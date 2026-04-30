@@ -26,8 +26,14 @@ export default async function SessionPage({
   }
 
   // Phase 0 is a server-side creation state — auto-advance to phase 1 on first client visit.
+  // Also wipe any messages saved while the session was at phase 0 (Claude should never
+  // have responded during phase 0; any messages there are contaminated and must be cleared
+  // so __init__ fires fresh with phase 1 instructions).
   if (session.current_phase === 0) {
-    await supabase.from('sessions').update({ current_phase: 1 }).eq('id', id)
+    await Promise.all([
+      supabase.from('sessions').update({ current_phase: 1 }).eq('id', id),
+      supabase.from('messages').delete().eq('session_id', id),
+    ])
     session.current_phase = 1
   }
 
