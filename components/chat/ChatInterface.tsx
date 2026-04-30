@@ -128,14 +128,24 @@ export default function ChatInterface({
       <div className="flex-1 overflow-y-auto px-4 py-6 max-w-2xl mx-auto w-full">
         <div className="space-y-4">
           {visibleMessages.map(m => (
-            <MessageBubble key={m.id} message={m} />
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isNew={!m.id.startsWith('init-')}
+            />
           ))}
 
           {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-surface-card text-text-secondary border border-border-default shadow-subtle rounded-2xl px-4 py-3 text-sm font-body flex items-center gap-2">
-                <span className="animate-pulse text-lg leading-none">···</span>
-                <span className="text-text-muted text-xs">AI is thinking…</span>
+            <div className="flex justify-start motion-safe:animate-msg-in">
+              <div className="bg-surface-card border border-border-default shadow-subtle rounded-2xl px-4 py-3 flex items-center gap-3">
+                {[0, 1, 2].map(i => (
+                  <span
+                    key={i}
+                    className="w-1.5 h-1.5 rounded-full bg-text-muted motion-safe:animate-dot-bounce"
+                    style={{ animationDelay: `${i * 160}ms` }}
+                  />
+                ))}
+                <span className="text-text-muted text-xs font-body">Thinking…</span>
               </div>
             </div>
           )}
@@ -165,12 +175,12 @@ export default function ChatInterface({
               onChange={e => setInput(e.target.value)}
               disabled={isLoading}
               placeholder="Type your reply…"
-              className="flex-1 border border-border-default rounded-pill px-4 py-3 text-sm font-body bg-surface-page focus:outline-none focus:border-brand-cyan disabled:opacity-50 transition-colors"
+              className="flex-1 border border-border-default rounded-pill px-4 py-3 text-sm font-body bg-surface-page focus:outline-none focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/15 disabled:opacity-50 transition-all duration-150"
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all duration-150 hover:bg-brand-navy active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
             </button>

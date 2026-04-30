@@ -77,7 +77,13 @@ function renderMarkdown(text: string): ReactNode {
   return <>{nodes}</>
 }
 
-export default function MessageBubble({ message }: { message: UIMessage }) {
+export default function MessageBubble({
+  message,
+  isNew = false,
+}: {
+  message: UIMessage
+  isNew?: boolean
+}) {
   const text = message.parts
     .filter((p): p is TextUIPart => p.type === 'text')
     .map(p => p.text)
@@ -88,7 +94,13 @@ export default function MessageBubble({ message }: { message: UIMessage }) {
   const isUser = message.role === 'user'
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div
+      className={[
+        'flex',
+        isUser ? 'justify-end' : 'justify-start',
+        isNew ? 'motion-safe:animate-msg-in' : '',
+      ].join(' ')}
+    >
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm font-body leading-relaxed ${
           isUser
