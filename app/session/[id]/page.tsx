@@ -22,6 +22,13 @@ export default async function SessionPage({
   // Safe to clear on page load — the client opening this page proves no stream is active.
   if (session.processing) {
     await supabase.from('sessions').update({ processing: false }).eq('id', id)
+    session.processing = false
+  }
+
+  // Phase 0 is a server-side creation state — auto-advance to phase 1 on first client visit.
+  if (session.current_phase === 0) {
+    await supabase.from('sessions').update({ current_phase: 1 }).eq('id', id)
+    session.current_phase = 1
   }
 
   if (session.status === 'approved') {
