@@ -13,7 +13,7 @@ export default async function DashboardPage() {
     <div className="min-h-screen bg-surface-page">
       <header className="bg-brand-navy h-16 flex items-center justify-between px-6">
         <Image
-          src="/logo.png"
+          src="/logo-white.png"
           alt="CountingFive"
           height={32}
           width={180}
