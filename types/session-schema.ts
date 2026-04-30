@@ -56,6 +56,8 @@ export type SessionSchema = {
     name: string
     description: string
     icp: string
+    painPoints: string
+    valueProp: string
   }>
   business?: {
     name: string
@@ -74,11 +76,25 @@ export type SessionSchema = {
     clientSuccessStories: string[]
     clientMixBreakdown: string
     howClientsFind: string
+    pricing: string
+    growthGoals: string
   }
   culture?: {
     missionVisionValues: string
     teamDescription: string
     socialMediaChannels: string[]
+  }
+  brand?: {
+    currentTone: string
+    aspirationalTone: string
+    toneAdjectives: string[]
+    toneToAvoid: string[]
+    voiceExample: string
+    brandPersonality: string
+    primaryColors: string
+    typography: string
+    logoStyle: string
+    hasBrandGuide: boolean
   }
   assets?: {
     headshotsAvailable: string[]

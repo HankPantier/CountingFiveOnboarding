@@ -21,11 +21,25 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
       clientSuccessStories: [],
       clientMixBreakdown: '',
       howClientsFind: '',
+      pricing: '',
+      growthGoals: '',
     },
     locations: [],
     team: [],
     services: [],
     niches: [],
+    brand: {
+      currentTone: '',
+      aspirationalTone: '',
+      toneAdjectives: [],
+      toneToAvoid: [],
+      voiceExample: '',
+      brandPersonality: '',
+      primaryColors: '',
+      typography: '',
+      logoStyle: '',
+      hasBrandGuide: false,
+    },
     culture: {
       missionVisionValues: '',
       teamDescription: '',
@@ -51,7 +65,7 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
     }
   }
 
-  addPhase4Gaps(gaps)
+  addPhase4Gaps(gaps, schema)
   return { schema, gaps }
 }
 
@@ -228,7 +242,7 @@ function parseSection5(markdown: string, schema: SessionSchema): void {
     const description = typeMatch ? typeMatch[1].trim() : ''
     const signalMatch = block.match(/\*\*Ideal signal:\*\*\s*\*"([^"]+)"\*/)
     const icp = signalMatch ? signalMatch[1] : ''
-    niches.push({ name, description, icp })
+    niches.push({ name, description, icp, painPoints: '', valueProp: '' })
   }
   schema.niches = niches
 }
@@ -298,19 +312,55 @@ function parseSection7(markdown: string, schema: SessionSchema, gaps: GapItem[])
 
 // ─── Phase 4 gaps (always present — MFP never covers these) ──────────────────
 
-function addPhase4Gaps(gaps: GapItem[]): void {
+function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
+  // Firm background
   gaps.push(
     { field: 'business.foundingYear', label: 'Founding Year', phase: 4, tier: 1, resolved: false },
     { field: 'business.firmHistory', label: 'Firm History / Origin Story', phase: 4, tier: 1, resolved: false },
-    { field: 'culture.missionVisionValues', label: 'Mission, Vision & Values', phase: 4, tier: 1, resolved: false },
-    { field: 'culture.teamDescription', label: 'Team Culture Description', phase: 4, tier: 1, resolved: false },
-    { field: 'business.differentiators', label: 'Differentiators (in their own words)', phase: 4, tier: 1, resolved: false },
-    { field: 'business.howClientsFind', label: 'How Clients Find the Firm', phase: 4, tier: 1, resolved: false },
-    { field: 'business.customerNeeds', label: 'Client Needs & Pain Points', phase: 4, tier: 1, resolved: false },
+  )
+  // Client & revenue
+  gaps.push(
     { field: 'business.geographicScope', label: 'Geographic Scope', phase: 4, tier: 1, resolved: false },
     { field: 'business.clientAgeRanges', label: 'Client Age Ranges', phase: 4, tier: 1, resolved: false },
-    { field: 'business.clientSuccessStories', label: 'Client Success Stories', phase: 4, tier: 2, resolved: false },
+    { field: 'business.customerNeeds', label: 'Client Needs & Pain Points', phase: 4, tier: 1, resolved: false },
+    { field: 'business.howClientsFind', label: 'How Clients Find the Firm', phase: 4, tier: 1, resolved: false },
+    { field: 'business.pricing', label: 'Pricing / Fee Structure', phase: 4, tier: 1, resolved: false },
+    { field: 'business.clientSuccessStories', label: 'Client Success Stories (1–2 examples)', phase: 4, tier: 1, resolved: false },
+  )
+  // Differentiators & growth
+  gaps.push(
+    { field: 'business.differentiators', label: 'Differentiators (in their own words)', phase: 4, tier: 1, resolved: false },
+    { field: 'business.growthGoals', label: 'Growth Goals / Where They Want to Be in 3 Years', phase: 4, tier: 2, resolved: false },
     { field: 'business.clientMixBreakdown', label: 'Client Mix Breakdown', phase: 4, tier: 2, resolved: false },
+  )
+  // Culture
+  gaps.push(
+    { field: 'culture.missionVisionValues', label: 'Mission, Vision & Values', phase: 4, tier: 1, resolved: false },
+    { field: 'culture.teamDescription', label: 'Team Culture Description', phase: 4, tier: 1, resolved: false },
+  )
+  // Brand & Tone (always collected in Phase 4)
+  gaps.push(
+    { field: 'brand.currentTone',       label: 'Current Brand Voice',                     phase: 4, tier: 1, resolved: false },
+    { field: 'brand.aspirationalTone',  label: 'Aspirational Voice (how they want to sound)', phase: 4, tier: 1, resolved: false },
+    { field: 'brand.toneAdjectives',    label: 'Tone Adjectives (words that feel like them)', phase: 4, tier: 1, resolved: false },
+    { field: 'brand.toneToAvoid',       label: 'Tone to Avoid',                            phase: 4, tier: 2, resolved: false },
+    { field: 'brand.voiceExample',      label: 'Voice Example Phrase',                     phase: 4, tier: 2, resolved: false },
+    { field: 'brand.primaryColors',     label: 'Brand Colors',                             phase: 4, tier: 1, resolved: false },
+    { field: 'brand.hasBrandGuide',     label: 'Has Existing Brand Guide',                 phase: 4, tier: 1, resolved: false },
+    { field: 'brand.logoStyle',         label: 'Logo / Visual Style (modern, traditional, etc.)', phase: 4, tier: 2, resolved: false },
+  )
+  // Per-niche pain points & value props
+  if (schema?.niches?.length) {
+    for (let i = 0; i < schema.niches.length; i++) {
+      const niche = schema.niches[i]
+      gaps.push(
+        { field: `niches[${i}].painPoints`, label: `${niche.name} — Pain Points`, phase: 4, tier: 1, resolved: false },
+        { field: `niches[${i}].valueProp`, label: `${niche.name} — Value Proposition`, phase: 4, tier: 2, resolved: false },
+      )
+    }
+  }
+  // Misc
+  gaps.push(
     { field: 'technical.googleBusinessProfileUrl', label: 'Google Business Profile URL', phase: 4, tier: 3, resolved: false },
   )
 }

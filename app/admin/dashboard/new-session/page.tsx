@@ -23,6 +23,7 @@ export default function NewSessionPage() {
   const [clientUrl, setClientUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   async function handleParse() {
     if (!file) return
@@ -93,10 +94,25 @@ export default function NewSessionPage() {
               {clientUrl}
             </code>
             <button
-              onClick={() => navigator.clipboard.writeText(clientUrl)}
+              onClick={() => {
+                navigator.clipboard.writeText(clientUrl).then(() => {
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                }).catch(() => {
+                  // Fallback for non-HTTPS contexts
+                  const el = document.createElement('textarea')
+                  el.value = clientUrl
+                  document.body.appendChild(el)
+                  el.select()
+                  document.execCommand('copy')
+                  document.body.removeChild(el)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2000)
+                })
+              }}
               className="bg-brand-navy text-text-inverse font-heading font-semibold text-sm px-4 py-2 rounded-pill transition-all hover:bg-brand-navy-dark whitespace-nowrap"
             >
-              Copy
+              {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
         </div>
