@@ -5,6 +5,8 @@ import SchemaViewer from '@/components/admin/SchemaViewer'
 import AssetsViewer from '@/components/admin/AssetsViewer'
 import ApproveButton from '@/components/admin/ApproveButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
+import CopyLinkButton from '@/components/admin/CopyLinkButton'
+import DeleteSessionButton from '@/components/admin/DeleteSessionButton'
 
 export default async function SessionDetailPage({
   params,
@@ -57,6 +59,7 @@ export default async function SessionDetailPage({
       {/* Right panel: schema + actions */}
       <div className="w-1/2 overflow-y-auto p-6">
         <StatusBanner session={session} />
+        <CopyLinkButton sessionId={id} />
         <SchemaViewer sessionId={id} schemaData={session.schema_data} />
         <div className="mt-6">
           <AssetsViewer assets={assets ?? []} />
@@ -89,6 +92,7 @@ export default async function SessionDetailPage({
             <SendReminderButton sessionId={id} />
           </div>
         )}
+        <DeleteSessionButton sessionId={id} />
       </div>
     </div>
   )

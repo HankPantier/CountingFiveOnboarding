@@ -2,6 +2,44 @@ import { createAuthClient, createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import type { Json } from '@/types/database'
 
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await createAuthClient()
+  const { data: { user } } = await auth.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const supabase = createServerClient()
+
+  const { data: session } = await supabase.from('sessions').select('id').eq('id', id).single()
+  if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+  // Remove uploaded files and generated PDFs/MDs from storage
+  const [{ data: sessionFiles }, { data: pdfFiles }] = await Promise.all([
+    supabase.storage.from('session-assets').list(`sessions/${id}`),
+    supabase.storage.from('session-assets').list(`pdfs/${id}`),
+  ])
+  const filesToRemove = [
+    ...(sessionFiles ?? []).map(f => `sessions/${id}/${f.name}`),
+    ...(pdfFiles ?? []).map(f => `pdfs/${id}/${f.name}`),
+  ]
+  if (filesToRemove.length > 0) {
+    await supabase.storage.from('session-assets').remove(filesToRemove)
+  }
+
+  // Delete related records then the session itself
+  await Promise.all([
+    supabase.from('messages').delete().eq('session_id', id),
+    supabase.from('assets').delete().eq('session_id', id),
+    supabase.from('reminders').delete().eq('session_id', id),
+  ])
+  await supabase.from('sessions').delete().eq('id', id)
+
+  return NextResponse.json({ success: true })
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

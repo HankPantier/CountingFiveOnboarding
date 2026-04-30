@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
+import SessionRowActions from '@/components/admin/SessionRowActions'
 import type { Database } from '@/types/database'
 
 type Session = Pick<
@@ -135,13 +136,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                       {daysInactive(session.last_activity_at)}d
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/sessions/${session.id}`}
-                      className="text-brand-cyan hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
-                    >
-                      View
-                    </Link>
+                  <td className="px-4 py-3">
+                    <SessionRowActions sessionId={session.id} />
                   </td>
                 </tr>
               ))}
