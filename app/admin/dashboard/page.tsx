@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { createAuthClient } from '@/lib/supabase/server'
 import { signOut } from './actions'
@@ -11,9 +12,14 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen bg-surface-page">
       <header className="bg-brand-navy h-16 flex items-center justify-between px-6">
-        <span className="text-text-inverse font-heading font-semibold">
-          CountingFive Admin
-        </span>
+        <Image
+          src="/logo.png"
+          alt="CountingFive"
+          height={32}
+          width={180}
+          style={{ height: 32, width: 'auto' }}
+          priority
+        />
         <form action={signOut}>
           <button
             type="submit"
