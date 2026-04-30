@@ -35,7 +35,7 @@ export async function POST(req: Request) {
       schema_data: (schemaData ?? {}) as Json,
       gap_list: (Array.isArray(gapList) ? gapList : []) as Json,
       status: 'pending',
-      current_phase: 0,
+      current_phase: 1,
     })
     .select('id')
     .single()
