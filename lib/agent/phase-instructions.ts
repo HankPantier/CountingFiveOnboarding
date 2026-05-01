@@ -52,7 +52,11 @@ When part 1 is done, call update_session_data with updates: { "_meta": { "phase3
 Present all of the following in one message:
 - Team members (note any with missing titles), services, industry niches
 Ask for corrections and any missing team titles.
-Then present the 3 positioning options (A, B, C) and ask the client to choose one.
+Then present the 3 positioning options. Format them as a markdown list, one per line — do not put all three inline in a sentence:
+- **Option A** — [summary]
+- **Option B** — [summary]
+- **Option C** — [summary]
+Ask which direction resonates most, or if they'd like to blend elements.
 When positioning is confirmed and part 2 is complete, call update_session_data with advancePhase: true and include "_meta.phase3_completed_chunks": ["chunk1", "chunk2"] in updates.`
 }
 
