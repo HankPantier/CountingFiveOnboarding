@@ -33,7 +33,8 @@ export async function POST(req: Request) {
   }
 
   const uuid = crypto.randomUUID()
-  const storagePath = `sessions/${sessionId}/${uuid}-${fileName}`
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const storagePath = `sessions/${sessionId}/${uuid}-${safeName}`
 
   const { data, error } = await supabase.storage
     .from('session-assets')

@@ -22,7 +22,7 @@ export default async function SessionsLayout({
             alt="CountingFive"
             height={32}
             width={180}
-            className="h-8 w-auto"
+            style={{ height: '32px', width: 'auto' }}
             priority
           />
         </Link>

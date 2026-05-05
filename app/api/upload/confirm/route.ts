@@ -11,6 +11,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
+  // Validate storagePath belongs to this session — prevent cross-session file claiming
+  const expectedPrefix = `sessions/${sessionId}/`
+  if (!storagePath.startsWith(expectedPrefix)) {
+    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
+  }
+
   const supabase = createServerClient()
 
   const { data: fileData, error: fileError } = await supabase.storage

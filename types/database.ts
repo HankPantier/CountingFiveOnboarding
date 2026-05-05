@@ -14,6 +14,221 @@ export type Database = {
   }
   public: {
     Tables: {
+      content_jobs: {
+        Row: {
+          id: string
+          session_id: string
+          phase: number
+          palette: Json | null
+          confirmed_sitemap: Json | null
+          status: string
+          error_message: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          session_id: string
+          phase?: number
+          palette?: Json | null
+          confirmed_sitemap?: Json | null
+          status?: string
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          session_id?: string
+          phase?: number
+          palette?: Json | null
+          confirmed_sitemap?: Json | null
+          status?: string
+          error_message?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_jobs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      generated_pages: {
+        Row: {
+          id: string
+          content_job_id: string
+          page_url: string
+          page_title: string
+          content_markdown: string | null
+          meta_title: string | null
+          meta_description: string | null
+          target_keyword: string | null
+          secondary_keywords: Json
+          answer_block: string | null
+          schema_markup_type: string | null
+          eeat_signals: Json
+          internal_links: Json
+          faq_block: Json
+          llm_citation_note: string | null
+          url_slug: string | null
+          canonical_url: string | null
+          generation_status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          content_job_id: string
+          page_url: string
+          page_title: string
+          content_markdown?: string | null
+          meta_title?: string | null
+          meta_description?: string | null
+          target_keyword?: string | null
+          secondary_keywords?: Json
+          answer_block?: string | null
+          schema_markup_type?: string | null
+          eeat_signals?: Json
+          internal_links?: Json
+          faq_block?: Json
+          llm_citation_note?: string | null
+          url_slug?: string | null
+          canonical_url?: string | null
+          generation_status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          content_job_id?: string
+          page_url?: string
+          page_title?: string
+          content_markdown?: string | null
+          meta_title?: string | null
+          meta_description?: string | null
+          target_keyword?: string | null
+          secondary_keywords?: Json
+          answer_block?: string | null
+          schema_markup_type?: string | null
+          eeat_signals?: Json
+          internal_links?: Json
+          faq_block?: Json
+          llm_citation_note?: string | null
+          url_slug?: string | null
+          canonical_url?: string | null
+          generation_status?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_pages_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      page_outlines: {
+        Row: {
+          id: string
+          content_job_id: string
+          page_url: string
+          page_title: string
+          h1: string | null
+          sections: Json
+          target_keyword: string | null
+          admin_approved: boolean
+          admin_notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          content_job_id: string
+          page_url: string
+          page_title: string
+          h1?: string | null
+          sections?: Json
+          target_keyword?: string | null
+          admin_approved?: boolean
+          admin_notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          content_job_id?: string
+          page_url?: string
+          page_title?: string
+          h1?: string | null
+          sections?: Json
+          target_keyword?: string | null
+          admin_approved?: boolean
+          admin_notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_outlines_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      research_results: {
+        Row: {
+          id: string
+          content_job_id: string
+          page_url: string
+          page_title: string
+          target_keyword: string | null
+          secondary_keywords: Json
+          competitor_references: Json
+          existing_content: string | null
+          research_status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          content_job_id: string
+          page_url: string
+          page_title: string
+          target_keyword?: string | null
+          secondary_keywords?: Json
+          competitor_references?: Json
+          existing_content?: string | null
+          research_status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          content_job_id?: string
+          page_url?: string
+          page_title?: string
+          target_keyword?: string | null
+          secondary_keywords?: Json
+          competitor_references?: Json
+          existing_content?: string | null
+          research_status?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "research_results_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       admins: {
         Row: {
           created_at: string
@@ -171,7 +386,9 @@ export type Database = {
           basecamp_project_id: string | null
           client_email: string | null
           completed_at: string | null
+          content_generation_phase: number | null
           content_generation_ready: boolean
+          content_generation_started_at: string | null
           created_at: string
           current_phase: number
           gap_list: Json
@@ -191,7 +408,9 @@ export type Database = {
           basecamp_project_id?: string | null
           client_email?: string | null
           completed_at?: string | null
+          content_generation_phase?: number | null
           content_generation_ready?: boolean
+          content_generation_started_at?: string | null
           created_at?: string
           current_phase?: number
           gap_list?: Json
@@ -211,7 +430,9 @@ export type Database = {
           basecamp_project_id?: string | null
           client_email?: string | null
           completed_at?: string | null
+          content_generation_phase?: number | null
           content_generation_ready?: boolean
+          content_generation_started_at?: string | null
           created_at?: string
           current_phase?: number
           gap_list?: Json

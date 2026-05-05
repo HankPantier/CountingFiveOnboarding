@@ -55,6 +55,10 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
     ['Section 5', () => parseSection5(markdown, schema)],
     ['Section 6', () => parseSection6(markdown, schema)],
     ['Section 7', () => parseSection7(markdown, schema, gaps)],
+    ['Section 8', () => parseSection8(markdown, schema)],
+    ['Section 9', () => parseSection9(markdown, schema)],
+    ['Section 10A', () => parseSection10A(markdown, schema)],
+    ['Section 10B', () => parseSection10B(markdown, schema)],
   ]
 
   for (const [label, fn] of sections) {
@@ -308,6 +312,232 @@ function parseSection7(markdown: string, schema: SessionSchema, gaps: GapItem[])
   }
 
   schema.team = team
+}
+
+// ─── Sections 8–10B (content generation data) ────────────────────────────────
+
+function parseSection8(markdown: string, schema: SessionSchema): void {
+  const section = extractSection(markdown, 8)
+  if (!section) return
+
+  const reputation: NonNullable<SessionSchema['reputation']> = {
+    trustSignalGaps: [],
+    pressAndMedia: [],
+  }
+
+  const googleMatch = section.match(/\*\*Google Rating:\*\*\s*([^\n]+)/)
+  if (googleMatch) reputation.googleRating = googleMatch[1].trim()
+
+  const yelpMatch = section.match(/\*\*Yelp Rating:\*\*\s*([^\n]+)/)
+  if (yelpMatch) reputation.yelpRating = yelpMatch[1].trim()
+
+  const sentimentMatch = section.match(/\*\*Overall Sentiment:\*\*\s*([^\n]+)/)
+  if (sentimentMatch) reputation.reviewSummary = sentimentMatch[1].trim()
+
+  // Trust Signal Gaps — bulleted list after the heading
+  const trustGapStart = section.indexOf('### Trust Signal Gaps')
+  if (trustGapStart > -1) {
+    const trustBlock = section.slice(trustGapStart)
+    const nextHeading = trustBlock.indexOf('\n### ', 1)
+    const block = nextHeading > -1 ? trustBlock.slice(0, nextHeading) : trustBlock
+    const bullets = block.match(/^- \*\*[^*]+\*\*[^\n]*/gm)
+    if (bullets) {
+      reputation.trustSignalGaps = bullets.map(b =>
+        b.replace(/^- \*\*/, '').replace(/\*\*/, '').trim()
+      )
+    }
+  }
+
+  // Press & Media
+  const pressStart = section.indexOf('### Press & Media')
+  if (pressStart > -1) {
+    const pressBlock = section.slice(pressStart)
+    const nextHeading = pressBlock.indexOf('\n### ', 1)
+    const block = nextHeading > -1 ? pressBlock.slice(0, nextHeading) : pressBlock
+    const bullets = block.match(/^- .+/gm)
+    if (bullets) {
+      reputation.pressAndMedia = bullets.map(b => b.replace(/^- /, '').trim())
+    }
+  }
+
+  schema.reputation = reputation
+}
+
+function parseSection9(markdown: string, schema: SessionSchema): void {
+  const section = extractSection(markdown, 9)
+  if (!section) return
+
+  const content_gaps: NonNullable<SessionSchema['content_gaps']> = {
+    nicheGaps: [],
+    authorityGaps: [],
+    conversionGaps: [],
+    teamExpertiseGaps: [],
+  }
+
+  const subsections: Array<[string, keyof typeof content_gaps]> = [
+    ['### Niche Gaps', 'nicheGaps'],
+    ['### Authority Gaps', 'authorityGaps'],
+    ['### Conversion Gaps', 'conversionGaps'],
+    ['### Team Expertise Gaps', 'teamExpertiseGaps'],
+  ]
+
+  for (const [heading, key] of subsections) {
+    const start = section.indexOf(heading)
+    if (start === -1) continue
+    const block = section.slice(start)
+    const nextHeading = block.indexOf('\n### ', 1)
+    const subsection = nextHeading > -1 ? block.slice(0, nextHeading) : block
+    const bullets = subsection.match(/^- \*\*[^*]+\*\*[^\n]*/gm)
+    if (bullets) {
+      content_gaps[key] = bullets.map(b =>
+        b.replace(/^- \*\*/, '').replace(/\*\*/, '').trim()
+      )
+    }
+  }
+
+  schema.content_gaps = content_gaps
+}
+
+function parseSection10A(markdown: string, schema: SessionSchema): void {
+  // Section 10A uses a custom header pattern
+  const pattern = /##\s+Section\s+10A\b[^\n]*\n/i
+  const match = markdown.match(pattern)
+  if (!match || match.index === undefined) return
+
+  const start = match.index + match[0].length
+  const nextSection = markdown.indexOf('\n## ', start)
+  const section = nextSection > -1 ? markdown.slice(start, nextSection) : markdown.slice(start)
+
+  // Parse the Redirect Planning Table
+  const tableStart = section.indexOf('### Redirect Planning Table')
+  if (tableStart === -1) return
+
+  const tableBlock = section.slice(tableStart)
+  const rows = tableRows(tableBlock)
+  const current_sitemap: NonNullable<SessionSchema['current_sitemap']> = []
+
+  for (const row of rows) {
+    if (row.length < 4) continue
+    const currentUrl = row[0].replace(/\*+/g, '').trim()
+    const pageTitle = row[1].replace(/\*+/g, '').trim()
+    const actionRaw = row[2].replace(/\*+/g, '').trim()
+    const newUrl = row[3].replace(/[→→]\s*/, '').replace(/\*+/g, '').trim()
+
+    // Skip header row
+    if (actionRaw.toLowerCase() === 'action') continue
+
+    let action: 'keep' | 'redirect' | 'consolidate' | 'new'
+    if (actionRaw.toLowerCase().includes('no change')) action = 'keep'
+    else if (actionRaw.toLowerCase().includes('consolidate')) action = 'consolidate'
+    else if (actionRaw.toLowerCase().includes('new page')) action = 'new'
+    else action = 'redirect'
+
+    // Determine if live — redirects to homepage or JS-rendered are not live
+    const isNewPage = currentUrl.includes('no current URL') || currentUrl === '*(no current URL)*'
+    const live = !isNewPage && action !== 'new'
+
+    current_sitemap.push({
+      url: isNewPage ? '' : currentUrl,
+      title: pageTitle,
+      action,
+      new_url: newUrl || undefined,
+      live,
+    })
+  }
+
+  schema.current_sitemap = current_sitemap
+}
+
+function parseSection10B(markdown: string, schema: SessionSchema): void {
+  // Section 10B uses a custom header pattern
+  const pattern = /##\s+Section\s+10B\b[^\n]*\n/i
+  const match = markdown.match(pattern)
+  if (!match || match.index === undefined) return
+
+  const start = match.index + match[0].length
+  const nextSection = markdown.indexOf('\n## ', start)
+  const section = nextSection > -1 ? markdown.slice(start, nextSection) : markdown.slice(start)
+
+  // Find the text tree (after "Site Map — Text Tree" heading, inside a code block)
+  const textTreeStart = section.indexOf('**Site Map — Text Tree**')
+  if (textTreeStart === -1) return
+
+  const codeBlockStart = section.indexOf('```', textTreeStart)
+  if (codeBlockStart === -1) return
+  const codeBlockContentStart = section.indexOf('\n', codeBlockStart) + 1
+  const codeBlockEnd = section.indexOf('```', codeBlockContentStart)
+  if (codeBlockEnd === -1) return
+
+  const textTree = section.slice(codeBlockContentStart, codeBlockEnd)
+
+  // URL mapping from the sitemap structure
+  const urlMap: Record<string, string> = {
+    'Home': '/',
+    'About': '/about',
+    'Our Story': '/about/our-story',
+    'Our Team': '/about/our-team',
+    'Services': '/services',
+    'Advisory & Virtual CFO': '/services/virtual-cfo-advisory',
+    'Tax': '/services/tax',
+    'Personal Tax': '/services/tax/personal-tax',
+    'Business Tax': '/services/tax/business-tax',
+    'Audit Representation': '/services/tax/audit-representation',
+    'Bookkeeping & Payroll': '/services/bookkeeping-payroll',
+    'Financial Reporting': '/services/financial-reporting',
+    'Nonprofit Accounting': '/industries/nonprofits',
+    'Wealth & Retirement Planning': '/services/wealth-retirement-planning',
+    'Business Startup Accounting': '/services/business-startup-accounting',
+    'Industries / Who We Serve': '/industries',
+    'Healthcare Professionals': '/industries/healthcare-professionals',
+    'Contractors & Trades': '/industries/contractors-trades',
+    'Retail & Manufacturing': '/industries/retail-manufacturing',
+    'Service Businesses': '/industries/service-businesses',
+    'Nonprofits': '/industries/nonprofits',
+    'Closely Held Family Businesses': '/industries/family-businesses',
+    'Resources': '/resources',
+    'Articles & Magazine': '/resources/articles',
+    'Refund Tracker': '/resources/refund-tracker',
+    'Client Portal': '/resources/client-portal',
+    'Contact': '/contact',
+  }
+
+  const proposed_sitemap: NonNullable<SessionSchema['proposed_sitemap']> = []
+  const parentStack: Array<{ indent: number; url: string }> = []
+
+  for (const line of textTree.split('\n')) {
+    if (!line.trim()) continue
+
+    // Determine indentation level (count leading chars before the title)
+    const indentMatch = line.match(/^([│├└\s─]+)/)
+    const indent = indentMatch ? indentMatch[1].length : 0
+
+    // Extract title and status emoji
+    const titleMatch = line.match(/(?:[│├└\s─]+)?([^📈🆕✅\n]+)\s*(📈|🆕|✅)/)
+    if (!titleMatch) continue
+
+    const title = titleMatch[1].trim()
+    const emoji = titleMatch[2]
+
+    let status: 'new' | 'update' | 'existing'
+    if (emoji === '🆕') status = 'new'
+    else if (emoji === '📈') status = 'update'
+    else status = 'existing'
+
+    // Generate URL from title
+    const url = urlMap[title] ?? '/' + title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, '')
+
+    // Determine parent from indentation
+    while (parentStack.length > 0 && parentStack[parentStack.length - 1].indent >= indent) {
+      parentStack.pop()
+    }
+    const parent = parentStack.length > 0 ? parentStack[parentStack.length - 1].url : undefined
+
+    parentStack.push({ indent, url })
+
+    proposed_sitemap.push({ url, title, status, parent })
+  }
+
+  schema.proposed_sitemap = proposed_sitemap
 }
 
 // ─── Phase 4 gaps (always present — MFP never covers these) ──────────────────

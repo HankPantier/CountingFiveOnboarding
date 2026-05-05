@@ -69,8 +69,11 @@ export async function basecampFetch(
   })
 
   if (res.status === 429) {
+    if ((options as { _retryCount?: number })._retryCount && (options as { _retryCount?: number })._retryCount! >= 3) {
+      throw new Error('Basecamp rate limit exceeded after 3 retries')
+    }
     await new Promise(r => setTimeout(r, 10000))
-    return basecampFetch(path, options)
+    return basecampFetch(path, { ...options, _retryCount: ((options as { _retryCount?: number })._retryCount ?? 0) + 1 } as RequestInit)
   }
 
   if (!res.ok) {

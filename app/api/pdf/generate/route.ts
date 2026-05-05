@@ -2,11 +2,15 @@ export const runtime = 'nodejs'
 export const maxDuration = 30
 
 import { createServerClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { generateIntakePdf } from '@/lib/pdf/generate-pdf'
 import { generateIntakeMd } from '@/lib/pdf/generate-md'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
+
   const { sessionId } = await req.json() as { sessionId: string }
   if (!sessionId) return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
 

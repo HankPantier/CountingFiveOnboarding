@@ -5,13 +5,13 @@ import { createAuthClient, createServerClient } from '@/lib/supabase/server'
 import ClientReminderEmail from '@/emails/ClientReminderEmail'
 import AdminReminderEmail from '@/emails/AdminReminderEmail'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-const ADMIN_EMAIL = 'webhank@gmail.com'
-
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
+
   const auth = await createAuthClient()
   const { data: { user } } = await auth.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

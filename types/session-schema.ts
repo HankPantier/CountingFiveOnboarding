@@ -107,4 +107,31 @@ export type SessionSchema = {
     otherDetails: string
     uploadedFiles: string[]
   }
+  proposed_sitemap?: Array<{
+    url: string
+    title: string
+    status: 'new' | 'update' | 'existing'
+    parent?: string
+    notes?: string
+  }>
+  current_sitemap?: Array<{
+    url: string
+    title: string
+    action: 'keep' | 'redirect' | 'consolidate' | 'new'
+    new_url?: string
+    live: boolean
+  }>
+  reputation?: {
+    googleRating?: string
+    yelpRating?: string
+    reviewSummary?: string
+    trustSignalGaps: string[]
+    pressAndMedia: string[]
+  }
+  content_gaps?: {
+    nicheGaps: string[]
+    authorityGaps: string[]
+    conversionGaps: string[]
+    teamExpertiseGaps: string[]
+  }
 }

@@ -1,12 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function CopyLinkButton({ sessionId }: { sessionId: string }) {
   const [copied, setCopied] = useState(false)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const [url, setUrl] = useState(`${appUrl}/session/${sessionId}`)
 
-  const url = typeof window !== 'undefined'
-    ? `${window.location.origin}/session/${sessionId}`
-    : `/session/${sessionId}`
+  useEffect(() => {
+    setUrl(`${window.location.origin}/session/${sessionId}`)
+  }, [sessionId])
 
   function copy() {
     const fullUrl = `${window.location.origin}/session/${sessionId}`

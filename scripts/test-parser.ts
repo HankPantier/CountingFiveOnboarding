@@ -27,9 +27,10 @@ assert('T1 — Team count > 0', (schema.team?.length ?? 0) > 0, 'got: ' + schema
 assert('T1 — Services count > 0', (schema.services?.length ?? 0) > 0, 'got: ' + schema.services?.length)
 assert('T1 — Gap count > 0', gaps.length > 0, 'got: ' + gaps.length)
 
-// T2
+// T2 — 16 base tier-1 gaps + 1 per niche (pain points)
 const tier1Gaps = gaps.filter(g => g.tier === 1)
-assert('T2 — Tier 1 gap count is 9', tier1Gaps.length === 9, 'got: ' + tier1Gaps.length)
+const expectedTier1 = 16 + (schema.niches?.length ?? 0)
+assert('T2 — Tier 1 gap count is ' + expectedTier1, tier1Gaps.length === expectedTier1, 'got: ' + tier1Gaps.length)
 
 // T3
 const titleGaps = gaps.filter(g => g.field.includes('.title'))
@@ -39,7 +40,7 @@ console.log('     Title gaps:', titleGaps.map(g => g.label).join(', '))
 // T4
 const { schema: emptySchema, gaps: emptyGaps } = parseMFP('')
 assert('T4 — Empty MFP does not throw', true)
-assert('T4 — Empty MFP has Phase 4 gaps', emptyGaps.filter(g => g.tier === 1).length === 9, 'got: ' + emptyGaps.filter(g => g.tier === 1).length)
+assert('T4 — Empty MFP has 16 base Phase 4 tier-1 gaps', emptyGaps.filter(g => g.tier === 1).length === 16, 'got: ' + emptyGaps.filter(g => g.tier === 1).length)
 
 // T5
 const { schema: partialSchema } = parseMFP('## Section 1 — Firm Identity\n| **Firm Name** | Test Co |\n')
@@ -54,6 +55,33 @@ assert('T6 — No overlap between affiliations and gaps',
   confirmedAffiliations.every(a => !affiliationGaps.some(g => g.field.includes(a))),
   'overlap detected'
 )
+
+// T7 — Section 8: Reputation & Trust Signals
+assert('T7 — reputation.trustSignalGaps is non-empty', (schema.reputation?.trustSignalGaps?.length ?? 0) > 0, 'got: ' + schema.reputation?.trustSignalGaps?.length)
+assert('T7 — reputation.pressAndMedia exists', Array.isArray(schema.reputation?.pressAndMedia), 'not an array')
+
+// T8 — Section 9: Content Gap Analysis
+assert('T8 — content_gaps.nicheGaps is non-empty', (schema.content_gaps?.nicheGaps?.length ?? 0) > 0, 'got: ' + schema.content_gaps?.nicheGaps?.length)
+assert('T8 — content_gaps.authorityGaps is non-empty', (schema.content_gaps?.authorityGaps?.length ?? 0) > 0, 'got: ' + schema.content_gaps?.authorityGaps?.length)
+assert('T8 — content_gaps.conversionGaps is non-empty', (schema.content_gaps?.conversionGaps?.length ?? 0) > 0, 'got: ' + schema.content_gaps?.conversionGaps?.length)
+assert('T8 — content_gaps.teamExpertiseGaps is non-empty', (schema.content_gaps?.teamExpertiseGaps?.length ?? 0) > 0, 'got: ' + schema.content_gaps?.teamExpertiseGaps?.length)
+
+// T9 — Section 10A: Current Site Map
+assert('T9 — current_sitemap is non-empty', (schema.current_sitemap?.length ?? 0) > 0, 'got: ' + schema.current_sitemap?.length)
+const redirectRows = schema.current_sitemap?.filter(r => r.action === 'redirect') ?? []
+assert('T9 — current_sitemap has redirect rows', redirectRows.length > 0, 'got: ' + redirectRows.length)
+const newPageRows = schema.current_sitemap?.filter(r => r.action === 'new') ?? []
+assert('T9 — current_sitemap has new page rows', newPageRows.length > 0, 'got: ' + newPageRows.length)
+
+// T10 — Section 10B: Proposed Site Map
+assert('T10 — proposed_sitemap is non-empty', (schema.proposed_sitemap?.length ?? 0) > 0, 'got: ' + schema.proposed_sitemap?.length)
+const newPages = schema.proposed_sitemap?.filter(p => p.status === 'new') ?? []
+const updatePages = schema.proposed_sitemap?.filter(p => p.status === 'update') ?? []
+const existingPages = schema.proposed_sitemap?.filter(p => p.status === 'existing') ?? []
+assert('T10 — proposed_sitemap has new pages', newPages.length > 0, 'got: ' + newPages.length)
+assert('T10 — proposed_sitemap has update pages', updatePages.length > 0, 'got: ' + updatePages.length)
+assert('T10 — proposed_sitemap has existing pages', existingPages.length > 0, 'got: ' + existingPages.length)
+assert('T10 — proposed_sitemap pages have parent refs', schema.proposed_sitemap!.some(p => p.parent !== undefined), 'no parents found')
 
 console.log('\n--- Summary ---')
 console.log('Passed: ' + passed + ' / Failed: ' + failed)

@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import StatusBanner from '@/components/admin/StatusBanner'
@@ -82,6 +83,16 @@ export default async function SessionDetailPage({
             >
               Download Markdown
             </a>
+          </div>
+        )}
+        {session.status === 'approved' && (
+          <div className="mt-4">
+            <Link
+              href={`/admin/content/${id}`}
+              className="inline-flex items-center gap-2 bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark"
+            >
+              Begin Content Generation &rarr;
+            </Link>
           </div>
         )}
         {session.status === 'completed' && (

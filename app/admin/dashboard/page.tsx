@@ -46,13 +46,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const supabase = createServerClient()
   const sp = await searchParams
 
-  const [{ data: sessions }, { data: bcToken }] = await Promise.all([
+  const [{ data: sessions }, { data: bcToken }, { count: approvedCount }] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, website_url, status, current_phase, last_activity_at, created_at, reminder_count')
       .order('last_activity_at', { ascending: true })
       .limit(100),
     supabase.from('basecamp_tokens').select('id').eq('id', 1).single(),
+    supabase
+      .from('sessions')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'approved'),
   ])
 
   const basecampConnected = !!bcToken
@@ -72,6 +76,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           <p className="text-text-secondary font-body text-sm mt-1">
             {sessions?.length ?? 0} total
           </p>
+          {(approvedCount ?? 0) > 0 && (
+            <Link
+              href="/admin/content"
+              className="inline-flex items-center gap-2 mt-2 text-sm font-body text-brand-cyan hover:text-brand-navy transition-colors"
+            >
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-brand-cyan text-text-inverse text-xs font-heading font-bold">
+                {approvedCount}
+              </span>
+              ready for content generation
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {!basecampConnected && (

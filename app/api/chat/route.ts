@@ -31,11 +31,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   }
 
-  if (session.processing) {
+  // Atomic lock: only set processing=true if it's currently false
+  const { data: lockResult } = await supabase
+    .from('sessions')
+    .update({ processing: true })
+    .eq('id', sessionId)
+    .eq('processing', false)
+    .select('id')
+
+  if (!lockResult?.length) {
     return NextResponse.json({ error: 'Already processing' }, { status: 429 })
   }
-
-  await supabase.from('sessions').update({ processing: true }).eq('id', sessionId)
 
   // Save incoming user message — skip the __init__ trigger
   const lastMsg = messages[messages.length - 1]

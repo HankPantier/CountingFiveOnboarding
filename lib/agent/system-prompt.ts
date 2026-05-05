@@ -48,8 +48,8 @@ GUARDRAILS:
 
 function serializeSchema(schema: Json): string {
   const obj = schema as Record<string, unknown>
-  const { _meta, ...rest } = obj
-  void _meta
+  const { _meta, proposed_sitemap, current_sitemap, reputation, content_gaps, ...rest } = obj
+  void _meta; void proposed_sitemap; void current_sitemap; void reputation; void content_gaps
   const sparse = deepOmitEmpty(rest)
   return JSON.stringify(sparse, null, 2)
 }

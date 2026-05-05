@@ -1,4 +1,5 @@
-import { createAuthClient, createServerClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { createBasecampProject } from '@/lib/basecamp/create-project'
 import { NextResponse } from 'next/server'
 
@@ -9,9 +10,9 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await createAuthClient()
-  const { data: { user } } = await auth.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
+  const user = auth.user
 
   const { id } = await params
   const supabase = createServerClient()
@@ -60,7 +61,7 @@ export async function POST(
       .update({
         status: 'approved',
         approved_at: new Date().toISOString(),
-        approved_by: user.email ?? user.id,
+        approved_by: user.id,
         basecamp_project_id: basecampProjectId,
         content_generation_ready: true,
         pdf_url: pdfStoragePath,
