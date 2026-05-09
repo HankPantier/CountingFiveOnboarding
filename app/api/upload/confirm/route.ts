@@ -3,12 +3,16 @@ import { NextResponse } from 'next/server'
 import { fileTypeFromBuffer } from 'file-type'
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/tiff', 'application/pdf']
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(req: Request) {
   const { sessionId, storagePath, fileName, mimeType, fileSize, assetCategory } = await req.json()
 
   if (!sessionId || !storagePath || !fileName) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  if (typeof sessionId !== 'string' || !UUID_RE.test(sessionId)) {
+    return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
   // Validate storagePath belongs to this session — prevent cross-session file claiming
@@ -59,7 +63,10 @@ export async function POST(req: Request) {
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[upload/confirm]', error)
+    return NextResponse.json({ error: 'Failed to record asset' }, { status: 500 })
+  }
 
   return NextResponse.json({ assetId: asset.id, publicUrl: urlData.publicUrl })
 }

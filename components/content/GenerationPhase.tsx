@@ -1,12 +1,17 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import MarkdownPreviewModal from './MarkdownPreviewModal'
 
 type PageStatus = {
+  id: string
   url: string
   title: string
   status: string
   parent?: string
+  approved?: boolean
+  wordCountActual?: number | null
+  wordCountTarget?: number | null
 }
 
 // Depth in the sitemap tree, capped to guard against accidental cycles.
@@ -25,6 +30,7 @@ type GenStatus = {
   complete: number
   running: number
   error: number
+  approved: number
   pages: PageStatus[]
 }
 
@@ -35,6 +41,22 @@ const STATUS_ICONS: Record<string, { icon: string; cls: string }> = {
   error:    { icon: '✗', cls: 'text-red-500' },
 }
 
+function wordCountBadge(actual: number | null | undefined, target: number | null | undefined): { label: string; cls: string } | null {
+  if (actual == null) return null
+  if (!target) {
+    return { label: `${actual} words`, cls: 'text-text-muted bg-surface-subtle' }
+  }
+  const variance = (actual - target) / target
+  const pct = Math.round(variance * 100)
+  if (Math.abs(variance) > 0.25) {
+    return {
+      label: `⚠ ${actual} / ${target} (${pct >= 0 ? '+' : ''}${pct}%)`,
+      cls: 'text-amber-800 bg-amber-50',
+    }
+  }
+  return { label: `${actual} / ${target}`, cls: 'text-text-muted bg-surface-subtle' }
+}
+
 export default function GenerationPhase({
   contentJobId,
 }: {
@@ -42,6 +64,9 @@ export default function GenerationPhase({
 }) {
   const [status, setStatus] = useState<GenStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [pollNonce, setPollNonce] = useState(0)
+  const [pendingActions, setPendingActions] = useState<Set<string>>(new Set())
+  const [previewPageId, setPreviewPageId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -54,7 +79,7 @@ export default function GenerationPhase({
         const data = await res.json()
         setStatus(data)
         setLoading(false)
-        if (data.total > 0 && data.complete + data.error >= data.total) {
+        if (data.total > 0 && data.complete + data.error >= data.total && data.running === 0) {
           clearInterval(intervalId)
         }
       } catch {
@@ -65,7 +90,46 @@ export default function GenerationPhase({
     poll()
     intervalId = setInterval(poll, 5000)
     return () => { cancelled = true; clearInterval(intervalId) }
-  }, [contentJobId])
+  }, [contentJobId, pollNonce])
+
+  const setAction = (key: string, on: boolean) => {
+    setPendingActions(prev => {
+      const next = new Set(prev)
+      if (on) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  const toggleApprove = async (page: PageStatus, next: boolean) => {
+    setAction(`approve:${page.id}`, true)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_approved_content: next }),
+      })
+      if (res.ok) setPollNonce(n => n + 1)
+    } finally {
+      setAction(`approve:${page.id}`, false)
+    }
+  }
+
+  const regenerate = async (page: PageStatus) => {
+    const warning = page.approved
+      ? `Regenerate "${page.title}"? The current approved content will be replaced and approval reset.`
+      : `Regenerate "${page.title}"? The current draft will be replaced.`
+    if (!window.confirm(warning)) return
+    setAction(`regen:${page.id}`, true)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}/regenerate`, {
+        method: 'POST',
+      })
+      if (res.ok) setPollNonce(n => n + 1)
+    } finally {
+      setAction(`regen:${page.id}`, false)
+    }
+  }
 
   if (loading) {
     return (
@@ -85,6 +149,7 @@ export default function GenerationPhase({
 
   const pct = status.total > 0 ? Math.round((status.complete / status.total) * 100) : 0
   const isRunning = status.running > 0 || (status.complete + status.error < status.total)
+  const allApproved = status.approved === status.complete && status.complete > 0
 
   return (
     <div className="space-y-4">
@@ -92,6 +157,9 @@ export default function GenerationPhase({
         <div className="flex items-center justify-between mb-1">
           <span className="text-sm font-body text-text-primary font-semibold">
             {status.complete} of {status.total} pages generated
+            <span className="ml-3 text-text-muted font-normal">
+              {status.approved} of {status.complete} approved
+            </span>
           </span>
           <span className="text-xs font-body text-text-muted">
             {isRunning ? 'Generating...' : 'Complete'}
@@ -108,21 +176,60 @@ export default function GenerationPhase({
         </div>
       </div>
 
-      <div className="max-h-[300px] overflow-y-auto space-y-1">
+      <div className="max-h-[400px] overflow-y-auto space-y-1">
         {(() => {
           const parentByUrl = new Map(status.pages.map(p => [p.url, p.parent]))
           return status.pages.map(page => {
             const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
             const depth = depthOf(page.url, parentByUrl)
+            const wcBadge = page.status === 'complete' ? wordCountBadge(page.wordCountActual, page.wordCountTarget) : null
+            const approveBusy = pendingActions.has(`approve:${page.id}`)
+            const regenBusy = pendingActions.has(`regen:${page.id}`)
             return (
               <div
-                key={page.url}
-                className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-surface-subtle transition-colors"
-                style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
+                key={page.id}
+                className="rounded hover:bg-surface-subtle transition-colors"
+                style={{ paddingLeft: `${0.75 + depth * 1.25}rem`, paddingRight: '0.75rem' }}
               >
-                <span className={`text-sm ${s.cls}`}>{s.icon}</span>
-                <span className="text-sm font-body text-text-primary flex-1 truncate">{page.title}</span>
-                <span className="text-xs font-mono text-text-muted flex-shrink-0">{page.url}</span>
+                <div className="flex items-center gap-2 py-1.5">
+                  <span className={`text-sm ${s.cls}`}>{s.icon}</span>
+                  <span className="text-sm font-body text-text-primary flex-1 truncate">{page.title}</span>
+                  {wcBadge && (
+                    <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${wcBadge.cls}`}>
+                      {wcBadge.label}
+                    </span>
+                  )}
+                  <span className="text-xs font-mono text-text-muted flex-shrink-0">{page.url}</span>
+                  {page.status === 'complete' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewPageId(page.id)}
+                        className="text-xs font-body text-text-secondary hover:text-brand-cyan transition-colors"
+                      >
+                        Preview
+                      </button>
+                      <label className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={page.approved ?? false}
+                          disabled={approveBusy}
+                          onChange={e => toggleApprove(page, e.target.checked)}
+                          className="accent-brand-cyan"
+                        />
+                        Approved
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => regenerate(page)}
+                        disabled={regenBusy || page.status !== 'complete'}
+                        className="text-xs font-body text-text-secondary hover:text-brand-cyan transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {regenBusy ? '…' : 'Regenerate'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )
           })
@@ -135,10 +242,25 @@ export default function GenerationPhase({
         </div>
       )}
 
-      {!isRunning && status.complete > 0 && (
+      {!isRunning && status.complete > 0 && allApproved && (
         <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-body rounded-lg px-4 py-2">
-          Content generation complete. Proceed to Deliverables to download the content package.
+          All pages approved. Proceed to Deliverables to download the content package.
         </div>
+      )}
+
+      {!isRunning && status.complete > 0 && !allApproved && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm font-body rounded-lg px-4 py-2">
+          Review each page above and check &quot;Approved&quot; before assembling the deliverable. {status.complete - status.approved} of {status.complete} still need review.
+        </div>
+      )}
+
+      {previewPageId && (
+        <MarkdownPreviewModal
+          contentJobId={contentJobId}
+          pageId={previewPageId}
+          onClose={() => setPreviewPageId(null)}
+          onApprovalChange={() => setPollNonce(n => n + 1)}
+        />
       )}
     </div>
   )

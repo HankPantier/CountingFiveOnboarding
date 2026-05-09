@@ -1,0 +1,132 @@
+import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { checkTokenBudget } from './truncate-to-token-budget'
+import type { SessionSchema } from '@/types/session-schema'
+
+export type BrandDoc = {
+  summary: string  // 1–2 paragraph blockquote-friendly description (~600 chars)
+  fullDoc: string  // full brand brief markdown (~800–1500 words)
+}
+
+function nonEmpty(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function joinList(items: unknown): string {
+  if (!Array.isArray(items)) return ''
+  return items.filter(nonEmpty).join(', ')
+}
+
+export function compileBrandDoc(schema: SessionSchema): BrandDoc {
+  const business = schema.business ?? ({} as NonNullable<SessionSchema['business']>)
+  const brand = schema.brand ?? ({} as NonNullable<SessionSchema['brand']>)
+  const niches = schema.niches ?? []
+  const firstLocation = schema.locations?.[0]
+  const firmName = nonEmpty(business.name) ? business.name : 'The firm'
+
+  // ---- Identity ----
+  const identityParts: string[] = []
+  const headline: string[] = [firmName]
+  if (nonEmpty(business.foundingYear)) headline.push(`founded ${business.foundingYear}`)
+  if (firstLocation && nonEmpty(firstLocation.city)) {
+    const loc = nonEmpty(firstLocation.state)
+      ? `${firstLocation.city}, ${firstLocation.state}`
+      : firstLocation.city
+    headline.push(loc)
+  }
+  identityParts.push(headline.join(' · '))
+  if (nonEmpty(business.tagline)) identityParts.push(`Tagline: ${business.tagline}`)
+  if (nonEmpty(business.geographicScope)) identityParts.push(`Geographic scope: ${business.geographicScope}`)
+
+  // ---- Positioning ----
+  const positioningParts: string[] = []
+  if (nonEmpty(business.positioningStatement)) positioningParts.push(business.positioningStatement)
+  if (nonEmpty(business.differentiators)) positioningParts.push(`**Differentiators:** ${business.differentiators}`)
+  const idealClients = joinList(business.idealClients)
+  if (idealClients) positioningParts.push(`**Ideal clients:** ${idealClients}`)
+
+  // ---- Niches ----
+  const nicheBlocks: string[] = []
+  for (const n of niches) {
+    if (!nonEmpty(n?.name)) continue
+    const block: string[] = [`### ${n.name}`]
+    if (nonEmpty(n.painPoints)) block.push(`Pain points: ${n.painPoints}`)
+    if (nonEmpty(n.valueProp)) block.push(`Value: ${n.valueProp}`)
+    if (block.length > 1) nicheBlocks.push(block.join('\n'))
+  }
+
+  // ---- Voice ----
+  const voiceParts: string[] = []
+  if (nonEmpty(brand.currentTone)) voiceParts.push(`**Current tone:** ${brand.currentTone}`)
+  if (nonEmpty(brand.aspirationalTone)) voiceParts.push(`**Aspirational tone:** ${brand.aspirationalTone}`)
+  const adjectives = joinList(brand.toneAdjectives)
+  if (adjectives) voiceParts.push(`**Tone adjectives:** ${adjectives}`)
+  if (nonEmpty(brand.voiceExample)) voiceParts.push(`**Voice example:** ${brand.voiceExample}`)
+  if (nonEmpty(brand.brandPersonality)) voiceParts.push(`**Personality:** ${brand.brandPersonality}`)
+
+  // ---- Assemble fullDoc ----
+  const sections: string[] = [`# About ${firmName}`]
+  if (identityParts.length) sections.push(`## Identity\n${identityParts.join('\n')}`)
+  if (positioningParts.length) sections.push(`## Positioning & Differentiation\n${positioningParts.join('\n\n')}`)
+  if (nicheBlocks.length) sections.push(`## Industries Served\n${nicheBlocks.join('\n\n')}`)
+  if (voiceParts.length) sections.push(`## Brand Voice\n${voiceParts.join('\n')}`)
+  const fullDoc = sections.join('\n\n')
+
+  // ---- Summary (deterministic) ----
+  const summaryParts: string[] = []
+  const opener = nonEmpty(business.tagline)
+    ? `${firmName} — ${business.tagline}.`
+    : `${firmName}.`
+  summaryParts.push(opener)
+  if (nonEmpty(business.positioningStatement)) summaryParts.push(business.positioningStatement)
+  const nicheNames = niches.map(n => n?.name).filter(nonEmpty)
+  if (nicheNames.length) summaryParts.push(`Serves ${nicheNames.join(', ')}.`)
+  const summary = summaryParts.join(' ')
+
+  return { summary, fullDoc }
+}
+
+export async function generateBrandDoc(schema: SessionSchema): Promise<BrandDoc> {
+  const fallback = compileBrandDoc(schema)
+  const firmName = schema.business?.name ?? 'the firm'
+
+  // Strip _meta and large content arrays before sending to Claude.
+  const { _meta, proposed_sitemap, current_sitemap, content_gaps, ...trimmed } =
+    schema as SessionSchema & { _meta?: unknown; content_gaps?: unknown }
+  void _meta; void proposed_sitemap; void current_sitemap; void content_gaps
+
+  const prompt = `You are writing a brand brief that LLM crawlers will ingest to understand this CPA firm. Use the firm's own positioning, voice, and audience — do not invent details.
+
+FIRM SCHEMA (JSON):
+${JSON.stringify(trimmed, null, 2)}
+
+Return JSON only — no prose, no code fences:
+{
+  "summary": "1–2 short paragraphs, ~400–600 characters. Reads as a blockquote: who they are, who they serve, what's distinctive. No headings.",
+  "fullDoc": "Full markdown brand brief, 800–1500 words, with these H2 sections in order: ## Identity, ## Positioning & Differentiation, ## Industries Served (one H3 per niche), ## Brand Voice. Skip a section entirely if its source fields are empty. Start with '# About <Firm Name>'."
+}
+
+RULES:
+- Mirror the firm's own tone in voice (use their toneAdjectives, voice example, personality).
+- For each niche, include pain points and value proposition if present.
+- No marketing fluff or invented credentials.`
+
+  try {
+    const { text, usage } = await generateText({
+      model: anthropic('claude-sonnet-4-6'),
+      prompt,
+      maxOutputTokens: 2500,
+    })
+    checkTokenBudget('brand-doc', firmName, usage?.inputTokens, 4000)
+    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
+    const parsed = JSON.parse(cleaned) as Partial<BrandDoc>
+    if (nonEmpty(parsed.summary) && nonEmpty(parsed.fullDoc)) {
+      return { summary: parsed.summary.trim(), fullDoc: parsed.fullDoc.trim() }
+    }
+    console.warn(`[brand-doc] LLM returned empty fields, using compiled fallback`)
+    return fallback
+  } catch (err) {
+    console.warn(`[brand-doc] LLM call failed, using compiled fallback:`, err instanceof Error ? err.message : err)
+    return fallback
+  }
+}

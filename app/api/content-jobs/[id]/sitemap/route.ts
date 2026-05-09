@@ -64,52 +64,55 @@ export async function POST(
 
   const supabase = createServerClient()
 
-  // Save confirmed sitemap and advance phase
-  const { error: updateError } = await supabase
+  // Persist the confirmed sitemap first — the seeds depend on it being current.
+  const { error: sitemapErr } = await supabase
     .from('content_jobs')
     .update({
       confirmed_sitemap: pages as unknown as Json,
-      phase: 3,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 })
+  if (sitemapErr) {
+    return NextResponse.json({ error: sitemapErr.message }, { status: 500 })
   }
 
-  // Clear any existing rows from a previous confirmation
+  // Clear any existing rows from a previous confirmation.
   await Promise.all([
     supabase.from('research_results').delete().eq('content_job_id', id),
     supabase.from('page_outlines').delete().eq('content_job_id', id),
     supabase.from('generated_pages').delete().eq('content_job_id', id),
   ])
 
-  // Seed research_results, page_outlines, and generated_pages for each page
-  const researchRows = pages.map(p => ({
-    content_job_id: id,
-    page_url: p.url,
-    page_title: p.title,
-  }))
-  const outlineRows = pages.map(p => ({
-    content_job_id: id,
-    page_url: p.url,
-    page_title: p.title,
-  }))
-  const generatedRows = pages.map(p => ({
+  // Seed research_results, page_outlines, generated_pages for each page.
+  const seedRows = pages.map(p => ({
     content_job_id: id,
     page_url: p.url,
     page_title: p.title,
   }))
 
   const [r1, r2, r3] = await Promise.all([
-    supabase.from('research_results').insert(researchRows),
-    supabase.from('page_outlines').insert(outlineRows),
-    supabase.from('generated_pages').insert(generatedRows),
+    supabase.from('research_results').insert(seedRows),
+    supabase.from('page_outlines').insert(seedRows),
+    supabase.from('generated_pages').insert(seedRows),
   ])
 
   if (r1.error || r2.error || r3.error) {
     console.error('[sitemap] Seed errors:', r1.error, r2.error, r3.error)
+    // Don't advance phase if seeds failed — admin can retry without ending up
+    // at phase 3 with nothing for the pipeline to process.
+    return NextResponse.json(
+      { error: 'Failed to seed pipeline rows; check server logs' },
+      { status: 500 }
+    )
+  }
+
+  // Seeds in place — now advance the phase.
+  const { error: phaseErr } = await supabase
+    .from('content_jobs')
+    .update({ phase: 3, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (phaseErr) {
+    return NextResponse.json({ error: phaseErr.message }, { status: 500 })
   }
 
   console.log(`[content-job] phase 2→3 session=${id} pages=${pages.length}`)

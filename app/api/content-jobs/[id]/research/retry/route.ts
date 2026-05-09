@@ -33,16 +33,19 @@ export async function POST(
     return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
   }
 
-  // Find rows that need retrying. 'running' is included because a crashed
-  // pipeline can leave rows orphaned in that state.
+  // Only target 'error' rows. Including 'running' here would race with any
+  // pipeline that's still actually executing — both runs would write the same
+  // rows and could clobber each other's progress / double-charge tokens. Rows
+  // genuinely orphaned in 'running' (crashed pipeline) should be cleared via a
+  // separate, explicit action; the lower-friction retry covers the common case.
   const { data: stale } = await supabase
     .from('research_results')
     .select('id, page_url')
     .eq('content_job_id', id)
-    .in('research_status', ['error', 'running'])
+    .eq('research_status', 'error')
 
   if (!stale?.length) {
-    return NextResponse.json({ retried: 0, message: 'No failed or stuck pages to retry' })
+    return NextResponse.json({ retried: 0, message: 'No failed pages to retry' })
   }
 
   await supabase

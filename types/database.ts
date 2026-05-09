@@ -78,6 +78,9 @@ export type Database = {
           url_slug: string | null
           canonical_url: string | null
           generation_status: string
+          admin_approved_content: boolean
+          word_count_actual: number | null
+          word_count_target: number | null
           created_at: string
         }
         Insert: {
@@ -99,6 +102,9 @@ export type Database = {
           url_slug?: string | null
           canonical_url?: string | null
           generation_status?: string
+          admin_approved_content?: boolean
+          word_count_actual?: number | null
+          word_count_target?: number | null
           created_at?: string
         }
         Update: {
@@ -120,6 +126,9 @@ export type Database = {
           url_slug?: string | null
           canonical_url?: string | null
           generation_status?: string
+          admin_approved_content?: boolean
+          word_count_actual?: number | null
+          word_count_target?: number | null
           created_at?: string
         }
         Relationships: [
@@ -143,6 +152,7 @@ export type Database = {
           target_keyword: string | null
           admin_approved: boolean
           admin_notes: string | null
+          cta: Json | null
           created_at: string
           updated_at: string
         }
@@ -156,6 +166,7 @@ export type Database = {
           target_keyword?: string | null
           admin_approved?: boolean
           admin_notes?: string | null
+          cta?: Json | null
           created_at?: string
           updated_at?: string
         }
@@ -169,6 +180,7 @@ export type Database = {
           target_keyword?: string | null
           admin_approved?: boolean
           admin_notes?: string | null
+          cta?: Json | null
           created_at?: string
           updated_at?: string
         }

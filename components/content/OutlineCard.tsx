@@ -5,6 +5,7 @@ import OutlineSectionRow from './OutlineSectionRow'
 import type { Json } from '@/types/database'
 
 type Section = { h2: string; description: string; word_count: number }
+type Cta = { text: string; url: string }
 
 type Outline = {
   id: string
@@ -15,6 +16,7 @@ type Outline = {
   target_keyword: string | null
   admin_approved: boolean
   admin_notes: string | null
+  cta: Json | null
   content_job_id: string
 }
 
@@ -50,6 +52,7 @@ export default function OutlineCard({
           h1: outline.h1,
           sections: outline.sections,
           admin_notes: outline.admin_notes,
+          cta: outline.cta,
         }),
       })
       if (res.ok) {
@@ -59,6 +62,11 @@ export default function OutlineCard({
     } finally {
       setSaving(false)
     }
+  }
+
+  const cta = (outline.cta as Cta | null) ?? null
+  const updateCta = (next: Cta | null) => {
+    onUpdate({ ...outline, cta: next as unknown as Json })
   }
 
   const approve = async () => {
@@ -179,6 +187,41 @@ export default function OutlineCard({
           {/* Keyword */}
           <div className="text-xs font-body text-text-muted">
             Target keyword: <span className="font-mono">{outline.target_keyword ?? '—'}</span>
+          </div>
+
+          {/* CTA */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-heading font-semibold text-text-secondary">Call to Action</label>
+              {cta && (
+                <button
+                  type="button"
+                  onClick={() => updateCta(null)}
+                  className="text-xs font-body text-text-muted hover:text-red-600 transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={cta?.text ?? ''}
+                onChange={e => updateCta({ text: e.target.value, url: cta?.url ?? '/contact' })}
+                placeholder="Schedule a consultation"
+                className="flex-1 px-3 py-2 text-sm font-body bg-surface-subtle border border-border-default rounded focus:border-brand-cyan focus:outline-none"
+              />
+              <input
+                type="text"
+                value={cta?.url ?? ''}
+                onChange={e => updateCta({ text: cta?.text ?? '', url: e.target.value })}
+                placeholder="/contact"
+                className="w-40 px-3 py-2 text-sm font-mono bg-surface-subtle border border-border-default rounded focus:border-brand-cyan focus:outline-none"
+              />
+            </div>
+            <p className="mt-1 text-xs font-body text-text-muted">
+              Closes every page. Leave empty for the default ("Schedule a consultation" → /contact).
+            </p>
           </div>
 
           {/* Notes */}

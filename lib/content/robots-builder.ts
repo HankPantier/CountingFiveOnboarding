@@ -26,11 +26,9 @@ Allow: /
 User-agent: CCBot
 Allow: /
 
-# Sitemap
+# Sitemap and LLM context files
 Sitemap: https://${domain}/sitemap.xml
-
-# LLM context files
-# llms.txt: https://${domain}/llms.txt
-# llms-full.txt: https://${domain}/llms-full.txt
+Sitemap: https://${domain}/llms.txt
+Sitemap: https://${domain}/llms-full.txt
 `
 }

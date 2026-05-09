@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
+import { slugify } from '@/lib/content/sitemap-utils'
 
 export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapItem[] } {
   const gaps: GapItem[] = []
@@ -59,6 +60,7 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
     ['Section 9', () => parseSection9(markdown, schema)],
     ['Section 10A', () => parseSection10A(markdown, schema)],
     ['Section 10B', () => parseSection10B(markdown, schema)],
+    ['Sitemap location augmentation', () => augmentSitemapWithLocations(schema)],
   ]
 
   for (const [label, fn] of sections) {
@@ -71,6 +73,42 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
 
   addPhase4Gaps(gaps, schema)
   return { schema, gaps }
+}
+
+// When a firm has multiple offices, ensure the proposed sitemap has a
+// /locations parent and a /locations/<slug> page per office. The MFP usually
+// already covers this, but auto-injection guards against omissions and gives
+// the LLM a per-location landing page to populate during research/generation.
+function augmentSitemapWithLocations(schema: SessionSchema): void {
+  const locations = schema.locations ?? []
+  if (locations.length < 2) return
+
+  const sitemap = (schema.proposed_sitemap ?? []) as NonNullable<SessionSchema['proposed_sitemap']>
+  const seenUrls = new Set(sitemap.map(p => p.url))
+
+  if (!seenUrls.has('/locations')) {
+    sitemap.push({ url: '/locations', title: 'Locations', status: 'new', parent: undefined })
+    seenUrls.add('/locations')
+  }
+
+  for (const loc of locations) {
+    const slug = locationSlugForSitemap(loc)
+    if (!slug) continue
+    const url = `/locations/${slug}`
+    if (seenUrls.has(url)) continue
+    const title =
+      (loc.name && loc.name.trim()) ||
+      (loc.city && loc.city.trim() ? `${loc.city} Office` : 'Office')
+    sitemap.push({ url, title, status: 'new', parent: '/locations' })
+    seenUrls.add(url)
+  }
+
+  schema.proposed_sitemap = sitemap
+}
+
+function locationSlugForSitemap(loc: NonNullable<SessionSchema['locations']>[number]): string {
+  const base = (loc.name && loc.name.trim()) || (loc.city && loc.city.trim()) || ''
+  return slugify(base)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

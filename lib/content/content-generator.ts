@@ -4,9 +4,13 @@ import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
+import { countWords, targetWordCount } from './word-count-validator'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
+
+type Cta = { text: string; url: string }
+const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
 
 type GeneratedResult = {
   content: string
@@ -39,6 +43,16 @@ function buildCredentials(schema: SessionSchema): string {
   return creds.join('\n') || 'Not specified'
 }
 
+function normalizeCta(raw: unknown): Cta {
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>
+    const text = typeof r.text === 'string' && r.text.trim() ? r.text : DEFAULT_CTA.text
+    const url = typeof r.url === 'string' && r.url.trim() ? r.url : DEFAULT_CTA.url
+    return { text, url }
+  }
+  return DEFAULT_CTA
+}
+
 async function generatePageContent(
   pageTitle: string,
   pageUrl: string,
@@ -50,6 +64,7 @@ async function generatePageContent(
   schema: SessionSchema,
   palette: PaletteData | null,
   websiteUrl: string,
+  cta: Cta,
   flaggedPhrases?: string[]
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
@@ -67,7 +82,7 @@ async function generatePageContent(
   )
 
   const retryNote = flaggedPhrases?.length
-    ? `\n\nIMPORTANT: A previous draft contained these banned phrases — do NOT use them: ${flaggedPhrases.join(', ')}`
+    ? `\n\nIMPORTANT: A previous draft was flagged for these issues — fix all of them: ${flaggedPhrases.join(' | ')}`
     : ''
 
   const prompt = `You are writing website copy for ${firmName}, a CPA firm in ${location}.
@@ -94,6 +109,10 @@ Approved outline: ${JSON.stringify(outlineSections)}
 KEYWORD TARGET:
 Primary: ${targetKeyword}
 Secondary: ${secondaryKeywords.join(', ')}
+
+PAGE CTA — close every page with a clear call-to-action that points to this. Weave it into the closing paragraph or render it as a final standalone block:
+Text: "${cta.text}"
+URL: ${cta.url}
 
 ${existingContent ? `EXISTING CONTENT ON THIS TOPIC (rewrite and improve — do not copy):\n${truncateToTokenBudget(existingContent, 800)}` : ''}
 
@@ -170,69 +189,93 @@ ${ANTI_SLOP_RULES}${retryNote}`
   }
 }
 
-export async function runContentGeneration(
+// Generate (or regenerate) a single page from its already-approved outline.
+// Used by both the bulk runContentGeneration loop and the per-page regenerate
+// endpoint. Resets admin_approved_content to false on success so the admin
+// re-reviews any newly produced copy.
+export async function generateSinglePage(
   contentJobId: string,
-  sessionId: string
-): Promise<void> {
+  outlineId: string
+): Promise<{ status: 'complete' | 'error'; pageUrl: string; error?: string }> {
   const supabase = createServerClient()
 
-  const [{ data: session }, { data: job }] = await Promise.all([
-    supabase.from('sessions').select('website_url, schema_data').eq('id', sessionId).single(),
-    supabase.from('content_jobs').select('palette').eq('id', contentJobId).single(),
-  ])
+  const { data: outline, error: outlineErr } = await supabase
+    .from('page_outlines')
+    .select('id, page_url, page_title, sections, target_keyword, admin_approved, cta')
+    .eq('id', outlineId)
+    .single()
 
-  if (!session) {
-    console.error('[content-gen] Session not found:', sessionId)
-    return
+  if (outlineErr || !outline) {
+    return { status: 'error', pageUrl: '', error: outlineErr?.message ?? 'Outline not found' }
   }
+
+  // Load the rest of the context.
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('session_id, palette')
+    .eq('id', contentJobId)
+    .single()
+  if (!job) return { status: 'error', pageUrl: outline.page_url, error: 'Content job not found' }
+
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('website_url, schema_data')
+    .eq('id', job.session_id)
+    .single()
+  if (!session) return { status: 'error', pageUrl: outline.page_url, error: 'Session not found' }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
-  const palette = (job?.palette ?? null) as PaletteData | null
+  const palette = (job.palette ?? null) as PaletteData | null
+  const cta = normalizeCta(outline.cta)
 
-  // Load approved outlines
-  const { data: outlines } = await supabase
-    .from('page_outlines')
-    .select('id, page_url, page_title, h1, sections, target_keyword, admin_approved')
+  const { data: genPage } = await supabase
+    .from('generated_pages')
+    .select('id')
     .eq('content_job_id', contentJobId)
-    .eq('admin_approved', true)
-    .order('created_at', { ascending: true })
+    .eq('page_url', outline.page_url)
+    .single()
+  if (!genPage) return { status: 'error', pageUrl: outline.page_url, error: 'generated_pages row missing' }
 
-  if (!outlines?.length) {
-    console.warn('[content-gen] No approved outlines for job:', contentJobId)
-    return
-  }
+  await supabase
+    .from('generated_pages')
+    .update({ generation_status: 'running' })
+    .eq('id', genPage.id)
 
-  // Process sequentially
-  for (const outline of outlines) {
-    const { data: genPage } = await supabase
-      .from('generated_pages')
-      .select('id, generation_status')
-      .eq('content_job_id', contentJobId)
-      .eq('page_url', outline.page_url)
-      .single()
+  const { data: research } = await supabase
+    .from('research_results')
+    .select('target_keyword, secondary_keywords, competitor_references, existing_content')
+    .eq('content_job_id', contentJobId)
+    .eq('page_url', outline.page_url)
+    .single()
 
-    if (!genPage || genPage.generation_status === 'complete') continue
+  const targetKeyword =
+    outline.target_keyword ?? research?.target_keyword ?? outline.page_title.toLowerCase()
+  const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
+  const competitorRefs =
+    (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? []
+  const existingContent = research?.existing_content ?? null
 
-    await supabase
-      .from('generated_pages')
-      .update({ generation_status: 'running' })
-      .eq('id', genPage.id)
+  try {
+    let result = await generatePageContent(
+      outline.page_title,
+      outline.page_url,
+      outline.sections,
+      targetKeyword,
+      secondaryKeywords,
+      existingContent,
+      competitorRefs,
+      schema,
+      palette,
+      session.website_url,
+      cta
+    )
 
-    // Load research for this page
-    const { data: research } = await supabase
-      .from('research_results')
-      .select('target_keyword, secondary_keywords, competitor_references, existing_content')
-      .eq('content_job_id', contentJobId)
-      .eq('page_url', outline.page_url)
-      .single()
-
-    const targetKeyword = outline.target_keyword ?? research?.target_keyword ?? outline.page_title.toLowerCase()
-    const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
-    const competitorRefs = (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? []
-    const existingContent = research?.existing_content ?? null
-
-    try {
-      let result = await generatePageContent(
+    const validation = validateContent(result.content)
+    if (!validation.passed) {
+      console.log(
+        `[content-gen] Anti-slop flagged ${outline.page_url}: ${validation.flagged.join(' | ')} — retrying`
+      )
+      result = await generatePageContent(
         outline.page_title,
         outline.page_url,
         outline.sections,
@@ -242,59 +285,85 @@ export async function runContentGeneration(
         competitorRefs,
         schema,
         palette,
-        session.website_url
+        session.website_url,
+        cta,
+        validation.flagged
       )
-
-      // Anti-slop validation
-      const validation = validateContent(result.content)
-      if (!validation.passed) {
-        console.log(`[content-gen] Anti-slop flagged ${outline.page_url}: ${validation.flagged.join(', ')} — retrying`)
-        result = await generatePageContent(
-          outline.page_title,
-          outline.page_url,
-          outline.sections,
-          targetKeyword,
-          secondaryKeywords,
-          existingContent,
-          competitorRefs,
-          schema,
-          palette,
-          session.website_url,
-          validation.flagged
-        )
-      }
-
-      await supabase
-        .from('generated_pages')
-        .update({
-          content_markdown: result.content,
-          meta_title: result.metadata.meta_title,
-          meta_description: result.metadata.meta_description,
-          target_keyword: result.metadata.target_keyword,
-          secondary_keywords: result.metadata.secondary_keywords as unknown as Json,
-          url_slug: result.metadata.url_slug,
-          canonical_url: result.metadata.canonical_url,
-          answer_block: result.metadata.answer_block,
-          schema_markup_type: result.metadata.schema_markup_type,
-          eeat_signals: result.metadata.eeat_signals as unknown as Json,
-          internal_links: result.metadata.internal_links as unknown as Json,
-          faq_block: result.metadata.faq_block as unknown as Json,
-          llm_citation_note: result.metadata.llm_citation_note,
-          generation_status: 'complete',
-        })
-        .eq('id', genPage.id)
-
-      console.log(`[content-gen] Complete: ${outline.page_title}`)
-    } catch (err) {
-      console.error(`[content-gen] Error on ${outline.page_url}:`, err)
-      await supabase
-        .from('generated_pages')
-        .update({ generation_status: 'error' })
-        .eq('id', genPage.id)
     }
+
+    const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
+    const wcTarget = targetWordCount(sections)
+    const wcActual = countWords(result.content)
+
+    await supabase
+      .from('generated_pages')
+      .update({
+        content_markdown: result.content,
+        meta_title: result.metadata.meta_title,
+        meta_description: result.metadata.meta_description,
+        target_keyword: result.metadata.target_keyword,
+        secondary_keywords: result.metadata.secondary_keywords as unknown as Json,
+        url_slug: result.metadata.url_slug,
+        canonical_url: result.metadata.canonical_url,
+        answer_block: result.metadata.answer_block,
+        schema_markup_type: result.metadata.schema_markup_type,
+        eeat_signals: result.metadata.eeat_signals as unknown as Json,
+        internal_links: result.metadata.internal_links as unknown as Json,
+        faq_block: result.metadata.faq_block as unknown as Json,
+        llm_citation_note: result.metadata.llm_citation_note,
+        word_count_actual: wcActual,
+        word_count_target: wcTarget || null,
+        admin_approved_content: false,  // re-review required after every generation
+        generation_status: 'complete',
+      })
+      .eq('id', genPage.id)
+
+    console.log(`[content-gen] Complete: ${outline.page_title} (${wcActual} words / target ${wcTarget})`)
+    return { status: 'complete', pageUrl: outline.page_url }
+  } catch (err) {
+    console.error(`[content-gen] Error on ${outline.page_url}:`, err)
+    const message = err instanceof Error ? err.message : String(err)
+    await supabase
+      .from('generated_pages')
+      .update({ generation_status: 'error' })
+      .eq('id', genPage.id)
+    return { status: 'error', pageUrl: outline.page_url, error: message }
+  }
+}
+
+export async function runContentGeneration(
+  contentJobId: string,
+  sessionId: string
+): Promise<void> {
+  const supabase = createServerClient()
+
+  // Load approved outlines (per-page generation pulls its own context).
+  const { data: outlines } = await supabase
+    .from('page_outlines')
+    .select('id, page_url')
+    .eq('content_job_id', contentJobId)
+    .eq('admin_approved', true)
+    .order('created_at', { ascending: true })
+
+  if (!outlines?.length) {
+    console.warn('[content-gen] No approved outlines for job:', contentJobId)
+    return
   }
 
-  // Check completion
+  for (const outline of outlines) {
+    // Skip pages already complete to make this loop idempotent on re-run.
+    const { data: genPage } = await supabase
+      .from('generated_pages')
+      .select('generation_status')
+      .eq('content_job_id', contentJobId)
+      .eq('page_url', outline.page_url)
+      .single()
+    if (genPage?.generation_status === 'complete') continue
+
+    await generateSinglePage(contentJobId, outline.id)
+  }
+
+  // Check completion + advance phase + email notification.
   const { data: allPages } = await supabase
     .from('generated_pages')
     .select('generation_status')
@@ -312,8 +381,14 @@ export async function runContentGeneration(
 
     console.log(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
 
-    // Email notification
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('schema_data')
+      .eq('id', sessionId)
+      .single()
+    const schema = (session?.schema_data ?? {}) as SessionSchema
     const firmName = schema.business?.name ?? 'Unknown firm'
+
     if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
       try {
         const { Resend } = await import('resend')
@@ -323,12 +398,12 @@ export async function runContentGeneration(
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL,
           to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-          subject: `[CountingFive] Content ready for download — ${firmName}`,
+          subject: `[CountingFive] Content ready for review — ${firmName}`,
           html: `
             <h2>Content Generation Complete</h2>
             <p><strong>${firmName}</strong></p>
             <p>${completeCount} pages generated${errorCount > 0 ? `, ${errorCount} errors` : ''}.</p>
-            <p><a href="${appUrl}/admin/content/${sessionId}">Download content package →</a></p>
+            <p><a href="${appUrl}/admin/content/${sessionId}">Review and approve before download →</a></p>
           `,
         })
       } catch (emailErr) {

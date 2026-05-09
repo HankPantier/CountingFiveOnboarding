@@ -13,6 +13,7 @@ type Outline = {
   target_keyword: string | null
   admin_approved: boolean
   admin_notes: string | null
+  cta: Json | null
   content_job_id: string
 }
 

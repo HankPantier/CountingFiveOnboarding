@@ -3,12 +3,16 @@ import { NextResponse } from 'next/server'
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/tiff', 'application/pdf']
 const MAX_BYTES = 300 * 1024 * 1024
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(req: Request) {
   const { sessionId, fileName, mimeType, fileSize, assetCategory } = await req.json()
 
   if (!sessionId || !fileName || !mimeType) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+  if (typeof sessionId !== 'string' || !UUID_RE.test(sessionId)) {
+    return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
   const supabase = createServerClient()
@@ -40,7 +44,10 @@ export async function POST(req: Request) {
     .from('session-assets')
     .createSignedUploadUrl(storagePath)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[upload/presign]', error)
+    return NextResponse.json({ error: 'Failed to create upload URL' }, { status: 500 })
+  }
 
   void assetCategory
 

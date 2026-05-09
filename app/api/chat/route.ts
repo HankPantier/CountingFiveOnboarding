@@ -12,11 +12,13 @@ import type { GapItem } from '@/types/gap-item'
 type Session = Database['public']['Tables']['sessions']['Row']
 type Supabase = ReturnType<typeof createServerClient>
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function POST(req: Request) {
   const { messages, sessionId }: { messages: UIMessage[]; sessionId: string } = await req.json()
 
-  if (!sessionId) {
-    return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
+  if (!sessionId || !UUID_RE.test(sessionId)) {
+    return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
   const supabase = createServerClient()

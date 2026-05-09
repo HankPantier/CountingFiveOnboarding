@@ -184,13 +184,13 @@ export default function ResearchPhase({
         </div>
       )}
 
-      {(status.error > 0 || (!isRunning && status.complete + status.error < status.total)) && (
+      {status.error > 0 && (
         <button
           onClick={retryFailed}
           disabled={retrying}
           className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {retrying ? 'Retrying...' : `Retry ${status.error > 0 ? 'failed' : 'stuck'} pages`}
+          {retrying ? 'Retrying...' : 'Retry failed pages'}
         </button>
       )}
     </div>
