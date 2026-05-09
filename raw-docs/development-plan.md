@@ -66,8 +66,8 @@ Gather all of these before starting. Every item here maps to an environment vari
 - [ ] Set up Supabase client helpers:
   - `lib/supabase/client.ts` — browser client (anon key)
   - `lib/supabase/server.ts` — server client (service role key, for API routes)
-  - `lib/supabase/middleware.ts` — for auth session refresh
-- [ ] Create `middleware.ts` at root — protects `/admin` routes, allows all `/session/*` routes through unauthenticated
+  - `lib/supabase/proxy.ts` — for auth session refresh
+- [ ] Create `proxy.ts` at root — protects `/admin` routes, allows all `/session/*` routes through unauthenticated
 - [ ] Create `vercel.json` at project root (stub it now — the cron schedule gets added in Development Phase 9):
   ```json
   {
@@ -259,7 +259,7 @@ Regenerate this file any time the schema changes — treat it as a build artifac
 - [ ] Disable **email confirmation** in Supabase → Authentication → Settings (admin creates users manually — no self-signup)
 - [ ] Disable **user signups** in Supabase → Authentication → Settings → "Disable signups" = ON
 - [ ] Build `/app/(admin)/login/page.tsx` — email + password form, Supabase Auth sign-in
-- [ ] Build `middleware.ts` logic:
+- [ ] Build `proxy.ts` logic:
   - `/admin/*` — redirect to `/admin/login` if no active session
   - `/session/*` — always allow through (no auth check)
   - `/api/cron/*` — validate `Authorization: Bearer {CRON_SECRET}` header
@@ -268,7 +268,7 @@ Regenerate this file any time the schema changes — treat it as a build artifac
 - [ ] Stub out `/app/(admin)/dashboard/page.tsx` — empty page that confirms auth works
 
 ### Failure points
-- **Supabase Auth session cookies** require the SSR package (`@supabase/ssr`) and the middleware refresh pattern. If session tokens expire and middleware doesn't refresh them, admins get randomly logged out. Follow the Supabase SSR docs exactly.
+- **Supabase Auth session cookies** require the SSR package (`@supabase/ssr`) and the proxy refresh pattern. If session tokens expire and the proxy doesn't refresh them, admins get randomly logged out. Follow the Supabase SSR docs exactly.
 - **Signups disabled** — verify this is off before going to production. Without it, anyone who discovers the login URL could create an account.
 
 ---

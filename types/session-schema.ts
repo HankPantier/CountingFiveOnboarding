@@ -26,7 +26,6 @@ export type SessionSchema = {
     hostingPhone: string
     hostingEmail: string
     redirectDomains: string[]
-    googleBusinessProfileUrl: string
   }
   locations?: Array<{
     name: string
@@ -78,11 +77,21 @@ export type SessionSchema = {
     howClientsFind: string
     pricing: string
     growthGoals: string
+    googleBusinessProfile?: {
+      url: string | null
+      usefulness?: 'low' | 'medium' | 'high'
+      roomForImprovement?: string
+    }
   }
   culture?: {
     missionVisionValues: string
     teamDescription: string
     socialMediaChannels: string[]
+    linkedIn?: {
+      url: string | null
+      usefulness?: 'low' | 'medium' | 'high'
+      roomForImprovement?: string
+    }
   }
   brand?: {
     currentTone: string

@@ -29,10 +29,12 @@ export default function PalettePhase({
   sessionId,
   contentJobId,
   existingPalette,
+  isLocked = false,
 }: {
   sessionId: string
   contentJobId: string
   existingPalette: PaletteData | null
+  isLocked?: boolean
 }) {
   const [palette, setPalette] = useState<PaletteData | null>(existingPalette)
   const [loading, setLoading] = useState(false)
@@ -77,10 +79,14 @@ export default function PalettePhase({
     setSaving(true)
     setError(null)
     try {
+      const body: Record<string, unknown> = { palette }
+      // Only advance phase on the initial lock; subsequent edits keep the
+      // current phase so a later-stage job stays where it is.
+      if (!isLocked) body.phase = 2
       const res = await fetch(`/api/content-jobs/${contentJobId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ palette, phase: 2 }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -159,7 +165,7 @@ export default function PalettePhase({
           disabled={saving || !contrastPasses}
           className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {saving ? 'Saving...' : 'Lock Palette & Continue'}
+          {saving ? 'Saving...' : isLocked ? 'Save changes' : 'Lock Palette & Continue'}
         </button>
         <button
           onClick={generatePalette}

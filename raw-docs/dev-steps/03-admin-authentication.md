@@ -8,7 +8,7 @@
 
 ## What This Step Accomplishes
 
-Admin login page working. All `/admin` routes protected by middleware. First admin user created manually in Supabase. No self-signup is possible — admin accounts are invitation-only.
+Admin login page working. All `/admin` routes protected by the root `proxy.ts`. First admin user created manually in Supabase. No self-signup is possible — admin accounts are invitation-only.
 
 ---
 
@@ -86,9 +86,9 @@ export default function LoginPage() {
 }
 ```
 
-### 3. Update middleware route protection
+### 3. Update proxy route protection
 
-Update `lib/supabase/middleware.ts` to enforce route protection:
+Update `lib/supabase/proxy.ts` to enforce route protection:
 ```typescript
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
@@ -243,7 +243,7 @@ console.log(error?.message) // Expected: "Signups not allowed for this instance"
 
 ## Common Failure Points
 
-- **Session tokens expiring silently** — the Supabase SSR pattern with `updateSession` in middleware refreshes tokens automatically. If you skip the middleware cookie handling, admins get randomly logged out. Follow the Supabase SSR docs exactly.
+- **Session tokens expiring silently** — the Supabase SSR pattern with `updateSession` in the root `proxy.ts` refreshes tokens automatically. If you skip the proxy cookie handling, admins get randomly logged out. Follow the Supabase SSR docs exactly.
 - **Signups still enabled** — double-check the Supabase dashboard after disabling. This is a critical security hole if left open.
 - **First admin row missing from `admins` table** — the `auth.users` record alone is not enough. The `admins` table must also have a matching row or the admin dashboard will break in later steps when it queries `admins`.
-- **`/admin/login` must not be protected** — the middleware should skip its auth check for `/admin/login` itself, or you'll create an infinite redirect loop.
+- **`/admin/login` must not be protected** — the proxy should skip its auth check for `/admin/login` itself, or you'll create an infinite redirect loop.

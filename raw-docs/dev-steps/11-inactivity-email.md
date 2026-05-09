@@ -138,7 +138,7 @@ const INACTIVITY_THRESHOLD_DAYS = 3
 const ADMIN_EMAIL = 'webhank@gmail.com'
 
 export async function POST(req: Request) {
-  // Validate CRON_SECRET (middleware handles this, but double-check)
+  // Validate CRON_SECRET (proxy handles this, but double-check)
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -6,6 +6,18 @@ type PageStatus = {
   url: string
   title: string
   status: string
+  parent?: string
+}
+
+// Depth in the sitemap tree, capped to guard against accidental cycles.
+function depthOf(url: string, parentByUrl: Map<string, string | undefined>): number {
+  let d = 0
+  let cur = parentByUrl.get(url)
+  while (cur && d < 8) {
+    d++
+    cur = parentByUrl.get(cur)
+  }
+  return d
 }
 
 type GenStatus = {
@@ -97,19 +109,24 @@ export default function GenerationPhase({
       </div>
 
       <div className="max-h-[300px] overflow-y-auto space-y-1">
-        {status.pages.map(page => {
-          const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
-          return (
-            <div
-              key={page.url}
-              className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-surface-subtle transition-colors"
-            >
-              <span className={`text-sm ${s.cls}`}>{s.icon}</span>
-              <span className="text-sm font-body text-text-primary flex-1 truncate">{page.title}</span>
-              <span className="text-xs font-mono text-text-muted flex-shrink-0">{page.url}</span>
-            </div>
-          )
-        })}
+        {(() => {
+          const parentByUrl = new Map(status.pages.map(p => [p.url, p.parent]))
+          return status.pages.map(page => {
+            const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
+            const depth = depthOf(page.url, parentByUrl)
+            return (
+              <div
+                key={page.url}
+                className="flex items-center gap-2 px-3 py-1.5 rounded hover:bg-surface-subtle transition-colors"
+                style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}
+              >
+                <span className={`text-sm ${s.cls}`}>{s.icon}</span>
+                <span className="text-sm font-body text-text-primary flex-1 truncate">{page.title}</span>
+                <span className="text-xs font-mono text-text-muted flex-shrink-0">{page.url}</span>
+              </div>
+            )
+          })
+        })()}
       </div>
 
       {status.error > 0 && !isRunning && (

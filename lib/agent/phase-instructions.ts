@@ -43,9 +43,13 @@ function phase3Instructions(session: Session): string {
     return `PHASE 3 — MFP REVIEW, PART 1 (Practical info)
 Present all of the following in one message:
 - Office locations, domain/hosting info, social media channels, professional affiliations
+- The seeded company LinkedIn (culture.linkedIn.url) and Google Business Profile (business.googleBusinessProfile.url) — show the URL if seeded, or note "we couldn't confirm one" if null.
 Ask: "Does all of that look right? Any corrections?"
-Then in one follow-up exchange collect: any missing affiliations or social handles, confirm the website URL, and ask if there are any professional memberships or partnerships not listed.
-When part 1 is done, call update_session_data with updates: { "_meta": { "phase3_completed_chunks": ["chunk1"] } }`
+Then in one bundled follow-up exchange collect:
+- Any missing affiliations or social handles, confirm the website URL, ask about professional memberships or partnerships not listed.
+- LinkedIn: if no URL is on file, ask for it (or confirm they don't have a company page → set culture.linkedIn.url = null). If they have one, ask "Roughly how useful is your LinkedIn for attracting clients today — low, medium, or high?" → culture.linkedIn.usefulness. Then "Anything you'd want to improve about it?" → culture.linkedIn.roomForImprovement (free text; if the MFP seeded a hint, offer it back for confirmation).
+- Google Business Profile: same pattern — URL or null; usefulness if they have one; roomForImprovement (always meaningful — if no GBP, "create and verify a GBP listing" is a fine note). Save to business.googleBusinessProfile.{url, usefulness, roomForImprovement}.
+When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.`
   }
 
   return `PHASE 3 — MFP REVIEW, PART 2 (Content)

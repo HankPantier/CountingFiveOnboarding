@@ -110,7 +110,7 @@ export function createServerClient() {
 }
 ```
 
-`lib/supabase/middleware.ts` — session refresh:
+`lib/supabase/proxy.ts` — session refresh:
 ```typescript
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
@@ -120,14 +120,14 @@ export async function updateSession(request: NextRequest) {
 }
 ```
 
-### 6. Create root middleware
+### 6. Create root proxy
 
-`middleware.ts`:
+`proxy.ts`:
 ```typescript
 import { type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { updateSession } from '@/lib/supabase/proxy'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return await updateSession(request)
 }
 

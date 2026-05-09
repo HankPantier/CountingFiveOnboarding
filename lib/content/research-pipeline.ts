@@ -82,7 +82,7 @@ export async function runResearchPipeline(
           page.url
         )
 
-        // Save results
+        // Save results — clear any error_message from a prior failed attempt.
         await supabase
           .from('research_results')
           .update({
@@ -91,15 +91,20 @@ export async function runResearchPipeline(
             competitor_references: competitorRefs as unknown as Json,
             existing_content: existingContent,
             research_status: 'complete',
+            error_message: null,
           })
           .eq('id', researchRow.id)
 
         console.log(`[Research] Complete: ${page.title} → "${keywords.targetKeyword}"`)
       } catch (err) {
         console.error(`[Research] Error on ${page.url}:`, err)
+        const message = err instanceof Error ? err.message : String(err)
         await supabase
           .from('research_results')
-          .update({ research_status: 'error' })
+          .update({
+            research_status: 'error',
+            error_message: message.slice(0, 500),
+          })
           .eq('id', researchRow.id)
       }
     }))

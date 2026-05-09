@@ -11,15 +11,25 @@ export async function GET(
   const { id } = await params
   const supabase = createServerClient()
 
-  const { data: results, error } = await supabase
-    .from('research_results')
-    .select('page_url, page_title, research_status')
-    .eq('content_job_id', id)
-    .order('created_at', { ascending: true })
+  const [{ data: results, error }, { data: job }] = await Promise.all([
+    supabase
+      .from('research_results')
+      .select('page_url, page_title, research_status, error_message')
+      .eq('content_job_id', id)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('content_jobs')
+      .select('confirmed_sitemap')
+      .eq('id', id)
+      .single(),
+  ])
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  const sitemap = (job?.confirmed_sitemap ?? []) as Array<{ url: string; parent?: string }>
+  const parentByUrl = new Map(sitemap.map(p => [p.url, p.parent]))
 
   const pages = results ?? []
   const total = pages.length
@@ -36,6 +46,8 @@ export async function GET(
       url: p.page_url,
       title: p.page_title,
       status: p.research_status,
+      parent: parentByUrl.get(p.page_url),
+      errorMessage: p.research_status === 'error' ? p.error_message : null,
     })),
   })
 }

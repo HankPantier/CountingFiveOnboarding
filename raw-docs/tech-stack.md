@@ -98,7 +98,7 @@ Then add `onboard.countingfive.com` as a custom domain in the Vercel project set
 ```
 /
 ├── app/
-│   ├── (admin)/              # Admin routes — protected by middleware
+│   ├── (admin)/              # Admin routes — protected by root proxy.ts
 │   │   ├── login/
 │   │   ├── dashboard/
 │   │   └── sessions/[id]/

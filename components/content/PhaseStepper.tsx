@@ -15,19 +15,6 @@ export function getPhaseStatus(jobPhase: number, thisPhase: number): PhaseStatus
   return 'locked'
 }
 
-function PaletteCompleteSummary({ palette }: { palette: PaletteData }) {
-  return (
-    <div className="flex items-center gap-2">
-      {Object.values(palette).map((swatch, i) => (
-        <div key={i} className="flex items-center gap-1.5">
-          <div className="w-5 h-5 rounded border border-border-default" style={{ backgroundColor: swatch.hex }} />
-          <span className="text-xs font-mono text-text-muted">{swatch.hex}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 export default function PhaseStepper({
   currentPhase,
   sessionId,
@@ -50,13 +37,12 @@ export default function PhaseStepper({
         let content: React.ReactNode = null
 
         if (phase === 1) {
-          content = isComplete && existingPalette ? (
-            <PaletteCompleteSummary palette={existingPalette} />
-          ) : (
+          content = (
             <PalettePhase
               sessionId={sessionId}
               contentJobId={contentJobId}
               existingPalette={existingPalette}
+              isLocked={isComplete}
             />
           )
         } else if (phase === 2) {

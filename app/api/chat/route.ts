@@ -226,6 +226,17 @@ function validatePhaseAdvance(
       const chunks = (meta?.phase3_completed_chunks as string[]) ?? []
       if (!chunks.includes('chunk1')) return 'Phase 3 chunk1 not complete'
       if (!chunks.includes('chunk2')) return 'Phase 3 chunk2 not complete'
+
+      const culture = schema.culture as Record<string, unknown> | undefined
+      const business = schema.business as Record<string, unknown> | undefined
+      const li = culture?.linkedIn as { url?: unknown; usefulness?: unknown } | undefined
+      const gbp = business?.googleBusinessProfile as { url?: unknown; usefulness?: unknown } | undefined
+
+      if (!li || li.url === undefined) return 'culture.linkedIn.url not captured'
+      if (!gbp || gbp.url === undefined) return 'business.googleBusinessProfile.url not captured'
+      // If the asset exists (non-empty URL), require a usefulness rating too.
+      if (typeof li.url === 'string' && li.url && !li.usefulness) return 'culture.linkedIn.usefulness not captured'
+      if (typeof gbp.url === 'string' && gbp.url && !gbp.usefulness) return 'business.googleBusinessProfile.usefulness not captured'
       return null
     }
     case 4: {

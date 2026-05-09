@@ -57,7 +57,7 @@ After a client completes the onboarding chat and an admin approves the session, 
 
 | Variable | Purpose | If missing |
 |----------|---------|-----------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | App crashes on startup — middleware and all DB operations fail |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | App crashes on startup — proxy and all DB operations fail |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous/public key for client-side auth | Login page breaks, admin auth fails |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key — bypasses RLS for server-side data access | All API routes return errors. No data can be read or written. **Never expose client-side.** |
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude calls | Keyword research (Phase 3), outline generation (Phase 4), and content generation (Phase 5) all fail. The onboarding chat agent also fails. |

@@ -193,6 +193,7 @@ export type Database = {
           competitor_references: Json
           existing_content: string | null
           research_status: string
+          error_message: string | null
           created_at: string
         }
         Insert: {
@@ -205,6 +206,7 @@ export type Database = {
           competitor_references?: Json
           existing_content?: string | null
           research_status?: string
+          error_message?: string | null
           created_at?: string
         }
         Update: {
@@ -217,6 +219,7 @@ export type Database = {
           competitor_references?: Json
           existing_content?: string | null
           research_status?: string
+          error_message?: string | null
           created_at?: string
         }
         Relationships: [

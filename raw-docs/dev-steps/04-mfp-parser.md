@@ -151,9 +151,7 @@ function addPhase4Gaps(gaps: GapItem[]) {
     { field: 'business.clientSuccessStories', label: 'Client Success Stories', phase: 4, tier: 2, resolved: false },
     { field: 'business.clientMixBreakdown', label: 'Client Mix Breakdown', phase: 4, tier: 2, resolved: false },
   ]
-  const tier3Gaps: GapItem[] = [
-    { field: 'technical.googleBusinessProfileUrl', label: 'Google Business Profile URL', phase: 4, tier: 3, resolved: false },
-  ]
+  const tier3Gaps: GapItem[] = []
   gaps.push(...tier1Gaps, ...tier2Gaps, ...tier3Gaps)
 }
 ```

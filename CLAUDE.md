@@ -192,7 +192,7 @@ app/
     basecamp/       # OAuth routes
     pdf/            # PDF generation
 lib/
-  supabase/         # client.ts, server.ts, middleware.ts
+  supabase/         # client.ts, server.ts, proxy.ts
   agent/            # system-prompt.ts, phase-instructions.ts, trim-messages.ts, gap-list.ts
   mfp-parser/       # index.ts + section parsers
   basecamp/         # client.ts, create-project.ts

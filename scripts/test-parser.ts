@@ -83,6 +83,17 @@ assert('T10 — proposed_sitemap has update pages', updatePages.length > 0, 'got
 assert('T10 — proposed_sitemap has existing pages', existingPages.length > 0, 'got: ' + existingPages.length)
 assert('T10 — proposed_sitemap pages have parent refs', schema.proposed_sitemap!.some(p => p.parent !== undefined), 'no parents found')
 
+// T11 — Section 4: structured LinkedIn + Google Business Profile capture
+// Korbey fixture has ❓ for LinkedIn URL and prose-only "not directly confirmed" for GBP,
+// so both should land as { url: null } with corresponding Phase-3 gaps.
+assert('T11 — culture.linkedIn defined', schema.culture?.linkedIn !== undefined)
+assert('T11 — culture.linkedIn.url is null (unconfirmed)', schema.culture?.linkedIn?.url === null, 'got: ' + JSON.stringify(schema.culture?.linkedIn?.url))
+assert('T11 — business.googleBusinessProfile defined', schema.business?.googleBusinessProfile !== undefined)
+assert('T11 — business.googleBusinessProfile.url is null (unconfirmed)', schema.business?.googleBusinessProfile?.url === null, 'got: ' + JSON.stringify(schema.business?.googleBusinessProfile?.url))
+assert('T11 — gap list includes LinkedIn URL (phase 3)', gaps.some(g => g.field === 'culture.linkedIn.url' && g.phase === 3))
+assert('T11 — gap list includes GBP URL (phase 3)', gaps.some(g => g.field === 'business.googleBusinessProfile.url' && g.phase === 3))
+assert('T11 — no legacy technical.googleBusinessProfileUrl gap', !gaps.some(g => g.field === 'technical.googleBusinessProfileUrl'))
+
 console.log('\n--- Summary ---')
 console.log('Passed: ' + passed + ' / Failed: ' + failed)
 console.log('\nSchema snapshot:')

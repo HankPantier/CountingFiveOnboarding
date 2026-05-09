@@ -24,6 +24,8 @@ export default function OutlinePhase({
   const [outlines, setOutlines] = useState<Outline[]>([])
   const [loading, setLoading] = useState(true)
   const [advancing, setAdvancing] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [retryNonce, setRetryNonce] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -51,7 +53,25 @@ export default function OutlinePhase({
     poll()
     intervalId = setInterval(poll, 5000)
     return () => { cancelled = true; clearInterval(intervalId) }
-  }, [contentJobId])
+  }, [contentJobId, retryNonce])
+
+  const retryGeneration = async () => {
+    setRetrying(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/outlines/generate`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Retry failed')
+      }
+      // Re-mount polling so it picks up newly-generating outlines.
+      setRetryNonce(n => n + 1)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Retry failed')
+    } finally {
+      setRetrying(false)
+    }
+  }
 
   const handleUpdate = (updated: Outline) => {
     setOutlines(prev => prev.map(o => o.id === updated.id ? updated : o))
@@ -125,7 +145,7 @@ export default function OutlinePhase({
       )}
 
       {/* Start content generation */}
-      <div className="pt-2">
+      <div className="pt-2 flex items-center gap-3">
         <button
           onClick={startContentGeneration}
           disabled={!allApproved || advancing}
@@ -133,12 +153,21 @@ export default function OutlinePhase({
         >
           {advancing ? 'Starting...' : 'Start Content Generation →'}
         </button>
-        {!allApproved && outlines.length > 0 && generatingCount === 0 && (
-          <p className="text-xs text-text-muted font-body mt-2">
-            Approve all outlines to enable content generation.
-          </p>
+        {generatingCount > 0 && (
+          <button
+            onClick={retryGeneration}
+            disabled={retrying}
+            className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {retrying ? 'Retrying...' : `Retry ${generatingCount} stuck`}
+          </button>
         )}
       </div>
+      {!allApproved && outlines.length > 0 && generatingCount === 0 && (
+        <p className="text-xs text-text-muted font-body">
+          Approve all outlines to enable content generation.
+        </p>
+      )}
     </div>
   )
 }

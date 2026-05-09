@@ -200,14 +200,35 @@ function parseSection4(markdown: string, schema: SessionSchema, gaps: GapItem[])
 
   const channels: string[] = []
   const SKIP = new Set(['platform', 'field'])
+  let linkedInCaptured = false
 
   for (const row of tableRows(section)) {
     const platform = row[0].replace(/\*+/g, '').trim()
     if (!platform || SKIP.has(platform.toLowerCase())) continue
     const url = row[1] ?? ''
-    if (row.join(' ').includes('❓')) {
+    const platformLc = platform.toLowerCase()
+    const rowJoined = row.join(' ')
+    const flagged = rowJoined.includes('❓')
+
+    // LinkedIn gets a structured field; do not also append to socialMediaChannels.
+    if (platformLc === 'linkedin') {
+      const hasUrl = !flagged && url.startsWith('http')
+      schema.culture!.linkedIn = { url: hasUrl ? url : null }
+      if (!hasUrl) {
+        gaps.push({
+          field: 'culture.linkedIn.url',
+          label: 'LinkedIn URL',
+          phase: 3,
+          resolved: false,
+        })
+      }
+      linkedInCaptured = true
+      continue
+    }
+
+    if (flagged) {
       gaps.push({
-        field: 'culture.socialMediaChannels[' + platform.toLowerCase() + ']',
+        field: 'culture.socialMediaChannels[' + platformLc + ']',
         label: 'Social Media: ' + platform,
         phase: 3,
         resolved: false,
@@ -218,6 +239,45 @@ function parseSection4(markdown: string, schema: SessionSchema, gaps: GapItem[])
   }
 
   schema.culture!.socialMediaChannels = channels
+
+  // If the MFP didn't list LinkedIn at all, still seed the field so the agent
+  // knows to ask about it during Phase 3 confirmation.
+  if (!linkedInCaptured) {
+    schema.culture!.linkedIn = { url: null }
+    gaps.push({
+      field: 'culture.linkedIn.url',
+      label: 'LinkedIn URL',
+      phase: 3,
+      resolved: false,
+    })
+  }
+
+  // Google Business Profile is typically described in prose below the social
+  // table (e.g. "**Google Business Profile:** *(not directly confirmed)*").
+  // Parse the prose for a URL or "no listing" cue; otherwise seed null + gap.
+  const gbpMatch = section.match(/Google Business Profile[\s\S]*?(?:\n\n|\n>|$)/i)
+  let gbpUrl: string | null = null
+  let gbpHint: string | undefined
+  if (gbpMatch) {
+    const gbpText = gbpMatch[0]
+    const urlMatch = gbpText.match(/https?:\/\/[^\s)]+/)
+    if (urlMatch) gbpUrl = urlMatch[0]
+    if (/no listing|no google|not directly confirmed|unclaimed|no reviews|no photos/i.test(gbpText)) {
+      gbpHint = gbpText.replace(/\*+/g, '').trim().slice(0, 240)
+    }
+  }
+  schema.business!.googleBusinessProfile = {
+    url: gbpUrl,
+    ...(gbpHint ? { roomForImprovement: gbpHint } : {}),
+  }
+  if (!gbpUrl) {
+    gaps.push({
+      field: 'business.googleBusinessProfile.url',
+      label: 'Google Business Profile URL',
+      phase: 3,
+      resolved: false,
+    })
+  }
 }
 
 function parseSection5(markdown: string, schema: SessionSchema): void {
@@ -502,6 +562,7 @@ function parseSection10B(markdown: string, schema: SessionSchema): void {
   }
 
   const proposed_sitemap: NonNullable<SessionSchema['proposed_sitemap']> = []
+  const seenUrls = new Set<string>()
   const parentStack: Array<{ indent: number; url: string }> = []
 
   for (const line of textTree.split('\n')) {
@@ -533,6 +594,12 @@ function parseSection10B(markdown: string, schema: SessionSchema): void {
     const parent = parentStack.length > 0 ? parentStack[parentStack.length - 1].url : undefined
 
     parentStack.push({ indent, url })
+
+    // Sitemap nodes can cross-link to the same destination URL (e.g. "Nonprofits"
+    // listed under both Services and Industries). Each URL maps to one page in
+    // the research/outline/generation pipeline, so dedupe by URL.
+    if (seenUrls.has(url)) continue
+    seenUrls.add(url)
 
     proposed_sitemap.push({ url, title, status, parent })
   }
@@ -589,8 +656,4 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
       )
     }
   }
-  // Misc
-  gaps.push(
-    { field: 'technical.googleBusinessProfileUrl', label: 'Google Business Profile URL', phase: 4, tier: 3, resolved: false },
-  )
 }

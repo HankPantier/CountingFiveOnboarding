@@ -48,8 +48,7 @@ The agent maintains a JSON data object throughout the conversation. Every exchan
     "hostingContact": "",
     "hostingPhone": "",
     "hostingEmail": "",
-    "redirectDomains": [],
-    "googleBusinessProfileUrl": ""
+    "redirectDomains": []
   },
   "locations": [
     {
@@ -104,12 +103,22 @@ The agent maintains a JSON data object throughout the conversation. Every exchan
     "affiliations": [],
     "clientSuccessStories": [],
     "clientMixBreakdown": "",
-    "howClientsFind": ""
+    "howClientsFind": "",
+    "googleBusinessProfile": {
+      "url": null,
+      "usefulness": "low",
+      "roomForImprovement": ""
+    }
   },
   "culture": {
     "missionVisionValues": "",
     "teamDescription": "",
-    "socialMediaChannels": []
+    "socialMediaChannels": [],
+    "linkedIn": {
+      "url": null,
+      "usefulness": "low",
+      "roomForImprovement": ""
+    }
   },
   "assets": {
     "headshotsAvailable": [],
@@ -201,6 +210,8 @@ Present all of the following together in one formatted message:
 **Domain:** registrar, registration date, expiry date, nameservers (from WHOIS).
 **Hosting:** provider name and contact (if known from MFP; otherwise leave blank and ask).
 **Social channels:** all confirmed social media URLs/handles.
+**Company LinkedIn:** seeded URL or "we couldn't confirm one." Required to advance Phase 3.
+**Google Business Profile:** seeded URL or "we couldn't confirm one." Required to advance Phase 3.
 **Professional affiliations:** all confirmed memberships and certifications (✅ items only; ❓ items noted as "unconfirmed").
 
 After presenting:
@@ -211,7 +222,9 @@ Then ask together (bundle — do not make these separate exchanges):
 - *"Is there a separate administrative or technical contact we should have on file — someone who handles IT or domain access?"* → `technical.adminContact`
 - *"Any other domains that should redirect to the main site?"* → `technical.redirectDomains[]`
 - *"Any affiliations we missed — Massachusetts Society of CPAs, chamber of commerce, BBB, local business awards?"* → `business.affiliations[]`
-- *"For social — we saw Instagram and LinkedIn linked on your site. Do you have those handles or URLs?"* → `culture.socialMediaChannels[]`
+- *"For social — we saw Instagram and other handles linked on your site. Do you have URLs for the rest?"* → `culture.socialMediaChannels[]`
+- *"For your company LinkedIn — do you have the URL? (or confirm you don't have a company page)"* → `culture.linkedIn.url`. Then: *"Roughly how useful is your LinkedIn for attracting clients today — low, medium, or high?"* → `culture.linkedIn.usefulness`. Then: *"Anything you'd want to improve about it?"* → `culture.linkedIn.roomForImprovement`.
+- *"For your Google Business Profile — do you have the URL? (or confirm you don't have one yet)"* → `business.googleBusinessProfile.url`. Then usefulness (`.usefulness`) and improvement notes (`.roomForImprovement`) the same way. If they don't have a GBP, "create and verify a Google Business Profile" is a fine `roomForImprovement` value.
 
 ---
 
@@ -284,9 +297,6 @@ If the session is approaching 6 minutes and Tier 1 and 2 are complete, skip thes
 
 **Competitive Landscape:**
 - *"Are there any competitor names that come up when prospects are shopping around — anyone new in the Tyngsborough/Lowell area we should know about?"*
-
-**Google Business Profile:**
-- *"Do you have a Google Business Profile set up? If so, do you have the URL handy?"* → `technical.googleBusinessProfileUrl`
 
 ---
 
