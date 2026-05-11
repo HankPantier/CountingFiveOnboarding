@@ -67,6 +67,8 @@ export default function GenerationPhase({
   const [pollNonce, setPollNonce] = useState(0)
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set())
   const [previewPageId, setPreviewPageId] = useState<string | null>(null)
+  const [restarting, setRestarting] = useState(false)
+  const [restartError, setRestartError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -112,6 +114,23 @@ export default function GenerationPhase({
       if (res.ok) setPollNonce(n => n + 1)
     } finally {
       setAction(`approve:${page.id}`, false)
+    }
+  }
+
+  const restartGeneration = async () => {
+    setRestarting(true)
+    setRestartError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/generate`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Restart failed')
+      }
+      setPollNonce(n => n + 1)
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : 'Restart failed')
+    } finally {
+      setRestarting(false)
     }
   }
 
@@ -252,6 +271,25 @@ export default function GenerationPhase({
         <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm font-body rounded-lg px-4 py-2">
           Review each page above and check &quot;Approved&quot; before assembling the deliverable. {status.complete - status.approved} of {status.complete} still need review.
         </div>
+      )}
+
+      {restartError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+          {restartError}
+        </div>
+      )}
+
+      {/* Stuck-pending recovery: no rows running, but some still pending/error.
+          Covers the case where the auto-trigger from phase-advance was killed
+          by Vercel before doing real work. */}
+      {status.running === 0 && status.complete + status.error < status.total && (
+        <button
+          onClick={restartGeneration}
+          disabled={restarting}
+          className="bg-brand-cyan text-white font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {restarting ? 'Restarting...' : 'Restart generation'}
+        </button>
       )}
 
       {previewPageId && (

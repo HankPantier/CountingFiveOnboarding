@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runContentGeneration } from '@/lib/content/content-generator'
@@ -26,10 +26,14 @@ export async function POST(
     return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
   }
 
-  // Fire-and-forget
-  runContentGeneration(id, job.session_id).catch(err =>
-    console.error('[content-gen] Manual trigger failed:', err)
-  )
+  const sessionId = job.session_id
+  after(async () => {
+    try {
+      await runContentGeneration(id, sessionId)
+    } catch (err) {
+      console.error('[content-gen] Manual trigger failed:', err)
+    }
+  })
 
   return NextResponse.json({ success: true })
 }

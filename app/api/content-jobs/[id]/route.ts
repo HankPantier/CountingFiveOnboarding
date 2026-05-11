@@ -1,7 +1,14 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runContentGeneration } from '@/lib/content/content-generator'
+
+export const runtime = 'nodejs'
+// Routes that trigger content generation need a long maxDuration because the
+// after() block runs the pipeline post-response. PATCHes that don't trigger
+// generation complete in milliseconds and exit immediately — the longer cap
+// only applies when there's pending work.
+export const maxDuration = 300
 
 export async function PATCH(
   req: Request,
@@ -40,11 +47,18 @@ export async function PATCH(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Auto-trigger content generation when advancing to phase 5
+  // Auto-trigger content generation when advancing to phase 5.
+  // after() guarantees the work runs within maxDuration on Vercel; plain
+  // fire-and-forget gets terminated once the response leaves the function.
   if (body.phase === 5 && data.session_id) {
-    runContentGeneration(id, data.session_id).catch(err =>
-      console.error('[content-gen] Auto-trigger failed:', err)
-    )
+    const sessionId = data.session_id
+    after(async () => {
+      try {
+        await runContentGeneration(id, sessionId)
+      } catch (err) {
+        console.error('[content-gen] Auto-trigger failed:', err)
+      }
+    })
   }
 
   return NextResponse.json({ contentJob: data })

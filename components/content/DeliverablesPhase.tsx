@@ -97,12 +97,21 @@ export default function DeliverablesPhase({
 
   const allApproved = approval ? approval.complete > 0 && approval.complete === approval.approved : false
   const hasUnapproved = approval ? approval.complete - approval.approved > 0 : false
+  const generationDone = approval !== null && approval.total > 0 && approval.complete >= approval.total
 
   return (
     <div className="space-y-4">
-      <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-body rounded-lg px-4 py-3">
-        Content generation complete.
-      </div>
+      {generationDone ? (
+        <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-body rounded-lg px-4 py-3">
+          Content generation complete.
+        </div>
+      ) : (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm font-body rounded-lg px-4 py-3">
+          {approval
+            ? `Waiting for content generation — ${approval.complete} of ${approval.total} pages ready.`
+            : 'Loading generation status…'}
+        </div>
+      )}
 
       {!packaged ? (
         <div className="space-y-3">
@@ -110,7 +119,7 @@ export default function DeliverablesPhase({
             Ready to assemble the deliverable package: {pageCount} pages, Word document, brand.md, llms.txt, llms-full.txt, robots.txt, sitemap.xml, redirects.csv, and an og-images README.
           </p>
 
-          {approval && hasUnapproved && (
+          {approval && generationDone && hasUnapproved && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-body rounded-lg px-4 py-2 space-y-1">
               <div>
                 {approval.complete - approval.approved} of {approval.complete} pages still need approval before packaging.
@@ -123,10 +132,16 @@ export default function DeliverablesPhase({
 
           <button
             onClick={assemblePackage}
-            disabled={packaging || hasUnapproved}
+            disabled={packaging || hasUnapproved || !generationDone}
             className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {packaging ? 'Assembling Package...' : allApproved ? 'Assemble & Download Package' : 'Assemble Package (pending approvals)'}
+            {packaging
+              ? 'Assembling Package...'
+              : !generationDone
+                ? 'Assemble Package (waiting on generation)'
+                : allApproved
+                  ? 'Assemble & Download Package'
+                  : 'Assemble Package (pending approvals)'}
           </button>
         </div>
       ) : (
