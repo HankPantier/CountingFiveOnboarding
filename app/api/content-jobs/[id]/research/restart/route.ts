@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
@@ -74,9 +74,16 @@ export async function POST(
   const restartUrls = new Set(stuck.map(s => s.page_url))
   const pagesToRun = sitemap.filter(p => restartUrls.has(p.url))
 
-  runResearchPipeline(id, pagesToRun, job.session_id).catch(err =>
-    console.error('[research-restart] Pipeline failed:', err)
-  )
+  // after() schedules the work post-response with a Vercel-honored guarantee
+  // that it runs within maxDuration. Plain fire-and-forget can be terminated
+  // by Vercel once the response leaves the function.
+  after(async () => {
+    try {
+      await runResearchPipeline(id, pagesToRun, job.session_id)
+    } catch (err) {
+      console.error('[research-restart] Pipeline failed:', err)
+    }
+  })
 
   return NextResponse.json({ restarted: stuck.length })
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
@@ -61,11 +61,16 @@ export async function POST(
   const retryUrls = new Set(stale.map(s => s.page_url))
   const pagesToRetry = sitemap.filter(p => retryUrls.has(p.url))
 
-  // Fire-and-forget — pipeline updates rows as it progresses and advances phase
-  // when all rows reach terminal status.
-  runResearchPipeline(id, pagesToRetry, job.session_id).catch(err =>
-    console.error('[research-retry] Pipeline failed:', err)
-  )
+  // after() runs post-response with Vercel's guarantee it completes within
+  // maxDuration. Plain fire-and-forget gets terminated by Vercel once the
+  // response leaves the function.
+  after(async () => {
+    try {
+      await runResearchPipeline(id, pagesToRetry, job.session_id)
+    } catch (err) {
+      console.error('[research-retry] Pipeline failed:', err)
+    }
+  })
 
   return NextResponse.json({ retried: stale.length })
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
@@ -124,11 +124,18 @@ export async function POST(
     .eq('id', id)
     .single()
 
-  // Fire-and-forget research pipeline
+  // after() runs post-response with Vercel's guarantee it completes within
+  // maxDuration. Plain fire-and-forget gets terminated by Vercel once the
+  // response leaves the function.
   if (jobData) {
-    runResearchPipeline(id, pages, jobData.session_id).catch(err =>
-      console.error('[Research] Pipeline failed:', err)
-    )
+    const sessionId = jobData.session_id
+    after(async () => {
+      try {
+        await runResearchPipeline(id, pages, sessionId)
+      } catch (err) {
+        console.error('[Research] Pipeline failed:', err)
+      }
+    })
   }
 
   return NextResponse.json({ success: true, pageCount: pages.length })

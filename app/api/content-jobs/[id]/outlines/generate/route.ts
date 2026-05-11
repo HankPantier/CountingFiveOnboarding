@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runOutlineGeneration } from '@/lib/content/outline-generator'
@@ -25,10 +25,18 @@ export async function POST(
     return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
   }
 
-  // Fire-and-forget
-  runOutlineGeneration(id, job.session_id).catch(err =>
-    console.error('[outline-gen] Manual trigger failed:', err)
-  )
+  // after() runs the work after the response is sent and is guaranteed to
+  // complete within the function's maxDuration on Vercel. Plain fire-and-
+  // forget Promises do not have that guarantee — Vercel terminates pending
+  // async work once the response leaves, which is why the previous retry
+  // button looked like it kicked off but never actually generated anything.
+  after(async () => {
+    try {
+      await runOutlineGeneration(id, job.session_id)
+    } catch (err) {
+      console.error('[outline-gen] Manual trigger failed:', err)
+    }
+  })
 
   return NextResponse.json({ success: true })
 }
