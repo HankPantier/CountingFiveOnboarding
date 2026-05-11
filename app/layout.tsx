@@ -18,6 +18,7 @@ const openSans = Open_Sans({
 export const metadata: Metadata = {
   title: 'CountingFive Onboarding',
   description: 'Website onboarding for CountingFive clients.',
+  icons: { icon: '/favicon.png' },
 }
 
 export default function RootLayout({

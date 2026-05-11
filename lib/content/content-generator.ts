@@ -356,7 +356,21 @@ export async function runContentGeneration(
   // well within Anthropic's RPM/TPM limits for Sonnet while bringing total
   // wall time to ~100s for a 26-page job — one click finishes the lot.
   const BATCH_SIZE = 3
+  // Soft deadline well under the 300s route maxDuration. When a batch would
+  // push elapsed time past this, we stop processing and chain to a fresh
+  // function invocation via HTTP self-call. 240s leaves ~60s for the final
+  // completion check, phase advance, email, and the self-fetch call.
+  const SOFT_DEADLINE_MS = 240_000
+  const startedAt = Date.now()
+  let completedThisRun = 0
+
   for (let i = 0; i < outlines.length; i += BATCH_SIZE) {
+    if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
+      console.log(
+        `[content-gen] Soft deadline reached after ${i} pages, chaining continuation.`
+      )
+      break
+    }
     const batch = outlines.slice(i, i + BATCH_SIZE)
     await Promise.all(batch.map(async (outline) => {
       // Skip pages already complete to make this loop idempotent on re-run.
@@ -369,6 +383,7 @@ export async function runContentGeneration(
       if (genPage?.generation_status === 'complete') return
 
       await generateSinglePage(contentJobId, outline.id)
+      completedThisRun += 1
     }))
   }
 
@@ -381,6 +396,34 @@ export async function runContentGeneration(
   const allDone = allPages?.every(p => p.generation_status === 'complete' || p.generation_status === 'error')
   const completeCount = allPages?.filter(p => p.generation_status === 'complete').length ?? 0
   const errorCount = allPages?.filter(p => p.generation_status === 'error').length ?? 0
+
+  // Auto-chain when more work remains and this invocation made progress. The
+  // `completedThisRun > 0` guard prevents an infinite cascade if a job is
+  // permanently stuck (e.g., every page errors instantly). Without it, an all-
+  // failing job would self-fetch forever.
+  if (!allDone && completedThisRun > 0) {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+    const cronSecret = process.env.CRON_SECRET
+    if (!baseUrl || !cronSecret) {
+      console.warn(
+        '[content-gen] Auto-chain skipped — NEXT_PUBLIC_APP_URL or CRON_SECRET missing.'
+      )
+      return
+    }
+    const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+    try {
+      const res = await fetch(`${url}/api/content-jobs/${contentJobId}/generate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${cronSecret}` },
+      })
+      console.log(
+        `[content-gen] Chained continuation: completed=${completedThisRun} this run, status=${res.status}`
+      )
+    } catch (err) {
+      console.error('[content-gen] Auto-chain self-call failed:', err)
+    }
+    return
+  }
 
   if (allDone) {
     await supabase

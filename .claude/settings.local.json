@@ -47,7 +47,8 @@
       "Bash(lsof -ti :3000 -sTCP:LISTEN)",
       "Bash(lsof -ti :3001 -sTCP:LISTEN)",
       "Bash(echo \"EXIT=$?\")",
-      "Bash(awk *)"
+      "Bash(awk *)",
+      "Bash(git rm *)"
     ]
   }
 }
