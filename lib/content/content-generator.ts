@@ -350,17 +350,26 @@ export async function runContentGeneration(
     return
   }
 
-  for (const outline of outlines) {
-    // Skip pages already complete to make this loop idempotent on re-run.
-    const { data: genPage } = await supabase
-      .from('generated_pages')
-      .select('generation_status')
-      .eq('content_job_id', contentJobId)
-      .eq('page_url', outline.page_url)
-      .single()
-    if (genPage?.generation_status === 'complete') continue
+  // Process in small parallel batches. Sequential generation took ~12s per
+  // page, which put 26-page jobs right at the 300s maxDuration cap and got
+  // them killed mid-run. Batch size 3 mirrors the research pipeline and stays
+  // well within Anthropic's RPM/TPM limits for Sonnet while bringing total
+  // wall time to ~100s for a 26-page job — one click finishes the lot.
+  const BATCH_SIZE = 3
+  for (let i = 0; i < outlines.length; i += BATCH_SIZE) {
+    const batch = outlines.slice(i, i + BATCH_SIZE)
+    await Promise.all(batch.map(async (outline) => {
+      // Skip pages already complete to make this loop idempotent on re-run.
+      const { data: genPage } = await supabase
+        .from('generated_pages')
+        .select('generation_status')
+        .eq('content_job_id', contentJobId)
+        .eq('page_url', outline.page_url)
+        .single()
+      if (genPage?.generation_status === 'complete') return
 
-    await generateSinglePage(contentJobId, outline.id)
+      await generateSinglePage(contentJobId, outline.id)
+    }))
   }
 
   // Check completion + advance phase + email notification.
