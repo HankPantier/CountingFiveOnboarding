@@ -64,11 +64,11 @@ export default function PhaseStepper({
             <OutlinePhase contentJobId={contentJobId} />
           )
         } else if (phase === 5) {
-          content = isComplete ? (
-            <p className="text-sm text-text-muted font-body">Content generation complete.</p>
-          ) : (
-            <GenerationPhase contentJobId={contentJobId} />
-          )
+          // Always render GenerationPhase — even when the job has advanced
+          // past 5 — so the admin can return later to preview pages, toggle
+          // approval, or regenerate. The component's internal state handles
+          // the "all done" UI on its own.
+          content = <GenerationPhase contentJobId={contentJobId} />
         } else if (phase === 6) {
           content = (
             <DeliverablesPhase contentJobId={contentJobId} pageCount={confirmedPageCount} />
