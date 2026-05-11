@@ -279,16 +279,18 @@ export default function GenerationPhase({
         </div>
       )}
 
-      {/* Stuck-pending recovery: no rows running, but some still pending/error.
-          Covers the case where the auto-trigger from phase-advance was killed
-          by Vercel before doing real work. */}
-      {status.running === 0 && status.complete + status.error < status.total && (
+      {/* Stuck-recovery: any time some pages haven't reached a terminal state,
+          allow restart. Includes the "running" case because Vercel may have
+          killed the pipeline mid-call, leaving rows orphaned in running.
+          The pipeline itself skips already-complete rows, so re-running is
+          idempotent for the work that's already done. */}
+      {status.complete + status.error < status.total && (
         <button
           onClick={restartGeneration}
           disabled={restarting}
           className="bg-brand-cyan text-white font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {restarting ? 'Restarting...' : 'Restart generation'}
+          {restarting ? 'Restarting...' : status.running > 0 ? 'Restart generation (unstick)' : 'Restart generation'}
         </button>
       )}
 
