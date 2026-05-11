@@ -48,7 +48,13 @@ export default function OutlineCard({
   const [saving, setSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
 
-  const sections = (outline.sections as Section[]) ?? []
+  // Defensive: outline.sections is jsonb and has been seen as a string ("[]")
+  // due to upstream model output occasionally returning sections as a string.
+  // Treat anything that isn't an array as empty here so the page can render
+  // without crashing; the corrupted shape gets repaired on the next Save Edits.
+  const sections: Section[] = Array.isArray(outline.sections)
+    ? (outline.sections as Section[])
+    : []
   const totalWords = sections.reduce((sum, s) => sum + (s.word_count || 0), 0)
 
   // PointerSensor with a small activation distance lets the input fields inside

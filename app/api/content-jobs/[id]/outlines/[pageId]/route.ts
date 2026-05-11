@@ -32,7 +32,16 @@ export async function PATCH(
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
 
   if (body.h1 !== undefined) updates.h1 = body.h1
-  if (body.sections !== undefined) updates.sections = body.sections as Json
+  if (body.sections !== undefined) {
+    // sections must be a proper JSON array — never a string or object.
+    if (!Array.isArray(body.sections)) {
+      return NextResponse.json(
+        { error: 'sections must be an array' },
+        { status: 400 }
+      )
+    }
+    updates.sections = body.sections as Json
+  }
   if (body.admin_notes !== undefined) updates.admin_notes = body.admin_notes
   if (body.admin_approved !== undefined) updates.admin_approved = body.admin_approved
   if (body.cta !== undefined) {

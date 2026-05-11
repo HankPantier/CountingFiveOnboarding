@@ -96,6 +96,13 @@ RULES:
   try {
     const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
     outline = JSON.parse(cleaned)
+    // Claude occasionally emits sections as the literal string "[]" instead of
+    // an actual array. Coerce any non-array shape to the fallback so the row
+    // is never written with a malformed sections value.
+    if (!Array.isArray(outline.sections)) {
+      console.warn(`[outline-gen] Non-array sections for ${pageUrl} — using fallback`)
+      outline.sections = [{ h2: 'Overview', description: 'Add content here', word_count: 300 }]
+    }
   } catch {
     // Fallback outline
     console.warn(`[outline-gen] Failed to parse outline JSON for ${pageUrl}, using fallback`)
