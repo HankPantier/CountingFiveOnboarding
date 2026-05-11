@@ -50,7 +50,11 @@ export async function POST(
 
   await supabase
     .from('research_results')
-    .update({ research_status: 'pending', error_message: null })
+    .update({
+      research_status: 'pending',
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
     .in('id', stale.map(s => s.id))
 
   const sitemap = (job.confirmed_sitemap ?? []) as SitemapPage[]

@@ -64,7 +64,7 @@ export async function runResearchPipeline(
       // Mark as running
       await supabase
         .from('research_results')
-        .update({ research_status: 'running' })
+        .update({ research_status: 'running', updated_at: new Date().toISOString() })
         .eq('id', researchRow.id)
 
       try {
@@ -92,6 +92,7 @@ export async function runResearchPipeline(
             existing_content: existingContent,
             research_status: 'complete',
             error_message: null,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', researchRow.id)
 
@@ -104,6 +105,7 @@ export async function runResearchPipeline(
           .update({
             research_status: 'error',
             error_message: message.slice(0, 500),
+            updated_at: new Date().toISOString(),
           })
           .eq('id', researchRow.id)
       }

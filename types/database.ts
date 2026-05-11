@@ -207,6 +207,7 @@ export type Database = {
           research_status: string
           error_message: string | null
           created_at: string
+          updated_at: string
         }
         Insert: {
           id?: string
@@ -220,6 +221,7 @@ export type Database = {
           research_status?: string
           error_message?: string | null
           created_at?: string
+          updated_at?: string
         }
         Update: {
           id?: string
@@ -233,6 +235,7 @@ export type Database = {
           research_status?: string
           error_message?: string | null
           created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {

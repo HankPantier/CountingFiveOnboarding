@@ -47,6 +47,8 @@ export default function ResearchPhase({
   const [retrying, setRetrying] = useState(false)
   const [retryNonce, setRetryNonce] = useState(0)
   const [retryError, setRetryError] = useState<string | null>(null)
+  const [restarting, setRestarting] = useState(false)
+  const [restartError, setRestartError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +90,23 @@ export default function ResearchPhase({
       setRetryError(err instanceof Error ? err.message : 'Retry failed')
     } finally {
       setRetrying(false)
+    }
+  }
+
+  const restartResearch = async () => {
+    setRestarting(true)
+    setRestartError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/research/restart`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Restart failed')
+      }
+      setRetryNonce(n => n + 1)
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : 'Restart failed')
+    } finally {
+      setRestarting(false)
     }
   }
 
@@ -184,15 +203,36 @@ export default function ResearchPhase({
         </div>
       )}
 
-      {status.error > 0 && (
-        <button
-          onClick={retryFailed}
-          disabled={retrying}
-          className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {retrying ? 'Retrying...' : 'Retry failed pages'}
-        </button>
+      {restartError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+          {restartError}
+        </div>
       )}
+
+      <div className="flex flex-wrap gap-2">
+        {/* Stuck-pending recovery: visible only when no rows are actively
+            running and the job hasn't finished. Covers the case where a fire-
+            and-forget pipeline crashed before issuing any DB updates. */}
+        {status.running === 0 && status.complete + status.error < status.total && (
+          <button
+            onClick={restartResearch}
+            disabled={restarting}
+            className="bg-brand-cyan text-white font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {restarting ? 'Restarting...' : 'Restart research'}
+          </button>
+        )}
+
+        {status.error > 0 && (
+          <button
+            onClick={retryFailed}
+            disabled={retrying}
+            className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {retrying ? 'Retrying...' : 'Retry failed pages'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

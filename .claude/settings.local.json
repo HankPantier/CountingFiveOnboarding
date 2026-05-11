@@ -40,7 +40,13 @@
       "Bash(ps *)",
       "Bash(lsof -ti:3001 -sTCP:LISTEN)",
       "Bash(git mv *)",
-      "Bash(supabase --version)"
+      "Bash(supabase --version)",
+      "Bash(node *)",
+      "Read(//dev/**)",
+      "Read(//tmp/**)",
+      "Bash(lsof -ti :3000 -sTCP:LISTEN)",
+      "Bash(lsof -ti :3001 -sTCP:LISTEN)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }
