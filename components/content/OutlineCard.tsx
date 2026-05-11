@@ -1,6 +1,21 @@
 'use client'
 
 import { useState } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import OutlineSectionRow from './OutlineSectionRow'
 import type { Json } from '@/types/database'
 
@@ -35,6 +50,23 @@ export default function OutlineCard({
 
   const sections = (outline.sections as Section[]) ?? []
   const totalWords = sections.reduce((sum, s) => sum + (s.word_count || 0), 0)
+
+  // PointerSensor with a small activation distance lets the input fields inside
+  // a section card still accept clicks without accidentally triggering a drag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = Number(active.id)
+    const newIndex = Number(over.id)
+    if (Number.isNaN(oldIndex) || Number.isNaN(newIndex)) return
+    const newSections = arrayMove(sections, oldIndex, newIndex)
+    onUpdate({ ...outline, sections: newSections as unknown as Json })
+  }
 
   const statusBadge = outline.admin_approved
     ? { label: 'Approved', cls: 'bg-green-50 text-green-700' }
@@ -157,28 +189,33 @@ export default function OutlineCard({
 
           {/* Sections */}
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-heading font-semibold text-text-secondary">Sections</label>
               <span className="text-xs font-mono text-text-muted">{totalWords} words total</span>
             </div>
-            <div className="flex items-center gap-2 px-2 py-1 text-xs text-text-muted font-heading">
-              <span className="flex-1">H2</span>
-              <span className="flex-[2]">Description</span>
-              <span className="w-16 text-center">Words</span>
-              <span className="w-6" />
-            </div>
-            {sections.map((section, i) => (
-              <OutlineSectionRow
-                key={i}
-                section={section}
-                onChange={updated => updateSection(i, updated)}
-                onRemove={() => removeSection(i)}
-              />
-            ))}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext
+                items={sections.map((_, i) => String(i))}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-2">
+                  {sections.map((section, i) => (
+                    <OutlineSectionRow
+                      key={i}
+                      id={String(i)}
+                      index={i}
+                      section={section}
+                      onChange={updated => updateSection(i, updated)}
+                      onRemove={() => removeSection(i)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
             <button
               type="button"
               onClick={addSection}
-              className="text-sm font-body text-brand-cyan hover:text-brand-navy transition-colors px-2 py-1"
+              className="mt-2 text-sm font-body text-brand-cyan hover:text-brand-navy transition-colors px-2 py-1"
             >
               + Add Section
             </button>
