@@ -48,7 +48,9 @@
       "Bash(lsof -ti :3001 -sTCP:LISTEN)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(awk *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(xargs cat)",
+      "Bash(unzip -p /tmp/test.docx word/document.xml)"
     ]
   }
 }
