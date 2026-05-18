@@ -12,6 +12,9 @@ import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
+import { buildBrandJson } from '@/lib/content/brand-json-builder'
+import { buildDesignJson } from '@/lib/content/design-json-builder'
+import { buildNavJson } from '@/lib/content/nav-json-builder'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -182,6 +185,15 @@ export async function POST(
     console.warn(`[package] Skipping design.md — palette=${!!palette}, design_tokens=${!!designTokens}`)
   }
 
+  // Phase II JSON contract — emitted alongside the existing markdown
+  // outputs. Consumed by the client-site template repo.
+  const brandJson = palette ? buildBrandJson(schema, palette) : null
+  const designJson = designTokens ? buildDesignJson(designTokens) : null
+  const navJson = buildNavJson(sitemap as Parameters<typeof buildNavJson>[0])
+
+  if (!brandJson) console.warn(`[package] Skipping brand.json — palette not locked`)
+  if (!designJson) console.warn(`[package] Skipping design.json — design tokens not locked`)
+
   const pageFiles = buildAllPageFiles(pages, firmName, {
     websiteUrl: session.website_url,
     ctaByUrl,
@@ -201,6 +213,9 @@ export async function POST(
     { path: `${folderName}/${folderName}.docx`, content: docxBuffer },
     { path: `${folderName}/brand.md`, content: brandDoc.fullDoc },
     ...(designMd ? [{ path: `${folderName}/design.md`, content: designMd }] : []),
+    ...(brandJson ? [{ path: `${folderName}/brand.json`, content: JSON.stringify(brandJson, null, 2) }] : []),
+    ...(designJson ? [{ path: `${folderName}/design.json`, content: JSON.stringify(designJson, null, 2) }] : []),
+    { path: `${folderName}/nav.json`, content: JSON.stringify(navJson, null, 2) },
     { path: `${folderName}/llms.txt`, content: llmsTxt },
     { path: `${folderName}/llms-full.txt`, content: llmsFullTxt },
     { path: `${folderName}/robots.txt`, content: robotsTxt },
