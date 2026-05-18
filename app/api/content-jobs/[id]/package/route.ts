@@ -11,7 +11,10 @@ import { buildSitemapXml } from '@/lib/content/sitemap-xml-builder'
 import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
+import { buildDesignMd } from '@/lib/content/design-md-builder'
 import type { SessionSchema } from '@/types/session-schema'
+import type { PaletteData } from '@/types/palette'
+import type { DesignTokens } from '@/types/design-tokens'
 
 const OG_IMAGES_README = `# OG Images
 
@@ -36,7 +39,7 @@ X/Twitter, and similar pick up the right image.
 Recommended:
 - 1200×630 px, < 5 MB
 - High-contrast text legible at thumbnail size
-- Brand palette colors (see brand.md)
+- Brand palette colors (see design.md)
 `
 
 export const runtime = 'nodejs'
@@ -55,7 +58,7 @@ export async function POST(
   // Load job + session
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('session_id, confirmed_sitemap')
+    .select('session_id, confirmed_sitemap, palette, design_tokens')
     .eq('id', id)
     .single()
 
@@ -138,6 +141,25 @@ export async function POST(
     buildDocx(pages, firmName),
   ])
 
+  const palette = job.palette as PaletteData | null
+  const designTokens = job.design_tokens as DesignTokens | null
+
+  let designMd: string | null = null
+  if (palette && designTokens) {
+    designMd = buildDesignMd({
+      firmName,
+      palette,
+      tokens: designTokens,
+      brand: schema.brand,
+      business: schema.business,
+      location: schema.locations?.[0]
+        ? { city: schema.locations[0].city, state: schema.locations[0].state }
+        : null,
+    })
+  } else {
+    console.warn(`[package] Skipping design.md — palette=${!!palette}, design_tokens=${!!designTokens}`)
+  }
+
   const pageFiles = buildAllPageFiles(pages, firmName, {
     websiteUrl: session.website_url,
     ctaByUrl,
@@ -156,6 +178,7 @@ export async function POST(
     ...pageFiles.map(f => ({ path: `${folderName}/pages/${f.filename}`, content: f.content })),
     { path: `${folderName}/${folderName}.docx`, content: docxBuffer },
     { path: `${folderName}/brand.md`, content: brandDoc.fullDoc },
+    ...(designMd ? [{ path: `${folderName}/design.md`, content: designMd }] : []),
     { path: `${folderName}/llms.txt`, content: llmsTxt },
     { path: `${folderName}/llms-full.txt`, content: llmsFullTxt },
     { path: `${folderName}/robots.txt`, content: robotsTxt },
