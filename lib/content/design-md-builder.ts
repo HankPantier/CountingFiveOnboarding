@@ -136,10 +136,106 @@ components:
 ---`
 }
 
+function buildOverview(input: BuilderInput): string {
+  const { firmName, brand, business, location, tokens } = input
+  const locPart = location?.city
+    ? ` in ${location.city}${location.state ? ', ' + location.state : ''}`
+    : ''
+  const foundedPart = business?.foundingYear ? ` founded ${business.foundingYear}` : ''
+  const aspirational = brand?.aspirationalTone?.trim()
+    ? `should feel **${brand.aspirationalTone.trim()}**`
+    : 'should feel measured, trustworthy, and clear'
+  const personality = brand?.brandPersonality?.trim()
+    ? ` ${brand.brandPersonality.trim()}`
+    : ''
+  const feelLine: Record<typeof tokens.visualFeel, string> = {
+    classic: 'Visual direction is classic: restrained typography, sturdy structure, considered detailing.',
+    modern: 'Visual direction is modern: clean type, generous whitespace, confident accents.',
+    editorial: 'Visual direction is editorial: serif headlines, considered hierarchy, room for long reads.',
+  }
+  return `## Overview
+
+${firmName}${locPart}${foundedPart} ${aspirational}.${personality}
+
+${feelLine[tokens.visualFeel]}`
+}
+
+function buildColorsSection(input: BuilderInput): string {
+  const { palette } = input
+  return `## Colors
+
+The palette is rooted in **${palette.primary.name}** as the structural primary and **${palette.action.name}** as the action color used sparingly for CTAs. Near-black (${palette.nearBlack.hex}) and near-white (${palette.nearWhite.hex}) provide high-contrast surface pairings. The complementary accent (${palette.complementary.hex}) is reserved for badges and visual punctuation — never large fills.`
+}
+
+function buildTypographySection(input: BuilderInput): string {
+  const pairing = findPairing(input.tokens.typePairing.id)
+  const blurb: Record<string, string> = {
+    modern: 'A clean, neutral sans throughout favors clarity over decoration. Tight letter-spacing on headlines keeps the typography editorial without feeling cold.',
+    editorial: 'Serif headlines pair with a humanist sans body. The combination gives long-form pages (About, Services) a considered, journalistic weight.',
+    classic: 'High-contrast classic typography signals authority and continuity. Use sparingly on headlines; let the sans body do the reading work.',
+    warm: 'Rounded forms throughout give the typography an approachable, human feel. Body sizes step up to 1rem for comfortable long-form reading.',
+  }
+  return `## Typography
+
+${pairing?.headingFont ?? 'Heading font'} for headlines, ${pairing?.bodyFont ?? 'body font'} for body copy. ${pairing ? blurb[pairing.feel] : ''}`
+}
+
+function buildLayoutSection(input: BuilderInput): string {
+  const density: Record<typeof input.tokens.density, string> = {
+    tight: 'Spacing scale is **tight**: 16px unit, 32px between sections at md+, 64px max. Suits dense, content-heavy pages.',
+    balanced: 'Spacing scale is **balanced**: 16px unit, 48px section gutter, 96px between major sections. Default for marketing layouts.',
+    airy: 'Spacing scale is **airy**: 16px unit, 64px section gutter, 128px between major sections. Generous whitespace; reads as confident.',
+  }
+  return `## Layout
+
+${density[input.tokens.density]} Container max-width 1200px. Single-column on mobile, two-column at md+.`
+}
+
+function buildElevationSection(): string {
+  return `## Elevation & Depth
+
+Use navy-tinted shadows, not pure black. At rest: \`0 1px 2px rgba(0, 59, 113, 0.08)\` for cards. On hover or raised state: \`0 8px 24px rgba(0, 59, 113, 0.12)\`. Avoid deep drop shadows; the system reads as flat-with-lift, not skeuomorphic.`
+}
+
+function buildShapesSection(input: BuilderInput): string {
+  const r: Record<typeof input.tokens.roundness, string> = {
+    sharp: 'Sharp 4px corners throughout signal precision and tradition. Buttons share the same 4px radius — no pill shapes.',
+    soft: 'Soft 8px corners give the system a current, approachable feel without going soft. Cards and inputs use 8px; buttons use the pill scale.',
+    pill: 'Full pill buttons (9999px) anchor the interactive language. Cards and inputs at 8px keep the rest of the system grounded.',
+  }
+  return `## Shapes
+
+${r[input.tokens.roundness]} Badges always use the smallest scale (4px) for typographic anchoring.`
+}
+
+function buildComponentsSection(): string {
+  return `## Components
+
+Button-primary is the action color with on-action text and pill (or roundness-scaled) corners. On hover it shifts to the primary color. Button-secondary inverts: white surface, primary text, same shape. Cards sit on near-white with a soft navy-tinted shadow. Links use the action color and are always underlined within body copy. Badge uses the complementary accent at the smallest radius. Hero blocks fill with the primary color and use the largest spacing scale.`
+}
+
 export function buildDesignMd(input: BuilderInput): string {
   const pairing = findPairing(input.tokens.typePairing.id)
   const fontsUrl = pairing?.googleFontsUrl ?? ''
   const front = buildYamlFrontMatter(input, fontsUrl)
-  // Markdown body added in the next task.
-  return front + '\n'
+
+  const sections = [
+    front,
+    '',
+    buildOverview(input),
+    '',
+    buildColorsSection(input),
+    '',
+    buildTypographySection(input),
+    '',
+    buildLayoutSection(input),
+    '',
+    buildElevationSection(),
+    '',
+    buildShapesSection(input),
+    '',
+    buildComponentsSection(),
+    // Do's and Don'ts added in Task 7
+  ]
+  return sections.join('\n') + '\n'
 }
