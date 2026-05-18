@@ -155,6 +155,7 @@ export type Database = {
           admin_approved_content: boolean
           answer_block: string | null
           canonical_url: string | null
+          client_approved_content: boolean
           content_job_id: string
           content_markdown: string | null
           created_at: string
@@ -166,6 +167,7 @@ export type Database = {
           llm_citation_note: string | null
           meta_description: string | null
           meta_title: string | null
+          needs_client_review: boolean
           page_title: string
           page_url: string
           schema_markup_type: string | null
@@ -179,6 +181,7 @@ export type Database = {
           admin_approved_content?: boolean
           answer_block?: string | null
           canonical_url?: string | null
+          client_approved_content?: boolean
           content_job_id: string
           content_markdown?: string | null
           created_at?: string
@@ -190,6 +193,7 @@ export type Database = {
           llm_citation_note?: string | null
           meta_description?: string | null
           meta_title?: string | null
+          needs_client_review?: boolean
           page_title: string
           page_url: string
           schema_markup_type?: string | null
@@ -203,6 +207,7 @@ export type Database = {
           admin_approved_content?: boolean
           answer_block?: string | null
           canonical_url?: string | null
+          client_approved_content?: boolean
           content_job_id?: string
           content_markdown?: string | null
           created_at?: string
@@ -214,6 +219,7 @@ export type Database = {
           llm_citation_note?: string | null
           meta_description?: string | null
           meta_title?: string | null
+          needs_client_review?: boolean
           page_title?: string
           page_url?: string
           schema_markup_type?: string | null
@@ -615,4 +621,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
