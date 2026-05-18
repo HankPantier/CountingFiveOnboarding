@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import PhaseStepper from '@/components/content/PhaseStepper'
+import type { DesignTokens } from '@/types/design-tokens'
+import type { SessionSchema } from '@/types/session-schema'
 
 export default async function ContentWorkflowPage({
   params,
@@ -49,6 +51,8 @@ export default async function ContentWorkflowPage({
   const currentPhase = contentJob?.phase ?? 1
   const contentJobId = contentJob?.id ?? ''
   const existingPalette = (contentJob?.palette ?? null) as import('@/types/palette').PaletteData | null
+  const existingTokens = (contentJob?.design_tokens ?? null) as DesignTokens | null
+  const brand = (session.schema_data as SessionSchema | null)?.brand
   const confirmedSitemap = (contentJob?.confirmed_sitemap ?? []) as Array<unknown>
   const confirmedPageCount = confirmedSitemap.length
 
@@ -82,6 +86,8 @@ export default async function ContentWorkflowPage({
         sessionId={session.id}
         contentJobId={contentJobId}
         existingPalette={existingPalette}
+        existingTokens={existingTokens}
+        brand={brand}
         confirmedPageCount={confirmedPageCount}
       />
     </main>

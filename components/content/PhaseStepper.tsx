@@ -1,5 +1,5 @@
 import PhaseCard from './PhaseCard'
-import PalettePhase from './PalettePhase'
+import DesignSystemPhase from './DesignSystemPhase'
 import SitemapPhase from './SitemapPhase'
 import ResearchPhase from './ResearchPhase'
 import OutlinePhase from './OutlinePhase'
@@ -7,6 +7,8 @@ import GenerationPhase from './GenerationPhase'
 import DeliverablesPhase from './DeliverablesPhase'
 import type { PhaseStatus } from './PhaseStatusBadge'
 import type { PaletteData } from '@/types/palette'
+import type { DesignTokens } from '@/types/design-tokens'
+import type { SessionSchema } from '@/types/session-schema'
 
 export function getPhaseStatus(jobPhase: number, thisPhase: number): PhaseStatus {
   if (thisPhase < jobPhase) return 'complete'
@@ -20,12 +22,16 @@ export default function PhaseStepper({
   sessionId,
   contentJobId,
   existingPalette,
+  existingTokens,
+  brand,
   confirmedPageCount,
 }: {
   currentPhase: number
   sessionId: string
   contentJobId: string
   existingPalette: PaletteData | null
+  existingTokens: DesignTokens | null
+  brand: SessionSchema['brand']
   confirmedPageCount: number
 }) {
   return (
@@ -38,10 +44,12 @@ export default function PhaseStepper({
 
         if (phase === 1) {
           content = (
-            <PalettePhase
+            <DesignSystemPhase
               sessionId={sessionId}
               contentJobId={contentJobId}
               existingPalette={existingPalette}
+              existingTokens={existingTokens}
+              brand={brand}
               isLocked={isComplete}
             />
           )
