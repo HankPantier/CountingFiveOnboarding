@@ -10,6 +10,8 @@ type PageStatus = {
   status: string
   parent?: string
   approved?: boolean
+  needsClientReview?: boolean
+  clientApproved?: boolean
   wordCountActual?: number | null
   wordCountTarget?: number | null
 }
@@ -31,6 +33,8 @@ type GenStatus = {
   running: number
   error: number
   approved: number
+  needsClientReview: number
+  clientApproved: number
   pages: PageStatus[]
 }
 
@@ -69,6 +73,7 @@ export default function GenerationPhase({
   const [previewPageId, setPreviewPageId] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
   const [restartError, setRestartError] = useState<string | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -134,6 +139,32 @@ export default function GenerationPhase({
     }
   }
 
+  const copyReviewLink = async () => {
+    const base = (process.env.NEXT_PUBLIC_APP_URL ?? '').replace(/\/$/, '') || (typeof window !== 'undefined' ? window.location.origin : '')
+    const link = `${base}/review/${contentJobId}`
+    try {
+      await navigator.clipboard.writeText(link)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    } catch {
+      // Ignore — most likely the user denied clipboard permission
+    }
+  }
+
+  const toggleClientReviewFlag = async (page: PageStatus, next: boolean) => {
+    setAction(`flag:${page.id}`, true)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ needs_client_review: next }),
+      })
+      if (res.ok) setPollNonce(n => n + 1)
+    } finally {
+      setAction(`flag:${page.id}`, false)
+    }
+  }
+
   const regenerate = async (page: PageStatus) => {
     const warning = page.approved
       ? `Regenerate "${page.title}"? The current approved content will be replaced and approval reset.`
@@ -168,10 +199,28 @@ export default function GenerationPhase({
 
   const pct = status.total > 0 ? Math.round((status.complete / status.total) * 100) : 0
   const isRunning = status.running > 0 || (status.complete + status.error < status.total)
-  const allApproved = status.approved === status.complete && status.complete > 0
+  const allAdminApproved = status.approved === status.complete && status.complete > 0
+  const allClientApproved = status.needsClientReview === 0 || status.clientApproved === status.needsClientReview
+  const allApproved = allAdminApproved && allClientApproved
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-body text-text-muted">
+          {status.needsClientReview > 0
+            ? `${status.clientApproved} of ${status.needsClientReview} flagged pages approved by client`
+            : 'No pages flagged for client review'}
+        </div>
+        <button
+          type="button"
+          onClick={copyReviewLink}
+          disabled={status.needsClientReview === 0}
+          className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {linkCopied ? 'Copied!' : 'Copy review link'}
+        </button>
+      </div>
+
       <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-sm font-body text-text-primary font-semibold">
@@ -204,6 +253,7 @@ export default function GenerationPhase({
             const wcBadge = page.status === 'complete' ? wordCountBadge(page.wordCountActual, page.wordCountTarget) : null
             const approveBusy = pendingActions.has(`approve:${page.id}`)
             const regenBusy = pendingActions.has(`regen:${page.id}`)
+            const flagBusy = pendingActions.has(`flag:${page.id}`)
             return (
               <div
                 key={page.id}
@@ -218,6 +268,17 @@ export default function GenerationPhase({
                       {wcBadge.label}
                     </span>
                   )}
+                  {page.needsClientReview && (
+                    <span
+                      className={`text-xs font-mono px-1.5 py-0.5 rounded ${
+                        page.clientApproved
+                          ? 'text-green-700 bg-green-50'
+                          : 'text-amber-700 bg-amber-50'
+                      }`}
+                    >
+                      {page.clientApproved ? 'Client ✓' : 'Awaiting client'}
+                    </span>
+                  )}
                   <span className="text-xs font-mono text-text-muted flex-shrink-0">{page.url}</span>
                   {page.status === 'complete' && (
                     <>
@@ -228,6 +289,16 @@ export default function GenerationPhase({
                       >
                         Preview
                       </button>
+                      <label className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={page.needsClientReview ?? false}
+                          disabled={flagBusy}
+                          onChange={e => toggleClientReviewFlag(page, e.target.checked)}
+                          className="accent-brand-cyan"
+                        />
+                        Client review
+                      </label>
                       <label className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer">
                         <input
                           type="checkbox"
@@ -269,7 +340,10 @@ export default function GenerationPhase({
 
       {!isRunning && status.complete > 0 && !allApproved && (
         <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm font-body rounded-lg px-4 py-2">
-          Review each page above and check &quot;Approved&quot; before assembling the deliverable. {status.complete - status.approved} of {status.complete} still need review.
+          {!allAdminApproved
+            ? <>Review each page above and check &quot;Approved&quot; before assembling the deliverable. {status.complete - status.approved} of {status.complete} still need review.</>
+            : <>{status.needsClientReview - status.clientApproved} of {status.needsClientReview} flagged pages still awaiting client approval. Copy the review link above and send it to the client.</>
+          }
         </div>
       )}
 

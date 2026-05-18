@@ -15,7 +15,7 @@ export async function GET(
   const [{ data: pages, error }, { data: job }] = await Promise.all([
     supabase
       .from('generated_pages')
-      .select('id, page_url, page_title, generation_status, admin_approved_content, word_count_actual, word_count_target')
+      .select('id, page_url, page_title, generation_status, admin_approved_content, needs_client_review, client_approved_content, word_count_actual, word_count_target')
       .eq('content_job_id', id)
       .order('created_at', { ascending: true }),
     supabase
@@ -39,6 +39,8 @@ export async function GET(
     running: all.filter(p => p.generation_status === 'running').length,
     error: all.filter(p => p.generation_status === 'error').length,
     approved: all.filter(p => p.generation_status === 'complete' && p.admin_approved_content).length,
+    needsClientReview: all.filter(p => p.needs_client_review).length,
+    clientApproved: all.filter(p => p.needs_client_review && p.client_approved_content).length,
     pages: all.map(p => ({
       id: p.id,
       url: p.page_url,
@@ -46,6 +48,8 @@ export async function GET(
       status: p.generation_status,
       parent: parentByUrl.get(p.page_url),
       approved: p.admin_approved_content,
+      needsClientReview: p.needs_client_review,
+      clientApproved: p.client_approved_content,
       wordCountActual: p.word_count_actual,
       wordCountTarget: p.word_count_target,
     })),
