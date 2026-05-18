@@ -25,6 +25,7 @@ export async function PATCH(
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
 
   if (body.palette !== undefined) updates.palette = body.palette
+  if (body.design_tokens !== undefined) updates.design_tokens = body.design_tokens
   if (body.confirmed_sitemap !== undefined) updates.confirmed_sitemap = body.confirmed_sitemap
   if (body.phase !== undefined) updates.phase = body.phase
   if (body.status !== undefined) {
