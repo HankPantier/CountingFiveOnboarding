@@ -50,8 +50,8 @@ og_title: ${page.meta_title ?? page.page_title}
 og_description: ${page.meta_description ?? ''}
 og_image: ${ogImage}
 twitter_card: summary_large_image
-${cta ? `cta_text: ${cta.text}\ncta_url: ${cta.url}` : ''}
----
+${cta ? `cta_text: ${cta.text}\ncta_url: ${cta.url}` : ''}hero: ${page.hero_block ?? 'page-header'}
+${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}---
 
 ${page.content_markdown ?? ''}
 

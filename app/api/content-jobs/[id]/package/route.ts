@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { buildAllPageFiles, buildErrorsFile } from '@/lib/content/deliverable-builder'
+import { buildAllPageFiles, buildErrorsFile, appendFaqBlock } from '@/lib/content/deliverable-builder'
 import type { CtaInfo } from '@/lib/content/deliverable-builder'
 import { buildDocx } from '@/lib/content/docx-builder'
 import { buildLlmsTxt, buildLlmsFullTxt } from '@/lib/content/llms-builder'
@@ -194,7 +194,9 @@ export async function POST(
   if (!brandJson) console.warn(`[package] Skipping brand.json — palette not locked`)
   if (!designJson) console.warn(`[package] Skipping design.json — design tokens not locked`)
 
-  const pageFiles = buildAllPageFiles(pages, firmName, {
+  const pagesWithFaq = pages.map(p => ({ ...p, content_markdown: appendFaqBlock(p) }))
+
+  const pageFiles = buildAllPageFiles(pagesWithFaq, firmName, {
     websiteUrl: session.website_url,
     ctaByUrl,
     jsonLdByUrl,
