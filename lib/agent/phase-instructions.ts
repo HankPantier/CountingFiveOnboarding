@@ -82,7 +82,7 @@ BRAND & TONE BLOCK — ask this as the last topic, after differentiators and cul
 Ask in one exchange: "Before we wrap up, I want to capture a sense of your brand voice. How would clients describe your firm today — and how would you like them to feel after reading your new site?"
 Then follow up: "Any words or phrases that feel very 'you'? Anything you'd want to avoid? And do you have existing brand colors or a style guide we should work within?"
 If they say yes to a brand guide → tell them they can upload it in the next step.
-Save responses to brand.currentTone, brand.aspirationalTone, brand.toneAdjectives, brand.toneToAvoid, brand.primaryColors, brand.hasBrandGuide.
+Save responses to brand.currentTone, brand.aspirationalTone, brand.toneAdjectives, brand.toneToAvoid, brand.primaryColors, brand.hasBrandGuide. If the client volunteers personality language ("we're more like a..."), capture it in brand.brandPersonality. If they offer a memorable phrase that captures their voice, capture it verbatim in brand.voiceExample.
 
 Close Phase 4 with: "Is there anything else about the firm that's important for us to know?"
 When all Tier 1 gaps are resolved and that question has been asked, call update_session_data with advancePhase: true.`
