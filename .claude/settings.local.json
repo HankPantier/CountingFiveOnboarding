@@ -64,7 +64,9 @@
       "Bash(git grep *)",
       "Bash(git -C /Users/webhank/LocalSites/counting-five-onboarding add lib/content/design-md-builder.ts)",
       "Bash(git -C /Users/webhank/LocalSites/counting-five-onboarding -c commit.gpgsign=false commit -m \"feat\\(content\\): design.md builder — YAML front-matter only\")",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(git -c commit.gpgsign=false commit -m \"feat\\(content\\): design.md builder — markdown sections \\(Overview through Components\\)\")",
+      "Bash(git *)"
     ]
   }
 }

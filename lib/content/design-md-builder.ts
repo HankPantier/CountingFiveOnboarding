@@ -2,7 +2,7 @@ import chroma from 'chroma-js'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens, Roundness, Density } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
-import { findPairing } from './type-pairing-catalog'
+import { findPairing, type TypePairingFeel } from './type-pairing-catalog'
 
 type BuilderInput = {
   firmName: string
@@ -169,7 +169,7 @@ The palette is rooted in **${palette.primary.name}** as the structural primary a
 
 function buildTypographySection(input: BuilderInput): string {
   const pairing = findPairing(input.tokens.typePairing.id)
-  const blurb: Record<string, string> = {
+  const blurb: Record<TypePairingFeel, string> = {
     modern: 'A clean, neutral sans throughout favors clarity over decoration. Tight letter-spacing on headlines keeps the typography editorial without feeling cold.',
     editorial: 'Serif headlines pair with a humanist sans body. The combination gives long-form pages (About, Services) a considered, journalistic weight.',
     classic: 'High-contrast classic typography signals authority and continuity. Use sparingly on headlines; let the sans body do the reading work.',
