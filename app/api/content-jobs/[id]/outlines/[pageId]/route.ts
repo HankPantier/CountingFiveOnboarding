@@ -82,7 +82,7 @@ export async function PATCH(
     // regenerate, but the package gate will block until they re-approve.
     const { error: cascadeErr } = await supabase
       .from('generated_pages')
-      .update({ admin_approved_content: false })
+      .update({ admin_approved_content: false, client_approved_content: false })
       .eq('content_job_id', existing.content_job_id)
       .eq('page_url', existing.page_url)
     if (cascadeErr) {
