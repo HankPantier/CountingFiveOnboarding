@@ -5,7 +5,7 @@ import type { SessionSchema } from '@/types/session-schema'
 
 export type BrandDoc = {
   summary: string  // 1–2 paragraph blockquote-friendly description (~600 chars)
-  fullDoc: string  // full brand brief markdown (~800–1500 words)
+  fullDoc: string  // full brand brief markdown (~600–1000 words)
 }
 
 function nonEmpty(value: unknown): value is string {
@@ -55,21 +55,11 @@ export function compileBrandDoc(schema: SessionSchema): BrandDoc {
     if (block.length > 1) nicheBlocks.push(block.join('\n'))
   }
 
-  // ---- Voice ----
-  const voiceParts: string[] = []
-  if (nonEmpty(brand.currentTone)) voiceParts.push(`**Current tone:** ${brand.currentTone}`)
-  if (nonEmpty(brand.aspirationalTone)) voiceParts.push(`**Aspirational tone:** ${brand.aspirationalTone}`)
-  const adjectives = joinList(brand.toneAdjectives)
-  if (adjectives) voiceParts.push(`**Tone adjectives:** ${adjectives}`)
-  if (nonEmpty(brand.voiceExample)) voiceParts.push(`**Voice example:** ${brand.voiceExample}`)
-  if (nonEmpty(brand.brandPersonality)) voiceParts.push(`**Personality:** ${brand.brandPersonality}`)
-
   // ---- Assemble fullDoc ----
   const sections: string[] = [`# About ${firmName}`]
   if (identityParts.length) sections.push(`## Identity\n${identityParts.join('\n')}`)
   if (positioningParts.length) sections.push(`## Positioning & Differentiation\n${positioningParts.join('\n\n')}`)
   if (nicheBlocks.length) sections.push(`## Industries Served\n${nicheBlocks.join('\n\n')}`)
-  if (voiceParts.length) sections.push(`## Brand Voice\n${voiceParts.join('\n')}`)
   const fullDoc = sections.join('\n\n')
 
   // ---- Summary (deterministic) ----
@@ -95,7 +85,7 @@ export async function generateBrandDoc(schema: SessionSchema): Promise<BrandDoc>
     schema as SessionSchema & { _meta?: unknown; content_gaps?: unknown }
   void _meta; void proposed_sitemap; void current_sitemap; void content_gaps
 
-  const prompt = `You are writing a brand brief that LLM crawlers will ingest to understand this CPA firm. Use the firm's own positioning, voice, and audience — do not invent details.
+  const prompt = `You are writing a brand brief that LLM crawlers will ingest to understand this CPA firm. Use the firm's own positioning and audience — do not invent details.
 
 FIRM SCHEMA (JSON):
 ${JSON.stringify(trimmed, null, 2)}
@@ -103,11 +93,10 @@ ${JSON.stringify(trimmed, null, 2)}
 Return JSON only — no prose, no code fences:
 {
   "summary": "1–2 short paragraphs, ~400–600 characters. Reads as a blockquote: who they are, who they serve, what's distinctive. No headings.",
-  "fullDoc": "Full markdown brand brief, 800–1500 words, with these H2 sections in order: ## Identity, ## Positioning & Differentiation, ## Industries Served (one H3 per niche), ## Brand Voice. Skip a section entirely if its source fields are empty. Start with '# About <Firm Name>'."
+  "fullDoc": "Full markdown brand brief, 600–1000 words, with these H2 sections in order: ## Identity, ## Positioning & Differentiation, ## Industries Served (one H3 per niche). Skip a section entirely if its source fields are empty. Start with '# About <Firm Name>'."
 }
 
 RULES:
-- Mirror the firm's own tone in voice (use their toneAdjectives, voice example, personality).
 - For each niche, include pain points and value proposition if present.
 - No marketing fluff or invented credentials.`
 
