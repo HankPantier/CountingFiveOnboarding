@@ -162,6 +162,9 @@ export type Database = {
           eeat_signals: Json | null
           faq_block: Json | null
           generation_status: string
+          hero_block: string
+          hero_image: string | null
+          hero_variant: string | null
           id: string
           internal_links: Json | null
           llm_citation_note: string | null
@@ -188,6 +191,9 @@ export type Database = {
           eeat_signals?: Json | null
           faq_block?: Json | null
           generation_status?: string
+          hero_block?: string
+          hero_image?: string | null
+          hero_variant?: string | null
           id?: string
           internal_links?: Json | null
           llm_citation_note?: string | null
@@ -214,6 +220,9 @@ export type Database = {
           eeat_signals?: Json | null
           faq_block?: Json | null
           generation_status?: string
+          hero_block?: string
+          hero_image?: string | null
+          hero_variant?: string | null
           id?: string
           internal_links?: Json | null
           llm_citation_note?: string | null
