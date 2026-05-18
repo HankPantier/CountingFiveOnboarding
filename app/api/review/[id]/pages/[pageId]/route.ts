@@ -6,6 +6,38 @@ type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Public GET endpoint for client review. No admin auth required.
+// Only returns pages that are flagged for client review.
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string; pageId: string }> }
+) {
+  const { id, pageId } = await params
+  const supabase = createServerClient()
+
+  if (!UUID_RE.test(id)) {
+    return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
+  }
+  if (!UUID_RE.test(pageId)) {
+    return NextResponse.json({ error: 'Invalid pageId' }, { status: 400 })
+  }
+
+  const { data, error } = await supabase
+    .from('generated_pages')
+    .select('*')
+    .eq('id', pageId)
+    .eq('content_job_id', id)
+    .eq('needs_client_review', true)
+    .single()
+
+  if (error || !data) {
+    if (error) console.error('[review-get] supabase error:', error)
+    return NextResponse.json({ error: 'Page not found' }, { status: 404 })
+  }
+
+  return NextResponse.json({ page: data })
+}
+
 // Public PATCH endpoint for client review. No admin auth required.
 // Allows clients to edit and approve pages flagged for review.
 export async function PATCH(

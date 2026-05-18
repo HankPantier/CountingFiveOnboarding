@@ -27,6 +27,14 @@ type GeneratedPageRow = {
   word_count_actual: number | null
   word_count_target: number | null
   admin_approved_content: boolean
+  client_approved_content: boolean
+}
+
+type EditForm = {
+  meta_title: string
+  meta_description: string
+  target_keyword: string
+  content_markdown: string
 }
 
 export default function MarkdownPreviewModal({
@@ -34,20 +42,46 @@ export default function MarkdownPreviewModal({
   pageId,
   onClose,
   onApprovalChange,
+  mode = 'admin',
 }: {
   contentJobId: string
   pageId: string
   onClose: () => void
   onApprovalChange?: (approved: boolean) => void
+  mode?: 'admin' | 'client'
 }) {
   const [page, setPage] = useState<GeneratedPageRow | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<'rendered' | 'raw'>('rendered')
   const [savingApproval, setSavingApproval] = useState(false)
 
+  // Edit mode state
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState<EditForm>({
+    meta_title: '',
+    meta_description: '',
+    target_keyword: '',
+    content_markdown: '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const endpoint =
+    mode === 'client'
+      ? `/api/review/${contentJobId}/pages/${pageId}`
+      : `/api/content-jobs/${contentJobId}/pages/${pageId}`
+
+  const approvalField =
+    mode === 'client' ? 'client_approved_content' : 'admin_approved_content'
+
+  const approvalValue = page
+    ? mode === 'client'
+      ? page.client_approved_content
+      : page.admin_approved_content
+    : false
+
   useEffect(() => {
     let cancelled = false
-    fetch(`/api/content-jobs/${contentJobId}/pages/${pageId}`)
+    fetch(endpoint)
       .then(res => res.json())
       .then(data => {
         if (cancelled) return
@@ -56,7 +90,8 @@ export default function MarkdownPreviewModal({
       })
       .catch(err => { if (!cancelled) setError(err.message) })
     return () => { cancelled = true }
-  }, [contentJobId, pageId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentJobId, pageId, mode])
 
   // Close on Escape.
   useEffect(() => {
@@ -69,10 +104,10 @@ export default function MarkdownPreviewModal({
     if (!page) return
     setSavingApproval(true)
     try {
-      const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${pageId}`, {
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_approved_content: next }),
+        body: JSON.stringify({ [approvalField]: next }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -81,6 +116,48 @@ export default function MarkdownPreviewModal({
       }
     } finally {
       setSavingApproval(false)
+    }
+  }
+
+  const enterEditMode = () => {
+    if (!page) return
+    setEditForm({
+      meta_title: page.meta_title ?? '',
+      meta_description: page.meta_description ?? '',
+      target_keyword: page.target_keyword ?? '',
+      content_markdown: page.content_markdown ?? '',
+    })
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+  }
+
+  const saveEdit = async () => {
+    if (!page) return
+    setSaving(true)
+    try {
+      const res = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meta_title: editForm.meta_title,
+          meta_description: editForm.meta_description,
+          target_keyword: editForm.target_keyword,
+          content_markdown: editForm.content_markdown,
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setPage(data.page)
+        setEditing(false)
+      } else {
+        const data = await res.json()
+        setError(data.error ?? 'Save failed')
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -102,22 +179,37 @@ export default function MarkdownPreviewModal({
             <div className="text-xs font-mono text-text-muted truncate">{page?.page_url ?? ''}</div>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="inline-flex border border-border-default rounded-pill overflow-hidden text-xs font-heading font-semibold">
+            {/* Edit button — only shown when page is loaded and not already editing */}
+            {page && !editing && (
               <button
                 type="button"
-                onClick={() => setView('rendered')}
-                className={`px-3 py-1 ${view === 'rendered' ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'}`}
+                onClick={enterEditMode}
+                className="px-3 py-1 text-xs font-heading font-semibold border border-border-default rounded-pill text-text-secondary hover:bg-surface-subtle transition-colors"
               >
-                Rendered
+                Edit
               </button>
-              <button
-                type="button"
-                onClick={() => setView('raw')}
-                className={`px-3 py-1 ${view === 'raw' ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'}`}
-              >
-                Raw
-              </button>
-            </div>
+            )}
+
+            {/* Rendered / Raw toggle — hidden while editing */}
+            {!editing && (
+              <div className="inline-flex border border-border-default rounded-pill overflow-hidden text-xs font-heading font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setView('rendered')}
+                  className={`px-3 py-1 ${view === 'rendered' ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'}`}
+                >
+                  Rendered
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('raw')}
+                  className={`px-3 py-1 ${view === 'raw' ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'}`}
+                >
+                  Raw
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={onClose}
@@ -139,6 +231,62 @@ export default function MarkdownPreviewModal({
 
           {!page ? (
             <div className="text-sm text-text-muted font-body">Loading page...</div>
+          ) : editing ? (
+            /* Edit mode body */
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-3">
+                <label className="block">
+                  <span className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
+                    Meta title <span className="text-text-muted font-body normal-case">(max 120)</span>
+                  </span>
+                  <input
+                    type="text"
+                    maxLength={120}
+                    value={editForm.meta_title}
+                    onChange={e => setEditForm(f => ({ ...f, meta_title: e.target.value }))}
+                    className="mt-1 block w-full border border-border-default rounded-lg px-3 py-2 text-sm font-body text-text-primary focus:outline-none focus:border-brand-cyan"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
+                    Meta description <span className="text-text-muted font-body normal-case">(max 320)</span>
+                  </span>
+                  <input
+                    type="text"
+                    maxLength={320}
+                    value={editForm.meta_description}
+                    onChange={e => setEditForm(f => ({ ...f, meta_description: e.target.value }))}
+                    className="mt-1 block w-full border border-border-default rounded-lg px-3 py-2 text-sm font-body text-text-primary focus:outline-none focus:border-brand-cyan"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
+                    Target keyword <span className="text-text-muted font-body normal-case">(max 100)</span>
+                  </span>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    value={editForm.target_keyword}
+                    onChange={e => setEditForm(f => ({ ...f, target_keyword: e.target.value }))}
+                    className="mt-1 block w-full border border-border-default rounded-lg px-3 py-2 text-sm font-body text-text-primary focus:outline-none focus:border-brand-cyan"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
+                    Content (Markdown) <span className="text-text-muted font-body normal-case">(max 50000)</span>
+                  </span>
+                  <textarea
+                    maxLength={50000}
+                    value={editForm.content_markdown}
+                    onChange={e => setEditForm(f => ({ ...f, content_markdown: e.target.value }))}
+                    className="mt-1 block w-full border border-border-default rounded-lg px-3 py-2 text-xs font-mono text-text-primary focus:outline-none focus:border-brand-cyan min-h-[400px] resize-y"
+                  />
+                </label>
+              </div>
+            </div>
           ) : (
             <>
               {/* Metadata strip */}
@@ -185,21 +333,44 @@ export default function MarkdownPreviewModal({
           )}
         </div>
 
-        {/* Footer — sticky approval */}
+        {/* Footer */}
         {page && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-border-default bg-surface-subtle">
-            <label className="flex items-center gap-2 text-sm font-body text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={page.admin_approved_content}
-                disabled={savingApproval}
-                onChange={e => toggleApproval(e.target.checked)}
-                className="accent-brand-cyan w-4 h-4"
-              />
-              <span className="font-heading font-semibold">
-                {page.admin_approved_content ? 'Approved' : 'Approve this page'}
-              </span>
-            </label>
+            {editing ? (
+              /* Edit mode footer: Save + Cancel */
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveEdit}
+                  disabled={saving}
+                  className="px-4 py-1.5 text-sm font-heading font-semibold bg-brand-navy text-text-inverse rounded-pill hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  disabled={saving}
+                  className="px-4 py-1.5 text-sm font-heading font-semibold border border-border-default rounded-pill text-text-secondary hover:bg-white transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              /* Normal footer: approval checkbox */
+              <label className="flex items-center gap-2 text-sm font-body text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={approvalValue}
+                  disabled={savingApproval}
+                  onChange={e => toggleApproval(e.target.checked)}
+                  className="accent-brand-cyan w-4 h-4"
+                />
+                <span className="font-heading font-semibold">
+                  {approvalValue ? 'Approved' : 'Approve this page'}
+                </span>
+              </label>
+            )}
             <button
               type="button"
               onClick={onClose}
