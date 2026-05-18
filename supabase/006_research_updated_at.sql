@@ -14,3 +14,4 @@ ALTER TABLE research_results
 
 CREATE INDEX IF NOT EXISTS idx_research_results_status_updated
   ON research_results(research_status, updated_at);
+

@@ -50,7 +50,21 @@
       "Bash(awk *)",
       "Bash(git rm *)",
       "Bash(xargs cat)",
-      "Bash(unzip -p /tmp/test.docx word/document.xml)"
+      "Bash(unzip -p /tmp/test.docx word/document.xml)",
+      "Skill(superpowers:brainstorming)",
+      "Bash(git -c commit.gpgsign=false commit -m ' *)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Bash(git checkout *)",
+      "Bash(npx supabase *)",
+      "Bash(git -c commit.gpgsign=false commit -m \"feat\\(db\\): add design_tokens column to content_jobs\")",
+      "Bash(git -c commit.gpgsign=false commit -m \"feat\\(types\\): add DesignTokens type\")",
+      "Bash(git -c commit.gpgsign=false commit -m \"feat\\(content\\): add curated type pairing catalog \\(15 pairings\\)\")",
+      "Bash(git -c commit.gpgsign=false commit -m \"feat\\(content\\): add design tokens auto-suggest from brand inputs\")",
+      "Bash(git grep *)",
+      "Bash(git -C /Users/webhank/LocalSites/counting-five-onboarding add lib/content/design-md-builder.ts)",
+      "Bash(git -C /Users/webhank/LocalSites/counting-five-onboarding -c commit.gpgsign=false commit -m \"feat\\(content\\): design.md builder — YAML front-matter only\")",
+      "Bash(npm list *)"
     ]
   }
 }

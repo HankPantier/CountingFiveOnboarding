@@ -14,3 +14,4 @@ ALTER TABLE generated_pages
   ADD COLUMN admin_approved_content boolean NOT NULL DEFAULT false,
   ADD COLUMN word_count_actual int DEFAULT NULL,
   ADD COLUMN word_count_target int DEFAULT NULL;
+pl

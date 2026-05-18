@@ -13,6 +13,11 @@ type BuilderInput = {
   location: { city: string; state: string } | null
 }
 
+function yamlEscape(s: string): string {
+  // Escape backslash first, then double-quote — order matters.
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
 function pillValue(r: Roundness): string {
   return r === 'sharp' ? '4px' : r === 'soft' ? '8px' : '9999px'
 }
@@ -48,8 +53,8 @@ function buildYamlFrontMatter(input: BuilderInput, fontsUrl: string): string {
   return `<!-- Fonts: ${fontsUrl} -->
 ---
 version: alpha
-name: "${firmName}"
-description: "Design system for the ${firmName} website rebuild."
+name: "${yamlEscape(firmName)}"
+description: "Design system for the ${yamlEscape(firmName)} website rebuild."
 colors:
   primary: "${palette.primary.hex}"
   secondary: "${palette.secondary.hex}"

@@ -4,3 +4,4 @@
 
 ALTER TABLE research_results
   ADD COLUMN error_message text DEFAULT NULL;
+x
