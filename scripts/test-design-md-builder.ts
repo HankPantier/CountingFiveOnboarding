@@ -67,7 +67,10 @@ assert('Overview mentions aspirational tone', out.includes('measured and trustwo
 assert('Overview mentions personality', out.includes('plain-spoken'))
 
 // Do's/Don'ts
-assert("avoid list present in Don't section", out.includes('avoid list:') && out.includes('"leverage"'))
+assert("avoid list present in Don't section",
+  out.includes('avoid list: "leverage", "synergy", "world-class"'),
+  'expected combined avoid line; sample: ' + (out.match(/avoid list:.{0,80}/)?.[0] ?? '(not found)')
+)
 
 // Pill-value variants
 const sharp = buildDesignMd({

@@ -225,7 +225,7 @@ function buildDosDontsSection(input: BuilderInput): string {
     .map(w => (typeof w === 'string' ? w.trim() : ''))
     .filter(w => w.length > 0)
   const avoidLine = avoidWords.length > 0
-    ? `\n- Don't use words from the firm's avoid list: ${avoidWords.map(w => `"${w}"`).join(', ')}`
+    ? `\n- Don't use words from the firm's avoid list: ${avoidWords.map(w => `"${w.replace(/"/g, '\\"')}"`).join(', ')}`
     : ''
 
   return `## Do's and Don'ts
