@@ -107,6 +107,28 @@ export async function POST(
     )
   }
 
+  // Client review gate: pages flagged for client review must also have client
+  // approval before we ship the package. This check fires only on pages that
+  // have already passed the admin-approval gate above.
+  const awaitingClient = pages
+    .filter(
+      p =>
+        p.generation_status === 'complete' &&
+        p.admin_approved_content &&
+        p.needs_client_review &&
+        !p.client_approved_content
+    )
+    .map(p => ({ id: p.id, page_url: p.page_url, page_title: p.page_title }))
+  if (awaitingClient.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'Awaiting client approval',
+        awaitingClient,
+      },
+      { status: 400 }
+    )
+  }
+
   // Build folder name
   const folderName = firmName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, '') + '-content'
 
