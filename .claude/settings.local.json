@@ -67,7 +67,17 @@
       "Bash(npm list *)",
       "Bash(git -c commit.gpgsign=false commit -m \"feat\\(content\\): design.md builder — markdown sections \\(Overview through Components\\)\")",
       "Bash(git *)",
-      "Bash(npx ts-node *)"
+      "Bash(npx ts-node *)",
+      "Bash(chmod +x /tmp/verify_design_system.sh)",
+      "Bash(/tmp/verify_design_system.sh)",
+      "Bash(chmod +x /tmp/race_check.sh)",
+      "Bash(/tmp/race_check.sh)",
+      "Bash(chmod +x /tmp/swatch_check.sh)",
+      "Bash(/tmp/swatch_check.sh)",
+      "Bash(chmod +x /tmp/import_check.sh)",
+      "Bash(/tmp/import_check.sh)",
+      "Bash(chmod +x /tmp/contract_check.sh)",
+      "Bash(/tmp/contract_check.sh)"
     ]
   }
 }

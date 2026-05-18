@@ -92,8 +92,10 @@ export async function PATCH(
     .select('*')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!data) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
+  if (error || !data) {
+    if (error) console.error('[review-patch] supabase error:', error)
+    return NextResponse.json({ error: 'Page not found' }, { status: 404 })
+  }
 
   return NextResponse.json({ page: data })
 }
