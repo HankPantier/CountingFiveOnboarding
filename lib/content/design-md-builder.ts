@@ -214,6 +214,33 @@ function buildComponentsSection(): string {
 Button-primary is the action color with on-action text and pill (or roundness-scaled) corners. On hover it shifts to the primary color. Button-secondary inverts: white surface, primary text, same shape. Cards sit on near-white with a soft navy-tinted shadow. Links use the action color and are always underlined within body copy. Badge uses the complementary accent at the smallest radius. Hero blocks fill with the primary color and use the largest spacing scale.`
 }
 
+function buildDosDontsSection(input: BuilderInput): string {
+  const { tokens, brand } = input
+  const feelDo: Record<typeof tokens.visualFeel, string> = {
+    classic: 'Keep typography restrained — let structural choices carry the brand',
+    modern: 'Keep hero copy short — let typography and whitespace carry the weight',
+    editorial: 'Use serif headlines for long-form pages; reserve sans for UI chrome',
+  }
+  const avoidWords = (brand?.toneToAvoid ?? [])
+    .map(w => (typeof w === 'string' ? w.trim() : ''))
+    .filter(w => w.length > 0)
+  const avoidLine = avoidWords.length > 0
+    ? `\n- Don't use words from the firm's avoid list: ${avoidWords.map(w => `"${w}"`).join(', ')}`
+    : ''
+
+  return `## Do's and Don'ts
+
+**Do**
+- Use the action color for one CTA per screen
+- ${feelDo[tokens.visualFeel]}
+- Pair CTAs against high-contrast backgrounds
+
+**Don't**
+- Don't put the action color on the primary background
+- Don't use generic black shadows
+- Don't introduce a third heading font${avoidLine}`
+}
+
 export function buildDesignMd(input: BuilderInput): string {
   const pairing = findPairing(input.tokens.typePairing.id)
   const fontsUrl = pairing?.googleFontsUrl ?? ''
@@ -235,7 +262,8 @@ export function buildDesignMd(input: BuilderInput): string {
     buildShapesSection(input),
     '',
     buildComponentsSection(),
-    // Do's and Don'ts added in Task 7
+    '',
+    buildDosDontsSection(input),
   ]
   return sections.join('\n') + '\n'
 }
