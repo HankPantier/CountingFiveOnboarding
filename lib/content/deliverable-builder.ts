@@ -116,3 +116,52 @@ export function buildErrorsFile(pages: GeneratedPage[]): string | null {
   }
   return md
 }
+
+// Appends FAQ block to content_markdown with annotation comment.
+// Inserts before closing cta-banner/form blocks if present; otherwise appends at end.
+export function appendFaqBlock(page: GeneratedPage): string {
+  const content = page.content_markdown ?? ''
+  if (!content) return ''
+
+  // Defensively parse faq_block as Array<{ question: string; answer: string }>
+  const raw = page.faq_block
+  if (!raw || !Array.isArray(raw)) return content
+  const items = raw.filter((it): it is { question: string; answer: string } =>
+    it != null &&
+    typeof it === 'object' &&
+    typeof (it as { question?: unknown }).question === 'string' &&
+    typeof (it as { answer?: unknown }).answer === 'string'
+  )
+  if (items.length === 0) return content
+
+  // Build FAQ section
+  const headline = `Frequently Asked Questions About ${page.page_title}`
+  const faqMarkdown = items
+    .map(({ question, answer }) => `**Q: ${question}**\nA: ${answer}`)
+    .join('\n\n')
+  const faqSection = `<!-- block: faq-accordion -->\n## ${headline}\n\n${faqMarkdown}`
+
+  // Find the last cta-banner or form block annotation
+  const ctaBannerMatch = content.match(/^<!-- block: cta-banner/m)
+  const formMatch = content.match(/^<!-- block: form/m)
+  const lastBlockMatch = ctaBannerMatch || formMatch
+  let lastBlockIndex = -1
+
+  if (ctaBannerMatch) {
+    const idx = content.lastIndexOf('<!-- block: cta-banner')
+    lastBlockIndex = idx >= 0 ? idx : -1
+  }
+  if (formMatch) {
+    const idx = content.lastIndexOf('<!-- block: form')
+    lastBlockIndex = Math.max(lastBlockIndex, idx)
+  }
+
+  // Insert before the last block if found; otherwise append at end
+  if (lastBlockIndex >= 0) {
+    // Find the start of the line containing the block annotation
+    const lineStart = content.lastIndexOf('\n', lastBlockIndex - 1) + 1
+    return content.slice(0, lineStart) + faqSection + '\n\n' + content.slice(lineStart)
+  } else {
+    return content + '\n\n' + faqSection
+  }
+}
