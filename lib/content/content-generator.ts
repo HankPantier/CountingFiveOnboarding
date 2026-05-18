@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
+import { parseBlockAnnotations, validateBlockAnnotations } from './block-annotation-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { countWords, targetWordCount } from './word-count-validator'
 import type { SessionSchema } from '@/types/session-schema'
@@ -27,6 +28,9 @@ type GeneratedResult = {
     internal_links: Array<{ url: string; anchor_text: string; reason: string }>
     faq_block: Array<{ question: string; answer: string }>
     llm_citation_note: string
+    hero_block: string
+    hero_variant: string | null
+    hero_image: string | null
   }
 }
 
@@ -133,6 +137,56 @@ OUTPUT: Return a JSON object with two keys:
    - internal_links (array of {url, anchor_text, reason} — reference other pages in the site)
    - faq_block (array of {question, answer} — 40-60 words per answer)
    - llm_citation_note (what structured claim an AI tool would most likely cite)
+   - hero_block (one of: "hero", "hero-split", "page-header")
+   - hero_variant (string or null — required for "hero" and "hero-split"; null for "page-header")
+   - hero_image (filename string from session assets, or null if none)
+
+BLOCK ANNOTATION RULES:
+
+Before every ## section heading in the content body, emit an HTML comment on the immediately preceding line:
+<!-- block: {block-id} | variant: {variant} -->
+
+Choose the block that best fits the section. Catalog:
+
+intro-text          → Short headline + paragraph transition
+content-split       → Narrative paragraph with a supporting image
+content-prose       → Long-form copy, no supporting image
+checklist-section   → List of benefits, inclusions, or qualifying criteria
+process-steps       → Numbered or sequential how-it-works steps
+feature-grid        → 3–8 equal features with icon + short description
+service-cards       → 2–9 named services with descriptions and links
+content-cards       → Articles or resources with images
+team-grid           → Staff or partner profiles with photos
+industry-cards      → Industry or niche verticals with icons
+testimonials        → Client quotes or reviews
+stats-bar           → 3–4 numeric proof points
+logo-bar            → Certification badges or association logos
+cta-banner          → A direct call to action with a button
+pricing             → Tiered service packages with prices and feature lists
+form                → A contact, quote, or newsletter form
+content-table       → Comparison data or structured reference info
+
+DO NOT use these inline (they are page-level only):
+  hero, hero-split, page-header
+
+DO NOT annotate with faq-accordion — it is auto-appended by the deliverable builder.
+
+VARIANT RULES:
+- content-split: alternate image-right and image-left across consecutive sections
+- feature-grid: default to 3-col; use 4-col only if 8+ items
+- service-cards: default to 3-col; use 2-col if descriptions exceed 4 sentences
+- team-grid: 2-col ≤4 people, 3-col 5–9, 4-col 10+
+- cta-banner: use color-bg unless a specific background image is referenced
+- form: use contact variant unless quote or newsletter clearly fits
+- pricing: match tier count to packages described
+
+HERO BLOCK (page-level — return in metadata, NOT inline):
+Choose ONE hero block for the page opener:
+- "hero" with variant "image"|"video"|"slider" — full-bleed dominant opener (homepage and key landing pages)
+- "hero-split" with variant "image-right"|"image-left" — opener with side-by-side text + image (About pages, primary service pages)
+- "page-header" with NO variant — slim inner-page title bar (most inner pages)
+
+Default to "page-header" if uncertain. Use "hero" only on the homepage and high-value landing pages.
 
 ${ANTI_SLOP_RULES}${retryNote}`
 
@@ -165,6 +219,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
         internal_links: parsed.metadata?.internal_links ?? [],
         faq_block: parsed.metadata?.faq_block ?? [],
         llm_citation_note: parsed.metadata?.llm_citation_note ?? '',
+        hero_block: parsed.metadata?.hero_block ?? 'page-header',
+        hero_variant: parsed.metadata?.hero_variant ?? null,
+        hero_image: parsed.metadata?.hero_image ?? null,
       },
     }
   } catch {
@@ -184,6 +241,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
         internal_links: [],
         faq_block: [],
         llm_citation_note: '',
+        hero_block: 'page-header',
+        hero_variant: null,
+        hero_image: null,
       },
     }
   }
@@ -291,6 +351,56 @@ export async function generateSinglePage(
       )
     }
 
+    const annotations = parseBlockAnnotations(result.content)
+    const blockValidation = validateBlockAnnotations(annotations, outline.page_url, result.metadata.faq_block)
+
+    if (!blockValidation.passed && blockValidation.errors.length > 0) {
+      console.log(
+        `[content-gen] Block validation errors on ${outline.page_url}:`,
+        blockValidation.errors.map(e => `[section ${e.position}] ${e.reason}`).join(' | ')
+      )
+
+      // Single retry: full-page regeneration with all errors listed.
+      // (The spec proposes per-section correction; we use full-page retry for
+      // simplicity. If the LLM can't fix issues in one retry, the errors are
+      // logged and content is stored as-is — admin can manually correct.)
+      const errorSummary = blockValidation.errors
+        .map(e => `Section ${e.position} ("${e.headingText}"): ${e.reason}. Suggested replacement: ${e.suggestion ?? 'content-prose'}`)
+        .join('\n')
+      const correctionNote = `Your previous draft had these block annotation issues — fix all of them:\n${errorSummary}`
+
+      result = await generatePageContent(
+        outline.page_title,
+        outline.page_url,
+        outline.sections,
+        targetKeyword,
+        secondaryKeywords,
+        existingContent,
+        competitorRefs,
+        schema,
+        palette,
+        session.website_url,
+        cta,
+        [correctionNote]  // reuse the flaggedPhrases mechanism to carry the correction note
+      )
+
+      const retryAnnotations = parseBlockAnnotations(result.content)
+      const retryValidation = validateBlockAnnotations(retryAnnotations, outline.page_url, result.metadata.faq_block)
+      if (!retryValidation.passed) {
+        console.warn(
+          `[content-gen] Block validation still failing after retry on ${outline.page_url}; storing anyway:`,
+          retryValidation.errors.map(e => e.reason).join(' | ')
+        )
+      }
+    }
+
+    if (blockValidation.warnings.length > 0) {
+      console.log(
+        `[content-gen] Block warnings on ${outline.page_url}:`,
+        blockValidation.warnings.join(' | ')
+      )
+    }
+
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
     const wcTarget = targetWordCount(sections)
     const wcActual = countWords(result.content)
@@ -311,6 +421,9 @@ export async function generateSinglePage(
         internal_links: result.metadata.internal_links as unknown as Json,
         faq_block: result.metadata.faq_block as unknown as Json,
         llm_citation_note: result.metadata.llm_citation_note,
+        hero_block: result.metadata.hero_block,
+        hero_variant: result.metadata.hero_variant,
+        hero_image: result.metadata.hero_image,
         word_count_actual: wcActual,
         word_count_target: wcTarget || null,
         admin_approved_content: false,  // re-review required after every generation
