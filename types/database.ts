@@ -110,6 +110,7 @@ export type Database = {
           design_tokens: Json | null
           error_message: string | null
           id: string
+          nav_config: Json | null
           palette: Json | null
           phase: number
           session_id: string
@@ -122,6 +123,7 @@ export type Database = {
           design_tokens?: Json | null
           error_message?: string | null
           id?: string
+          nav_config?: Json | null
           palette?: Json | null
           phase?: number
           session_id: string
@@ -134,6 +136,7 @@ export type Database = {
           design_tokens?: Json | null
           error_message?: string | null
           id?: string
+          nav_config?: Json | null
           palette?: Json | null
           phase?: number
           session_id?: string
