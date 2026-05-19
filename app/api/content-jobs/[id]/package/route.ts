@@ -159,6 +159,50 @@ export async function POST(
     )
   }
 
+  // Pull session-uploaded assets from storage
+  const { data: assetRows } = await supabase
+    .from('assets')
+    .select('id, file_name, storage_path, asset_category, mime_type')
+    .eq('session_id', job.session_id)
+    .order('uploaded_at', { ascending: true })
+
+  const sessionAssets = assetRows ?? []
+
+  const assetEntries: Array<{ path: string; content: Buffer; fileName: string; category: string | null }> = []
+  const seenFilenames = new Set<string>()
+
+  await Promise.all(sessionAssets.map(async (asset) => {
+    const { data, error } = await supabase.storage
+      .from('session-assets')
+      .download(asset.storage_path)
+    if (error || !data) {
+      console.warn(`[package] Failed to download asset ${asset.storage_path}: ${error?.message}`)
+      return
+    }
+    const buffer = Buffer.from(await data.arrayBuffer())
+
+    // Use the original file_name. On collision, append a numeric suffix.
+    let cleanName = asset.file_name
+    let counter = 1
+    while (seenFilenames.has(cleanName)) {
+      const dotIdx = asset.file_name.lastIndexOf('.')
+      const stem = dotIdx > 0 ? asset.file_name.slice(0, dotIdx) : asset.file_name
+      const ext = dotIdx > 0 ? asset.file_name.slice(dotIdx) : ''
+      cleanName = `${stem}-${counter}${ext}`
+      counter++
+    }
+    seenFilenames.add(cleanName)
+
+    assetEntries.push({
+      path: `public/content-assets/${cleanName}`,
+      content: buffer,
+      fileName: cleanName,
+      category: asset.asset_category,
+    })
+  }))
+
+  console.log(`[package] Bundled ${assetEntries.length} session asset(s) into public/content-assets/`)
+
   // The brand-doc LLM call and the docx render are both async/expensive; run
   // them in parallel with each other (the deterministic stitches that depend
   // on neither stay synchronous and run after).
@@ -197,6 +241,19 @@ export async function POST(
 
   if (!brandJson) console.warn(`[package] Skipping brand.json — palette not locked`)
   if (!designJson) console.warn(`[package] Skipping design.json — design tokens not locked`)
+
+  // Override logo.primary with the actual uploaded logo asset filename
+  if (brandJson) {
+    const logoAsset =
+      assetEntries.find(a => a.category === 'logo') ??
+      assetEntries.find(a => /\blogo\b/i.test(a.fileName))
+    if (logoAsset) {
+      brandJson.logo = {
+        primary: logoAsset.fileName,
+        alt: brandJson.logo?.alt || `${brandJson.firm.name} logo`,
+      }
+    }
+  }
 
   const pagesWithFaq = pages.map(p => ({ ...p, content_markdown: appendFaqBlock(p) }))
 
@@ -245,6 +302,9 @@ export async function POST(
     { path: 'public/llms-full.txt', content: llmsFullTxt },
     { path: 'public/og-images/README.md', content: OG_IMAGES_README },
 
+    // Session-uploaded assets (logos, photos, etc.) — served from public/content-assets/
+    ...assetEntries.map(a => ({ path: a.path, content: a.content })),
+
     // Top-level — human review artifacts
     { path: `${folderName}.docx`, content: docxBuffer },
   ]
@@ -281,6 +341,7 @@ export async function POST(
     success: true,
     storagePath,
     pageCount: pageFiles.length,
+    assetCount: assetEntries.length,
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
   })
