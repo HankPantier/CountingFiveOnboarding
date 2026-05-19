@@ -214,23 +214,28 @@ export async function POST(
 
   // Assemble zip
   const entries = [
-    ...pageFiles.map(f => ({ path: `${folderName}/pages/${f.filename}`, content: f.content })),
-    { path: `${folderName}/${folderName}.docx`, content: docxBuffer },
-    { path: `${folderName}/brand.md`, content: brandDoc.fullDoc },
-    ...(designMd ? [{ path: `${folderName}/design.md`, content: designMd }] : []),
-    ...(brandJson ? [{ path: `${folderName}/brand.json`, content: JSON.stringify(brandJson, null, 2) }] : []),
-    ...(designJson ? [{ path: `${folderName}/design.json`, content: JSON.stringify(designJson, null, 2) }] : []),
-    { path: `${folderName}/nav.json`, content: JSON.stringify(navJson, null, 2) },
-    { path: `${folderName}/llms.txt`, content: llmsTxt },
-    { path: `${folderName}/llms-full.txt`, content: llmsFullTxt },
-    { path: `${folderName}/robots.txt`, content: robotsTxt },
-    { path: `${folderName}/sitemap.xml`, content: sitemapXml },
-    { path: `${folderName}/redirects.csv`, content: redirectsCsv },
-    { path: `${folderName}/og-images/README.md`, content: OG_IMAGES_README },
+    // content/ — editable source of truth, read at build time by the Phase II template
+    ...pageFiles.map(f => ({ path: `content/pages/${f.filename}`, content: f.content })),
+    { path: 'content/brand.md', content: brandDoc.fullDoc },
+    ...(designMd ? [{ path: 'content/design.md', content: designMd }] : []),
+    ...(brandJson ? [{ path: 'content/brand.json', content: JSON.stringify(brandJson, null, 2) }] : []),
+    ...(designJson ? [{ path: 'content/design.json', content: JSON.stringify(designJson, null, 2) }] : []),
+    { path: 'content/nav.json', content: JSON.stringify(navJson, null, 2) },
+    { path: 'content/redirects.csv', content: redirectsCsv },
+
+    // public/ — served at canonical URLs by Next.js
+    { path: 'public/robots.txt', content: robotsTxt },
+    { path: 'public/sitemap.xml', content: sitemapXml },
+    { path: 'public/llms.txt', content: llmsTxt },
+    { path: 'public/llms-full.txt', content: llmsFullTxt },
+    { path: 'public/og-images/README.md', content: OG_IMAGES_README },
+
+    // Top-level — human review artifacts
+    { path: `${folderName}.docx`, content: docxBuffer },
   ]
 
   if (errorsFile) {
-    entries.push({ path: `${folderName}/ERRORS.md`, content: errorsFile })
+    entries.push({ path: 'ERRORS.md', content: errorsFile })
   }
 
   const zipBuffer = await assembleZip(entries)
