@@ -33,7 +33,8 @@ function deriveInitialItems(
     return { primary: navConfig.primary.map(item => ({ ...item })), cta: navConfig.cta }
   }
   // Fall back to a flat one-level structure from the sitemap. Group by parent.
-  const filtered = sitemap.filter(e =>
+  // Defensive: sitemap may be null/undefined when called before Phase 2 confirms a sitemap.
+  const filtered = (sitemap ?? []).filter(e =>
     !e.status || !['redirect', 'consolidate'].includes(e.status)
   )
   const roots = filtered.filter(e => !e.parent || e.parent === '/')
