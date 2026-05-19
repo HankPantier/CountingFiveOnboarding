@@ -352,9 +352,40 @@ export async function generateSinglePage(
     }
 
     const annotations = parseBlockAnnotations(result.content)
+    const headingCount = (result.content.match(/^##\s+/gm) || []).length
     const blockValidation = validateBlockAnnotations(annotations, outline.page_url, result.metadata.faq_block)
 
-    if (!blockValidation.passed && blockValidation.errors.length > 0) {
+    // Missing-annotation check: if the body has ## sections but few or no
+    // annotations, Claude ignored the block-annotation rules. Force a retry
+    // with explicit feedback. We tolerate up to (headingCount - 1) missing
+    // annotations as warning-only (e.g. final CTA section); zero annotations
+    // when sections exist is always a fatal regeneration trigger.
+    const missingAnnotations = headingCount > 0 && annotations.length === 0
+
+    if (missingAnnotations) {
+      console.log(
+        `[content-gen] Missing block annotations on ${outline.page_url} (${headingCount} ## sections, 0 annotations) — forcing retry`
+      )
+      const correctionNote =
+        `Your previous draft had ${headingCount} "##" sections but ZERO block annotations. ` +
+        `Every "##" section heading MUST be preceded on the line above by an HTML comment like ` +
+        `\`<!-- block: feature-grid | variant: 3-col -->\`. Re-emit the entire page with a block ` +
+        `annotation on every "##" heading, using the catalog from the system prompt. ` +
+        `Do NOT use hero, hero-split, page-header, or faq-accordion inline.`
+      result = await generatePageContent(
+        outline.page_title, outline.page_url, outline.sections,
+        targetKeyword, secondaryKeywords, existingContent, competitorRefs,
+        schema, palette, session.website_url, cta,
+        [correctionNote]
+      )
+      // Re-parse after retry; if still empty, log and store anyway.
+      const retryAnnotations = parseBlockAnnotations(result.content)
+      if (retryAnnotations.length === 0) {
+        console.warn(
+          `[content-gen] Annotations still missing after retry on ${outline.page_url}; storing anyway (admin must manually annotate)`
+        )
+      }
+    } else if (!blockValidation.passed && blockValidation.errors.length > 0) {
       console.log(
         `[content-gen] Block validation errors on ${outline.page_url}:`,
         blockValidation.errors.map(e => `[section ${e.position}] ${e.reason}`).join(' | ')
