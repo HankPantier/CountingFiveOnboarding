@@ -91,7 +91,7 @@ export default function ClientReviewList({
                 onClick={() => setPreviewPageId(page.id)}
                 className="bg-brand-cyan text-white text-xs font-heading font-semibold px-3 py-1.5 rounded-pill hover:bg-brand-cyan/90 transition-all"
               >
-                Preview
+                View
               </button>
             </div>
           </div>

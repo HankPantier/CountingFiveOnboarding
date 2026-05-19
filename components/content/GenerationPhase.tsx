@@ -287,7 +287,7 @@ export default function GenerationPhase({
                         onClick={() => setPreviewPageId(page.id)}
                         className="text-xs font-body text-text-secondary hover:text-brand-cyan transition-colors"
                       >
-                        Preview
+                        View
                       </button>
                       <label className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer">
                         <input
