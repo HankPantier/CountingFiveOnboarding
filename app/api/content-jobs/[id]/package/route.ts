@@ -61,7 +61,7 @@ export async function POST(
   // Load job + session
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('session_id, confirmed_sitemap, palette, design_tokens')
+    .select('session_id, confirmed_sitemap, palette, design_tokens, nav_config')
     .eq('id', id)
     .single()
 
@@ -189,7 +189,10 @@ export async function POST(
   // outputs. Consumed by the client-site template repo.
   const brandJson = palette ? buildBrandJson(schema, palette) : null
   const designJson = designTokens ? buildDesignJson(designTokens) : null
-  const navJson = buildNavJson(sitemap as Parameters<typeof buildNavJson>[0])
+  const navJson = buildNavJson(
+    sitemap as Parameters<typeof buildNavJson>[0],
+    job.nav_config
+  )
 
   if (!brandJson) console.warn(`[package] Skipping brand.json — palette not locked`)
   if (!designJson) console.warn(`[package] Skipping design.json — design tokens not locked`)

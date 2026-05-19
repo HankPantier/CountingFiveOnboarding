@@ -16,6 +16,50 @@ export type SitemapEntry = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Validate that an unknown value has the shape of a NavJson.
+ * Checks:
+ * - Has a top-level `primary: NavItem[]`
+ * - Each NavItem has `label: string` and `url: string`
+ * - Children (if present) are also valid NavItems (recursive)
+ * - Optional `cta` with `label: string` and `url: string`
+ *
+ * Returns the typed value or null if validation fails.
+ */
+function validateNavJson(value: unknown): NavJson | null {
+  if (!value || typeof value !== 'object') return null
+
+  const obj = value as Record<string, unknown>
+
+  // Must have primary array
+  if (!Array.isArray(obj.primary)) return null
+
+  // Validate each NavItem in primary
+  const isValidNavItem = (item: unknown): item is NavItem => {
+    if (!item || typeof item !== 'object') return false
+    const navItem = item as Record<string, unknown>
+    if (typeof navItem.label !== 'string' || typeof navItem.url !== 'string') return false
+    // If children exist, validate them recursively
+    if (navItem.children !== undefined) {
+      if (!Array.isArray(navItem.children)) return false
+      return navItem.children.every(isValidNavItem)
+    }
+    return true
+  }
+
+  if (!obj.primary.every(isValidNavItem)) return null
+
+  // Validate optional cta
+  if (obj.cta !== undefined) {
+    if (!obj.cta || typeof obj.cta !== 'object') return null
+    const cta = obj.cta as Record<string, unknown>
+    if (typeof cta.label !== 'string' || typeof cta.url !== 'string') return null
+  }
+
+  // Return a deep clone to avoid mutation
+  return JSON.parse(JSON.stringify(obj)) as NavJson
+}
+
+/**
  * Humanize a URL slug into a label.
  * e.g., '/services/virtual-cfo-advisory' → 'Virtual Cfo Advisory'
  */
@@ -73,7 +117,22 @@ function isRootItem(entry: SitemapEntry): boolean {
 // Main builder
 // ---------------------------------------------------------------------------
 
-export function buildNavJson(sitemap: SitemapEntry[]): NavJson {
+export function buildNavJson(
+  sitemap: SitemapEntry[],
+  curated?: unknown
+): NavJson {
+  // If curated config is provided and passes validation, use it
+  if (curated !== null && curated !== undefined) {
+    const validated = validateNavJson(curated)
+    if (validated) {
+      return validated
+    }
+    // Validation failed — log warning and fall through to sitemap logic
+    console.warn(
+      '[nav-json-builder] nav_config failed validation — falling back to sitemap'
+    )
+  }
+
   // Filter out redirect/consolidate entries
   const included = sitemap.filter(shouldInclude)
 
