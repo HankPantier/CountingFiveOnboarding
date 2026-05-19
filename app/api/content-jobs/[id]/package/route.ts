@@ -10,6 +10,7 @@ import { generateBrandDoc } from '@/lib/content/brand-doc-builder'
 import { buildSitemapXml } from '@/lib/content/sitemap-xml-builder'
 import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
+import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
@@ -210,7 +211,21 @@ export async function POST(
   const llmsFullTxt = buildLlmsFullTxt(firmName, brandDoc.fullDoc, sitemap, pages)
   const robotsTxt = buildRobotsTxt(session.website_url)
   const sitemapXml = buildSitemapXml(session.website_url, sitemap)
-  const redirectsCsv = buildRedirectsCsv(schema.current_sitemap)
+  const redirectsResult = buildRedirectsCsv(
+    schema.current_sitemap,
+    sitemap as Parameters<typeof buildRedirectsCsv>[1]
+  )
+  const redirectsCsv = redirectsResult.csv
+  const redirectIssues: RedirectIssue[] = redirectsResult.issues
+
+  if (redirectIssues.length > 0) {
+    const errors = redirectIssues.filter(i => i.severity === 'error').length
+    const warnings = redirectIssues.filter(i => i.severity === 'warning').length
+    console.warn(
+      `[package] Redirect validation: ${errors} error(s), ${warnings} warning(s)`,
+      redirectIssues.map(i => `[${i.severity}] ${i.oldUrl}: ${i.reason}`).join(' | ')
+    )
+  }
 
   // Assemble zip
   const entries = [
@@ -267,5 +282,6 @@ export async function POST(
     storagePath,
     pageCount: pageFiles.length,
     sizeKB: Math.round(zipBuffer.length / 1024),
+    redirectIssues,
   })
 }
