@@ -59,6 +59,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .eq('status', 'approved'),
   ])
 
+  // Build a set of session IDs that already have a content_job — used to toggle
+  // the row action between "Start content" and "View content" for approved sessions.
+  const sessionIds = (sessions ?? []).map(s => s.id)
+  const { data: contentJobs } = sessionIds.length
+    ? await supabase
+        .from('content_jobs')
+        .select('session_id')
+        .in('session_id', sessionIds)
+    : { data: [] as Array<{ session_id: string }> }
+  const contentJobSessionIds = new Set((contentJobs ?? []).map(j => j.session_id))
+
   const basecampConnected = !!bcToken
   const justConnected = sp.basecamp === 'connected'
 
@@ -152,7 +163,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <SessionRowActions sessionId={session.id} />
+                    <SessionRowActions
+                      sessionId={session.id}
+                      sessionStatus={session.status}
+                      hasContentJob={contentJobSessionIds.has(session.id)}
+                    />
                   </td>
                 </tr>
               ))}

@@ -3,7 +3,15 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-export default function SessionRowActions({ sessionId }: { sessionId: string }) {
+export default function SessionRowActions({
+  sessionId,
+  sessionStatus,
+  hasContentJob,
+}: {
+  sessionId: string
+  sessionStatus?: string
+  hasContentJob?: boolean
+}) {
   const [copied, setCopied] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const router = useRouter()
@@ -27,6 +35,8 @@ export default function SessionRowActions({ sessionId }: { sessionId: string }) 
     }
   }
 
+  const showContentLink = sessionStatus === 'approved'
+
   return (
     <div className="flex items-center justify-end gap-4">
       <button
@@ -37,10 +47,19 @@ export default function SessionRowActions({ sessionId }: { sessionId: string }) 
       </button>
       <Link
         href={`/admin/sessions/${sessionId}`}
-        className="text-brand-cyan hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
+        className="text-text-secondary hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
       >
-        View
+        Session
       </Link>
+      {showContentLink && (
+        <Link
+          href={`/admin/content/${sessionId}`}
+          className="text-brand-cyan hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
+          title={hasContentJob ? 'Open the content generation workflow for this session' : 'Begin the content generation workflow for this session'}
+        >
+          {hasContentJob ? 'View content →' : 'Start content →'}
+        </Link>
+      )}
       <button
         onClick={handleDelete}
         disabled={deleting}
