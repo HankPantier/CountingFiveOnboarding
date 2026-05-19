@@ -1,6 +1,7 @@
 import {
   parseBlockAnnotations,
   validateBlockAnnotations,
+  applyCoercions,
 } from '../lib/content/block-annotation-validator'
 import { appendFaqBlock } from '../lib/content/deliverable-builder'
 import type { Database } from '../types/database'
@@ -135,15 +136,20 @@ const r6 = validateBlockAnnotations(ann_unknown, '/test', [])
 assert('case 6: r6.passed === false', r6.passed === false)
 assert('case 6: r6.errors.some(e => /unknown/i.test(e.reason))', r6.errors.some(e => /unknown/i.test(e.reason)))
 
-// Case 7: fatal error — invalid variant
+// Case 7: invalid variant — coerced to first valid (was previously fatal, now downgraded
+// to warning + coercion so we don't pay a full-page retry for a single bad variant token).
 const ann_bad_variant = parseBlockAnnotations(`<!-- block: feature-grid | variant: bogus-variant -->
 ## Heading
 
 Body.
 `)
 const r7 = validateBlockAnnotations(ann_bad_variant, '/test', [])
-assert('case 7: r7.passed === false', r7.passed === false)
-assert('case 7: r7.errors.some(e => /variant/i.test(e.reason))', r7.errors.some(e => /variant/i.test(e.reason)))
+assert('case 7: r7.passed === true (variant errors no longer fatal)', r7.passed === true)
+assert('case 7: r7.coercions has one entry', r7.coercions.length === 1)
+assert('case 7: r7.coercions[0] targets feature-grid', r7.coercions[0].blockId === 'feature-grid')
+assert('case 7: r7.coercions[0] original is bogus-variant', r7.coercions[0].originalVariant === 'bogus-variant')
+assert('case 7: r7.coercions[0] coerced to 3-col (first valid)', r7.coercions[0].coercedVariant === '3-col')
+assert('case 7: r7.warnings mentions the variant', r7.warnings.some(w => /variant/i.test(w)))
 
 // Case 8: fatal error — stats-bar without numbers
 const ann_stats = parseBlockAnnotations(`<!-- block: stats-bar | variant: 3-up -->
@@ -274,6 +280,35 @@ const page15 = makePage({
 })
 const out15 = appendFaqBlock(page15)
 assert("case 15: out15 === ''", out15 === '')
+
+// ---------------------------------------------------------------------------
+// Test cases — applyCoercions (variant rewrite)
+// ---------------------------------------------------------------------------
+console.log('\n--- applyCoercions ---')
+
+const dirty = `<!-- block: feature-grid | variant: default -->
+## Section A
+
+Body.
+
+<!-- block: intro-text | variant: default -->
+## Section B
+
+Body.
+
+<!-- block: content-split | variant: image-right | image: foo.jpg -->
+## Section C
+
+Body.
+`
+const annDirty = parseBlockAnnotations(dirty)
+const rDirty = validateBlockAnnotations(annDirty, '/test', [])
+assert('case 16: dirty page has 2 coercions', rDirty.coercions.length === 2)
+const fixed = applyCoercions(dirty, rDirty.coercions)
+assert('case 16: fixed includes "feature-grid | variant: 3-col"', fixed.includes('feature-grid | variant: 3-col'))
+assert('case 16: fixed includes "intro-text | variant: centered"', fixed.includes('intro-text | variant: centered'))
+assert('case 16: fixed preserves untouched content-split annotation', fixed.includes('content-split | variant: image-right | image: foo.jpg'))
+assert('case 16: fixed does NOT contain "variant: default" anywhere', !fixed.includes('variant: default'))
 
 // ---------------------------------------------------------------------------
 // Summary

@@ -26,10 +26,18 @@ export type ValidationError = {
   suggestion?: string // block ID we'd suggest instead
 }
 
+export type AnnotationCoercion = {
+  position: number
+  blockId: string
+  originalVariant: string
+  coercedVariant: string
+}
+
 export type ValidationResult = {
   passed: boolean // true if no fatal errors (warnings don't affect this)
   warnings: string[]
   errors: ValidationError[]
+  coercions: AnnotationCoercion[] // invalid variants that were auto-fixed
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +138,7 @@ export function validateBlockAnnotations(
 ): ValidationResult {
   const errors: ValidationError[] = []
   const warnings: string[] = []
+  const coercions: AnnotationCoercion[] = []
   const total = annotations.length
 
   for (let i = 0; i < total; i++) {
@@ -183,17 +192,21 @@ export function validateBlockAnnotations(
     }
 
     // ------------------------------------------------------------------
-    // Fatal rule 4: invalid variant
+    // Coercion rule 4: invalid variant (downgrade from fatal — auto-fix to first valid)
     // ------------------------------------------------------------------
     if (variant !== undefined && catalogEntry.variants.length > 0) {
       if (!catalogEntry.variants.includes(variant)) {
-        errors.push({
+        const fallback = catalogEntry.variants[0]
+        coercions.push({
           position,
-          headingText,
           blockId,
-          reason: `invalid variant '${variant}' for block '${blockId}' (valid: ${catalogEntry.variants.join(', ')})`,
+          originalVariant: variant,
+          coercedVariant: fallback,
         })
-        // Don't continue — remaining content rules can still run
+        warnings.push(
+          `invalid variant '${variant}' on '${blockId}' at position ${position} — auto-coerced to '${fallback}' (valid: ${catalogEntry.variants.join(', ')})`
+        )
+        // Don't continue — remaining content rules can still run on this section
       }
     }
 
@@ -334,7 +347,35 @@ export function validateBlockAnnotations(
     passed: errors.length === 0,
     warnings,
     errors,
+    coercions,
   }
+}
+
+// ---------------------------------------------------------------------------
+// applyCoercions — given the raw markdown body and coercions from validation,
+// rewrite the offending `<!-- block: <id> | variant: <bad> ... -->` annotations
+// in place so the stored content_markdown carries valid variants downstream.
+//
+// Conservative: only substitutes the `variant: <oldValue>` token inside an
+// annotation tag for the matching block-id. Other annotation parts (image,
+// extra keys) are preserved. If a coercion doesn't match anything in the
+// markdown (e.g. someone hand-edited the annotation between parse and apply),
+// it's a no-op for that entry.
+// ---------------------------------------------------------------------------
+export function applyCoercions(markdown: string, coercions: AnnotationCoercion[]): string {
+  let result = markdown
+  for (const c of coercions) {
+    // Match the annotation containing this exact blockId + originalVariant
+    // pair, then rewrite the variant token. Escape regex-special chars in
+    // the original variant just in case.
+    const escapedVariant = c.originalVariant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const pattern = new RegExp(
+      `(<!--\\s*block:\\s*${c.blockId}\\s*\\|\\s*variant:\\s*)${escapedVariant}(\\s*(?:\\||-->))`,
+      'g'
+    )
+    result = result.replace(pattern, `$1${c.coercedVariant}$2`)
+  }
+  return result
 }
 
 // ---------------------------------------------------------------------------

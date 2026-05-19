@@ -3,7 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
-import { parseBlockAnnotations, validateBlockAnnotations } from './block-annotation-validator'
+import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { countWords, targetWordCount } from './word-count-validator'
 import type { SessionSchema } from '@/types/session-schema'
@@ -171,14 +171,21 @@ DO NOT use these inline (they are page-level only):
 
 DO NOT annotate with faq-accordion — it is auto-appended by the deliverable builder.
 
-VARIANT RULES:
+VARIANT RULES — every variant value must come from the block's catalog above. NEVER emit \`variant: default\` (it is not a real variant for any block); pick a specific value from the catalog or omit the \`variant:\` key entirely.
 - content-split: alternate image-right and image-left across consecutive sections
-- feature-grid: default to 3-col; use 4-col only if 8+ items
-- service-cards: default to 3-col; use 2-col if descriptions exceed 4 sentences
+- feature-grid: 3-col by default; 4-col only if 8+ items
+- service-cards: 3-col by default; 2-col if descriptions exceed 4 sentences
 - team-grid: 2-col ≤4 people, 3-col 5–9, 4-col 10+
-- cta-banner: use color-bg unless a specific background image is referenced
-- form: use contact variant unless quote or newsletter clearly fits
-- pricing: match tier count to packages described
+- cta-banner: color-bg unless a specific background image is referenced
+- form: contact variant unless quote or newsletter clearly fits
+- pricing: match tier count to packages described (2-tier / 3-tier / 4-tier)
+- intro-text: centered by default; left-aligned only when feeding into left-aligned content
+- checklist-section: standalone by default; with-image only when an image is referenced
+- process-steps: vertical by default; horizontal only for short 3–5-step flows
+- testimonials: grid by default; carousel only when 4+ testimonials
+- stats-bar: 3-up by default; 4-up if you have exactly 4 numbers
+- industry-cards: 3-col by default; 4-col only if 8+ industries
+- content-cards: 3-col by default; 2-col for longer excerpts
 
 HERO BLOCK (page-level — return in metadata, NOT inline):
 Choose ONE hero block for the page opener:
@@ -425,10 +432,27 @@ export async function generateSinglePage(
       }
     }
 
-    if (blockValidation.warnings.length > 0) {
+    // Apply variant coercions (invalid variant values like `default` get
+    // auto-fixed to the block's first valid variant). Done after any retry
+    // so we coerce on the latest result.content.
+    const finalAnnotations = parseBlockAnnotations(result.content)
+    const finalValidation = validateBlockAnnotations(
+      finalAnnotations,
+      outline.page_url,
+      result.metadata.faq_block
+    )
+    if (finalValidation.coercions.length > 0) {
+      console.log(
+        `[content-gen] Coerced ${finalValidation.coercions.length} variant(s) on ${outline.page_url}:`,
+        finalValidation.coercions.map(c => `${c.blockId}: '${c.originalVariant}' → '${c.coercedVariant}'`).join(' | ')
+      )
+      result.content = applyCoercions(result.content, finalValidation.coercions)
+    }
+
+    if (finalValidation.warnings.length > 0) {
       console.log(
         `[content-gen] Block warnings on ${outline.page_url}:`,
-        blockValidation.warnings.join(' | ')
+        finalValidation.warnings.join(' | ')
       )
     }
 
