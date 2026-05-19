@@ -315,7 +315,7 @@ export default function GenerationPhase({
                         disabled={regenBusy || page.status !== 'complete'}
                         className="text-xs font-body text-text-secondary hover:text-brand-cyan transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {regenBusy ? '…' : 'Regenerate'}
+                        {regenBusy ? '…' : 'Regen'}
                       </button>
                     </>
                   )}
