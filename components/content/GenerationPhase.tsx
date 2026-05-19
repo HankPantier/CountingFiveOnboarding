@@ -38,17 +38,21 @@ type GenStatus = {
   pages: PageStatus[]
 }
 
-const STATUS_ICONS: Record<string, { icon: string; cls: string }> = {
-  pending:  { icon: '○', cls: 'text-text-muted' },
-  running:  { icon: '◌', cls: 'text-blue-500 animate-pulse' },
-  complete: { icon: '●', cls: 'text-green-600' },
-  error:    { icon: '✗', cls: 'text-red-500' },
+const STATUS_ICONS: Record<string, { icon: string; cls: string; title: string }> = {
+  pending:  { icon: '○', cls: 'text-text-muted', title: 'Pending — not yet generated' },
+  running:  { icon: '◌', cls: 'text-blue-500 animate-pulse', title: 'Running — Claude is generating this page now' },
+  complete: { icon: '●', cls: 'text-green-600', title: 'Complete — content has been generated' },
+  error:    { icon: '✗', cls: 'text-red-500', title: 'Error — generation failed; check server logs and re-run' },
 }
 
-function wordCountBadge(actual: number | null | undefined, target: number | null | undefined): { label: string; cls: string } | null {
+function wordCountBadge(actual: number | null | undefined, target: number | null | undefined): { label: string; cls: string; title: string } | null {
   if (actual == null) return null
   if (!target) {
-    return { label: `${actual} words`, cls: 'text-text-muted bg-surface-subtle' }
+    return {
+      label: `${actual} words`,
+      cls: 'text-text-muted bg-surface-subtle',
+      title: `${actual} words generated (no target was set for this outline)`,
+    }
   }
   const variance = (actual - target) / target
   const pct = Math.round(variance * 100)
@@ -56,9 +60,14 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
     return {
       label: `⚠ ${actual} / ${target} (${pct >= 0 ? '+' : ''}${pct}%)`,
       cls: 'text-amber-800 bg-amber-50',
+      title: `${actual} words generated vs target of ${target} (${pct >= 0 ? '+' : ''}${pct}% off target). Flagged when actual is more than ±25% from target — review whether the content is too thin or too verbose.`,
     }
   }
-  return { label: `${actual} / ${target}`, cls: 'text-text-muted bg-surface-subtle' }
+  return {
+    label: `${actual} / ${target}`,
+    cls: 'text-text-muted bg-surface-subtle',
+    title: `${actual} words generated vs target of ${target} (${pct >= 0 ? '+' : ''}${pct}%). Within the acceptable ±25% range.`,
+  }
 }
 
 export default function GenerationPhase({
@@ -261,10 +270,13 @@ export default function GenerationPhase({
                 style={{ paddingLeft: `${0.75 + depth * 1.25}rem`, paddingRight: '0.75rem' }}
               >
                 <div className="flex items-center gap-2 py-1.5">
-                  <span className={`text-sm ${s.cls}`}>{s.icon}</span>
+                  <span className={`text-sm ${s.cls}`} title={s.title}>{s.icon}</span>
                   <span className="text-sm font-body text-text-primary flex-1 truncate">{page.title}</span>
                   {wcBadge && (
-                    <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${wcBadge.cls}`}>
+                    <span
+                      className={`text-xs font-mono px-1.5 py-0.5 rounded ${wcBadge.cls}`}
+                      title={wcBadge.title}
+                    >
                       {wcBadge.label}
                     </span>
                   )}
@@ -275,6 +287,11 @@ export default function GenerationPhase({
                           ? 'text-green-700 bg-green-50'
                           : 'text-amber-700 bg-amber-50'
                       }`}
+                      title={
+                        page.clientApproved
+                          ? 'Client has reviewed and approved this page via the client review URL.'
+                          : 'This page is flagged for client review. The deliverable cannot be assembled until the client approves it via the review URL.'
+                      }
                     >
                       {page.clientApproved ? 'Client ✓' : 'Awaiting client'}
                     </span>
@@ -286,10 +303,14 @@ export default function GenerationPhase({
                         type="button"
                         onClick={() => setPreviewPageId(page.id)}
                         className="text-xs font-body text-text-secondary hover:text-brand-cyan transition-colors"
+                        title="Open the rendered + raw view of this page; edit metadata or markdown inline"
                       >
                         View
                       </button>
-                      <label className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer">
+                      <label
+                        className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer"
+                        title="Flag this page for client review. Flagged pages appear in the public review URL and gate the deliverable until the client approves."
+                      >
                         <input
                           type="checkbox"
                           checked={page.needsClientReview ?? false}
@@ -299,7 +320,10 @@ export default function GenerationPhase({
                         />
                         Client review
                       </label>
-                      <label className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer">
+                      <label
+                        className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer"
+                        title="Admin approval. Required before the deliverable package can be assembled. Resets to false whenever content or the outline is edited."
+                      >
                         <input
                           type="checkbox"
                           checked={page.approved ?? false}
@@ -314,6 +338,7 @@ export default function GenerationPhase({
                         onClick={() => regenerate(page)}
                         disabled={regenBusy || page.status !== 'complete'}
                         className="text-xs font-body text-text-secondary hover:text-brand-cyan transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Re-run Claude to generate fresh content for this page. Approval (both admin and client) resets to false on regeneration."
                       >
                         {regenBusy ? '…' : 'Regen'}
                       </button>
