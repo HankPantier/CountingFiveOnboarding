@@ -27,6 +27,7 @@ export async function PATCH(
   if (body.palette !== undefined) updates.palette = body.palette
   if (body.design_tokens !== undefined) updates.design_tokens = body.design_tokens
   if (body.confirmed_sitemap !== undefined) updates.confirmed_sitemap = body.confirmed_sitemap
+  if (body.nav_config !== undefined) updates.nav_config = body.nav_config
   if (body.phase !== undefined) updates.phase = body.phase
   if (body.status !== undefined) {
     const validStatuses = ['active', 'complete', 'error']

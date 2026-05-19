@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import PhaseStepper from '@/components/content/PhaseStepper'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
+import type { NavJson } from '@/types/nav-json'
 
 export default async function ContentWorkflowPage({
   params,
@@ -53,8 +54,9 @@ export default async function ContentWorkflowPage({
   const existingPalette = (contentJob?.palette ?? null) as import('@/types/palette').PaletteData | null
   const existingTokens = (contentJob?.design_tokens ?? null) as DesignTokens | null
   const brand = (session.schema_data as SessionSchema | null)?.brand
-  const confirmedSitemap = (contentJob?.confirmed_sitemap ?? []) as Array<unknown>
+  const confirmedSitemap = (contentJob?.confirmed_sitemap ?? []) as Array<{ url: string; title: string; parent?: string; status?: string }>
   const confirmedPageCount = confirmedSitemap.length
+  const navConfig = (contentJob?.nav_config ?? null) as NavJson | null
 
   return (
     <main className="p-8 max-w-3xl mx-auto">
@@ -89,6 +91,8 @@ export default async function ContentWorkflowPage({
         existingTokens={existingTokens}
         brand={brand}
         confirmedPageCount={confirmedPageCount}
+        navConfig={navConfig}
+        confirmedSitemap={confirmedSitemap}
       />
     </main>
   )

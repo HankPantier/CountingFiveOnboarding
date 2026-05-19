@@ -9,6 +9,7 @@ import type { PhaseStatus } from './PhaseStatusBadge'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
+import type { NavJson } from '@/types/nav-json'
 
 export function getPhaseStatus(jobPhase: number, thisPhase: number): PhaseStatus {
   if (thisPhase < jobPhase) return 'complete'
@@ -16,6 +17,8 @@ export function getPhaseStatus(jobPhase: number, thisPhase: number): PhaseStatus
   if (thisPhase === jobPhase + 1) return 'active'
   return 'locked'
 }
+
+type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
 
 export default function PhaseStepper({
   currentPhase,
@@ -25,6 +28,8 @@ export default function PhaseStepper({
   existingTokens,
   brand,
   confirmedPageCount,
+  navConfig,
+  confirmedSitemap,
 }: {
   currentPhase: number
   sessionId: string
@@ -33,6 +38,8 @@ export default function PhaseStepper({
   existingTokens: DesignTokens | null
   brand: SessionSchema['brand']
   confirmedPageCount: number
+  navConfig: NavJson | null
+  confirmedSitemap: SitemapEntry[]
 }) {
   return (
     <div className="space-y-4">
@@ -79,7 +86,12 @@ export default function PhaseStepper({
           content = <GenerationPhase contentJobId={contentJobId} />
         } else if (phase === 6) {
           content = (
-            <DeliverablesPhase contentJobId={contentJobId} pageCount={confirmedPageCount} />
+            <DeliverablesPhase
+              contentJobId={contentJobId}
+              pageCount={confirmedPageCount}
+              initialNavConfig={navConfig}
+              confirmedSitemap={confirmedSitemap}
+            />
           )
         }
 

@@ -1,6 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import NavCurationPhase from './NavCurationPhase'
+import type { NavJson } from '@/types/nav-json'
+
+type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
 
 type ApprovalSnapshot = {
   total: number
@@ -14,9 +18,13 @@ type Unapproved = { id?: string; page_title?: string; page_url?: string }
 export default function DeliverablesPhase({
   contentJobId,
   pageCount,
+  initialNavConfig,
+  confirmedSitemap,
 }: {
   contentJobId: string
   pageCount: number
+  initialNavConfig: NavJson | null
+  confirmedSitemap: SitemapEntry[]
 }) {
   const [packaging, setPackaging] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -100,7 +108,19 @@ export default function DeliverablesPhase({
   const generationDone = approval !== null && approval.total > 0 && approval.complete >= approval.total
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Nav Curation */}
+      <section className="border border-border-default rounded-lg p-4 space-y-3">
+        <h3 className="text-lg font-semibold font-heading">Curate Navigation</h3>
+        <NavCurationPhase
+          contentJobId={contentJobId}
+          initialNavConfig={initialNavConfig}
+          confirmedSitemap={confirmedSitemap}
+        />
+      </section>
+
+      {/* Package Assembly */}
+      <div className="space-y-4">
       {generationDone ? (
         <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-body rounded-lg px-4 py-3">
           Content generation complete.
@@ -178,6 +198,7 @@ export default function DeliverablesPhase({
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }
