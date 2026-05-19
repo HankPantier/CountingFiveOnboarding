@@ -143,6 +143,12 @@ export default function NavCurationPhase({
   const [error, setError] = useState<string | null>(null)
   const [savedAt, setSavedAt] = useState<string | null>(initialNavConfig ? 'Loaded saved config' : null)
 
+  // @dnd-kit generates accessibility-announcement IDs that don't line up between
+  // server render and client mount (DndDescribedBy-0 vs DndDescribedBy-1), causing
+  // a hydration mismatch. Mount-gate the DndContext so it only renders on the client.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -211,25 +217,35 @@ export default function NavCurationPhase({
         </p>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={items.map(itemKey)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-1.5">
-            {items.length === 0 && (
-              <p className="text-sm font-body text-text-muted py-2">No nav items.</p>
-            )}
-            {items.map((item, i) => (
-              <SortableRow
-                key={itemKey(item)}
-                item={item}
-                index={i}
-                onChange={(next) => updateItem(i, next)}
-                onRemove={() => removeItem(i)}
-                onToggleHidden={() => toggleHidden(i)}
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      {mounted ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={items.map(itemKey)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1.5">
+              {items.length === 0 && (
+                <p className="text-sm font-body text-text-muted py-2">No nav items.</p>
+              )}
+              {items.map((item, i) => (
+                <SortableRow
+                  key={itemKey(item)}
+                  item={item}
+                  index={i}
+                  onChange={(next) => updateItem(i, next)}
+                  onRemove={() => removeItem(i)}
+                  onToggleHidden={() => toggleHidden(i)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <div className="space-y-1.5">
+          {items.length === 0 ? (
+            <p className="text-sm font-body text-text-muted py-2">No nav items.</p>
+          ) : (
+            <p className="text-sm font-body text-text-muted py-2">Loading nav editor…</p>
+          )}
+        </div>
+      )}
 
       <div className="pt-2 space-y-2">
         <h4 className="text-sm font-heading font-semibold text-text-primary">Header CTA (optional)</h4>
