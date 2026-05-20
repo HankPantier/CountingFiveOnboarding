@@ -16,6 +16,7 @@ import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { buildNavJson } from '@/lib/content/nav-json-builder'
+import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -252,6 +253,28 @@ export async function POST(
         primary: logoAsset.fileName,
         alt: brandJson.logo?.alt || `${brandJson.firm.name} logo`,
       }
+    } else if (palette && designJson?.typography?.headingFont) {
+      // No uploaded logo — generate a branded SVG wordmark so the NavBar
+      // ships with the firm name in the heading font + primary color
+      // instead of falling back to plain text. Synthesized at package time
+      // (not at zip-receive time) so the file lands inside the deliverable
+      // under public/content-assets/ exactly like a user-uploaded logo.
+      const wordmark = generateWordmarkSvg({
+        firmName: brandJson.firm.name || firmName,
+        primaryColor: palette.primary.hex,
+        headingFont: designJson.typography.headingFont,
+      })
+      assetEntries.push({
+        path: `public/content-assets/${wordmark.filename}`,
+        content: Buffer.from(wordmark.svg, 'utf-8'),
+        fileName: wordmark.filename,
+        category: 'logo',
+      })
+      brandJson.logo = {
+        primary: wordmark.filename,
+        alt: brandJson.logo?.alt || `${brandJson.firm.name} logo`,
+      }
+      console.log(`[package] No logo upload found — generated wordmark ${wordmark.filename}`)
     }
   }
 

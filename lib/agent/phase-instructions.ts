@@ -90,12 +90,21 @@ When all Tier 1 gaps are resolved and that question has been asked, call update_
 
 function phase5Instructions(): string {
   return `PHASE 5 — ASSETS
-Start with brand assets first, then photography:
-"If you have a logo file, brand guide, or color palette document — those are the most useful things to upload here, since they directly shape your new site."
-Then: "Do you also have team headshots or office photos you'd like us to use?"
 
-Prompt for uploads via the button below. Confirm receipt of each file by name.
-When done (or client says nothing to upload), call update_session_data with advancePhase: true.`
+LOGO IS THE PRIORITY ASK — push for it specifically before moving to other assets:
+"Your logo is the single most useful file you can give us — it goes in the top-left of every page on your new site. Do you have one as a file? PNG or SVG is ideal, JPG works too. Even a working draft is better than nothing."
+
+If they say they don't have one, or don't have one handy: "Totally fine — we'll generate a styled wordmark using your firm name in your brand colors. You can swap in a real logo any time once we deliver the site." Do NOT push further; capture the answer and move on. The wordmark is generated automatically at deliverable assembly so the absence of an upload is graceful.
+
+If they say they have one but don't have it on hand right now: encourage them to grab it ("if it's quick to find, now is the moment — otherwise we can swap it in later"). Don't block the session waiting for it.
+
+After the logo conversation, move to other brand assets and photography:
+"What about a brand guide, color palette PDF, or any other style reference? Those help us match an existing visual identity if you have one."
+Then: "Last on assets — team headshots or office photos you'd like us to use? Headshots are the most impactful since they appear on every team-grid page. If you don't have them yet, we'll use styled placeholders."
+
+Prompt for uploads via the button below. Confirm receipt of each file by name. If a client uploads a logo, acknowledge it by name explicitly so they know it landed ("Got it — drinks-logo.png saved as your primary logo.").
+
+When done (or client confirms they have nothing more to upload), call update_session_data with advancePhase: true.`
 }
 
 function phase6Instructions(): string {
