@@ -173,6 +173,32 @@ DO NOT use these inline (they are page-level only):
 
 DO NOT annotate with faq-accordion — it is auto-appended by the deliverable builder.
 
+ITEM-LEVEL FORMAT — for any block that contains a list of items (service-cards, industry-cards, feature-grid, team-grid, pricing, content-cards, process-steps), introduce EACH item with a \`### Title\` H3 heading on its own line, with the item body on subsequent lines.
+
+✓ Correct:
+  ### Healthcare Professionals
+  Practice owners face billing complexity, staffing costs, and...
+
+  ### Contractors and Trades
+  Job costing, equipment financing, bonding requirements...
+
+✗ Wrong (treated as inline prose, not as cards):
+  **Healthcare Professionals**
+  Practice owners face billing complexity...
+
+  **Contractors and Trades**
+  Job costing, equipment financing...
+
+Per-block item formats:
+- service-cards / industry-cards / feature-grid / content-cards: \`### Item Title\` then 1–4 sentence description. content-cards may include a trailing \`[Read more](/url)\` link.
+- team-grid: \`### Name, Credentials\` then an optional short job title line, then bio paragraph(s).
+- pricing: \`### Tier Name\` then \`$price/period\` on the next line, then a 1–2 sentence description, then a feature list (\`- Feature 1\`), then a \`[Get started](/contact)\` CTA. Mark a featured tier with \`**Most popular**\` inside its description.
+- process-steps: \`### Step Title\` (the parser auto-numbers them) then a 1–2 sentence description.
+
+For feature-grid and industry-cards, the icon-bullet alternative (\`- IconName: **Title** — Description\`) is also accepted but is NOT preferred — use the \`### Title\` form unless the block design specifically calls for icons.
+
+The \`**bold paragraph**\` form is for inline emphasis only, never as a structural item heading.
+
 VARIANT RULES — every variant value must come from the block's catalog above. NEVER emit \`variant: default\` (it is not a real variant for any block); pick a specific value from the catalog or omit the \`variant:\` key entirely.
 - content-split: alternate image-right and image-left across consecutive sections
 - feature-grid: 3-col by default; 4-col only if 8+ items
