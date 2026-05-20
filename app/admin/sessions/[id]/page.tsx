@@ -5,6 +5,7 @@ import StatusBanner from '@/components/admin/StatusBanner'
 import SchemaViewer from '@/components/admin/SchemaViewer'
 import AssetsViewer from '@/components/admin/AssetsViewer'
 import TeamPhotoManager from '@/components/admin/TeamPhotoManager'
+import StockPhotoManager from '@/components/admin/StockPhotoManager'
 import ApproveButton from '@/components/admin/ApproveButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
 import CopyLinkButton from '@/components/admin/CopyLinkButton'
@@ -72,6 +73,7 @@ export default async function SessionDetailPage({
             }
             assets={assets ?? []}
           />
+          <StockPhotoManager sessionId={id} assets={assets ?? []} />
           <AssetsViewer assets={assets ?? []} />
         </div>
         {session.pdf_url && (
