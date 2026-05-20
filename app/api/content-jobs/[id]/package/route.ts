@@ -18,6 +18,8 @@ import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { buildNavJson } from '@/lib/content/nav-json-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
+import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
+import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto } from '@/lib/content/stock-photo-resolver'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -161,7 +163,41 @@ export async function POST(
     )
   }
 
-  // Pull session-uploaded assets from storage
+  // Stock-photo resolution: for any page with a hero_image_query but no
+  // matching uploaded asset, fetch from Pexels and persist as a real
+  // assets-table row in this session. Brand-aware: deriveImageStyleSuffix
+  // computes a visual style suffix from palette + tone adjectives so every
+  // photo on the site shares aesthetic. Pulls the existing asset list once
+  // to know what's already resolved (deterministic reruns).
+  const palettePreResolve = job.palette as PaletteData | null
+  const styleSuffix = deriveImageStyleSuffix(palettePreResolve, schema.brand)
+  let stockPhotoResolutions: ResolvedStockPhoto[] = []
+  const { data: preResolveAssets } = await supabase
+    .from('assets')
+    .select('*')
+    .eq('session_id', job.session_id)
+  if (palettePreResolve) {
+    stockPhotoResolutions = await resolveStockPhotos(
+      {
+        sessionId: job.session_id,
+        apiKey: process.env.PEXELS_API_KEY ?? '',
+        styleSuffix,
+        existingAssets: preResolveAssets ?? [],
+        pages: pages.map(p => ({
+          page_url: p.page_url,
+          hero_image: p.hero_image,
+          hero_image_query: p.hero_image_query,
+        })),
+      },
+      supabase
+    )
+    if (stockPhotoResolutions.length > 0) {
+      console.log(`[package] Stock photos resolved: ${stockPhotoResolutions.length} (suffix="${styleSuffix}")`)
+    }
+  }
+
+  // Pull session-uploaded assets from storage — runs AFTER stock photo
+  // resolution so newly-inserted stock-photo rows are included.
   const { data: assetRows } = await supabase
     .from('assets')
     .select('id, file_name, storage_path, asset_category, mime_type, metadata')
@@ -377,6 +413,18 @@ export async function POST(
 
   if (errorsFile) {
     entries.push({ path: 'ERRORS.md', content: errorsFile })
+  }
+
+  // Pexels attribution. Pexels License doesn't legally require attribution
+  // but emitting CREDITS.md insulates against ambiguity if licensing terms
+  // change, and gives the client a record of where each photo came from.
+  // Includes both freshly-resolved photos and previously-resolved ones
+  // already in the assets table (resolver re-surfaces stored metadata).
+  if (stockPhotoResolutions.length > 0) {
+    entries.push({
+      path: 'public/content-assets/CREDITS.md',
+      content: buildCreditsMarkdown(stockPhotoResolutions),
+    })
   }
 
   const zipBuffer = await assembleZip(entries)
