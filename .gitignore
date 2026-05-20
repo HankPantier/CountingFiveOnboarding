@@ -46,3 +46,9 @@ next-env.d.ts
 
 # supabase CLI cache (per-machine state, never wanted in git)
 supabase/.temp/
+
+# Local-only reference artifacts: dropped-in PDFs and screenshot working
+# directory used as scratch input for design/UI iteration. Track in the
+# project root only if a PDF is intended as a deliverable.
+/*.pdf
+raw-docs/screenshots/
