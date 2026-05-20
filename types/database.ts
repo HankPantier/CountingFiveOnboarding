@@ -167,6 +167,7 @@ export type Database = {
           generation_status: string
           hero_block: string
           hero_image: string | null
+          hero_subhead: string | null
           hero_variant: string | null
           id: string
           internal_links: Json | null
@@ -196,6 +197,7 @@ export type Database = {
           generation_status?: string
           hero_block?: string
           hero_image?: string | null
+          hero_subhead?: string | null
           hero_variant?: string | null
           id?: string
           internal_links?: Json | null
@@ -225,6 +227,7 @@ export type Database = {
           generation_status?: string
           hero_block?: string
           hero_image?: string | null
+          hero_subhead?: string | null
           hero_variant?: string | null
           id?: string
           internal_links?: Json | null

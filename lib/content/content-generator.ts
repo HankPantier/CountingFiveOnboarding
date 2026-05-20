@@ -31,6 +31,7 @@ type GeneratedResult = {
     hero_block: string
     hero_variant: string | null
     hero_image: string | null
+    hero_subhead: string | null
   }
 }
 
@@ -140,6 +141,7 @@ OUTPUT: Return a JSON object with two keys:
    - hero_block (one of: "hero", "hero-split", "page-header")
    - hero_variant (string or null — required for "hero" and "hero-split"; null for "page-header")
    - hero_image (filename string from session assets, or null if none)
+   - hero_subhead (12-18 words, benefit-led, written for the on-page hero — NOT the same as meta_description, which targets SERPs. Speak directly to the reader's outcome; avoid restating the firm name or the page title. Plain prose, no quotes, no trailing period required.)
 
 BLOCK ANNOTATION RULES:
 
@@ -229,6 +231,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
         hero_block: parsed.metadata?.hero_block ?? 'page-header',
         hero_variant: parsed.metadata?.hero_variant ?? null,
         hero_image: parsed.metadata?.hero_image ?? null,
+        hero_subhead: typeof parsed.metadata?.hero_subhead === 'string' && parsed.metadata.hero_subhead.trim()
+          ? parsed.metadata.hero_subhead.trim()
+          : null,
       },
     }
   } catch {
@@ -251,6 +256,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
         hero_block: 'page-header',
         hero_variant: null,
         hero_image: null,
+        hero_subhead: null,
       },
     }
   }
@@ -479,6 +485,7 @@ export async function generateSinglePage(
         hero_block: result.metadata.hero_block,
         hero_variant: result.metadata.hero_variant,
         hero_image: result.metadata.hero_image,
+        hero_subhead: result.metadata.hero_subhead,
         word_count_actual: wcActual,
         word_count_target: wcTarget || null,
         admin_approved_content: false,  // re-review required after every generation
