@@ -170,6 +170,7 @@ export type Database = {
           generation_status: string
           hero_block: string
           hero_image: string | null
+          hero_image_query: string | null
           hero_subhead: string | null
           hero_variant: string | null
           id: string
@@ -200,6 +201,7 @@ export type Database = {
           generation_status?: string
           hero_block?: string
           hero_image?: string | null
+          hero_image_query?: string | null
           hero_subhead?: string | null
           hero_variant?: string | null
           id?: string
@@ -230,6 +232,7 @@ export type Database = {
           generation_status?: string
           hero_block?: string
           hero_image?: string | null
+          hero_image_query?: string | null
           hero_subhead?: string | null
           hero_variant?: string | null
           id?: string

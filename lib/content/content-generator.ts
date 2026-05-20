@@ -32,6 +32,7 @@ type GeneratedResult = {
     hero_variant: string | null
     hero_image: string | null
     hero_subhead: string | null
+    hero_image_query: string | null
   }
 }
 
@@ -142,6 +143,7 @@ OUTPUT: Return a JSON object with two keys:
    - hero_variant (string or null — required for "hero" and "hero-split"; null for "page-header")
    - hero_image (filename string from session assets, or null if none)
    - hero_subhead (12-18 words, benefit-led, written for the on-page hero — NOT the same as meta_description, which targets SERPs. Speak directly to the reader's outcome; avoid restating the firm name or the page title. Plain prose, no quotes, no trailing period required.)
+   - hero_image_query (3-8 word SUBJECT-only Pexels search query that captures the visual concept for this page's hero photo. Focus on the SUBJECT MATTER — people, setting, activity — not visual style. Examples: "tax season paperwork accountant", "client meeting professional office", "small business owner reviewing financials", "construction contractor on site". The builder appends brand-specific style modifiers automatically (cool tone, modern office, etc.) — you don't need to include those. Return null only for page-header heroes where no photo is needed.)
 
 BLOCK ANNOTATION RULES:
 
@@ -262,6 +264,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
         hero_subhead: typeof parsed.metadata?.hero_subhead === 'string' && parsed.metadata.hero_subhead.trim()
           ? parsed.metadata.hero_subhead.trim()
           : null,
+        hero_image_query: typeof parsed.metadata?.hero_image_query === 'string' && parsed.metadata.hero_image_query.trim()
+          ? parsed.metadata.hero_image_query.trim()
+          : null,
       },
     }
   } catch {
@@ -285,6 +290,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
         hero_variant: null,
         hero_image: null,
         hero_subhead: null,
+        hero_image_query: null,
       },
     }
   }
@@ -514,6 +520,7 @@ export async function generateSinglePage(
         hero_variant: result.metadata.hero_variant,
         hero_image: result.metadata.hero_image,
         hero_subhead: result.metadata.hero_subhead,
+        hero_image_query: result.metadata.hero_image_query,
         word_count_actual: wcActual,
         word_count_target: wcTarget || null,
         admin_approved_content: false,  // re-review required after every generation
