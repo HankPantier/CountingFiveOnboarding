@@ -180,6 +180,8 @@ DO NOT use these inline (they are page-level only):
 
 DO NOT annotate with faq-accordion — it is auto-appended by the deliverable builder.
 
+DO NOT annotate with contact-info or map on /contact (or any "/contact" path). The deliverable builder auto-injects those blocks using firm phone/email/hours/address from brand.json. If you generate a contact page, focus on a short intro-text and any narrative content — never inline phone numbers, email addresses, or street addresses in body prose. Those values come from session data, not Claude. Hallucinating placeholder numbers like "(555) 555-0100" or "info@example.com" on contact pages has been a recurring bug; the builder strips such patterns automatically as a safety net, but don't emit them in the first place.
+
 DO NOT include an FAQ section in the body content under ANY annotation (content-prose, intro-text, or otherwise). The deliverable builder auto-appends a structured FAQ accordion from the faq_block metadata you return. Emitting a body section like "## Frequently Asked Questions" or "## FAQ" causes the assembled page to render the same Q&A twice. Put all FAQ content in the metadata.faq_block array — the body must not contain any heading that starts with "Frequently Asked Questions" or "FAQ".
 
 ITEM-LEVEL FORMAT — for any block that contains a list of items (service-cards, industry-cards, feature-grid, team-grid, pricing, content-cards, process-steps), introduce EACH item with a \`### Title\` H3 heading on its own line, with the item body on subsequent lines.

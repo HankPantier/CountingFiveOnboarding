@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { buildAllPageFiles, buildErrorsFile, appendFaqBlock, injectTeamPhotos } from '@/lib/content/deliverable-builder'
+import { buildAllPageFiles, buildErrorsFile, appendFaqBlock, injectTeamPhotos, standardizeContactPage } from '@/lib/content/deliverable-builder'
 import type { CtaInfo } from '@/lib/content/deliverable-builder'
 import { buildDocx } from '@/lib/content/docx-builder'
 import { buildLlmsTxt, buildLlmsFullTxt } from '@/lib/content/llms-builder'
@@ -371,7 +371,13 @@ export async function POST(
 
   const pagesWithFaq = pages.map(p => ({
     ...p,
-    content_markdown: injectTeamPhotos(appendFaqBlock(p), photoMap),
+    content_markdown: injectTeamPhotos(
+      standardizeContactPage({
+        ...p,
+        content_markdown: appendFaqBlock(p),
+      }),
+      photoMap
+    ),
   }))
 
   const pageFiles = buildAllPageFiles(pagesWithFaq, firmName, {

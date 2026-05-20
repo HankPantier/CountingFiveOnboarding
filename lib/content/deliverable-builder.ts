@@ -177,6 +177,89 @@ export function injectTeamPhotos(markdown: string, photoMap: Record<string, stri
   return processed.join('')
 }
 
+/**
+ * Standardize the /contact page's structure so every client deliverable
+ * gets a working contact page out of the box.
+ *
+ * The Phase I content-generator gives Claude latitude to design contact
+ * page content, but contact pages have hard structural requirements that
+ * shouldn't be left to model judgment:
+ *   - Phone / email / hours / address must come from brand.json, NOT
+ *     from Claude's generated prose. Claude historically hallucinated
+ *     fake numbers ("(978) 555-0100") when reaching for a credible-
+ *     sounding placeholder.
+ *   - A map embed is non-negotiable for a CPA firm's contact page.
+ *   - A contact form is non-negotiable.
+ *
+ * This post-processor enforces the standard layout for any page whose
+ * url is /contact (or ends in /contact):
+ *
+ *   1. Page-header (Claude's title — kept as-is from frontmatter)
+ *   2. intro-text from Claude (if present) with phone/email substrings
+ *      stripped to prevent the hallucination bug
+ *   3. contact-info block  (NEW — auto-fills from brand.json)
+ *   4. map block           (NEW — auto-fills from brand.json)
+ *   5. form block (contact variant) — Claude's intro text is preserved
+ *      if it already emitted one; otherwise a default intro is used
+ *   6. (faq-accordion auto-appended later by appendFaqBlock)
+ *
+ * Idempotent: re-running on a page that already has contact-info / map
+ * blocks doesn't double-insert. Detects existing annotations and only
+ * appends what's missing.
+ */
+export function standardizeContactPage(page: GeneratedPage): string {
+  const content = page.content_markdown ?? ''
+  if (!isContactPage(page.page_url)) return content
+  if (!content) return content
+
+  // Strip hallucinated phone/email values that Claude inlined into prose.
+  // Match common forms: "Phone: (xxx) xxx-xxxx", "Email: foo@bar.com",
+  // "Call us at (xxx) xxx-xxxx".
+  let cleaned = content
+    .replace(/\s*Phone:\s*\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\.?/gi, '')
+    .replace(/\s*Email:\s*[\w.+-]+@[\w-]+\.[\w.-]+\.?/gi, '')
+    .replace(/\s*Call us at \(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\.?/gi, '')
+
+  const hasContactInfo = /<!-- block: contact-info\b/.test(cleaned)
+  const hasMap = /<!-- block: map\b/.test(cleaned)
+  const hasForm = /<!-- block: form\b/.test(cleaned)
+
+  // Build the standard insert. Empty if all three already exist.
+  const inserts: string[] = []
+  if (!hasContactInfo) {
+    inserts.push('<!-- block: contact-info -->\n## How to Reach Us\n')
+  }
+  if (!hasMap) {
+    inserts.push('<!-- block: map -->\n## Where to Find Us\n')
+  }
+  if (!hasForm) {
+    inserts.push(
+      '<!-- block: form | variant: contact -->\n## Send Us a Message\n\nDrop a line and a member of our team will get back to you within one business day.\n'
+    )
+  }
+  if (inserts.length === 0) return cleaned
+
+  // Insert just before any closing cta-banner / faq-accordion if one exists,
+  // otherwise append at the end. Mirrors appendFaqBlock's insertion heuristic.
+  const ctaIdx = cleaned.search(/^<!-- block: cta-banner/m)
+  const faqIdx = cleaned.search(/^<!-- block: faq-accordion/m)
+  const insertText = inserts.join('\n')
+  let insertBefore = -1
+  if (faqIdx >= 0) insertBefore = faqIdx
+  if (ctaIdx >= 0 && (insertBefore < 0 || ctaIdx < insertBefore)) insertBefore = ctaIdx
+
+  if (insertBefore >= 0) {
+    return cleaned.slice(0, insertBefore).trimEnd() + '\n\n' + insertText + '\n' + cleaned.slice(insertBefore)
+  }
+  return cleaned.trimEnd() + '\n\n' + insertText
+}
+
+function isContactPage(url: string | null | undefined): boolean {
+  if (!url) return false
+  const normalized = url.toLowerCase().replace(/\/+$/, '')
+  return normalized === '/contact' || normalized.endsWith('/contact')
+}
+
 export function buildErrorsFile(pages: GeneratedPage[]): string | null {
   const errored = pages.filter(p => p.generation_status === 'error')
   if (errored.length === 0) return null
