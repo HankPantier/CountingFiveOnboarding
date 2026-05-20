@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { searchPexels, downloadPexelsImage, type PexelsPhoto } from './pexels-fetcher'
+import { searchPexelsTop, downloadPexelsImage, type PexelsPhoto } from './pexels-fetcher'
 import type { Database } from '@/types/database'
 
 type AssetRow = Database['public']['Tables']['assets']['Row']
@@ -89,10 +89,22 @@ export async function resolveStockPhotos(
   const existingByName = new Map<string, AssetRow>()
   for (const a of input.existingAssets) existingByName.set(a.file_name, a)
 
+  // Track Pexels photo IDs already chosen this run (so two pages with
+  // similar subjects don't accidentally get the same photo) AND already
+  // assigned to existing stock-photo assets in this session (so reruns
+  // don't pick photos that other pages historically claimed). Pre-seed
+  // from existing assets' metadata.
+  const usedPexelsIds = new Set<number>()
+  for (const a of input.existingAssets) {
+    if (a.asset_category !== 'stock-photo') continue
+    const m = a.metadata as StockPhotoMetadata | null
+    if (m?.source === 'pexels' && typeof m.pexels_id === 'number') {
+      usedPexelsIds.add(m.pexels_id)
+    }
+  }
+
   // De-duplicate by filename: if two refs target the same filename, only
-  // fetch once. Pexels would otherwise return the SAME photo twice
-  // (deterministic with per_page=1, orientation=landscape) and double-bill
-  // our quota.
+  // fetch once. Same image just gets reused.
   const seenFilenames = new Set<string>()
 
   for (const ref of input.imageRefs) {
@@ -117,11 +129,21 @@ export async function resolveStockPhotos(
       ? `${subjectQuery}, ${input.styleSuffix}`
       : subjectQuery
 
-    const photo: PexelsPhoto | null = await searchPexels(finalQuery, input.apiKey)
-    if (!photo) {
+    // Pull the top 10 results so we can skip any that are already used
+    // elsewhere in this session. Pexels' rate cost is the same as per_page=1.
+    const candidates = await searchPexelsTop(finalQuery, input.apiKey, 10)
+    if (candidates.length === 0) {
       console.warn(`[stock-photo] No Pexels result for ${filename} (query="${finalQuery}", source=${ref.source ?? 'hero'})`)
       continue
     }
+    let photo: PexelsPhoto | undefined = candidates.find(p => !usedPexelsIds.has(p.id))
+    if (!photo) {
+      // Every top result was already used — better to repeat than skip;
+      // log so the operator can broaden queries if this happens often.
+      console.warn(`[stock-photo] All ${candidates.length} top results already used in session for query="${finalQuery}" — reusing first`)
+      photo = candidates[0]
+    }
+    usedPexelsIds.add(photo.id)
 
     const bytes = await downloadPexelsImage(photo.src_large)
     if (!bytes) {

@@ -40,20 +40,30 @@ export type PexelsPhoto = {
 }
 
 /**
- * Search Pexels for the best image matching `query`. Returns the top result
- * (Pexels' relevance ranking) or null if no match / API error.
+ * Search Pexels for images matching `query`. Returns up to `perPage` results
+ * (Pexels' relevance ranking) or an empty array if no match / API error.
  *
- * `apiKey` is the PEXELS_API_KEY from env. If empty or missing, returns null
+ * `apiKey` is the PEXELS_API_KEY from env. If empty or missing, returns []
  * without making a network call.
+ *
+ * Callers that just need the top result can use searchPexels (singular,
+ * thin wrapper). The plural form exists so the resolver can dedupe across
+ * pages in a session — when two pages would otherwise get the same photo,
+ * pick the next-best result instead.
  */
-export async function searchPexels(query: string, apiKey: string): Promise<PexelsPhoto | null> {
-  if (!apiKey || !apiKey.trim()) return null
-  if (!query || !query.trim()) return null
+export async function searchPexelsTop(
+  query: string,
+  apiKey: string,
+  perPage = 1
+): Promise<PexelsPhoto[]> {
+  if (!apiKey || !apiKey.trim()) return []
+  if (!query || !query.trim()) return []
+  const safePerPage = Math.max(1, Math.min(perPage, 15))  // Pexels caps at 80; 15 is plenty for dedup
 
   const url = new URL(PEXELS_SEARCH_URL)
   url.searchParams.set('query', query)
-  url.searchParams.set('per_page', '1')           // We only ever need the top result
-  url.searchParams.set('orientation', 'landscape') // Hero images are wider than tall
+  url.searchParams.set('per_page', String(safePerPage))
+  url.searchParams.set('orientation', 'landscape')
 
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
@@ -67,7 +77,7 @@ export async function searchPexels(query: string, apiKey: string): Promise<Pexel
 
     if (!res.ok) {
       console.warn(`[pexels-fetcher] Search failed: ${res.status} ${res.statusText} for query="${query}"`)
-      return null
+      return []
     }
 
     const data = await res.json() as {
@@ -83,29 +93,41 @@ export async function searchPexels(query: string, apiKey: string): Promise<Pexel
       }>
     }
 
-    const first = data.photos?.[0]
-    if (!first || typeof first.id !== 'number' || !first.src?.original) {
-      console.warn(`[pexels-fetcher] No usable result for query="${query}"`)
-      return null
+    const photos: PexelsPhoto[] = []
+    for (const p of data.photos ?? []) {
+      if (typeof p.id !== 'number' || !p.src?.original) continue
+      photos.push({
+        id: p.id,
+        src_original: p.src.original,
+        src_large: p.src.large2x ?? p.src.large ?? p.src.original,
+        photographer: p.photographer ?? 'Unknown',
+        photographer_url: p.photographer_url ?? '',
+        width: p.width ?? 0,
+        height: p.height ?? 0,
+        avg_color: p.avg_color ?? '#808080',
+        pexels_url: p.url ?? '',
+      })
     }
-
-    return {
-      id: first.id,
-      src_original: first.src.original,
-      src_large: first.src.large2x ?? first.src.large ?? first.src.original,
-      photographer: first.photographer ?? 'Unknown',
-      photographer_url: first.photographer_url ?? '',
-      width: first.width ?? 0,
-      height: first.height ?? 0,
-      avg_color: first.avg_color ?? '#808080',
-      pexels_url: first.url ?? '',
+    if (photos.length === 0) {
+      console.warn(`[pexels-fetcher] No usable results for query="${query}"`)
     }
+    return photos
   } catch (err) {
     clearTimeout(timeoutId)
     const msg = err instanceof Error ? err.message : String(err)
     console.warn(`[pexels-fetcher] Search error for query="${query}": ${msg}`)
-    return null
+    return []
   }
+}
+
+/**
+ * Thin wrapper that returns the top result only. Kept for callers that don't
+ * need dedup — currently the regenerate admin route, which is always single-
+ * image and per-asset. Resolver uses searchPexelsTop directly for dedup.
+ */
+export async function searchPexels(query: string, apiKey: string): Promise<PexelsPhoto | null> {
+  const results = await searchPexelsTop(query, apiKey, 1)
+  return results[0] ?? null
 }
 
 /**
