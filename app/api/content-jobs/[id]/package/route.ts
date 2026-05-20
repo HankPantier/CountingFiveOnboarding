@@ -19,7 +19,8 @@ import { buildNavJson } from '@/lib/content/nav-json-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
-import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto } from '@/lib/content/stock-photo-resolver'
+import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto, type ImageRef } from '@/lib/content/stock-photo-resolver'
+import { extractInlineImageRefs } from '@/lib/content/image-ref-extractor'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -177,17 +178,31 @@ export async function POST(
     .select('*')
     .eq('session_id', job.session_id)
   if (palettePreResolve) {
+    // Build a flat list of every image reference across all pages:
+    //   - hero images (from generated_pages columns)
+    //   - content-split annotation images (inline in content_markdown)
+    //   - content-cards per-card photo references (inline)
+    const imageRefs: ImageRef[] = []
+    for (const p of pages) {
+      if (p.hero_image && p.hero_image_query) {
+        imageRefs.push({
+          pageUrl: p.page_url,
+          filename: p.hero_image,
+          subjectQuery: p.hero_image_query,
+          source: 'hero',
+        })
+      }
+      const inline = extractInlineImageRefs(p.content_markdown ?? '', p.page_url)
+      imageRefs.push(...inline)
+    }
+
     stockPhotoResolutions = await resolveStockPhotos(
       {
         sessionId: job.session_id,
         apiKey: process.env.PEXELS_API_KEY ?? '',
         styleSuffix,
         existingAssets: preResolveAssets ?? [],
-        pages: pages.map(p => ({
-          page_url: p.page_url,
-          hero_image: p.hero_image,
-          hero_image_query: p.hero_image_query,
-        })),
+        imageRefs,
       },
       supabase
     )

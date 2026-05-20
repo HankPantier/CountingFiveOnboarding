@@ -150,6 +150,11 @@ BLOCK ANNOTATION RULES:
 Before every ## section heading in the content body, emit an HTML comment on the immediately preceding line:
 <!-- block: {block-id} | variant: {variant} -->
 
+For blocks that use a supporting image (content-split, hero, hero-split), extend the annotation with image + query attributes so the builder can fetch from Pexels:
+<!-- block: content-split | variant: image-right | image: services-overview.jpg | query: "professional team meeting modern office" -->
+
+The "image:" attribute is a short kebab-case filename ending in .jpg (don't include path prefixes). The "query:" attribute is a 3-8 word SUBJECT-only Pexels search string — focus on people, setting, activity. Skip visual style modifiers ("cinematic", "warm tones", etc.) — the builder appends those automatically per brand.
+
 Choose the block that best fits the section. Catalog:
 
 intro-text          → Short headline + paragraph transition
@@ -194,7 +199,16 @@ ITEM-LEVEL FORMAT — for any block that contains a list of items (service-cards
   Job costing, equipment financing...
 
 Per-block item formats:
-- service-cards / industry-cards / feature-grid / content-cards: \`### Item Title\` then 1–4 sentence description. content-cards may include a trailing \`[Read more](/url)\` link.
+- service-cards / industry-cards / feature-grid: \`### Item Title\` then 1–4 sentence description.
+- content-cards: \`### Card Title\` then OPTIONAL \`photo:\` and \`query:\` lines, then a 1–3 sentence excerpt, then an optional trailing \`[Read more](/url)\` link. The photo lines look like:
+
+      ### Year-End Tax Planning Guide
+      photo: year-end-planning.jpg
+      query: tax planner reviewing year end documents
+
+      Excerpt prose here...
+
+  Include photo + query for every content-card that warrants imagery (most do — these are article thumbnails). Same kebab-case filename and SUBJECT-only query conventions as content-split.
 - team-grid: \`### Name, Credentials\` then an optional short job title line, then bio paragraph(s).
 - pricing: \`### Tier Name\` then \`$price/period\` on the next line, then a 1–2 sentence description, then a feature list (\`- Feature 1\`), then a \`[Get started](/contact)\` CTA. Mark a featured tier with \`**Most popular**\` inside its description.
 - process-steps: \`### Step Title\` (the parser auto-numbers them) then a 1–2 sentence description.

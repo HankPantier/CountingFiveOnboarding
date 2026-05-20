@@ -50,18 +50,30 @@ export type ResolvedStockPhoto = {
   metadata: StockPhotoMetadata
 }
 
+/**
+ * A request to resolve one Pexels photo, sourced from anywhere — page hero,
+ * inline content-split annotation, content-card entry, etc. The resolver
+ * doesn't care about provenance; the package route assembles refs from
+ * multiple sources and passes them all in.
+ */
+export type ImageRef = {
+  /** Page URL this image is referenced from. Used for CREDITS grouping. */
+  pageUrl: string
+  /** Filename the deliverable will use (and the assets table key). */
+  filename: string
+  /** Subject-only query (3-8 words). Builder appends styleSuffix at fetch time. */
+  subjectQuery: string
+  /** Free-text source label for logging: "hero" | "content-split" | "content-cards" */
+  source?: string
+}
+
 export type StockResolverInput = {
   sessionId: string
   apiKey: string
   styleSuffix: string
   /** Existing session assets — used to short-circuit when an asset for this filename already exists */
   existingAssets: AssetRow[]
-  /** Pages with their generated metadata */
-  pages: Array<{
-    page_url: string
-    hero_image: string | null
-    hero_image_query: string | null
-  }>
+  imageRefs: ImageRef[]
 }
 
 export async function resolveStockPhotos(
@@ -77,15 +89,15 @@ export async function resolveStockPhotos(
   const existingByName = new Map<string, AssetRow>()
   for (const a of input.existingAssets) existingByName.set(a.file_name, a)
 
-  // De-duplicate by filename: if two pages reference the same hero_image,
-  // only fetch once. Pexels would otherwise return the SAME photo twice
-  // (deterministic with our per_page=1, orientation=landscape params) but
-  // we'd double-charge our quota.
+  // De-duplicate by filename: if two refs target the same filename, only
+  // fetch once. Pexels would otherwise return the SAME photo twice
+  // (deterministic with per_page=1, orientation=landscape) and double-bill
+  // our quota.
   const seenFilenames = new Set<string>()
 
-  for (const page of input.pages) {
-    const filename = page.hero_image?.trim()
-    const subjectQuery = page.hero_image_query?.trim()
+  for (const ref of input.imageRefs) {
+    const filename = ref.filename?.trim()
+    const subjectQuery = ref.subjectQuery?.trim()
     if (!filename || !subjectQuery) continue
     if (seenFilenames.has(filename)) continue
     seenFilenames.add(filename)
@@ -96,7 +108,7 @@ export async function resolveStockPhotos(
       // Surface its metadata for CREDITS.md if it's a Pexels stock photo
       const meta = existing.metadata as StockPhotoMetadata | null
       if (meta?.source === 'pexels') {
-        resolved.push({ filename, pageUrl: page.page_url, metadata: meta })
+        resolved.push({ filename, pageUrl: ref.pageUrl, metadata: meta })
       }
       continue
     }
@@ -107,7 +119,7 @@ export async function resolveStockPhotos(
 
     const photo: PexelsPhoto | null = await searchPexels(finalQuery, input.apiKey)
     if (!photo) {
-      console.warn(`[stock-photo] No Pexels result for ${filename} (query="${finalQuery}")`)
+      console.warn(`[stock-photo] No Pexels result for ${filename} (query="${finalQuery}", source=${ref.source ?? 'hero'})`)
       continue
     }
 
@@ -163,8 +175,8 @@ export async function resolveStockPhotos(
       continue
     }
 
-    resolved.push({ filename, pageUrl: page.page_url, metadata })
-    console.log(`[stock-photo] Resolved ${filename} ← Pexels #${photo.id} by ${photo.photographer}`)
+    resolved.push({ filename, pageUrl: ref.pageUrl, metadata })
+    console.log(`[stock-photo] Resolved ${filename} ← Pexels #${photo.id} by ${photo.photographer} (source=${ref.source ?? 'hero'})`)
   }
 
   return resolved
