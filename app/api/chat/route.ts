@@ -229,6 +229,14 @@ function validatePhaseAdvance(
       if (!chunks.includes('chunk1')) return 'Phase 3 chunk1 not complete'
       if (!chunks.includes('chunk2')) return 'Phase 3 chunk2 not complete'
 
+      // chunk3 — team photos. Required when team[] is non-empty so the agent
+      // can't skip past the per-member upload step. Empty team → no photos to
+      // collect → chunk3 is vacuous and the agent marks it complete inline.
+      const team = (schema.team as Array<unknown> | undefined) ?? []
+      if (team.length > 0 && !chunks.includes('chunk3')) {
+        return 'Phase 3 chunk3 (team photos) not complete'
+      }
+
       const culture = schema.culture as Record<string, unknown> | undefined
       const business = schema.business as Record<string, unknown> | undefined
       const li = culture?.linkedIn as { url?: unknown; usefulness?: unknown } | undefined

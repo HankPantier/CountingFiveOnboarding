@@ -35,9 +35,12 @@ The WHOIS lookup runs automatically — do not ask the client for technical deta
 }
 
 function phase3Instructions(session: Session): string {
-  const meta = (session.schema_data as Record<string, unknown>)?._meta as Record<string, unknown> | undefined
+  const schema = session.schema_data as Record<string, unknown> | null
+  const meta = schema?._meta as Record<string, unknown> | undefined
   const completedChunks = (meta?.phase3_completed_chunks as string[]) ?? []
   const chunk1Done = completedChunks.includes('chunk1')
+  const chunk2Done = completedChunks.includes('chunk2')
+  const chunk3Done = completedChunks.includes('chunk3')
 
   if (!chunk1Done) {
     return `PHASE 3 — MFP REVIEW, PART 1 (Practical info)
@@ -52,7 +55,8 @@ Then in one bundled follow-up exchange collect:
 When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.`
   }
 
-  return `PHASE 3 — MFP REVIEW, PART 2 (Content)
+  if (!chunk2Done) {
+    return `PHASE 3 — MFP REVIEW, PART 2 (Content)
 Present all of the following in one message:
 - Team members (note any with missing titles), services, industry niches
 Ask for corrections and any missing team titles.
@@ -61,7 +65,65 @@ Then present the 3 positioning options. Format them as a markdown list, one per 
 - **Option B** — [summary]
 - **Option C** — [summary]
 Ask which direction resonates most, or if they'd like to blend elements.
-When positioning is confirmed and part 2 is complete, call update_session_data with advancePhase: true and include "_meta.phase3_completed_chunks": ["chunk1", "chunk2"] in updates.`
+When positioning is confirmed and part 2 is complete, call update_session_data with the "_meta": { "phase3_completed_chunks": ["chunk1", "chunk2"] } updated. DO NOT advance phase yet — Part 3 (team photos) still has to run.`
+  }
+
+  // Chunk 3 — team photo capture
+  const team = (schema?.team as Array<{ name?: string }> | undefined) ?? []
+  const teamMembersList = team
+    .map(m => m?.name)
+    .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+
+  if (!chunk3Done) {
+    if (teamMembersList.length === 0) {
+      // No team members captured — chunk 3 is a no-op. Tell the agent to skip
+      // straight to completion + advance.
+      return `PHASE 3 — MFP REVIEW, PART 3 (Team photos) — NO TEAM CAPTURED
+
+The team[] array is empty so there's nothing to photograph. Immediately call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"]. No message to the client is necessary; the next agent turn will be Phase 4.`
+    }
+
+    const captured = (meta?.team_photos_captured as string[]) ?? []
+    const remaining = teamMembersList.filter(n => !captured.includes(n))
+    const current = (meta?.current_team_member_name as string | undefined) ?? remaining[0] ?? null
+
+    return `PHASE 3 — MFP REVIEW, PART 3 (Team photos)
+
+Walk the client through uploading one headshot per team member, in order.
+
+Team roster: ${teamMembersList.map(n => `"${n}"`).join(', ')}
+Already captured (skipped or uploaded): ${captured.length ? captured.map(n => `"${n}"`).join(', ') : 'none yet'}
+Still to ask about: ${remaining.length ? remaining.map(n => `"${n}"`).join(', ') : 'none — all done, advance now'}
+Current focus: ${current ? `"${current}"` : 'n/a'}
+
+PROCEDURE for each remaining member (one at a time, not all in one message):
+
+1. Set the upload context by calling update_session_data with:
+   _meta.current_team_member_name = "<exact member name>"
+
+   This is REQUIRED before asking — the upload UI reads this field and tags any uploaded file with the right member name. If you don't set it first, the upload is unmapped.
+
+2. Ask the client in plain prose: "Do you have a headshot for <Name>? Upload it now, or skip if you don't have one — we'll generate a styled initials avatar as a placeholder."
+
+3. Wait for the client to upload OR say something like "skip / don't have one / next".
+
+4. Once the client has handled this member (upload landed OR skip stated), call update_session_data with:
+   _meta.team_photos_captured = [<existing list>, "<this member name>"]
+   _meta.current_team_member_name = "<NEXT member name, or null if last>"
+
+   Do NOT remove names from team_photos_captured. Always append.
+
+5. Acknowledge briefly: "Got <Name>'s headshot — moving on" or "Skipped <Name> — moving on", then ask about the NEXT member.
+
+ON THE LAST MEMBER, after step 4: call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"] and a null current_team_member_name. Acknowledge: "Team photos done — let's wrap a few last details" and stop.
+
+DO NOT ask about members already in team_photos_captured. Use the "Still to ask about" list above.
+
+If the client uploads multiple photos in one message for one member, accept all of them; only the first will be used as the canonical photo but the others stay archived.`
+  }
+
+  // All chunks done — should not normally be reached (advancePhase moves to 4)
+  return `PHASE 3 is complete. Call update_session_data with advancePhase: true if you haven't already.`
 }
 
 function phase4Instructions(): string {
