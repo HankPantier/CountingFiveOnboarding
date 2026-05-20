@@ -41,6 +41,7 @@ export type Database = {
           file_name: string
           file_size_bytes: number | null
           id: string
+          metadata: Json | null
           mime_type: string
           public_url: string
           session_id: string
@@ -52,6 +53,7 @@ export type Database = {
           file_name: string
           file_size_bytes?: number | null
           id?: string
+          metadata?: Json | null
           mime_type: string
           public_url: string
           session_id: string
@@ -63,6 +65,7 @@ export type Database = {
           file_name?: string
           file_size_bytes?: number | null
           id?: string
+          metadata?: Json | null
           mime_type?: string
           public_url?: string
           session_id?: string

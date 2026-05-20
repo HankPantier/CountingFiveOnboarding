@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { buildAllPageFiles, buildErrorsFile, appendFaqBlock } from '@/lib/content/deliverable-builder'
+import { buildAllPageFiles, buildErrorsFile, appendFaqBlock, injectTeamPhotos } from '@/lib/content/deliverable-builder'
 import type { CtaInfo } from '@/lib/content/deliverable-builder'
 import { buildDocx } from '@/lib/content/docx-builder'
 import { buildLlmsTxt, buildLlmsFullTxt } from '@/lib/content/llms-builder'
@@ -17,6 +17,7 @@ import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { buildNavJson } from '@/lib/content/nav-json-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
+import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -163,7 +164,7 @@ export async function POST(
   // Pull session-uploaded assets from storage
   const { data: assetRows } = await supabase
     .from('assets')
-    .select('id, file_name, storage_path, asset_category, mime_type')
+    .select('id, file_name, storage_path, asset_category, mime_type, metadata')
     .eq('session_id', job.session_id)
     .order('uploaded_at', { ascending: true })
 
@@ -278,7 +279,49 @@ export async function POST(
     }
   }
 
-  const pagesWithFaq = pages.map(p => ({ ...p, content_markdown: appendFaqBlock(p) }))
+  // Team-photo binding: assets tagged with metadata.team_member_name are
+  // attached to specific team members during Phase 3 chunk 3. Build a map
+  // memberName → filename so the team-grid sections in each page can have
+  // their `photo:` lines injected. For any team member who didn't get an
+  // uploaded headshot, synthesize an initials-avatar SVG and bundle it into
+  // the zip alongside the uploads.
+  const teamMembers = (schema.team ?? []) as Array<{ name?: string }>
+  const photoMap: Record<string, string> = {}
+  for (const entry of assetEntries) {
+    if (entry.category === 'team-photo') {
+      // sessionAssets row that produced this entry — find the original to
+      // pull the metadata.team_member_name. assetRows still holds them.
+      const sourceRow = (assetRows ?? []).find(r => r.file_name === entry.fileName)
+      const memberName = (sourceRow?.metadata as { team_member_name?: string } | null)?.team_member_name
+      if (memberName) photoMap[memberName] = entry.fileName
+    }
+  }
+  if (palette && designJson?.typography?.headingFont) {
+    for (const member of teamMembers) {
+      const name = member?.name?.trim()
+      if (!name || photoMap[name]) continue
+      const avatar = generateInitialsAvatar({
+        memberName: name,
+        primaryColor: palette.primary.hex,
+        headingFont: designJson.typography.headingFont,
+      })
+      assetEntries.push({
+        path: `public/content-assets/${avatar.filename}`,
+        content: Buffer.from(avatar.svg, 'utf-8'),
+        fileName: avatar.filename,
+        category: 'team-photo',
+      })
+      photoMap[name] = avatar.filename
+    }
+    if (teamMembers.length > 0) {
+      console.log(`[package] Team photos: ${Object.keys(photoMap).length} bound (${assetEntries.filter(a => a.category === 'team-photo' && a.fileName.endsWith('-avatar.svg')).length} synthesized)`)
+    }
+  }
+
+  const pagesWithFaq = pages.map(p => ({
+    ...p,
+    content_markdown: injectTeamPhotos(appendFaqBlock(p), photoMap),
+  }))
 
   const pageFiles = buildAllPageFiles(pagesWithFaq, firmName, {
     websiteUrl: session.website_url,

@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import StatusBanner from '@/components/admin/StatusBanner'
 import SchemaViewer from '@/components/admin/SchemaViewer'
 import AssetsViewer from '@/components/admin/AssetsViewer'
+import TeamPhotoManager from '@/components/admin/TeamPhotoManager'
 import ApproveButton from '@/components/admin/ApproveButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
 import CopyLinkButton from '@/components/admin/CopyLinkButton'
@@ -63,6 +64,14 @@ export default async function SessionDetailPage({
         <CopyLinkButton sessionId={id} />
         <SchemaViewer sessionId={id} schemaData={session.schema_data} />
         <div className="mt-6">
+          <TeamPhotoManager
+            sessionId={id}
+            team={
+              ((session.schema_data as Record<string, unknown> | null)?.team as
+                Array<{ name: string; title?: string; credentials?: string[] }>) ?? []
+            }
+            assets={assets ?? []}
+          />
           <AssetsViewer assets={assets ?? []} />
         </div>
         {session.pdf_url && (

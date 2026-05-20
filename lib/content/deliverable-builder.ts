@@ -106,6 +106,77 @@ export function buildAllPageFiles(
     }))
 }
 
+/**
+ * Inject `photo: <filename>` lines into team-grid sections of a page's
+ * markdown content. Used by the package builder right before zip assembly to
+ * wire uploaded team headshots (and synthesized initials avatars) into the
+ * deliverable so the Phase II TeamGrid parser picks them up.
+ *
+ * Input markdown structure (per Phase I content-generator output):
+ *
+ *   <!-- block: team-grid | variant: 3-col -->
+ *   ## Our Team
+ *
+ *   ### Ron Lague, CPA, PFS
+ *   Ron holds a CPA license...
+ *
+ *   ### Jackie Estes, MBA
+ *   Jackie brings...
+ *
+ * After processing with photoMap = { "Ron Lague": "ron.jpg", "Jackie Estes": "jackie-avatar.svg" }:
+ *
+ *   <!-- block: team-grid | variant: 3-col -->
+ *   ## Our Team
+ *
+ *   ### Ron Lague, CPA, PFS
+ *   photo: ron.jpg
+ *   Ron holds a CPA license...
+ *
+ *   ### Jackie Estes, MBA
+ *   photo: jackie-avatar.svg
+ *   Jackie brings...
+ *
+ * Member name matching: case-insensitive, compares the leading name portion
+ * of the ### heading (everything before the first comma) against photoMap
+ * keys. If a `photo:` line already exists right after the heading, it's
+ * left alone (idempotent).
+ *
+ * Members in the markdown without a photoMap entry are left untouched —
+ * callers should pre-populate photoMap with initials-avatar filenames for
+ * any team member who lacks an uploaded photo, so every member ends up
+ * with something.
+ *
+ * Pure and never throws.
+ */
+export function injectTeamPhotos(markdown: string, photoMap: Record<string, string>): string {
+  if (!markdown || Object.keys(photoMap).length === 0) return markdown
+
+  // Split by block annotations, preserving the delimiter at the start of
+  // each chunk. The first chunk (before any annotation) is left as-is.
+  const parts = markdown.split(/(?=<!-- block:)/g)
+  const lookup = new Map<string, string>()
+  for (const [k, v] of Object.entries(photoMap)) {
+    lookup.set(k.toLowerCase().trim(), v)
+  }
+
+  const processed = parts.map(part => {
+    if (!/^<!-- block: team-grid/.test(part)) return part
+    return part.replace(
+      /^(### [^\n]+\n)((?:photo:[^\n]*\n)?)/gm,
+      (_match, heading: string, existingPhoto: string) => {
+        if (existingPhoto) return heading + existingPhoto
+        const headingText = heading.replace(/^### /, '').trim()
+        const memberName = headingText.split(',')[0].trim().toLowerCase()
+        const filename = lookup.get(memberName)
+        if (!filename) return heading + existingPhoto
+        return `${heading}photo: ${filename}\n`
+      }
+    )
+  })
+
+  return processed.join('')
+}
+
 export function buildErrorsFile(pages: GeneratedPage[]): string | null {
   const errored = pages.filter(p => p.generation_status === 'error')
   if (errored.length === 0) return null
