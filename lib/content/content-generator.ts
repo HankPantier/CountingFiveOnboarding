@@ -173,6 +173,8 @@ DO NOT use these inline (they are page-level only):
 
 DO NOT annotate with faq-accordion — it is auto-appended by the deliverable builder.
 
+DO NOT include an FAQ section in the body content under ANY annotation (content-prose, intro-text, or otherwise). The deliverable builder auto-appends a structured FAQ accordion from the faq_block metadata you return. Emitting a body section like "## Frequently Asked Questions" or "## FAQ" causes the assembled page to render the same Q&A twice. Put all FAQ content in the metadata.faq_block array — the body must not contain any heading that starts with "Frequently Asked Questions" or "FAQ".
+
 ITEM-LEVEL FORMAT — for any block that contains a list of items (service-cards, industry-cards, feature-grid, team-grid, pricing, content-cards, process-steps), introduce EACH item with a \`### Title\` H3 heading on its own line, with the item body on subsequent lines.
 
 ✓ Correct:
