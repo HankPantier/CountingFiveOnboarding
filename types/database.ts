@@ -112,6 +112,7 @@ export type Database = {
           created_at: string
           design_tokens: Json | null
           error_message: string | null
+          github_repo: string | null
           id: string
           nav_config: Json | null
           palette: Json | null
@@ -125,6 +126,7 @@ export type Database = {
           created_at?: string
           design_tokens?: Json | null
           error_message?: string | null
+          github_repo?: string | null
           id?: string
           nav_config?: Json | null
           palette?: Json | null
@@ -138,6 +140,7 @@ export type Database = {
           created_at?: string
           design_tokens?: Json | null
           error_message?: string | null
+          github_repo?: string | null
           id?: string
           nav_config?: Json | null
           palette?: Json | null

@@ -7,10 +7,12 @@ export default function SessionRowActions({
   sessionId,
   sessionStatus,
   hasContentJob,
+  canEditContent,
 }: {
   sessionId: string
   sessionStatus?: string
   hasContentJob?: boolean
+  canEditContent?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -59,6 +61,24 @@ export default function SessionRowActions({
         >
           {hasContentJob ? 'View content →' : 'Start content →'}
         </Link>
+      )}
+      {showContentLink && hasContentJob && (
+        canEditContent ? (
+          <Link
+            href={`/admin/content/${sessionId}/edit`}
+            className="text-brand-navy hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
+            title="Edit published content in the linked GitHub repo"
+          >
+            Edit content ↗
+          </Link>
+        ) : (
+          <span
+            className="text-text-muted font-heading font-semibold text-xs cursor-not-allowed"
+            title="Repo not provisioned yet"
+          >
+            Edit content
+          </span>
+        )
       )}
       <button
         onClick={handleDelete}
