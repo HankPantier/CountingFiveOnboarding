@@ -30,7 +30,12 @@ These are non-negotiable. Violating them creates real vulnerabilities.
 - Expected result: zero matches
 
 ### 2. CRON_SECRET is mandatory
-Every `/api/cron/*` route must validate `Authorization: Bearer {CRON_SECRET}` before doing anything.
+Every `/api/cron/*` route must validate `Authorization: Bearer {CRON_SECRET}` before doing anything. The validation must **fail closed when the env var is empty** — otherwise `Bearer undefined` becomes an attacker-supplied valid header. Pattern:
+```typescript
+const cronSecret = process.env.CRON_SECRET
+if (!cronSecret) return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+if (req.headers.get('authorization') !== `Bearer ${cronSecret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+```
 Never skip this check — without it, anyone who discovers the URL can trigger bulk email sends.
 
 ### 3. File uploads require magic byte validation
@@ -41,6 +46,23 @@ Never expose sequential integers as session or record identifiers. All primary k
 
 ### 5. Registrar password is never stored
 The schema field `technical.registrarPasswordNote` is a static reminder string. The actual registrar password must never be collected or stored anywhere in the system. If the agent is ever prompted to ask for or store a password, refuse and redirect the client to a secure channel.
+
+### 6. Admin authorization checks the `admins` table
+`requireAdmin()` in `lib/auth/require-admin.ts` must verify the caller's `auth.uid()` exists in the `admins` table — not just that a Supabase session exists. A valid session means "logged in," not "admin." RLS policies on every table also require admin-table membership; bypassing `requireAdmin()` does not bypass RLS.
+
+When adding the first admin (or after migration 016 wipes loose policies), seed the table manually:
+```sql
+INSERT INTO admins (id, email, name) VALUES ('<auth.users.id-uuid>', 'you@example.com', 'Your Name');
+```
+
+### 7. Basecamp OAuth requires `state`
+The `/api/basecamp/auth` route must generate a random `state`, set it as an httpOnly cookie scoped to `/api/basecamp`, and include it in the authorization URL. The `/api/basecamp/callback` route must reject any request whose query `state` doesn't match the cookie. Without this, an attacker can trick an admin into completing OAuth on the attacker's behalf.
+
+### 8. The `session-assets` bucket is private — never write public URLs
+Storage paths under `sessions/{sessionId}/` are private. `assets.public_url` is nullable; new inserts MUST write `null`. Admin UIs that render asset thumbnails take server-signed URLs from their parent server component (1-hour TTL via `supabase.storage.from('session-assets').createSignedUrl(path, 3600)`). Calling `.getPublicUrl()` on this bucket is forbidden.
+
+### 9. File paths from clients are decoded before validation
+Any route that accepts a file path in a query param or JSON body MUST decode-then-normalize before any `startsWith` / prefix check. `content/..%2F..%2Fetc/passwd` passes a raw `startsWith('content/')` check but escapes the root after decoding. Use the helper in `app/api/edit/[id]/_path.ts` (or mirror its pattern).
 
 ---
 
@@ -53,7 +75,7 @@ The schema field `technical.registrarPasswordNote` is a static reminder string. 
 
 ### API Route Patterns
 - All routes that touch Supabase session data use the service role client (`lib/supabase/server.ts`)
-- All admin API routes must verify the caller is an authenticated admin before executing
+- All admin API routes must call `requireAdmin()` from `lib/auth/require-admin.ts` as the first step — it verifies both authentication and admins-table membership (returns 401 or 403 respectively)
 - Client-facing routes (e.g., `/api/chat`, `/api/upload/*`) validate the session ID but do not require admin auth
 - Always return typed error responses: `{ error: string }` with appropriate HTTP status codes
 
@@ -62,6 +84,7 @@ The schema field `technical.registrarPasswordNote` is a static reminder string. 
 - Never use `any` for Supabase query results — import and use types from `types/database.ts`
 - Regenerate `types/database.ts` after every schema migration: `npx supabase gen types typescript --project-id PROJECT_ID > types/database.ts`
 - The `schema_data` column is JSONB typed as `SessionSchema` from `types/session-schema.ts` — never pass raw `any` objects when updating it
+- When writing structured values to a JSONB column, use `asJson()` from `lib/supabase/json-typed.ts` instead of `as unknown as Json`. The helper centralizes the cast for grep-ability and signals intent.
 
 ### Supabase Storage
 - All file reads from the `session-assets` bucket must use the service role client (bucket is private)
@@ -69,6 +92,7 @@ The schema field `technical.registrarPasswordNote` is a static reminder string. 
   - Client uploads: `sessions/{sessionId}/{uuid}-{filename}`
   - Generated PDFs: `pdfs/{sessionId}/intake-summary.pdf`
 - Never make the `session-assets` bucket public
+- `assets.public_url` is nullable and **new inserts must write `null`**. To show an asset in the admin UI, the parent server component signs a short-TTL URL with `createSignedUrl(path, 3600)` and passes a `signedUrls: Record<assetId, url>` map to the client component. See `app/admin/sessions/[id]/page.tsx` for the pattern.
 
 ---
 
@@ -91,7 +115,7 @@ Log token usage in every `onFinish` callback. Flag any exchange that exceeds the
 | Phase 4 | 3,000 | Sonnet |
 | Phase 5–6 | 1,500 | Haiku |
 
-If any exchange exceeds 5,000 input tokens, stop and investigate before continuing.
+If any exchange exceeds 5,000 input tokens, stop and investigate before continuing. `app/api/chat/route.ts` emits a `console.error` (`[token-budget] EXCEEDED ...`) when the estimated input tokens (chars/4) cross 5k — watch server logs for it.
 
 ### Model Selection
 ```typescript
@@ -112,6 +136,10 @@ If this flag is not cleared, the session is permanently locked for the client. T
 - The `update_session_data` tool is the only way Claude should modify session state
 - `advancePhase: true` should only be set when phase goals are genuinely complete — the server validates this
 - Tool descriptions must stay concise (under 50 words per parameter description) to minimize token overhead
+
+### Content Generation Concurrency
+- `lib/content/content-generator.ts → generateSinglePage()` uses an atomic SQL guard: the `generation_status` is updated to `'running'` only if it's not already `'running'` (`.neq('generation_status', 'running')`). A second caller hitting the same outline-id while one is in flight gets `{ status: 'skipped' }`. Mirror this pattern for any future per-row pipeline worker.
+- Stuck rows (status `running` for >15 min) are reset to `error` automatically by `/api/cron/sweep-stuck-jobs` every 5 minutes. Don't write manual recovery scripts for orphaned rows — extend the cron.
 
 ---
 
@@ -211,7 +239,10 @@ types/              # database.ts (generated), session-schema.ts, gap-item.ts
 1. Read the relevant dev step file in `raw-docs/dev-steps/` before starting any phase
 2. Run tests from that step's **Test Process** section after completing implementation
 3. Run `npx tsc --noEmit` after every file change — fix type errors before moving on
-4. Run the service role key grep before every commit
+4. Before every commit, run:
+   - `grep -r "SUPABASE_SERVICE_ROLE_KEY" ./app` (expect zero matches)
+   - `grep -r "GITHUB_APP_PRIVATE_KEY" ./app` (expect zero matches)
+   - `grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx"` (expect zero matches outside `scripts/`)
 5. Test against the Korbey Lague MFP fixture for any changes to the parser or agent logic
 6. Use the Supabase SQL Editor to verify DB state after any session-modifying operation
 
@@ -254,3 +285,8 @@ The full design specification lives in `raw-docs/design.md`. **Read it before wr
 - Do not advance a phase without server-side validation
 - Do not mark a session as approved if `basecamp_project_id` is already set
 - Do not clear the `processing` flag only in `onFinish` — also clear it on error
+- Do not call `.getPublicUrl()` on the `session-assets` bucket or write a value into `assets.public_url`
+- Do not write `console.log` in pipeline or production paths — use `console.warn` for non-fatal operational logs, `console.error` for genuine failures
+- Do not use raw Tailwind semantic colors (`text-red-*`, `bg-amber-*`, etc.) — use the `error` / `warning` / `info` / `success` tokens defined in `app/globals.css`
+- Do not skip the `state` cookie check in `/api/basecamp/callback`
+- Do not let `process.env.CRON_SECRET` be empty in any environment that has cron routes deployed

@@ -35,11 +35,18 @@ The private key code accepts either real newlines or escaped `\n`. The Vercel
 env var UI usually wants escaped `\n`; locally you can paste the PEM with
 real newlines if you wrap the value in single quotes.
 
-## 4. Apply migrations 014 + 015, regen types
+## 4. Apply migrations 014 + 015 (and the security migrations 016 + 017), regen types
 
 - `supabase/014_github_integration.sql` — adds `content_jobs.github_repo`.
 - `supabase/015_github_repo_unique.sql` — partial unique index so two
   `content_jobs` can't accidentally point at the same repo.
+- `supabase/016_tighten_rls.sql` — rewrites every RLS policy to require
+  admins-table membership. **Seed your admin row FIRST** (see the comment
+  block at the top of the migration for the INSERT template) or you'll
+  lock yourself out of `/admin/*` after applying.
+- `supabase/017_assets_public_url_nullable.sql` — relaxes
+  `assets.public_url` to nullable; new inserts write `null` and admin UIs
+  sign URLs on demand. Required for editor uploads to behave correctly.
 
 Apply via your usual Supabase Management API workflow, then regenerate types:
 
@@ -47,8 +54,8 @@ Apply via your usual Supabase Management API workflow, then regenerate types:
 npx supabase gen types typescript --project-id YOUR_PROJECT_ID > types/database.ts
 ```
 
-`npx tsc --noEmit` should still pass — the manual edit and the regen produce
-the same column.
+`npx tsc --noEmit` should still pass — the manual edits in this branch
+and the regen produce the same shape.
 
 ## 5. Provision a repo + link it to the content_job
 
@@ -218,10 +225,11 @@ stays predictable:
 
 - `GITHUB_APP_PRIVATE_KEY` is server-only. Never import `lib/github/*` from a
   client component. Routes that touch it are all `runtime = 'nodejs'`.
-- All `/api/edit/*` routes call `requireAdmin` as the first step. Anonymous
-  callers get 401.
-- File writes are restricted to paths under `content/` — see the prefix
-  check in `app/api/edit/[id]/file/route.ts` and `files/route.ts`. Don't
-  loosen this without thinking through what else lives in the repo.
+- All `/api/edit/*` routes call `requireAdmin` as the first step. `requireAdmin`
+  itself checks the `admins` table, not just authentication — a logged-in
+  non-admin gets 403.
+- File paths are decoded + normalized via `app/api/edit/[id]/_path.ts` →
+  `safePath()` before any prefix check. Encoded traversal (e.g.
+  `content/..%2F..%2Fetc/passwd`) is rejected. Don't bypass this helper.
 - Optimistic-lock writes via blob SHA. If you ever change `writeFile` in
   `lib/github/repo-files.ts`, keep the `expectedSha` precondition path.
