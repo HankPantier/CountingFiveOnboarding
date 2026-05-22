@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import PhaseStepper from '@/components/content/PhaseStepper'
+import GithubRepoConnector from '@/components/admin/GithubRepoConnector'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
 import type { NavJson } from '@/types/nav-json'
@@ -82,6 +83,12 @@ export default async function ContentWorkflowPage({
           </p>
         </div>
       </div>
+
+      <GithubRepoConnector
+        contentJobId={contentJobId}
+        initialRepo={contentJob?.github_repo ?? null}
+        defaultOrg={process.env.GITHUB_ORG ?? null}
+      />
 
       <PhaseStepper
         currentPhase={currentPhase}

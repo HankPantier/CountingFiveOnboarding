@@ -72,12 +72,13 @@ export default function SessionRowActions({
             Edit content ↗
           </Link>
         ) : (
-          <span
-            className="text-text-muted font-heading font-semibold text-xs cursor-not-allowed"
-            title="Repo not provisioned yet"
+          <Link
+            href={`/admin/content/${sessionId}`}
+            className="text-text-muted hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
+            title="Open the content workflow to connect a GitHub repo"
           >
-            Edit content
-          </span>
+            Connect repo →
+          </Link>
         )
       )}
       <button
