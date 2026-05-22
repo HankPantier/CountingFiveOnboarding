@@ -34,7 +34,7 @@ const STATUS_ICONS: Record<string, { icon: string; cls: string }> = {
   pending:  { icon: '○', cls: 'text-text-muted' },
   running:  { icon: '◌', cls: 'text-blue-500 animate-pulse' },
   complete: { icon: '●', cls: 'text-green-600' },
-  error:    { icon: '✗', cls: 'text-red-500' },
+  error:    { icon: '✗', cls: 'text-error' },
 }
 
 export default function ResearchPhase({
@@ -171,7 +171,7 @@ export default function ResearchPhase({
                   <span className="text-xs font-mono text-text-muted flex-shrink-0">{page.url}</span>
                 </div>
                 {page.errorMessage && (
-                  <div className="text-xs font-body text-red-600 pl-6 pb-1.5 -mt-1">
+                  <div className="text-xs font-body text-error pl-6 pb-1.5 -mt-1">
                     {page.errorMessage}
                   </div>
                 )}
@@ -198,13 +198,13 @@ export default function ResearchPhase({
       })()}
 
       {retryError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {retryError}
         </div>
       )}
 
       {restartError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {restartError}
         </div>
       )}

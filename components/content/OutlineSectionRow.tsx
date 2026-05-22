@@ -64,7 +64,7 @@ export default function OutlineSectionRow({
           <button
             type="button"
             onClick={onRemove}
-            className="text-text-muted hover:text-red-500 transition-colors p-1"
+            className="text-text-muted hover:text-error transition-colors p-1"
             aria-label="Remove section"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

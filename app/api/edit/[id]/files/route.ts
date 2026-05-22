@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
+import { safePath } from '../_path'
 import {
   DRAFT_BRANCH,
   StaleShaError,
@@ -29,14 +30,15 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
-  const { path, contents, expectedSha } = body
-  if (!path || typeof contents !== 'string') {
+  const { path: rawPath, contents, expectedSha } = body
+  if (!rawPath || typeof contents !== 'string') {
     return NextResponse.json(
       { error: 'path and contents required' },
       { status: 400 }
     )
   }
-  if (!path.startsWith('content/')) {
+  const path = safePath(rawPath)
+  if (!path) {
     return NextResponse.json({ error: 'path must be under content/' }, { status: 400 })
   }
 

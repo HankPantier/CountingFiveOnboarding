@@ -224,7 +224,7 @@ export default function MarkdownPreviewModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2 mb-4">
+            <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2 mb-4">
               {error}
             </div>
           )}
@@ -428,7 +428,7 @@ function SeoBlocks({ page }: { page: GeneratedPageRow }) {
             {links.map((l, i) => (
               <li key={i}>
                 <span className="font-mono text-brand-cyan">{l.url}</span>
-                <span className="text-text-muted"> · "{l.anchor_text}" · {l.reason}</span>
+                <span className="text-text-muted"> · &quot;{l.anchor_text}&quot; · {l.reason}</span>
               </li>
             ))}
           </ul>

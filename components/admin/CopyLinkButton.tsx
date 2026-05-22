@@ -7,6 +7,8 @@ export default function CopyLinkButton({ sessionId }: { sessionId: string }) {
   const [url, setUrl] = useState(`${appUrl}/session/${sessionId}`)
 
   useEffect(() => {
+    // Hydration fix: window.location is only available client-side.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUrl(`${window.location.origin}/session/${sessionId}`)
   }, [sessionId])
 

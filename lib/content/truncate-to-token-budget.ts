@@ -25,7 +25,7 @@ export function checkTokenBudget(
       `[content-gen] ⚠️ Token budget exceeded: page="${pageUrl}" input=${inputTokens.toLocaleString()}`
     )
   } else if (inputTokens > budgetMax) {
-    console.log(
+    console.warn(
       `[content-gen] Token over target: ${label} page="${pageUrl}" input=${inputTokens} (target: ${budgetMax})`
     )
   }

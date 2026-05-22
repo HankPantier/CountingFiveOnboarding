@@ -43,7 +43,7 @@ export type Database = {
           id: string
           metadata: Json | null
           mime_type: string
-          public_url: string
+          public_url: string | null
           session_id: string
           storage_path: string
           uploaded_at: string
@@ -55,7 +55,7 @@ export type Database = {
           id?: string
           metadata?: Json | null
           mime_type: string
-          public_url: string
+          public_url: string | null
           session_id: string
           storage_path: string
           uploaded_at?: string

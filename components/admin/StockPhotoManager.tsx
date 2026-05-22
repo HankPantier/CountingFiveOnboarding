@@ -20,6 +20,7 @@ type StockPhotoMetadata = {
 type Props = {
   sessionId: string
   assets: Asset[]
+  signedUrls: Record<string, string>
 }
 
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp']
@@ -28,7 +29,7 @@ const MAX_BYTES = 25 * 1024 * 1024
 /**
  * Admin UI for managing stock-photo assets resolved during a deliverable
  * package build. One row per stock-photo asset, with:
- *   - Thumbnail preview (uses asset.public_url)
+ *   - Thumbnail preview (uses signedUrls[asset.id])
  *   - Filename + photographer credit (linked to Pexels page)
  *   - "Original query" inline-editable text field
  *   - "Regenerate" button → POST /api/admin/stock-photos/regenerate
@@ -41,7 +42,7 @@ const MAX_BYTES = 25 * 1024 * 1024
  * Renders nothing if there are no stock photos yet (first deliverable
  * assembly creates them — admin sees an empty state until then).
  */
-export default function StockPhotoManager({ sessionId, assets }: Props) {
+export default function StockPhotoManager({ sessionId, assets, signedUrls }: Props) {
   const router = useRouter()
   const stockPhotos = assets.filter(a => a.asset_category === 'stock-photo')
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
@@ -143,9 +144,9 @@ export default function StockPhotoManager({ sessionId, assets }: Props) {
           return (
             <div key={asset.id} className="flex gap-3 p-3 border border-border-default rounded-md">
               <div className="w-24 h-16 bg-surface-subtle rounded overflow-hidden shrink-0">
-                {asset.public_url ? (
+                {signedUrls[asset.id] ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={asset.public_url} alt={asset.file_name} className="w-full h-full object-cover" />
+                  <img src={signedUrls[asset.id]} alt={asset.file_name} className="w-full h-full object-cover" />
                 ) : null}
               </div>
               <div className="min-w-0 flex-1 space-y-1.5">
@@ -200,7 +201,7 @@ export default function StockPhotoManager({ sessionId, assets }: Props) {
                     Upload
                   </button>
                 </div>
-                {err && <p className="text-xs text-red-600 font-body">{err}</p>}
+                {err && <p className="text-xs text-error font-body">{err}</p>}
               </div>
             </div>
           )

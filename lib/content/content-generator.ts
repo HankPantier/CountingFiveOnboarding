@@ -9,6 +9,7 @@ import { countWords, targetWordCount } from './word-count-validator'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 
 type Cta = { text: string; url: string }
 const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
@@ -251,7 +252,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
     maxOutputTokens: 4000,
   })
 
-  console.log(
+  console.warn(
     `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
   )
   checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
@@ -319,7 +320,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
 export async function generateSinglePage(
   contentJobId: string,
   outlineId: string
-): Promise<{ status: 'complete' | 'error'; pageUrl: string; error?: string }> {
+): Promise<{ status: 'complete' | 'error' | 'skipped'; pageUrl: string; error?: string }> {
   const supabase = createServerClient()
 
   const { data: outline, error: outlineErr } = await supabase
@@ -359,10 +360,19 @@ export async function generateSinglePage(
     .single()
   if (!genPage) return { status: 'error', pageUrl: outline.page_url, error: 'generated_pages row missing' }
 
-  await supabase
+  // Atomic lock: refuse if the row is already 'running'. Two callers
+  // racing for the same page (e.g., bulk run + manual regenerate) would
+  // otherwise overwrite each other. Any non-running prior state can be
+  // claimed for (re-)generation.
+  const { data: locked } = await supabase
     .from('generated_pages')
     .update({ generation_status: 'running' })
     .eq('id', genPage.id)
+    .neq('generation_status', 'running')
+    .select('id')
+  if (!locked?.length) {
+    return { status: 'skipped', pageUrl: outline.page_url, error: 'Another worker is already generating this page' }
+  }
 
   const { data: research } = await supabase
     .from('research_results')
@@ -395,7 +405,7 @@ export async function generateSinglePage(
 
     const validation = validateContent(result.content)
     if (!validation.passed) {
-      console.log(
+      console.warn(
         `[content-gen] Anti-slop flagged ${outline.page_url}: ${validation.flagged.join(' | ')} — retrying`
       )
       result = await generatePageContent(
@@ -426,7 +436,7 @@ export async function generateSinglePage(
     const missingAnnotations = headingCount > 0 && annotations.length === 0
 
     if (missingAnnotations) {
-      console.log(
+      console.warn(
         `[content-gen] Missing block annotations on ${outline.page_url} (${headingCount} ## sections, 0 annotations) — forcing retry`
       )
       const correctionNote =
@@ -449,7 +459,7 @@ export async function generateSinglePage(
         )
       }
     } else if (!blockValidation.passed && blockValidation.errors.length > 0) {
-      console.log(
+      console.warn(
         `[content-gen] Block validation errors on ${outline.page_url}:`,
         blockValidation.errors.map(e => `[section ${e.position}] ${e.reason}`).join(' | ')
       )
@@ -498,7 +508,7 @@ export async function generateSinglePage(
       result.metadata.faq_block
     )
     if (finalValidation.coercions.length > 0) {
-      console.log(
+      console.warn(
         `[content-gen] Coerced ${finalValidation.coercions.length} variant(s) on ${outline.page_url}:`,
         finalValidation.coercions.map(c => `${c.blockId}: '${c.originalVariant}' → '${c.coercedVariant}'`).join(' | ')
       )
@@ -506,7 +516,7 @@ export async function generateSinglePage(
     }
 
     if (finalValidation.warnings.length > 0) {
-      console.log(
+      console.warn(
         `[content-gen] Block warnings on ${outline.page_url}:`,
         finalValidation.warnings.join(' | ')
       )
@@ -523,14 +533,14 @@ export async function generateSinglePage(
         meta_title: result.metadata.meta_title,
         meta_description: result.metadata.meta_description,
         target_keyword: result.metadata.target_keyword,
-        secondary_keywords: result.metadata.secondary_keywords as unknown as Json,
+        secondary_keywords: asJson(result.metadata.secondary_keywords),
         url_slug: result.metadata.url_slug,
         canonical_url: result.metadata.canonical_url,
         answer_block: result.metadata.answer_block,
         schema_markup_type: result.metadata.schema_markup_type,
-        eeat_signals: result.metadata.eeat_signals as unknown as Json,
-        internal_links: result.metadata.internal_links as unknown as Json,
-        faq_block: result.metadata.faq_block as unknown as Json,
+        eeat_signals: asJson(result.metadata.eeat_signals),
+        internal_links: asJson(result.metadata.internal_links),
+        faq_block: asJson(result.metadata.faq_block),
         llm_citation_note: result.metadata.llm_citation_note,
         hero_block: result.metadata.hero_block,
         hero_variant: result.metadata.hero_variant,
@@ -544,7 +554,7 @@ export async function generateSinglePage(
       })
       .eq('id', genPage.id)
 
-    console.log(`[content-gen] Complete: ${outline.page_title} (${wcActual} words / target ${wcTarget})`)
+    console.warn(`[content-gen] Complete: ${outline.page_title} (${wcActual} words / target ${wcTarget})`)
     return { status: 'complete', pageUrl: outline.page_url }
   } catch (err) {
     console.error(`[content-gen] Error on ${outline.page_url}:`, err)
@@ -592,7 +602,7 @@ export async function runContentGeneration(
 
   for (let i = 0; i < outlines.length; i += BATCH_SIZE) {
     if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
-      console.log(
+      console.warn(
         `[content-gen] Soft deadline reached after ${i} pages, chaining continuation.`
       )
       break
@@ -642,7 +652,7 @@ export async function runContentGeneration(
         method: 'POST',
         headers: { Authorization: `Bearer ${cronSecret}` },
       })
-      console.log(
+      console.warn(
         `[content-gen] Chained continuation: completed=${completedThisRun} this run, status=${res.status}`
       )
     } catch (err) {
@@ -657,7 +667,7 @@ export async function runContentGeneration(
       .update({ phase: 6, updated_at: new Date().toISOString() })
       .eq('id', contentJobId)
 
-    console.log(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
+    console.warn(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
 
     const { data: session } = await supabase
       .from('sessions')

@@ -140,7 +140,7 @@ export default function OutlinePhase({
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {error}
         </div>
       )}

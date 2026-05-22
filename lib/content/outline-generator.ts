@@ -5,7 +5,7 @@ import { derivePaletteToneSignal } from './palette-tone-signal'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
-import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 
 type OutlineResult = {
   h1: string
@@ -87,7 +87,7 @@ RULES:
     maxOutputTokens: 1000,
   })
 
-  console.log(
+  console.warn(
     `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
   )
   checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
@@ -118,7 +118,7 @@ RULES:
     .from('page_outlines')
     .update({
       h1: outline.h1,
-      sections: outline.sections as unknown as Json,
+      sections: asJson(outline.sections),
       target_keyword: outline.target_keyword ?? targetKeyword,
       admin_notes: outline.notes ?? null,
       updated_at: new Date().toISOString(),
@@ -174,7 +174,7 @@ export async function runOutlineGeneration(
         .from('page_outlines')
         .update({
           h1: outline.page_title,
-          sections: [{ h2: 'Overview', description: 'Add content here', word_count: 300 }] as unknown as Json,
+          sections: asJson([{ h2: 'Overview', description: 'Add content here', word_count: 300 }]),
           admin_notes: 'Auto-generated fallback — generation failed. Admin must edit before approving.',
           updated_at: new Date().toISOString(),
         })
@@ -182,7 +182,7 @@ export async function runOutlineGeneration(
     }
   }
 
-  console.log(`[content-job] Outlines generated for job=${contentJobId}`)
+  console.warn(`[content-job] Outlines generated for job=${contentJobId}`)
 
   // Send email notification
   const firmName = schema.business?.name ?? 'Unknown firm'

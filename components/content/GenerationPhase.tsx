@@ -42,7 +42,7 @@ const STATUS_ICONS: Record<string, { icon: string; cls: string; title: string }>
   pending:  { icon: '○', cls: 'text-text-muted', title: 'Pending — not yet generated' },
   running:  { icon: '◌', cls: 'text-blue-500 animate-pulse', title: 'Running — Claude is generating this page now' },
   complete: { icon: '●', cls: 'text-green-600', title: 'Complete — content has been generated' },
-  error:    { icon: '✗', cls: 'text-red-500', title: 'Error — generation failed; check server logs and re-run' },
+  error:    { icon: '✗', cls: 'text-error', title: 'Error — generation failed; check server logs and re-run' },
 }
 
 function wordCountBadge(actual: number | null | undefined, target: number | null | undefined): { label: string; cls: string; title: string } | null {
@@ -373,7 +373,7 @@ export default function GenerationPhase({
       )}
 
       {restartError && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {restartError}
         </div>
       )}

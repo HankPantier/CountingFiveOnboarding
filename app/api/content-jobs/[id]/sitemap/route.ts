@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
 import type { SessionSchema } from '@/types/session-schema'
-import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 
 type SitemapPage = NonNullable<SessionSchema['proposed_sitemap']>[number]
 
@@ -68,7 +68,7 @@ export async function POST(
   const { error: sitemapErr } = await supabase
     .from('content_jobs')
     .update({
-      confirmed_sitemap: pages as unknown as Json,
+      confirmed_sitemap: asJson(pages),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
@@ -115,7 +115,7 @@ export async function POST(
     return NextResponse.json({ error: phaseErr.message }, { status: 500 })
   }
 
-  console.log(`[content-job] phase 2→3 session=${id} pages=${pages.length}`)
+  console.warn(`[content-job] phase 2→3 session=${id} pages=${pages.length}`)
 
   // Get the session_id for the research pipeline
   const { data: jobData } = await supabase

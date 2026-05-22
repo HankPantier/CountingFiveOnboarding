@@ -3,7 +3,7 @@ import { runKeywordResearch } from './keyword-research'
 import { fetchCompetitorPages, fetchExistingContent } from './competitor-fetch'
 import { runOutlineGeneration } from './outline-generator'
 import type { SessionSchema } from '@/types/session-schema'
-import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 
 type SitemapPage = {
   url: string
@@ -69,7 +69,7 @@ export async function runResearchPipeline(
 
       try {
         // Job 1: Keyword research
-        console.log(`[Research] Starting keyword research for: ${page.title}`)
+        console.warn(`[Research] Starting keyword research for: ${page.title}`)
         const keywords = await runKeywordResearch(page.title, page.url, firmContext)
 
         // Job 2: Competitor page analysis
@@ -87,8 +87,8 @@ export async function runResearchPipeline(
           .from('research_results')
           .update({
             target_keyword: keywords.targetKeyword,
-            secondary_keywords: keywords.secondaryKeywords as unknown as Json,
-            competitor_references: competitorRefs as unknown as Json,
+            secondary_keywords: asJson(keywords.secondaryKeywords),
+            competitor_references: asJson(competitorRefs),
             existing_content: existingContent,
             research_status: 'complete',
             error_message: null,
@@ -96,7 +96,7 @@ export async function runResearchPipeline(
           })
           .eq('id', researchRow.id)
 
-        console.log(`[Research] Complete: ${page.title} → "${keywords.targetKeyword}"`)
+        console.warn(`[Research] Complete: ${page.title} → "${keywords.targetKeyword}"`)
       } catch (err) {
         console.error(`[Research] Error on ${page.url}:`, err)
         const message = err instanceof Error ? err.message : String(err)
@@ -128,7 +128,7 @@ export async function runResearchPipeline(
       .update({ phase: 4, updated_at: new Date().toISOString() })
       .eq('id', contentJobId)
 
-    console.log(`[content-job] phase 3→4 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
+    console.warn(`[content-job] phase 3→4 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
 
     // Fire outline generation automatically
     runOutlineGeneration(contentJobId, sessionId).catch(err =>

@@ -45,7 +45,7 @@ export default function ApproveButton({ sessionId }: { sessionId: string }) {
   return (
     <div className="mt-6">
       {error && (
-        <p className="text-sm font-body text-red-700 mb-3">{error}</p>
+        <p className="text-sm font-body text-error mb-3">{error}</p>
       )}
       {busy && (
         <div className="mb-3 flex items-center gap-2 text-sm font-body text-text-secondary">

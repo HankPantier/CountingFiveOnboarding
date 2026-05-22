@@ -51,10 +51,8 @@ export async function POST(req: Request) {
     )
   }
 
-  const { data: urlData } = supabase.storage
-    .from('session-assets')
-    .getPublicUrl(storagePath)
-
+  // The session-assets bucket is private — never store a public URL.
+  // Admin UIs sign URLs on demand via lib/supabase server.createSignedUrl().
   // Server-side context binding: if the agent has staged a current team
   // member name (Phase 3 chunk 3), tag this upload as a team-photo for that
   // member. The chat UI doesn't need to know — the agent owns the linkage
@@ -85,7 +83,7 @@ export async function POST(req: Request) {
       session_id: sessionId,
       file_name: fileName,
       storage_path: storagePath,
-      public_url: urlData.publicUrl,
+      public_url: null,
       mime_type: detected?.mime ?? mimeType,
       file_size_bytes: fileSize,
       asset_category: resolvedCategory,
@@ -99,5 +97,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to record asset' }, { status: 500 })
   }
 
-  return NextResponse.json({ assetId: asset.id, publicUrl: urlData.publicUrl })
+  return NextResponse.json({ assetId: asset.id })
 }

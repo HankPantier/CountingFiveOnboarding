@@ -53,7 +53,7 @@ export async function POST(
     if (BASECAMP_ENABLED) {
       basecampProjectId = await createBasecampProject(session, pdfStoragePath)
     } else {
-      console.log('[Approve] Basecamp disabled — skipping project creation')
+      console.warn('[Approve] Basecamp disabled — skipping project creation')
     }
 
     await supabase

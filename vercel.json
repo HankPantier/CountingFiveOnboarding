@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/check-inactivity",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/sweep-stuck-jobs",
+      "schedule": "*/5 * * * *"
     }
   ],
   "functions": {

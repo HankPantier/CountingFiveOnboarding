@@ -120,7 +120,7 @@ export default function ChatInterface({
       </header>
 
       {error && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-sm font-body text-red-700 text-center flex-shrink-0">
+        <div className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error text-center flex-shrink-0">
           {error.message} — please try again.
         </div>
       )}

@@ -45,7 +45,7 @@ export default function ClientReviewList({
   if (pages.length === 0) {
     return (
       <p className="text-sm text-text-muted font-body">
-        No pages currently need your review. You can close this page — we'll be in touch if anything else needs your input.
+        No pages currently need your review. You can close this page — we&apos;ll be in touch if anything else needs your input.
       </p>
     )
   }

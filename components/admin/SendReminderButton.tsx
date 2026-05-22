@@ -27,7 +27,7 @@ export default function SendReminderButton({ sessionId }: { sessionId: string })
 
   return (
     <div>
-      {error && <p className="text-sm font-body text-red-700 mb-2">{error}</p>}
+      {error && <p className="text-sm font-body text-error mb-2">{error}</p>}
       <button
         onClick={handleSend}
         disabled={loading || sent}

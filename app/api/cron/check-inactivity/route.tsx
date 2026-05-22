@@ -11,8 +11,14 @@ export async function GET(req: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY)
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
 
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) {
+    // Fail closed: an unset secret would otherwise compare against
+    // "Bearer undefined", which an attacker could match.
+    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+  }
   const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

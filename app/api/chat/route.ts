@@ -69,11 +69,23 @@ export async function POST(req: Request) {
       ? anthropic('claude-sonnet-4-6')
       : anthropic('claude-haiku-4-5-20251001')
 
-    console.log(
+    console.warn(
       `[model] phase=${session.current_phase} model=${modelName}`,
       `[messages] raw=${messages.length} trimmed=${trimmed.length}`,
       `[system-prompt] chars=${systemPrompt.length}`
     )
+
+    // Soft guard: CLAUDE.md targets ~1k–3.5k input tokens depending on
+    // phase, with 5k as the "stop and investigate" threshold. We can't
+    // count Anthropic-correct tokens without the tokenizer, so a chars/4
+    // estimate is good enough for an alert.
+    const estimatedTokens = Math.ceil(systemPrompt.length / 4)
+    if (estimatedTokens > 5000) {
+      console.error(
+        `[token-budget] EXCEEDED phase=${session.current_phase} ` +
+          `estimated=${estimatedTokens} chars=${systemPrompt.length}`
+      )
+    }
 
     const result = streamText({
       model,
@@ -106,7 +118,7 @@ export async function POST(req: Request) {
       stopWhen: stepCountIs(5),
       onFinish: async ({ text, totalUsage }) => {
         try {
-          console.log(
+          console.warn(
             `[tokens] session=${sessionId} input=${totalUsage.inputTokens} output=${totalUsage.outputTokens}`
           )
           if (text) {

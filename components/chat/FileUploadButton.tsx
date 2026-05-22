@@ -124,7 +124,7 @@ export default function FileUploadButton({ sessionId, onUploadComplete }: Props)
         {uploading ? `Uploading… ${progress}%` : 'Attach file'}
       </label>
       {error && (
-        <p className="text-red-600 text-xs font-body">{error}</p>
+        <p className="text-error text-xs font-body">{error}</p>
       )}
     </div>
   )

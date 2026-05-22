@@ -84,7 +84,7 @@ export default function SessionRowActions({
         onClick={handleDelete}
         disabled={deleting}
         title="Delete session"
-        className="text-text-muted hover:text-red-500 text-xs transition-colors disabled:opacity-40"
+        className="text-text-muted hover:text-error text-xs transition-colors disabled:opacity-40"
       >
         {deleting ? '…' : '×'}
       </button>

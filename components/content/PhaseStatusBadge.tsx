@@ -5,7 +5,7 @@ const styles: Record<PhaseStatus, string> = {
   active:          'bg-blue-50 text-blue-700',
   awaiting_review: 'bg-amber-50 text-amber-700',
   complete:        'bg-green-50 text-green-700',
-  error:           'bg-red-50 text-red-700',
+  error:           'bg-error/10 text-error',
 }
 
 const labels: Record<PhaseStatus, string> = {

@@ -82,7 +82,13 @@ export default function SitemapPhase({
     }
   }, [contentJobId])
 
-  useEffect(() => { loadSitemap() }, [loadSitemap])
+  useEffect(() => {
+    // Data-loading-on-mount pattern: loadSitemap is async and only setState's
+    // after fetch resolves, but ESLint flags any indirect setState reference
+    // inside an effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadSitemap()
+  }, [loadSitemap])
 
   const groups = groupBySections(pages)
 
@@ -171,7 +177,7 @@ export default function SitemapPhase({
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {error}
         </div>
       )}

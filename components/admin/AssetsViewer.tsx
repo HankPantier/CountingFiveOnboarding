@@ -9,7 +9,13 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / 1048576).toFixed(1)} MB`
 }
 
-export default function AssetsViewer({ assets }: { assets: Asset[] }) {
+export default function AssetsViewer({
+  assets,
+  signedUrls,
+}: {
+  assets: Asset[]
+  signedUrls: Record<string, string>
+}) {
   if (!assets.length) {
     return (
       <div className="bg-surface-card border border-border-default rounded-lg p-4 mb-6">
@@ -36,14 +42,18 @@ export default function AssetsViewer({ assets }: { assets: Asset[] }) {
                 {asset.asset_category ?? 'other'} · {asset.mime_type} · {formatBytes(asset.file_size_bytes)}
               </p>
             </div>
-            <a
-              href={asset.storage_path}
-              className="ml-4 text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors flex-shrink-0"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View
-            </a>
+            {signedUrls[asset.id] ? (
+              <a
+                href={signedUrls[asset.id]}
+                className="ml-4 text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors flex-shrink-0"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View
+              </a>
+            ) : (
+              <span className="ml-4 text-xs font-body text-text-muted flex-shrink-0">No preview</span>
+            )}
           </div>
         ))}
       </div>

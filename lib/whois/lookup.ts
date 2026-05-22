@@ -51,5 +51,5 @@ export async function runWhoisLookup(sessionId: string, domain: string): Promise
     .update({ schema_data: updatedSchema as Json, current_phase: 3 })
     .eq('id', sessionId)
 
-  console.log('[WHOIS] Done for session', sessionId, '— advanced to Phase 3')
+  console.warn('[WHOIS] Done for session', sessionId, '— advanced to Phase 3')
 }

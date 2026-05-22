@@ -87,6 +87,9 @@ export default function DesignSystemPhase({
   }, [sessionId])
 
   useEffect(() => {
+    // Data-loading-on-mount pattern; setState happens only after the async
+    // fetch in generatePalette resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!palette) generatePalette()
   }, [palette, generatePalette])
 
@@ -145,7 +148,7 @@ export default function DesignSystemPhase({
             />
           ))}
         </div>
-        <div className={`text-sm font-body ${passesContrast ? 'text-emerald-700' : 'text-red-700'}`}>
+        <div className={`text-sm font-body ${passesContrast ? 'text-emerald-700' : 'text-error'}`}>
           Near-black / near-white contrast: {minContrast.toFixed(2)} {passesContrast ? '(WCAG AA)' : '(below WCAG AA — pick higher-contrast neutrals)'}
         </div>
       </section>
@@ -209,7 +212,7 @@ export default function DesignSystemPhase({
         />
       </section>
 
-      {error && <div className="text-sm text-red-700 font-body">{error}</div>}
+      {error && <div className="text-sm text-error font-body">{error}</div>}
 
       <button
         type="button"

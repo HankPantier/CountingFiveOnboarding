@@ -207,7 +207,7 @@ export async function POST(
       supabase
     )
     if (stockPhotoResolutions.length > 0) {
-      console.log(`[package] Stock photos resolved: ${stockPhotoResolutions.length} (suffix="${styleSuffix}")`)
+      console.warn(`[package] Stock photos resolved: ${stockPhotoResolutions.length} (suffix="${styleSuffix}")`)
     }
   }
 
@@ -254,7 +254,7 @@ export async function POST(
     })
   }))
 
-  console.log(`[package] Bundled ${assetEntries.length} session asset(s) into public/content-assets/`)
+  console.warn(`[package] Bundled ${assetEntries.length} session asset(s) into public/content-assets/`)
 
   // The brand-doc LLM call and the docx render are both async/expensive; run
   // them in parallel with each other (the deterministic stitches that depend
@@ -326,7 +326,7 @@ export async function POST(
         primary: wordmark.filename,
         alt: brandJson.logo?.alt || `${brandJson.firm.name} logo`,
       }
-      console.log(`[package] No logo upload found — generated wordmark ${wordmark.filename}`)
+      console.warn(`[package] No logo upload found — generated wordmark ${wordmark.filename}`)
     }
   }
 
@@ -365,7 +365,7 @@ export async function POST(
       photoMap[name] = avatar.filename
     }
     if (teamMembers.length > 0) {
-      console.log(`[package] Team photos: ${Object.keys(photoMap).length} bound (${assetEntries.filter(a => a.category === 'team-photo' && a.fileName.endsWith('-avatar.svg')).length} synthesized)`)
+      console.warn(`[package] Team photos: ${Object.keys(photoMap).length} bound (${assetEntries.filter(a => a.category === 'team-photo' && a.fileName.endsWith('-avatar.svg')).length} synthesized)`)
     }
   }
 
@@ -470,7 +470,7 @@ export async function POST(
     .update({ phase: 6, updated_at: new Date().toISOString() })
     .eq('id', id)
 
-  console.log(`[content-job] Package assembled: ${storagePath} (${(zipBuffer.length / 1024).toFixed(0)} KB)`)
+  console.warn(`[content-job] Package assembled: ${storagePath} (${(zipBuffer.length / 1024).toFixed(0)} KB)`)
 
   return NextResponse.json({
     success: true,

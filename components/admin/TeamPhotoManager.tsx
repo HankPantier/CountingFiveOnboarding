@@ -16,12 +16,13 @@ type Props = {
   sessionId: string
   team: TeamMember[]
   assets: Asset[]
+  signedUrls: Record<string, string>
 }
 
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png']
 const MAX_BYTES = 25 * 1024 * 1024  // 25MB per team photo is plenty
 
-export default function TeamPhotoManager({ sessionId, team, assets }: Props) {
+export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }: Props) {
   const router = useRouter()
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [busyMember, setBusyMember] = useState<string | null>(null)
@@ -122,9 +123,9 @@ export default function TeamPhotoManager({ sessionId, team, assets }: Props) {
           return (
             <div key={member.name} className="flex items-center gap-3 p-2 border border-border-default rounded-md">
               <div className="w-12 h-12 rounded bg-surface-subtle flex-shrink-0 overflow-hidden">
-                {asset?.public_url ? (
+                {asset && signedUrls[asset.id] ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={asset.public_url} alt={member.name} className="w-full h-full object-cover" />
+                  <img src={signedUrls[asset.id]} alt={member.name} className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center text-xs text-text-muted font-heading font-semibold">
                     {member.name.split(' ').map(t => t[0] || '').join('').slice(0, 2).toUpperCase()}
@@ -136,7 +137,7 @@ export default function TeamPhotoManager({ sessionId, team, assets }: Props) {
                 <p className="text-xs text-text-muted font-body truncate">
                   {asset ? asset.file_name : 'No photo — will use initials avatar'}
                 </p>
-                {err && <p className="text-xs text-red-600 font-body mt-0.5">{err}</p>}
+                {err && <p className="text-xs text-error font-body mt-0.5">{err}</p>}
               </div>
               <input
                 ref={el => { inputRefs.current[member.name] = el }}

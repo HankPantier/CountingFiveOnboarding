@@ -240,7 +240,7 @@ export default function OutlineCard({
                 <button
                   type="button"
                   onClick={() => updateCta(null)}
-                  className="text-xs font-body text-text-muted hover:text-red-600 transition-colors"
+                  className="text-xs font-body text-text-muted hover:text-error transition-colors"
                 >
                   Clear
                 </button>
@@ -263,7 +263,7 @@ export default function OutlineCard({
               />
             </div>
             <p className="mt-1 text-xs font-body text-text-muted">
-              Closes every page. Leave empty for the default ("Schedule a consultation" → /contact).
+              Closes every page. Leave empty for the default (&quot;Schedule a consultation&quot; → /contact).
             </p>
           </div>
 

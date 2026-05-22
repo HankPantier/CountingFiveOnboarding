@@ -28,11 +28,11 @@ export default function DeleteSessionButton({ sessionId }: { sessionId: string }
 
   return (
     <div className="mt-6 pt-6 border-t border-border-default">
-      {error && <p className="text-sm font-body text-red-700 mb-3">{error}</p>}
+      {error && <p className="text-sm font-body text-error mb-3">{error}</p>}
       <button
         onClick={handleDelete}
         disabled={state === 'deleting'}
-        className="w-full border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-400 font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full border border-error/20 text-error hover:bg-error/10 hover:border-error/50 font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {state === 'deleting' ? 'Deleting…' : 'Delete Session'}
       </button>

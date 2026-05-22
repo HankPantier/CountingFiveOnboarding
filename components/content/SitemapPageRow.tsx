@@ -54,7 +54,7 @@ export default function SitemapPageRow({
       <button
         type="button"
         onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-red-500 transition-all p-1 flex-shrink-0"
+        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all p-1 flex-shrink-0"
         aria-label={`Remove ${page.title}`}
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

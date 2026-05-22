@@ -215,7 +215,7 @@ export function standardizeContactPage(page: GeneratedPage): string {
   // Strip hallucinated phone/email values that Claude inlined into prose.
   // Match common forms: "Phone: (xxx) xxx-xxxx", "Email: foo@bar.com",
   // "Call us at (xxx) xxx-xxxx".
-  let cleaned = content
+  const cleaned = content
     .replace(/\s*Phone:\s*\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\.?/gi, '')
     .replace(/\s*Email:\s*[\w.+-]+@[\w-]+\.[\w.-]+\.?/gi, '')
     .replace(/\s*Call us at \(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}\.?/gi, '')

@@ -34,7 +34,7 @@ export default function NavEditor({
               nav.json
             </h2>
             {error ? (
-              <span className="text-xs font-body text-red-600">{error}</span>
+              <span className="text-xs font-body text-error">{error}</span>
             ) : (
               <span className="text-xs font-body text-green-700">Valid</span>
             )}

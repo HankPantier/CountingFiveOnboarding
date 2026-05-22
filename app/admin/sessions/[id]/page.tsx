@@ -27,6 +27,18 @@ export default async function SessionDetailPage({
 
   if (!session) notFound()
 
+  // Sign URLs for every asset server-side so the components never need to
+  // know the bucket is private. 1-hour expiry covers a typical admin
+  // session; refreshing the page mints new URLs via router.refresh().
+  const signedUrls: Record<string, string> = {}
+  for (const asset of assets ?? []) {
+    if (!asset.storage_path) continue
+    const { data: signed } = await supabase.storage
+      .from('session-assets')
+      .createSignedUrl(asset.storage_path, 3600)
+    if (signed?.signedUrl) signedUrls[asset.id] = signed.signedUrl
+  }
+
   return (
     <div className="flex h-[calc(100vh-4rem)]">
       {/* Left panel: chat transcript */}
@@ -72,9 +84,10 @@ export default async function SessionDetailPage({
                 Array<{ name: string; title?: string; credentials?: string[] }>) ?? []
             }
             assets={assets ?? []}
+            signedUrls={signedUrls}
           />
-          <StockPhotoManager sessionId={id} assets={assets ?? []} />
-          <AssetsViewer assets={assets ?? []} />
+          <StockPhotoManager sessionId={id} assets={assets ?? []} signedUrls={signedUrls} />
+          <AssetsViewer assets={assets ?? []} signedUrls={signedUrls} />
         </div>
         {session.pdf_url && (
           <div className="mt-4 flex flex-col gap-2">

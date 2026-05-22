@@ -4,7 +4,18 @@ import { NextResponse } from 'next/server'
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const code = searchParams.get('code')
+  const state = searchParams.get('state')
   if (!code) return NextResponse.json({ error: 'No code' }, { status: 400 })
+  if (!state) return NextResponse.json({ error: 'No state' }, { status: 400 })
+
+  // CSRF guard: state in the OAuth redirect must match the cookie we set
+  // in /api/basecamp/auth. Without this check, an attacker could trick an
+  // admin into completing an OAuth flow for an attacker-controlled account.
+  const cookieHeader = req.headers.get('cookie') ?? ''
+  const cookieState = parseCookie(cookieHeader, 'basecamp_oauth_state')
+  if (!cookieState || cookieState !== state) {
+    return NextResponse.json({ error: 'Invalid state' }, { status: 400 })
+  }
 
   const res = await fetch('https://launchpad.37signals.com/authorization/token', {
     method: 'POST',
@@ -37,7 +48,17 @@ export async function GET(req: Request) {
     updated_at: new Date().toISOString(),
   })
 
-  return NextResponse.redirect(
+  const response = NextResponse.redirect(
     `${process.env.NEXT_PUBLIC_APP_URL}/admin/dashboard?basecamp=connected`
   )
+  response.cookies.delete({ name: 'basecamp_oauth_state', path: '/api/basecamp' })
+  return response
+}
+
+function parseCookie(header: string, name: string): string | null {
+  for (const pair of header.split(';')) {
+    const [k, ...v] = pair.trim().split('=')
+    if (k === name) return decodeURIComponent(v.join('='))
+  }
+  return null
 }

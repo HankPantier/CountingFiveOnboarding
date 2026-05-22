@@ -164,9 +164,8 @@ export async function resolveStockPhotos(
       continue
     }
 
-    const { data: urlData } = supabase.storage
-      .from('session-assets')
-      .getPublicUrl(storagePath)
+    // session-assets bucket is private; never store a public URL.
+    // Admin viewers sign URLs on demand via Supabase storage createSignedUrl().
 
     const metadata: StockPhotoMetadata = {
       source: 'pexels',
@@ -185,7 +184,7 @@ export async function resolveStockPhotos(
         session_id: input.sessionId,
         file_name: filename,
         storage_path: storagePath,
-        public_url: urlData.publicUrl,
+        public_url: null,
         mime_type: 'image/jpeg',
         file_size_bytes: bytes.length,
         asset_category: 'stock-photo',
@@ -198,7 +197,7 @@ export async function resolveStockPhotos(
     }
 
     resolved.push({ filename, pageUrl: ref.pageUrl, metadata })
-    console.log(`[stock-photo] Resolved ${filename} ← Pexels #${photo.id} by ${photo.photographer} (source=${ref.source ?? 'hero'})`)
+    console.warn(`[stock-photo] Resolved ${filename} ← Pexels #${photo.id} by ${photo.photographer} (source=${ref.source ?? 'hero'})`)
   }
 
   return resolved

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
+import { safePath } from '../_path'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -18,12 +19,12 @@ export async function GET(
   if (ctx instanceof NextResponse) return ctx
 
   const url = new URL(req.url)
-  const path = url.searchParams.get('path')
-  if (!path) {
+  const rawPath = url.searchParams.get('path')
+  if (!rawPath) {
     return NextResponse.json({ error: 'path query param required' }, { status: 400 })
   }
-  // Lock writes to content/ so the editor cannot leak into other paths.
-  if (!path.startsWith('content/')) {
+  const path = safePath(rawPath)
+  if (!path) {
     return NextResponse.json({ error: 'path must be under content/' }, { status: 400 })
   }
 

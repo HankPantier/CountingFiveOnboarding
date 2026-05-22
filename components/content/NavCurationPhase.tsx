@@ -121,7 +121,7 @@ function SortableRow({
       <button
         type="button"
         onClick={onRemove}
-        className="text-xs text-red-600 hover:text-red-800 p-1"
+        className="text-xs text-error hover:text-error p-1"
         aria-label="Remove from nav"
       >
         <Trash2 className="h-4 w-4" />
@@ -147,7 +147,11 @@ export default function NavCurationPhase({
   // server render and client mount (DndDescribedBy-0 vs DndDescribedBy-1), causing
   // a hydration mismatch. Mount-gate the DndContext so it only renders on the client.
   const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => {
+    // Hydration gate: render dnd-kit children only after mount to avoid mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -268,7 +272,7 @@ export default function NavCurationPhase({
         </div>
       </div>
 
-      {error && <div className="text-sm text-red-700 font-body">{error}</div>}
+      {error && <div className="text-sm text-error font-body">{error}</div>}
 
       <div className="flex items-center justify-between pt-2">
         <span className="text-xs font-body text-text-muted">{savedAt ?? ''}</span>

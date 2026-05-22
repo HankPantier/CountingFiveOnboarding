@@ -2,6 +2,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import ClientReviewList from '@/components/content/ClientReviewList'
+import type { SessionSchema } from '@/types/session-schema'
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -41,11 +42,8 @@ export default async function ReviewPage({
     notFound()
   }
 
-  // Extract firm name defensively
-  const firmName =
-    session.schema_data && typeof session.schema_data === 'object'
-      ? (session.schema_data as any).business?.name || 'your firm'
-      : 'your firm'
+  const schema = (session.schema_data ?? null) as SessionSchema | null
+  const firmName = schema?.business?.name?.trim() || 'your firm'
 
   // Load flagged pages for review
   const { data: pages } = await supabase
