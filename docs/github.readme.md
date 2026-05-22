@@ -35,9 +35,11 @@ The private key code accepts either real newlines or escaped `\n`. The Vercel
 env var UI usually wants escaped `\n`; locally you can paste the PEM with
 real newlines if you wrap the value in single quotes.
 
-## 4. Apply migration 014 + regen types
+## 4. Apply migrations 014 + 015, regen types
 
-Migration file: `supabase/014_github_integration.sql` — adds `content_jobs.github_repo`.
+- `supabase/014_github_integration.sql` — adds `content_jobs.github_repo`.
+- `supabase/015_github_repo_unique.sql` — partial unique index so two
+  `content_jobs` can't accidentally point at the same repo.
 
 Apply via your usual Supabase Management API workflow, then regenerate types:
 
@@ -93,6 +95,37 @@ this by hand per client:
   continue." (409 handled).
 
 ---
+
+## Multi-client model — how edits stay scoped to the right repo
+
+You will run many clients through this. Each one gets its own GitHub repo
+forked from the `counting-five-client-template` codebase. The editor is
+designed so cross-contamination is structurally impossible:
+
+- **One session → one content_job → one `github_repo`.** A unique partial
+  index (migration `015_github_repo_unique.sql`) prevents two `content_jobs`
+  from ever pointing at the same repo, even by accident.
+- **Every request resolves the repo from the DB.** The URL carries the
+  session UUID (`/admin/content/[sessionId]/edit`, `/api/edit/[sessionId]/*`).
+  `resolveEditContext()` in `app/api/edit/[id]/_helpers.ts` looks up
+  `content_jobs.github_repo` *per request* — no global "current client" state
+  exists.
+- **The Octokit client is shared safely.** `getOctokit()` caches one Octokit
+  instance per Node process. It is authenticated to a single GitHub App
+  *installation*, which has access to every repo under the org. Each
+  Octokit call passes the resolved `{owner, repo}` explicitly, so a request
+  for client A cannot accidentally hit client B's repo.
+- **The editor top bar shows firm name + website URL + repo slug**, so the
+  admin can see at a glance which client they're editing — useful when
+  multiple browser tabs are open. (`components/editor/EditorTopBar.tsx`.)
+- **The dashboard `Edit content` action is per-row.** Each row's link
+  embeds its own `sessionId`. There is no "global edit" entry point.
+
+When you're about to act on someone else's session by mistake, the URL,
+the top bar, and the file tree all show the firm name and the repo slug.
+If you ever see two rows in the dashboard with the same repo slug, the
+UNIQUE constraint has been bypassed (manual SQL) — investigate before
+clicking Save.
 
 ## How the pieces fit together
 
@@ -151,9 +184,28 @@ hand-edits.
   you ever see rate-limit warnings, add a DB-backed cache mirroring
   `lib/basecamp/client.ts`'s pattern.
 
+## Conventions to honor when provisioning lands
+
+When the provisioning spec is built, follow these conventions so the editor
+stays predictable:
+
+- **Source of every new repo**: a single template repo under the
+  CountingFive GitHub org (the `counting-five-client-template` codebase).
+  Each new client repo is created from this template (GitHub's "Create
+  repository from template" API or `repos.createUsingTemplate`).
+- **Slug derivation**: auto from `sessions.website_url` — strip the TLD and
+  append `-site`. Examples: `acmetax.com` → `acmetax-site`,
+  `korbeylague.com` → `korbeylague-site`. If the derived slug collides
+  with an existing repo (the unique index will refuse), append a 5-char
+  prefix from the session UUID — `acmetax-site-3f2a1`. Admin can override
+  with a custom slug at provisioning time.
+- **Slug is immutable once set.** Renaming a repo breaks every commit URL
+  and every Vercel preview. If a client rebrands, leave the repo slug
+  alone and just update display names elsewhere.
+
 ## Known follow-ups (separate specs)
 
-- **Provisioning flow** (zip → repo). Currently manual per step 5.
+- **Provisioning flow** (zip → repo from template). Currently manual per step 5.
 - **Theme/asset editing** (brand.json, design.json, `/public/content-assets/`).
 - **Preview URL** in the editor top bar — wire a Vercel deploy URL via an
   env template (`https://{project}-git-draft-{team}.vercel.app`).

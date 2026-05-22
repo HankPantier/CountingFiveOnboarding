@@ -9,7 +9,15 @@ import { parseNavJson } from '@/lib/editor/nav-config'
 
 type LoadedFile = { content: string; sha: string }
 
-export default function EditorShell({ sessionId }: { sessionId: string }) {
+export default function EditorShell({
+  sessionId,
+  firmName,
+  websiteUrl,
+}: {
+  sessionId: string
+  firmName: string
+  websiteUrl: string
+}) {
   const [tree, setTree] = useState<TreeFile[]>([])
   const [status, setStatus] = useState<EditorStatus | null>(null)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
@@ -203,6 +211,8 @@ export default function EditorShell({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex flex-col h-screen bg-surface-default">
       <EditorTopBar
+        firmName={firmName}
+        websiteUrl={websiteUrl}
         status={status}
         dirtyCount={dirty.size}
         selectedPath={selectedPath}

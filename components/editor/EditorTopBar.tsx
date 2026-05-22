@@ -13,6 +13,8 @@ export type EditorStatus = {
 }
 
 export default function EditorTopBar({
+  firmName,
+  websiteUrl,
   status,
   dirtyCount,
   selectedPath,
@@ -23,6 +25,8 @@ export default function EditorTopBar({
   onSave,
   onPublish,
 }: {
+  firmName: string
+  websiteUrl: string
   status: EditorStatus | null
   dirtyCount: number
   selectedPath: string | null
@@ -45,14 +49,27 @@ export default function EditorTopBar({
       <div className="flex items-center gap-3 min-w-0">
         <Link
           href="/admin/dashboard"
-          className="text-text-muted hover:text-brand-cyan font-heading text-xs"
+          className="text-text-muted hover:text-brand-cyan font-heading text-xs whitespace-nowrap"
         >
           ← Dashboard
         </Link>
-        <h1 className="font-heading font-semibold text-sm text-brand-navy truncate">
-          {status?.repo ?? 'Editor'}
-        </h1>
-        <span className="text-xs font-body text-text-muted">{aheadLabel}</span>
+        <div className="flex flex-col min-w-0">
+          <h1 className="font-heading font-semibold text-sm text-brand-navy truncate">
+            {firmName}
+          </h1>
+          <div className="flex items-center gap-2 text-xs font-body text-text-muted truncate">
+            <span className="truncate">{websiteUrl}</span>
+            {status && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="font-mono text-[10px] text-text-muted truncate">
+                  {status.repo}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <span className="text-xs font-body text-text-muted whitespace-nowrap">{aheadLabel}</span>
         {publishResult && (
           <span className="text-xs font-body text-green-700 bg-green-50 px-2 py-0.5 rounded">
             {publishResult}
