@@ -5,6 +5,7 @@ import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
 import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
+import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -13,6 +14,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 
 type Cta = { text: string; url: string }
 const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
+const CONTENT_MODEL = 'claude-sonnet-4-6'
 
 type GeneratedResult = {
   content: string
@@ -72,6 +74,8 @@ async function generatePageContent(
   palette: PaletteData | null,
   websiteUrl: string,
   cta: Cta,
+  contentJobId: string,
+  sessionId: string,
   flaggedPhrases?: string[]
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
@@ -247,7 +251,7 @@ Default to "page-header" if uncertain. Use "hero" only on the homepage and high-
 ${ANTI_SLOP_RULES}${retryNote}`
 
   const { text, usage } = await generateText({
-    model: anthropic('claude-sonnet-4-6'),
+    model: anthropic(CONTENT_MODEL),
     prompt,
     maxOutputTokens: 4000,
   })
@@ -256,6 +260,15 @@ ${ANTI_SLOP_RULES}${retryNote}`
     `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
   )
   checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
+  await recordTokenUsage({
+    contentJobId,
+    sessionId,
+    stage: 'content',
+    pageUrl,
+    model: CONTENT_MODEL,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+  })
 
   try {
     const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
@@ -400,7 +413,9 @@ export async function generateSinglePage(
       schema,
       palette,
       session.website_url,
-      cta
+      cta,
+      contentJobId,
+      job.session_id
     )
 
     const validation = validateContent(result.content)
@@ -420,6 +435,8 @@ export async function generateSinglePage(
         palette,
         session.website_url,
         cta,
+        contentJobId,
+        job.session_id,
         validation.flagged
       )
     }
@@ -449,6 +466,7 @@ export async function generateSinglePage(
         outline.page_title, outline.page_url, outline.sections,
         targetKeyword, secondaryKeywords, existingContent, competitorRefs,
         schema, palette, session.website_url, cta,
+        contentJobId, job.session_id,
         [correctionNote]
       )
       // Re-parse after retry; if still empty, log and store anyway.
@@ -485,6 +503,8 @@ export async function generateSinglePage(
         palette,
         session.website_url,
         cta,
+        contentJobId,
+        job.session_id,
         [correctionNote]  // reuse the flaggedPhrases mechanism to carry the correction note
       )
 
@@ -647,6 +667,39 @@ export async function runContentGeneration(
       return
     }
     const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+
+    // Mid-progress email at each continuation boundary. A full site can take
+    // several chained invocations; this reassures the admin that work is still
+    // moving rather than leaving them watching a silent dashboard.
+    if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
+      try {
+        const total = allPages?.length ?? 0
+        const { data: progressSession } = await supabase
+          .from('sessions')
+          .select('schema_data')
+          .eq('id', sessionId)
+          .single()
+        const firmName = ((progressSession?.schema_data ?? {}) as SessionSchema).business?.name ?? 'Unknown firm'
+        const { Resend } = await import('resend')
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL,
+          to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
+          subject: `[CountingFive] Content generation in progress — ${firmName}`,
+          html: `
+            <h2>Content Generation In Progress</h2>
+            <p><strong>${firmName}</strong></p>
+            <p>${completeCount} of ${total} pages complete${errorCount > 0 ? `, ${errorCount} errors` : ''}. Generation is continuing automatically — no action needed.</p>
+            <p><a href="${appUrl}/admin/content/${sessionId}">View progress →</a></p>
+          `,
+        })
+      } catch (emailErr) {
+        console.warn('[content-gen] Progress email failed:', emailErr)
+      }
+    }
+
     try {
       const res = await fetch(`${url}/api/content-jobs/${contentJobId}/generate`, {
         method: 'POST',

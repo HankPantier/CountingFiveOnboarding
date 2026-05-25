@@ -59,6 +59,7 @@ export async function POST(
       outline.page_title,
       outline.page_url,
       outline.content_job_id,
+      job.session_id,
       schema,
       palette
     )

@@ -52,6 +52,25 @@ export default async function ContentWorkflowPage({
   const firmName = (session.schema_data as Record<string, Record<string, unknown>>)?.business?.name as string | undefined
   const currentPhase = contentJob?.phase ?? 1
   const contentJobId = contentJob?.id ?? ''
+
+  // Cumulative API cost for this job (estimated at insert time per model rates).
+  const usageRows = contentJobId
+    ? (await supabase
+        .from('token_usage')
+        .select('stage, input_tokens, output_tokens, cost_usd')
+        .eq('content_job_id', contentJobId)).data ?? []
+    : []
+  const usage = usageRows.reduce(
+    (acc, r) => {
+      const cost = Number(r.cost_usd) || 0
+      acc.cost += cost
+      acc.tokens += (r.input_tokens || 0) + (r.output_tokens || 0)
+      acc.calls += 1
+      acc.byStage[r.stage] = (acc.byStage[r.stage] ?? 0) + cost
+      return acc
+    },
+    { cost: 0, tokens: 0, calls: 0, byStage: {} as Record<string, number> }
+  )
   const existingPalette = (contentJob?.palette ?? null) as import('@/types/palette').PaletteData | null
   const existingTokens = (contentJob?.design_tokens ?? null) as DesignTokens | null
   const brand = (session.schema_data as SessionSchema | null)?.brand
@@ -81,6 +100,16 @@ export default async function ContentWorkflowPage({
               </span>
             )}
           </p>
+          {usage.calls > 0 && (
+            <p
+              className="text-text-muted font-body text-xs mt-1"
+              title={Object.entries(usage.byStage)
+                .map(([stage, cost]) => `${stage}: $${cost.toFixed(2)}`)
+                .join('  ·  ')}
+            >
+              Est. API cost: ${usage.cost.toFixed(2)} · {usage.tokens.toLocaleString()} tokens · {usage.calls} calls
+            </p>
+          )}
         </div>
       </div>
 

@@ -3,9 +3,12 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
+import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import { asJson } from '@/lib/supabase/json-typed'
+
+const OUTLINE_MODEL = 'claude-sonnet-4-6'
 
 type OutlineResult = {
   h1: string
@@ -19,6 +22,7 @@ export async function generateOutlineForPage(
   pageTitle: string,
   pageUrl: string,
   contentJobId: string,
+  sessionId: string,
   schema: SessionSchema,
   palette: PaletteData | null
 ): Promise<void> {
@@ -82,7 +86,7 @@ RULES:
 - Do not write any actual copy — structure only`
 
   const { text, usage } = await generateText({
-    model: anthropic('claude-sonnet-4-6'),
+    model: anthropic(OUTLINE_MODEL),
     prompt,
     maxOutputTokens: 1000,
   })
@@ -91,6 +95,15 @@ RULES:
     `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
   )
   checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
+  await recordTokenUsage({
+    contentJobId,
+    sessionId,
+    stage: 'outline',
+    pageUrl,
+    model: OUTLINE_MODEL,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+  })
 
   let outline: OutlineResult
   try {
@@ -164,6 +177,7 @@ export async function runOutlineGeneration(
         outline.page_title,
         outline.page_url,
         contentJobId,
+        sessionId,
         schema,
         palette
       )

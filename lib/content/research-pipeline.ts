@@ -70,7 +70,10 @@ export async function runResearchPipeline(
       try {
         // Job 1: Keyword research
         console.warn(`[Research] Starting keyword research for: ${page.title}`)
-        const keywords = await runKeywordResearch(page.title, page.url, firmContext)
+        const keywords = await runKeywordResearch(page.title, page.url, firmContext, {
+          contentJobId,
+          sessionId,
+        })
 
         // Job 2: Competitor page analysis
         const competitorRefs = await fetchCompetitorPages(keywords.competitorRefs)

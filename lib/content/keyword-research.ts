@@ -1,6 +1,9 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { checkTokenBudget } from './truncate-to-token-budget'
+import { recordTokenUsage } from './token-usage'
+
+const KEYWORD_MODEL = 'claude-haiku-4-5-20251001'
 
 type KeywordResult = {
   targetKeyword: string
@@ -11,11 +14,12 @@ type KeywordResult = {
 export async function runKeywordResearch(
   pageTitle: string,
   pageUrl: string,
-  firmContext: { name: string; location: string; services: string[]; niches: string[] }
+  firmContext: { name: string; location: string; services: string[]; niches: string[] },
+  ctx: { contentJobId: string; sessionId: string }
 ): Promise<KeywordResult> {
   // Step 1: Claude keyword generation
   const { text, usage } = await generateText({
-    model: anthropic('claude-haiku-4-5-20251001'),
+    model: anthropic(KEYWORD_MODEL),
     system: 'You are an SEO keyword researcher for CPA firms. Return JSON only, no prose.',
     prompt: `Generate search keywords for this CPA firm page.
 
@@ -33,6 +37,15 @@ Return JSON: { "primary": "keyword phrase", "secondary": ["kw1", "kw2", "kw3"] }
   })
 
   checkTokenBudget('keyword-research', pageUrl, usage?.inputTokens, 800)
+  await recordTokenUsage({
+    contentJobId: ctx.contentJobId,
+    sessionId: ctx.sessionId,
+    stage: 'keyword',
+    pageUrl,
+    model: KEYWORD_MODEL,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+  })
 
   let primary = `${pageTitle.toLowerCase()} ${firmContext.location.toLowerCase()}`
   let secondary: string[] = []

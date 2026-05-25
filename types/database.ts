@@ -507,6 +507,60 @@ export type Database = {
           },
         ]
       }
+      token_usage: {
+        Row: {
+          content_job_id: string | null
+          cost_usd: number
+          created_at: string
+          id: string
+          input_tokens: number
+          model: string
+          output_tokens: number
+          page_url: string | null
+          session_id: string | null
+          stage: string
+        }
+        Insert: {
+          content_job_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+          page_url?: string | null
+          session_id?: string | null
+          stage: string
+        }
+        Update: {
+          content_job_id?: string | null
+          cost_usd?: number
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+          page_url?: string | null
+          session_id?: string | null
+          stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_usage_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "token_usage_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
