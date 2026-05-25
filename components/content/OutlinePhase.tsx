@@ -26,6 +26,8 @@ export default function OutlinePhase({
   const [loading, setLoading] = useState(true)
   const [advancing, setAdvancing] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [approvingAll, setApprovingAll] = useState(false)
+  const [regeneratingAll, setRegeneratingAll] = useState(false)
   const [retryNonce, setRetryNonce] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
@@ -71,6 +73,43 @@ export default function OutlinePhase({
       setError(err instanceof Error ? err.message : 'Retry failed')
     } finally {
       setRetrying(false)
+    }
+  }
+
+  const approveAll = async () => {
+    setApprovingAll(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/outlines/approve-all`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Approve all failed')
+      }
+      // Re-fetch so the approved flags (and the enabled "Start" button) update.
+      setRetryNonce(n => n + 1)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Approve all failed')
+    } finally {
+      setApprovingAll(false)
+    }
+  }
+
+  const regenerateAll = async () => {
+    if (!window.confirm('Regenerate ALL outlines? Every outline will be cleared and rebuilt, and all approvals reset.')) return
+    setRegeneratingAll(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/outlines/regenerate-all`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? 'Regenerate all failed')
+      }
+      // Re-mount polling to track the rebuilding outlines.
+      setRetryNonce(n => n + 1)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Regenerate all failed')
+    } finally {
+      setRegeneratingAll(false)
     }
   }
 
@@ -126,6 +165,28 @@ export default function OutlinePhase({
           style={{ width: `${outlines.length > 0 ? (approvedCount / outlines.length) * 100 : 0}%` }}
         />
       </div>
+
+      {/* Bulk actions */}
+      {outlines.length > 0 && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={approveAll}
+            disabled={approvingAll || allApproved || generatingCount > 0}
+            className="border border-brand-cyan text-brand-navy font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan hover:text-text-inverse disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Approve every generated outline at once. Outlines still being generated are left untouched."
+          >
+            {approvingAll ? 'Approving…' : 'Approve all'}
+          </button>
+          <button
+            onClick={regenerateAll}
+            disabled={regeneratingAll || generatingCount > 0}
+            className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Clear and rebuild every outline from scratch. All approvals reset — use after major schema changes."
+          >
+            {regeneratingAll ? 'Regenerating…' : 'Regenerate all'}
+          </button>
+        </div>
+      )}
 
       {/* Outline cards */}
       <div className="space-y-2">
