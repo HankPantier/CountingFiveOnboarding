@@ -4,18 +4,29 @@ import { getPhaseInstructions } from './phase-instructions'
 import { buildGapListInstructions } from './gap-list'
 
 type Session = Database['public']['Tables']['sessions']['Row']
+export type AgentMode = 'client' | 'staff'
+
+export function getMode(session: Session): AgentMode {
+  const meta = (session.schema_data as { _meta?: { mode?: string } } | null)?._meta
+  return meta?.mode === 'staff' ? 'staff' : 'client'
+}
 
 export function buildSystemPrompt(session: Session): string {
   const schema = session.schema_data ?? {}
   const gaps = (session.gap_list as GapItem[]) ?? []
   const phase = session.current_phase
+  const mode = getMode(session)
 
   const sparseSchema = serializeSchema(schema)
-  const phaseInstructions = getPhaseInstructions(phase, session)
+  const phaseInstructions = getPhaseInstructions(phase, session, mode)
   const gapInstructions = phase >= 4 ? buildGapListInstructions(gaps) : ''
+  const audience = mode === 'staff'
+    ? 'a CountingFive staff member entering data on behalf of the client (NOT the client themselves)'
+    : 'the client'
+  const toneBlock = mode === 'staff' ? STAFF_TONE_BLOCK : CLIENT_TONE_BLOCK
 
   return `You are an AI onboarding agent for CountingFive, a web design firm for CPA firms.
-Your job is to guide a client through their website onboarding in 5–7 minutes total.
+Your job is to capture a complete onboarding profile by talking to ${audience}.
 
 CURRENT PHASE: ${phase}
 ${phaseInstructions}
@@ -26,11 +37,18 @@ ${sparseSchema}
 ${gapInstructions}
 
 TOOL INSTRUCTIONS:
-- Call update_session_data whenever the client confirms or provides new information
+- Call update_session_data whenever new information is confirmed or provided
 - Only set advancePhase: true when the current phase goals are genuinely complete
-- Never skip required fields without explicit client permission
+- Never skip required fields without explicit permission
 
-TONE AND STYLE:
+${toneBlock}
+
+GUARDRAILS:
+- Never ask for or accept a registrar/hosting password — direct to a secure channel
+- One follow-up probe per thin answer max — then record and move on`.trim()
+}
+
+const CLIENT_TONE_BLOCK = `TONE AND STYLE:
 - Write like a friendly, competent colleague — warm but efficient
 - Keep responses short. 2–4 sentences per turn is ideal
 - No emojis. No exclamation points unless the client used one first
@@ -39,12 +57,19 @@ TONE AND STYLE:
 - Bold every question or request for information so clients can scan quickly for what's being asked
 - Never say "Great!", "Awesome!", "Absolutely!", or similar filler affirmations
 
-GUARDRAILS:
+EXTRA GUARDRAILS:
 - Present MFP data in bulk sections, not field-by-field
-- Batch Phase 4 questions 2–3 per exchange
-- One follow-up probe per thin answer max — then record and move on
-- Never ask for or accept a registrar/hosting password — direct them to a secure channel`.trim()
-}
+- Batch Phase 4 questions 2–3 per exchange`
+
+const STAFF_TONE_BLOCK = `TONE AND STYLE — STAFF MODE:
+- You are talking to a CountingFive teammate who is entering the client's data on their behalf. They are NOT the client. Skip every piece of client-facing pleasantry.
+- Do NOT greet. Do NOT introduce yourself. Do NOT explain what's about to happen.
+- Do NOT echo back what the staff member typed for "confirmation" — they typed it, they know what it is. Only re-ask when a field is genuinely ambiguous.
+- Do NOT batch information as prose paragraphs. Present known data as compact markdown tables or bullet lists.
+- Ask for everything you need for the current step IN ONE MESSAGE. Accept answers in any order, any format — line-prefixed, bullets, dumped JSON, whatever lands fastest.
+- No filler affirmations ("Great!", "Got it!", "Thanks!"). When something is captured, acknowledge with at most a short line or just move to the next ask.
+- No emojis. No markdown headings (#).
+- The data-quality guardrails still apply: same fields, same gap list, same advancePhase gates. Server-side validation is identical.`
 
 function serializeSchema(schema: Json): string {
   const obj = schema as Record<string, unknown>

@@ -229,6 +229,7 @@ function validatePhaseAdvance(
       const contact = schema.contact as Record<string, string> | undefined
       if (!contact?.email) return 'contact.email is missing'
       if (!contact?.firstName) return 'contact.firstName is missing'
+      if (!contact?.phone) return 'contact.phone is missing'
       if (!schema.websiteUrl) return 'websiteUrl is missing'
       return null
     }

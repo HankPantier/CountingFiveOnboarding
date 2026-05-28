@@ -58,11 +58,15 @@ export default async function SessionPage({
     .eq('session_id', id)
     .order('created_at', { ascending: true })
 
+  const meta = (session.schema_data as { _meta?: { mode?: string } } | null)?._meta
+  const initialIsStaffMode = meta?.mode === 'staff'
+
   return (
     <ChatInterface
       sessionId={id}
       initialSession={session}
       initialMessages={dbMessages ?? []}
+      initialIsStaffMode={initialIsStaffMode}
     />
   )
 }

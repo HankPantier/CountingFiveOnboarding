@@ -4,6 +4,8 @@ export type SessionSchema = {
     phase4_resolved_tiers: { tier1_done: boolean; tier2_done: boolean }
     phase4_flagged_for_followup: string[]
     admin_overrides: Record<string, boolean>
+    mode?: 'client' | 'staff'
+    staff_note?: string
   }
   contact?: {
     firstName: string

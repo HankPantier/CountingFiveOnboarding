@@ -395,3 +395,21 @@ Once the user confirms:
 | **Incidental capture** | If the user mentions new info during any phase, agent records it in the appropriate schema field. |
 | **Explicit skip** | Empty fields are only acceptable if the user explicitly says to skip them. |
 | **No redundant crawl** | The MFP replaces Phase 2 web crawl; only a WHOIS lookup is run. |
+
+---
+
+## Staff Mode (proxy)
+
+The chat supports a **staff proxy mode** for sessions where a CountingFive teammate is entering the client's data on their behalf (phone call, client got stuck, etc.).
+
+**Activation.** During Phase 0 or Phase 1 only, an authenticated admin sees a small "I'm staff — switch mode" link in the chat header. Clicking it opens a small panel with an optional note (kept in `_meta.staff_note`) and a confirm button. Confirming POSTs to `/api/sessions/[id]/staff-mode` (guarded by `requireAdmin()`), which sets `schema_data._meta.mode = 'staff'`. Once flipped, the link is replaced by a persistent "Staff mode" badge; there is no revert button.
+
+**What changes per phase:**
+- **Phase 1.** Single batched ask in one message: first name / last name / email / phone / website URL. No greeting, no echo-back.
+- **Phase 2.** One-line acknowledgment: "WHOIS running — hold." No client-facing copy.
+- **Phase 3 chunk1 + chunk2.** Known data is shown as compact tables / bullet lists, and all outstanding asks for the chunk are bundled into the same message. Accept answers in any format. Positioning options A/B/C are still presented; the staff member picks one.
+- **Phase 3 chunk3 (team photos).** Per-member loop is unchanged — the upload UI invariant on `_meta.current_team_member_name` requires one-at-a-time photo capture regardless of mode. Per-member ask copy is trimmed.
+- **Phase 4.** Every unresolved gap is presented as a single checklist in one message; the staff member answers in any layout (line-prefixed, key-value, or prose dump) and the agent parses and persists.
+- **Phases 5–7.** Same flow as client mode; tone is mode-aware via the system prompt.
+
+**Same gates either way.** `validatePhaseAdvance` in `app/api/chat/route.ts` enforces the same field requirements in staff mode as in client mode (Phase 1 needs contact + URL + phone; Phase 3 needs chunk completion + LinkedIn/GBP usefulness; Phase 4 needs all Tier 1 gaps resolved). Staff mode changes the conversation, never the data contract.

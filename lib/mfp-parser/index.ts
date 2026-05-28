@@ -188,6 +188,21 @@ function parseSection2(markdown: string, schema: SessionSchema): void {
 
   const business = schema.business!
 
+  // Firm history lives in the "### History & Background" subsection as plain
+  // prose. Capture everything up to the next subheading or blockquote so the
+  // agent can confirm it in Phase 3 rather than re-asking in Phase 4.
+  const historyStart = section.indexOf('### History & Background')
+  if (historyStart > -1) {
+    const tail = section.slice(historyStart + '### History & Background'.length)
+    const stopAt = (() => {
+      const candidates = [tail.indexOf('\n### '), tail.indexOf('\n> '), tail.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : tail.length
+    })()
+    const history = tail.slice(0, stopAt).trim()
+    if (history) business.firmHistory = history
+  }
+
   const taglineMatch = section.match(/>\s*\*"([^"]+)"\*/)
   if (taglineMatch) business.tagline = taglineMatch[1].trim()
 
@@ -344,7 +359,11 @@ function parseSection5(markdown: string, schema: SessionSchema): void {
     const description = typeMatch ? typeMatch[1].trim() : ''
     const signalMatch = block.match(/\*\*Ideal signal:\*\*\s*\*"([^"]+)"\*/)
     const icp = signalMatch ? signalMatch[1] : ''
-    niches.push({ name, description, icp, painPoints: '', valueProp: '' })
+    const fearMatch = block.match(/\*\*What they fear:\*\*\s*([^\n]+)/)
+    const painPoints = fearMatch ? fearMatch[1].trim() : ''
+    const valueMatch = block.match(/\*\*What they value:\*\*\s*([^\n]+)/)
+    const valueProp = valueMatch ? valueMatch[1].trim() : ''
+    niches.push({ name, description, icp, painPoints, valueProp })
   }
   schema.niches = niches
 }
@@ -645,36 +664,55 @@ function parseSection10B(markdown: string, schema: SessionSchema): void {
   schema.proposed_sitemap = proposed_sitemap
 }
 
-// ─── Phase 4 gaps (always present — MFP never covers these) ──────────────────
+// ─── Phase 4 gaps (only added when the MFP didn't populate the field) ────────
+
+function getPath(obj: unknown, path: string): unknown {
+  return path.split('.').reduce<unknown>(
+    (acc, key) =>
+      acc && typeof acc === 'object'
+        ? (acc as Record<string, unknown>)[key]
+        : undefined,
+    obj
+  )
+}
+
+function isPopulated(schema: SessionSchema | undefined, path: string): boolean {
+  if (!schema) return false
+  const v = getPath(schema, path)
+  if (v === undefined || v === null) return false
+  if (typeof v === 'string') return v.trim().length > 0
+  if (Array.isArray(v)) return v.length > 0
+  // Booleans are initialized to `false` as schema defaults (e.g. hasBrandGuide).
+  // The MFP doesn't set them, so a `false` here is never a real answer — gaps
+  // for boolean fields stay until the agent collects them at runtime.
+  if (typeof v === 'boolean') return false
+  return true
+}
 
 function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
-  // Firm background
-  gaps.push(
+  // Tier numbering mirrors raw-docs/agent-conversation-flow.md Phase 4. Each
+  // entry is only emitted if the MFP didn't already fill the field — chat fills
+  // gaps, not duplicates.
+  const candidates: GapItem[] = [
+    // Firm background
     { field: 'business.foundingYear', label: 'Founding Year', phase: 4, tier: 1, resolved: false },
     { field: 'business.firmHistory', label: 'Firm History / Origin Story', phase: 4, tier: 1, resolved: false },
-  )
-  // Client & revenue
-  gaps.push(
+    // Clients
     { field: 'business.geographicScope', label: 'Geographic Scope', phase: 4, tier: 1, resolved: false },
     { field: 'business.clientAgeRanges', label: 'Client Age Ranges', phase: 4, tier: 1, resolved: false },
     { field: 'business.customerNeeds', label: 'Client Needs & Pain Points', phase: 4, tier: 1, resolved: false },
     { field: 'business.howClientsFind', label: 'How Clients Find the Firm', phase: 4, tier: 1, resolved: false },
-    { field: 'business.pricing', label: 'Pricing / Fee Structure', phase: 4, tier: 1, resolved: false },
-    { field: 'business.clientSuccessStories', label: 'Client Success Stories (1–2 examples)', phase: 4, tier: 1, resolved: false },
-  )
-  // Differentiators & growth
-  gaps.push(
+    // Per flow doc Tier 2: success stories + pricing — ask only if time allows.
+    { field: 'business.clientSuccessStories', label: 'Client Success Stories (1–2 examples)', phase: 4, tier: 2, resolved: false },
+    { field: 'business.pricing', label: 'Pricing / Fee Structure', phase: 4, tier: 2, resolved: false },
+    // Differentiators & growth
     { field: 'business.differentiators', label: 'Differentiators (in their own words)', phase: 4, tier: 1, resolved: false },
     { field: 'business.growthGoals', label: 'Growth Goals / Where They Want to Be in 3 Years', phase: 4, tier: 2, resolved: false },
     { field: 'business.clientMixBreakdown', label: 'Client Mix Breakdown', phase: 4, tier: 2, resolved: false },
-  )
-  // Culture
-  gaps.push(
+    // Culture
     { field: 'culture.missionVisionValues', label: 'Mission, Vision & Values', phase: 4, tier: 1, resolved: false },
     { field: 'culture.teamDescription', label: 'Team Culture Description', phase: 4, tier: 1, resolved: false },
-  )
-  // Brand & Tone (always collected in Phase 4)
-  gaps.push(
+    // Brand & Tone
     { field: 'brand.currentTone',       label: 'Current Brand Voice',                     phase: 4, tier: 1, resolved: false },
     { field: 'brand.aspirationalTone',  label: 'Aspirational Voice (how they want to sound)', phase: 4, tier: 1, resolved: false },
     { field: 'brand.toneAdjectives',    label: 'Tone Adjectives (words that feel like them)', phase: 4, tier: 1, resolved: false },
@@ -683,15 +721,22 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     { field: 'brand.primaryColors',     label: 'Brand Colors',                             phase: 4, tier: 1, resolved: false },
     { field: 'brand.hasBrandGuide',     label: 'Has Existing Brand Guide',                 phase: 4, tier: 1, resolved: false },
     { field: 'brand.logoStyle',         label: 'Logo / Visual Style (modern, traditional, etc.)', phase: 4, tier: 2, resolved: false },
-  )
-  // Per-niche pain points & value props
+  ]
+
+  for (const g of candidates) {
+    if (!isPopulated(schema, g.field)) gaps.push(g)
+  }
+
+  // Per-niche pain points & value props — only ask when the MFP didn't fill them.
   if (schema?.niches?.length) {
     for (let i = 0; i < schema.niches.length; i++) {
       const niche = schema.niches[i]
-      gaps.push(
-        { field: `niches[${i}].painPoints`, label: `${niche.name} — Pain Points`, phase: 4, tier: 1, resolved: false },
-        { field: `niches[${i}].valueProp`, label: `${niche.name} — Value Proposition`, phase: 4, tier: 2, resolved: false },
-      )
+      if (!niche.painPoints) {
+        gaps.push({ field: `niches[${i}].painPoints`, label: `${niche.name} — Pain Points`, phase: 4, tier: 1, resolved: false })
+      }
+      if (!niche.valueProp) {
+        gaps.push({ field: `niches[${i}].valueProp`, label: `${niche.name} — Value Proposition`, phase: 4, tier: 2, resolved: false })
+      }
     }
   }
 }

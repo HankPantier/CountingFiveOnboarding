@@ -20,17 +20,36 @@ const PHASE_LABELS: Record<number, string> = {
   7: 'Complete',
 }
 
+const STAFF_PHASE_LABELS: Record<number, string> = {
+  0: 'Staff · Phase 0',
+  1: 'Staff · Phase 1',
+  2: 'Staff · Phase 2',
+  3: 'Staff · Phase 3',
+  4: 'Staff · Phase 4',
+  5: 'Staff · Phase 5',
+  6: 'Staff · Phase 6',
+  7: 'Staff · Phase 7',
+}
+
 export default function ChatInterface({
   sessionId,
   initialSession,
   initialMessages,
+  initialIsStaffMode = false,
 }: {
   sessionId: string
   initialSession: Session
   initialMessages: { role: string; content: string }[]
+  initialIsStaffMode?: boolean
 }) {
   const [input, setInput] = useState('')
   const [currentPhase, setCurrentPhase] = useState(initialSession.current_phase)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [isStaffMode, setIsStaffMode] = useState(initialIsStaffMode)
+  const [staffPanelOpen, setStaffPanelOpen] = useState(false)
+  const [staffNote, setStaffNote] = useState('')
+  const [staffSubmitting, setStaffSubmitting] = useState(false)
+  const [staffError, setStaffError] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const transport = useMemo(
@@ -48,6 +67,19 @@ export default function ChatInterface({
   })
 
   const isLoading = status === 'submitted' || status === 'streaming'
+
+  // Admin detection runs on mount. Non-admin visitors quietly get { isAdmin: false }
+  // (no console errors), so the staff toggle simply never renders for them.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/auth/me')
+      .then(r => r.json())
+      .then((data: { isAdmin?: boolean }) => {
+        if (!cancelled && data.isAdmin) setIsAdmin(true)
+      })
+      .catch(() => { /* unauthenticated; ignore */ })
+    return () => { cancelled = true }
+  }, [])
 
   // Refresh phase after each assistant exchange
   useEffect(() => {
@@ -82,6 +114,29 @@ export default function ChatInterface({
     sendMessage({ text })
   }
 
+  const handleStaffSubmit = async () => {
+    setStaffSubmitting(true)
+    setStaffError(null)
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/staff-mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(staffNote.trim() ? { note: staffNote.trim() } : {}),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body?.error ?? `HTTP ${res.status}`)
+      }
+      setIsStaffMode(true)
+      setStaffPanelOpen(false)
+      setStaffNote('')
+    } catch (err) {
+      setStaffError(err instanceof Error ? err.message : 'Failed to switch')
+    } finally {
+      setStaffSubmitting(false)
+    }
+  }
+
   const visibleMessages = messages.filter(m => {
     const textPart = m.parts.find((p): p is TextUIPart => p.type === 'text')
     return textPart?.text !== '__init__'
@@ -89,7 +144,10 @@ export default function ChatInterface({
 
   const totalPhases = 7
   const progressPct = Math.round((currentPhase / totalPhases) * 100)
-  const phaseLabel = PHASE_LABELS[currentPhase] ?? ''
+  const phaseLabel = isStaffMode
+    ? STAFF_PHASE_LABELS[currentPhase] ?? ''
+    : PHASE_LABELS[currentPhase] ?? ''
+  const showStaffButton = isAdmin && !isStaffMode && currentPhase <= 1
 
   return (
     <div className="flex flex-col h-screen bg-surface-page">
@@ -103,11 +161,27 @@ export default function ChatInterface({
             className="h-8 w-auto"
             priority
           />
-          {currentPhase > 0 && (
-            <span className="text-white/60 text-xs font-body hidden sm:block">
-              {phaseLabel}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {isStaffMode && (
+              <span className="bg-brand-cyan/20 border border-brand-cyan/40 text-brand-cyan text-[11px] font-heading font-semibold uppercase tracking-wide px-2.5 py-1 rounded-pill">
+                Staff mode
+              </span>
+            )}
+            {showStaffButton && (
+              <button
+                type="button"
+                onClick={() => setStaffPanelOpen(true)}
+                className="text-white/70 hover:text-white text-xs font-body underline-offset-2 hover:underline transition"
+              >
+                I&apos;m staff — switch mode
+              </button>
+            )}
+            {currentPhase > 0 && (
+              <span className="text-white/60 text-xs font-body hidden sm:block">
+                {phaseLabel}
+              </span>
+            )}
+          </div>
         </div>
         {currentPhase > 0 && (
           <div className="h-0.5 bg-white/10">
@@ -118,6 +192,49 @@ export default function ChatInterface({
           </div>
         )}
       </header>
+
+      {staffPanelOpen && (
+        <div className="bg-surface-card border-b border-border-default px-4 py-4 flex-shrink-0">
+          <div className="max-w-2xl mx-auto">
+            <p className="text-sm font-heading font-semibold text-brand-navy">
+              Switch this session to staff mode
+            </p>
+            <p className="text-text-muted text-xs font-body mt-1">
+              Optional: short note on why staff is filling this in (kept in the session, not shown to the client).
+            </p>
+            <textarea
+              value={staffNote}
+              onChange={e => setStaffNote(e.target.value)}
+              disabled={staffSubmitting}
+              maxLength={1000}
+              rows={2}
+              placeholder="e.g. Client emailed answers; entering on their behalf."
+              className="mt-2 w-full border border-border-default rounded-2xl px-3 py-2 text-sm font-body bg-surface-page focus:outline-none focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/15 disabled:opacity-50 transition-all duration-150"
+            />
+            {staffError && (
+              <p className="text-error text-xs font-body mt-2">{staffError}</p>
+            )}
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setStaffPanelOpen(false); setStaffError(null) }}
+                disabled={staffSubmitting}
+                className="text-text-muted hover:text-text-primary text-sm font-body px-3 py-2 rounded-pill transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleStaffSubmit}
+                disabled={staffSubmitting}
+                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all duration-150 hover:bg-brand-navy active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {staffSubmitting ? 'Switching…' : 'Switch to staff mode'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error text-center flex-shrink-0">
