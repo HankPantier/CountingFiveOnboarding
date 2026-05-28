@@ -75,8 +75,67 @@ function serializeSchema(schema: Json): string {
   const obj = schema as Record<string, unknown>
   const { _meta, proposed_sitemap, current_sitemap, reputation, content_gaps, ...rest } = obj
   void _meta; void proposed_sitemap; void current_sitemap; void reputation; void content_gaps
-  const sparse = deepOmitEmpty(rest)
+
+  // Trim heavy content-gen-only fields out of the chat context. The agent
+  // doesn't need them while talking to the client; content generation reads
+  // them directly from schema_data later. This keeps the system prompt under
+  // the per-phase token budgets in CLAUDE.md.
+  const trimmed = trimContentGenFields(rest)
+  const sparse = deepOmitEmpty(trimmed)
   return JSON.stringify(sparse, null, 2)
+}
+
+function trimContentGenFields(rest: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...rest }
+
+  const business = out.business as Record<string, unknown> | undefined
+  if (business) {
+    const {
+      competitors,
+      competitiveContext,
+      currentPositioning,
+      firmHistory,
+      ...keepBusiness
+    } = business
+    void competitors; void competitiveContext; void currentPositioning; void firmHistory
+    out.business = keepBusiness
+  }
+
+  const niches = out.niches as Array<Record<string, unknown>> | undefined
+  if (Array.isArray(niches)) {
+    out.niches = niches.map(n => {
+      const { subCategories, painPoints, valueProp, customerTrigger, ...keep } = n
+      void subCategories; void painPoints; void valueProp; void customerTrigger
+      return keep
+    })
+  }
+
+  const services = out.services as Array<Record<string, unknown>> | undefined
+  if (Array.isArray(services)) {
+    out.services = services.map(s => {
+      const { rewriteDirection, description, ...keep } = s
+      void rewriteDirection; void description
+      return keep
+    })
+  }
+
+  // Team bios + expertise + press are content-gen payload; the agent only
+  // needs names, titles, and credentials to verify the team in chat.
+  const team = out.team as Array<Record<string, unknown>> | undefined
+  if (Array.isArray(team)) {
+    out.team = team.map(t => {
+      const {
+        bio, expertise, associations, press,
+        previousEmployers, education, externalFootprint, specializations,
+        ...keep
+      } = t
+      void bio; void expertise; void associations; void press
+      void previousEmployers; void education; void externalFootprint; void specializations
+      return keep
+    })
+  }
+
+  return out
 }
 
 function deepOmitEmpty(obj: unknown): unknown {

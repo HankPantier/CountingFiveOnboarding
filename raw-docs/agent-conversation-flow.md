@@ -413,3 +413,38 @@ The chat supports a **staff proxy mode** for sessions where a CountingFive teamm
 - **Phases 5–7.** Same flow as client mode; tone is mode-aware via the system prompt.
 
 **Same gates either way.** `validatePhaseAdvance` in `app/api/chat/route.ts` enforces the same field requirements in staff mode as in client mode (Phase 1 needs contact + URL + phone; Phase 3 needs chunk completion + LinkedIn/GBP usefulness; Phase 4 needs all Tier 1 gaps resolved). Staff mode changes the conversation, never the data contract.
+
+---
+
+## MFP-driven chat injection
+
+The parser captures three pieces of analyst-authored content that the agent surfaces verbatim during the chat, rather than improvising:
+
+- **`> 📋 **Client Review Action:**` blocks** — every section ends with a pre-written question the analyst wants asked. These land in `_meta.review_prompts` keyed by section id (`section_1`, `section_2`, etc.) and are injected into:
+  - **Phase 3 chunk1** — sections 1, 3, 4 (firm identity / accreditations / social).
+  - **Phase 3 chunk2** — sections 2, 5, 6, 7 (narrative / niches / services / team).
+  The chunk prompts include them under an "ANALYST-WRITTEN ASKS" header instead of generic "any corrections?".
+
+- **Section 5 Industry Sub-Category Assessment** — per-niche sub-service tables with status `✅ confirmed | 🔍 likely | ❓ verify`. The parser lands these on `niches[i].subCategories`. Sub-categories with status `verify` are surfaced in Phase 3 chunk1 as "UNCONFIRMED SUB-SERVICES — ask the client yes/no on each"; confirmed answers update the status in-place.
+
+- **Section 11 "Before You Review" checklist** — every `- [ ]` item lands in `_meta.before_you_review_checklist`. Phase 4 appends them as "ANALYST CHECKLIST" alongside the remaining gap list. Answers that don't map to schema fields go to `_meta.section11_responses` keyed by a short slug.
+
+Additionally, Section 5 "Team-Derived Audience Opportunities", Section 6 "High-Opportunity Niches" and "Team-Derived Service Opportunities" land in `_meta.opportunities` and surface in Phase 3 chunk2 so the client can confirm which to build pages for. Confirmations land in `_meta.opportunities_confirmed`.
+
+### Phase 3 chunk2 is split into chunk2a + chunk2b
+
+To keep each chunk2 message focused, Phase 3 chunk2 is now two sub-exchanges:
+
+- **chunk2a (Content):** team / services / niches corrections + positioning A/B/C selection. Same as the original chunk2 minus the decision blocks. The agent writes `_meta.phase3_completed_chunks: [..., "chunk2a"]` when done.
+- **chunk2b (Decisions):** analyst-written asks for sections 2/5/6/7 (only the ones not already surfaced in chunk2a), opportunities, trust signal gaps, and sitemap deltas. The agent writes `_meta.phase3_completed_chunks: [..., "chunk2b"]` when done. If the MFP has no decision content (older fixtures), chunk2b auto-completes silently with no message to the user.
+
+`validatePhaseAdvance` in `app/api/chat/route.ts` accepts either form: a legacy session with the single `chunk2` marker advances exactly like one with `chunk2a + chunk2b`. New sessions write the split markers.
+
+### Trust signals + sitemap decisions (Phase 3 chunk2b)
+
+Two further analyst-authored signals are surfaced in Phase 3 chunk2b:
+
+- **Trust signal gaps** (Section 8 `reputation.trustSignalGaps[]`) — observations like "2026 awards not on site" or "24 Google reviews invisible." The agent presents them as a short numbered list and asks the client which to address on the new site (default is yes-to-all). Confirmed items land in `_meta.trust_signals_confirmed: string[]`.
+- **Proposed sitemap deltas** (Sections 10A + 10B) — `proposed_sitemap[].status === 'new'` items and `current_sitemap[].action === 'consolidate'` items. Presented as compact lists with a "default is build/merge — call out exceptions" framing. Client exceptions land in `_meta.sitemap_decisions: { skip_new_pages, keep_pages, notes }`.
+
+When the MFP doesn't include any of the above (older fixtures), the injected blocks are empty strings and the chat falls back to its baseline phase instructions. No new gates; this only adds context, never removes it.

@@ -60,6 +60,8 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
     ['Section 9', () => parseSection9(markdown, schema)],
     ['Section 10A', () => parseSection10A(markdown, schema)],
     ['Section 10B', () => parseSection10B(markdown, schema)],
+    ['Section 11', () => parseSection11(markdown, schema)],
+    ['Review Prompts', () => parseReviewPrompts(markdown, schema)],
     ['Sitemap location augmentation', () => augmentSitemapWithLocations(schema)],
   ]
 
@@ -162,6 +164,22 @@ function parseSection1(markdown: string, schema: SessionSchema): void {
   schema.business!.name = fieldValue(section, 'Firm Name')
   schema.websiteUrl = fieldValue(section, 'URL')
 
+  // Section 1 sometimes carries Year Established / Former Name / Firm Size.
+  // ❓-flagged values mean the analyst couldn't confirm — treat as empty so
+  // the Phase 4 gap remains.
+  const yearRaw = fieldValue(section, 'Year Established')
+  if (yearRaw && !yearRaw.includes('❓')) {
+    schema.business!.foundingYear = yearRaw
+  }
+  const formerName = fieldValue(section, 'Former Name')
+  if (formerName && !formerName.includes('❓')) {
+    schema.business!.formerName = formerName
+  }
+  const firmSize = fieldValue(section, 'Firm Size Estimate')
+  if (firmSize && !firmSize.includes('❓')) {
+    schema.business!.firmSizeEstimate = firmSize
+  }
+
   const locStart = section.indexOf('### Location')
   const locSection = locStart > -1 ? section.slice(locStart) : section
 
@@ -224,6 +242,66 @@ function parseSection2(markdown: string, schema: SessionSchema): void {
 
   if (optionTexts.length > 0) {
     business.positioningStatement = optionTexts.join('\n\n---\n\n')
+  }
+
+  // Current Positioning prose — the analyst's explanation of how the firm
+  // currently positions itself (distinct from the tagline blockquote above).
+  const currentStart = section.indexOf('### Current Positioning')
+  if (currentStart > -1) {
+    const tail = section.slice(currentStart + '### Current Positioning'.length)
+    const stopAt = (() => {
+      const candidates = [tail.indexOf('\n### '), tail.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : tail.length
+    })()
+    const block = tail.slice(0, stopAt)
+    // Skip the blockquote tagline; keep prose paragraphs only.
+    const prose = block
+      .split('\n')
+      .filter(line => !line.trim().startsWith('>') && line.trim() !== '')
+      .join(' ')
+      .trim()
+    if (prose) business.currentPositioning = prose
+  }
+
+  // Competitive Context table (only present in some MFPs).
+  const competitiveStart = section.indexOf('### Competitive Context')
+  if (competitiveStart > -1) {
+    const tail = section.slice(competitiveStart)
+    const stopAt = (() => {
+      const candidates = [tail.indexOf('\n### '), tail.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : tail.length
+    })()
+    const block = tail.slice(0, stopAt)
+
+    const competitors: NonNullable<typeof business.competitors> = []
+    const SKIP = new Set(['firm', 'field'])
+    for (const row of tableRows(block)) {
+      if (row.length < 5) continue
+      const name = row[0].replace(/\*+/g, '').trim()
+      if (!name || SKIP.has(name.toLowerCase())) continue
+      competitors.push({
+        name,
+        location: row[1].replace(/\*+/g, '').trim(),
+        size: row[2].replace(/\*+/g, '').trim(),
+        nicheClaim: row[3].replace(/\*+/g, '').trim(),
+        positioningNotes: row[4].replace(/\*+/g, '').trim(),
+      })
+    }
+    if (competitors.length > 0) business.competitors = competitors
+
+    // "Key Competitive Takeaways" bullets often follow the table.
+    const takeawaysIdx = block.indexOf('**Key Competitive Takeaways:**')
+    if (takeawaysIdx > -1) {
+      const tBlock = block.slice(takeawaysIdx)
+      const bullets = tBlock.match(/^- \*\*[^*]+\*\*[^\n]*/gm)
+      if (bullets) {
+        business.competitiveContext = bullets
+          .map(b => b.replace(/^- \*\*/, '').replace(/\*\*/, '').trim())
+          .join('\n')
+      }
+    }
   }
 }
 
@@ -349,12 +427,20 @@ function parseSection5(markdown: string, schema: SessionSchema): void {
   }
   business.idealClients = idealClients
 
+  // Locate each ICP block by its heading and slice between them. Stop at the
+  // sub-category heading so prose text from later subsections doesn't bleed in.
+  // Korbey MFPs use `\n---\n` separators; Barwick does not — heading-position
+  // slicing handles both shapes.
   const niches: NonNullable<SessionSchema['niches']> = []
-  const blocks = section.split(/\n---\n/)
-  for (const block of blocks) {
-    const icpMatch = block.match(/\*\*([^*]+?)\s+ICP\*\*/)
-    if (!icpMatch) continue
-    const name = icpMatch[1].trim()
+  const subAssessmentIdx = section.indexOf('### Industry Sub-Category Assessment')
+  const icpScope = subAssessmentIdx > -1 ? section.slice(0, subAssessmentIdx) : section
+  const headingPositions = [...icpScope.matchAll(/\*\*([^*]+?)\s+ICP\*\*/g)]
+    .map(m => ({ name: m[1].trim(), start: m.index! }))
+
+  for (let i = 0; i < headingPositions.length; i++) {
+    const { name, start } = headingPositions[i]
+    const end = i + 1 < headingPositions.length ? headingPositions[i + 1].start : icpScope.length
+    const block = icpScope.slice(start, end)
     const typeMatch = block.match(/\*\*Business type:\*\*\s*([^\n]+)/)
     const description = typeMatch ? typeMatch[1].trim() : ''
     const signalMatch = block.match(/\*\*Ideal signal:\*\*\s*\*"([^"]+)"\*/)
@@ -363,9 +449,93 @@ function parseSection5(markdown: string, schema: SessionSchema): void {
     const painPoints = fearMatch ? fearMatch[1].trim() : ''
     const valueMatch = block.match(/\*\*What they value:\*\*\s*([^\n]+)/)
     const valueProp = valueMatch ? valueMatch[1].trim() : ''
-    niches.push({ name, description, icp, painPoints, valueProp })
+    const triggerMatch = block.match(/\*\*What triggers a search:\*\*\s*([^\n]+)/)
+    const customerTrigger = triggerMatch ? triggerMatch[1].trim() : ''
+    const sizeMatch = block.match(/\*\*Size range:\*\*\s*([^\n]+)/)
+    const typicalRevenueSize = sizeMatch ? sizeMatch[1].trim() : ''
+    niches.push({
+      name,
+      description,
+      icp,
+      painPoints,
+      valueProp,
+      ...(customerTrigger ? { customerTrigger } : {}),
+      ...(typicalRevenueSize ? { typicalRevenueSize } : {}),
+    })
   }
   schema.niches = niches
+
+  // Industry Sub-Category Assessment — multiple tables, one per industry,
+  // each preceded by **<Industry>** as a bolded heading line.
+  const subAssessIdx = section.indexOf('### Industry Sub-Category Assessment')
+  if (subAssessIdx > -1) {
+    const subBlock = section.slice(subAssessIdx)
+    const stopAt = (() => {
+      const candidates = [subBlock.indexOf('\n### ', 1), subBlock.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : subBlock.length
+    })()
+    const scope = subBlock.slice(0, stopAt)
+
+    // Find each industry sub-section by its **Name** heading followed by a table.
+    const industryHeadingRe = /\n\*\*([^*]+?)\*\*[^\n]*\n/g
+    const matches = [...scope.matchAll(industryHeadingRe)]
+    for (let i = 0; i < matches.length; i++) {
+      const headingName = matches[i][1].trim()
+      const start = matches[i].index! + matches[i][0].length
+      const end = i + 1 < matches.length ? matches[i + 1].index! : scope.length
+      const tableBlock = scope.slice(start, end)
+      const subRows = tableRows(tableBlock)
+      const subCategories: NonNullable<NonNullable<SessionSchema['niches']>[number]['subCategories']> = []
+      const SUB_SKIP = new Set(['sub-category', 'subcategory', 'field'])
+      for (const row of subRows) {
+        const subName = row[0].replace(/\*+/g, '').trim()
+        if (!subName || SUB_SKIP.has(subName.toLowerCase())) continue
+        const statusRaw = (row[1] ?? '').trim()
+        let status: 'confirmed' | 'likely' | 'verify'
+        if (statusRaw.includes('✅')) status = 'confirmed'
+        else if (statusRaw.includes('🔍')) status = 'likely'
+        else status = 'verify'
+        const notes = (row[2] ?? '').replace(/\*+/g, '').trim()
+        subCategories.push({ name: subName, status, ...(notes ? { notes } : {}) })
+      }
+      if (subCategories.length === 0) continue
+
+      // Match heading to a niche by stem-based token overlap. Handles plurals
+      // (Churches ↔ Church), hyphenated niches (Service-based Businesses ↔
+      // Service Businesses), and multi-word names with extensions
+      // (Church / Faith-Based ↔ Churches).
+      const stem = (w: string) => w.replace(/(es|s)$/, '')
+      const tokenize = (s: string) =>
+        s.toLowerCase().split(/[^a-z]+/).filter(t => t.length > 2).map(stem)
+      const headingTokens = new Set(tokenize(headingName))
+      const target = niches.find(n => {
+        const nameTokens = tokenize(n.name)
+        return nameTokens.some(t => headingTokens.has(t))
+      })
+      if (target) target.subCategories = subCategories
+    }
+  }
+
+  // Team-Derived Audience Opportunities — bullets after the heading.
+  const audienceIdx = section.indexOf('### Team-Derived Audience Opportunities')
+  if (audienceIdx > -1) {
+    const block = section.slice(audienceIdx)
+    const stopAt = (() => {
+      const candidates = [block.indexOf('\n### ', 1), block.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : block.length
+    })()
+    const scoped = block.slice(0, stopAt)
+    const bullets = scoped.match(/^- \*\*[^\n]+/gm)
+    if (bullets && bullets.length > 0) {
+      ensureMeta(schema)
+      ensureOpportunities(schema)
+      schema._meta!.opportunities!.audienceOpportunities = bullets.map(b =>
+        b.replace(/^- /, '').trim()
+      )
+    }
+  }
 }
 
 function parseSection6(markdown: string, schema: SessionSchema): void {
@@ -381,14 +551,85 @@ function parseSection6(markdown: string, schema: SessionSchema): void {
   const services: NonNullable<SessionSchema['services']> = []
   const SKIP = new Set(['service', 'field'])
 
+  // Detect column layout. Newer MFPs use:
+  //   | Service | Clarity | Current Framing | Rewrite Direction |
+  // Older MFPs use:
+  //   | Service | Tier | Notes | Description |
+  // We look at the header row to decide whether row[3] is rewriteDirection
+  // (preferred) or just a description.
+  let rewriteCol = -1
+  let descCol = 3
+  const headerMatch = servicesBlock.match(/^\|\s*\*?\*?Service[^\n]+/m)
+  if (headerMatch) {
+    const cols = headerMatch[0]
+      .split('|')
+      .slice(1, -1)
+      .map(c => c.replace(/\*+/g, '').trim().toLowerCase())
+    const rIdx = cols.findIndex(c => c.includes('rewrite'))
+    if (rIdx >= 0) rewriteCol = rIdx
+  }
+
   for (const row of tableRows(servicesBlock)) {
     const name = row[0].replace(/\*+/g, '').trim()
     if (!name || SKIP.has(name.toLowerCase())) continue
-    const description = (row[3] ?? row[2] ?? '').replace(/\*+/g, '').trim()
-    services.push({ name, description, offerings: [] })
+    const description = (row[descCol] ?? row[2] ?? '').replace(/\*+/g, '').trim()
+    const rewriteDirection = rewriteCol >= 0
+      ? (row[rewriteCol] ?? '').replace(/\*+/g, '').trim()
+      : ''
+    services.push({
+      name,
+      description,
+      offerings: [],
+      ...(rewriteDirection ? { rewriteDirection } : {}),
+    })
   }
 
   schema.services = services
+
+  // High-Opportunity Niches table — strategic recommendations for content gen.
+  const highOppIdx = section.indexOf('### High-Opportunity Niches')
+  if (highOppIdx > -1) {
+    const block = section.slice(highOppIdx)
+    const stopAt = (() => {
+      const candidates = [block.indexOf('\n### ', 1), block.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : block.length
+    })()
+    const scoped = block.slice(0, stopAt)
+    const niches: string[] = []
+    const SKIP_NICHE = new Set(['niche', 'field'])
+    for (const row of tableRows(scoped)) {
+      const name = row[0].replace(/\*+/g, '').trim()
+      if (!name || SKIP_NICHE.has(name.toLowerCase())) continue
+      const rationale = (row[1] ?? '').replace(/\*+/g, '').trim()
+      niches.push(rationale ? `${name} — ${rationale}` : name)
+    }
+    if (niches.length > 0) {
+      ensureMeta(schema)
+      ensureOpportunities(schema)
+      schema._meta!.opportunities!.highOpportunityNiches = niches
+    }
+  }
+
+  // Team-Derived Service Opportunities — bullets.
+  const serviceOppIdx = section.indexOf('### Team-Derived Service Opportunities')
+  if (serviceOppIdx > -1) {
+    const block = section.slice(serviceOppIdx)
+    const stopAt = (() => {
+      const candidates = [block.indexOf('\n### ', 1), block.indexOf('\n## ')]
+        .filter(i => i > -1)
+      return candidates.length ? Math.min(...candidates) : block.length
+    })()
+    const scoped = block.slice(0, stopAt)
+    const bullets = scoped.match(/^- \*\*[^\n]+/gm)
+    if (bullets && bullets.length > 0) {
+      ensureMeta(schema)
+      ensureOpportunities(schema)
+      schema._meta!.opportunities!.serviceOpportunities = bullets.map(b =>
+        b.replace(/^- /, '').trim()
+      )
+    }
+  }
 }
 
 function parseSection7(markdown: string, schema: SessionSchema, gaps: GapItem[]): void {
@@ -409,14 +650,58 @@ function parseSection7(markdown: string, schema: SessionSchema, gaps: GapItem[])
     const missingTitle = titleRaw.includes('❓') || !titleRaw
     const title = missingTitle ? '' : titleRaw.replace(/\*[^*\n]+\*/g, '').trim()
 
-    const credsMatch = block.match(/\|\s*\*{0,2}Credentials\*{0,2}\s*\|\s*([^|\n]+)/)
-    const credsRaw = credsMatch ? credsMatch[1].trim() : ''
+    const credsRaw = teamTableValue(block, 'Credentials')
     const certifications =
       credsRaw && credsRaw !== 'None listed' && !credsRaw.includes('❓')
         ? credsRaw.split(/[,/]/).map((c: string) => c.trim()).filter(Boolean)
         : []
 
-    team.push({ name, title, certifications, bio: '', specializations: [] })
+    const expertise = parseTeamList(teamTableValue(block, 'Areas of Expertise'))
+    const associations = parseTeamList(teamTableValue(block, 'Associations'))
+    const press = parseTeamList(teamTableValue(block, 'Published / Speaking'))
+    const previousEmployers = parseTeamList(teamTableValue(block, 'Previous Employers'))
+
+    const footprintMatch = block.match(/\*\*External Footprint:\*\*\s*([^\n]+)/i)
+    const footprintRaw = footprintMatch ? footprintMatch[1].trim().toLowerCase() : ''
+    const externalFootprint =
+      footprintRaw.includes('high') ? 'high' as const
+      : footprintRaw.includes('moderate') ? 'moderate' as const
+      : footprintRaw.includes('minimal') || footprintRaw.includes('low') ? 'minimal' as const
+      : undefined
+
+    // Bio Summary paragraph between **Bio Summary:** and the next bold heading
+    // (Leverage Opportunities) or the end of the member block.
+    let bio = ''
+    const bioMatch = block.match(/\*\*Bio Summary:\*\*\s*([\s\S]*?)(?=\n\*\*[A-Z]|\n###|\n$)/)
+    if (bioMatch) {
+      bio = bioMatch[1]
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+    }
+
+    // Best-effort education extraction from the bio paragraph.
+    let education: string | undefined
+    if (bio) {
+      const eduMatch = bio.match(/University of [A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)?|[A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)? University/)
+      if (eduMatch) education = eduMatch[0]
+    }
+
+    team.push({
+      name,
+      title,
+      certifications,
+      bio,
+      specializations: [],
+      ...(expertise.length ? { expertise } : {}),
+      ...(associations.length ? { associations } : {}),
+      ...(press.length ? { press } : {}),
+      ...(previousEmployers.length ? { previousEmployers } : {}),
+      ...(education ? { education } : {}),
+      ...(externalFootprint ? { externalFootprint } : {}),
+    })
 
     if (missingTitle) {
       gaps.push({
@@ -429,6 +714,22 @@ function parseSection7(markdown: string, schema: SessionSchema, gaps: GapItem[])
   }
 
   schema.team = team
+}
+
+function teamTableValue(block: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp('\\|\\s*\\*{0,2}' + escaped + '\\*{0,2}\\s*\\|\\s*([^|\\n]+)', 'i')
+  const m = block.match(re)
+  return m ? m[1].trim() : ''
+}
+
+function parseTeamList(raw: string): string[] {
+  if (!raw) return []
+  if (raw.includes('(not found)') || raw.includes('(none surfaced)') || raw.includes('(none found)')) return []
+  return raw
+    .split(/[;,]|\s+\/\s+/)
+    .map(s => s.replace(/\*+/g, '').trim())
+    .filter(Boolean)
 }
 
 // ─── Sections 8–10B (content generation data) ────────────────────────────────
@@ -664,6 +965,85 @@ function parseSection10B(markdown: string, schema: SessionSchema): void {
   schema.proposed_sitemap = proposed_sitemap
 }
 
+// ─── Section 11 + Review Prompts + _meta helpers ─────────────────────────────
+
+function ensureMeta(schema: SessionSchema): void {
+  if (!schema._meta) {
+    schema._meta = {
+      phase3_completed_chunks: [],
+      phase4_resolved_tiers: { tier1_done: false, tier2_done: false },
+      phase4_flagged_for_followup: [],
+      admin_overrides: {},
+    }
+  }
+}
+
+function ensureOpportunities(schema: SessionSchema): void {
+  ensureMeta(schema)
+  if (!schema._meta!.opportunities) {
+    schema._meta!.opportunities = {
+      audienceOpportunities: [],
+      serviceOpportunities: [],
+      highOpportunityNiches: [],
+    }
+  }
+}
+
+function parseSection11(markdown: string, schema: SessionSchema): void {
+  const section = extractSection(markdown, 11)
+  if (!section) return
+
+  const items = section.match(/^\s*-\s*\[\s*\]\s*(.+)$/gm)
+  if (!items || items.length === 0) return
+
+  const checklist = items
+    .map(line => line.replace(/^\s*-\s*\[\s*\]\s*/, '').trim())
+    .filter(Boolean)
+
+  if (checklist.length > 0) {
+    ensureMeta(schema)
+    schema._meta!.before_you_review_checklist = checklist
+  }
+}
+
+function parseReviewPrompts(markdown: string, schema: SessionSchema): void {
+  const sectionPositions: Array<{ id: string; index: number }> = []
+  for (const m of markdown.matchAll(/##\s+Section\s+([0-9]+[A-Z]?)\b/gm)) {
+    sectionPositions.push({ id: m[1], index: m.index! })
+  }
+  if (sectionPositions.length === 0) return
+
+  const prompts: Record<string, string> = {}
+  const blockRe = /^>\s*📋\s*\*\*Client Review Action:\*\*\s*([\s\S]*?)(?=\n\n|\n##|\n###|$)/gm
+  for (const r of markdown.matchAll(blockRe)) {
+    const at = r.index!
+    let owner: string | null = null
+    for (let i = sectionPositions.length - 1; i >= 0; i--) {
+      if (sectionPositions[i].index <= at) {
+        owner = sectionPositions[i].id
+        break
+      }
+    }
+    if (!owner) continue
+    const body = r[1]
+      .split('\n')
+      .map(line => line.replace(/^>\s?/, '').trim())
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    if (!body) continue
+    const key = `section_${owner}`
+    // First analyst prompt wins per section (some sections include multiple
+    // inline review actions; the first is usually the highest-level).
+    if (!prompts[key]) prompts[key] = body
+  }
+
+  if (Object.keys(prompts).length > 0) {
+    ensureMeta(schema)
+    schema._meta!.review_prompts = prompts
+  }
+}
+
 // ─── Phase 4 gaps (only added when the MFP didn't populate the field) ────────
 
 function getPath(obj: unknown, path: string): unknown {
@@ -736,6 +1116,9 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
       }
       if (!niche.valueProp) {
         gaps.push({ field: `niches[${i}].valueProp`, label: `${niche.name} — Value Proposition`, phase: 4, tier: 2, resolved: false })
+      }
+      if (!niche.nicheOrigin) {
+        gaps.push({ field: `niches[${i}].nicheOrigin`, label: `${niche.name} — How did this niche start?`, phase: 4, tier: 2, resolved: false })
       }
     }
   }

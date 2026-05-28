@@ -6,6 +6,21 @@ export type SessionSchema = {
     admin_overrides: Record<string, boolean>
     mode?: 'client' | 'staff'
     staff_note?: string
+    review_prompts?: Record<string, string>
+    before_you_review_checklist?: string[]
+    opportunities?: {
+      audienceOpportunities: string[]
+      serviceOpportunities: string[]
+      highOpportunityNiches: string[]
+    }
+    opportunities_confirmed?: string[]
+    section11_responses?: Record<string, string>
+    trust_signals_confirmed?: string[]
+    sitemap_decisions?: {
+      skip_new_pages?: string[]
+      keep_pages?: string[]
+      notes?: string
+    }
   }
   contact?: {
     firstName: string
@@ -47,11 +62,18 @@ export type SessionSchema = {
     certifications: string[]
     bio: string
     specializations: string[]
+    expertise?: string[]
+    associations?: string[]
+    press?: string[]
+    previousEmployers?: string[]
+    education?: string
+    externalFootprint?: 'minimal' | 'moderate' | 'high'
   }>
   services?: Array<{
     name: string
     description: string
     offerings: string[]
+    rewriteDirection?: string
   }>
   niches?: Array<{
     name: string
@@ -59,6 +81,14 @@ export type SessionSchema = {
     icp: string
     painPoints: string
     valueProp: string
+    customerTrigger?: string
+    typicalRevenueSize?: string
+    nicheOrigin?: string
+    subCategories?: Array<{
+      name: string
+      status: 'confirmed' | 'likely' | 'verify'
+      notes?: string
+    }>
   }>
   business?: {
     name: string
@@ -79,6 +109,17 @@ export type SessionSchema = {
     howClientsFind: string
     pricing: string
     growthGoals: string
+    formerName?: string
+    firmSizeEstimate?: string
+    currentPositioning?: string
+    competitiveContext?: string
+    competitors?: Array<{
+      name: string
+      location: string
+      size: string
+      nicheClaim: string
+      positioningNotes: string
+    }>
     googleBusinessProfile?: {
       url: string | null
       usefulness?: 'low' | 'medium' | 'high'

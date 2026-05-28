@@ -3,6 +3,21 @@ import type { AgentMode } from './system-prompt'
 
 type Session = Database['public']['Tables']['sessions']['Row']
 
+type SchemaMeta = {
+  review_prompts?: Record<string, string>
+  before_you_review_checklist?: string[]
+  opportunities?: {
+    audienceOpportunities?: string[]
+    serviceOpportunities?: string[]
+    highOpportunityNiches?: string[]
+  }
+}
+
+type NicheLike = {
+  name?: string
+  subCategories?: Array<{ name: string; status: 'confirmed' | 'likely' | 'verify' }>
+}
+
 export function getPhaseInstructions(
   phase: number,
   session: Session,
@@ -13,12 +28,116 @@ export function getPhaseInstructions(
     case 1:  return phase1Instructions(mode)
     case 2:  return phase2Instructions(mode)
     case 3:  return phase3Instructions(session, mode)
-    case 4:  return phase4Instructions(mode)
+    case 4:  return phase4Instructions(session, mode)
     case 5:  return phase5Instructions()
     case 6:  return phase6Instructions()
     case 7:  return phase7Instructions()
     default: return ''
   }
+}
+
+function analystPromptsBlock(meta: SchemaMeta | undefined, sectionIds: string[]): string {
+  const prompts = meta?.review_prompts ?? {}
+  const lines = sectionIds
+    .map(id => {
+      const text = prompts[`section_${id}`]
+      return text ? `Section ${id}: ${text}` : null
+    })
+    .filter((s): s is string => s !== null)
+  if (lines.length === 0) return ''
+  return `\n\nANALYST-WRITTEN ASKS (read these verbatim — they're the specific questions the analyst wants asked, not generic "any corrections?"):\n${lines.join('\n')}`
+}
+
+function unconfirmedSubCategoriesBlock(niches: NicheLike[]): string {
+  const items: string[] = []
+  for (const n of niches) {
+    const verifies = (n.subCategories ?? []).filter(s => s.status === 'verify')
+    if (verifies.length === 0 || !n.name) continue
+    items.push(`${n.name}: ${verifies.map(s => s.name).join(', ')}`)
+  }
+  if (items.length === 0) return ''
+  return `\n\nUNCONFIRMED SUB-SERVICES (ask the client a quick yes/no on each — capture confirmed ones by updating niches[i].subCategories to status: "confirmed"):\n${items.join('\n')}`
+}
+
+function opportunitiesBlock(meta: SchemaMeta | undefined): string {
+  const opps = meta?.opportunities
+  if (!opps) return ''
+  const lines: string[] = []
+  if (opps.highOpportunityNiches && opps.highOpportunityNiches.length > 0) {
+    lines.push('HIGH-OPPORTUNITY NICHES (analyst-flagged — ask whether the client wants pages built for any):')
+    for (const n of opps.highOpportunityNiches) lines.push(`- ${n}`)
+  }
+  if (opps.serviceOpportunities && opps.serviceOpportunities.length > 0) {
+    lines.push('SERVICE OPPORTUNITIES (team capability not on the current site — ask if the client wants to externalize any):')
+    for (const s of opps.serviceOpportunities) lines.push(`- ${s}`)
+  }
+  if (lines.length === 0) return ''
+  return `\n\n${lines.join('\n')}\nCapture which the client confirms into _meta.opportunities_confirmed as a string array of the item names.`
+}
+
+function section11Block(meta: SchemaMeta | undefined): string {
+  const items = meta?.before_you_review_checklist ?? []
+  if (items.length === 0) return ''
+  const numbered = items.slice(0, 30).map((it, i) => `${i + 1}. ${it}`).join('\n')
+  return `\n\nANALYST CHECKLIST FROM SECTION 11 (asks the analyst pre-wrote for this client — work through anything not already covered by the gap list above; skip anything answered earlier):\n${numbered}\nCapture answers into _meta.section11_responses keyed by a short slug of the item (e.g. "optometry-niche-origin").`
+}
+
+function readMeta(session: Session): SchemaMeta | undefined {
+  return (session.schema_data as { _meta?: SchemaMeta } | null)?._meta
+}
+
+function readNiches(session: Session): NicheLike[] {
+  return ((session.schema_data as { niches?: NicheLike[] } | null)?.niches) ?? []
+}
+
+type ReputationLike = { trustSignalGaps?: string[] }
+type ProposedSitemapItem = { url?: string; title?: string; status?: 'new' | 'update' | 'existing' }
+type CurrentSitemapItem = { url?: string; title?: string; action?: 'keep' | 'redirect' | 'consolidate' | 'new'; new_url?: string }
+
+function readReputation(session: Session): ReputationLike {
+  return ((session.schema_data as { reputation?: ReputationLike } | null)?.reputation) ?? {}
+}
+
+function readProposedSitemap(session: Session): ProposedSitemapItem[] {
+  return ((session.schema_data as { proposed_sitemap?: ProposedSitemapItem[] } | null)?.proposed_sitemap) ?? []
+}
+
+function readCurrentSitemap(session: Session): CurrentSitemapItem[] {
+  return ((session.schema_data as { current_sitemap?: CurrentSitemapItem[] } | null)?.current_sitemap) ?? []
+}
+
+function trustSignalsBlock(reputation: ReputationLike): string {
+  const items = reputation.trustSignalGaps ?? []
+  if (items.length === 0) return ''
+  const numbered = items.slice(0, 12).map((it, i) => `${i + 1}. ${it}`).join('\n')
+  return `\n\nTRUST SIGNALS MISSING FROM CURRENT SITE (analyst-flagged — ask the client which to address on the new site; default answer is "yes to all"):\n${numbered}\nCapture confirmed items as a string array into _meta.trust_signals_confirmed using the analyst's short label for each (the bold heading is fine).`
+}
+
+function sitemapDecisionsBlock(
+  proposed: ProposedSitemapItem[],
+  current: CurrentSitemapItem[]
+): string {
+  const newPages = proposed.filter(p => p.status === 'new')
+  const consolidations = current.filter(c => c.action === 'consolidate')
+  const sunsets = current.filter(c => c.action !== 'keep' && c.action !== 'redirect' && c.action !== 'consolidate' && c.action !== 'new' && c.url)
+
+  if (newPages.length === 0 && consolidations.length === 0 && sunsets.length === 0) return ''
+
+  const lines: string[] = []
+  if (newPages.length > 0) {
+    lines.push(`PROPOSED NEW PAGES (default: build all — ask the client which, if any, to skip):`)
+    for (const p of newPages.slice(0, 20)) lines.push(`- ${p.url}${p.title ? ` (${p.title})` : ''}`)
+  }
+  if (consolidations.length > 0) {
+    if (lines.length > 0) lines.push('')
+    lines.push(`PROPOSED CONSOLIDATIONS (default: merge — ask if any of these should stay as standalone pages):`)
+    for (const c of consolidations.slice(0, 20)) {
+      const target = c.new_url ? ` → ${c.new_url}` : ''
+      lines.push(`- ${c.url}${target}`)
+    }
+  }
+
+  return `\n\n${lines.join('\n')}\nCapture exceptions into _meta.sitemap_decisions: { skip_new_pages: [urls client doesn't want], keep_pages: [current URLs the client wants kept instead of consolidated], notes: "any free-text concerns" }. Default both arrays to [] when the client accepts the proposal as-is.`
 }
 
 function phase0Instructions(): string {
@@ -60,8 +179,24 @@ function phase3Instructions(session: Session, mode: AgentMode): string {
   const meta = schema?._meta as Record<string, unknown> | undefined
   const completedChunks = (meta?.phase3_completed_chunks as string[]) ?? []
   const chunk1Done = completedChunks.includes('chunk1')
-  const chunk2Done = completedChunks.includes('chunk2')
+  // Legacy sessions wrote a single "chunk2" marker before the split. Treat
+  // that as "both chunk2a and chunk2b done" so in-flight sessions don't stall.
+  const legacyChunk2Done = completedChunks.includes('chunk2')
+  const chunk2aDone = legacyChunk2Done || completedChunks.includes('chunk2a')
+  const chunk2bDone = legacyChunk2Done || completedChunks.includes('chunk2b')
   const chunk3Done = completedChunks.includes('chunk3')
+
+  const typedMeta = readMeta(session)
+  const niches = readNiches(session)
+  const chunk1Analyst = analystPromptsBlock(typedMeta, ['1', '3', '4'])
+  const chunk1SubCats = unconfirmedSubCategoriesBlock(niches)
+  const chunk2bAnalyst = analystPromptsBlock(typedMeta, ['2', '5', '6', '7'])
+  const chunk2bOpportunities = opportunitiesBlock(typedMeta)
+  const chunk2bTrustSignals = trustSignalsBlock(readReputation(session))
+  const chunk2bSitemap = sitemapDecisionsBlock(readProposedSitemap(session), readCurrentSitemap(session))
+  const chunk2bHasContent =
+    chunk2bAnalyst.length + chunk2bOpportunities.length +
+    chunk2bTrustSignals.length + chunk2bSitemap.length > 0
 
   if (!chunk1Done) {
     if (mode === 'staff') {
@@ -82,7 +217,7 @@ Then, in the SAME message, ask for everything outstanding:
 - "LinkedIn URL (or 'none'); LinkedIn usefulness (low/med/high); LinkedIn roomForImprovement"
 - "GBP URL (or 'none'); GBP usefulness (low/med/high); GBP roomForImprovement"
 
-Accept everything in any format. As soon as it lands, call update_session_data with all populated fields, resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url", and "_meta": { "phase3_completed_chunks": ["chunk1"] }.`
+Accept everything in any format. As soon as it lands, call update_session_data with all populated fields, resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url", and "_meta": { "phase3_completed_chunks": ["chunk1"] }.${chunk1Analyst}${chunk1SubCats}`
     }
     return `PHASE 3 — MFP REVIEW, PART 1 (Practical info)
 Present all of the following in one message:
@@ -93,12 +228,15 @@ Then in one bundled follow-up exchange collect:
 - Any missing affiliations or social handles, confirm the website URL, ask about professional memberships or partnerships not listed.
 - LinkedIn: if no URL is on file, ask for it (or confirm they don't have a company page → set culture.linkedIn.url = null). If they have one, ask "Roughly how useful is your LinkedIn for attracting clients today — low, medium, or high?" → culture.linkedIn.usefulness. Then "Anything you'd want to improve about it?" → culture.linkedIn.roomForImprovement (free text; if the MFP seeded a hint, offer it back for confirmation).
 - Google Business Profile: same pattern — URL or null; usefulness if they have one; roomForImprovement (always meaningful — if no GBP, "create and verify a GBP listing" is a fine note). Save to business.googleBusinessProfile.{url, usefulness, roomForImprovement}.
-When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.`
+When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.${chunk1Analyst}${chunk1SubCats}`
   }
 
-  if (!chunk2Done) {
+  if (!chunk2aDone) {
+    const bridgeNext = chunk2bHasContent
+      ? "a few quick decisions the analyst flagged"
+      : "team photos"
     if (mode === 'staff') {
-      return `PHASE 3 — MFP REVIEW, PART 2 (Content) — staff mode
+      return `PHASE 3 — MFP REVIEW, PART 2a (Content) — staff mode
 Present known data as compact tables / lists in ONE message:
 - Team — name | title (❓ if missing) | certifications
 - Services — name + one-line description
@@ -110,7 +248,7 @@ Then ask in the same message:
 - "Missing team titles?"
 - "Pick a positioning option (A/B/C or a blend description)"
 
-Accept all answers. As soon as positioning is chosen, call update_session_data with business.positioningOption, business.positioningStatement (use the chosen option's statement verbatim from the MFP), team/service/niche updates, and "_meta": { "phase3_completed_chunks": ["chunk1", "chunk2"] }. DO NOT advance phase — chunk3 (team photos) runs next.`
+Accept all answers. As soon as positioning is chosen, call update_session_data with business.positioningOption, business.positioningStatement (use the chosen option's statement verbatim from the MFP), team/service/niche updates, and "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase — ${bridgeNext} run next.`
     }
     return `PHASE 3 — MFP REVIEW, PART 2 (Content)
 Present all of the following in one message:
@@ -121,8 +259,33 @@ Then present the 3 positioning options. Format them as a markdown list, one per 
 - **Option B** — [summary]
 - **Option C** — [summary]
 Ask which direction resonates most, or if they'd like to blend elements.
-Once positioning is captured, briefly close with a single sentence bridging to the next step: "Last for this section — I'll walk through your team and ask about a headshot for each. Ready?"
-Then call update_session_data with "_meta": { "phase3_completed_chunks": ["chunk1", "chunk2"] }. DO NOT advance phase yet — Part 3 (team photos) runs on the next exchange.`
+Once positioning is captured, briefly close with a single sentence bridging to the next step: "${chunk2bHasContent
+        ? "Next I'll walk through a few quick decisions the analyst flagged before we get to team photos."
+        : "Last for this section — I'll walk through your team and ask about a headshot for each. Ready?"}"
+Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase yet — ${chunk2bHasContent ? "Part 2b (decisions) runs next, then team photos." : "Part 3 (team photos) runs on the next exchange."}`
+  }
+
+  if (!chunk2bDone) {
+    // No decision content from the MFP — auto-complete and move on without
+    // burning a chat turn.
+    if (!chunk2bHasContent) {
+      return `PHASE 3 — MFP REVIEW, PART 2b (Decisions) — NOTHING TO DECIDE
+
+The MFP didn't surface any decisions for the client to confirm. Immediately call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. No message to the user is necessary; the next agent turn will move into team photos (chunk3).`
+    }
+
+    if (mode === 'staff') {
+      return `PHASE 3 — MFP REVIEW, PART 2b (Decisions) — staff mode
+Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Staff can answer in any layout (line-prefixed, key-value, comma list). Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed.
+
+When the staff member's answer lands, call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up) and "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. DO NOT advance phase — chunk3 (team photos) runs next.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
+    }
+    return `PHASE 3 — MFP REVIEW, PART 2b (Decisions)
+Open with a short bridge: "Before team photos, a few quick decisions our analyst flagged. Defaults are noted next to each — just call out exceptions."
+
+Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Keep each ask compact. Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed. If the client agrees with the defaults wholesale, accept that and move on.
+
+When the client's answer lands, call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions) and "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. DO NOT advance phase yet — Part 3 (team photos) runs on the next exchange.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
   }
 
   // Chunk 3 — team photo capture. Per-member invariant is mode-agnostic; the
@@ -195,7 +358,8 @@ If multiple photos arrive in one message for one member, accept all of them; onl
   return `PHASE 3 is complete. Call update_session_data with advancePhase: true if you haven't already.`
 }
 
-function phase4Instructions(mode: AgentMode): string {
+function phase4Instructions(session: Session, mode: AgentMode): string {
+  const checklist = section11Block(readMeta(session))
   if (mode === 'staff') {
     return `PHASE 4 — GAP FILLING (staff mode)
 Present every unresolved gap from the REMAINING GAPS section below as a single checklist in ONE message. Group by section heading:
@@ -217,7 +381,7 @@ Accept the staff member's answer in any layout — line-prefixed, key-value, or 
 
 Tier 1 gaps MUST be answered before advancing (server-side enforced). If the staff member skips a Tier 1 item, ask for it again in a short follow-up. Tier 2 / Tier 3 may be skipped — for Tier 3, log into "_meta.phase4_flagged_for_followup".
 
-When all Tier 1 gaps are resolved, call update_session_data with advancePhase: true. No closing pleasantry needed.`
+When all Tier 1 gaps are resolved, call update_session_data with advancePhase: true. No closing pleasantry needed.${checklist}`
   }
   return `PHASE 4 — GAP FILLING
 Only ask about items still in the gap list below. Anything already in COLLECTED DATA was seeded from the MFP — DO NOT re-ask. If you need light confirmation on a seeded value (e.g. firm history paragraph), do it inline within an unrelated batch, not as a standalone exchange.
@@ -241,7 +405,7 @@ If they say yes to a brand guide → tell them they can upload it in the next st
 Save responses to brand.currentTone, brand.aspirationalTone, brand.toneAdjectives, brand.toneToAvoid, brand.primaryColors, brand.hasBrandGuide. If the client volunteers personality language ("we're more like a..."), capture it in brand.brandPersonality. If they offer a memorable phrase that captures their voice, capture it verbatim in brand.voiceExample.
 
 Close Phase 4 with: "Is there anything else about the firm that's important for us to know?"
-When all Tier 1 gaps are resolved and that question has been asked, call update_session_data with advancePhase: true.`
+When all Tier 1 gaps are resolved and that question has been asked, call update_session_data with advancePhase: true.${checklist}`
 }
 
 function phase5Instructions(): string {

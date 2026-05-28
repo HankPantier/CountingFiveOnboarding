@@ -240,7 +240,11 @@ function validatePhaseAdvance(
       const meta = schema._meta as Record<string, unknown> | undefined
       const chunks = (meta?.phase3_completed_chunks as string[]) ?? []
       if (!chunks.includes('chunk1')) return 'Phase 3 chunk1 not complete'
-      if (!chunks.includes('chunk2')) return 'Phase 3 chunk2 not complete'
+      // Legacy sessions wrote a single "chunk2" marker before the chunk2a/2b
+      // split. Either form is accepted.
+      const legacyChunk2 = chunks.includes('chunk2')
+      if (!legacyChunk2 && !chunks.includes('chunk2a')) return 'Phase 3 chunk2a not complete'
+      if (!legacyChunk2 && !chunks.includes('chunk2b')) return 'Phase 3 chunk2b not complete'
 
       // chunk3 — team photos. Required when team[] is non-empty so the agent
       // can't skip past the per-member upload step. Empty team → no photos to
