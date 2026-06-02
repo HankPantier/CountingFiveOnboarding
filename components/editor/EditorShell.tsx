@@ -40,7 +40,10 @@ export default function EditorShell({
     setLoadingTree(true)
     try {
       const res = await fetch(`/api/edit/${sessionId}/tree`)
-      if (!res.ok) throw new Error(`Tree load failed: ${res.status}`)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Tree load failed: ${res.status}`)
+      }
       const data = (await res.json()) as { entries: TreeFile[] }
       setTree(data.entries)
     } catch (err) {
