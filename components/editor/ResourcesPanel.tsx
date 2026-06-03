@@ -156,7 +156,7 @@ export default function ResourcesPanel({
   }
 
   const visible = ideas.filter((i) => i.status !== 'dismissed')
-  const dismissedCount = ideas.length - visible.length
+  const dismissed = ideas.filter((i) => i.status === 'dismissed')
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -167,7 +167,7 @@ export default function ResourcesPanel({
           disabled={brainstorming}
           className="rounded-[40px] bg-brand-cyan px-5 py-2 text-sm font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
         >
-          {brainstorming ? 'Brainstorming…' : 'Brainstorm ideas'}
+          {brainstorming ? 'Brainstorming…' : ideas.length > 0 ? 'Brainstorm more' : 'Brainstorm ideas'}
         </button>
       </div>
       <p className="text-xs font-body text-text-muted mb-4">
@@ -308,20 +308,20 @@ export default function ResourcesPanel({
                         onClick={() => void setStatus(idea.id, 'approved')}
                         className="rounded-[40px] border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                       >
-                        Approve
+                        Interested
                       </button>
                     )}
                     <button
                       onClick={() => void setStatus(idea.id, 'dismissed')}
                       className="rounded-[40px] px-4 py-1.5 text-xs font-heading font-semibold text-text-muted hover:text-text-secondary transition-colors"
                     >
-                      Dismiss
+                      Not interested
                     </button>
                   </>
                 )}
                 {idea.status === 'approved' && idea.draft_status !== 'running' && (
                   <span className="text-[10px] font-body uppercase tracking-wide text-success">
-                    Approved
+                    Interested
                   </span>
                 )}
                 {idea.draft_status === 'error' && (
@@ -335,10 +335,28 @@ export default function ResourcesPanel({
         </ul>
       )}
 
-      {dismissedCount > 0 && (
-        <p className="mt-4 text-[11px] font-body text-text-muted">
-          {dismissedCount} dismissed idea{dismissedCount === 1 ? '' : 's'} hidden (kept for dedupe).
-        </p>
+      {dismissed.length > 0 && (
+        <details className="mt-6">
+          <summary className="cursor-pointer text-xs font-heading font-semibold text-text-muted hover:text-text-secondary">
+            Not interested ({dismissed.length}) — future brainstorms steer away from these
+          </summary>
+          <ul className="mt-3 space-y-2">
+            {dismissed.map((idea) => (
+              <li
+                key={idea.id}
+                className="flex items-center justify-between gap-3 rounded border border-border-default bg-surface-subtle px-3 py-2"
+              >
+                <span className="text-xs font-body text-text-muted truncate">{idea.title}</span>
+                <button
+                  onClick={() => void setStatus(idea.id, 'suggested')}
+                  className="shrink-0 text-[11px] font-heading font-semibold text-brand-navy hover:text-brand-cyan transition-colors"
+                >
+                  Restore
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   )

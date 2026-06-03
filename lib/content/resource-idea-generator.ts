@@ -147,11 +147,19 @@ export async function generateResourceIdeas(
   )
 
   // Dedupe context: existing ideas in any status + posts already in the repo.
+  // Status doubles as a taste signal for re-brainstorms: approved/drafted
+  // ideas tell Claude what landed, dismissed ones what to steer away from.
   const { data: existingIdeas } = await supabase
     .from('resource_ideas')
-    .select('title')
+    .select('title, status')
     .eq('content_job_id', contentJobId)
   const existingTitles = (existingIdeas ?? []).map((i) => i.title)
+  const likedTitles = (existingIdeas ?? [])
+    .filter((i) => i.status === 'approved' || i.status === 'drafted')
+    .map((i) => i.title)
+  const dislikedTitles = (existingIdeas ?? [])
+    .filter((i) => i.status === 'dismissed')
+    .map((i) => i.title)
   const existingPosts = await listExistingPostSlugs(job.github_repo)
 
   const nicheDetail = (schema.niches ?? [])
@@ -179,6 +187,10 @@ ${buildResearchBlock(research) ? `LIVE SEARCH RESEARCH (real questions and compe
 
 DO NOT DUPLICATE — these ideas/posts already exist (reject anything covering the same ground):
 ${[...existingTitles, ...existingPosts].map((t) => `- ${t}`).join('\n') || '- (none yet)'}
+
+${likedTitles.length ? `THE ADMIN LIKED THESE (generate more in this vein — similar energy and specificity, different ground):\n${likedTitles.map((t) => `- ${t}`).join('\n')}` : ''}
+
+${dislikedTitles.length ? `THE ADMIN REJECTED THESE (avoid their themes, framings, and topic territory):\n${dislikedTitles.map((t) => `- ${t}`).join('\n')}` : ''}
 
 SCORING RUBRIC — score each idea 0-25 on each axis, sum to 0-100:
 - stickiness: memorable, opinionated, specific to this firm's niches. Generic listicles ("Top 5 Tax Tips") score under 10.

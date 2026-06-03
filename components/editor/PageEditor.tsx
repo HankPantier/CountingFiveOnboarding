@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
 import ImageReplaceControl from './ImageReplaceControl'
+import HeaderImagePicker from './HeaderImagePicker'
 
 // Editable subset of frontmatter keys. Other keys are preserved on save but
 // not exposed as form fields.
@@ -19,6 +20,19 @@ const PROMOTED_FIELDS = [
   'hero_variant',
   'hero_image',
   'hero_subhead',
+]
+
+// Blog posts (content/posts/) carry a different frontmatter shape — the
+// header image is handled by HeaderImagePicker, not a text field.
+const POST_PROMOTED_FIELDS = [
+  'title',
+  'excerpt',
+  'date',
+  'author',
+  'image_alt',
+  'meta_title',
+  'meta_description',
+  'target_keyword',
 ]
 
 export default function PageEditor({
@@ -35,6 +49,8 @@ export default function PageEditor({
   const parsed = useMemo(() => splitFile(contents), [contents])
   const images = useMemo(() => extractPageImages(parsed), [parsed])
   const [preview, setPreview] = useState(false)
+  const isPost = path.startsWith('content/posts/')
+  const promotedFields = isPost ? POST_PROMOTED_FIELDS : PROMOTED_FIELDS
 
   // Rewrite bare image filenames in the preview to the admin asset route so
   // thumbnails actually render (the repo/bucket isn't public).
@@ -63,6 +79,23 @@ export default function PageEditor({
     onChange(serializeFile(next))
   }
 
+  // Drop a key entirely (an empty `image:` line would fail the template's
+  // frontmatter validation, so "remove" must delete, not blank).
+  const removeField = (key: string) => {
+    if (!parsed.frontmatter) return
+    const fields = { ...parsed.frontmatter.fields }
+    delete fields[key]
+    const next = {
+      ...parsed,
+      frontmatter: {
+        ...parsed.frontmatter,
+        fields,
+        order: parsed.frontmatter.order.filter((k) => k !== key),
+      },
+    }
+    onChange(serializeFile(next))
+  }
+
   const setBody = (body: string) => {
     onChange(serializeFile({ ...parsed, body }))
   }
@@ -78,10 +111,21 @@ export default function PageEditor({
         {parsed.frontmatter && (
           <section className="bg-surface-card border border-border-default rounded-lg p-4">
             <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
-              Page metadata
+              {isPost ? 'Post metadata' : 'Page metadata'}
             </h2>
+            {isPost && (
+              <div className="mb-4">
+                <HeaderImagePicker
+                  sessionId={sessionId}
+                  value={parsed.frontmatter.fields['image'] ?? ''}
+                  onChange={(filename) =>
+                    filename ? setField('image', filename) : removeField('image')
+                  }
+                />
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-3">
-              {PROMOTED_FIELDS.map((key) => {
+              {promotedFields.map((key) => {
                 const value = parsed.frontmatter!.fields[key] ?? ''
                 return (
                   <label key={key} className="block">

@@ -147,9 +147,9 @@ OUTPUT: Return a JSON object:
     "answer_block": "2-3 sentences answering the post's core question directly",
     "schema_markup": "BlogPosting" | "Article" | "FAQPage",
     "tags": ["2-4 short topic tags"],
-    "hero_image": "kebab-case-filename.jpg or null",
-    "hero_image_query": "3-8 word SUBJECT-only Pexels query (people, setting, activity — no style words) or null",
-    "image_alt": "descriptive alt text for the hero image or null"
+    "hero_image": "kebab-case-filename.jpg — ALWAYS provide one; every post gets a header image",
+    "hero_image_query": "3-8 word SUBJECT-only Pexels query (people, setting, activity — no style words) — ALWAYS provide one",
+    "image_alt": "descriptive alt text for the hero image"
   }
 }
 
@@ -412,6 +412,15 @@ export async function generateResourceDraft(
     const entries: Array<{ path: string; content: string | Buffer }> = []
     let heroImage: string | null = null
     const fm = result.frontmatter
+    // Every post gets a header image: synthesize a ref when Claude omits one.
+    if (!fm.hero_image || !fm.hero_image_query) {
+      fm.hero_image = `${slug.slice(0, 48).replace(/-+$/, '')}-header.jpg`
+      fm.hero_image_query = (idea.target_keyword ?? idea.title)
+        .replace(/[^a-zA-Z0-9 ]+/g, ' ')
+        .split(/\s+/)
+        .slice(0, 6)
+        .join(' ')
+    }
     if (fm.hero_image && fm.hero_image_query) {
       const palette = (job.palette ?? null) as PaletteData | null
       const styleSuffix = deriveImageStyleSuffix(palette, schema.brand)
