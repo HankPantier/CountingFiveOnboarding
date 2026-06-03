@@ -47,6 +47,7 @@ export default function ResourcesPanel({
   const [ideas, setIdeas] = useState<ResourceIdea[]>([])
   const [loading, setLoading] = useState(true)
   const [brainstorming, setBrainstorming] = useState(false)
+  const [seed, setSeed] = useState('')
   const [error, setError] = useState<string | null>(null)
   // Idea count at brainstorm start, so polling knows when new rows arrive.
   const brainstormBaseline = useRef<number | null>(null)
@@ -91,16 +92,25 @@ export default function ResourcesPanel({
     return () => clearInterval(timer)
   }, [brainstorming, anyDrafting, refresh])
 
-  const brainstorm = async () => {
+  const brainstorm = async (seedIdea?: string) => {
     setError(null)
     setBrainstorming(true)
     brainstormBaseline.current = ideas.length
     try {
-      const res = await fetch(`/api/edit/${sessionId}/resources/brainstorm`, { method: 'POST' })
+      const res = await fetch(`/api/edit/${sessionId}/resources/brainstorm`, {
+        method: 'POST',
+        ...(seedIdea
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ seed: seedIdea }),
+            }
+          : {}),
+      })
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(data.error ?? `Brainstorm failed: ${res.status}`)
       }
+      if (seedIdea) setSeed('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Brainstorm failed')
       setBrainstorming(false)
@@ -160,10 +170,34 @@ export default function ResourcesPanel({
           {brainstorming ? 'Brainstorming…' : 'Brainstorm ideas'}
         </button>
       </div>
-      <p className="text-xs font-body text-text-muted mb-5">
+      <p className="text-xs font-body text-text-muted mb-4">
         Researches sticky, sharable angles for this firm, drafts on-brand posts to the draft branch
         under <code>content/posts/</code>, then you edit and publish like any page.
       </p>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (seed.trim() && !brainstorming) void brainstorm(seed.trim())
+        }}
+        className="mb-5 flex items-center gap-2"
+      >
+        <input
+          type="text"
+          value={seed}
+          onChange={(e) => setSeed(e.target.value)}
+          maxLength={300}
+          placeholder="Or seed your own idea — e.g. “year-end equipment purchases for contractors”"
+          className="flex-1 rounded-[40px] border border-border-default bg-surface-card px-4 py-2 text-xs font-body text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-brand-cyan"
+        />
+        <button
+          type="submit"
+          disabled={brainstorming || !seed.trim()}
+          className="rounded-[40px] border border-brand-navy px-5 py-2 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 disabled:border-border-default disabled:text-text-muted transition-colors"
+        >
+          Extrapolate
+        </button>
+      </form>
 
       {error && (
         <div className="mb-4 rounded border border-error/30 bg-error/5 px-3 py-2 text-xs font-body text-error">

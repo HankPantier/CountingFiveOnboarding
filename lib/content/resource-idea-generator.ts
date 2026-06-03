@@ -11,6 +11,7 @@ import type { SessionSchema } from '@/types/session-schema'
 
 const IDEA_MODEL = 'claude-sonnet-4-6'
 const DEFAULT_IDEA_COUNT = 9
+const SEEDED_IDEA_COUNT = 5
 
 export type GeneratedIdea = {
   title: string
@@ -98,10 +99,12 @@ function buildResearchBlock(results: Array<{ query: string; result: SerperResult
 export async function generateResourceIdeas(
   contentJobId: string,
   sessionId: string,
-  opts: { count?: number } = {}
+  opts: { count?: number; seed?: string } = {}
 ): Promise<{ created: number }> {
   const supabase = createServerClient()
-  const count = opts.count ?? DEFAULT_IDEA_COUNT
+  const seed = opts.seed?.trim() || null
+  // Seeded runs extrapolate one base idea — fewer, tighter variations.
+  const count = opts.count ?? (seed ? SEEDED_IDEA_COUNT : DEFAULT_IDEA_COUNT)
 
   const { data: job } = await supabase
     .from('content_jobs')
@@ -124,13 +127,21 @@ export async function generateResourceIdeas(
   const services = (schema.services ?? []).map((s) => s.name).filter(Boolean)
   const niches = (schema.niches ?? []).map((n) => n.name).filter(Boolean)
 
-  // Serper research — up to 3 queries blending service × niche × locality.
-  // All failures are non-fatal; ideas degrade to schema-only generation.
-  const queries = [
-    `${services[0] ?? 'CPA'} questions ${location}`.trim(),
-    niches[0] ? `${niches[0]} accounting advice` : null,
-    `small business tax planning ${new Date().getFullYear()} ${location}`.trim(),
-  ].filter((q): q is string => !!q)
+  // Serper research — up to 3 queries. Seeded runs research the seed itself;
+  // open runs blend service × niche × locality. All failures are non-fatal;
+  // ideas degrade to schema-only generation.
+  const queries = (seed
+    ? [
+        seed,
+        `${seed} ${location}`.trim(),
+        `${seed} CPA advice`,
+      ]
+    : [
+        `${services[0] ?? 'CPA'} questions ${location}`.trim(),
+        niches[0] ? `${niches[0]} accounting advice` : null,
+        `small business tax planning ${new Date().getFullYear()} ${location}`.trim(),
+      ]
+  ).filter((q): q is string => !!q)
   const research = await Promise.all(
     queries.map(async (query) => ({ query, result: await serperSearch(query) }))
   )
@@ -148,7 +159,15 @@ export async function generateResourceIdeas(
     .map((n) => `- ${n.name}: pain points: ${n.painPoints?.slice(0, 200) ?? ''} | value prop: ${n.valueProp?.slice(0, 200) ?? ''}`)
     .join('\n')
 
-  const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. Brainstorm ${count} blog post ideas for the firm's "Resources" section.
+  const task = seed
+    ? `The admin provided this base idea for a blog post:
+
+"${seed}"
+
+Extrapolate it into ${count} distinct, fully-formed post ideas for the firm's "Resources" section. Each must stay rooted in the base idea but take a different path: a sharper contrarian angle, a specific niche application (use the firm's actual niches below), a local tie-in, a seasonal/timely hook, or a practical framework/checklist treatment. Do not drift into unrelated topics.`
+    : `Brainstorm ${count} blog post ideas for the firm's "Resources" section.`
+
+  const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. ${task}
 
 ${buildBrandVoiceBlock(schema)}
 
