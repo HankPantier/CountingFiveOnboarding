@@ -26,6 +26,13 @@ export type ResourceIdea = {
   slug: string | null
   draft_path: string | null
   draft_error: string | null
+  social_path: string | null
+}
+
+// Interested/drafted float to the top, then by score.
+function sortIdeas(ideas: ResourceIdea[]): ResourceIdea[] {
+  const rank = (i: ResourceIdea) => (i.status === 'drafted' ? 0 : i.status === 'approved' ? 1 : 2)
+  return [...ideas].sort((a, b) => rank(a) - rank(b) || (b.score ?? 0) - (a.score ?? 0))
 }
 
 const POLL_MS = 5000
@@ -48,6 +55,8 @@ export default function ResourcesPanel({
   const [loading, setLoading] = useState(true)
   const [brainstorming, setBrainstorming] = useState(false)
   const [seed, setSeed] = useState('')
+  // Ideas with a social backfill in flight (cleared when social_path arrives).
+  const [socialBusy, setSocialBusy] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   // Idea count at brainstorm start, so polling knows when new rows arrive.
   const brainstormBaseline = useRef<number | null>(null)
@@ -71,10 +80,11 @@ export default function ResourcesPanel({
       .finally(() => setLoading(false))
   }, [refresh])
 
-  // Poll while a brainstorm or any draft is in flight.
+  // Poll while a brainstorm, draft, or social backfill is in flight.
   const anyDrafting = ideas.some((i) => i.draft_status === 'running')
+  const anySocial = socialBusy.size > 0
   useEffect(() => {
-    if (!brainstorming && !anyDrafting) return
+    if (!brainstorming && !anyDrafting && !anySocial) return
     const timer = setInterval(() => {
       void refresh()
         .then((next) => {
@@ -86,11 +96,21 @@ export default function ResourcesPanel({
             setBrainstorming(false)
             brainstormBaseline.current = null
           }
+          // Clear social spinners once the path lands.
+          setSocialBusy((prev) => {
+            if (prev.size === 0) return prev
+            const stillBusy = new Set<string>()
+            for (const id of prev) {
+              const idea = next.find((i) => i.id === id)
+              if (idea && !idea.social_path) stillBusy.add(id)
+            }
+            return stillBusy.size === prev.size ? prev : stillBusy
+          })
         })
         .catch(() => {})
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [brainstorming, anyDrafting, refresh])
+  }, [brainstorming, anyDrafting, anySocial, refresh])
 
   const brainstorm = async (seedIdea?: string) => {
     setError(null)
@@ -115,6 +135,27 @@ export default function ResourcesPanel({
       setError(err instanceof Error ? err.message : 'Brainstorm failed')
       setBrainstorming(false)
       brainstormBaseline.current = null
+    }
+  }
+
+  const generateSocial = async (ideaId: string) => {
+    setError(null)
+    setSocialBusy((prev) => new Set(prev).add(ideaId))
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/resources/ideas/${ideaId}/social`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Social generation failed: ${res.status}`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Social generation failed')
+      setSocialBusy((prev) => {
+        const next = new Set(prev)
+        next.delete(ideaId)
+        return next
+      })
     }
   }
 
@@ -155,8 +196,7 @@ export default function ResourcesPanel({
     }
   }
 
-  const visible = ideas.filter((i) => i.status !== 'dismissed')
-  const dismissed = ideas.filter((i) => i.status === 'dismissed')
+  const visible = sortIdeas(ideas.filter((i) => i.status !== 'dismissed'))
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -172,7 +212,8 @@ export default function ResourcesPanel({
       </div>
       <p className="text-xs font-body text-text-muted mb-4">
         Researches sticky, sharable angles for this firm, drafts on-brand posts to the draft branch
-        under <code>content/posts/</code>, then you edit and publish like any page.
+        under <code>content/posts/</code>, then you edit and publish like any page. Brainstorming
+        adds to the list without touching kept ideas; removed ideas won&apos;t be suggested again.
       </p>
 
       <form
@@ -245,6 +286,16 @@ export default function ResourcesPanel({
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
+                {idea.status === 'approved' && (
+                  <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-success">
+                    ★ Interested
+                  </span>
+                )}
+                {idea.status === 'drafted' && (
+                  <span className="rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy">
+                    Drafted
+                  </span>
+                )}
                 {SCORE_LABELS.map(({ key, label }) =>
                   typeof idea.score_breakdown?.[key] === 'number' ? (
                     <span
@@ -285,14 +336,41 @@ export default function ResourcesPanel({
                 </p>
               )}
 
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
                 {idea.status === 'drafted' && idea.draft_path ? (
-                  <button
-                    onClick={() => onOpenPost(idea.draft_path!)}
-                    className="rounded-[40px] bg-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
-                  >
-                    Open draft
-                  </button>
+                  <>
+                    <button
+                      onClick={() => onOpenPost(idea.draft_path!)}
+                      className="rounded-[40px] bg-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
+                    >
+                      Open draft
+                    </button>
+                    {socialBusy.has(idea.id) && !idea.social_path ? (
+                      <span className="text-xs font-body text-info">Generating social…</span>
+                    ) : idea.social_path ? (
+                      <>
+                        <button
+                          onClick={() => onOpenPost(idea.social_path!)}
+                          className="rounded-[40px] border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                        >
+                          View social
+                        </button>
+                        <button
+                          onClick={() => void generateSocial(idea.id)}
+                          className="text-[11px] font-heading font-semibold text-text-muted hover:text-text-secondary transition-colors"
+                        >
+                          Regenerate social
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => void generateSocial(idea.id)}
+                        className="rounded-[40px] border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                      >
+                        Generate social
+                      </button>
+                    )}
+                  </>
                 ) : idea.draft_status === 'running' ? (
                   <span className="text-xs font-body text-info">Drafting post…</span>
                 ) : (
@@ -308,21 +386,17 @@ export default function ResourcesPanel({
                         onClick={() => void setStatus(idea.id, 'approved')}
                         className="rounded-[40px] border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                       >
-                        Interested
+                        ★ Interested
                       </button>
                     )}
                     <button
                       onClick={() => void setStatus(idea.id, 'dismissed')}
-                      className="rounded-[40px] px-4 py-1.5 text-xs font-heading font-semibold text-text-muted hover:text-text-secondary transition-colors"
+                      title="Removes this idea — future brainstorms will avoid this territory"
+                      className="rounded-[40px] px-4 py-1.5 text-xs font-heading font-semibold text-text-muted hover:text-error transition-colors"
                     >
-                      Not interested
+                      Remove
                     </button>
                   </>
-                )}
-                {idea.status === 'approved' && idea.draft_status !== 'running' && (
-                  <span className="text-[10px] font-body uppercase tracking-wide text-success">
-                    Interested
-                  </span>
                 )}
                 {idea.draft_status === 'error' && (
                   <span className="text-xs font-body text-error">
@@ -335,29 +409,6 @@ export default function ResourcesPanel({
         </ul>
       )}
 
-      {dismissed.length > 0 && (
-        <details className="mt-6">
-          <summary className="cursor-pointer text-xs font-heading font-semibold text-text-muted hover:text-text-secondary">
-            Not interested ({dismissed.length}) — future brainstorms steer away from these
-          </summary>
-          <ul className="mt-3 space-y-2">
-            {dismissed.map((idea) => (
-              <li
-                key={idea.id}
-                className="flex items-center justify-between gap-3 rounded border border-border-default bg-surface-subtle px-3 py-2"
-              >
-                <span className="text-xs font-body text-text-muted truncate">{idea.title}</span>
-                <button
-                  onClick={() => void setStatus(idea.id, 'suggested')}
-                  className="shrink-0 text-[11px] font-heading font-semibold text-brand-navy hover:text-brand-cyan transition-colors"
-                >
-                  Restore
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
     </div>
   )
 }

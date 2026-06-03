@@ -19,6 +19,10 @@ function isPost(path: string): boolean {
   return path.startsWith('content/posts/') && path.endsWith('.md')
 }
 
+function isSocial(path: string): boolean {
+  return path.startsWith('content/social/') && path.endsWith('.md')
+}
+
 function isNav(path: string): boolean {
   return path === VIRTUAL_NAV
 }
@@ -105,6 +109,11 @@ export default function FileTree({
 }) {
   const pages = sortPages(entries.filter((e) => isPage(e.path)))
   const posts = entries.filter((e) => isPost(e.path))
+  const socialBySlug = new Map(
+    entries
+      .filter((e) => isSocial(e.path))
+      .map((e) => [e.path.slice('content/social/'.length, -3), e])
+  )
   const nav = entries.find((e) => isNav(e.path))
 
   // Pages is the noisy section — start it collapsed; the rest are small.
@@ -125,7 +134,7 @@ export default function FileTree({
     const section = selectedPath
       ? isPage(selectedPath)
         ? 'pages'
-        : isPost(selectedPath)
+        : isPost(selectedPath) || isSocial(selectedPath)
           ? 'resources'
           : isNav(selectedPath)
             ? 'configuration'
@@ -201,17 +210,34 @@ export default function FileTree({
           {posts.length === 0 ? (
             <li className="text-xs text-text-muted px-2 py-1">No posts drafted yet.</li>
           ) : (
-            posts.map((p) => (
-              <li key={p.path}>
-                <button
-                  onClick={() => onSelect(p.path)}
-                  className={fileButtonClass(selectedPath === p.path)}
-                >
-                  {p.path.split('/').pop()}
-                  {dirtyPaths.has(p.path) && <DirtyDot />}
-                </button>
-              </li>
-            ))
+            posts.map((p) => {
+              const slug = p.path.slice('content/posts/'.length, -3)
+              const social = socialBySlug.get(slug)
+              return (
+                <li key={p.path}>
+                  <button
+                    onClick={() => onSelect(p.path)}
+                    className={fileButtonClass(selectedPath === p.path)}
+                  >
+                    {p.path.split('/').pop()}
+                    {dirtyPaths.has(p.path) && <DirtyDot />}
+                  </button>
+                  {social && (
+                    <button
+                      onClick={() => onSelect(social.path)}
+                      style={{ paddingLeft: '22px' }}
+                      className={fileButtonClass(selectedPath === social.path)}
+                    >
+                      <span className="text-text-muted mr-1" aria-hidden>
+                        └
+                      </span>
+                      social posts
+                      {dirtyPaths.has(social.path) && <DirtyDot />}
+                    </button>
+                  )}
+                </li>
+              )
+            })
           )}
         </ul>
       )}

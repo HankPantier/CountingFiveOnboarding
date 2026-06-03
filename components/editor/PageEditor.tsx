@@ -50,6 +50,8 @@ export default function PageEditor({
   const images = useMemo(() => extractPageImages(parsed), [parsed])
   const [preview, setPreview] = useState(false)
   const isPost = path.startsWith('content/posts/')
+  // Social suggestion files are plain copy — body-only editing, no metadata form.
+  const isSocial = path.startsWith('content/social/')
   const promotedFields = isPost ? POST_PROMOTED_FIELDS : PROMOTED_FIELDS
 
   // Rewrite bare image filenames in the preview to the admin asset route so
@@ -108,7 +110,7 @@ export default function PageEditor({
           <div className="font-heading font-semibold text-brand-navy text-lg">{path}</div>
         </div>
 
-        {parsed.frontmatter && (
+        {parsed.frontmatter && !isSocial && (
           <section className="bg-surface-card border border-border-default rounded-lg p-4">
             <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
               {isPost ? 'Post metadata' : 'Page metadata'}

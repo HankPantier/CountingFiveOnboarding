@@ -15,6 +15,7 @@ import {
   readFile,
   FileNotFoundError,
 } from '@/lib/github/repo-files'
+import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import type { NavJson } from '@/types/nav-json'
 import type { SessionSchema } from '@/types/session-schema'
@@ -479,6 +480,32 @@ export async function generateResourceDraft(
     const nav = await updatedNavJson(job.github_repo)
     if (nav) entries.push(nav)
 
+    // Social suggestions ride in the same atomic commit. Non-fatal: a parse
+    // failure just means the admin backfills via the panel's button.
+    let socialPath: string | null = null
+    try {
+      const social = await generateSocialJson({
+        schema,
+        title: fm.title,
+        excerpt: fm.excerpt,
+        answerBlock: fm.answer_block,
+        body: result.body,
+        canonicalUrl,
+        contentJobId: idea.content_job_id,
+        sessionId: idea.session_id,
+        slug,
+      })
+      if (social) {
+        socialPath = socialPathForSlug(slug)
+        entries.push({
+          path: socialPath,
+          content: buildSocialMarkdown({ title: fm.title, slug, social }),
+        })
+      }
+    } catch (err) {
+      console.warn(`[resource-draft] Social generation failed for ${slug}:`, err)
+    }
+
     const { commitSha } = await pushEntriesToBranch(
       job.github_repo,
       DRAFT_BRANCH,
@@ -496,6 +523,7 @@ export async function generateResourceDraft(
         draft_path: `content/posts/${slug}.md`,
         draft_commit_sha: commitSha,
         draft_error: null,
+        social_path: socialPath,
         updated_at: new Date().toISOString(),
       })
       .eq('id', ideaId)

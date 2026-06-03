@@ -447,6 +447,7 @@ export type Database = {
           secondary_keywords: Json
           session_id: string
           slug: string | null
+          social_path: string | null
           status: string
           target_keyword: string | null
           title: string
@@ -468,6 +469,7 @@ export type Database = {
           secondary_keywords?: Json
           session_id: string
           slug?: string | null
+          social_path?: string | null
           status?: string
           target_keyword?: string | null
           title: string
@@ -489,6 +491,7 @@ export type Database = {
           secondary_keywords?: Json
           session_id?: string
           slug?: string | null
+          social_path?: string | null
           status?: string
           target_keyword?: string | null
           title?: string
