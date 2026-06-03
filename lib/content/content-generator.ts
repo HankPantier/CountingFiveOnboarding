@@ -7,6 +7,7 @@ import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from 
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
+import { buildCredentials } from './brand-voice'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -37,19 +38,6 @@ type GeneratedResult = {
     hero_subhead: string | null
     hero_image_query: string | null
   }
-}
-
-function buildCredentials(schema: SessionSchema): string {
-  const creds: string[] = []
-  for (const member of schema.team ?? []) {
-    if (member.certifications?.length) {
-      creds.push(`${member.name}: ${member.certifications.join(', ')}`)
-    }
-  }
-  for (const aff of schema.business?.affiliations ?? []) {
-    creds.push(aff)
-  }
-  return creds.join('\n') || 'Not specified'
 }
 
 function normalizeCta(raw: unknown): Cta {

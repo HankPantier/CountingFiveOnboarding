@@ -4,6 +4,8 @@ export type TreeFile = { path: string; sha: string }
 
 // Sentinel selectedPath that opens the media library instead of a file.
 export const MEDIA_VIEW = '__media__'
+// Sentinel selectedPath that opens the Resources (blog) panel.
+export const RESOURCES_VIEW = '__resources__'
 
 const VIRTUAL_NAV = 'content/nav.json'
 
@@ -14,6 +16,10 @@ function displayName(path: string): string {
 
 function isPage(path: string): boolean {
   return path.startsWith('content/pages/') && path.endsWith('.md')
+}
+
+function isPost(path: string): boolean {
+  return path.startsWith('content/posts/') && path.endsWith('.md')
 }
 
 function isNav(path: string): boolean {
@@ -32,6 +38,7 @@ export default function FileTree({
   onSelect: (path: string) => void
 }) {
   const pages = entries.filter((e) => isPage(e.path))
+  const posts = entries.filter((e) => isPost(e.path))
   const nav = entries.find((e) => isNav(e.path))
 
   return (
@@ -61,6 +68,41 @@ export default function FileTree({
             </li>
           ))
         )}
+      </ul>
+
+      <div className="text-xs font-heading font-semibold uppercase tracking-wide text-text-muted px-2 mb-2">
+        Resources
+      </div>
+      <ul className="mb-6">
+        <li>
+          <button
+            onClick={() => onSelect(RESOURCES_VIEW)}
+            className={`w-full text-left text-xs font-body px-2 py-1.5 rounded transition-colors ${
+              selectedPath === RESOURCES_VIEW
+                ? 'bg-brand-cyan/10 text-brand-navy font-semibold'
+                : 'text-text-secondary hover:bg-surface-subtle'
+            }`}
+          >
+            Blog ideas &amp; drafting
+          </button>
+        </li>
+        {posts.map((p) => (
+          <li key={p.path}>
+            <button
+              onClick={() => onSelect(p.path)}
+              className={`w-full text-left text-xs font-body px-2 py-1.5 rounded transition-colors ${
+                selectedPath === p.path
+                  ? 'bg-brand-cyan/10 text-brand-navy font-semibold'
+                  : 'text-text-secondary hover:bg-surface-subtle'
+              }`}
+            >
+              {displayName(p.path)}
+              {dirtyPaths.has(p.path) && (
+                <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-warning align-middle" />
+              )}
+            </button>
+          </li>
+        ))}
       </ul>
 
       <div className="text-xs font-heading font-semibold uppercase tracking-wide text-text-muted px-2 mb-2">

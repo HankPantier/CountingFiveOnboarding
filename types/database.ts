@@ -430,6 +430,87 @@ export type Database = {
           },
         ]
       }
+      resource_ideas: {
+        Row: {
+          angle: string | null
+          content_job_id: string
+          created_at: string
+          draft_commit_sha: string | null
+          draft_error: string | null
+          draft_path: string | null
+          draft_status: string
+          external_links: Json
+          id: string
+          rationale: string | null
+          score: number | null
+          score_breakdown: Json
+          secondary_keywords: Json
+          session_id: string
+          slug: string | null
+          status: string
+          target_keyword: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          angle?: string | null
+          content_job_id: string
+          created_at?: string
+          draft_commit_sha?: string | null
+          draft_error?: string | null
+          draft_path?: string | null
+          draft_status?: string
+          external_links?: Json
+          id?: string
+          rationale?: string | null
+          score?: number | null
+          score_breakdown?: Json
+          secondary_keywords?: Json
+          session_id: string
+          slug?: string | null
+          status?: string
+          target_keyword?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          angle?: string | null
+          content_job_id?: string
+          created_at?: string
+          draft_commit_sha?: string | null
+          draft_error?: string | null
+          draft_path?: string | null
+          draft_status?: string
+          external_links?: Json
+          id?: string
+          rationale?: string | null
+          score?: number | null
+          score_breakdown?: Json
+          secondary_keywords?: Json
+          session_id?: string
+          slug?: string | null
+          status?: string
+          target_keyword?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "resource_ideas_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "resource_ideas_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           approved_at: string | null

@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import EditorTopBar, { type EditorStatus } from './EditorTopBar'
-import FileTree, { MEDIA_VIEW, type TreeFile } from './FileTree'
+import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
 import NavEditor from './NavEditor'
 import MediaLibrary from './MediaLibrary'
+import ResourcesPanel from './ResourcesPanel'
 import { parseNavJson } from '@/lib/editor/nav-config'
 
 type LoadedFile = { content: string; sha: string }
@@ -78,7 +79,7 @@ export default function EditorShell({
     async (path: string) => {
       setError(null)
       setSelectedPath(path)
-      if (path === MEDIA_VIEW) return // virtual view, nothing to fetch
+      if (path === MEDIA_VIEW || path === RESOURCES_VIEW) return // virtual view, nothing to fetch
       if (loaded.has(path)) return
       setLoadingFile(true)
       try {
@@ -252,6 +253,17 @@ export default function EditorShell({
           </div>
         ) : selectedPath === MEDIA_VIEW ? (
           <MediaLibrary sessionId={sessionId} onChanged={() => void refreshStatus()} />
+        ) : selectedPath === RESOURCES_VIEW ? (
+          <ResourcesPanel
+            sessionId={sessionId}
+            onOpenPost={(path) => {
+              // A freshly drafted post is a new commit on draft: refresh the
+              // tree + status so it appears, then open it in the editor.
+              void refreshTree()
+              void refreshStatus()
+              void select(path)
+            }}
+          />
         ) : loadingFile || content === null ? (
           <div className="flex-1 flex items-center justify-center text-sm font-body text-text-muted">
             Loading {selectedPath}…

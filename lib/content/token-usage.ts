@@ -1,6 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 
-export type TokenStage = 'keyword' | 'outline' | 'content'
+export type TokenStage = 'keyword' | 'outline' | 'content' | 'idea' | 'resource'
 
 // USD per 1,000,000 tokens, keyed by model id. Verify against current
 // Anthropic pricing before relying on cost_usd for actual billing — these
