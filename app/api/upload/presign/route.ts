@@ -1,7 +1,8 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/auth/require-admin'
 
-const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/tiff', 'application/pdf']
+const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'application/pdf']
 const MAX_BYTES = 300 * 1024 * 1024
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -25,7 +26,13 @@ export async function POST(req: Request) {
 
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   if (session.current_phase < 5) {
-    return NextResponse.json({ error: 'File uploads not available yet' }, { status: 403 })
+    // The phase gate exists for the client-facing chat flow (uploads unlock
+    // at agent phase 5). Admins manage team photos from the dashboard at any
+    // phase — let an authenticated admin through.
+    const auth = await requireAdmin()
+    if (auth instanceof NextResponse) {
+      return NextResponse.json({ error: 'File uploads not available yet' }, { status: 403 })
+    }
   }
 
   if (!ALLOWED_MIMES.includes(mimeType)) {

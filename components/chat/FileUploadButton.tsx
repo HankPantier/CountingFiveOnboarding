@@ -6,7 +6,7 @@ type Props = {
   onUploadComplete: (fileName: string, assetId: string) => void
 }
 
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png', '.tif', '.tiff', '.pdf']
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png', '.webp', '.tif', '.tiff', '.pdf']
 const MAX_BYTES = 300 * 1024 * 1024
 
 function detectCategory(fileName: string): string {

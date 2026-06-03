@@ -19,7 +19,7 @@ type Props = {
   signedUrls: Record<string, string>
 }
 
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png']
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png', '.webp']
 const MAX_BYTES = 25 * 1024 * 1024  // 25MB per team photo is plenty
 
 export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }: Props) {
