@@ -194,7 +194,15 @@ ITEM-LEVEL FORMAT — for any block that contains a list of items (service-cards
   Job costing, equipment financing...
 
 Per-block item formats:
-- service-cards / industry-cards / feature-grid: \`### Item Title\` then 1–4 sentence description.
+- service-cards: \`### Item Title\` then 1–4 sentence description.
+- industry-cards / feature-grid: \`### Item Title\`, then an \`icon:\` line choosing the card's icon, then a 1–4 sentence description:
+
+      ### Healthcare Professionals
+      icon: Stethoscope
+
+      Practice owners face billing complexity, staffing costs, and...
+
+  Pick the most specific fitting icon per item from this set (PascalCase, exact): Calculator, Briefcase, ChartLine, ChartBar, TrendingUp, FileText, FileCheck, ClipboardCheck, Coins, DollarSign, CreditCard, Wallet, PiggyBank, Receipt, Users, UserCheck, Building, Building2, Home, MapPin, Globe, ShieldCheck, Award, Star, BadgeCheck, Hammer, Wrench, Cog, HeartPulse, Stethoscope, GraduationCap, Scale, Gavel, Lightbulb, Target, Zap, Sparkles, Calendar, Clock. Never repeat an icon within one block.
 - content-cards: \`### Card Title\` then OPTIONAL \`photo:\` and \`query:\` lines, then a 1–3 sentence excerpt, then an optional trailing \`[Read more](/url)\` link. The photo lines look like:
 
       ### Year-End Tax Planning Guide
