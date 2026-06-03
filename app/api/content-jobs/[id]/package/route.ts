@@ -12,6 +12,7 @@ import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
+import { DRAFT_BRANCH, ensureDraftBranch, pushEntriesToBranch } from '@/lib/github/repo-files'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
@@ -67,7 +68,7 @@ export async function POST(
   // Load job + session
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('session_id, confirmed_sitemap, palette, design_tokens, nav_config')
+    .select('session_id, confirmed_sitemap, palette, design_tokens, nav_config, github_repo')
     .eq('id', id)
     .single()
 
@@ -472,6 +473,34 @@ export async function POST(
 
   console.warn(`[content-job] Package assembled: ${storagePath} (${(zipBuffer.length / 1024).toFixed(0)} KB)`)
 
+  // Auto-deploy to the linked repo's draft branch so the in-admin editor and
+  // Vercel preview reflect the freshly-packaged content. Only content/ and
+  // public/ files are pushed (the .docx + ERRORS.md review artifacts stay out
+  // of the site repo). Non-fatal: a GitHub hiccup must not fail packaging.
+  let pushedToRepo: { commitSha: string; fileCount: number } | null = null
+  let pushError: string | null = null
+  if (job.github_repo) {
+    const repoEntries = entries.filter(
+      (e) => e.path.startsWith('content/') || e.path.startsWith('public/')
+    )
+    try {
+      await ensureDraftBranch(job.github_repo)
+      pushedToRepo = await pushEntriesToBranch(
+        job.github_repo,
+        DRAFT_BRANCH,
+        repoEntries,
+        `Deploy packaged content via admin${auth.user.email ? ` (${auth.user.email})` : ''}`,
+        { authorName: 'CountingFive Admin', authorEmail: auth.user.email ?? 'admin@countingfive.com' }
+      )
+      console.warn(
+        `[content-job] Pushed ${pushedToRepo.fileCount} file(s) to ${job.github_repo}@${DRAFT_BRANCH} (${pushedToRepo.commitSha.slice(0, 7)})`
+      )
+    } catch (err) {
+      pushError = err instanceof Error ? err.message : 'Push to repo failed'
+      console.error(`[content-job] Push to ${job.github_repo} failed:`, pushError)
+    }
+  }
+
   return NextResponse.json({
     success: true,
     storagePath,
@@ -479,5 +508,7 @@ export async function POST(
     assetCount: assetEntries.length,
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
+    pushedToRepo,
+    pushError,
   })
 }

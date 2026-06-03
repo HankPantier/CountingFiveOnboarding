@@ -85,6 +85,64 @@ export async function ensureDraftBranch(slug: string): Promise<void> {
   await ensureBranch(slug, DRAFT_BRANCH, MAIN_BRANCH)
 }
 
+// Overlay a set of files onto a branch in one atomic commit via the Git Data
+// API. base_tree is the branch's current tree, so files NOT in `entries` are
+// preserved (the client repo's app code stays put; only the deliverable's
+// content/ + public/ paths are added or updated). base64 blobs handle text and
+// binary (images) uniformly.
+export async function pushEntriesToBranch(
+  slug: string,
+  branch: string,
+  entries: { path: string; content: string | Buffer }[],
+  message: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<{ commitSha: string; fileCount: number }> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+
+  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+  const baseCommitSha = ref.data.object.sha
+  const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
+
+  // Explicit literal types for mode/type — Octokit's overloaded createTree
+  // signature defeats `Parameters<...>['tree']` index access.
+  const tree: { path: string; mode: '100644'; type: 'blob'; sha: string }[] = []
+  for (const e of entries) {
+    const buf = typeof e.content === 'string' ? Buffer.from(e.content, 'utf-8') : e.content
+    const blob = await octokit.git.createBlob({
+      owner,
+      repo,
+      content: buf.toString('base64'),
+      encoding: 'base64',
+    })
+    tree.push({ path: e.path, mode: '100644', type: 'blob', sha: blob.data.sha })
+  }
+
+  const newTree = await octokit.git.createTree({
+    owner,
+    repo,
+    base_tree: baseCommit.data.tree.sha,
+    tree,
+  })
+  const commit = await octokit.git.createCommit({
+    owner,
+    repo,
+    message,
+    tree: newTree.data.sha,
+    parents: [baseCommitSha],
+    ...(options.authorName && options.authorEmail
+      ? { author: { name: options.authorName, email: options.authorEmail } }
+      : {}),
+  })
+  await octokit.git.updateRef({
+    owner,
+    repo,
+    ref: `heads/${branch}`,
+    sha: commit.data.sha,
+  })
+  return { commitSha: commit.data.sha, fileCount: tree.length }
+}
+
 export async function listTree(
   slug: string,
   branch: string,

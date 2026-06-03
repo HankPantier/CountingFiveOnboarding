@@ -32,6 +32,8 @@ export default function DeliverablesPhase({
   const [error, setError] = useState<string | null>(null)
   const [unapprovedFromGate, setUnapprovedFromGate] = useState<Unapproved[] | null>(null)
   const [packageInfo, setPackageInfo] = useState<{ pageCount: number; sizeKB: number } | null>(null)
+  const [pushInfo, setPushInfo] = useState<{ fileCount: number } | null>(null)
+  const [pushWarn, setPushWarn] = useState<string | null>(null)
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
 
   // Poll the approval state so the assemble button knows whether the gate
@@ -80,6 +82,8 @@ export default function DeliverablesPhase({
         throw new Error(data?.error ?? 'Failed to assemble package')
       }
       setPackageInfo({ pageCount: data.pageCount, sizeKB: data.sizeKB })
+      setPushInfo(data.pushedToRepo ? { fileCount: data.pushedToRepo.fileCount } : null)
+      setPushWarn(typeof data.pushError === 'string' ? data.pushError : null)
       setPackaged(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to assemble')
@@ -173,6 +177,18 @@ export default function DeliverablesPhase({
               <span className="text-text-muted"> · {packageInfo.sizeKB} KB</span>
             )}
           </div>
+
+          {pushInfo && (
+            <div className="bg-info/10 border border-info/20 text-info text-sm font-body rounded-lg px-4 py-2">
+              Deployed {pushInfo.fileCount} file(s) to the site repo&rsquo;s <span className="font-mono">draft</span> branch.
+              Review in the content editor, then <span className="font-semibold">Publish to live</span> when ready.
+            </div>
+          )}
+          {pushWarn && (
+            <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2">
+              Package built, but the push to the site repo failed: {pushWarn}. The repo link or GitHub App may need attention; the download below still works.
+            </div>
+          )}
 
           <button
             onClick={downloadPackage}
