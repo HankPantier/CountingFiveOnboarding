@@ -9,7 +9,7 @@ at `/Users/webhank/.claude/plans/sharded-tumbling-wadler.md`.
 ## 1. Create the GitHub App (one-time)
 
 - Go to `https://github.com/organizations/YOUR_ORG/settings/apps` → **New GitHub App**.
-- **Repository permissions**: set **Contents** to **Read & write**. Leave everything else at "No access".
+- **Repository permissions**: set **Contents** to **Read & write** and **Pull requests** to **Read & write**. Leave everything else at "No access". (Contents covers reading/writing files, the `draft` branch, and the fast-forward publish merge; Pull requests is required because the publish flow opens a PR via `pulls.create` when a fast-forward merge conflicts — without it, publish-on-conflict fails with a 403.)
 - **Webhook**: uncheck "Active" — we don't use webhooks.
 - **Where can this GitHub App be installed?**: Only on this account.
 - Hit **Create GitHub App**. Note the **App ID** at the top.
