@@ -8,7 +8,20 @@ export type TreeEntry = {
   path: string
   sha: string
   type: 'blob' | 'tree'
+  size?: number
 }
+
+export type BinaryBlob = {
+  path: string
+  content: Buffer
+  sha: string
+  size: number
+}
+
+// Image file extensions surfaced in the asset/media UI. SVG is listed so
+// existing ones render, but uploads of SVG are rejected upstream (no magic
+// bytes to validate; stored-XSS risk).
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|svg)$/i
 
 export type FileBlob = {
   path: string
@@ -31,6 +44,13 @@ export class StaleShaError extends Error {
   ) {
     super(`File changed remotely: ${path}`)
     this.name = 'StaleShaError'
+  }
+}
+
+export class AssetExistsError extends Error {
+  constructor(public path: string) {
+    super(`Asset already exists: ${path}`)
+    this.name = 'AssetExistsError'
   }
 }
 
@@ -85,14 +105,155 @@ export async function listTree(
     recursive: 'true',
   })
   const filtered = tree.data.tree.filter(
-    (n): n is { path: string; sha: string; type: 'blob' | 'tree' } =>
+    (n): n is { path: string; sha: string; type: 'blob' | 'tree'; size?: number } =>
       typeof n.path === 'string' &&
       typeof n.sha === 'string' &&
       (n.type === 'blob' || n.type === 'tree')
   )
   return filtered
     .filter((n) => !prefix || n.path.startsWith(prefix))
-    .map((n) => ({ path: n.path, sha: n.sha, type: n.type }))
+    .map((n) => ({ path: n.path, sha: n.sha, type: n.type, size: n.size }))
+}
+
+// List image blobs under the asset roots (public/content-assets, public/og-images).
+export async function listAssets(
+  slug: string,
+  branch: string
+): Promise<TreeEntry[]> {
+  const all = await listTree(slug, branch)
+  return all.filter(
+    (n) =>
+      n.type === 'blob' &&
+      (n.path.startsWith('public/content-assets/') ||
+        n.path.startsWith('public/og-images/')) &&
+      IMAGE_EXT_RE.test(n.path)
+  )
+}
+
+// Read a binary blob (image) by path. Resolves the blob sha via getContent,
+// then pulls full bytes via the git blobs API so files >1MB aren't truncated
+// the way getContent's inline `content` would be.
+export async function readBinaryFile(
+  slug: string,
+  path: string,
+  branch: string
+): Promise<BinaryBlob> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  try {
+    const meta = await octokit.repos.getContent({ owner, repo, path, ref: branch })
+    if (Array.isArray(meta.data) || meta.data.type !== 'file') {
+      throw new Error(`Path is not a file: ${path}`)
+    }
+    const sha = meta.data.sha
+    const blob = await octokit.git.getBlob({ owner, repo, file_sha: sha })
+    const content = Buffer.from(blob.data.content, blob.data.encoding as BufferEncoding)
+    return { path, content, sha, size: content.byteLength }
+  } catch (err) {
+    if (isRequestError(err) && err.status === 404) {
+      throw new FileNotFoundError(path)
+    }
+    throw err
+  }
+}
+
+// Current blob sha of a file, or null if it doesn't exist. Used to enforce
+// optimistic locking on binary writes without decoding the bytes.
+async function currentSha(
+  slug: string,
+  path: string,
+  branch: string
+): Promise<string | null> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  try {
+    const res = await octokit.repos.getContent({ owner, repo, path, ref: branch })
+    if (Array.isArray(res.data) || res.data.type !== 'file') return null
+    return res.data.sha
+  } catch (err) {
+    if (isRequestError(err) && err.status === 404) return null
+    throw err
+  }
+}
+
+// Write binary content (already a Buffer) to the branch. `mode: 'create'`
+// requires the path to be absent; `mode: 'replace'` requires expectedSha to
+// match the current blob. StaleShaError (empty content) signals a lost race.
+export async function writeBinaryFile(
+  slug: string,
+  path: string,
+  content: Buffer,
+  branch: string,
+  message: string,
+  options: {
+    mode: 'create' | 'replace'
+    expectedSha?: string
+    authorName?: string
+    authorEmail?: string
+  }
+): Promise<{ commitSha: string; blobSha: string }> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+
+  const existing = await currentSha(slug, path, branch)
+  if (options.mode === 'create' && existing !== null) {
+    throw new AssetExistsError(path)
+  }
+  if (options.mode === 'replace') {
+    if (existing === null) throw new FileNotFoundError(path)
+    if (options.expectedSha && existing !== options.expectedSha) {
+      throw new StaleShaError(path, existing, '')
+    }
+  }
+
+  const payload: Parameters<typeof octokit.repos.createOrUpdateFileContents>[0] = {
+    owner,
+    repo,
+    path,
+    message,
+    content: content.toString('base64'),
+    branch,
+  }
+  if (existing) payload.sha = existing
+  if (options.authorName && options.authorEmail) {
+    payload.author = { name: options.authorName, email: options.authorEmail }
+  }
+
+  const res = await octokit.repos.createOrUpdateFileContents(payload)
+  return {
+    commitSha: res.data.commit.sha ?? '',
+    blobSha: res.data.content?.sha ?? '',
+  }
+}
+
+// Delete a file from the branch. expectedSha guards against deleting a blob
+// that changed since the caller last listed it.
+export async function deleteFile(
+  slug: string,
+  path: string,
+  branch: string,
+  expectedSha: string,
+  message: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<{ commitSha: string }> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const existing = await currentSha(slug, path, branch)
+  if (existing === null) throw new FileNotFoundError(path)
+  if (existing !== expectedSha) throw new StaleShaError(path, existing, '')
+
+  const res = await octokit.repos.deleteFile({
+    owner,
+    repo,
+    path,
+    message,
+    sha: expectedSha,
+    branch,
+    ...(options.authorName && options.authorEmail
+      ? { author: { name: options.authorName, email: options.authorEmail } }
+      : {}),
+  })
+  return { commitSha: res.data.commit.sha ?? '' }
 }
 
 export async function readFile(

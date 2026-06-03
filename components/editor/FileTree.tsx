@@ -2,6 +2,9 @@
 
 export type TreeFile = { path: string; sha: string }
 
+// Sentinel selectedPath that opens the media library instead of a file.
+export const MEDIA_VIEW = '__media__'
+
 const VIRTUAL_NAV = 'content/nav.json'
 
 function displayName(path: string): string {
@@ -83,6 +86,24 @@ export default function FileTree({
         ) : (
           <li className="text-xs text-text-muted px-2 py-1">nav.json missing</li>
         )}
+      </ul>
+
+      <div className="text-xs font-heading font-semibold uppercase tracking-wide text-text-muted px-2 mb-2 mt-6">
+        Media
+      </div>
+      <ul>
+        <li>
+          <button
+            onClick={() => onSelect(MEDIA_VIEW)}
+            className={`w-full text-left text-xs font-body px-2 py-1.5 rounded transition-colors ${
+              selectedPath === MEDIA_VIEW
+                ? 'bg-brand-cyan/10 text-brand-navy font-semibold'
+                : 'text-text-secondary hover:bg-surface-subtle'
+            }`}
+          >
+            Image library
+          </button>
+        </li>
       </ul>
     </nav>
   )
