@@ -80,12 +80,20 @@ function SectionHeader({
       className="w-full flex items-center gap-1.5 text-xs font-heading font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary px-2 mb-1 transition-colors"
       aria-expanded={open}
     >
-      <span
-        className={`inline-block text-[9px] transition-transform ${open ? 'rotate-90' : ''}`}
+      <svg
+        viewBox="0 0 16 16"
+        className={`w-3 h-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
         aria-hidden
       >
-        ▶
-      </span>
+        <path
+          d="M6 4l4 4-4 4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
       {label}
       {typeof count === 'number' && (
         <span className="font-body font-normal normal-case tracking-normal text-[10px]">
