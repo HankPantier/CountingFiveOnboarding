@@ -68,6 +68,11 @@ export default function ChatInterface({
 
   const isLoading = status === 'submitted' || status === 'streaming'
 
+  // useChat owns `error`; a local flag lets the user dismiss the banner
+  // without clearing SDK state. Reset whenever a new error arrives.
+  const [errorDismissed, setErrorDismissed] = useState(false)
+  useEffect(() => { setErrorDismissed(false) }, [error])
+
   // Admin detection runs on mount. Non-admin visitors quietly get { isAdmin: false }
   // (no console errors), so the staff toggle simply never renders for them.
   useEffect(() => {
@@ -199,11 +204,12 @@ export default function ChatInterface({
             <p className="text-sm font-heading font-semibold text-brand-navy">
               Switch this session to staff mode
             </p>
-            <p className="text-text-muted text-xs font-body mt-1">
+            <p id="staff-note-help" className="text-text-muted text-xs font-body mt-1">
               Optional: short note on why staff is filling this in (kept in the session, not shown to the client).
             </p>
             <textarea
               value={staffNote}
+              aria-describedby="staff-note-help"
               onChange={e => setStaffNote(e.target.value)}
               disabled={staffSubmitting}
               maxLength={1000}
@@ -227,7 +233,7 @@ export default function ChatInterface({
                 type="button"
                 onClick={handleStaffSubmit}
                 disabled={staffSubmitting}
-                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all duration-150 hover:bg-brand-navy active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all duration-150 hover:bg-brand-cyan-dark active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {staffSubmitting ? 'Switching…' : 'Switch to staff mode'}
               </button>
@@ -236,9 +242,19 @@ export default function ChatInterface({
         </div>
       )}
 
-      {error && (
-        <div className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error text-center flex-shrink-0">
-          {error.message} — please try again.
+      {error && !errorDismissed && (
+        <div
+          role="alert"
+          className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error flex-shrink-0 flex items-center justify-center gap-4"
+        >
+          <span>{error.message} — please try again.</span>
+          <button
+            type="button"
+            onClick={() => setErrorDismissed(true)}
+            className="text-xs font-heading font-semibold underline underline-offset-2 hover:no-underline shrink-0"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -258,7 +274,7 @@ export default function ChatInterface({
                 {[0, 1, 2].map(i => (
                   <span
                     key={i}
-                    className="w-1.5 h-1.5 rounded-full bg-text-muted motion-safe:animate-dot-bounce"
+                    className="w-1.5 h-1.5 rounded-full bg-brand-cyan motion-safe:animate-dot-bounce"
                     style={{ animationDelay: `${i * 160}ms` }}
                   />
                 ))}
@@ -297,7 +313,7 @@ export default function ChatInterface({
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all duration-150 hover:bg-brand-navy active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all duration-150 hover:bg-brand-cyan-dark active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send
             </button>

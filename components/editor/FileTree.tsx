@@ -83,9 +83,9 @@ function SectionHeader({
       aria-expanded={open}
     >
       <svg
+        aria-hidden="true"
         viewBox="0 0 16 16"
         className={`w-3 h-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
-        aria-hidden
       >
         <path
           d="M6 4l4 4-4 4"

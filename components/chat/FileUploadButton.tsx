@@ -20,6 +20,7 @@ function detectCategory(fileName: string): string {
 export default function FileUploadButton({ sessionId, onUploadComplete }: Props) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [justUploaded, setJustUploaded] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -88,6 +89,8 @@ export default function FileUploadButton({ sessionId, onUploadComplete }: Props)
 
       setProgress(100)
       onUploadComplete(file.name, confirmData.assetId)
+      setJustUploaded(true)
+      setTimeout(() => setJustUploaded(false), 2000)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed'
       setError(message)
@@ -115,13 +118,21 @@ export default function FileUploadButton({ sessionId, onUploadComplete }: Props)
           'inline-flex items-center gap-2 px-4 py-2.5 rounded-pill text-sm font-heading font-semibold transition-all cursor-pointer',
           uploading
             ? 'bg-surface-card text-text-secondary border border-border-default cursor-not-allowed opacity-60'
-            : 'bg-surface-card text-brand-navy border border-border-default hover:border-brand-cyan hover:text-brand-cyan',
+            : justUploaded
+              ? 'bg-success/10 text-success border border-success/40'
+              : 'bg-surface-card text-brand-navy border border-border-default hover:border-brand-cyan hover:text-brand-cyan',
         ].join(' ')}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-        </svg>
-        {uploading ? `Uploading… ${progress}%` : 'Attach file'}
+        {justUploaded ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+          </svg>
+        )}
+        {uploading ? `Uploading… ${progress}%` : justUploaded ? 'Uploaded ✓' : 'Attach file'}
       </label>
       {error && (
         <p className="text-error text-xs font-body">{error}</p>

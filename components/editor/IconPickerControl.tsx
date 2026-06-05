@@ -56,8 +56,9 @@ export default function IconPickerControl({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search icons…"
+            aria-label="Search icons"
             autoFocus
-            className="w-full mb-2 rounded-[40px] border border-border-default px-3 py-1.5 text-xs font-body focus:border-brand-cyan focus:outline-none"
+            className="w-full mb-2 rounded-pill border border-border-default px-3 py-1.5 text-xs font-body focus:border-brand-cyan focus:outline-none"
           />
           <div className="max-h-56 overflow-y-auto space-y-2">
             {groups.length === 0 ? (
@@ -77,6 +78,8 @@ export default function IconPickerControl({
                           key={name}
                           type="button"
                           title={name}
+                          aria-label={name}
+                          aria-pressed={selected}
                           onClick={() => {
                             onChange(name)
                             setOpen(false)
@@ -88,7 +91,7 @@ export default function IconPickerControl({
                               : 'hover:bg-surface-subtle'
                           }`}
                         >
-                          <IconComp className="w-4 h-4 text-brand-navy" strokeWidth={1.75} />
+                          <IconComp aria-hidden="true" className="w-4 h-4 text-brand-navy" strokeWidth={1.75} />
                         </button>
                       )
                     })}

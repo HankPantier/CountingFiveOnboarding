@@ -102,7 +102,7 @@ export default function MessageBubble({
       ].join(' ')}
     >
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm font-body leading-relaxed ${
+        className={`max-w-[90%] sm:max-w-[80%] rounded-2xl px-4 py-3 text-sm font-body leading-relaxed ${
           isUser
             ? 'bg-brand-navy text-text-inverse whitespace-pre-wrap'
             : 'bg-surface-card text-text-primary border border-border-default shadow-subtle space-y-2'
