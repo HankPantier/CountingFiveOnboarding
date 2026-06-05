@@ -53,23 +53,26 @@ export default function EditorTopBar({
         >
           ← Dashboard
         </Link>
-        <div className="flex flex-col min-w-0">
-          <h1 className="font-heading font-semibold text-sm text-brand-navy truncate">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h1 className="font-heading font-semibold text-sm text-brand-navy truncate max-w-[16rem]">
             {firmName}
           </h1>
-          <div className="flex items-center gap-2 text-xs font-body text-text-muted truncate">
-            <span className="truncate">{websiteUrl}</span>
-            {status && (
-              <>
-                <span aria-hidden>·</span>
-                <span className="font-mono text-[10px] text-text-muted truncate">
-                  {status.repo}
-                </span>
-              </>
-            )}
-          </div>
+          <span aria-hidden className="text-text-muted hidden md:inline">·</span>
+          <span className="text-xs font-body text-text-muted truncate hidden md:inline max-w-[14rem]">
+            {websiteUrl}
+          </span>
+          {status && (
+            <>
+              <span aria-hidden className="text-text-muted hidden lg:inline">·</span>
+              <span className="font-mono text-[10px] text-text-muted truncate hidden lg:inline max-w-[14rem]">
+                {status.repo}
+              </span>
+            </>
+          )}
         </div>
-        <span className="text-xs font-body text-text-muted whitespace-nowrap">{aheadLabel}</span>
+        <span className="text-xs font-body text-text-muted whitespace-nowrap hidden sm:inline">
+          {aheadLabel}
+        </span>
         {publishResult && (
           <span className="text-xs font-body text-success bg-success/10 px-2 py-0.5 rounded">
             {publishResult}
