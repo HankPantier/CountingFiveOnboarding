@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { BrandFitResult } from '@/lib/content/brand-fit'
 
 type ScoreBreakdown = {
   stickiness?: number
@@ -58,6 +59,15 @@ export default function ResourcesPanel({
   // Ideas with a social backfill in flight (cleared when social_path arrives).
   const [socialBusy, setSocialBusy] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
+  // Idea with the writer-notes box open, and its text.
+  const [notesFor, setNotesFor] = useState<string | null>(null)
+  const [notesText, setNotesText] = useState('')
+  // Brand-fit conflict awaiting an admin decision (seed or draft notes).
+  const [brandConflict, setBrandConflict] = useState<{
+    action: { kind: 'seed'; seed: string } | { kind: 'draft'; ideaId: string; notes: string }
+    fit: BrandFitResult
+  } | null>(null)
+  const [amending, setAmending] = useState(false)
   // Idea count at brainstorm start, so polling knows when new rows arrive.
   const brainstormBaseline = useRef<number | null>(null)
 
@@ -112,8 +122,9 @@ export default function ResourcesPanel({
     return () => clearInterval(timer)
   }, [brainstorming, anyDrafting, anySocial, refresh])
 
-  const brainstorm = async (seedIdea?: string) => {
+  const brainstorm = async (seedIdea?: string, overrideBrandFit = false) => {
     setError(null)
+    setBrandConflict(null)
     setBrainstorming(true)
     brainstormBaseline.current = ideas.length
     try {
@@ -122,10 +133,19 @@ export default function ResourcesPanel({
         ...(seedIdea
           ? {
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ seed: seedIdea }),
+              body: JSON.stringify({ seed: seedIdea, overrideBrandFit }),
             }
           : {}),
       })
+      if (res.status === 409 && seedIdea) {
+        const data = (await res.json().catch(() => ({}))) as { brandFit?: BrandFitResult }
+        if (data.brandFit) {
+          setBrandConflict({ action: { kind: 'seed', seed: seedIdea }, fit: data.brandFit })
+          setBrainstorming(false)
+          brainstormBaseline.current = null
+          return
+        }
+      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(data.error ?? `Brainstorm failed: ${res.status}`)
@@ -177,22 +197,67 @@ export default function ResourcesPanel({
     }
   }
 
-  const draft = async (ideaId: string) => {
+  const draft = async (ideaId: string, notes: string, overrideBrandFit = false) => {
     setError(null)
+    setBrandConflict(null)
     try {
       const res = await fetch(`/api/edit/${sessionId}/resources/ideas/${ideaId}/draft`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: notes || undefined, overrideBrandFit }),
       })
+      if (res.status === 409 && notes) {
+        const data = (await res.json().catch(() => ({}))) as { brandFit?: BrandFitResult; error?: string }
+        if (data.brandFit) {
+          setBrandConflict({ action: { kind: 'draft', ideaId, notes }, fit: data.brandFit })
+          return
+        }
+        throw new Error(data.error ?? 'Draft already in progress')
+      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(data.error ?? `Draft failed: ${res.status}`)
       }
+      setNotesFor(null)
+      setNotesText('')
       // Optimistic: show the running state immediately; polling takes over.
       setIdeas((prev) =>
         prev.map((i) => (i.id === ideaId ? { ...i, draft_status: 'running' as const } : i))
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Draft failed')
+    }
+  }
+
+  // Re-run the gated action with the admin's override after a brand conflict.
+  const proceedOffBrand = async () => {
+    if (!brandConflict) return
+    const { action } = brandConflict
+    if (action.kind === 'seed') await brainstorm(action.seed, true)
+    else await draft(action.ideaId, action.notes, true)
+  }
+
+  // Apply the proposed brand amendment first, then proceed with the action —
+  // the divergence becomes part of the documented brand.
+  const amendAndProceed = async () => {
+    if (!brandConflict?.fit.proposedAmendment) return
+    setAmending(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/resources/brand-amendment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(brandConflict.fit.proposedAmendment),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Brand update failed: ${res.status}`)
+      }
+      await proceedOffBrand()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Brand update failed')
+    } finally {
+      setAmending(false)
     }
   }
 
@@ -243,6 +308,69 @@ export default function ResourcesPanel({
       {error && (
         <div className="mb-4 rounded border border-error/30 bg-error/5 px-3 py-2 text-xs font-body text-error">
           {error}
+        </div>
+      )}
+
+      {brandConflict && (
+        <div className="mb-5 rounded-lg border border-warning/50 bg-warning/5 p-4">
+          <h3 className="text-sm font-heading font-semibold text-brand-navy">
+            This request conflicts with the documented brand voice
+          </h3>
+          <p className="mt-1 text-xs font-body text-text-muted">
+            “{brandConflict.action.kind === 'seed' ? brandConflict.action.seed : brandConflict.action.notes}”
+          </p>
+          <ul className="mt-2 space-y-1">
+            {brandConflict.fit.conflicts.map((c, i) => (
+              <li key={i} className="text-xs font-body text-text-secondary">
+                • {c}
+              </li>
+            ))}
+          </ul>
+          {brandConflict.fit.proposedAmendment && (
+            <div className="mt-3 rounded border border-border-default bg-surface-card px-3 py-2">
+              <p className="text-xs font-heading font-semibold text-brand-navy">
+                Proposed brand update: {brandConflict.fit.proposedAmendment.summary}
+              </p>
+              <p className="mt-1 text-[11px] font-body text-text-muted">
+                {[
+                  brandConflict.fit.proposedAmendment.toneAdjectivesAdd.length
+                    ? `Tone adds: ${brandConflict.fit.proposedAmendment.toneAdjectivesAdd.join(', ')}`
+                    : null,
+                  brandConflict.fit.proposedAmendment.toneToAvoidRemove.length
+                    ? `No longer avoiding: ${brandConflict.fit.proposedAmendment.toneToAvoidRemove.join(', ')}`
+                    : null,
+                  brandConflict.fit.proposedAmendment.aspirationalToneAppend
+                    ? `Aspiration: ${brandConflict.fit.proposedAmendment.aspirationalToneAppend}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            </div>
+          )}
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setBrandConflict(null)}
+              className="rounded-[40px] border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+            >
+              Revise request
+            </button>
+            <button
+              onClick={() => void proceedOffBrand()}
+              className="rounded-[40px] px-4 py-1.5 text-xs font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors"
+            >
+              Proceed off-brand (one time)
+            </button>
+            {brandConflict.fit.proposedAmendment && (
+              <button
+                onClick={() => void amendAndProceed()}
+                disabled={amending}
+                className="rounded-[40px] bg-brand-cyan px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
+              >
+                {amending ? 'Updating brand…' : 'Update brand & proceed'}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -376,7 +504,14 @@ export default function ResourcesPanel({
                 ) : (
                   <>
                     <button
-                      onClick={() => void draft(idea.id)}
+                      onClick={() => {
+                        if (notesFor === idea.id) {
+                          setNotesFor(null)
+                        } else {
+                          setNotesFor(idea.id)
+                          setNotesText('')
+                        }
+                      }}
                       className="rounded-[40px] bg-brand-cyan px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
                     >
                       Draft post
@@ -404,6 +539,36 @@ export default function ResourcesPanel({
                   </span>
                 )}
               </div>
+
+              {notesFor === idea.id && idea.draft_status !== 'running' && (
+                <div className="mt-3 rounded border border-border-default bg-surface-default p-3">
+                  <textarea
+                    value={notesText}
+                    onChange={(e) => setNotesText(e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Optional notes for the writer — angle emphasis, must-mention items, CTA preference…"
+                    className="w-full rounded border border-border-default px-3 py-2 text-xs font-body focus:border-brand-cyan focus:outline-none resize-y"
+                  />
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      onClick={() => void draft(idea.id, notesText.trim())}
+                      className="rounded-[40px] bg-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
+                    >
+                      Draft now
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNotesFor(null)
+                        setNotesText('')
+                      }}
+                      className="text-xs font-heading font-semibold text-text-muted hover:text-text-secondary transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </li>
           ))}
         </ul>

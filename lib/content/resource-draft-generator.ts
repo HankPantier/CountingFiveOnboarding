@@ -16,6 +16,7 @@ import {
   FileNotFoundError,
 } from '@/lib/github/repo-files'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
+import { OFF_BRAND_MARKER } from './brand-fit'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import type { NavJson } from '@/types/nav-json'
 import type { SessionSchema } from '@/types/session-schema'
@@ -87,8 +88,21 @@ async function buildInternalLinkTargets(githubRepo: string): Promise<{
   return { targets, postSlugs }
 }
 
+// Admin writer-notes block. The OFF_BRAND_MARKER first line means the admin
+// confirmed a divergence from the documented brand voice for this post.
+function buildNotesBlock(notes: string): string {
+  if (notes.startsWith(OFF_BRAND_MARKER)) {
+    const rest = notes.slice(OFF_BRAND_MARKER.length).trim()
+    return `ADMIN NOTES FOR THIS POST (follow these; they take precedence over the angle — the admin explicitly approved this direction even where it diverges from the brand voice below; keep factual rigor and the anti-slop rules):
+${rest}`
+  }
+  return `ADMIN NOTES FOR THIS POST (follow these; they take precedence over the angle):
+${notes}`
+}
+
 async function generateDraftContent(args: {
   idea: { title: string; angle: string | null; target_keyword: string | null; rationale: string | null }
+  notes: string | null
   secondaryKeywords: string[]
   externalLinks: ExternalLink[]
   internalTargets: Array<{ url: string; title: string }>
@@ -117,6 +131,8 @@ POST TO WRITE:
 Title: ${idea.title}
 Angle: ${idea.angle ?? ''}
 Why it fits: ${idea.rationale ?? ''}
+
+${args.notes ? buildNotesBlock(args.notes) : ''}
 
 KEYWORD TARGET:
 Primary: ${idea.target_keyword ?? idea.title.toLowerCase()}
@@ -328,7 +344,7 @@ export async function generateResourceDraft(
 
   const { data: idea } = await supabase
     .from('resource_ideas')
-    .select('id, content_job_id, session_id, title, angle, target_keyword, secondary_keywords, rationale, external_links, status')
+    .select('id, content_job_id, session_id, title, angle, target_keyword, secondary_keywords, rationale, external_links, status, draft_notes')
     .eq('id', ideaId)
     .single()
   if (!idea) return { status: 'error', error: 'Idea not found' }
@@ -379,6 +395,7 @@ export async function generateResourceDraft(
 
     let result = await generateDraftContent({
       idea,
+      notes: idea.draft_notes,
       secondaryKeywords,
       externalLinks,
       internalTargets: targets,
@@ -395,6 +412,7 @@ export async function generateResourceDraft(
       )
       const retry = await generateDraftContent({
         idea,
+        notes: idea.draft_notes,
         secondaryKeywords,
         externalLinks,
         internalTargets: targets,

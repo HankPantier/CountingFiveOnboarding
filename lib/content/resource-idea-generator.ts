@@ -99,7 +99,7 @@ function buildResearchBlock(results: Array<{ query: string; result: SerperResult
 export async function generateResourceIdeas(
   contentJobId: string,
   sessionId: string,
-  opts: { count?: number; seed?: string } = {}
+  opts: { count?: number; seed?: string; offBrandApproved?: boolean } = {}
 ): Promise<{ created: number }> {
   const supabase = createServerClient()
   const seed = opts.seed?.trim() || null
@@ -172,7 +172,11 @@ export async function generateResourceIdeas(
 
 "${seed}"
 
-Extrapolate it into ${count} distinct, fully-formed post ideas for the firm's "Resources" section. Each must stay rooted in the base idea but take a different path: a sharper contrarian angle, a specific niche application (use the firm's actual niches below), a local tie-in, a seasonal/timely hook, or a practical framework/checklist treatment. Do not drift into unrelated topics.`
+Extrapolate it into ${count} distinct, fully-formed post ideas for the firm's "Resources" section. Each must stay rooted in the base idea but take a different path: a sharper contrarian angle, a specific niche application (use the firm's actual niches below), a local tie-in, a seasonal/timely hook, or a practical framework/checklist treatment. Do not drift into unrelated topics.${
+        opts.offBrandApproved
+          ? `\n\nNOTE: The admin explicitly approved this direction even though it diverges from the documented brand voice below. Follow the seed's direction and energy; keep factual rigor and the scoring honesty.`
+          : ''
+      }`
     : `Brainstorm ${count} blog post ideas for the firm's "Resources" section.`
 
   const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. ${task}

@@ -437,6 +437,7 @@ export type Database = {
           created_at: string
           draft_commit_sha: string | null
           draft_error: string | null
+          draft_notes: string | null
           draft_path: string | null
           draft_status: string
           external_links: Json
@@ -459,6 +460,7 @@ export type Database = {
           created_at?: string
           draft_commit_sha?: string | null
           draft_error?: string | null
+          draft_notes?: string | null
           draft_path?: string | null
           draft_status?: string
           external_links?: Json
@@ -481,6 +483,7 @@ export type Database = {
           created_at?: string
           draft_commit_sha?: string | null
           draft_error?: string | null
+          draft_notes?: string | null
           draft_path?: string | null
           draft_status?: string
           external_links?: Json
