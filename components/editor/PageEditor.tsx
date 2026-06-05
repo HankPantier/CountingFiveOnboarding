@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
-import { extractIconItems, setItemIcon } from '@/lib/editor/icon-items'
+import { extractIconItems, extractIconBlockSummaries, setItemIcon } from '@/lib/editor/icon-items'
 import { extractImageBlocks, setBlockImage } from '@/lib/editor/block-images'
 import ImageReplaceControl from './ImageReplaceControl'
 import HeaderImagePicker from './HeaderImagePicker'
@@ -52,6 +52,10 @@ export default function PageEditor({
   const parsed = useMemo(() => splitFile(contents), [contents])
   const images = useMemo(() => extractPageImages(parsed), [parsed])
   const iconItems = useMemo(() => extractIconItems(parsed.body), [parsed])
+  const emptyIconBlocks = useMemo(
+    () => extractIconBlockSummaries(parsed.body).filter((b) => b.itemCount === 0),
+    [parsed]
+  )
   const imageBlocks = useMemo(() => extractImageBlocks(parsed.body), [parsed])
   const [preview, setPreview] = useState(false)
   const isPost = path.startsWith('content/posts/')
@@ -152,24 +156,37 @@ export default function PageEditor({
           </section>
         )}
 
-        {iconItems.length > 0 && (
+        {(iconItems.length > 0 || emptyIconBlocks.length > 0) && (
           <section className="bg-surface-card border border-border-default rounded-lg p-4">
             <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
               Icons on this page
             </h2>
             <p className="text-xs font-body text-text-muted mb-3">
-              Card icons for feature and industry blocks. Changes update the page markdown —
-              save to apply.
+              Card icons for feature, industry, and service blocks. Changes update the
+              page markdown — save to apply.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {iconItems.map((item, idx) => (
-                <IconPickerControl
-                  key={`${item.kind}-${idx}-${item.title}`}
-                  item={item}
-                  onChange={(name) => setBody(setItemIcon(parsed.body, item, name))}
-                />
-              ))}
-            </div>
+            {iconItems.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {iconItems.map((item, idx) => (
+                  <IconPickerControl
+                    key={`${item.kind}-${idx}-${item.title}`}
+                    item={item}
+                    onChange={(name) => setBody(setItemIcon(parsed.body, item, name))}
+                  />
+                ))}
+              </div>
+            )}
+            {emptyIconBlocks.map((blk, i) => (
+              <div
+                key={`${blk.blockId}-${i}`}
+                className="mt-2 bg-warning/10 border border-warning/30 text-warning text-xs font-body rounded px-3 py-2"
+              >
+                “{blk.heading || blk.blockId}” ({blk.blockId}) can show icons, but its
+                items aren&apos;t in a recognizable list format — rewrite them as
+                “**Title**” paragraphs or “### Title” chunks in the page body to attach
+                icons.
+              </div>
+            ))}
           </section>
         )}
 

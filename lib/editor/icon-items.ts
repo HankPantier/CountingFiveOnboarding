@@ -1,12 +1,13 @@
-// Extracts the icon-bearing items on a page (feature-grid / industry-cards
-// sections) so the editor can show a picker per item, and rewrites a chosen
-// icon back into the markdown. Two content syntaxes are handled, mirroring
-// the template's parseIconTitleDescriptionList:
+// Extracts the icon-bearing items on a page (feature-grid / industry-cards /
+// service-cards sections) so the editor can show a picker per item, and
+// rewrites a chosen icon back into the markdown. Two content syntaxes are
+// handled, mirroring the template's parseIconTitleDescriptionList and
+// parseH3CardList:
 //   1. icon bullets:  - IconName: **Title** — Description
 //   2. ### Title chunks with an optional `icon: Name` first line
 // Line-index based so rewrites are exact, not regex-replace guesses.
 
-const ICON_BLOCKS = new Set(['feature-grid', 'industry-cards'])
+const ICON_BLOCKS = new Set(['feature-grid', 'industry-cards', 'service-cards'])
 
 const ANNOTATION_RE = /^<!--\s*block:\s*([a-z0-9][a-z0-9-]*)/
 const BULLET_RE = /^(\s*[-*]\s+)(?:([A-Za-z][A-Za-z0-9]*):\s+)?\*\*(.+?)\*\*\s*(?:—|–|--)/
@@ -32,6 +33,46 @@ export type IconItemRef =
       /** Set when an `icon:` line already exists for this chunk. */
       iconLineIndex: number | null
     }
+
+export type IconBlockSummary = {
+  blockId: string
+  heading: string
+  itemCount: number
+}
+
+// Per-block view of the same scan: lets the editor flag icon-capable blocks
+// whose items aren't in a recognizable format (prose paragraphs instead of
+// bullets/title chunks) — otherwise they'd silently get no picker rows.
+export function extractIconBlockSummaries(body: string): IconBlockSummary[] {
+  const lines = body.split('\n')
+  const out: IconBlockSummary[] = []
+  let cur: IconBlockSummary | null = null
+
+  for (const line of lines) {
+    const annotation = line.match(ANNOTATION_RE)
+    if (annotation) {
+      if (ICON_BLOCKS.has(annotation[1])) {
+        cur = { blockId: annotation[1], heading: '', itemCount: 0 }
+        out.push(cur)
+      } else {
+        cur = null
+      }
+      continue
+    }
+    if (!cur) continue
+    if (!cur.heading) {
+      const h2 = line.match(/^##\s+(.+?)\s*$/)
+      if (h2) {
+        cur.heading = h2[1]
+        continue
+      }
+    }
+    if (BULLET_RE.test(line) || HEADING_RE.test(line) || BOLD_LINE_RE.test(line)) {
+      cur.itemCount++
+    }
+  }
+  return out
+}
 
 export function extractIconItems(body: string): IconItemRef[] {
   const lines = body.split('\n')
