@@ -166,7 +166,7 @@ export default function FileTree({
         onToggle={() => toggle('pages')}
       />
       {open.pages && (
-        <ul className="mb-4">
+        <ul className="mb-4 pl-[18px]">
           {pages.length === 0 ? (
             <li className="text-xs text-text-muted px-2 py-1">No pages yet.</li>
           ) : (
@@ -203,7 +203,7 @@ export default function FileTree({
         onToggle={() => toggle('resources')}
       />
       {open.resources && (
-        <ul className="mb-4">
+        <ul className="mb-4 pl-[18px]">
           <li className="mb-2">
             <button
               onClick={() => onSelect(RESOURCES_VIEW)}
@@ -275,7 +275,7 @@ export default function FileTree({
         onToggle={() => toggle('configuration')}
       />
       {open.configuration && (
-        <ul className="mb-4">
+        <ul className="mb-4 pl-[18px]">
           {nav ? (
             <li>
               <button
@@ -294,7 +294,7 @@ export default function FileTree({
 
       <SectionHeader label="Media" open={open.media} onToggle={() => toggle('media')} />
       {open.media && (
-        <ul>
+        <ul className="pl-[18px]">
           <li>
             <button
               onClick={() => onSelect(MEDIA_VIEW)}
