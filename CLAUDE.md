@@ -152,7 +152,7 @@ If this flag is not cleared, the session is permanently locked for the client. T
 
 ### Phase Advancement
 Phase advances are validated server-side in `updateSessionSchema`. Claude calling `advancePhase: true` is a request, not a guarantee. The server checks:
-- Phase 1 → 2: `contact.email`, `contact.firstName`, and `websiteUrl` must all be set
+- Phase 1 → 2: `contact.email`, `contact.firstName`, `contact.phone`, and `websiteUrl` must all be set
 - Phase 3 → 4: both `_meta.phase3_completed_chunks` entries (`chunk1`, `chunk2`) must be present
 - Phase 4 → 5: all Tier 1 gaps must have `resolved: true`
 
