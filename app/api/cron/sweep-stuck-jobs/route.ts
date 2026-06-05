@@ -25,7 +25,7 @@ export async function GET(req: Request) {
   // resource_ideas sweeps on updated_at: the draft lock bumps it when claimed,
   // so it reflects when the in-flight run actually started (rows are created
   // at brainstorm time, long before drafting).
-  const [research, pages, ideas] = await Promise.all([
+  const [research, pages, ideas, oneoffs] = await Promise.all([
     supabase
       .from('research_results')
       .update({ research_status: 'error' })
@@ -44,17 +44,24 @@ export async function GET(req: Request) {
       .eq('draft_status', 'running')
       .lt('updated_at', cutoff)
       .select('id'),
+    supabase
+      .from('oneoff_generations')
+      .update({ status: 'error', error: 'Generation timed out (swept by cron)' })
+      .eq('status', 'running')
+      .lt('updated_at', cutoff)
+      .select('id'),
   ])
 
   const researchSwept = research.data?.length ?? 0
   const pagesSwept = pages.data?.length ?? 0
   const ideasSwept = ideas.data?.length ?? 0
+  const oneoffsSwept = oneoffs.data?.length ?? 0
 
-  if (researchSwept || pagesSwept || ideasSwept) {
+  if (researchSwept || pagesSwept || ideasSwept || oneoffsSwept) {
     console.warn(
-      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} cutoff=${cutoff}`
+      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} oneoffs=${oneoffsSwept} cutoff=${cutoff}`
     )
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, oneoffsSwept, cutoff })
 }

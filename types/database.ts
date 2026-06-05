@@ -295,6 +295,60 @@ export type Database = {
           },
         ]
       }
+      oneoff_generations: {
+        Row: {
+          content_job_id: string
+          context: Json
+          created_at: string
+          error: string | null
+          id: string
+          options: Json
+          prompt: string
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          content_job_id: string
+          context?: Json
+          created_at?: string
+          error?: string | null
+          id?: string
+          options?: Json
+          prompt: string
+          session_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          content_job_id?: string
+          context?: Json
+          created_at?: string
+          error?: string | null
+          id?: string
+          options?: Json
+          prompt?: string
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oneoff_generations_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "oneoff_generations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       page_outlines: {
         Row: {
           admin_approved: boolean

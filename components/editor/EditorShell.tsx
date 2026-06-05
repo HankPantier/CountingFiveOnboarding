@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import EditorTopBar, { type EditorStatus } from './EditorTopBar'
-import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, type TreeFile } from './FileTree'
+import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
 import NavEditor from './NavEditor'
 import MediaLibrary from './MediaLibrary'
 import ResourcesPanel from './ResourcesPanel'
+import OneOffPanel from './OneOffPanel'
 import { parseNavJson } from '@/lib/editor/nav-config'
 
 type LoadedFile = { content: string; sha: string }
@@ -79,7 +80,7 @@ export default function EditorShell({
     async (path: string) => {
       setError(null)
       setSelectedPath(path)
-      if (path === MEDIA_VIEW || path === RESOURCES_VIEW) return // virtual view, nothing to fetch
+      if (path === MEDIA_VIEW || path === RESOURCES_VIEW || path === ONEOFF_VIEW) return // virtual view, nothing to fetch
       if (loaded.has(path)) return
       setLoadingFile(true)
       try {
@@ -253,6 +254,8 @@ export default function EditorShell({
           </div>
         ) : selectedPath === MEDIA_VIEW ? (
           <MediaLibrary sessionId={sessionId} onChanged={() => void refreshStatus()} />
+        ) : selectedPath === ONEOFF_VIEW ? (
+          <OneOffPanel sessionId={sessionId} />
         ) : selectedPath === RESOURCES_VIEW ? (
           <ResourcesPanel
             sessionId={sessionId}

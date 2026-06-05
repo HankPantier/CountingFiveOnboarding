@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrandFitResult } from '@/lib/content/brand-fit'
+import BrandConflictCard from './BrandConflictCard'
 
 type ScoreBreakdown = {
   stickiness?: number
@@ -312,66 +313,16 @@ export default function ResourcesPanel({
       )}
 
       {brandConflict && (
-        <div className="mb-5 rounded-lg border border-warning/50 bg-warning/5 p-4">
-          <h3 className="text-sm font-heading font-semibold text-brand-navy">
-            This request conflicts with the documented brand voice
-          </h3>
-          <p className="mt-1 text-xs font-body text-text-muted">
-            “{brandConflict.action.kind === 'seed' ? brandConflict.action.seed : brandConflict.action.notes}”
-          </p>
-          <ul className="mt-2 space-y-1">
-            {brandConflict.fit.conflicts.map((c, i) => (
-              <li key={i} className="text-xs font-body text-text-secondary">
-                • {c}
-              </li>
-            ))}
-          </ul>
-          {brandConflict.fit.proposedAmendment && (
-            <div className="mt-3 rounded border border-border-default bg-surface-card px-3 py-2">
-              <p className="text-xs font-heading font-semibold text-brand-navy">
-                Proposed brand update: {brandConflict.fit.proposedAmendment.summary}
-              </p>
-              <p className="mt-1 text-[11px] font-body text-text-muted">
-                {[
-                  brandConflict.fit.proposedAmendment.toneAdjectivesAdd.length
-                    ? `Tone adds: ${brandConflict.fit.proposedAmendment.toneAdjectivesAdd.join(', ')}`
-                    : null,
-                  brandConflict.fit.proposedAmendment.toneToAvoidRemove.length
-                    ? `No longer avoiding: ${brandConflict.fit.proposedAmendment.toneToAvoidRemove.join(', ')}`
-                    : null,
-                  brandConflict.fit.proposedAmendment.aspirationalToneAppend
-                    ? `Aspiration: ${brandConflict.fit.proposedAmendment.aspirationalToneAppend}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-            </div>
-          )}
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setBrandConflict(null)}
-              className="rounded-[40px] border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
-            >
-              Revise request
-            </button>
-            <button
-              onClick={() => void proceedOffBrand()}
-              className="rounded-[40px] px-4 py-1.5 text-xs font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors"
-            >
-              Proceed off-brand (one time)
-            </button>
-            {brandConflict.fit.proposedAmendment && (
-              <button
-                onClick={() => void amendAndProceed()}
-                disabled={amending}
-                className="rounded-[40px] bg-brand-cyan px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
-              >
-                {amending ? 'Updating brand…' : 'Update brand & proceed'}
-              </button>
-            )}
-          </div>
-        </div>
+        <BrandConflictCard
+          requestText={
+            brandConflict.action.kind === 'seed' ? brandConflict.action.seed : brandConflict.action.notes
+          }
+          fit={brandConflict.fit}
+          amending={amending}
+          onRevise={() => setBrandConflict(null)}
+          onProceed={() => void proceedOffBrand()}
+          onAmendAndProceed={() => void amendAndProceed()}
+        />
       )}
 
       {brainstorming && (

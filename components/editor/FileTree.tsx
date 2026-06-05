@@ -8,6 +8,8 @@ export type TreeFile = { path: string; sha: string }
 export const MEDIA_VIEW = '__media__'
 // Sentinel selectedPath that opens the Resources (blog) panel.
 export const RESOURCES_VIEW = '__resources__'
+// Sentinel selectedPath that opens the one-off content generator.
+export const ONEOFF_VIEW = '__oneoff__'
 
 const VIRTUAL_NAV = 'content/nav.json'
 
@@ -148,7 +150,9 @@ export default function FileTree({
             ? 'configuration'
             : selectedPath === MEDIA_VIEW
               ? 'media'
-              : null
+              : selectedPath === ONEOFF_VIEW
+                ? 'resources'
+                : null
       : null
     if (section && !open[section]) setOpen({ ...open, [section]: true })
   }
@@ -213,6 +217,21 @@ export default function FileTree({
                 ✦
               </span>
               Blog ideas &amp; drafting
+            </button>
+          </li>
+          <li className="mb-2">
+            <button
+              onClick={() => onSelect(ONEOFF_VIEW)}
+              className={`w-full text-left text-xs font-heading font-semibold px-3 py-2 rounded-lg border transition-colors ${
+                selectedPath === ONEOFF_VIEW
+                  ? 'border-brand-cyan bg-brand-cyan/10 text-brand-navy'
+                  : 'border-brand-cyan/40 bg-brand-cyan/5 text-brand-navy hover:bg-brand-cyan/10'
+              }`}
+            >
+              <span className="text-brand-cyan mr-1.5" aria-hidden>
+                ⚡
+              </span>
+              One-off content
             </button>
           </li>
           {posts.length === 0 ? (
