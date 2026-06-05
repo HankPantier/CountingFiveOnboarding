@@ -6,6 +6,9 @@ import ClientReminderEmail from '@/emails/ClientReminderEmail'
 import AdminReminderEmail from '@/emails/AdminReminderEmail'
 
 const INACTIVITY_THRESHOLD_DAYS = 3
+// Stop nagging after this many reminders — a session dormant through three
+// nudges needs a human follow-up, not a fourth email.
+const MAX_REMINDERS = 3
 
 export async function GET(req: Request) {
   const resend = new Resend(process.env.RESEND_API_KEY)
@@ -27,14 +30,30 @@ export async function GET(req: Request) {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - INACTIVITY_THRESHOLD_DAYS)
 
-  const { data: inactiveSessions } = await supabase
+  const { data: candidates } = await supabase
     .from('sessions')
     .select('id, website_url, client_email, schema_data, reminder_count, last_activity_at')
     .in('status', ['pending', 'in_progress'])
     .lt('last_activity_at', cutoff.toISOString())
+    .lt('reminder_count', MAX_REMINDERS)
 
-  if (!inactiveSessions?.length) {
+  if (!candidates?.length) {
     return NextResponse.json({ checked: 0, reminded: 0 })
+  }
+
+  // Dedup: last_activity_at never moves while a session sits idle, so
+  // without this every cron run re-reminds the same sessions. Skip any
+  // session already reminded within the inactivity window.
+  const { data: recentReminders } = await supabase
+    .from('reminders')
+    .select('session_id')
+    .in('session_id', candidates.map((s) => s.id))
+    .gte('sent_at', cutoff.toISOString())
+  const recentlyReminded = new Set((recentReminders ?? []).map((r) => r.session_id))
+  const inactiveSessions = candidates.filter((s) => !recentlyReminded.has(s.id))
+
+  if (!inactiveSessions.length) {
+    return NextResponse.json({ checked: candidates.length, reminded: 0 })
   }
 
   let reminded = 0

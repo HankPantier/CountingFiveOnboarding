@@ -68,7 +68,7 @@ export async function POST(
       content_job_id: ctx.jobId,
       session_id: ctx.sessionId,
       prompt: overrideBrandFit ? `${OFF_BRAND_MARKER}\n${prompt}` : prompt,
-      status: 'running',
+      status: 'pending',
     })
     .select('id')
     .single()

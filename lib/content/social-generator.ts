@@ -146,7 +146,7 @@ export function socialPathForSlug(slug: string): string {
 // file, and record social_path on the idea.
 export async function generateSocialContent(
   ideaId: string
-): Promise<{ status: 'complete' | 'error'; error?: string }> {
+): Promise<{ status: 'complete' | 'error' | 'skipped'; error?: string }> {
   const supabase = createServerClient()
 
   const { data: idea } = await supabase
@@ -159,19 +159,40 @@ export async function generateSocialContent(
     return { status: 'error', error: 'Idea has no drafted post' }
   }
 
+  // Atomic claim — only one worker may generate per idea at a time
+  // (same .neq pattern as generateSinglePage). updated_at marks when the
+  // in-flight run started so the stuck-job sweep can reset it.
+  const { data: locked } = await supabase
+    .from('resource_ideas')
+    .update({ social_status: 'running', updated_at: new Date().toISOString() })
+    .eq('id', ideaId)
+    .neq('social_status', 'running')
+    .select('id')
+  if (!locked?.length) {
+    return { status: 'skipped', error: 'Social generation already running' }
+  }
+
+  const fail = async (message: string) => {
+    await supabase
+      .from('resource_ideas')
+      .update({ social_status: 'error', updated_at: new Date().toISOString() })
+      .eq('id', ideaId)
+    return { status: 'error' as const, error: message }
+  }
+
   const { data: job } = await supabase
     .from('content_jobs')
     .select('github_repo')
     .eq('id', idea.content_job_id)
     .single()
-  if (!job?.github_repo) return { status: 'error', error: 'Repo not linked' }
+  if (!job?.github_repo) return await fail('Repo not linked')
 
   const { data: session } = await supabase
     .from('sessions')
     .select('website_url, schema_data')
     .eq('id', idea.session_id)
     .single()
-  if (!session) return { status: 'error', error: 'Session not found' }
+  if (!session) return await fail('Session not found')
 
   try {
     let post
@@ -179,7 +200,7 @@ export async function generateSocialContent(
       post = await readFile(job.github_repo, `content/posts/${idea.slug}.md`, DRAFT_BRANCH)
     } catch (err) {
       if (err instanceof FileNotFoundError) {
-        return { status: 'error', error: 'Post file missing from draft branch' }
+        return await fail('Post file missing from draft branch')
       }
       throw err
     }
@@ -198,7 +219,7 @@ export async function generateSocialContent(
       sessionId: idea.session_id,
       slug: idea.slug,
     })
-    if (!social) return { status: 'error', error: 'Social generation returned unparseable output' }
+    if (!social) return await fail('Social generation returned unparseable output')
 
     const path = socialPathForSlug(idea.slug)
     const markdown = buildSocialMarkdown({ title: fields['title'] ?? idea.title, slug: idea.slug, social })
@@ -221,7 +242,11 @@ export async function generateSocialContent(
 
     await supabase
       .from('resource_ideas')
-      .update({ social_path: path, updated_at: new Date().toISOString() })
+      .update({
+        social_path: path,
+        social_status: 'complete',
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', ideaId)
 
     console.warn(`[social-gen] Complete: ${path}`)
@@ -229,6 +254,6 @@ export async function generateSocialContent(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[social-gen] Error on "${idea.title}":`, err)
-    return { status: 'error', error: message }
+    return await fail(message)
   }
 }

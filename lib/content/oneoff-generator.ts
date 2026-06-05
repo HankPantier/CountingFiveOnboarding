@@ -72,7 +72,7 @@ Return JSON: { "pageUrl": "exact url from the list or null", "teamMemberName": "
 
 export async function generateOneOff(
   generationId: string
-): Promise<{ status: 'complete' | 'error'; error?: string }> {
+): Promise<{ status: 'complete' | 'error' | 'skipped'; error?: string }> {
   const supabase = createServerClient()
 
   const { data: row } = await supabase
@@ -81,6 +81,18 @@ export async function generateOneOff(
     .eq('id', generationId)
     .single()
   if (!row) return { status: 'error', error: 'Generation not found' }
+
+  // Atomic claim (pending → running, .neq guard per CLAUDE.md pipeline
+  // rule) so a sweep/retry overlap can't double-run the same row.
+  const { data: locked } = await supabase
+    .from('oneoff_generations')
+    .update({ status: 'running', updated_at: new Date().toISOString() })
+    .eq('id', generationId)
+    .neq('status', 'running')
+    .select('id')
+  if (!locked?.length) {
+    return { status: 'skipped', error: 'Generation already running' }
+  }
 
   const fail = async (message: string) => {
     await supabase

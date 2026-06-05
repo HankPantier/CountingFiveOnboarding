@@ -503,6 +503,7 @@ export type Database = {
           session_id: string
           slug: string | null
           social_path: string | null
+          social_status: string
           status: string
           target_keyword: string | null
           title: string
@@ -526,6 +527,7 @@ export type Database = {
           session_id: string
           slug?: string | null
           social_path?: string | null
+          social_status?: string
           status?: string
           target_keyword?: string | null
           title: string
@@ -549,6 +551,7 @@ export type Database = {
           session_id?: string
           slug?: string | null
           social_path?: string | null
+          social_status?: string
           status?: string
           target_keyword?: string | null
           title?: string

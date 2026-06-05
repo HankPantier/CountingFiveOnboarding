@@ -25,7 +25,7 @@ export async function GET(req: Request) {
   // resource_ideas sweeps on updated_at: the draft lock bumps it when claimed,
   // so it reflects when the in-flight run actually started (rows are created
   // at brainstorm time, long before drafting).
-  const [research, pages, ideas, oneoffs] = await Promise.all([
+  const [research, pages, ideas, socials, oneoffs] = await Promise.all([
     supabase
       .from('research_results')
       .update({ research_status: 'error' })
@@ -45,9 +45,17 @@ export async function GET(req: Request) {
       .lt('updated_at', cutoff)
       .select('id'),
     supabase
+      .from('resource_ideas')
+      .update({ social_status: 'error' })
+      .eq('social_status', 'running')
+      .lt('updated_at', cutoff)
+      .select('id'),
+    // 'pending' rows are swept too: a row stuck in pending means the
+    // after() worker never ran (deploy restart, crash before claim).
+    supabase
       .from('oneoff_generations')
       .update({ status: 'error', error: 'Generation timed out (swept by cron)' })
-      .eq('status', 'running')
+      .in('status', ['pending', 'running'])
       .lt('updated_at', cutoff)
       .select('id'),
   ])
@@ -55,13 +63,14 @@ export async function GET(req: Request) {
   const researchSwept = research.data?.length ?? 0
   const pagesSwept = pages.data?.length ?? 0
   const ideasSwept = ideas.data?.length ?? 0
+  const socialsSwept = socials.data?.length ?? 0
   const oneoffsSwept = oneoffs.data?.length ?? 0
 
-  if (researchSwept || pagesSwept || ideasSwept || oneoffsSwept) {
+  if (researchSwept || pagesSwept || ideasSwept || socialsSwept || oneoffsSwept) {
     console.warn(
-      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} oneoffs=${oneoffsSwept} cutoff=${cutoff}`
+      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} socials=${socialsSwept} oneoffs=${oneoffsSwept} cutoff=${cutoff}`
     )
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, oneoffsSwept, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, cutoff })
 }

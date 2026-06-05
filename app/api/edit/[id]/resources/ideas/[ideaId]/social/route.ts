@@ -22,7 +22,7 @@ export async function POST(
   const supabase = createServerClient()
   const { data: idea } = await supabase
     .from('resource_ideas')
-    .select('id, status, slug')
+    .select('id, status, slug, social_status')
     .eq('id', ideaId)
     .eq('content_job_id', ctx.jobId)
     .single()
@@ -31,6 +31,11 @@ export async function POST(
   }
   if (idea.status !== 'drafted' || !idea.slug) {
     return NextResponse.json({ error: 'Idea has no drafted post yet' }, { status: 409 })
+  }
+  // Fast-path rejection for double-clicks; the generator's atomic claim
+  // (social_status → running via .neq guard) is the authoritative guard.
+  if (idea.social_status === 'running') {
+    return NextResponse.json({ error: 'Social generation already running' }, { status: 409 })
   }
 
   after(async () => {

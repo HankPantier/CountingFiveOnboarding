@@ -12,7 +12,7 @@ type Generation = {
   prompt: string
   context: OneOffContext
   options: OneOffOption[]
-  status: 'running' | 'complete' | 'error'
+  status: 'pending' | 'running' | 'complete' | 'error'
   error: string | null
   created_at: string
 }
@@ -44,7 +44,7 @@ function CopyButton({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 1500)
         })
       }}
-      className="shrink-0 rounded-[40px] border border-brand-navy px-3 py-1 text-[11px] font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+      className="shrink-0 rounded-pill border border-brand-navy px-3 py-1 text-[11px] font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
     >
       {copied ? 'Copied ✓' : 'Copy'}
     </button>
@@ -79,7 +79,7 @@ export default function OneOffPanel({ sessionId }: { sessionId: string }) {
       .finally(() => setLoading(false))
   }, [refresh])
 
-  const anyRunning = generations.some((g) => g.status === 'running')
+  const anyRunning = generations.some((g) => g.status === 'running' || g.status === 'pending')
   useEffect(() => {
     if (!anyRunning) return
     const timer = setInterval(() => {
@@ -183,7 +183,7 @@ export default function OneOffPanel({ sessionId }: { sessionId: string }) {
           <button
             type="submit"
             disabled={submitting || !prompt.trim()}
-            className="rounded-[40px] bg-brand-cyan px-5 py-2 text-sm font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
+            className="rounded-pill bg-brand-cyan px-5 py-2 text-sm font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
           >
             {submitting ? 'Starting…' : 'Generate options'}
           </button>
@@ -245,7 +245,7 @@ export default function OneOffPanel({ sessionId }: { sessionId: string }) {
                 </button>
               </div>
 
-              {gen.status === 'running' && (
+              {(gen.status === 'running' || gen.status === 'pending') && (
                 <p className="mt-3 text-xs font-body text-info">Generating options…</p>
               )}
               {gen.status === 'error' && (
