@@ -40,8 +40,8 @@ type GenStatus = {
 
 const STATUS_ICONS: Record<string, { icon: string; cls: string; title: string }> = {
   pending:  { icon: '○', cls: 'text-text-muted', title: 'Pending — not yet generated' },
-  running:  { icon: '◌', cls: 'text-blue-500 animate-pulse', title: 'Running — Claude is generating this page now' },
-  complete: { icon: '●', cls: 'text-green-600', title: 'Complete — content has been generated' },
+  running:  { icon: '◌', cls: 'text-info animate-pulse', title: 'Running — Claude is generating this page now' },
+  complete: { icon: '●', cls: 'text-success', title: 'Complete — content has been generated' },
   error:    { icon: '✗', cls: 'text-error', title: 'Error — generation failed; check server logs and re-run' },
 }
 
@@ -59,7 +59,7 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
   if (Math.abs(variance) > 0.25) {
     return {
       label: `⚠ ${actual} / ${target} (${pct >= 0 ? '+' : ''}${pct}%)`,
-      cls: 'text-amber-800 bg-amber-50',
+      cls: 'text-warning bg-warning/10',
       title: `${actual} words generated vs target of ${target} (${pct >= 0 ? '+' : ''}${pct}% off target). Flagged when actual is more than ±25% from target — review whether the content is too thin or too verbose.`,
     }
   }
@@ -246,7 +246,7 @@ export default function GenerationPhase({
         <div className="w-full h-2 bg-surface-subtle rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
-              status.error > 0 && !isRunning ? 'bg-amber-400' : 'bg-brand-cyan'
+              status.error > 0 && !isRunning ? 'bg-warning' : 'bg-brand-cyan'
             }`}
             style={{ width: `${pct}%` }}
           />
@@ -284,8 +284,8 @@ export default function GenerationPhase({
                     <span
                       className={`text-xs font-mono px-1.5 py-0.5 rounded ${
                         page.clientApproved
-                          ? 'text-green-700 bg-green-50'
-                          : 'text-amber-700 bg-amber-50'
+                          ? 'text-success bg-success/10'
+                          : 'text-warning bg-warning/10'
                       }`}
                       title={
                         page.clientApproved
@@ -352,19 +352,19 @@ export default function GenerationPhase({
       </div>
 
       {status.error > 0 && !isRunning && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-warning/10 border border-warning/30 text-warning text-sm font-body rounded-lg px-4 py-2">
           {status.complete} pages generated · {status.error} failed — deliverables will include an ERRORS.md noting skipped pages.
         </div>
       )}
 
       {!isRunning && status.complete > 0 && allApproved && (
-        <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-2">
           All pages approved. Proceed to Deliverables to download the content package.
         </div>
       )}
 
       {!isRunning && status.complete > 0 && !allApproved && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-info/10 border border-info/20 text-info text-sm font-body rounded-lg px-4 py-2">
           {!allAdminApproved
             ? <>Review each page above and check &quot;Approved&quot; before assembling the deliverable. {status.complete - status.approved} of {status.complete} still need review.</>
             : <>{status.needsClientReview - status.clientApproved} of {status.needsClientReview} flagged pages still awaiting client approval. Copy the review link above and send it to the client.</>

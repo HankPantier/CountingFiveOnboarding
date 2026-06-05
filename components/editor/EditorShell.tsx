@@ -231,7 +231,7 @@ export default function EditorShell({
         onPublish={publish}
       />
       {error && (
-        <div className="px-6 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 font-body text-xs">
+        <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning font-body text-xs">
           {error}
         </div>
       )}

@@ -2,9 +2,9 @@ export type PhaseStatus = 'locked' | 'active' | 'awaiting_review' | 'complete' |
 
 const styles: Record<PhaseStatus, string> = {
   locked:          'bg-surface-subtle text-text-muted',
-  active:          'bg-blue-50 text-blue-700',
-  awaiting_review: 'bg-amber-50 text-amber-700',
-  complete:        'bg-green-50 text-green-700',
+  active:          'bg-info/10 text-info',
+  awaiting_review: 'bg-warning/10 text-warning',
+  complete:        'bg-success/10 text-success',
   error:           'bg-error/10 text-error',
 }
 

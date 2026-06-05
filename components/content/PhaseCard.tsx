@@ -30,7 +30,7 @@ export default function PhaseCard({
         <div className="flex items-center gap-3">
           <span className="flex items-center justify-center w-7 h-7 rounded-full bg-brand-navy text-text-inverse text-xs font-heading font-bold">
             {status === 'complete' ? (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             ) : (

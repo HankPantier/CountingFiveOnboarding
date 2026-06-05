@@ -36,7 +36,7 @@ export default function NavEditor({
             {error ? (
               <span className="text-xs font-body text-error">{error}</span>
             ) : (
-              <span className="text-xs font-body text-green-700">Valid</span>
+              <span className="text-xs font-body text-success">Valid</span>
             )}
           </div>
           <textarea

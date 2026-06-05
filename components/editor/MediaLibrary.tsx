@@ -203,7 +203,7 @@ function MediaCard({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-navy-dark"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-cyan-dark"
           >
             Replace
           </button>

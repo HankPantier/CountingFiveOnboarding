@@ -148,7 +148,7 @@ export default function DesignSystemPhase({
             />
           ))}
         </div>
-        <div className={`text-sm font-body ${passesContrast ? 'text-emerald-700' : 'text-error'}`}>
+        <div className={`text-sm font-body ${passesContrast ? 'text-success' : 'text-error'}`}>
           Near-black / near-white contrast: {minContrast.toFixed(2)} {passesContrast ? '(WCAG AA)' : '(below WCAG AA — pick higher-contrast neutrals)'}
         </div>
       </section>

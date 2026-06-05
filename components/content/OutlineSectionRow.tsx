@@ -44,7 +44,7 @@ export default function OutlineSectionRow({
             className="text-text-muted hover:text-brand-cyan transition-colors cursor-grab active:cursor-grabbing touch-none p-1 -ml-1"
             aria-label={`Drag section ${index + 1} to reorder`}
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 8h16M4 16h16" />
             </svg>
           </button>
@@ -67,7 +67,7 @@ export default function OutlineSectionRow({
             className="text-text-muted hover:text-error transition-colors p-1"
             aria-label="Remove section"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>

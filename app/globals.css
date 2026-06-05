@@ -8,6 +8,7 @@
   /* Brand colors */
   --color-brand-navy: #003B71;
   --color-brand-cyan: #00C1DE;
+  --color-brand-cyan-dark: #00ADC8; /* hover state for cyan CTAs (design.md: 10% darker) */
   --color-brand-navy-dark: #0A406B;
   --color-brand-navy-deeper: #183057;
   --color-brand-purple: #6B2956;
@@ -180,6 +181,14 @@ h1, h2, h3, h4, h5, h6 {
   }
   html {
     @apply font-sans;
+  }
+  /* Consistent keyboard-focus treatment for all interactive elements —
+     custom buttons don't carry per-instance focus classes. */
+  button:focus-visible,
+  a:focus-visible,
+  [role='button']:focus-visible {
+    outline: 2px solid var(--color-brand-cyan);
+    outline-offset: 2px;
   }
 }
 

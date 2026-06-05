@@ -75,10 +75,10 @@ export default function OutlineCard({
   }
 
   const statusBadge = outline.admin_approved
-    ? { label: 'Approved', cls: 'bg-green-50 text-green-700' }
+    ? { label: 'Approved', cls: 'bg-success/10 text-success' }
     : outline.h1
-      ? { label: 'Pending', cls: 'bg-amber-50 text-amber-700' }
-      : { label: 'Generating...', cls: 'bg-blue-50 text-blue-700' }
+      ? { label: 'Pending', cls: 'bg-warning/10 text-warning' }
+      : { label: 'Generating...', cls: 'bg-info/10 text-info' }
 
   const saveEdits = async () => {
     setSaving(true)
@@ -157,7 +157,7 @@ export default function OutlineCard({
   }
 
   return (
-    <div className={`border rounded-lg overflow-hidden ${outline.admin_approved ? 'border-green-200' : 'border-border-default'}`}>
+    <div className={`border rounded-lg overflow-hidden ${outline.admin_approved ? 'border-success/30' : 'border-border-default'}`}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -165,6 +165,7 @@ export default function OutlineCard({
       >
         <div className="flex items-center gap-3 min-w-0">
           <svg
+            aria-hidden="true"
             className={`w-4 h-4 text-text-muted transition-transform flex-shrink-0 ${expanded ? 'rotate-90' : ''}`}
             fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
           >
@@ -285,7 +286,7 @@ export default function OutlineCard({
               <button
                 onClick={approve}
                 disabled={saving}
-                className="bg-green-600 text-white font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-green-700 disabled:opacity-50"
+                className="bg-success text-white font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Approve'}
               </button>

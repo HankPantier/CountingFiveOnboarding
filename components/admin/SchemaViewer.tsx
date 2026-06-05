@@ -139,7 +139,7 @@ function FieldRow({ fieldPath, label, value, onSave }: FieldRowProps) {
             {state === 'saving'
               ? <span className="text-text-muted italic">Saving…</span>
               : state === 'saved'
-                ? <span className="text-green-600 text-xs font-semibold">Saved ✓</span>
+                ? <span className="text-success text-xs font-semibold">Saved ✓</span>
                 : displayValue}
           </div>
         )}

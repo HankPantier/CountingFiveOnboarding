@@ -154,14 +154,14 @@ export default function OutlinePhase({
           {approvedCount} of {outlines.length} pages approved
         </span>
         {generatingCount > 0 && (
-          <span className="text-xs font-body text-blue-600 animate-pulse">
+          <span className="text-xs font-body text-info animate-pulse">
             {generatingCount} still generating...
           </span>
         )}
       </div>
       <div className="w-full h-2 bg-surface-subtle rounded-full overflow-hidden">
         <div
-          className="h-full bg-green-500 rounded-full transition-all duration-500"
+          className="h-full bg-brand-cyan rounded-full transition-all duration-500"
           style={{ width: `${outlines.length > 0 ? (approvedCount / outlines.length) * 100 : 0}%` }}
         />
       </div>
@@ -211,7 +211,7 @@ export default function OutlinePhase({
         <button
           onClick={startContentGeneration}
           disabled={!allApproved || advancing}
-          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {advancing ? 'Starting...' : 'Start Content Generation →'}
         </button>

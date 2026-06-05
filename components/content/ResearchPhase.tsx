@@ -32,8 +32,8 @@ type ResearchStatus = {
 
 const STATUS_ICONS: Record<string, { icon: string; cls: string }> = {
   pending:  { icon: '○', cls: 'text-text-muted' },
-  running:  { icon: '◌', cls: 'text-blue-500 animate-pulse' },
-  complete: { icon: '●', cls: 'text-green-600' },
+  running:  { icon: '◌', cls: 'text-info animate-pulse' },
+  complete: { icon: '●', cls: 'text-success' },
   error:    { icon: '✗', cls: 'text-error' },
 }
 
@@ -145,7 +145,7 @@ export default function ResearchPhase({
         <div className="w-full h-2 bg-surface-subtle rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all duration-500 ${
-              status.error > 0 && !isRunning ? 'bg-amber-400' : 'bg-brand-cyan'
+              status.error > 0 && !isRunning ? 'bg-warning' : 'bg-brand-cyan'
             }`}
             style={{ width: `${pct}%` }}
           />
@@ -184,12 +184,12 @@ export default function ResearchPhase({
       {status.error > 0 && !isRunning && (() => {
         const firstError = status.pages.find(p => p.errorMessage)?.errorMessage
         return (
-          <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-body rounded-lg px-4 py-2 space-y-1">
+          <div className="bg-warning/10 border border-warning/30 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
             <div>
               {status.complete} complete · {status.error} errors — generation will proceed with available research.
             </div>
             {firstError && (
-              <div className="text-xs text-amber-900 font-mono break-words">
+              <div className="text-xs text-warning font-mono break-words">
                 First error: {firstError}
               </div>
             )}

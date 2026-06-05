@@ -24,9 +24,9 @@ function daysInactive(dateStr: string): number {
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     pending:     'bg-surface-subtle text-text-muted',
-    in_progress: 'bg-blue-50 text-blue-700',
-    completed:   'bg-green-50 text-green-700',
-    approved:    'bg-purple-50 text-brand-purple',
+    in_progress: 'bg-info/10 text-info',
+    completed:   'bg-success/10 text-success',
+    approved:    'bg-brand-purple/10 text-brand-purple',
   }
   const labels: Record<string, string> = {
     pending:     'Pending',
@@ -80,7 +80,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <main className="p-8">
       {justConnected && (
-        <div className="mb-6 bg-green-50 border border-green-200 text-green-800 font-body text-sm rounded-lg px-4 py-3">
+        <div className="mb-6 bg-success/10 border border-success/30 text-success font-body text-sm rounded-lg px-4 py-3">
           Basecamp connected successfully.
         </div>
       )}
@@ -114,7 +114,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           )}
           <Link
             href="/admin/dashboard/new-session"
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
           >
             New Session
           </Link>
@@ -162,7 +162,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                     {timeAgo(session.last_activity_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-sm ${daysInactive(session.last_activity_at) >= 3 ? 'text-amber-600 font-semibold' : 'text-text-muted'}`}>
+                    <span className={`text-sm ${daysInactive(session.last_activity_at) >= 3 ? 'text-warning font-semibold' : 'text-text-muted'}`}>
                       {daysInactive(session.last_activity_at)}d
                     </span>
                   </td>

@@ -43,7 +43,7 @@ export default function SessionRowActions({
     <div className="flex items-center justify-end gap-4">
       <button
         onClick={copyLink}
-        className={`text-xs font-heading font-semibold transition-colors ${copied ? 'text-green-600' : 'text-text-muted hover:text-brand-cyan'}`}
+        className={`text-xs font-heading font-semibold transition-colors ${copied ? 'text-success' : 'text-text-muted hover:text-brand-cyan'}`}
       >
         {copied ? 'Copied!' : 'Copy link'}
       </button>

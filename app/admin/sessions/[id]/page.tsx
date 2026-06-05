@@ -40,9 +40,9 @@ export default async function SessionDetailPage({
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex flex-col md:flex-row md:h-[calc(100vh-4rem)]">
       {/* Left panel: chat transcript */}
-      <div className="w-1/2 border-r border-border-default overflow-y-auto">
+      <div className="md:w-1/2 max-h-[50vh] md:max-h-none border-b md:border-b-0 md:border-r border-border-default overflow-y-auto">
         <div className="px-6 py-4 border-b border-border-default bg-surface-subtle sticky top-0">
           <h2 className="text-sm font-heading font-semibold text-text-primary">Chat Transcript</h2>
           <p className="text-xs text-text-muted font-body mt-0.5">{session.website_url}</p>
@@ -72,7 +72,7 @@ export default async function SessionDetailPage({
       </div>
 
       {/* Right panel: schema + actions */}
-      <div className="w-1/2 overflow-y-auto p-6">
+      <div className="md:w-1/2 overflow-y-auto p-6">
         <StatusBanner session={session} />
         <CopyLinkButton sessionId={id} />
         <SchemaViewer sessionId={id} schemaData={session.schema_data} />
@@ -113,7 +113,7 @@ export default async function SessionDetailPage({
           <div className="mt-4">
             <Link
               href={`/admin/content/${id}`}
-              className="inline-flex items-center gap-2 bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark"
+              className="inline-flex items-center gap-2 bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
             >
               Begin Content Generation &rarr;
             </Link>

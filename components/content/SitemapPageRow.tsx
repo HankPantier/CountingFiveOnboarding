@@ -9,9 +9,9 @@ type SitemapPage = {
 }
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
-  new:      { label: '🆕 New',      cls: 'bg-blue-50 text-blue-700' },
-  update:   { label: '📈 Update',   cls: 'bg-amber-50 text-amber-700' },
-  existing: { label: '✅ Existing', cls: 'bg-green-50 text-green-700' },
+  new:      { label: '🆕 New',      cls: 'bg-info/10 text-info' },
+  update:   { label: '📈 Update',   cls: 'bg-warning/10 text-warning' },
+  existing: { label: '✅ Existing', cls: 'bg-success/10 text-success' },
 }
 
 function formatSlug(raw: string): string {
@@ -57,7 +57,7 @@ export default function SitemapPageRow({
         className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all p-1 flex-shrink-0"
         aria-label={`Remove ${page.title}`}
       >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
         </svg>
       </button>

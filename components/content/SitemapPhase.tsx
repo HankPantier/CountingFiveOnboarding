@@ -186,7 +186,7 @@ export default function SitemapPhase({
         <button
           onClick={confirmSitemap}
           disabled={saving || pages.length === 0}
-          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? 'Saving...' : 'Confirm Sitemap & Continue'}
         </button>

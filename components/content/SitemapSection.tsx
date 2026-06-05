@@ -51,6 +51,7 @@ export default function SitemapSection({
       >
         <div className="flex items-center gap-2">
           <svg
+            aria-hidden="true"
             className={`w-4 h-4 text-text-muted transition-transform ${collapsed ? '' : 'rotate-90'}`}
             fill="none"
             viewBox="0 0 24 24"

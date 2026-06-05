@@ -79,7 +79,7 @@ export default function HeaderImagePicker({
             <button
               type="button"
               onClick={() => setBrowsing((b) => !b)}
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-navy-dark"
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-cyan-dark"
             >
               {browsing ? 'Close library' : 'Choose from library'}
             </button>

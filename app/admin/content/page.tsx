@@ -20,13 +20,13 @@ function ContentPhaseBadge({ phase }: { phase: number | null }) {
   }
   if (phase === 6) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-green-50 text-green-700">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-success/10 text-success">
         Complete
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-blue-50 text-blue-700">
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-info/10 text-info">
       {CONTENT_PHASE_LABELS[phase] ?? `Phase ${phase}`}
     </span>
   )
@@ -121,10 +121,10 @@ export default async function ContentHubPage() {
                         href={`/admin/content/${session.id}`}
                         className={`inline-flex items-center font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all ${
                           phase === 6
-                            ? 'border border-green-300 text-green-700 hover:bg-green-50'
+                            ? 'border border-success/40 text-success hover:bg-success/10'
                             : phase !== null
-                              ? 'bg-brand-cyan text-text-inverse hover:bg-brand-navy-dark'
-                              : 'bg-brand-cyan text-text-inverse hover:bg-brand-navy-dark'
+                              ? 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
+                              : 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
                         }`}
                       >
                         {phase === 6 ? 'Download' : phase !== null ? 'Continue' : 'Start'}

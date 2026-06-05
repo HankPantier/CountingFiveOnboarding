@@ -69,7 +69,7 @@ export default function ImageReplaceControl({
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={busy}
-          className="mt-1 bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed"
+          className="mt-1 bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed"
         >
           {busy ? 'Uploading…' : 'Replace'}
         </button>

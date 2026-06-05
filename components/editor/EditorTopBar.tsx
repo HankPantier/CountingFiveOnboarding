@@ -71,7 +71,7 @@ export default function EditorTopBar({
         </div>
         <span className="text-xs font-body text-text-muted whitespace-nowrap">{aheadLabel}</span>
         {publishResult && (
-          <span className="text-xs font-body text-green-700 bg-green-50 px-2 py-0.5 rounded">
+          <span className="text-xs font-body text-success bg-success/10 px-2 py-0.5 rounded">
             {publishResult}
           </span>
         )}
@@ -90,7 +90,7 @@ export default function EditorTopBar({
         <button
           onClick={onSave}
           disabled={!canSave || saving}
-          className="bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed"
+          className="bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed"
           title={selectedPath ? `Save ${selectedPath}` : 'Select a file to save'}
         >
           {saving ? 'Saving…' : 'Save'}

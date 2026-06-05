@@ -33,7 +33,7 @@ export default function CopyLinkButton({ sessionId }: { sessionId: string }) {
           onClick={copy}
           className={`flex-shrink-0 text-xs font-heading font-semibold px-3 py-1.5 rounded-pill border transition-all ${
             copied
-              ? 'border-green-300 text-green-700 bg-green-50'
+              ? 'border-success/40 text-success bg-success/10'
               : 'border-border-default text-text-secondary hover:border-brand-cyan hover:text-brand-cyan'
           }`}
         >

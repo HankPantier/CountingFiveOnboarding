@@ -126,11 +126,11 @@ export default function DeliverablesPhase({
       {/* Package Assembly */}
       <div className="space-y-4">
       {generationDone ? (
-        <div className="bg-green-50 border border-green-200 text-green-700 text-sm font-body rounded-lg px-4 py-3">
+        <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-3">
           Content generation complete.
         </div>
       ) : (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm font-body rounded-lg px-4 py-3">
+        <div className="bg-info/10 border border-info/20 text-info text-sm font-body rounded-lg px-4 py-3">
           {approval
             ? `Waiting for content generation — ${approval.complete} of ${approval.total} pages ready.`
             : 'Loading generation status…'}
@@ -144,11 +144,11 @@ export default function DeliverablesPhase({
           </p>
 
           {approval && generationDone && hasUnapproved && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-body rounded-lg px-4 py-2 space-y-1">
+            <div className="bg-warning/10 border border-warning/30 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
               <div>
                 {approval.complete - approval.approved} of {approval.complete} pages still need approval before packaging.
               </div>
-              <div className="text-xs font-mono text-amber-900">
+              <div className="text-xs font-mono text-warning">
                 Approve them in the Content Generation step above.
               </div>
             </div>
@@ -157,7 +157,7 @@ export default function DeliverablesPhase({
           <button
             onClick={assemblePackage}
             disabled={packaging || hasUnapproved || !generationDone}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {packaging
               ? 'Assembling Package...'
@@ -193,7 +193,7 @@ export default function DeliverablesPhase({
           <button
             onClick={downloadPackage}
             disabled={downloading}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {downloading ? 'Preparing...' : 'Download Package'}
           </button>
