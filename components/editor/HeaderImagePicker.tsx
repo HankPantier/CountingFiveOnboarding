@@ -15,10 +15,12 @@ export default function HeaderImagePicker({
   sessionId,
   value,
   onChange,
+  label = 'Header image',
 }: {
   sessionId: string
   value: string
   onChange: (filename: string) => void
+  label?: string
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [browsing, setBrowsing] = useState(false)
@@ -56,7 +58,7 @@ export default function HeaderImagePicker({
 
   return (
     <div>
-      <span className="block text-xs font-heading text-text-secondary mb-1">Header image</span>
+      <span className="block text-xs font-heading text-text-secondary mb-1">{label}</span>
       <div className="flex items-center gap-3">
         {value ? (
           <AssetThumb

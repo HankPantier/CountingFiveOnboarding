@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
 import { extractIconItems, setItemIcon } from '@/lib/editor/icon-items'
+import { extractImageBlocks, setBlockImage } from '@/lib/editor/block-images'
 import ImageReplaceControl from './ImageReplaceControl'
 import HeaderImagePicker from './HeaderImagePicker'
 import IconPickerControl from './IconPickerControl'
@@ -51,6 +52,7 @@ export default function PageEditor({
   const parsed = useMemo(() => splitFile(contents), [contents])
   const images = useMemo(() => extractPageImages(parsed), [parsed])
   const iconItems = useMemo(() => extractIconItems(parsed.body), [parsed])
+  const imageBlocks = useMemo(() => extractImageBlocks(parsed.body), [parsed])
   const [preview, setPreview] = useState(false)
   const isPost = path.startsWith('content/posts/')
   // Social suggestion files are plain copy — body-only editing, no metadata form.
@@ -165,6 +167,35 @@ export default function PageEditor({
                   key={`${item.kind}-${idx}-${item.title}`}
                   item={item}
                   onChange={(name) => setBody(setItemIcon(parsed.body, item, name))}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!isPost && !isSocial && imageBlocks.length > 0 && (
+          <section className="bg-surface-card border border-border-default rounded-lg p-4">
+            <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
+              Section images
+            </h2>
+            <p className="text-xs font-body text-text-muted mb-3">
+              These sections can show an image. Pick one from the library or upload —
+              changes update the page markdown, save to apply.
+            </p>
+            <div className="space-y-4">
+              {imageBlocks.map((blk) => (
+                <HeaderImagePicker
+                  key={`${blk.commentIndex}-${blk.blockId}`}
+                  sessionId={sessionId}
+                  value={blk.image ?? ''}
+                  label={
+                    blk.heading
+                      ? `${blk.heading} (${blk.blockId})`
+                      : blk.blockId
+                  }
+                  onChange={(filename) =>
+                    setBody(setBlockImage(parsed.body, blk, filename || null))
+                  }
                 />
               ))}
             </div>
