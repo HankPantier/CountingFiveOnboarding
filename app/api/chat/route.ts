@@ -14,6 +14,11 @@ type Supabase = ReturnType<typeof createServerClient>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Per-session abuse cap: the processing flag serializes concurrent calls, but
+// nothing bounded sequential volume — a leaked session URL could drain the
+// Anthropic budget. 60 user messages/hour is far above any real conversation.
+const MAX_MESSAGES_PER_HOUR = 60
+
 export async function POST(req: Request) {
   const { messages, sessionId }: { messages: UIMessage[]; sessionId: string } = await req.json()
 
@@ -31,6 +36,21 @@ export async function POST(req: Request) {
 
   if (error || !session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+  }
+
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  const { count: recentCount } = await supabase
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('session_id', sessionId)
+    .eq('role', 'user')
+    .gte('created_at', hourAgo)
+
+  if ((recentCount ?? 0) >= MAX_MESSAGES_PER_HOUR) {
+    return NextResponse.json(
+      { error: 'Message limit reached — please wait a bit before continuing.' },
+      { status: 429 }
+    )
   }
 
   // Atomic lock: only set processing=true if it's currently false
