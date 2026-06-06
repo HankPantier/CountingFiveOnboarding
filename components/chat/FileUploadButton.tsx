@@ -90,7 +90,7 @@ export default function FileUploadButton({ sessionId, onUploadComplete }: Props)
       setProgress(100)
       onUploadComplete(file.name, confirmData.assetId)
       setJustUploaded(true)
-      setTimeout(() => setJustUploaded(false), 2000)
+      setTimeout(() => setJustUploaded(false), 3500)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed'
       setError(message)

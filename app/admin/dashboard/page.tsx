@@ -278,22 +278,24 @@ export default async function DashboardPage({
 
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-3 mt-4 text-sm font-body">
+          {/* Sort is stalest-first (sessions needing attention float up), so
+              direction labels would mislead — neutral Prev/Next instead. */}
           {page > 1 ? (
             <Link href={filterHref({ page: page - 1 })} className="text-brand-cyan hover:text-brand-navy font-heading font-semibold">
-              ← Newer
+              ← Prev
             </Link>
           ) : (
-            <span className="text-text-muted">← Newer</span>
+            <span className="text-text-muted">← Prev</span>
           )}
           <span className="text-text-secondary">
             Page {page} of {totalPages}
           </span>
           {page < totalPages ? (
             <Link href={filterHref({ page: page + 1 })} className="text-brand-cyan hover:text-brand-navy font-heading font-semibold">
-              Older →
+              Next →
             </Link>
           ) : (
-            <span className="text-text-muted">Older →</span>
+            <span className="text-text-muted">Next →</span>
           )}
         </div>
       )}

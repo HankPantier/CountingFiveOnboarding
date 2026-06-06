@@ -21,7 +21,7 @@ export default function BrandConflictCard({
   onAmendAndProceed: () => void
 }) {
   return (
-    <div className="mb-5 rounded-lg border border-warning/50 bg-warning/5 p-4">
+    <div role="alert" className="mb-5 rounded-lg border border-warning/30 bg-warning/10 p-4">
       <h3 className="text-sm font-heading font-semibold text-brand-navy">
         This request conflicts with the documented brand voice
       </h3>

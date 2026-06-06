@@ -232,6 +232,14 @@ export default function EditorShell({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: conflict.path, contents: mine, expectedSha: conflict.serverSha }),
       })
+      if (res.status === 409) {
+        // The file moved AGAIN while the conflict bar was open — refresh the
+        // conflict to the newest server state so the choice stays valid
+        // (otherwise "keep mine" loops on a stale sha forever).
+        const data = (await res.json()) as { currentSha: string; currentContent: string }
+        setConflict({ path: conflict.path, serverSha: data.currentSha, serverContent: data.currentContent })
+        return
+      }
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
@@ -316,7 +324,10 @@ export default function EditorShell({
         </div>
       )}
       {conflict && (
-        <div className="px-6 py-3 bg-warning/10 border-b border-warning/30 font-body text-xs flex items-center gap-4 flex-wrap">
+        <div
+          role="alert"
+          className="px-6 py-3 bg-warning/10 border-b border-warning/30 font-body text-xs flex items-center gap-4 flex-wrap"
+        >
           <span className="text-warning">
             <strong>{conflict.path.split('/').pop()}</strong> was changed on the server while you
             were editing (another admin or a fresh package). Which version should win?

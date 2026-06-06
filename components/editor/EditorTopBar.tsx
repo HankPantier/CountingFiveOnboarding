@@ -141,7 +141,7 @@ export default function EditorTopBar({
               ? 'Save your unsaved changes first'
               : (status?.draftAhead ?? 0) === 0
                 ? 'Nothing new to publish'
-                : 'Merge draft into main and trigger a production deploy'
+                : 'Deploy your saved draft changes to the live site'
           }
         >
           {publishing ? 'Publishing…' : 'Publish to live'}
