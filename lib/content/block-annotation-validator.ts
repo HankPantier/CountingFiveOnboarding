@@ -449,7 +449,7 @@ export function applyCoercions(markdown: string, coercions: AnnotationCoercion[]
  *   5 = sectionContent (body below the heading before next annotation or EOF)
  */
 const SECTION_PATTERN =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*query:\s*"[^"]*")?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
+  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"[^"]*")?(?:\s*\|\s*query:\s*"[^"]*")?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
 
 /**
  * Parse a full page markdown body into an array of BlockAnnotation entries.

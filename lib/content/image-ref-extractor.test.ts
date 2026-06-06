@@ -37,6 +37,15 @@ describe('extractInlineImageRefs', () => {
     expect(extractInlineImageRefs(md, PAGE)[0].subjectQuery).toBe('year end planning')
   })
 
+  it('tolerates an alt attribute between image and query', () => {
+    const md = `<!-- block: content-split | variant: image-right | image: a.jpg | alt: "Accountant at a desk" | query: "office desk" -->\n## H`
+    expect(extractInlineImageRefs(md, PAGE)[0]).toMatchObject({
+      filename: 'a.jpg',
+      subjectQuery: 'office desk',
+      source: 'content-split',
+    })
+  })
+
   it('extracts content-cards photo refs (regression)', () => {
     const md = [
       `<!-- block: content-cards | variant: 3-col -->`,

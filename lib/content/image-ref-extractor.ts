@@ -44,7 +44,7 @@ export function extractInlineImageRefs(markdown: string, pageUrl: string): Image
   // for the query value (allow double-quoted spaces). Annotations without an
   // image: attribute fall through the !filename guard.
   const ANNOTATION_RE =
-    /<!-- block: (content-split|cta-banner|checklist-section)(?:\s*\|\s*variant:\s*[a-z0-9-]+)?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
+    /<!-- block: (content-split|cta-banner|checklist-section)(?:\s*\|\s*variant:\s*[a-z0-9-]+)?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"[^"]*")?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
   let m: RegExpExecArray | null
   while ((m = ANNOTATION_RE.exec(markdown)) !== null) {
     const filename = m[2]?.trim()

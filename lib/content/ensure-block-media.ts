@@ -9,9 +9,9 @@
 // ---------------------------------------------------------------------------
 
 // Same comment grammar as lib/editor/block-images.ts and the template's
-// parse-page-md.ts — part order MUST be: block | variant | image | query.
+// parse-page-md.ts — part order MUST be: block | variant | image | alt | query.
 const BLOCK_COMMENT_RE =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
+  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"([^"]*)")?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
 
 const STOPWORDS = new Set([
   'the', 'and', 'a', 'an', 'your', 'our', 'for', 'to', 'of', 'with',
@@ -67,7 +67,7 @@ export function ensureBlockMedia(
 
   return markdown.replace(
     BLOCK_COMMENT_RE,
-    (full, blockId: string, variant: string | undefined, image: string | undefined, query: string | undefined, offset: number) => {
+    (full, blockId: string, variant: string | undefined, image: string | undefined, alt: string | undefined, query: string | undefined, offset: number) => {
       if (!needsImage(blockId, variant, image)) return full
 
       // Heading for this section: first `## ` line after THIS comment
@@ -81,6 +81,9 @@ export function ensureBlockMedia(
       let out = `<!-- block: ${blockId}`
       if (variant) out += ` | variant: ${variant}`
       out += ` | image: ${filename}`
+      // No alt synthesis: the template already falls back to the section
+      // heading, so injecting a heading-derived alt would add nothing.
+      if (alt) out += ` | alt: "${alt}"`
       out += ` | query: "${derivedQuery}"`
       return `${out} -->`
     }

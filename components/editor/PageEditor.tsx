@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
 import { extractIconItems, extractIconBlockSummaries, setItemIcon } from '@/lib/editor/icon-items'
-import { extractImageBlocks, setBlockImage } from '@/lib/editor/block-images'
+import { extractImageBlocks, setBlockImage, setBlockAlt } from '@/lib/editor/block-images'
 import ImageReplaceControl from './ImageReplaceControl'
 import HeaderImagePicker from './HeaderImagePicker'
 import IconPickerControl from './IconPickerControl'
@@ -201,19 +201,36 @@ export default function PageEditor({
             </p>
             <div className="space-y-4">
               {imageBlocks.map((blk) => (
-                <HeaderImagePicker
-                  key={`${blk.commentIndex}-${blk.blockId}`}
-                  sessionId={sessionId}
-                  value={blk.image ?? ''}
-                  label={
-                    blk.heading
-                      ? `${blk.heading} (${blk.blockId})`
-                      : blk.blockId
-                  }
-                  onChange={(filename) =>
-                    setBody(setBlockImage(parsed.body, blk, filename || null))
-                  }
-                />
+                <div key={`${blk.commentIndex}-${blk.blockId}`}>
+                  <HeaderImagePicker
+                    sessionId={sessionId}
+                    value={blk.image ?? ''}
+                    label={
+                      blk.heading
+                        ? `${blk.heading} (${blk.blockId})`
+                        : blk.blockId
+                    }
+                    onChange={(filename) =>
+                      setBody(setBlockImage(parsed.body, blk, filename || null))
+                    }
+                  />
+                  {blk.image && (
+                    <label className="block mt-2">
+                      <span className="block text-[11px] font-heading text-text-muted mb-0.5">
+                        Alt text (what the photo shows — screen readers &amp; SEO)
+                      </span>
+                      <input
+                        type="text"
+                        value={blk.alt ?? ''}
+                        placeholder={blk.heading || 'Describe the image'}
+                        onChange={(e) =>
+                          setBody(setBlockAlt(parsed.body, blk, e.target.value))
+                        }
+                        className="w-full text-xs font-body px-2.5 py-1.5 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
+                      />
+                    </label>
+                  )}
+                </div>
               ))}
             </div>
           </section>

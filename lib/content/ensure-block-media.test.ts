@@ -20,6 +20,11 @@ describe('ensureBlockMedia', () => {
     expect(ensureBlockMedia(body, PAGE, KW)).toBe(body)
   })
 
+  it('leaves a fully-annotated comment (image + alt + query) byte-identical', () => {
+    const body = `<!-- block: content-split | variant: image-left | image: x.jpg | alt: "Team reviewing reports" | query: "team at work" -->\n## Section\n\nProse.`
+    expect(ensureBlockMedia(body, PAGE, KW)).toBe(body)
+  })
+
   it('injects on with-image and no-variant checklists, skips standalone', () => {
     const withImage = `<!-- block: checklist-section | variant: with-image -->\n## Who We Serve\n\n- Item`
     const noVariant = `<!-- block: checklist-section -->\n## Who We Serve\n\n- Item`

@@ -36,6 +36,7 @@ type GeneratedResult = {
     hero_block: string
     hero_variant: string | null
     hero_image: string | null
+    hero_image_alt: string | null
     hero_subhead: string | null
     hero_image_query: string | null
   }
@@ -136,6 +137,7 @@ OUTPUT: Return a JSON object with two keys:
    - hero_block (one of: "hero", "hero-split", "page-header")
    - hero_variant (string or null — required for "hero" and "hero-split"; null for "page-header")
    - hero_image (kebab-case .jpg filename — ALWAYS provide one whenever hero_block is not "page-header"; null only for page-header)
+   - hero_image_alt (8-15 word literal description of what the hero photo shows — for screen readers and image SEO, not marketing copy. Example: "Accountant reviewing financial documents with a small business owner". ALWAYS provide one whenever hero_image is set; null otherwise.)
    - hero_subhead (12-18 words, benefit-led, written for the on-page hero — NOT the same as meta_description, which targets SERPs. Speak directly to the reader's outcome; avoid restating the firm name or the page title. Plain prose, no quotes, no trailing period required.)
    - hero_image_query (3-8 word SUBJECT-only Pexels search query that captures the visual concept for this page's hero photo. Focus on the SUBJECT MATTER — people, setting, activity — not visual style. Examples: "tax season paperwork accountant", "client meeting professional office", "small business owner reviewing financials", "construction contractor on site". The builder appends brand-specific style modifiers automatically (cool tone, modern office, etc.) — you don't need to include those. ALWAYS provide a non-null query whenever hero_block is not "page-header"; null only for page-header heroes.)
 
@@ -144,13 +146,13 @@ BLOCK ANNOTATION RULES:
 Before every ## section heading in the content body, emit an HTML comment on the immediately preceding line:
 <!-- block: {block-id} | variant: {variant} -->
 
-Images are MANDATORY for these blocks — always extend the annotation with image + query attributes so the builder can fetch from Pexels:
+Images are MANDATORY for these blocks — always extend the annotation with image + alt + query attributes so the builder can fetch from Pexels:
 - content-split: every instance
 - checklist-section: every instance (use variant with-image)
 - cta-banner: only when variant is image-bg (never put image on color-bg)
-<!-- block: content-split | variant: image-right | image: services-overview.jpg | query: "professional team meeting modern office" -->
+<!-- block: content-split | variant: image-right | image: services-overview.jpg | alt: "Accountants in a planning meeting around a conference table" | query: "professional team meeting modern office" -->
 
-The "image:" attribute is a short kebab-case filename ending in .jpg (don't include path prefixes). The "query:" attribute is a 3-8 word SUBJECT-only Pexels search string — focus on people, setting, activity. Skip visual style modifiers ("cinematic", "warm tones", etc.) — the builder appends those automatically per brand.
+The "image:" attribute is a short kebab-case filename ending in .jpg (don't include path prefixes). The "alt:" attribute is an 8-15 word literal description of what the photo shows — written for screen readers and image SEO, not marketing copy. The "query:" attribute is a 3-8 word SUBJECT-only Pexels search string — focus on people, setting, activity. Skip visual style modifiers ("cinematic", "warm tones", etc.) — the builder appends those automatically per brand. Attribute order is fixed: image, then alt, then query.
 
 Choose the block that best fits the section. Catalog:
 
@@ -290,6 +292,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
         hero_block: parsed.metadata?.hero_block ?? 'page-header',
         hero_variant: parsed.metadata?.hero_variant ?? null,
         hero_image: parsed.metadata?.hero_image ?? null,
+        hero_image_alt: typeof parsed.metadata?.hero_image_alt === 'string' && parsed.metadata.hero_image_alt.trim()
+          ? parsed.metadata.hero_image_alt.trim()
+          : null,
         hero_subhead: typeof parsed.metadata?.hero_subhead === 'string' && parsed.metadata.hero_subhead.trim()
           ? parsed.metadata.hero_subhead.trim()
           : null,
@@ -318,6 +323,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
         hero_block: 'page-header',
         hero_variant: null,
         hero_image: null,
+        hero_image_alt: null,
         hero_subhead: null,
         hero_image_query: null,
       },
@@ -581,6 +587,7 @@ export async function generateSinglePage(
         hero_block: result.metadata.hero_block,
         hero_variant: result.metadata.hero_variant,
         hero_image: result.metadata.hero_image,
+        hero_image_alt: result.metadata.hero_image_alt,
         hero_subhead: result.metadata.hero_subhead,
         hero_image_query: result.metadata.hero_image_query,
         word_count_actual: wcActual,
