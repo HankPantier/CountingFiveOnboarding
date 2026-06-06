@@ -34,6 +34,7 @@ export default function DeliverablesPhase({
   const [packageInfo, setPackageInfo] = useState<{ pageCount: number; sizeKB: number } | null>(null)
   const [pushInfo, setPushInfo] = useState<{ fileCount: number } | null>(null)
   const [pushWarn, setPushWarn] = useState<string | null>(null)
+  const [linkWarnings, setLinkWarnings] = useState<string[]>([])
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
 
   // Poll the approval state so the assemble button knows whether the gate
@@ -84,6 +85,7 @@ export default function DeliverablesPhase({
       setPackageInfo({ pageCount: data.pageCount, sizeKB: data.sizeKB })
       setPushInfo(data.pushedToRepo ? { fileCount: data.pushedToRepo.fileCount } : null)
       setPushWarn(typeof data.pushError === 'string' ? data.pushError : null)
+      setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
       setPackaged(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to assemble')
@@ -187,6 +189,21 @@ export default function DeliverablesPhase({
           {pushWarn && (
             <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2">
               Package built, but the push to the site repo failed: {pushWarn}. The repo link or GitHub App may need attention; the download below still works.
+            </div>
+          )}
+
+          {linkWarnings.length > 0 && (
+            <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
+              <div className="font-heading font-semibold">
+                {linkWarnings.length} internal link(s) point outside the confirmed sitemap:
+              </div>
+              <ul className="text-xs font-mono space-y-0.5">
+                {linkWarnings.slice(0, 10).map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+                {linkWarnings.length > 10 && <li>…and {linkWarnings.length - 10} more</li>}
+              </ul>
+              <div className="text-xs">Fix them in the editor — the package still shipped.</div>
             </div>
           )}
 

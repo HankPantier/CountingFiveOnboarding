@@ -8,6 +8,7 @@ import { buildLlmsTxt, buildLlmsFullTxt } from '@/lib/content/llms-builder'
 import { buildRobotsTxt } from '@/lib/content/robots-builder'
 import { generateBrandDoc } from '@/lib/content/brand-doc-builder'
 import { buildSitemapXml } from '@/lib/content/sitemap-xml-builder'
+import { validateInternalLinks } from '@/lib/content/link-validator'
 import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
@@ -502,6 +503,16 @@ export async function POST(
     }
   }
 
+  // Warn-only quality gate: internal links pointing outside the confirmed
+  // sitemap (typos, renamed slugs, hallucinated paths).
+  const linkWarnings = validateInternalLinks(
+    pages.filter(p => p.generation_status === 'complete'),
+    sitemap.map(s => s.url)
+  )
+  if (linkWarnings.length > 0) {
+    console.warn(`[package] ${linkWarnings.length} internal-link warning(s):`, linkWarnings.join(' | '))
+  }
+
   return NextResponse.json({
     success: true,
     storagePath,
@@ -509,6 +520,7 @@ export async function POST(
     assetCount: assetEntries.length,
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
+    linkWarnings,
     pushedToRepo,
     pushError,
   })
