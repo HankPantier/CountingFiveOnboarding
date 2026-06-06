@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
+import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 import type { Database, Json } from '@/types/database'
+import type { SessionSchema } from '@/types/session-schema'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 
@@ -129,5 +131,68 @@ export async function PATCH(
     return NextResponse.json({ error: 'Page not found' }, { status: 404 })
   }
 
+  // When this approval clears the last outstanding review page, tell the
+  // admin — otherwise approvals sit undiscovered until someone checks the
+  // dashboard. Fail-soft: email problems never block the client's PATCH.
+  if (updates.client_approved_content === true) {
+    try {
+      await notifyIfReviewComplete(supabase, id)
+    } catch (err) {
+      console.error('[review-patch] completion notification failed:', err)
+    }
+  }
+
   return NextResponse.json({ page: data })
+}
+
+async function notifyIfReviewComplete(
+  supabase: ReturnType<typeof createServerClient>,
+  contentJobId: string
+) {
+  const { count: remaining } = await supabase
+    .from('generated_pages')
+    .select('id', { count: 'exact', head: true })
+    .eq('content_job_id', contentJobId)
+    .eq('needs_client_review', true)
+    .eq('client_approved_content', false)
+  if ((remaining ?? 1) > 0) return
+
+  const { count: approved } = await supabase
+    .from('generated_pages')
+    .select('id', { count: 'exact', head: true })
+    .eq('content_job_id', contentJobId)
+    .eq('needs_client_review', true)
+    .eq('client_approved_content', true)
+
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('session_id')
+    .eq('id', contentJobId)
+    .single()
+  if (!job) return
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('website_url, schema_data')
+    .eq('id', job.session_id)
+    .single()
+  const schema = (session?.schema_data ?? {}) as SessionSchema
+  const firmName = schema.business?.name ?? session?.website_url ?? 'Client'
+
+  const adminEmail = process.env.ADMIN_EMAIL
+  const fromEmail = process.env.RESEND_FROM_EMAIL
+  if (!adminEmail || !fromEmail || !process.env.RESEND_API_KEY) return
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  await resend.emails.send({
+    from: fromEmail,
+    to: adminEmail,
+    subject: `[CountingFive] Client review complete — ${firmName}`,
+    html: `
+      <h2>Client Review Complete</h2>
+      <p><strong>${firmName}</strong></p>
+      <p>The client has approved all ${approved ?? 0} page(s) flagged for review.</p>
+      <p><a href="${appUrl}/admin/content/${job.session_id}">Continue to packaging →</a></p>
+    `,
+  })
 }

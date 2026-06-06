@@ -65,20 +65,9 @@ export async function searchPexelsTop(
   url.searchParams.set('per_page', String(safePerPage))
   url.searchParams.set('orientation', 'landscape')
 
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
   try {
-    const res = await fetch(url.toString(), {
-      headers: { Authorization: apiKey },
-      signal: controller.signal,
-    })
-    clearTimeout(timeoutId)
-
-    if (!res.ok) {
-      console.warn(`[pexels-fetcher] Search failed: ${res.status} ${res.statusText} for query="${query}"`)
-      return []
-    }
+    const res = await searchWithBackoff(url.toString(), apiKey, query)
+    if (!res) return []
 
     const data = await res.json() as {
       photos?: Array<{
@@ -113,11 +102,54 @@ export async function searchPexelsTop(
     }
     return photos
   } catch (err) {
-    clearTimeout(timeoutId)
     const msg = err instanceof Error ? err.message : String(err)
     console.warn(`[pexels-fetcher] Search error for query="${query}": ${msg}`)
     return []
   }
+}
+
+// Pexels free tier is 200 req/hr — a full-site package sits near that
+// ceiling, and a silent 429 previously meant the image just went missing.
+// Honor Retry-After (capped) and retry up to 3 times before giving up.
+const MAX_429_RETRIES = 3
+const MAX_RETRY_WAIT_MS = 10_000
+
+async function searchWithBackoff(
+  url: string,
+  apiKey: string,
+  query: string
+): Promise<Response | null> {
+  for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: apiKey },
+        signal: controller.signal,
+      })
+      if (res.status === 429 && attempt < MAX_429_RETRIES) {
+        const retryAfter = Number(res.headers.get('retry-after'))
+        const waitMs = Math.min(
+          Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * (attempt + 1),
+          MAX_RETRY_WAIT_MS
+        )
+        console.warn(
+          `[pexels-fetcher] 429 rate-limited (attempt ${attempt + 1}/${MAX_429_RETRIES}) — waiting ${waitMs}ms for query="${query}"`
+        )
+        await new Promise((r) => setTimeout(r, waitMs))
+        continue
+      }
+      if (!res.ok) {
+        console.warn(`[pexels-fetcher] Search failed: ${res.status} ${res.statusText} for query="${query}"`)
+        return null
+      }
+      return res
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+  console.warn(`[pexels-fetcher] Gave up after ${MAX_429_RETRIES} rate-limit retries for query="${query}"`)
+  return null
 }
 
 /**

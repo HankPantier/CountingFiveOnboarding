@@ -12,6 +12,17 @@ export type EditorStatus = {
   repoUrl: string
 }
 
+// Vercel's stable branch-preview URL: {project}-git-{branch}-{team}.vercel.app.
+// Assumes the Vercel project name matches the repo name (our convention).
+// Hidden when the team slug env var isn't configured.
+function previewUrl(repo: string): string | null {
+  const team = process.env.NEXT_PUBLIC_VERCEL_TEAM_SLUG
+  if (!team) return null
+  const name = repo.split('/').pop()
+  if (!name) return null
+  return `https://${name}-git-draft-${team}.vercel.app`
+}
+
 export default function EditorTopBar({
   firmName,
   websiteUrl,
@@ -80,6 +91,16 @@ export default function EditorTopBar({
         )}
       </div>
       <div className="flex items-center gap-3">
+        {status && previewUrl(status.repo) && (
+          <a
+            href={previewUrl(status.repo)!}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs font-heading text-brand-cyan hover:text-brand-navy whitespace-nowrap"
+          >
+            Preview draft ↗
+          </a>
+        )}
         {status && (
           <a
             href={status.repoUrl}

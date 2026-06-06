@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
+import { estimateCostUsd } from '@/lib/content/token-usage'
 import SessionRowActions from '@/components/admin/SessionRowActions'
 import type { Database } from '@/types/database'
 
@@ -46,7 +47,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const supabase = createServerClient()
   const sp = await searchParams
 
-  const [{ data: sessions }, { data: bcToken }, { count: approvedCount }] = await Promise.all([
+  const [{ data: sessions }, { data: bcToken }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
     supabase
       .from('sessions')
       .select('id, website_url, status, current_phase, last_activity_at, created_at, reminder_count')
@@ -57,7 +58,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .from('sessions')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'approved'),
+    supabase
+      .from('token_usage')
+      .select('model, input_tokens, output_tokens, created_at'),
   ])
+
+  // Aggregate AI spend so the operator sees burn without opening every job.
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const spend = (usageRows ?? []).reduce(
+    (acc, r) => {
+      const cost = estimateCostUsd(r.model, r.input_tokens, r.output_tokens)
+      acc.total += cost
+      if (new Date(r.created_at).getTime() >= thirtyDaysAgo) acc.recent += cost
+      return acc
+    },
+    { total: 0, recent: 0 }
+  )
 
   // Pull each session's content_job state so the row can show:
   //   - "Start content" if no job exists yet
@@ -85,11 +101,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       )}
 
+      {process.env.BASECAMP_ENABLED !== 'true' && (
+        <div className="mb-6 bg-warning/10 border border-warning/30 text-warning font-body text-sm rounded-lg px-4 py-3">
+          Basecamp integration is disabled (BASECAMP_ENABLED is not set) — session
+          approvals will <strong>not</strong> create Basecamp projects.
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-heading font-bold text-brand-navy">Sessions</h1>
           <p className="text-text-secondary font-body text-sm mt-1">
             {sessions?.length ?? 0} total
+            {spend.total > 0 && (
+              <span className="ml-3 text-text-muted">
+                · AI spend: ${spend.total.toFixed(2)} total, ${spend.recent.toFixed(2)} last 30 days
+              </span>
+            )}
           </p>
           {(approvedCount ?? 0) > 0 && (
             <Link

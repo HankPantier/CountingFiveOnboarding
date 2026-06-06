@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -70,6 +71,36 @@ export async function GET(req: Request) {
     console.warn(
       `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} socials=${socialsSwept} oneoffs=${oneoffsSwept} cutoff=${cutoff}`
     )
+
+    // Stuck rows mean a pipeline run died mid-flight — tell the admin instead
+    // of resetting silently. Fail-soft: a mail hiccup must not fail the cron.
+    const adminEmail = process.env.ADMIN_EMAIL
+    const fromEmail = process.env.RESEND_FROM_EMAIL
+    if (adminEmail && fromEmail && process.env.RESEND_API_KEY) {
+      try {
+        const parts = [
+          researchSwept && `${researchSwept} research`,
+          pagesSwept && `${pagesSwept} page generation(s)`,
+          ideasSwept && `${ideasSwept} blog draft(s)`,
+          socialsSwept && `${socialsSwept} social generation(s)`,
+          oneoffsSwept && `${oneoffsSwept} one-off generation(s)`,
+        ].filter(Boolean)
+        const resend = new Resend(process.env.RESEND_API_KEY)
+        await resend.emails.send({
+          from: fromEmail,
+          to: adminEmail,
+          subject: `[CountingFive] Stuck jobs swept — ${parts.join(', ')}`,
+          html: `
+            <h2>Stuck Pipeline Jobs Reset</h2>
+            <p>The sweep cron reset rows stuck in 'running' for over 15 minutes: ${parts.join(', ')}.</p>
+            <p>They're now marked as errors — check the affected jobs and retry from the admin UI.</p>
+            <p><a href="${process.env.NEXT_PUBLIC_APP_URL ?? ''}/admin/dashboard">Open dashboard →</a></p>
+          `,
+        })
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] alert email failed:', err)
+      }
+    }
   }
 
   return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, cutoff })
