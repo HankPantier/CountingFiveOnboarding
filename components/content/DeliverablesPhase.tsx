@@ -35,6 +35,7 @@ export default function DeliverablesPhase({
   const [pushInfo, setPushInfo] = useState<{ fileCount: number } | null>(null)
   const [pushWarn, setPushWarn] = useState<string | null>(null)
   const [linkWarnings, setLinkWarnings] = useState<string[]>([])
+  const [redirectIssues, setRedirectIssues] = useState<Array<{ severity: string; oldUrl: string; reason: string }>>([])
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
 
   // Poll the approval state so the assemble button knows whether the gate
@@ -86,6 +87,7 @@ export default function DeliverablesPhase({
       setPushInfo(data.pushedToRepo ? { fileCount: data.pushedToRepo.fileCount } : null)
       setPushWarn(typeof data.pushError === 'string' ? data.pushError : null)
       setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
+      setRedirectIssues(Array.isArray(data.redirectIssues) ? data.redirectIssues : [])
       setPackaged(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to assemble')
@@ -189,6 +191,19 @@ export default function DeliverablesPhase({
           {pushWarn && (
             <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2">
               Package built, but the push to the site repo failed: {pushWarn}. The repo link or GitHub App may need attention; the download below still works.
+            </div>
+          )}
+
+          {redirectIssues.length > 0 && (
+            <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
+              <div className="font-heading font-semibold">
+                {redirectIssues.length} redirect map issue(s) — fix in redirects.csv before launch:
+              </div>
+              <ul className="text-xs font-mono space-y-0.5">
+                {redirectIssues.map((i) => (
+                  <li key={`${i.oldUrl}-${i.reason}`}>[{i.severity}] {i.oldUrl}: {i.reason}</li>
+                ))}
+              </ul>
             </div>
           )}
 

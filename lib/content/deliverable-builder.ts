@@ -14,11 +14,12 @@ function originOf(websiteUrl: string): string {
   return websiteUrl.replace(/\/$/, '')
 }
 
-// Always derive from page_url so the path matches the convention documented in
-// og-images/README.md regardless of whether the LLM produced a clean url_slug.
+// The template generates branded OG cards dynamically at /api/og/<path> —
+// point the frontmatter at the real route instead of a static PNG that
+// never ships (the old /og-images/<slug>.png convention was dead cargo).
 function ogImageUrl(websiteUrl: string, pageUrl: string): string {
-  const slug = pageUrl.replace(/^\//, '').replace(/\//g, '--') || 'home'
-  return `${originOf(websiteUrl)}/og-images/${slug}.png`
+  const path = pageUrl.replace(/^\//, '')
+  return `${originOf(websiteUrl)}/api/og${path ? `/${path}` : ''}`
 }
 
 export function buildPageMarkdown(

@@ -66,6 +66,7 @@ async function generatePageContent(
   cta: Cta,
   contentJobId: string,
   sessionId: string,
+  sitemapUrls: string[],
   flaggedPhrases?: string[]
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
@@ -131,7 +132,7 @@ OUTPUT: Return a JSON object with two keys:
    - answer_block (2-3 sentences answering the likely search query directly)
    - schema_markup_type (e.g. "LocalBusiness", "Service", "FAQPage")
    - eeat_signals (array of specific credential/experience claims)
-   - internal_links (array of {url, anchor_text, reason} — reference other pages in the site)
+   - internal_links (array of {url, anchor_text, reason}. ONLY use URLs from this exact list — never invent paths: ${sitemapUrls.join(' ')})
    - faq_block (array of {question, answer} — 40-60 words per answer)
    - llm_citation_note (what structured claim an AI tool would most likely cite)
    - hero_block (one of: "hero", "hero-split", "page-header")
@@ -354,10 +355,16 @@ export async function generateSinglePage(
   // Load the rest of the context.
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('session_id, palette')
+    .select('session_id, palette, confirmed_sitemap')
     .eq('id', contentJobId)
     .single()
   if (!job) return { status: 'error', pageUrl: outline.page_url, error: 'Content job not found' }
+
+  // Real page URLs for the internal_links constraint — without this list the
+  // model invents plausible-but-wrong paths (/team, /services/bookkeeping).
+  const sitemapUrls = ((job.confirmed_sitemap as Array<{ url?: string }>) ?? [])
+    .map((s) => s.url)
+    .filter((u): u is string => typeof u === 'string' && u.length > 0)
 
   const { data: session } = await supabase
     .from('sessions')
@@ -420,7 +427,8 @@ export async function generateSinglePage(
       session.website_url,
       cta,
       contentJobId,
-      job.session_id
+      job.session_id,
+      sitemapUrls
     )
 
     const validation = validateContent(result.content)
@@ -442,6 +450,7 @@ export async function generateSinglePage(
         cta,
         contentJobId,
         job.session_id,
+        sitemapUrls,
         validation.flagged
       )
     }
@@ -472,6 +481,7 @@ export async function generateSinglePage(
         targetKeyword, secondaryKeywords, existingContent, competitorRefs,
         schema, palette, session.website_url, cta,
         contentJobId, job.session_id,
+        sitemapUrls,
         [correctionNote]
       )
       // Re-parse after retry; if still empty, log and store anyway.
@@ -514,6 +524,7 @@ export async function generateSinglePage(
         cta,
         contentJobId,
         job.session_id,
+        sitemapUrls,
         [correctionNote]  // reuse the flaggedPhrases mechanism to carry the correction note
       )
 
