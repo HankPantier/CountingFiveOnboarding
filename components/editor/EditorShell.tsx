@@ -212,6 +212,32 @@ export default function EditorShell({
     }
   }
 
+  const rollback = async () => {
+    if (
+      !window.confirm(
+        'Revert the last publish? The live site goes back to its previous state; your published changes stay in draft so you can fix and re-publish.'
+      )
+    ) {
+      return
+    }
+    setPublishing(true)
+    setError(null)
+    setPublishResult(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/rollback`, { method: 'POST' })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Rollback failed: ${res.status}`)
+      }
+      setPublishResult('Live site reverted — Vercel is redeploying the previous version.')
+      await refreshStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rollback failed')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   const content = currentContent()
   const isNav = selectedPath === 'content/nav.json'
 
@@ -229,6 +255,7 @@ export default function EditorShell({
         publishResult={publishResult}
         onSave={save}
         onPublish={publish}
+        onRollback={rollback}
       />
       {error && (
         <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning font-body text-xs">

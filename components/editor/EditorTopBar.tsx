@@ -8,6 +8,7 @@ export type EditorStatus = {
   lastCommitSha: string | null
   lastCommitMessage: string | null
   lastCommitAt: string | null
+  canRevertPublish: boolean
   repo: string
   repoUrl: string
 }
@@ -35,6 +36,7 @@ export default function EditorTopBar({
   publishResult,
   onSave,
   onPublish,
+  onRollback,
 }: {
   firmName: string
   websiteUrl: string
@@ -47,6 +49,7 @@ export default function EditorTopBar({
   publishResult: string | null
   onSave: () => void
   onPublish: () => void
+  onRollback: () => void
 }) {
   const aheadLabel =
     status === null
@@ -119,6 +122,16 @@ export default function EditorTopBar({
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
+        {status?.canRevertPublish && (
+          <button
+            onClick={onRollback}
+            disabled={publishing}
+            className="border border-error/40 text-error font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-error/5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            title="Force the live site back to its pre-publish state. Draft keeps the changes for fixing."
+          >
+            Revert last publish
+          </button>
+        )}
         <button
           onClick={onPublish}
           disabled={publishing || (status?.draftAhead ?? 0) === 0 || dirtyCount > 0}

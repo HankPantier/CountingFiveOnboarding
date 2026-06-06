@@ -454,6 +454,23 @@ export type RepoStatus = {
   lastCommitSha: string | null
   lastCommitMessage: string | null
   lastCommitAt: string | null
+  /** True when main's HEAD is a publish merge that revertLastPublish can undo. */
+  canRevertPublish: boolean
+}
+
+const PUBLISH_MERGE_MESSAGE = 'Publish draft to live'
+
+// main HEAD must be the merge commit our publish created — two parents and
+// the exact publish message. Anything else (manual commits, GitHub-side
+// merges) is not safe to force-revert blindly.
+async function isPublishMergeHead(slug: string) {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const head = await octokit.repos.getCommit({ owner, repo, ref: MAIN_BRANCH })
+  const isPublish =
+    head.data.parents.length === 2 &&
+    head.data.commit.message.startsWith(PUBLISH_MERGE_MESSAGE)
+  return { isPublish, parentSha: head.data.parents[0]?.sha ?? null }
 }
 
 export async function getStatus(slug: string): Promise<RepoStatus> {
@@ -466,11 +483,45 @@ export async function getStatus(slug: string): Promise<RepoStatus> {
     head: DRAFT_BRANCH,
   })
   const head = cmp.data.commits.at(-1)
+  let canRevertPublish = false
+  try {
+    canRevertPublish = (await isPublishMergeHead(slug)).isPublish
+  } catch {
+    // Status must stay usable even if the HEAD lookup hiccups.
+  }
   return {
     draftAhead: cmp.data.ahead_by,
     draftBehind: cmp.data.behind_by,
     lastCommitSha: head?.sha ?? null,
     lastCommitMessage: head?.commit.message ?? null,
     lastCommitAt: head?.commit.author?.date ?? null,
+    canRevertPublish,
   }
+}
+
+export type RevertResult =
+  | { reverted: true; revertedTo: string }
+  | { reverted: false; reason: string }
+
+// Undo the most recent publish: force main back to the merge commit's first
+// parent (the pre-publish live state). Draft is left alone — it still holds
+// the published content, so the admin can fix it there and publish again.
+export async function revertLastPublish(slug: string): Promise<RevertResult> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const { isPublish, parentSha } = await isPublishMergeHead(slug)
+  if (!isPublish || !parentSha) {
+    return {
+      reverted: false,
+      reason: 'The live branch tip is not a publish merge — nothing safe to revert.',
+    }
+  }
+  await octokit.git.updateRef({
+    owner,
+    repo,
+    ref: `heads/${MAIN_BRANCH}`,
+    sha: parentSha,
+    force: true,
+  })
+  return { reverted: true, revertedTo: parentSha }
 }
