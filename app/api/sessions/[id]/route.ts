@@ -1,4 +1,5 @@
-import { createAuthClient, createServerClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/auth/require-admin'
 import { NextResponse } from 'next/server'
 import type { Json } from '@/types/database'
 
@@ -6,9 +7,8 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await createAuthClient()
-  const { data: { user } } = await auth.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
 
   const { id } = await params
   const supabase = createServerClient()
@@ -44,9 +44,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await createAuthClient()
-  const { data: { user } } = await auth.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAdmin()
+  if (auth instanceof NextResponse) return auth
 
   const { id } = await params
   const { fieldPath, value, isAdminOverride } = await req.json() as {

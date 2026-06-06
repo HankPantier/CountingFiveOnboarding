@@ -16,7 +16,9 @@ export default function SessionRowActions({
 }) {
   const [copied, setCopied] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const router = useRouter()
+  const isArchived = sessionStatus === 'archived'
 
   function copyLink() {
     const url = `${window.location.origin}/session/${sessionId}`
@@ -34,6 +36,20 @@ export default function SessionRowActions({
       router.refresh()
     } catch {
       setDeleting(false)
+    }
+  }
+
+  async function handleArchiveToggle() {
+    setArchiving(true)
+    try {
+      await fetch(`/api/sessions/${sessionId}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived: !isArchived }),
+      })
+      router.refresh()
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -81,6 +97,14 @@ export default function SessionRowActions({
           </Link>
         )
       )}
+      <button
+        onClick={handleArchiveToggle}
+        disabled={archiving}
+        title={isArchived ? 'Restore session to the active list' : 'Archive session (keeps all data, hides from the active list)'}
+        className="text-text-muted hover:text-brand-navy font-heading font-semibold text-xs transition-colors disabled:opacity-40"
+      >
+        {archiving ? '…' : isArchived ? 'Restore' : 'Archive'}
+      </button>
       <button
         onClick={handleDelete}
         disabled={deleting}

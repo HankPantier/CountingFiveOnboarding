@@ -43,16 +43,35 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ basecamp?: string }> }) {
+const PAGE_SIZE = 25
+const STATUS_FILTERS = ['all', 'pending', 'in_progress', 'completed', 'approved', 'archived'] as const
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ basecamp?: string; q?: string; status?: string; page?: string }>
+}) {
   const supabase = createServerClient()
   const sp = await searchParams
 
-  const [{ data: sessions }, { data: bcToken }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
-    supabase
-      .from('sessions')
-      .select('id, website_url, status, current_phase, last_activity_at, created_at, reminder_count')
+  const q = (sp.q ?? '').trim()
+  const statusFilter = STATUS_FILTERS.includes(sp.status as (typeof STATUS_FILTERS)[number])
+    ? (sp.status as (typeof STATUS_FILTERS)[number])
+    : 'all'
+  const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1)
+
+  // Archived sessions only show up when explicitly filtered for.
+  let query = supabase
+    .from('sessions')
+    .select('id, website_url, status, current_phase, last_activity_at, created_at, reminder_count', { count: 'exact' })
+  if (statusFilter === 'all') query = query.neq('status', 'archived')
+  else query = query.eq('status', statusFilter)
+  if (q) query = query.ilike('website_url', `%${q}%`)
+
+  const [{ data: sessions, count: totalCount }, { data: bcToken }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
+    query
       .order('last_activity_at', { ascending: true })
-      .limit(100),
+      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
     supabase.from('basecamp_tokens').select('id').eq('id', 1).single(),
     supabase
       .from('sessions')
@@ -62,6 +81,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .from('token_usage')
       .select('model, input_tokens, output_tokens, created_at'),
   ])
+
+  const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE))
+  const filterHref = (over: { q?: string; status?: string; page?: number }) => {
+    const params = new URLSearchParams()
+    const nq = over.q ?? q
+    const ns = over.status ?? statusFilter
+    const np = over.page ?? 1
+    if (nq) params.set('q', nq)
+    if (ns !== 'all') params.set('status', ns)
+    if (np > 1) params.set('page', String(np))
+    const s = params.toString()
+    return `/admin/dashboard${s ? `?${s}` : ''}`
+  }
 
   // Aggregate AI spend so the operator sees burn without opening every job.
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
@@ -112,7 +144,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div>
           <h1 className="text-2xl font-heading font-bold text-brand-navy">Sessions</h1>
           <p className="text-text-secondary font-body text-sm mt-1">
-            {sessions?.length ?? 0} total
+            {totalCount ?? 0} {statusFilter === 'all' ? 'active' : statusFilter}
+            {q && <span> matching “{q}”</span>}
             {spend.total > 0 && (
               <span className="ml-3 text-text-muted">
                 · AI spend: ${spend.total.toFixed(2)} total, ${spend.recent.toFixed(2)} last 30 days
@@ -149,9 +182,40 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <form action="/admin/dashboard" className="flex items-center gap-2">
+          {statusFilter !== 'all' && <input type="hidden" name="status" value={statusFilter} />}
+          <input
+            type="search"
+            name="q"
+            defaultValue={q}
+            placeholder="Search by website…"
+            aria-label="Search sessions by website"
+            className="text-sm font-body px-3 py-1.5 rounded-pill border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none w-56"
+          />
+        </form>
+        <div className="flex items-center gap-1">
+          {STATUS_FILTERS.map((s) => (
+            <Link
+              key={s}
+              href={filterHref({ status: s })}
+              className={`text-xs font-heading font-semibold px-3 py-1.5 rounded-pill transition-colors ${
+                statusFilter === s
+                  ? 'bg-brand-navy text-text-inverse'
+                  : 'text-text-secondary hover:bg-surface-subtle'
+              }`}
+            >
+              {s === 'all' ? 'Active' : s.replace('_', ' ')}
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {!sessions?.length ? (
         <div className="text-center py-16 text-text-muted font-body">
-          No sessions yet. Create one to get started.
+          {q || statusFilter !== 'all'
+            ? 'No sessions match this filter.'
+            : 'No sessions yet. Create one to get started.'}
         </div>
       ) : (
         <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
@@ -209,6 +273,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-4 text-sm font-body">
+          {page > 1 ? (
+            <Link href={filterHref({ page: page - 1 })} className="text-brand-cyan hover:text-brand-navy font-heading font-semibold">
+              ← Newer
+            </Link>
+          ) : (
+            <span className="text-text-muted">← Newer</span>
+          )}
+          <span className="text-text-secondary">
+            Page {page} of {totalPages}
+          </span>
+          {page < totalPages ? (
+            <Link href={filterHref({ page: page + 1 })} className="text-brand-cyan hover:text-brand-navy font-heading font-semibold">
+              Older →
+            </Link>
+          ) : (
+            <span className="text-text-muted">Older →</span>
+          )}
         </div>
       )}
     </main>

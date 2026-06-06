@@ -32,6 +32,14 @@ export default function EditorShell({
   const [publishing, setPublishing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<string | null>(null)
+  // Set when a save hits a sha conflict (someone else saved the same file).
+  // The admin chooses explicitly: overwrite with their version, or take the
+  // server's — no silent last-writer-wins.
+  const [conflict, setConflict] = useState<{
+    path: string
+    serverSha: string
+    serverContent: string
+  } | null>(null)
 
   const refreshStatus = useCallback(async () => {
     const res = await fetch(`/api/edit/${sessionId}/status`)
@@ -152,10 +160,7 @@ export default function EditorShell({
       })
       if (res.status === 409) {
         const data = (await res.json()) as { currentSha: string; currentContent: string; message?: string }
-        setLoaded((prev) =>
-          new Map(prev).set(selectedPath, { content: data.currentContent, sha: data.currentSha })
-        )
-        setError(data.message ?? 'File changed remotely; latest content reloaded.')
+        setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
         return
       }
       if (!res.ok) {
@@ -212,6 +217,54 @@ export default function EditorShell({
     }
   }
 
+  const resolveConflictMine = async () => {
+    if (!conflict) return
+    const mine = dirty.get(conflict.path)
+    if (mine === undefined) {
+      setConflict(null)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/files`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: conflict.path, contents: mine, expectedSha: conflict.serverSha }),
+      })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Save failed: ${res.status}`)
+      }
+      const data = (await res.json()) as { commitSha: string; blobSha: string }
+      setLoaded((prev) => new Map(prev).set(conflict.path, { content: mine, sha: data.blobSha }))
+      setDirty((prev) => {
+        const m = new Map(prev)
+        m.delete(conflict.path)
+        return m
+      })
+      setConflict(null)
+      await refreshStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resolveConflictTheirs = () => {
+    if (!conflict) return
+    setLoaded((prev) =>
+      new Map(prev).set(conflict.path, { content: conflict.serverContent, sha: conflict.serverSha })
+    )
+    setDirty((prev) => {
+      const m = new Map(prev)
+      m.delete(conflict.path)
+      return m
+    })
+    setConflict(null)
+  }
+
   const rollback = async () => {
     if (
       !window.confirm(
@@ -260,6 +313,30 @@ export default function EditorShell({
       {error && (
         <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning font-body text-xs">
           {error}
+        </div>
+      )}
+      {conflict && (
+        <div className="px-6 py-3 bg-warning/10 border-b border-warning/30 font-body text-xs flex items-center gap-4 flex-wrap">
+          <span className="text-warning">
+            <strong>{conflict.path.split('/').pop()}</strong> was changed on the server while you
+            were editing (another admin or a fresh package). Which version should win?
+          </span>
+          <button
+            type="button"
+            onClick={() => void resolveConflictMine()}
+            disabled={saving}
+            className="rounded-pill border border-brand-navy px-3 py-1 font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors disabled:opacity-50"
+          >
+            Keep mine (overwrite server)
+          </button>
+          <button
+            type="button"
+            onClick={resolveConflictTheirs}
+            disabled={saving}
+            className="rounded-pill border border-border-default px-3 py-1 font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors disabled:opacity-50"
+          >
+            Take server version (discard mine)
+          </button>
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
