@@ -24,6 +24,7 @@ export type ValidationError = {
   blockId: string
   reason: string
   suggestion?: string // block ID we'd suggest instead
+  fix?: 'add-image' // the block is fine — it just needs an image: attribute
 }
 
 export type AnnotationCoercion = {
@@ -319,12 +320,68 @@ export function validateBlockAnnotations(
     }
 
     // ------------------------------------------------------------------
-    // Warning rule 14: missing image on content-split
+    // Error rule 14: mandatory images. Images are structural for these
+    // blocks — a miss triggers the single retry, and ensureBlockMedia
+    // injects a deterministic placeholder as the final backstop.
     // ------------------------------------------------------------------
     if (blockId === 'content-split' && !ann.image) {
-      warnings.push(
-        `content-split at position ${position} has no image reference — manual asset assignment needed`,
-      )
+      errors.push({
+        position,
+        headingText,
+        blockId,
+        reason: 'content-split requires an image: + query: on its annotation (imagery is mandatory)',
+        fix: 'add-image',
+      })
+    }
+    if (
+      blockId === 'checklist-section' &&
+      !ann.image &&
+      (ann.variant === 'with-image' || ann.variant === undefined)
+    ) {
+      errors.push({
+        position,
+        headingText,
+        blockId,
+        reason: 'checklist-section (with-image) requires an image: + query: on its annotation',
+        fix: 'add-image',
+      })
+    }
+    if (blockId === 'cta-banner' && ann.variant === 'image-bg' && !ann.image) {
+      errors.push({
+        position,
+        headingText,
+        blockId,
+        reason: 'image-bg cta-banner requires an image: + query: on its annotation',
+        fix: 'add-image',
+      })
+    }
+
+    // ------------------------------------------------------------------
+    // Warning rule 15: items missing icons on icon-bearing card blocks.
+    // Warning only — the template renders a CheckCircle fallback, and
+    // icon misses shouldn't consume the retry that image misses need.
+    // ------------------------------------------------------------------
+    if (['feature-grid', 'industry-cards', 'service-cards'].includes(blockId)) {
+      const lines = sectionContent.split('\n')
+      let iconless = 0
+      for (let li = 0; li < lines.length; li++) {
+        const isItemTitle =
+          /^###\s+/.test(lines[li].trim()) || /^\*\*[^*\n]+\*\*\s*$/.test(lines[li].trim())
+        if (!isItemTitle) continue
+        // Icon bullets (- IconName: **Title** — …) carry their own icon.
+        let hasIcon = false
+        for (let lj = li + 1; lj < lines.length; lj++) {
+          if (lines[lj].trim() === '') continue
+          hasIcon = /^icon:\s*[A-Za-z][A-Za-z0-9]*\s*$/.test(lines[lj].trim())
+          break
+        }
+        if (!hasIcon) iconless++
+      }
+      if (iconless > 0) {
+        warnings.push(
+          `${blockId} at position ${position} has ${iconless} item(s) without an icon: line — template falls back to CheckCircle`,
+        )
+      }
     }
   }
 
@@ -392,7 +449,7 @@ export function applyCoercions(markdown: string, coercions: AnnotationCoercion[]
  *   5 = sectionContent (body below the heading before next annotation or EOF)
  */
 const SECTION_PATTERN =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s>]+))?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
+  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*query:\s*"[^"]*")?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
 
 /**
  * Parse a full page markdown body into an array of BlockAnnotation entries.

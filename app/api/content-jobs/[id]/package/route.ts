@@ -181,7 +181,8 @@ export async function POST(
   if (palettePreResolve) {
     // Build a flat list of every image reference across all pages:
     //   - hero images (from generated_pages columns)
-    //   - content-split annotation images (inline in content_markdown)
+    //   - annotation images: content-split, image-bg cta-banner,
+    //     with-image checklist-section (inline in content_markdown)
     //   - content-cards per-card photo references (inline)
     const imageRefs: ImageRef[] = []
     for (const p of pages) {

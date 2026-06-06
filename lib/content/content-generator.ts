@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
 import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
+import { ensureBlockMedia } from './ensure-block-media'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
@@ -134,16 +135,19 @@ OUTPUT: Return a JSON object with two keys:
    - llm_citation_note (what structured claim an AI tool would most likely cite)
    - hero_block (one of: "hero", "hero-split", "page-header")
    - hero_variant (string or null — required for "hero" and "hero-split"; null for "page-header")
-   - hero_image (filename string from session assets, or null if none)
+   - hero_image (kebab-case .jpg filename — ALWAYS provide one whenever hero_block is not "page-header"; null only for page-header)
    - hero_subhead (12-18 words, benefit-led, written for the on-page hero — NOT the same as meta_description, which targets SERPs. Speak directly to the reader's outcome; avoid restating the firm name or the page title. Plain prose, no quotes, no trailing period required.)
-   - hero_image_query (3-8 word SUBJECT-only Pexels search query that captures the visual concept for this page's hero photo. Focus on the SUBJECT MATTER — people, setting, activity — not visual style. Examples: "tax season paperwork accountant", "client meeting professional office", "small business owner reviewing financials", "construction contractor on site". The builder appends brand-specific style modifiers automatically (cool tone, modern office, etc.) — you don't need to include those. Return null only for page-header heroes where no photo is needed.)
+   - hero_image_query (3-8 word SUBJECT-only Pexels search query that captures the visual concept for this page's hero photo. Focus on the SUBJECT MATTER — people, setting, activity — not visual style. Examples: "tax season paperwork accountant", "client meeting professional office", "small business owner reviewing financials", "construction contractor on site". The builder appends brand-specific style modifiers automatically (cool tone, modern office, etc.) — you don't need to include those. ALWAYS provide a non-null query whenever hero_block is not "page-header"; null only for page-header heroes.)
 
 BLOCK ANNOTATION RULES:
 
 Before every ## section heading in the content body, emit an HTML comment on the immediately preceding line:
 <!-- block: {block-id} | variant: {variant} -->
 
-For blocks that use a supporting image (content-split, hero, hero-split), extend the annotation with image + query attributes so the builder can fetch from Pexels:
+Images are MANDATORY for these blocks — always extend the annotation with image + query attributes so the builder can fetch from Pexels:
+- content-split: every instance
+- checklist-section: every instance (use variant with-image)
+- cta-banner: only when variant is image-bg (never put image on color-bg)
 <!-- block: content-split | variant: image-right | image: services-overview.jpg | query: "professional team meeting modern office" -->
 
 The "image:" attribute is a short kebab-case filename ending in .jpg (don't include path prefixes). The "query:" attribute is a 3-8 word SUBJECT-only Pexels search string — focus on people, setting, activity. Skip visual style modifiers ("cinematic", "warm tones", etc.) — the builder appends those automatically per brand.
@@ -194,8 +198,7 @@ ITEM-LEVEL FORMAT — for any block that contains a list of items (service-cards
   Job costing, equipment financing...
 
 Per-block item formats:
-- service-cards: \`### Item Title\` then 1–4 sentence description.
-- industry-cards / feature-grid: \`### Item Title\`, then an \`icon:\` line choosing the card's icon, then a 1–4 sentence description:
+- service-cards / industry-cards / feature-grid: \`### Item Title\`, then an \`icon:\` line choosing the card's icon (EVERY item MUST have one), then a 1–4 sentence description:
 
       ### Healthcare Professionals
       icon: Stethoscope
@@ -203,7 +206,7 @@ Per-block item formats:
       Practice owners face billing complexity, staffing costs, and...
 
   Pick the most specific fitting icon per item from this set (PascalCase, exact): Calculator, Briefcase, ChartLine, ChartBar, TrendingUp, FileText, FileCheck, ClipboardCheck, Coins, DollarSign, CreditCard, Wallet, PiggyBank, Receipt, Users, UserCheck, Building, Building2, Home, MapPin, Globe, ShieldCheck, Award, Star, BadgeCheck, Hammer, Wrench, Cog, HeartPulse, Stethoscope, GraduationCap, Scale, Gavel, Lightbulb, Target, Zap, Sparkles, Calendar, Clock. Never repeat an icon within one block.
-- content-cards: \`### Card Title\` then OPTIONAL \`photo:\` and \`query:\` lines, then a 1–3 sentence excerpt, then an optional trailing \`[Read more](/url)\` link. The photo lines look like:
+- content-cards: \`### Card Title\` then \`photo:\` and \`query:\` lines, then a 1–3 sentence excerpt, then an optional trailing \`[Read more](/url)\` link. The photo lines look like:
 
       ### Year-End Tax Planning Guide
       photo: year-end-planning.jpg
@@ -211,7 +214,7 @@ Per-block item formats:
 
       Excerpt prose here...
 
-  Include photo + query for every content-card that warrants imagery (most do — these are article thumbnails). Same kebab-case filename and SUBJECT-only query conventions as content-split.
+  Include photo + query on EVERY content-card without exception — these are article thumbnails and always need an image. Same kebab-case filename and SUBJECT-only query conventions as content-split.
 - team-grid: \`### Name, Credentials\` then an optional short job title line, then bio paragraph(s).
 - pricing: \`### Tier Name\` then \`$price/period\` on the next line, then a 1–2 sentence description, then a feature list (\`- Feature 1\`), then a \`[Get started](/contact)\` CTA. Mark a featured tier with \`**Most popular**\` inside its description.
 - process-steps: \`### Step Title\` (the parser auto-numbers them) then a 1–2 sentence description.
@@ -225,11 +228,11 @@ VARIANT RULES — every variant value must come from the block's catalog above. 
 - feature-grid: 3-col by default; 4-col only if 8+ items
 - service-cards: 3-col by default; 2-col if descriptions exceed 4 sentences
 - team-grid: 2-col ≤4 people, 3-col 5–9, 4-col 10+
-- cta-banner: color-bg unless a specific background image is referenced
+- cta-banner: MIX variants across the site — prefer image-bg for a page's final/primary banner (MUST carry image: + query:); color-bg for secondary mid-page CTAs (no image)
 - form: contact variant unless quote or newsletter clearly fits
 - pricing: match tier count to packages described (2-tier / 3-tier / 4-tier)
 - intro-text: centered by default; left-aligned only when feeding into left-aligned content
-- checklist-section: standalone by default; with-image only when an image is referenced
+- checklist-section: with-image by default (carries the mandatory image: + query:); standalone only for a short inline qualifying list with no room for a supporting photo
 - process-steps: vertical by default; horizontal only for short 3–5-step flows
 - testimonials: grid by default; carousel only when 4+ testimonials
 - stats-bar: 3-up by default; 4-up if you have exactly 4 numbers
@@ -483,7 +486,11 @@ export async function generateSinglePage(
       // simplicity. If the LLM can't fix issues in one retry, the errors are
       // logged and content is stored as-is — admin can manually correct.)
       const errorSummary = blockValidation.errors
-        .map(e => `Section ${e.position} ("${e.headingText}"): ${e.reason}. Suggested replacement: ${e.suggestion ?? 'content-prose'}`)
+        .map(e =>
+          e.fix === 'add-image'
+            ? `Section ${e.position} ("${e.headingText}"): ${e.reason}. Keep the block — add image: + query: attributes to its annotation comment.`
+            : `Section ${e.position} ("${e.headingText}"): ${e.reason}. Suggested replacement: ${e.suggestion ?? 'content-prose'}`
+        )
         .join('\n')
       const correctionNote = `Your previous draft had these block annotation issues — fix all of them:\n${errorSummary}`
 
@@ -536,6 +543,19 @@ export async function generateSinglePage(
         `[content-gen] Block warnings on ${outline.page_url}:`,
         finalValidation.warnings.join(' | ')
       )
+    }
+
+    // Guaranteed image coverage: if the retry still left a structural image
+    // slot empty, inject a deterministic filename + heading-derived Pexels
+    // query so the package-time resolver always has something to fetch.
+    const ensured = ensureBlockMedia(
+      result.content,
+      outline.page_url,
+      result.metadata.target_keyword ?? ''
+    )
+    if (ensured !== result.content) {
+      console.warn(`[content-gen] Injected placeholder image refs on ${outline.page_url}`)
+      result.content = ensured
     }
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []

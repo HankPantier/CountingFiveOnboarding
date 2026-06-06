@@ -7,11 +7,14 @@ import type { ImageRef } from './stock-photo-resolver'
  *
  * Two surfaces handled here:
  *
- * 1. content-split block annotation:
+ * 1. Block annotations carrying an image (content-split, image-bg cta-banner,
+ *    with-image checklist-section):
  *      <!-- block: content-split | variant: image-right | image: filename.jpg | query: "subject only" -->
  *    The `query:` segment is optional. When absent, the filename slug
  *    (hyphens → spaces, extension stripped) becomes the query — good
  *    enough for secondary images even if Claude didn't volunteer a query.
+ *    Annotations without an `image:` (color-bg banners, standalone
+ *    checklists) are skipped.
  *
  * 2. content-cards individual cards (one per `### Title` chunk inside a
  *    `<!-- block: content-cards -->` section):
@@ -36,18 +39,19 @@ export function extractInlineImageRefs(markdown: string, pageUrl: string): Image
   if (!markdown) return []
   const refs: ImageRef[] = []
 
-  // 1. content-split annotations — match the entire annotation comment and
-  // pull out image + optional query attributes. Use a non-greedy capture
-  // for the query value (allow double-quoted spaces).
+  // 1. Image-bearing block annotations — match the entire annotation comment
+  // and pull out image + optional query attributes. Use a non-greedy capture
+  // for the query value (allow double-quoted spaces). Annotations without an
+  // image: attribute fall through the !filename guard.
   const ANNOTATION_RE =
-    /<!-- block: content-split(?:\s*\|\s*variant:\s*[a-z0-9-]+)?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
+    /<!-- block: (content-split|cta-banner|checklist-section)(?:\s*\|\s*variant:\s*[a-z0-9-]+)?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
   let m: RegExpExecArray | null
   while ((m = ANNOTATION_RE.exec(markdown)) !== null) {
-    const filename = m[1]?.trim()
+    const filename = m[2]?.trim()
     if (!filename) continue
-    const queryRaw = m[2]?.trim()
+    const queryRaw = m[3]?.trim()
     const subjectQuery = queryRaw && queryRaw.length > 0 ? queryRaw : filenameToQuery(filename)
-    refs.push({ pageUrl, filename, subjectQuery, source: 'content-split' })
+    refs.push({ pageUrl, filename, subjectQuery, source: m[1] })
   }
 
   // 2. content-cards entries — find each content-cards block segment, then
