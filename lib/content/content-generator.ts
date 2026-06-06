@@ -132,7 +132,7 @@ OUTPUT: Return a JSON object with two keys:
    - answer_block (2-3 sentences answering the likely search query directly)
    - schema_markup_type (e.g. "LocalBusiness", "Service", "FAQPage")
    - eeat_signals (array of specific credential/experience claims)
-   - internal_links (array of {url, anchor_text, reason}. ONLY use URLs from this exact list — never invent paths: ${sitemapUrls.join(' ')})
+   - internal_links (array of {url, anchor_text, reason}. ONLY use URLs from this exact list — never invent paths: ${sitemapUrls.join(' ')}. The same rule applies to every relative link you write in the body copy.)
    - faq_block (array of {question, answer} — 40-60 words per answer)
    - llm_citation_note (what structured claim an AI tool would most likely cite)
    - hero_block (one of: "hero", "hero-split", "page-header")

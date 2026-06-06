@@ -35,6 +35,18 @@ const COMMENT_HEADER =
 
 const CSV_HEADER = 'old_url,new_url,status_code,reason\n'
 
+// Phase I sitemap data annotates destinations with prose — real examples:
+// "/contact (merge into contact page)", "/resources/articles/ (bulk)".
+// Take the first whitespace-delimited token and normalize the trailing
+// slash so the intent maps onto a real page instead of failing validation.
+function sanitizeUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined
+  const first = raw.trim().split(/\s+/)[0] ?? ''
+  if (!first.startsWith('/')) return undefined
+  const noTrailing = first.replace(/\/+$/, '')
+  return noTrailing === '' ? '/' : noTrailing
+}
+
 // Emit a CSV migration plan from the firm's current site to the new sitemap.
 // Validates redirect targets against the confirmed sitemap and returns both
 // the CSV and a list of issues. Warn-and-proceed: issues never block the CSV.
@@ -55,7 +67,8 @@ export function buildRedirectsCsv(
   const validNewUrls = new Set<string>(
     (confirmedSitemap ?? [])
       .filter(e => !['redirect', 'consolidate'].includes(e.status ?? ''))
-      .map(e => e.url)
+      .map(e => sanitizeUrl(e.url))
+      .filter((u): u is string => !!u)
   )
 
   const rows: string[] = []
@@ -65,25 +78,28 @@ export function buildRedirectsCsv(
     if (!entry?.url) continue
     if (entry.live === false) continue
 
+    const oldUrl = entry.url.trim()
+    const newUrl = sanitizeUrl(entry.new_url)
+
     const isRedirectAction =
       entry.action === 'redirect' || entry.action === 'consolidate'
 
     if (isRedirectAction) {
       // Error: action requires a destination but none was set
-      if (!entry.new_url) {
+      if (!newUrl) {
         issues.push({
           severity: 'error',
-          oldUrl: entry.url,
+          oldUrl,
           reason: `action '${entry.action}' but no new_url specified`,
         })
         continue // drop from CSV
       }
 
       // Error: destination set but it doesn't exist in the new sitemap
-      if (!validNewUrls.has(entry.new_url)) {
+      if (!validNewUrls.has(newUrl)) {
         issues.push({
           severity: 'error',
-          oldUrl: entry.url,
+          oldUrl,
           reason: `new_url '${entry.new_url}' does not exist in the new sitemap`,
         })
         continue // drop from CSV
@@ -92,19 +108,25 @@ export function buildRedirectsCsv(
       // Valid redirect row
       const reason =
         entry.action === 'consolidate'
-          ? `consolidated into ${entry.new_url}`
+          ? `consolidated into ${newUrl}`
           : 'redirected to new structure'
 
       rows.push(
-        [csvEscape(entry.url), csvEscape(entry.new_url), '301', csvEscape(reason)].join(',')
+        [csvEscape(oldUrl), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
       )
-    } else {
-      // Warning pass: 'keep' (or any other non-redirect action) whose URL
-      // doesn't appear in the new sitemap — might become a broken old link.
-      if (entry.url && !validNewUrls.has(entry.url)) {
+    } else if (!validNewUrls.has(sanitizeUrl(oldUrl) ?? oldUrl)) {
+      // 'keep' (or any other non-redirect action) whose URL doesn't appear in
+      // the new sitemap. Phase I sometimes marks these 'keep' but still fills
+      // new_url with where the content went — honor that intent as a redirect
+      // instead of warning about a broken link.
+      if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl)) {
+        rows.push(
+          [csvEscape(oldUrl), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
+        )
+      } else {
         issues.push({
           severity: 'warning',
-          oldUrl: entry.url,
+          oldUrl,
           reason: `old URL marked '${entry.action ?? 'keep'}' but not present in new sitemap — broken old link?`,
         })
       }
