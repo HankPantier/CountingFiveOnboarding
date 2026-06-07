@@ -386,6 +386,73 @@ export async function writeFile(
   }
 }
 
+// Remove a stale static public/sitemap.xml if one exists on the branch. New
+// packages no longer ship it — the template's dynamic src/app/sitemap.ts owns
+// the sitemap and auto-includes every post — but already-packaged repos still
+// carry a frozen copy that shadows the route. Idempotent: returns false when
+// nothing was there. Never throws; callers treat failure as non-fatal.
+export async function removeStaleStaticSitemap(
+  slug: string,
+  branch: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<boolean> {
+  let existing: FileBlob
+  try {
+    existing = await readFile(slug, 'public/sitemap.xml', branch)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return false
+    throw err
+  }
+  await deleteFile(
+    slug,
+    'public/sitemap.xml',
+    branch,
+    existing.sha,
+    'Remove static sitemap.xml — dynamic app/sitemap.ts now owns it',
+    options
+  )
+  return true
+}
+
+// Patch only the `siteUrl: '...'` line in the repo-root site.config.ts so the
+// dynamic sitemap (and any other siteConfig consumer) emits the canonical
+// host. Targeted regex replace preserves every other field (legalLinks, forms,
+// booking). No-op when the file is missing, the field is absent, or the value
+// already matches. Returns true only when a commit was made.
+// A legitimate site URL never contains quotes or backslashes; refusing them
+// prevents an admin-supplied website_url from breaking out of the string
+// literal we write into the executable site.config.ts (code injection).
+const SAFE_SITE_URL_RE = /^https?:\/\/[A-Za-z0-9.\-:/_?#=&%]+$/
+
+export async function patchSiteConfigSiteUrl(
+  slug: string,
+  branch: string,
+  siteUrl: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<boolean> {
+  if (!SAFE_SITE_URL_RE.test(siteUrl)) {
+    console.warn(`[repo-files] Refusing unsafe siteUrl, not patching site.config.ts: ${siteUrl}`)
+    return false
+  }
+  let blob: FileBlob
+  try {
+    blob = await readFile(slug, 'site.config.ts', branch)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return false
+    throw err
+  }
+  const next = blob.content.replace(
+    /(\bsiteUrl\s*:\s*)(['"])[^'"]*\2/,
+    (_m, prefix: string, quote: string) => `${prefix}${quote}${siteUrl}${quote}`
+  )
+  if (next === blob.content) return false
+  await writeFile(slug, 'site.config.ts', next, branch, `Set siteUrl to ${siteUrl}`, {
+    expectedSha: blob.sha,
+    ...options,
+  })
+  return true
+}
+
 // Returns { merged: true } on fast-forward / clean merge,
 // or { merged: false, prUrl } if a PR had to be opened due to conflict.
 export type MergeResult =

@@ -11,13 +11,18 @@ import { buildDocx } from '@/lib/content/docx-builder'
 import { buildLlmsTxt, buildLlmsFullTxt } from '@/lib/content/llms-builder'
 import { buildRobotsTxt } from '@/lib/content/robots-builder'
 import { generateBrandDoc } from '@/lib/content/brand-doc-builder'
-import { buildSitemapXml } from '@/lib/content/sitemap-xml-builder'
 import { validateInternalLinks } from '@/lib/content/link-validator'
 import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
-import { DRAFT_BRANCH, ensureDraftBranch, pushEntriesToBranch } from '@/lib/github/repo-files'
+import {
+  DRAFT_BRANCH,
+  ensureDraftBranch,
+  pushEntriesToBranch,
+  patchSiteConfigSiteUrl,
+  removeStaleStaticSitemap,
+} from '@/lib/github/repo-files'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
@@ -386,7 +391,6 @@ export async function assembleContentPackage(
   const llmsTxt = buildLlmsTxt(firmName, brandDoc.summary, sitemap, pages)
   const llmsFullTxt = buildLlmsFullTxt(firmName, brandDoc.fullDoc, sitemap, pages)
   const robotsTxt = buildRobotsTxt(session.website_url)
-  const sitemapXml = buildSitemapXml(session.website_url, sitemap)
   const redirectsResult = buildRedirectsCsv(
     schema.current_sitemap,
     sitemap as Parameters<typeof buildRedirectsCsv>[1]
@@ -414,9 +418,10 @@ export async function assembleContentPackage(
     { path: 'content/nav.json', content: JSON.stringify(navJson, null, 2) },
     { path: 'content/redirects.csv', content: redirectsCsv },
 
-    // public/ — served at canonical URLs by Next.js
+    // public/ — served at canonical URLs by Next.js. No static sitemap.xml:
+    // the template's dynamic src/app/sitemap.ts owns it and auto-includes
+    // every post, so a frozen static copy would only shadow + staleness it.
     { path: 'public/robots.txt', content: robotsTxt },
-    { path: 'public/sitemap.xml', content: sitemapXml },
     { path: 'public/llms.txt', content: llmsTxt },
     { path: 'public/llms-full.txt', content: llmsFullTxt },
     { path: 'public/og-images/README.md', content: OG_IMAGES_README },
@@ -490,6 +495,21 @@ export async function assembleContentPackage(
       console.warn(
         `[content-job] Pushed ${pushedToRepo.fileCount} file(s) to ${job.github_repo}@${DRAFT_BRANCH} (${pushedToRepo.commitSha.slice(0, 7)})`
       )
+      // Point the dynamic sitemap (and other siteConfig consumers) at the
+      // canonical host the content already uses, and drop any stale static
+      // sitemap a prior package left behind. Both non-fatal.
+      const siteUrl = session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://')
+      const author = { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' }
+      try {
+        await patchSiteConfigSiteUrl(job.github_repo, DRAFT_BRANCH, siteUrl, author)
+      } catch (err) {
+        console.warn(`[content-job] site.config siteUrl patch failed for ${job.github_repo}:`, err)
+      }
+      try {
+        await removeStaleStaticSitemap(job.github_repo, DRAFT_BRANCH, author)
+      } catch (err) {
+        console.warn(`[content-job] Stale sitemap cleanup failed for ${job.github_repo}:`, err)
+      }
     } catch (err) {
       pushError = err instanceof Error ? err.message : 'Push to repo failed'
       console.error(`[content-job] Push to ${job.github_repo} failed:`, pushError)

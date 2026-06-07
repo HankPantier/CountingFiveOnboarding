@@ -12,6 +12,7 @@ import {
   ensureDraftBranch,
   pushEntriesToBranch,
   readFile,
+  removeStaleStaticSitemap,
   FileNotFoundError,
 } from '@/lib/github/repo-files'
 import { buildInternalLinkTargets, type InternalLinkTarget } from './internal-link-targets'
@@ -309,6 +310,69 @@ async function updatedLlmsTxt(
   return { path: 'public/llms.txt', content: next }
 }
 
+// Append this post's full content to public/llms-full.txt, mirroring the
+// per-section format buildLlmsFullTxt() uses (### title, URL, body, rule).
+// Like updatedLlmsTxt: missing file → skip, already-present slug → skip.
+async function updatedLlmsFullTxt(
+  githubRepo: string,
+  slug: string,
+  title: string,
+  body: string
+): Promise<{ path: string; content: string } | null> {
+  let existing: string
+  try {
+    const blob = await readFile(githubRepo, 'public/llms-full.txt', DRAFT_BRANCH)
+    existing = blob.content
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return null
+    console.warn('[resource-draft] llms-full.txt read failed:', err)
+    return null
+  }
+
+  if (existing.includes(`URL: /resources/${slug}\n`)) return null
+
+  const entry = `\n### ${title}\nURL: /resources/${slug}\n\n${body.trim()}\n\n---\n`
+  let next: string
+  if (/^## Resources$/m.test(existing)) {
+    next = existing.replace(/^## Resources$/m, `## Resources\n${entry}`)
+  } else {
+    next = `${existing.trimEnd()}\n\n## Resources\n${entry}`
+  }
+  return { path: 'public/llms-full.txt', content: next }
+}
+
+function normalizeLinkPath(url: string): string {
+  const noTrailing = url.replace(/\/+$/, '')
+  return noTrailing === '' ? '/' : noTrailing
+}
+
+// Warn-only: surface site-relative links in a freshly drafted post body that
+// don't resolve to a known page or post. link-validator.validateInternalLinks
+// deliberately skips /resources/* (posts live outside the confirmed sitemap),
+// so posts get no link check there — this fills that gap without blocking.
+const POST_BODY_LINK_RE = /\[[^\]]*\]\((\/[^)\s#?]*)/g
+const POST_LINK_ASSET_RE = /\.(png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|zip|xml|txt|ico)$/i
+
+function warnUnknownInternalLinks(
+  body: string,
+  slug: string,
+  targets: InternalLinkTarget[],
+  postSlugs: string[]
+): void {
+  const known = new Set<string>(['/'])
+  for (const t of targets) known.add(normalizeLinkPath(t.url))
+  for (const s of postSlugs) known.add(`/resources/${s}`)
+  known.add(`/resources/${slug}`)
+
+  const seen = new Set<string>()
+  for (const match of body.matchAll(POST_BODY_LINK_RE)) {
+    const target = normalizeLinkPath(match[1])
+    if (POST_LINK_ASSET_RE.test(target) || known.has(target) || seen.has(target)) continue
+    seen.add(target)
+    console.warn(`[resource-draft] /resources/${slug} links to ${target} which is not a known page or post`)
+  }
+}
+
 export async function generateResourceDraft(
   ideaId: string
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; slug?: string; error?: string }> {
@@ -354,6 +418,13 @@ export async function generateResourceDraft(
 
   try {
     await ensureDraftBranch(job.github_repo)
+    // Self-heal: drop a stale static sitemap a prior package left behind so the
+    // template's dynamic route (which includes this new post) takes over.
+    try {
+      await removeStaleStaticSitemap(job.github_repo, DRAFT_BRANCH)
+    } catch (err) {
+      console.warn(`[resource-draft] Stale sitemap cleanup failed for ${job.github_repo}:`, err)
+    }
     const { targets, postSlugs } = await buildInternalLinkTargets(job.github_repo)
 
     // Slug: derive from the idea title, dodge collisions with existing posts.
@@ -397,6 +468,7 @@ export async function generateResourceDraft(
     }
 
     result.body = stripUnapprovedExternalLinks(result.body, externalLinks)
+    warnUnknownInternalLinks(result.body, slug, targets, postSlugs)
 
     // Hero image via Pexels — non-fatal. Resolution persists an assets row +
     // storage object; we then download the bytes to push into the repo commit.
@@ -466,6 +538,9 @@ export async function generateResourceDraft(
 
     const llms = await updatedLlmsTxt(job.github_repo, slug, fm.title, fm.meta_description || fm.excerpt)
     if (llms) entries.push(llms)
+
+    const llmsFull = await updatedLlmsFullTxt(job.github_repo, slug, fm.title, result.body)
+    if (llmsFull) entries.push(llmsFull)
 
     const nav = await updatedNavJson(job.github_repo)
     if (nav) entries.push(nav)
