@@ -13,6 +13,8 @@ type ScoreBreakdown = {
 
 type ExternalLink = { url: string; title?: string }
 
+type ReverseLink = { slug: string; path: string; anchorText: string; insertedInto: string }
+
 export type ResourceIdea = {
   id: string
   title: string
@@ -29,6 +31,13 @@ export type ResourceIdea = {
   draft_path: string | null
   draft_error: string | null
   social_path: string | null
+  reverse_links: ReverseLink[]
+}
+
+// Render a markdown link as plain text ([anchor](url) → anchor) so the
+// reverse-link tooltip reads as prose instead of raw markdown.
+function stripMarkdownLinks(text: string): string {
+  return text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
 }
 
 // Interested/drafted float to the top, then by score.
@@ -38,6 +47,10 @@ function sortIdeas(ideas: ResourceIdea[]): ResourceIdea[] {
 }
 
 const POLL_MS = 5000
+// The reverse-link commit + DB write lands shortly AFTER draft_status flips to
+// 'complete', so we keep polling a short grace window past completion to pick
+// up the reverse_links audit without a manual reload.
+const REVERSE_LINK_GRACE_CYCLES = 8 // ~40s at POLL_MS
 
 const SCORE_LABELS: Array<{ key: keyof ScoreBreakdown; label: string }> = [
   { key: 'stickiness', label: 'Sticky' },
@@ -71,6 +84,13 @@ export default function ResourcesPanel({
   const [amending, setAmending] = useState(false)
   // Idea count at brainstorm start, so polling knows when new rows arrive.
   const brainstormBaseline = useRef<number | null>(null)
+  // Per-idea draft_status from the last refresh, used to detect the
+  // running→complete transition that starts a reverse-link grace window.
+  const prevDraftStatus = useRef<Map<string, string>>(new Map())
+  // Ideas awaiting their reverse_links write → poll cycles remaining.
+  const reverseLinkWatch = useRef<Map<string, number>>(new Map())
+  // Mirrors reverseLinkWatch.size into render state so the poll effect re-runs.
+  const [settling, setSettling] = useState(false)
 
   const refresh = useCallback(async (): Promise<ResourceIdea[]> => {
     const res = await fetch(`/api/edit/${sessionId}/resources/ideas`)
@@ -80,6 +100,25 @@ export default function ResourcesPanel({
     }
     const data = (await res.json()) as { ideas: ResourceIdea[] }
     setIdeas(data.ideas)
+
+    const watch = reverseLinkWatch.current
+    for (const idea of data.ideas) {
+      if (prevDraftStatus.current.get(idea.id) === 'running' && idea.draft_status === 'complete') {
+        watch.set(idea.id, REVERSE_LINK_GRACE_CYCLES)
+      }
+      prevDraftStatus.current.set(idea.id, idea.draft_status)
+      if (watch.has(idea.id)) {
+        if (idea.reverse_links.length > 0) {
+          watch.delete(idea.id)
+        } else {
+          const left = (watch.get(idea.id) ?? 0) - 1
+          if (left <= 0) watch.delete(idea.id)
+          else watch.set(idea.id, left)
+        }
+      }
+    }
+    setSettling(watch.size > 0)
+
     return data.ideas
   }, [sessionId])
 
@@ -95,7 +134,7 @@ export default function ResourcesPanel({
   const anyDrafting = ideas.some((i) => i.draft_status === 'running')
   const anySocial = socialBusy.size > 0
   useEffect(() => {
-    if (!brainstorming && !anyDrafting && !anySocial) return
+    if (!brainstorming && !anyDrafting && !anySocial && !settling) return
     const timer = setInterval(() => {
       void refresh()
         .then((next) => {
@@ -121,7 +160,7 @@ export default function ResourcesPanel({
         .catch(() => {})
     }, POLL_MS)
     return () => clearInterval(timer)
-  }, [brainstorming, anyDrafting, anySocial, refresh])
+  }, [brainstorming, anyDrafting, anySocial, settling, refresh])
 
   const brainstorm = async (seedIdea?: string, overrideBrandFit = false) => {
     setError(null)
@@ -410,6 +449,25 @@ export default function ResourcesPanel({
                       >
                         {l.title || new URL(l.url).hostname}
                       </a>
+                    </span>
+                  ))}
+                </p>
+              )}
+
+              {idea.reverse_links.length > 0 && (
+                <p className="mt-2 text-[11px] font-body text-text-muted">
+                  Linked back from {idea.reverse_links.length} existing{' '}
+                  {idea.reverse_links.length === 1 ? 'post' : 'posts'}:{' '}
+                  {idea.reverse_links.map((l, i) => (
+                    <span key={l.path}>
+                      {i > 0 && ' · '}
+                      <button
+                        onClick={() => onOpenPost(l.path)}
+                        title={stripMarkdownLinks(l.insertedInto)}
+                        className="text-brand-navy underline hover:text-brand-cyan"
+                      >
+                        {l.anchorText || l.slug}
+                      </button>
                     </span>
                   ))}
                 </p>

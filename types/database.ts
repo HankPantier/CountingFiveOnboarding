@@ -500,6 +500,7 @@ export type Database = {
           external_links: Json
           id: string
           rationale: string | null
+          reverse_links: Json
           score: number | null
           score_breakdown: Json
           secondary_keywords: Json
@@ -524,6 +525,7 @@ export type Database = {
           external_links?: Json
           id?: string
           rationale?: string | null
+          reverse_links?: Json
           score?: number | null
           score_breakdown?: Json
           secondary_keywords?: Json
@@ -548,6 +550,7 @@ export type Database = {
           external_links?: Json
           id?: string
           rationale?: string | null
+          reverse_links?: Json
           score?: number | null
           score_breakdown?: Json
           secondary_keywords?: Json

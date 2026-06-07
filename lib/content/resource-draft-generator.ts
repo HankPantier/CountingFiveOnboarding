@@ -10,11 +10,13 @@ import { resolveStockPhotos, type ImageRef } from './stock-photo-resolver'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
-  listTree,
   pushEntriesToBranch,
   readFile,
   FileNotFoundError,
 } from '@/lib/github/repo-files'
+import { buildInternalLinkTargets, type InternalLinkTarget } from './internal-link-targets'
+import { insertReverseLinks } from './reverse-linker'
+import { asJson } from '@/lib/supabase/json-typed'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
@@ -52,42 +54,6 @@ function kebabSlug(title: string): string {
     .replace(/-+$/g, '')
 }
 
-function titleFromSlug(slug: string): string {
-  return slug
-    .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
-}
-
-// Build the internal-link target list from the repo tree: site pages
-// (content/pages/) plus existing posts (content/posts/). Filename-derived
-// titles are good enough for prompting — the LLM writes its own anchor text.
-async function buildInternalLinkTargets(githubRepo: string): Promise<{
-  targets: Array<{ url: string; title: string }>
-  postSlugs: string[]
-}> {
-  const targets: Array<{ url: string; title: string }> = []
-  const postSlugs: string[] = []
-  try {
-    const entries = await listTree(githubRepo, DRAFT_BRANCH, 'content/')
-    for (const e of entries) {
-      if (e.type !== 'blob' || !e.path.endsWith('.md')) continue
-      if (e.path.startsWith('content/pages/')) {
-        const slug = e.path.slice('content/pages/'.length, -3)
-        const url = slug === 'home' ? '/' : `/${slug.replace(/--/g, '/')}`
-        targets.push({ url, title: titleFromSlug(slug.split('--').pop() ?? slug) })
-      } else if (e.path.startsWith('content/posts/')) {
-        const slug = e.path.slice('content/posts/'.length, -3)
-        postSlugs.push(slug)
-        targets.push({ url: `/resources/${slug}`, title: titleFromSlug(slug) })
-      }
-    }
-  } catch (err) {
-    console.warn('[resource-draft] Failed to list repo tree for internal links:', err)
-  }
-  return { targets, postSlugs }
-}
-
 // Admin writer-notes block. The OFF_BRAND_MARKER first line means the admin
 // confirmed a divergence from the documented brand voice for this post.
 function buildNotesBlock(notes: string): string {
@@ -105,7 +71,7 @@ async function generateDraftContent(args: {
   notes: string | null
   secondaryKeywords: string[]
   externalLinks: ExternalLink[]
-  internalTargets: Array<{ url: string; title: string }>
+  internalTargets: InternalLinkTarget[]
   schema: SessionSchema
   contentJobId: string
   sessionId: string
@@ -140,8 +106,14 @@ Secondary: ${args.secondaryKeywords.join(', ')}
 
 ${externalBlock}
 
-INTERNAL LINK TARGETS — link to these site pages and existing posts where genuinely relevant (site-relative markdown links, natural anchor text, 2-4 links total, never force one):
-${args.internalTargets.map((t) => `- [${t.title}](${t.url})`).join('\n') || '- (none yet)'}
+INTERNAL LINK TARGETS — link to these site pages and existing posts where genuinely relevant (site-relative markdown links, natural anchor text drawn from the topic, 2-4 links total, never force one). Pick targets whose subject actually overlaps what you're writing:
+${args.internalTargets
+  .map((t) => {
+    const kw = t.keyword ? ` — keyword: ${t.keyword}` : ''
+    const about = t.about ? ` — about: ${t.about}` : ''
+    return `- ${t.url} — "${t.title}"${kw}${about}`
+  })
+  .join('\n') || '- (none yet)'}
 
 FORMAT RULES:
 - 1,200–1,800 words of plain markdown prose. Start with a paragraph, not a heading. Use ## for section headings (the page title renders separately — no H1).
@@ -542,11 +514,59 @@ export async function generateResourceDraft(
         draft_commit_sha: commitSha,
         draft_error: null,
         social_path: socialPath,
+        // Clear any prior run's audit so a re-draft starts from a clean slate;
+        // the reverse-link pass below repopulates it for the current slug.
+        reverse_links: asJson([]),
         updated_at: new Date().toISOString(),
       })
       .eq('id', ideaId)
 
     console.warn(`[resource-draft] Complete: "${fm.title}" → content/posts/${slug}.md (${commitSha.slice(0, 7)})`)
+
+    // Reverse-link pass: link the most relevant existing posts back to the
+    // new one, as a second commit on the same draft branch (one reviewable
+    // diff). Runs AFTER the row is marked complete, by design: the draft is
+    // already published, so this is failure-isolated — a thrown error (incl. a
+    // GitHub fast-forward conflict if a re-trigger raced us) is swallowed below
+    // and never regresses the published draft. Trade-off: it runs outside the
+    // draft_status lock, so a concurrent re-draft could double-run; worst case
+    // is a duplicate/missing back-link, not corruption.
+    // Lifecycle note: links point at a post we just created, so they're valid
+    // at insertion. If that post is later deleted manually in GitHub the
+    // inbound links become orphaned — there is no app-level post-delete flow to
+    // hook cleanup onto, so this is an accepted, documented limitation.
+    try {
+      const { results, entries: reverseEntries } = await insertReverseLinks({
+        githubRepo: job.github_repo,
+        newPost: {
+          slug,
+          title: fm.title,
+          keyword: fm.target_keyword || null,
+          tags: fm.tags,
+          excerpt: fm.excerpt,
+          answerBlock: fm.answer_block,
+        },
+        contentJobId: idea.content_job_id,
+        sessionId: idea.session_id,
+      })
+      if (reverseEntries.length > 0) {
+        await pushEntriesToBranch(
+          job.github_repo,
+          DRAFT_BRANCH,
+          reverseEntries,
+          `Add reverse links to: ${fm.title}`,
+          {}
+        )
+        await supabase
+          .from('resource_ideas')
+          .update({ reverse_links: asJson(results), updated_at: new Date().toISOString() })
+          .eq('id', ideaId)
+        console.warn(`[reverse-link] Linked ${results.length} existing post(s) to ${slug}`)
+      }
+    } catch (err) {
+      console.warn(`[reverse-link] Pass failed for ${slug} (draft already published):`, err)
+    }
+
     return { status: 'complete', slug }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

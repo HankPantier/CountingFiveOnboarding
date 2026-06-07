@@ -16,7 +16,7 @@ export async function GET(
   const { data: ideas, error } = await supabase
     .from('resource_ideas')
     .select(
-      'id, title, angle, target_keyword, secondary_keywords, rationale, score, score_breakdown, external_links, status, draft_status, slug, draft_path, draft_error, social_path, created_at'
+      'id, title, angle, target_keyword, secondary_keywords, rationale, score, score_breakdown, external_links, status, draft_status, slug, draft_path, draft_error, social_path, reverse_links, created_at'
     )
     .eq('content_job_id', ctx.jobId)
     .order('score', { ascending: false, nullsFirst: false })
