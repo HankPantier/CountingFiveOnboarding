@@ -34,6 +34,20 @@ export function deepSetPath(
   return setIn(obj, path.split('.'), value) as Record<string, unknown>
 }
 
+// Read a dotted path, traversing both object keys and numeric array indices
+// (e.g. "business.tagline", "team.3.title"). Returns undefined if any segment
+// is missing.
+export function getByPath(obj: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, key) => {
+    if (acc == null || typeof acc !== 'object') return undefined
+    if (Array.isArray(acc)) {
+      const idx = Number(key)
+      return Number.isInteger(idx) ? acc[idx] : undefined
+    }
+    return (acc as Record<string, unknown>)[key]
+  }, obj)
+}
+
 // Recursively merge source into target. Plain objects merge deeply; arrays
 // and primitives replace.
 export function deepMerge(

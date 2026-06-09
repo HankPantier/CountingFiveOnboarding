@@ -97,14 +97,17 @@ export async function DELETE(
     return NextResponse.json({ error: 'Cannot delete the last admin' }, { status: 400 })
   }
 
-  // CASCADE on manager_clients clears assignments when the admins row goes.
-  const { error: delErr } = await supabase.from('admins').delete().eq('id', id)
-  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
-
+  // Delete the auth user first — if this fails we keep the admins row intact
+  // rather than orphaning a login that could be re-invited. (CASCADE on
+  // manager_clients clears assignments when the admins row goes.)
   const { error: authErr } = await supabase.auth.admin.deleteUser(id)
   if (authErr) {
     console.error('[DELETE /api/admin/users] auth user delete failed', authErr)
+    return NextResponse.json({ error: 'Failed to remove the user account' }, { status: 500 })
   }
+
+  const { error: delErr } = await supabase.from('admins').delete().eq('id', id)
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
 
   return NextResponse.json({ success: true })
 }

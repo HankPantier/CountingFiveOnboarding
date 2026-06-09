@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { serializeSchemaFull } from '@/lib/agent/system-prompt'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { getByPath } from '@/lib/mbp/schema-write'
 import type { MbpChangeOp, MbpSuggestionChanges, MbpSuggestionOrigin } from '@/types/mbp'
 
 export interface ImpactReviewInput {
@@ -44,15 +45,6 @@ function parseReview(parsed: unknown): ReviewResult | null {
     changes,
     summary: typeof p.summary === 'string' ? p.summary : 'Suggested MBP update',
   }
-}
-
-function getByPath(obj: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === 'object' && !Array.isArray(acc)) {
-      return (acc as Record<string, unknown>)[key]
-    }
-    return undefined
-  }, obj)
 }
 
 // Background review (run via Next.js `after()` from content-mutation routes).

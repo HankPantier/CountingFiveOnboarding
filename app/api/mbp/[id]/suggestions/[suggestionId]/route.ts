@@ -2,18 +2,14 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
+import { getByPath } from '@/lib/mbp/schema-write'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
 
 export const runtime = 'nodejs'
 
-function getByPath(schema: SessionSchema, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === 'object' && !Array.isArray(acc)) {
-      return (acc as Record<string, unknown>)[key]
-    }
-    return undefined
-  }, schema as Record<string, unknown>)
+function valueKind(v: unknown): string {
+  return v !== null && typeof v === 'object' ? 'object' : typeof v
 }
 
 // Approve (apply the proposed field changes) or dismiss a pending MBP
@@ -63,11 +59,28 @@ export async function PATCH(
     for (const [fieldPath, change] of Object.entries(changes)) {
       if (change.op === 'append') {
         let item: unknown = change.proposedValue
-        if (typeof change.proposedValue === 'string') {
-          try { item = JSON.parse(change.proposedValue) } catch { item = change.proposedValue }
+        let parsedJson = false
+        if (typeof change.proposedValue === 'string' && /^\s*[[{]/.test(change.proposedValue)) {
+          try { item = JSON.parse(change.proposedValue); parsedJson = true } catch { /* keep as string */ }
         }
-        const existing = getByPath(currentSchema, fieldPath)
+        const existing = getByPath(currentSchema as Record<string, unknown>, fieldPath)
         const base = Array.isArray(existing) ? existing : []
+        // Never corrupt a typed array: the appended item must match the kind of
+        // the existing entries (object arrays get objects, string arrays get
+        // strings). If the proposed value looked structured but didn't parse,
+        // reject rather than push raw text.
+        if (base.length > 0 && valueKind(item) !== valueKind(base[0])) {
+          return NextResponse.json(
+            { error: `Cannot apply: proposed ${fieldPath} item doesn't match the existing entries' shape` },
+            { status: 422 }
+          )
+        }
+        if (typeof change.proposedValue === 'string' && /^\s*\{/.test(change.proposedValue) && !parsedJson) {
+          return NextResponse.json(
+            { error: `Cannot apply: malformed value for ${fieldPath}` },
+            { status: 422 }
+          )
+        }
         updates[fieldPath] = [...base, item]
       } else {
         updates[fieldPath] = change.proposedValue

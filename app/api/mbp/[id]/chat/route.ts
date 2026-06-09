@@ -53,17 +53,9 @@ export async function POST(
     )
   }
 
-  // Atomic lock shared with the onboarding chat: only one Claude call per session.
-  const { data: lockResult } = await supabase
-    .from('sessions')
-    .update({ processing: true })
-    .eq('id', id)
-    .eq('processing', false)
-    .select('id')
-  if (!lockResult?.length) {
-    return NextResponse.json({ error: 'Already processing' }, { status: 429 })
-  }
-
+  // NOTE: this admin tool does NOT take the client `processing` lock — that
+  // belongs to the onboarding chat, and sharing it let a client conversation
+  // (or a stuck flag) block admin edits. useChat serializes per user.
   const lastMsg = messages[messages.length - 1]
   if (lastMsg?.role === 'user') {
     const textPart = lastMsg.parts.find((p): p is TextUIPart => p.type === 'text')
@@ -73,8 +65,7 @@ export async function POST(
     }
   }
 
-  try {
-    const result = streamText({
+  const result = streamText({
       model: anthropic('claude-sonnet-4-6'),
       system: buildMbpEditPrompt(session),
       messages: await convertToModelMessages(trimMessages(messages)),
@@ -102,20 +93,13 @@ export async function POST(
           }
           await supabase
             .from('sessions')
-            .update({ processing: false, last_activity_at: new Date().toISOString() })
+            .update({ last_activity_at: new Date().toISOString() })
             .eq('id', id)
         } catch (err) {
           console.error('[mbp-chat] onFinish failed:', err)
-          try {
-            await supabase.from('sessions').update({ processing: false }).eq('id', id)
-          } catch { /* best effort */ }
         }
       },
-    })
+  })
 
-    return result.toUIMessageStreamResponse()
-  } catch (err) {
-    await supabase.from('sessions').update({ processing: false }).eq('id', id)
-    throw err
-  }
+  return result.toUIMessageStreamResponse()
 }

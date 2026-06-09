@@ -54,15 +54,33 @@ export async function POST(req: Request) {
     )
   }
 
-  // Atomic lock: only set processing=true if it's currently false
+  // Atomic lock: only set processing=true if it's currently false. We stamp
+  // last_activity_at on acquire so a lock can be aged out — a run that died
+  // mid-stream never reaches onFinish to clear the flag.
+  const nowIso = new Date().toISOString()
   const { data: lockResult } = await supabase
     .from('sessions')
-    .update({ processing: true })
+    .update({ processing: true, last_activity_at: nowIso })
     .eq('id', sessionId)
     .eq('processing', false)
     .select('id')
 
-  if (!lockResult?.length) {
+  let acquired = !!lockResult?.length
+  if (!acquired) {
+    // Self-heal a stuck lock: reclaim only if it's been "processing" with no
+    // activity for >3 min (a real in-flight run updates within maxDuration).
+    // The .lt guard makes this atomic — concurrent reclaims can't both win.
+    const staleBefore = new Date(Date.now() - 3 * 60 * 1000).toISOString()
+    const { data: reclaimed } = await supabase
+      .from('sessions')
+      .update({ processing: true, last_activity_at: nowIso })
+      .eq('id', sessionId)
+      .eq('processing', true)
+      .lt('last_activity_at', staleBefore)
+      .select('id')
+    acquired = !!reclaimed?.length
+  }
+  if (!acquired) {
     return NextResponse.json({ error: 'Already processing' }, { status: 429 })
   }
 

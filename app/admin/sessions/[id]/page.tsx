@@ -136,7 +136,7 @@ export default async function SessionDetailPage({
             </Link>
           </div>
         )}
-        {session.status === 'completed' && (
+        {session.status === 'completed' && isAdmin && (
           <ApproveButton sessionId={id} />
         )}
         {['pending', 'in_progress'].includes(session.status) && (

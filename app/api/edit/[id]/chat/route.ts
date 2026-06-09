@@ -65,17 +65,9 @@ export async function POST(
   const schema = (session?.schema_data ?? {}) as SessionSchema
   const firmName = schema.business?.name ?? 'the firm'
 
-  // Atomic lock shared with the onboarding + MBP chats.
-  const { data: lockResult } = await supabase
-    .from('sessions')
-    .update({ processing: true })
-    .eq('id', ctx.sessionId)
-    .eq('processing', false)
-    .select('id')
-  if (!lockResult?.length) {
-    return NextResponse.json({ error: 'Already processing' }, { status: 429 })
-  }
-
+  // This admin tool does NOT take the client `processing` lock (that belongs to
+  // the onboarding chat); sharing it let a client conversation block admin
+  // edits. useChat serializes per user.
   const system = `You are a website content editor for ${firmName}, a CPA firm. You edit a single markdown file on the site.
 
 ${buildBrandVoiceBlock(schema)}
@@ -93,8 +85,7 @@ The admin will describe a change. Make ONLY what they ask for and return the COM
 - Write clean, on-brand copy grounded in the firm profile above. NEVER invent facts (credentials, numbers, named people, dates) not supported by the profile or the existing file.
 After writing, briefly tell the admin what you changed.`
 
-  try {
-    const result = streamText({
+  const result = streamText({
       model: anthropic('claude-sonnet-4-6'),
       system,
       messages: await convertToModelMessages(trimMessages(messages)),
@@ -121,13 +112,12 @@ After writing, briefly tell the admin what you changed.`
       },
       stopWhen: stepCountIs(5),
       onFinish: async () => {
-        await supabase.from('sessions').update({ processing: false }).eq('id', ctx.sessionId)
+        await supabase
+          .from('sessions')
+          .update({ last_activity_at: new Date().toISOString() })
+          .eq('id', ctx.sessionId)
       },
     })
 
-    return result.toUIMessageStreamResponse()
-  } catch (err) {
-    await supabase.from('sessions').update({ processing: false }).eq('id', ctx.sessionId)
-    throw err
-  }
+  return result.toUIMessageStreamResponse()
 }
