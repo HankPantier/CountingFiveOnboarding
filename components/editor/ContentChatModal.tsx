@@ -7,11 +7,13 @@ export default function ContentChatModal({
   path,
   isDirty,
   onEdited,
+  onSave,
 }: {
   sessionId: string
   path: string
   isDirty: boolean
   onEdited: () => void
+  onSave: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -52,7 +54,7 @@ export default function ContentChatModal({
               </button>
             </div>
             <div className="flex-1 min-h-0 p-3">
-              <ContentChat key={path} sessionId={sessionId} path={path} isDirty={isDirty} onEdited={onEdited} />
+              <ContentChat key={path} sessionId={sessionId} path={path} isDirty={isDirty} onEdited={onEdited} onSave={onSave} />
             </div>
           </div>
         </div>

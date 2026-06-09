@@ -73,6 +73,7 @@ export default function SessionRowActions({
         href={`/admin/sessions/${sessionId}/mbp`}
         className="text-text-secondary hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
         title="View / edit the Master Business Profile"
+        aria-label="View Master Business Profile"
       >
         MBP
       </Link>

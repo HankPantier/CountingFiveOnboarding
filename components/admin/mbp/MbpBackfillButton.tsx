@@ -8,6 +8,7 @@ export default function MbpBackfillButton({ sessionId }: { sessionId: string }) 
   const router = useRouter()
 
   async function run() {
+    if (!confirm('Derive values for the empty MBP fields from the existing profile + produced content? This runs an AI pass and queues suggestions for your review.')) return
     setBusy(true)
     setNote('')
     try {

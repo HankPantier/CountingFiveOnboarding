@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation'
 import type { Role } from '@/lib/auth/access'
 import type { SessionOption } from '@/app/admin/settings/users/page'
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 export default function AddUserDialog({ sessions }: { sessions: SessionOption[] }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -34,6 +36,8 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    if (!name.trim()) { setError('Name is required'); return }
+    if (!EMAIL_RE.test(email.trim())) { setError('Please enter a valid email address'); return }
     setSaving(true)
     try {
       const res = await fetch('/api/admin/users', {

@@ -8,11 +8,13 @@ export default function ContentChat({
   path,
   isDirty,
   onEdited,
+  onSave,
 }: {
   sessionId: string
   path: string
   isDirty: boolean
   onEdited: () => void
+  onSave: () => void
 }) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -85,9 +87,15 @@ export default function ContentChat({
       {error && <p className="px-4 py-2 text-sm text-error bg-error/10 font-body">{error.message}</p>}
 
       {isDirty && (
-        <p className="px-4 py-2 text-xs text-warning bg-warning/10 font-body border-t border-warning/30">
-          Save or discard your unsaved edits before using the assistant — it edits the saved draft.
-        </p>
+        <div className="px-4 py-2 text-xs text-warning bg-warning/10 font-body border-t border-warning/30 flex items-center justify-between gap-2">
+          <span>You have unsaved edits — the assistant works on the saved draft.</span>
+          <button
+            onClick={onSave}
+            className="font-heading font-semibold text-warning hover:text-warning/80 whitespace-nowrap"
+          >
+            Save now
+          </button>
+        </div>
       )}
 
       <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3 border-t border-border-default">

@@ -64,7 +64,7 @@ export default function MbpCompleteness({
         ) : (
           byTier.map(({ tier, items }) => (
             <div key={tier}>
-              <p className="text-xs font-heading font-semibold text-text-secondary mb-1">{TIER_LABELS[tier]}</p>
+              <p className={`text-xs font-heading font-semibold mb-1 ${tier === 1 ? 'text-brand-navy' : 'text-text-secondary'}`}>{TIER_LABELS[tier]}</p>
               <ul className="space-y-0.5">
                 {items.map(g => (
                   <li key={g.field} className="flex gap-1.5 text-sm font-body text-text-primary">

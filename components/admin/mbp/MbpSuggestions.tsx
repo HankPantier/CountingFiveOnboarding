@@ -13,6 +13,7 @@ function SuggestionCard({
   isAdmin: boolean
 }) {
   const [busy, setBusy] = useState<'approve' | 'dismiss' | null>(null)
+  const [done, setDone] = useState<'approved' | 'dismissed' | null>(null)
   const [error, setError] = useState('')
   const router = useRouter()
 
@@ -31,11 +32,21 @@ function SuggestionCard({
         setBusy(null)
         return
       }
-      router.refresh()
+      setBusy(null)
+      setDone(action === 'approve' ? 'approved' : 'dismissed')
+      setTimeout(() => router.refresh(), 700)
     } catch {
       setError('Failed. Please try again.')
       setBusy(null)
     }
+  }
+
+  if (done) {
+    return (
+      <div className="border border-border-default rounded-lg p-3 text-sm font-body text-success">
+        {done === 'approved' ? '✓ Applied to the profile' : '✓ Dismissed'}
+      </div>
+    )
   }
 
   return (

@@ -18,6 +18,7 @@ export default function UserRow({
   const router = useRouter()
 
   async function resend() {
+    if (!confirm(`Send a new invite email to ${user.email}?`)) return
     setBusy('resend')
     setNote('')
     try {

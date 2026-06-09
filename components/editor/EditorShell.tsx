@@ -346,6 +346,7 @@ export default function EditorShell({
             sessionId={sessionId}
             path={selectedPath}
             isDirty={dirty.has(selectedPath)}
+            onSave={() => void save()}
             onEdited={() => {
               void reloadFile(selectedPath)
               void refreshStatus()

@@ -7,21 +7,29 @@ function isPrimitive(v: unknown): v is string | number | boolean {
   return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
 }
 
+// Array of plain values (e.g. toneAdjectives) — edited as a comma list, not JSON.
+function isPrimitiveArray(v: unknown): v is unknown[] {
+  return Array.isArray(v) && v.every(x => x === null || typeof x !== 'object')
+}
+
 function toEditString(v: unknown): string {
   if (v === null || v === undefined) return ''
+  if (isPrimitiveArray(v)) return v.join(', ')
   if (isPrimitive(v)) return String(v)
   return JSON.stringify(v, null, 2)
 }
 
-// Parse the edited string back to a value, matching the original type where
-// possible (mirrors SchemaViewer): numbers/booleans coerce, objects/arrays
-// parse as JSON, everything else stays a string.
+// Parse the edited string back to a value, matching the original type: numbers/
+// booleans coerce, primitive arrays split on commas, objects parse as JSON.
 function parseEditString(raw: string, original: unknown): unknown {
   if (typeof original === 'number') {
     const n = Number(raw)
     return isNaN(n) ? raw : n
   }
   if (typeof original === 'boolean') return raw.toLowerCase() === 'true'
+  if (isPrimitiveArray(original)) {
+    return raw.split(',').map(s => s.trim()).filter(Boolean)
+  }
   if (original !== null && typeof original === 'object') {
     try { return JSON.parse(raw) } catch { return raw }
   }
@@ -42,7 +50,9 @@ export default function MbpEditableField({
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const router = useRouter()
 
-  const structured = value !== null && typeof value === 'object'
+  // Only objects / arrays-of-objects use the JSON textarea; everything else
+  // (scalars + plain-value arrays) edits in a single-line input.
+  const jsonEdit = value !== null && typeof value === 'object' && !isPrimitiveArray(value)
   const display = formatFieldValue(value)
 
   function start() {
@@ -66,7 +76,7 @@ export default function MbpEditableField({
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey && !structured) {
+    if (e.key === 'Enter' && !e.shiftKey && !jsonEdit) {
       e.preventDefault()
       void commit()
     }
@@ -76,14 +86,14 @@ export default function MbpEditableField({
   if (editing) {
     return (
       <div className="flex flex-col gap-1">
-        {structured ? (
+        {jsonEdit ? (
           <textarea
             autoFocus
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
             rows={4}
-            className="w-full text-xs font-mono border border-brand-cyan rounded px-2 py-1 focus:outline-none bg-surface-card resize-y"
+            className="w-full text-xs font-mono border border-brand-cyan rounded px-2 py-1 bg-surface-card resize-y"
           />
         ) : (
           <input
@@ -91,8 +101,11 @@ export default function MbpEditableField({
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
-            className="w-full text-sm font-body border border-brand-cyan rounded px-2 py-1 focus:outline-none bg-surface-card"
+            className="w-full text-sm font-body border border-brand-cyan rounded px-2 py-1 bg-surface-card"
           />
+        )}
+        {isPrimitiveArray(value) && (
+          <span className="text-[11px] text-text-muted font-body">Comma-separated list</span>
         )}
         <div className="flex gap-2">
           <button
@@ -113,9 +126,11 @@ export default function MbpEditableField({
   }
 
   return (
-    <div
+    <button
+      type="button"
       onClick={start}
-      className="text-sm font-body cursor-pointer hover:bg-surface-subtle -mx-1 px-1 rounded break-words"
+      aria-label={`Edit ${fieldPath}`}
+      className="text-sm font-body cursor-pointer hover:bg-surface-subtle -mx-1 px-1 rounded break-words text-left w-full"
       title="Click to edit"
     >
       {state === 'saving'
@@ -125,6 +140,6 @@ export default function MbpEditableField({
           : display
             ? <span className="text-text-primary">{display}</span>
             : <span className="text-text-muted italic">— add</span>}
-    </div>
+    </button>
   )
 }
