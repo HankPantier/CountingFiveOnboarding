@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
+import { reviewContentEdit } from '@/lib/content/content-edit-review'
 import {
   DRAFT_BRANCH,
   StaleShaError,
@@ -56,6 +57,7 @@ export async function PATCH(
         authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
       }
     )
+    reviewContentEdit(ctx.sessionId, path, contents)
     return NextResponse.json(result)
   } catch (err) {
     if (err instanceof StaleShaError) {

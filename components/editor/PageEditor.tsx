@@ -57,7 +57,7 @@ export default function PageEditor({
     [parsed]
   )
   const imageBlocks = useMemo(() => extractImageBlocks(parsed.body), [parsed])
-  const [preview, setPreview] = useState(false)
+  const [mode, setMode] = useState<'view' | 'edit'>('view')
   const isPost = path.startsWith('content/posts/')
   // Social suggestion files are plain copy — body-only editing, no metadata form.
   const isSocial = path.startsWith('content/social/')
@@ -111,14 +111,40 @@ export default function PageEditor({
     onChange(serializeFile({ ...parsed, body }))
   }
 
+  const title = parsed.frontmatter?.fields['title'] ?? ''
+
   return (
     <div className="flex-1 overflow-y-auto bg-surface-default">
       <div className="max-w-4xl mx-auto p-6 space-y-6">
-        <div>
-          <div className="text-xs font-heading text-text-muted">Editing</div>
-          <div className="font-heading font-semibold text-brand-navy text-lg">{path}</div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-heading text-text-muted">{mode === 'view' ? 'Viewing' : 'Editing'}</div>
+            <div className="font-heading font-semibold text-brand-navy text-lg truncate">{path}</div>
+          </div>
+          <div className="flex items-center rounded-pill border border-border-default overflow-hidden flex-shrink-0">
+            {(['view', 'edit'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`text-xs font-heading font-semibold px-4 py-1.5 transition-colors capitalize ${
+                  mode === m ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {mode === 'view' ? (
+          <article className="prose max-w-none bg-surface-card border border-border-default rounded-lg p-6 text-sm font-body">
+            {title && <h1 className="font-heading text-brand-navy">{title}</h1>}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: markdownImg }}>
+              {parsed.body}
+            </ReactMarkdown>
+          </article>
+        ) : (
+        <>
         {parsed.frontmatter && !isSocial && (
           <section className="bg-surface-card border border-border-default rounded-lg p-4">
             <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
@@ -255,32 +281,20 @@ export default function PageEditor({
         )}
 
         <section className="bg-surface-card border border-border-default rounded-lg">
-          <div className="flex items-center justify-between px-4 py-2 border-b border-border-default">
+          <div className="px-4 py-2 border-b border-border-default">
             <h2 className="text-sm font-heading font-semibold text-brand-navy">
-              Page body
+              Page body (markdown source)
             </h2>
-            <button
-              onClick={() => setPreview((p) => !p)}
-              className="text-xs font-heading text-brand-cyan hover:text-brand-navy"
-            >
-              {preview ? 'Edit source' : 'Preview'}
-            </button>
           </div>
-          {preview ? (
-            <article className="prose max-w-none p-4 text-sm font-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: markdownImg }}>
-                {parsed.body}
-              </ReactMarkdown>
-            </article>
-          ) : (
-            <textarea
-              value={parsed.body}
-              onChange={(e) => setBody(e.target.value)}
-              spellCheck
-              className="w-full min-h-[480px] text-sm font-mono px-4 py-3 outline-none resize-y"
-            />
-          )}
+          <textarea
+            value={parsed.body}
+            onChange={(e) => setBody(e.target.value)}
+            spellCheck
+            className="w-full min-h-[480px] text-sm font-mono px-4 py-3 outline-none resize-y"
+          />
         </section>
+        </>
+        )}
       </div>
     </div>
   )

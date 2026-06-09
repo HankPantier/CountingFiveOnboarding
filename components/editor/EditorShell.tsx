@@ -5,6 +5,7 @@ import EditorTopBar, { type EditorStatus } from './EditorTopBar'
 import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
 import NavEditor from './NavEditor'
+import ContentChatModal from './ContentChatModal'
 import MediaLibrary from './MediaLibrary'
 import ResourcesPanel from './ResourcesPanel'
 import OneOffPanel from './OneOffPanel'
@@ -106,6 +107,27 @@ export default function EditorShell({
       }
     },
     [sessionId, loaded]
+  )
+
+  // Force-reload a file from the server, replacing the cached content + sha and
+  // clearing any dirty state — used after the AI agent commits a new version.
+  const reloadFile = useCallback(
+    async (path: string) => {
+      try {
+        const res = await fetch(`/api/edit/${sessionId}/file?path=${encodeURIComponent(path)}`)
+        if (!res.ok) return
+        const blob = (await res.json()) as { content: string; sha: string }
+        setLoaded((prev) => new Map(prev).set(path, { content: blob.content, sha: blob.sha }))
+        setDirty((prev) => {
+          const m = new Map(prev)
+          m.delete(path)
+          return m
+        })
+      } catch {
+        /* non-fatal — a stale cache surfaces as a save conflict the admin resolves */
+      }
+    },
+    [sessionId]
   )
 
   const currentContent = (): string | null => {
@@ -318,6 +340,19 @@ export default function EditorShell({
         onPublish={publish}
         onRollback={rollback}
       />
+      {selectedPath && (selectedPath.startsWith('content/pages/') || selectedPath.startsWith('content/posts/')) && (
+        <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end">
+          <ContentChatModal
+            sessionId={sessionId}
+            path={selectedPath}
+            isDirty={dirty.has(selectedPath)}
+            onEdited={() => {
+              void reloadFile(selectedPath)
+              void refreshStatus()
+            }}
+          />
+        </div>
+      )}
       {error && (
         <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning font-body text-xs">
           {error}
