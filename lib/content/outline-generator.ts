@@ -2,6 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
+import { buildFirmContext } from './brand-voice'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
@@ -59,6 +60,8 @@ Positioning: ${schema.business?.positioningOption ?? ''} — ${schema.business?.
 Differentiators: ${schema.business?.differentiators ?? 'Not specified'}
 Niches: ${schema.niches?.map(n => n.name).join(', ') ?? 'General CPA services'}
 ${paletteTone ? `Palette tone: ${paletteTone}` : ''}
+
+${buildFirmContext(schema)}
 
 PAGE: ${pageTitle} (${pageUrl})
 TARGET KEYWORD: ${targetKeyword}

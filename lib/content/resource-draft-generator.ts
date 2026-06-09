@@ -1,7 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { buildBrandVoiceBlock, firmLocation } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -94,6 +94,8 @@ async function generateDraftContent(args: {
   const prompt = `You are writing a blog post for the Resources section of ${firmName}, a CPA firm in ${location}.
 
 ${buildBrandVoiceBlock(schema)}
+
+${buildFirmContext(schema)}
 
 POST TO WRITE:
 Title: ${idea.title}

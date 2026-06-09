@@ -8,7 +8,7 @@ import { ensureBlockMedia } from './ensure-block-media'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
-import { buildBrandVoiceBlock } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -90,6 +90,8 @@ async function generatePageContent(
   const prompt = `You are writing website copy for ${firmName}, a CPA firm in ${location}.
 
 ${buildBrandVoiceBlock(schema)}
+
+${buildFirmContext(schema)}
 
 PALETTE TONE: ${paletteTone}
 

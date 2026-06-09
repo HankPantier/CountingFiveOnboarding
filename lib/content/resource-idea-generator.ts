@@ -1,7 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { buildBrandVoiceBlock, firmLocation } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { headCheckUrls, type ExternalLink } from './link-checker'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -182,6 +182,8 @@ Extrapolate it into ${count} distinct, fully-formed post ideas for the firm's "R
   const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. ${task}
 
 ${buildBrandVoiceBlock(schema)}
+
+${buildFirmContext(schema)}
 
 SERVICES: ${services.join(', ') || 'Not specified'}
 NICHES:

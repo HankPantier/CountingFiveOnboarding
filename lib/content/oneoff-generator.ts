@@ -1,7 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { buildBrandVoiceBlock, firmLocation } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { ANTI_SLOP_RULES } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -159,9 +159,6 @@ export async function generateOneOff(
       }
     }
 
-    const services = (schema.services ?? []).map((s) => s.name).filter(Boolean)
-    const niches = (schema.niches ?? []).map((n) => n.name).filter(Boolean)
-
     const genPrompt = `You are producing one-off copy for ${schema.business?.name ?? 'a CPA firm'} in ${firmLocation(schema)}.
 
 THE ADMIN'S REQUEST:
@@ -169,8 +166,7 @@ THE ADMIN'S REQUEST:
 ${offBrandApproved ? '\n(The admin explicitly approved this direction even where it diverges from the brand voice below — follow the request\'s direction; keep factual rigor.)\n' : ''}
 ${buildBrandVoiceBlock(schema)}
 
-SERVICES: ${services.join(', ') || 'Not specified'}
-NICHES: ${niches.join(', ') || 'Not specified'}
+${buildFirmContext(schema)}
 
 ${memberBlock}
 
