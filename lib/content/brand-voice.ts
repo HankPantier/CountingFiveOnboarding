@@ -24,12 +24,14 @@ export function firmLocation(schema: SessionSchema): string {
 }
 
 export function buildBrandVoiceBlock(schema: SessionSchema): string {
+  const personality = schema.brand?.brandPersonality?.trim()
+  const example = schema.brand?.voiceExample?.trim()
   return `BRAND VOICE:
 ${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
 Tone adjectives: ${schema.brand?.toneAdjectives?.join(', ') ?? ''}
 Avoid: ${schema.brand?.toneToAvoid?.join(', ') ?? ''}
-Positioning: ${schema.business?.positioningOption ?? ''} — ${schema.business?.positioningStatement?.slice(0, 300) ?? ''}
-
+${personality ? `Personality: ${personality}\n` : ''}Positioning: ${schema.business?.positioningOption ?? ''} — ${schema.business?.positioningStatement?.slice(0, 300) ?? ''}
+${example ? `\nVOICE EXAMPLE (match this writing style, do not copy it verbatim):\n${example.slice(0, 600)}\n` : ''}
 DIFFERENTIATORS (use these specifically, do not generalize):
 ${schema.business?.differentiators ?? 'Not specified'}
 

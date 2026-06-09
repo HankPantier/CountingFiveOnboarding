@@ -8,7 +8,7 @@ import { ensureBlockMedia } from './ensure-block-media'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
-import { buildCredentials } from './brand-voice'
+import { buildBrandVoiceBlock } from './brand-voice'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -89,19 +89,9 @@ async function generatePageContent(
 
   const prompt = `You are writing website copy for ${firmName}, a CPA firm in ${location}.
 
-BRAND VOICE:
-${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
-Tone adjectives: ${schema.brand?.toneAdjectives?.join(', ') ?? ''}
-Avoid: ${schema.brand?.toneToAvoid?.join(', ') ?? ''}
-Positioning: ${schema.business?.positioningOption ?? ''} — ${schema.business?.positioningStatement?.slice(0, 300) ?? ''}
+${buildBrandVoiceBlock(schema)}
 
 PALETTE TONE: ${paletteTone}
-
-DIFFERENTIATORS (use these specifically, do not generalize):
-${schema.business?.differentiators ?? 'Not specified'}
-
-CREDENTIALS TO FEATURE:
-${buildCredentials(schema)}
 
 PAGE TO WRITE:
 Title: ${pageTitle}
