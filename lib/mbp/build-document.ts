@@ -75,7 +75,15 @@ function arraySection<T extends Record<string, unknown>>(
   return { key, title, items }
 }
 
-export function buildMbpDocument(schema: SessionSchema): MbpDocument {
+// The live site structure comes from the content job's confirmed_sitemap (what
+// the generated content was actually built from) — NOT schema.current_sitemap /
+// proposed_sitemap, which are stale onboarding-audit artifacts.
+type SitemapEntry = NonNullable<SessionSchema['proposed_sitemap']>[number]
+
+export function buildMbpDocument(
+  schema: SessionSchema,
+  confirmedSitemap?: SitemapEntry[] | null
+): MbpDocument {
   const sections: MbpDocumentSection[] = [
     objectSection('contact', 'Contact', schema.contact as Record<string, unknown> | undefined),
     objectSection('business', 'Business', schema.business as Record<string, unknown> | undefined),
@@ -90,9 +98,10 @@ export function buildMbpDocument(schema: SessionSchema): MbpDocument {
     objectSection('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined),
     objectSection('assets', 'Assets', schema.assets as Record<string, unknown> | undefined),
     objectSection('additional', 'Additional', schema.additional as Record<string, unknown> | undefined),
-    arraySection('current_sitemap', 'Current Sitemap', schema.current_sitemap, p => p.title || p.url || ''),
-    arraySection('proposed_sitemap', 'Proposed Sitemap', schema.proposed_sitemap, p => p.title || p.url || ''),
   ]
+  if (confirmedSitemap && confirmedSitemap.length > 0) {
+    sections.push(arraySection('site_map', 'Site Map', confirmedSitemap, p => p.title || p.url || ''))
+  }
   return { sections }
 }
 

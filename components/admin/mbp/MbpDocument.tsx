@@ -4,7 +4,7 @@ import type { MbpDocument, MbpDocumentField, MbpDocumentItem } from '@/types/mbp
 
 // Sitemap sections are uniformly tabular and otherwise render as tall
 // label/value stacks — show them as a compact one-row-per-page table instead.
-const SITEMAP_KEYS = new Set(['current_sitemap', 'proposed_sitemap'])
+const SITEMAP_KEYS = new Set(['site_map'])
 const COL_ORDER = ['Title', 'Url', 'Action', 'Status', 'New Url', 'Live', 'Parent', 'Notes']
 
 function FieldRow({

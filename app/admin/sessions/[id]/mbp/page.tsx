@@ -37,7 +37,19 @@ export default async function MbpPage({
 
   const schema = (session.schema_data ?? {}) as SessionSchema
   const gaps = (session.gap_list as GapItem[]) ?? []
-  const doc = buildMbpDocument(schema)
+
+  // The live site structure is the content job's confirmed_sitemap (what the
+  // generated content was built from), not the stale onboarding sitemaps.
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('confirmed_sitemap')
+    .eq('session_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const confirmedSitemap = (job?.confirmed_sitemap ?? null) as SessionSchema['proposed_sitemap'] | null
+
+  const doc = buildMbpDocument(schema, confirmedSitemap)
   const overrides =
     ((schema._meta?.admin_overrides as Record<string, boolean> | undefined)) ?? {}
 
