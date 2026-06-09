@@ -6,6 +6,7 @@ import { buildMbpDocument } from '@/lib/mbp/build-document'
 import MbpDocument from '@/components/admin/mbp/MbpDocument'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
 import MbpSuggestions from '@/components/admin/mbp/MbpSuggestions'
+import MbpBackfillButton from '@/components/admin/mbp/MbpBackfillButton'
 import MbpChat from '@/components/admin/mbp/MbpChat'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
@@ -76,6 +77,7 @@ export default async function MbpPage({
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-6">
           <MbpCompleteness doc={doc} gaps={gaps} />
+          {isAdmin && <MbpBackfillButton sessionId={id} />}
           <MbpSuggestions sessionId={id} suggestions={suggestions} isAdmin={isAdmin} />
           <MbpDocument doc={doc} overrides={overrides} />
         </div>
