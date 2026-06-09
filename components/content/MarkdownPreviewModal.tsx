@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
 
 type FaqItem = { question: string; answer: string }
 type InternalLink = { url: string; anchor_text: string; reason: string }
@@ -462,62 +463,4 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </div>
   )
-}
-
-// Style mapping for ReactMarkdown — uses the project's design tokens directly
-// instead of relying on the `prose` plugin (Tailwind v4, no typography plugin).
-const MARKDOWN_COMPONENTS = {
-  h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-    <h1 className="font-heading font-bold text-xl text-brand-navy mt-4 mb-2" {...props} />
-  ),
-  h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-    <h2 className="font-heading font-bold text-lg text-brand-navy mt-4 mb-2" {...props} />
-  ),
-  h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-    <h3 className="font-heading font-semibold text-base text-brand-navy mt-3 mb-1.5" {...props} />
-  ),
-  h4: (props: React.HTMLAttributes<HTMLHeadingElement>) => (
-    <h4 className="font-heading font-semibold text-sm text-brand-navy mt-3 mb-1" {...props} />
-  ),
-  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
-    <p className="my-2.5" {...props} />
-  ),
-  ul: (props: React.HTMLAttributes<HTMLUListElement>) => (
-    <ul className="list-disc pl-6 my-2.5 space-y-1" {...props} />
-  ),
-  ol: (props: React.OlHTMLAttributes<HTMLOListElement>) => (
-    <ol className="list-decimal pl-6 my-2.5 space-y-1" {...props} />
-  ),
-  li: (props: React.LiHTMLAttributes<HTMLLIElement>) => <li {...props} />,
-  a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a className="text-brand-cyan hover:underline" target="_blank" rel="noopener noreferrer" {...props} />
-  ),
-  strong: (props: React.HTMLAttributes<HTMLElement>) => (
-    <strong className="font-heading font-semibold text-text-primary" {...props} />
-  ),
-  em: (props: React.HTMLAttributes<HTMLElement>) => <em className="italic" {...props} />,
-  code: (props: React.HTMLAttributes<HTMLElement>) => (
-    <code className="font-mono text-xs bg-surface-subtle px-1 py-0.5 rounded text-brand-navy" {...props} />
-  ),
-  pre: (props: React.HTMLAttributes<HTMLPreElement>) => (
-    <pre className="bg-surface-subtle border border-border-default rounded p-3 my-3 overflow-auto text-xs font-mono" {...props} />
-  ),
-  blockquote: (props: React.BlockquoteHTMLAttributes<HTMLQuoteElement>) => (
-    <blockquote className="border-l-4 border-brand-cyan pl-4 italic my-3 text-text-secondary" {...props} />
-  ),
-  table: (props: React.TableHTMLAttributes<HTMLTableElement>) => (
-    <div className="overflow-x-auto my-3">
-      <table className="min-w-full border-collapse border border-border-default text-sm" {...props} />
-    </div>
-  ),
-  thead: (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
-    <thead className="bg-surface-subtle" {...props} />
-  ),
-  th: (props: React.ThHTMLAttributes<HTMLTableCellElement>) => (
-    <th className="border border-border-default px-3 py-1.5 text-left font-heading font-semibold" {...props} />
-  ),
-  td: (props: React.TdHTMLAttributes<HTMLTableCellElement>) => (
-    <td className="border border-border-default px-3 py-1.5" {...props} />
-  ),
-  hr: () => <hr className="my-4 border-border-default" />,
 }

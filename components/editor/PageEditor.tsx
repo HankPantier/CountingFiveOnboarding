@@ -10,6 +10,7 @@ import { extractImageBlocks, setBlockImage, setBlockAlt } from '@/lib/editor/blo
 import ImageReplaceControl from './ImageReplaceControl'
 import HeaderImagePicker from './HeaderImagePicker'
 import IconPickerControl from './IconPickerControl'
+import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
 
 // Editable subset of frontmatter keys. Other keys are preserved on save but
 // not exposed as form fields.
@@ -112,6 +113,13 @@ export default function PageEditor({
   }
 
   const title = parsed.frontmatter?.fields['title'] ?? ''
+  // Reading view: drop the block-annotation HTML comments so they don't show.
+  const viewBody = useMemo(() => parsed.body.replace(/<!--[\s\S]*?-->/g, '').trim(), [parsed.body])
+  const heroRaw = parsed.frontmatter?.fields['image'] ?? parsed.frontmatter?.fields['hero_image'] ?? ''
+  const heroFile = heroRaw ? localImageFilename(heroRaw) : ''
+  const heroSrc = heroFile
+    ? `/api/edit/${sessionId}/asset?path=${encodeURIComponent(ASSET_ROOT + heroFile)}`
+    : ''
 
   return (
     <div className="flex-1 overflow-y-auto bg-surface-default">
@@ -137,10 +145,16 @@ export default function PageEditor({
         </div>
 
         {mode === 'view' ? (
-          <article className="prose max-w-none bg-surface-card border border-border-default rounded-lg p-6 text-sm font-body">
-            {title && <h1 className="font-heading text-brand-navy">{title}</h1>}
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: markdownImg }}>
-              {parsed.body}
+          <article className="bg-surface-card border border-border-default rounded-lg p-8 text-sm font-body text-text-primary leading-relaxed">
+            {heroSrc && (
+              // eslint-disable-next-line @next/next/no-img-element -- private admin asset route
+              <img src={heroSrc} alt={title} className="rounded-card w-full mb-6" />
+            )}
+            {title && (
+              <h1 className="font-heading font-bold text-2xl text-brand-navy mb-5">{title}</h1>
+            )}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...MARKDOWN_COMPONENTS, img: markdownImg }}>
+              {viewBody}
             </ReactMarkdown>
           </article>
         ) : (
