@@ -1,6 +1,7 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
+import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
@@ -138,6 +139,14 @@ export async function POST(
         console.error('[Research] Pipeline failed:', err)
       }
     })
+    after(() =>
+      reviewContentForMbpImpact({
+        sessionId,
+        origin: 'sitemap_confirm',
+        sourceRef: 'confirmed sitemap',
+        changedText: pages.map(p => `${p.title} — ${p.url}`).join('\n'),
+      }).catch(err => console.error('[mbp-impact] sitemap_confirm review failed:', err))
+    )
   }
 
   return NextResponse.json({ success: true, pageCount: pages.length })

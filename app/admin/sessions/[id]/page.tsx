@@ -26,6 +26,7 @@ export default async function SessionDetailPage({
     const allowed = await getAccessibleSessionIds(user)
     if (!allowed?.includes(id)) notFound()
   }
+  const isAdmin = user.role === 'admin'
 
   const supabase = createServerClient()
 
@@ -85,7 +86,13 @@ export default async function SessionDetailPage({
       <div className="md:w-1/2 overflow-y-auto p-6">
         <StatusBanner session={session} />
         <CopyLinkButton sessionId={id} />
-        <SchemaViewer sessionId={id} schemaData={session.schema_data} />
+        <Link
+          href={`/admin/sessions/${id}/mbp`}
+          className="inline-flex items-center gap-2 mt-2 text-sm font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"
+        >
+          View Master Business Profile &rarr;
+        </Link>
+        <SchemaViewer sessionId={id} schemaData={session.schema_data} readOnly={!isAdmin} />
         <div className="mt-6">
           <TeamPhotoManager
             sessionId={id}

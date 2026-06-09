@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
+import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import type { Json } from '@/types/database'
 
 // Fields that, when changed, invalidate any previously-approved generated
@@ -16,6 +17,7 @@ export async function PATCH(
   const { id: _jobId } = await params
   const auth = await requireContentJobAccess(_jobId)
   if (auth instanceof NextResponse) return auth
+  const sessionId = auth.sessionId
   const { pageId } = await params
   const body = await req.json()
   const supabase = createServerClient()
@@ -89,6 +91,15 @@ export async function PATCH(
     if (cascadeErr) {
       console.warn(`[outline-patch] approval cascade failed for ${existing.page_url}:`, cascadeErr.message)
     }
+
+    after(() =>
+      reviewContentForMbpImpact({
+        sessionId,
+        origin: 'outline_edit',
+        sourceRef: existing.page_url ?? pageId,
+        changedText: JSON.stringify({ h1: data.h1, sections: data.sections, cta: data.cta }),
+      }).catch(err => console.error('[mbp-impact] outline_edit review failed:', err))
+    )
   }
 
   return NextResponse.json({ outline: data, materialChanged })

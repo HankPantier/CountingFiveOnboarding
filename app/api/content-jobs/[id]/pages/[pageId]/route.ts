@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
+import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 
 export async function GET(
   _req: Request,
@@ -34,6 +35,7 @@ export async function PATCH(
   const { id: _jobId } = await params
   const auth = await requireContentJobAccess(_jobId)
   if (auth instanceof NextResponse) return auth
+  const sessionId = auth.sessionId
 
   const { id, pageId } = await params
   const body = await req.json()
@@ -108,6 +110,17 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
+
+  if (contentEdited && typeof data.content_markdown === 'string') {
+    after(() =>
+      reviewContentForMbpImpact({
+        sessionId,
+        origin: 'page_edit',
+        sourceRef: data.page_url ?? pageId,
+        changedText: data.content_markdown ?? '',
+      }).catch(err => console.error('[mbp-impact] page_edit review failed:', err))
+    )
+  }
 
   return NextResponse.json({ page: data })
 }

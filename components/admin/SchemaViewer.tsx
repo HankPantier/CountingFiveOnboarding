@@ -52,9 +52,10 @@ type FieldRowProps = {
   label: string
   value: unknown
   onSave: (fieldPath: string, value: unknown) => Promise<void>
+  readOnly?: boolean
 }
 
-function FieldRow({ fieldPath, label, value, onSave }: FieldRowProps) {
+function FieldRow({ fieldPath, label, value, onSave, readOnly }: FieldRowProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -131,6 +132,8 @@ function FieldRow({ fieldPath, label, value, onSave }: FieldRowProps) {
               </button>
             </div>
           </div>
+        ) : readOnly ? (
+          <div className="text-sm font-body truncate -mx-1 px-1">{displayValue}</div>
         ) : (
           <div
             className="text-sm font-body truncate cursor-pointer hover:bg-surface-subtle -mx-1 px-1 rounded"
@@ -144,7 +147,7 @@ function FieldRow({ fieldPath, label, value, onSave }: FieldRowProps) {
           </div>
         )}
       </div>
-      {!editing && state === 'idle' && (
+      {!readOnly && !editing && state === 'idle' && (
         <button
           onClick={startEdit}
           className="text-text-muted text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 pt-0.5 hover:text-brand-cyan"
@@ -162,9 +165,10 @@ type SectionProps = {
   data: unknown
   sessionId: string
   onSave: (fieldPath: string, value: unknown) => Promise<void>
+  readOnly?: boolean
 }
 
-function SchemaSection({ label, path, data, onSave }: SectionProps) {
+function SchemaSection({ label, path, data, onSave, readOnly }: SectionProps) {
   const [open, setOpen] = useState(true)
 
   if (data === null || data === undefined) {
@@ -208,6 +212,7 @@ function SchemaSection({ label, path, data, onSave }: SectionProps) {
               label={displayKey(key)}
               value={val}
               onSave={onSave}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -219,9 +224,11 @@ function SchemaSection({ label, path, data, onSave }: SectionProps) {
 export default function SchemaViewer({
   sessionId,
   schemaData,
+  readOnly = false,
 }: {
   sessionId: string
   schemaData: Json
+  readOnly?: boolean
 }) {
   const schema = (schemaData as SchemaObj) ?? {}
 
@@ -244,6 +251,7 @@ export default function SchemaViewer({
           data={schema[s.path]}
           sessionId={sessionId}
           onSave={handleSave}
+          readOnly={readOnly}
         />
       ))}
     </div>

@@ -1,6 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdminUser, requireSessionAccess } from '@/lib/auth/access'
+import { requireAdminUser } from '@/lib/auth/access'
 import { NextResponse } from 'next/server'
+import { deepSetPath } from '@/lib/mbp/schema-write'
 import type { Json } from '@/types/database'
 
 export async function DELETE(
@@ -44,9 +45,10 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params
-  const auth = await requireSessionAccess(id)
+  const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
+
+  const { id } = await params
   const { fieldPath, value, isAdminOverride } = await req.json() as {
     fieldPath: string
     value: unknown
@@ -83,21 +85,4 @@ export async function PATCH(
     .eq('id', id)
 
   return NextResponse.json({ success: true })
-}
-
-function deepSetPath(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown
-): Record<string, unknown> {
-  const keys = path.split('.')
-  const result = { ...obj }
-  let current = result
-  for (let i = 0; i < keys.length - 1; i++) {
-    const key = keys[i]
-    current[key] = { ...(typeof current[key] === 'object' && current[key] !== null && !Array.isArray(current[key]) ? current[key] as Record<string, unknown> : {}) }
-    current = current[key] as Record<string, unknown>
-  }
-  current[keys[keys.length - 1]] = value
-  return result
 }

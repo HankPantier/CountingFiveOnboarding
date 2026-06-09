@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
+import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { DRAFT_BRANCH, readFile, writeFile, FileNotFoundError } from '@/lib/github/repo-files'
@@ -16,6 +17,11 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Brand amendments mutate the MBP (schema_data.brand) directly, so they are
+  // admin-only — managers get a read-only MBP.
+  const adminAuth = await requireAdminUser()
+  if (adminAuth instanceof NextResponse) return adminAuth
+
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx

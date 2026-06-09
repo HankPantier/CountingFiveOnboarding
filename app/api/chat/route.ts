@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { trimMessages } from '@/lib/agent/trim-messages'
+import { deepMerge } from '@/lib/mbp/schema-write'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
@@ -302,27 +303,4 @@ function statusForPhase(phase: number): string {
   if (phase === 0) return 'pending'
   if (phase === 7) return 'completed'
   return 'in_progress'
-}
-
-function deepMerge(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>
-): Record<string, unknown> {
-  const result = { ...target }
-  for (const key of Object.keys(source)) {
-    const sv = source[key]
-    const tv = target[key]
-    if (
-      typeof sv === 'object' && !Array.isArray(sv) && sv !== null &&
-      typeof tv === 'object' && !Array.isArray(tv) && tv !== null
-    ) {
-      result[key] = deepMerge(
-        tv as Record<string, unknown>,
-        sv as Record<string, unknown>
-      )
-    } else {
-      result[key] = sv
-    }
-  }
-  return result
 }

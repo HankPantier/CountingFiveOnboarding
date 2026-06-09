@@ -281,6 +281,95 @@ export type Database = {
           },
         ]
       }
+      mbp_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          session_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          session_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mbp_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mbp_suggestions: {
+        Row: {
+          changes: Json
+          created_at: string
+          dedupe_key: string
+          id: string
+          origin: string
+          resolved_at: string | null
+          resolved_by: string | null
+          session_id: string
+          source_ref: string | null
+          status: string
+          summary: string
+        }
+        Insert: {
+          changes: Json
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          origin: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          session_id: string
+          source_ref?: string | null
+          status?: string
+          summary: string
+        }
+        Update: {
+          changes?: Json
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          origin?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          session_id?: string
+          source_ref?: string | null
+          status?: string
+          summary?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mbp_suggestions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mbp_suggestions_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           content: string

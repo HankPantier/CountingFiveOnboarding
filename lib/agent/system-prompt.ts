@@ -71,6 +71,18 @@ const STAFF_TONE_BLOCK = `TONE AND STYLE — STAFF MODE:
 - No emojis. No markdown headings (#).
 - The data-quality guardrails still apply: same fields, same gap list, same advancePhase gates. Server-side validation is identical.`
 
+// Complete serialization for MBP editing/review contexts (NOT the onboarding
+// chat): strips only internal `_meta` and omits empties, but keeps every
+// content-gen field, sitemaps, reputation, and content_gaps. The opposite of
+// serializeSchema, which trims aggressively to fit the per-phase token budget.
+export function serializeSchemaFull(schema: Json): string {
+  const obj = schema as Record<string, unknown>
+  const { _meta, ...rest } = obj
+  void _meta
+  const sparse = deepOmitEmpty(rest)
+  return JSON.stringify(sparse, null, 2)
+}
+
 function serializeSchema(schema: Json): string {
   const obj = schema as Record<string, unknown>
   const { _meta, proposed_sitemap, current_sitemap, reputation, content_gaps, ...rest } = obj

@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateResourceIdeas } from '@/lib/content/resource-idea-generator'
+import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { checkBrandFit } from '@/lib/content/brand-fit'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -71,6 +72,18 @@ export async function POST(
       console.error('[resource-ideas] Brainstorm failed:', err)
     }
   })
+  // Only an admin-provided seed carries intent worth reviewing against the MBP;
+  // open brainstorms generate blog ideas that don't alter the firm profile.
+  if (seed) {
+    after(() =>
+      reviewContentForMbpImpact({
+        sessionId: ctx.sessionId,
+        origin: 'resource',
+        sourceRef: 'brainstorm seed',
+        changedText: seed,
+      }).catch(err => console.error('[mbp-impact] resource review failed:', err))
+    )
+  }
 
   return NextResponse.json({ success: true })
 }
