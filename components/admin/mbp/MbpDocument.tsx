@@ -95,10 +95,10 @@ function SectionCard({
   editable: boolean
 }) {
   return (
-    <div className="border border-border-default rounded-lg overflow-hidden bg-surface-card">
-      <div className="px-4 py-2.5 bg-surface-subtle">
-        <span className="text-sm font-heading font-semibold text-text-primary">{section.title}</span>
-      </div>
+    <details className="border border-border-default rounded-lg overflow-hidden bg-surface-card">
+      <summary className="px-4 py-2.5 bg-surface-subtle cursor-pointer text-sm font-heading font-semibold text-text-primary marker:text-text-muted hover:bg-surface-card transition-colors">
+        {section.title}
+      </summary>
       <div className="px-4 py-1">
         {section.fields && section.fields.length > 0 &&
           section.fields.map(f => (
@@ -123,7 +123,7 @@ function SectionCard({
           <p className="text-text-muted font-body text-sm italic py-2">No data collected yet.</p>
         )}
       </div>
-    </div>
+    </details>
   )
 }
 
