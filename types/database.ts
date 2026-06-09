@@ -20,20 +20,59 @@ export type Database = {
           email: string
           id: string
           name: string
+          role: string
         }
         Insert: {
           created_at?: string
           email: string
           id: string
           name: string
+          role?: string
         }
         Update: {
           created_at?: string
           email?: string
           id?: string
           name?: string
+          role?: string
         }
         Relationships: []
+      }
+      manager_clients: {
+        Row: {
+          created_at: string
+          id: string
+          manager_id: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_id: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manager_clients_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manager_clients_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       assets: {
         Row: {

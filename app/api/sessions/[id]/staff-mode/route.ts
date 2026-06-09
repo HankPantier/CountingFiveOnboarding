@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -9,13 +9,13 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin()
-  if (auth instanceof NextResponse) return auth
-
   const { id } = await params
   if (!UUID_RE.test(id)) {
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
+
+  const auth = await requireSessionAccess(id)
+  if (auth instanceof NextResponse) return auth
 
   let note: string | undefined
   try {

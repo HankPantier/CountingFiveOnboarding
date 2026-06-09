@@ -1,6 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'application/pdf']
 const MAX_BYTES = 300 * 1024 * 1024
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     // The phase gate exists for the client-facing chat flow (uploads unlock
     // at agent phase 5). Admins manage team photos from the dashboard at any
     // phase — let an authenticated admin through.
-    const auth = await requireAdmin()
+    const auth = await requireSessionAccess(sessionId)
     if (auth instanceof NextResponse) {
       return NextResponse.json({ error: 'File uploads not available yet' }, { status: 403 })
     }

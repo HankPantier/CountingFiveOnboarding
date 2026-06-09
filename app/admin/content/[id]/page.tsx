@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import PhaseStepper from '@/components/content/PhaseStepper'
 import GithubRepoConnector from '@/components/admin/GithubRepoConnector'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -13,6 +14,15 @@ export default async function ContentWorkflowPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+
+  // Managers may only open clients assigned to them.
+  const user = await getCurrentUser()
+  if (!user) redirect('/admin/login')
+  if (user.role !== 'admin') {
+    const allowed = await getAccessibleSessionIds(user)
+    if (!allowed?.includes(id)) notFound()
+  }
+
   const supabase = createServerClient()
 
   const { data: session } = await supabase

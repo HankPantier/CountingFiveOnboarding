@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import StatusBanner from '@/components/admin/StatusBanner'
 import SchemaViewer from '@/components/admin/SchemaViewer'
 import AssetsViewer from '@/components/admin/AssetsViewer'
@@ -17,6 +18,15 @@ export default async function SessionDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+
+  // Managers may only open clients assigned to them.
+  const user = await getCurrentUser()
+  if (!user) redirect('/admin/login')
+  if (user.role !== 'admin') {
+    const allowed = await getAccessibleSessionIds(user)
+    if (!allowed?.includes(id)) notFound()
+  }
+
   const supabase = createServerClient()
 
   const [{ data: session }, { data: messages }, { data: assets }] = await Promise.all([

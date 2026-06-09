@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { estimateCostUsd } from '@/lib/content/token-usage'
 import SessionRowActions from '@/components/admin/SessionRowActions'
 import type { Database } from '@/types/database'
@@ -54,6 +56,11 @@ export default async function DashboardPage({
   const supabase = createServerClient()
   const sp = await searchParams
 
+  // Managers see only their assigned clients; admins see all (allowed === null).
+  const user = await getCurrentUser()
+  if (!user) redirect('/admin/login')
+  const allowed = await getAccessibleSessionIds(user)
+
   const q = (sp.q ?? '').trim()
   const statusFilter = STATUS_FILTERS.includes(sp.status as (typeof STATUS_FILTERS)[number])
     ? (sp.status as (typeof STATUS_FILTERS)[number])
@@ -67,18 +74,23 @@ export default async function DashboardPage({
   if (statusFilter === 'all') query = query.neq('status', 'archived')
   else query = query.eq('status', statusFilter)
   if (q) query = query.ilike('website_url', `%${q}%`)
+  if (allowed !== null) query = query.in('id', allowed)
+
+  let approvedQuery = supabase
+    .from('sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'approved')
+  if (allowed !== null) approvedQuery = approvedQuery.in('id', allowed)
 
   const [{ data: sessions, count: totalCount }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
     query
       .order('last_activity_at', { ascending: true })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
-    supabase
-      .from('sessions')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'approved'),
-    supabase
-      .from('token_usage')
-      .select('model, input_tokens, output_tokens, created_at'),
+    approvedQuery,
+    // AI spend is a global operator metric — admins only.
+    user.role === 'admin'
+      ? supabase.from('token_usage').select('model, input_tokens, output_tokens, created_at')
+      : Promise.resolve({ data: [] as Array<{ model: string; input_tokens: number; output_tokens: number; created_at: string }> }),
   ])
 
   const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE))
@@ -148,14 +160,16 @@ export default async function DashboardPage({
             </Link>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/admin/dashboard/new-session"
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
-          >
-            New Session
-          </Link>
-        </div>
+        {user.role === 'admin' && (
+          <div className="flex items-center gap-3">
+            <Link
+              href="/admin/dashboard/new-session"
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
+            >
+              New Session
+            </Link>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">

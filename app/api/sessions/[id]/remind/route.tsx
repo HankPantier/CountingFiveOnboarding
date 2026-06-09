@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { render } from '@react-email/render'
-import { createAuthClient, createServerClient } from '@/lib/supabase/server'
+import { createServerClient } from '@/lib/supabase/server'
+import { requireSessionAccess } from '@/lib/auth/access'
 import ClientReminderEmail from '@/emails/ClientReminderEmail'
 import AdminReminderEmail from '@/emails/AdminReminderEmail'
 
@@ -12,11 +13,10 @@ export async function POST(
   const resend = new Resend(process.env.RESEND_API_KEY)
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
 
-  const auth = await createAuthClient()
-  const { data: { user } } = await auth.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id } = await params
+  const access = await requireSessionAccess(id)
+  if (access instanceof NextResponse) return access
+
   const supabase = createServerClient()
 
   const { data: session } = await supabase

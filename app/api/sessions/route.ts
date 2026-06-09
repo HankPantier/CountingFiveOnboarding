@@ -1,10 +1,10 @@
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminUser } from '@/lib/auth/access'
 import type { Json } from '@/types/database'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin()
+  const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
 
   const body: unknown = await req.json()

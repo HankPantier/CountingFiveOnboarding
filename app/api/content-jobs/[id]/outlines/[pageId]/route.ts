@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireContentJobAccess } from '@/lib/auth/access'
 import type { Json } from '@/types/database'
 
 // Fields that, when changed, invalidate any previously-approved generated
@@ -13,7 +13,8 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; pageId: string }> }
 ) {
-  const auth = await requireAdmin()
+  const { id: _jobId } = await params
+  const auth = await requireContentJobAccess(_jobId)
   if (auth instanceof NextResponse) return auth
   const { pageId } = await params
   const body = await req.json()

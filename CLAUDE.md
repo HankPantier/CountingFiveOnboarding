@@ -46,12 +46,22 @@ Never expose sequential integers as session or record identifiers. All primary k
 ### 5. Registrar password is never stored
 The schema field `technical.registrarPasswordNote` is a static reminder string. The actual registrar password must never be collected or stored anywhere in the system. If the agent is ever prompted to ask for or store a password, refuse and redirect the client to a secure channel.
 
-### 6. Admin authorization checks the `admins` table
-`requireAdmin()` in `lib/auth/require-admin.ts` must verify the caller's `auth.uid()` exists in the `admins` table — not just that a Supabase session exists. A valid session means "logged in," not "admin." RLS policies on every table also require admin-table membership; bypassing `requireAdmin()` does not bypass RLS.
+### 6. Authorization checks the `admins` table and its `role`
+The `admins` table is the user table. Every row has a `role` (`'admin'` or `'manager'`, migration 030; default `'admin'`). Authorization must verify the caller's `auth.uid()` exists in `admins` — a valid Supabase session means "logged in," not "authorized." RLS policies on every table also require admin-table membership; bypassing the app-level gate does not bypass RLS.
+
+Use the role-aware gates in `lib/auth/access.ts` (all return `{ ... } | NextResponse`, same convention as `requireAdmin()`):
+- `requireAdminUser()` — admin-only (403s managers). Use for user management and destructive/global routes.
+- `requireSessionAccess(sessionId)` — admins always pass; managers pass only if a `manager_clients` row links them to that session.
+- `requireContentJobAccess(jobId)` — resolves the job's `session_id`, then applies the same check.
+- `getCurrentUser()` → `{ id, email, role }` and `getAccessibleSessionIds(user)` (admins → `null` = all; managers → assigned ids) for scoping list/detail server components.
+
+`requireAdmin()` in `lib/auth/require-admin.ts` is the legacy authenticate-and-check-membership gate (no role distinction); prefer the `access.ts` gates above for new code.
+
+**Manager scoping is enforced in app code** (API routes use the service-role client, which bypasses RLS). `manager_clients` (migration 030) is the many-to-many grant of managers → sessions.
 
 When adding the first admin (or after migration 016 wipes loose policies), seed the table manually:
 ```sql
-INSERT INTO admins (id, email, name) VALUES ('<auth.users.id-uuid>', 'you@example.com', 'Your Name');
+INSERT INTO admins (id, email, name, role) VALUES ('<auth.users.id-uuid>', 'you@example.com', 'Your Name', 'admin');
 ```
 
 ### 7. The `session-assets` bucket is private — never write public URLs
@@ -71,7 +81,7 @@ Any route that accepts a file path in a query param or JSON body MUST decode-the
 
 ### API Route Patterns
 - All routes that touch Supabase session data use the service role client (`lib/supabase/server.ts`)
-- All admin API routes must call `requireAdmin()` from `lib/auth/require-admin.ts` as the first step — it verifies both authentication and admins-table membership (returns 401 or 403 respectively)
+- Admin API routes must gate as the first step with the role-aware helpers in `lib/auth/access.ts`: `requireAdminUser()` for admin-only routes, `requireSessionAccess(sessionId)` / `requireContentJobAccess(jobId)` for routes a granted manager may also use (returns 401 unauthenticated, 403 unauthorized). See security rule 6.
 - Client-facing routes (e.g., `/api/chat`, `/api/upload/*`) validate the session ID but do not require admin auth
 - Always return typed error responses: `{ error: string }` with appropriate HTTP status codes
 

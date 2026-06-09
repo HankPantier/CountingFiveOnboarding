@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -21,7 +21,7 @@ export async function resolveEditContext(
   if (!UUID_RE.test(paramId)) {
     return NextResponse.json({ error: 'Invalid session id' }, { status: 400 })
   }
-  const auth = await requireAdmin()
+  const auth = await requireSessionAccess(paramId)
   if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()

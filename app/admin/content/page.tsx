@@ -1,5 +1,7 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 
 const CONTENT_PHASE_LABELS: Record<number, string> = {
   1: 'Palette',
@@ -35,12 +37,20 @@ function ContentPhaseBadge({ phase }: { phase: number | null }) {
 export default async function ContentHubPage() {
   const supabase = createServerClient()
 
-  const { data: sessions } = await supabase
+  // Managers see only their assigned clients; admins see all (allowed === null).
+  const user = await getCurrentUser()
+  if (!user) redirect('/admin/login')
+  const allowed = await getAccessibleSessionIds(user)
+
+  let sessionsQuery = supabase
     .from('sessions')
     .select('id, website_url, schema_data, approved_at, content_generation_phase')
     .eq('status', 'approved')
     .order('approved_at', { ascending: false })
     .limit(100)
+  if (allowed !== null) sessionsQuery = sessionsQuery.in('id', allowed)
+
+  const { data: sessions } = await sessionsQuery
 
   // Get content job phases for sessions that have them
   const sessionIds = sessions?.map(s => s.id) ?? []

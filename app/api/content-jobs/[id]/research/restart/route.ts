@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireContentJobAccess } from '@/lib/auth/access'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
 
 export const runtime = 'nodejs'
@@ -17,7 +17,8 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin()
+  const { id: _jobId } = await params
+  const auth = await requireContentJobAccess(_jobId)
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params

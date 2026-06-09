@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 import { Vibrant } from 'node-vibrant/node'
 import chroma from 'chroma-js'
 
@@ -22,14 +22,14 @@ function ensureContrast(dark: string, light: string): { dark: string; light: str
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin()
-  if (auth instanceof NextResponse) return auth
-
   const { sessionId }: { sessionId: string } = await req.json()
 
   if (!sessionId) {
     return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
   }
+
+  const auth = await requireSessionAccess(sessionId)
+  if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()
 

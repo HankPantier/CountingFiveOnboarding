@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireAdminUser } from '@/lib/auth/access'
 
 // Soft-archive toggle. Archived sessions keep all data but drop out of the
 // default dashboard list and the inactivity-reminder cron (status filter).
@@ -8,7 +8,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin()
+  const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params

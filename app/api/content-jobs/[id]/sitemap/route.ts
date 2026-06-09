@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireContentJobAccess } from '@/lib/auth/access'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
@@ -11,7 +11,8 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin()
+  const { id: _jobId } = await params
+  const auth = await requireContentJobAccess(_jobId)
   if (auth instanceof NextResponse) return auth
   const { id } = await params
   const supabase = createServerClient()
@@ -47,7 +48,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authCheck = await requireAdmin()
+  const { id: _jobId } = await params
+  const authCheck = await requireContentJobAccess(_jobId)
   if (authCheck instanceof NextResponse) return authCheck
   const { id } = await params
   const { pages }: { pages: SitemapPage[] } = await req.json()

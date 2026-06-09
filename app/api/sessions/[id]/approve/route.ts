@@ -1,16 +1,16 @@
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 import { NextResponse } from 'next/server'
 
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAdmin()
+  const { id } = await params
+  const auth = await requireSessionAccess(id)
   if (auth instanceof NextResponse) return auth
   const user = auth.user
 
-  const { id } = await params
   const supabase = createServerClient()
 
   const { data: session } = await supabase

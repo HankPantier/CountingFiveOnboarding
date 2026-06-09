@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 import { searchPexels, downloadPexelsImage } from '@/lib/content/pexels-fetcher'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
 import type { SessionSchema } from '@/types/session-schema'
@@ -30,9 +30,6 @@ export const runtime = 'nodejs'
  * Returns the updated asset summary.
  */
 export async function POST(req: Request) {
-  const auth = await requireAdmin()
-  if (auth instanceof NextResponse) return auth
-
   const { assetId, query } = (await req.json()) as { assetId?: string; query?: string }
   if (!assetId || typeof assetId !== 'string') {
     return NextResponse.json({ error: 'assetId required' }, { status: 400 })
@@ -53,6 +50,10 @@ export async function POST(req: Request) {
   if (assetErr || !asset) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
   }
+
+  const access = await requireSessionAccess(asset.session_id)
+  if (access instanceof NextResponse) return access
+
   if (asset.asset_category !== 'stock-photo') {
     return NextResponse.json({ error: 'Asset is not a stock-photo' }, { status: 400 })
   }

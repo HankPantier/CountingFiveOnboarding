@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireSessionAccess } from '@/lib/auth/access'
 import { fileTypeFromBuffer } from 'file-type'
 
 export const runtime = 'nodejs'
@@ -27,9 +27,6 @@ const MAX_BYTES = 25 * 1024 * 1024
  * failure, the existing storage object is left untouched.
  */
 export async function POST(req: Request) {
-  const auth = await requireAdmin()
-  if (auth instanceof NextResponse) return auth
-
   const form = await req.formData()
   const assetId = form.get('assetId')
   const file = form.get('file')
@@ -44,15 +41,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Max 25MB' }, { status: 400 })
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const detected = await fileTypeFromBuffer(buffer)
-  if (!detected || !ALLOWED_MIMES.includes(detected.mime)) {
-    return NextResponse.json(
-      { error: 'File type rejected — content does not match allowed image formats' },
-      { status: 400 }
-    )
-  }
-
   const supabase = createServerClient()
 
   const { data: asset, error: assetErr } = await supabase
@@ -63,8 +51,21 @@ export async function POST(req: Request) {
   if (assetErr || !asset) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
   }
+
+  const access = await requireSessionAccess(asset.session_id)
+  if (access instanceof NextResponse) return access
+
   if (asset.asset_category !== 'stock-photo') {
     return NextResponse.json({ error: 'Asset is not a stock-photo' }, { status: 400 })
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const detected = await fileTypeFromBuffer(buffer)
+  if (!detected || !ALLOWED_MIMES.includes(detected.mime)) {
+    return NextResponse.json(
+      { error: 'File type rejected — content does not match allowed image formats' },
+      { status: 400 }
+    )
   }
 
   // Overwrite the storage object in place at the existing path

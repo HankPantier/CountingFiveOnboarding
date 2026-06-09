@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdmin } from '@/lib/auth/require-admin'
+import { requireContentJobAccess } from '@/lib/auth/access'
 import { runContentGeneration } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
@@ -19,12 +19,13 @@ export async function POST(
   const isInternalChain =
     !!cronSecret && authHeader === `Bearer ${cronSecret}`
 
+  const { id } = await params
+
   if (!isInternalChain) {
-    const auth = await requireAdmin()
+    const auth = await requireContentJobAccess(id)
     if (auth instanceof NextResponse) return auth
   }
 
-  const { id } = await params
   const supabase = createServerClient()
 
   const { data: job } = await supabase
