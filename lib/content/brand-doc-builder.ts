@@ -19,7 +19,6 @@ function joinList(items: unknown): string {
 
 export function compileBrandDoc(schema: SessionSchema): BrandDoc {
   const business = schema.business ?? ({} as NonNullable<SessionSchema['business']>)
-  const brand = schema.brand ?? ({} as NonNullable<SessionSchema['brand']>)
   const niches = schema.niches ?? []
   const firstLocation = schema.locations?.[0]
   const firmName = nonEmpty(business.name) ? business.name : 'The firm'

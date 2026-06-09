@@ -107,6 +107,9 @@ export default async function DashboardPage({
   }
 
   // Aggregate AI spend so the operator sees burn without opening every job.
+  // Server Component: renders once per request on the server, so Date.now() is
+  // deterministic for the render — the React-Compiler purity rule doesn't apply.
+  // eslint-disable-next-line react-hooks/purity
   const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
   const spend = (usageRows ?? []).reduce(
     (acc, r) => {

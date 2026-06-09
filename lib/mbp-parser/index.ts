@@ -558,7 +558,7 @@ function parseSection6(markdown: string, schema: SessionSchema): void {
   // We look at the header row to decide whether row[3] is rewriteDirection
   // (preferred) or just a description.
   let rewriteCol = -1
-  let descCol = 3
+  const descCol = 3
   const headerMatch = servicesBlock.match(/^\|\s*\*?\*?Service[^\n]+/m)
   if (headerMatch) {
     const cols = headerMatch[0]

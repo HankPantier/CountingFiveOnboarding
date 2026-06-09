@@ -299,7 +299,6 @@ export function appendFaqBlock(page: GeneratedPage): string {
   // Find the last cta-banner or form block annotation
   const ctaBannerMatch = content.match(/^<!-- block: cta-banner/m)
   const formMatch = content.match(/^<!-- block: form/m)
-  const lastBlockMatch = ctaBannerMatch || formMatch
   let lastBlockIndex = -1
 
   if (ctaBannerMatch) {

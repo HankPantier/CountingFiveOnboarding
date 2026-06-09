@@ -42,7 +42,6 @@ export default function DeliverablesPhase({
   // would reject. Stops polling once everything's approved.
   useEffect(() => {
     let cancelled = false
-    let intervalId: ReturnType<typeof setInterval>
 
     const poll = async () => {
       try {
@@ -67,8 +66,8 @@ export default function DeliverablesPhase({
       }
     }
 
+    const intervalId = setInterval(poll, 5000)
     poll()
-    intervalId = setInterval(poll, 5000)
     return () => { cancelled = true; clearInterval(intervalId) }
   }, [contentJobId])
 

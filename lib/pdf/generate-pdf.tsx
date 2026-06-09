@@ -8,7 +8,6 @@ type SchemaObj = Record<string, unknown>
 
 export async function generateIntakePdf(session: Session): Promise<Buffer> {
   const s = (session.schema_data as SchemaObj) ?? {}
-  const contact    = s.contact    as Record<string, unknown> | undefined
   const business   = s.business   as Record<string, unknown> | undefined
   const brand      = s.brand      as Record<string, unknown> | undefined
   const technical  = s.technical  as Record<string, unknown> | undefined

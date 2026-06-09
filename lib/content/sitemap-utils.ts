@@ -50,7 +50,6 @@ export function groupBySection<T extends SitemapNode>(pages: T[]): Map<string, T
     }
   }
 
-  const assigned = new Set([...groups.values()].flat().map(p => p.url))
   const standalone = topLevel.filter(p => !parentUrls.has(p.url) && p.url !== '/')
   if (standalone.length > 0) groups.set('Other', standalone)
 

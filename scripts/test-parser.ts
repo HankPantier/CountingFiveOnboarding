@@ -38,7 +38,7 @@ assert('T3 — Title gaps exist', titleGaps.length > 0, 'got: ' + titleGaps.leng
 console.log('     Title gaps:', titleGaps.map(g => g.label).join(', '))
 
 // T4
-const { schema: emptySchema, gaps: emptyGaps } = parseMBP('')
+const { gaps: emptyGaps } = parseMBP('')
 assert('T4 — Empty MBP does not throw', true)
 assert('T4 — Empty MBP has 16 base Phase 4 tier-1 gaps', emptyGaps.filter(g => g.tier === 1).length === 16, 'got: ' + emptyGaps.filter(g => g.tier === 1).length)
 

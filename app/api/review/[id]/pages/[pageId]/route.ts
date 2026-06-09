@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
-import type { Database, Json } from '@/types/database'
 import type { SessionSchema } from '@/types/session-schema'
-
-type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

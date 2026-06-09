@@ -32,8 +32,8 @@ export default function AssetThumb({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- bytes are streamed
-    // from a private admin route, not a public/optimizable URL.
+    // bytes are streamed from a private admin route, not a public/optimizable URL.
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       key={version}
       src={src}

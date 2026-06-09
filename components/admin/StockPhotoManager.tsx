@@ -42,7 +42,7 @@ const MAX_BYTES = 25 * 1024 * 1024
  * Renders nothing if there are no stock photos yet (first deliverable
  * assembly creates them — admin sees an empty state until then).
  */
-export default function StockPhotoManager({ sessionId, assets, signedUrls }: Props) {
+export default function StockPhotoManager({ assets, signedUrls }: Props) {
   const router = useRouter()
   const stockPhotos = assets.filter(a => a.asset_category === 'stock-photo')
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
@@ -54,7 +54,7 @@ export default function StockPhotoManager({ sessionId, assets, signedUrls }: Pro
     return (
       <div className="bg-surface-card border border-border-default rounded-lg p-4 mb-6">
         <h2 className="text-sm font-heading font-semibold text-text-primary mb-2">Stock Photos</h2>
-        <p className="text-text-muted font-body text-sm">No stock photos resolved yet. Assemble the deliverable package once to fetch from Pexels — they'll appear here for review and editing.</p>
+        <p className="text-text-muted font-body text-sm">No stock photos resolved yet. Assemble the deliverable package once to fetch from Pexels — they&apos;ll appear here for review and editing.</p>
       </div>
     )
   }

@@ -68,10 +68,12 @@ export default function ChatInterface({
 
   const isLoading = status === 'submitted' || status === 'streaming'
 
-  // useChat owns `error`; a local flag lets the user dismiss the banner
-  // without clearing SDK state. Reset whenever a new error arrives.
-  const [errorDismissed, setErrorDismissed] = useState(false)
-  useEffect(() => { setErrorDismissed(false) }, [error])
+  // useChat owns `error`; tracking the dismissed error (instead of a boolean +
+  // effect reset) lets a fresh error re-show the banner without setting state
+  // inside an effect. The banner shows whenever the current error isn't the
+  // one the user dismissed.
+  const [dismissedError, setDismissedError] = useState<typeof error>(undefined)
+  const showError = !!error && error !== dismissedError
 
   // Admin detection runs on mount. Non-admin visitors quietly get { isAdmin: false }
   // (no console errors), so the staff toggle simply never renders for them.
@@ -242,7 +244,7 @@ export default function ChatInterface({
         </div>
       )}
 
-      {error && !errorDismissed && (
+      {showError && (
         <div
           role="alert"
           className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error flex-shrink-0 flex items-center justify-center gap-4"
@@ -250,7 +252,7 @@ export default function ChatInterface({
           <span>{error.message} — please try again.</span>
           <button
             type="button"
-            onClick={() => setErrorDismissed(true)}
+            onClick={() => setDismissedError(error)}
             className="text-xs font-heading font-semibold underline underline-offset-2 hover:no-underline shrink-0"
           >
             Dismiss
