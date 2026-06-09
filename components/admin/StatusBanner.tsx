@@ -6,7 +6,7 @@ const PHASE_LABELS: Record<number, string> = {
   0: 'Not started',
   1: 'Contact info',
   2: 'Domain lookup',
-  3: 'MFP review',
+  3: 'MBP review',
   4: 'Gap filling',
   5: 'Assets',
   6: 'Wrap-up',

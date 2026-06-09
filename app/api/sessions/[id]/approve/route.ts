@@ -1,10 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/auth/require-admin'
-import { createBasecampProject } from '@/lib/basecamp/create-project'
 import { NextResponse } from 'next/server'
-
-// Set BASECAMP_ENABLED=true in .env.local (and Vercel) when ready to go live
-const BASECAMP_ENABLED = process.env.BASECAMP_ENABLED === 'true'
 
 export async function POST(
   _req: Request,
@@ -24,15 +20,15 @@ export async function POST(
     .single()
 
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+  if (session.status === 'approved') {
+    return NextResponse.json({ error: 'Session already approved' }, { status: 409 })
+  }
   if (session.status !== 'completed') {
     return NextResponse.json({ error: 'Session is not completed' }, { status: 400 })
   }
-  if (session.basecamp_project_id) {
-    return NextResponse.json({ error: 'Session already approved' }, { status: 409 })
-  }
 
   try {
-    // Generate PDF + MD
+    // Generate PDF + MD — non-fatal: a failure must not block approval.
     let pdfStoragePath: string | null = null
     try {
       const genRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/pdf/generate`, {
@@ -48,27 +44,18 @@ export async function POST(
       console.warn('[Approve] PDF/MD generation failed (non-fatal):', err)
     }
 
-    // Basecamp integration — enable by setting BASECAMP_ENABLED=true in env
-    let basecampProjectId: string | null = null
-    if (BASECAMP_ENABLED) {
-      basecampProjectId = await createBasecampProject(session, pdfStoragePath)
-    } else {
-      console.warn('[Approve] Basecamp disabled — skipping project creation')
-    }
-
     await supabase
       .from('sessions')
       .update({
         status: 'approved',
         approved_at: new Date().toISOString(),
         approved_by: user.id,
-        basecamp_project_id: basecampProjectId,
         content_generation_ready: true,
         pdf_url: pdfStoragePath,
       })
       .eq('id', id)
 
-    return NextResponse.json({ success: true, basecampProjectId })
+    return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[Approve]', err)
     const message = err instanceof Error ? err.message : 'Approval failed'

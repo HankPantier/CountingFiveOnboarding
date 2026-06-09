@@ -200,7 +200,7 @@ function phase3Instructions(session: Session, mode: AgentMode): string {
 
   if (!chunk1Done) {
     if (mode === 'staff') {
-      return `PHASE 3 — MFP REVIEW, PART 1 (Practical info) — staff mode
+      return `PHASE 3 — MBP REVIEW, PART 1 (Practical info) — staff mode
 Present known data as a compact bulleted list / markdown table in ONE message:
 - Office location(s) — name, address, phone, fax, email, hours
 - Domain & hosting info
@@ -219,14 +219,14 @@ Then, in the SAME message, ask for everything outstanding:
 
 Accept everything in any format. As soon as it lands, call update_session_data with all populated fields, resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url", and "_meta": { "phase3_completed_chunks": ["chunk1"] }.${chunk1Analyst}${chunk1SubCats}`
     }
-    return `PHASE 3 — MFP REVIEW, PART 1 (Practical info)
+    return `PHASE 3 — MBP REVIEW, PART 1 (Practical info)
 Present all of the following in one message:
 - Office locations, domain/hosting info, social media channels, professional affiliations
 - The seeded company LinkedIn (culture.linkedIn.url) and Google Business Profile (business.googleBusinessProfile.url) — show the URL if seeded, or note "we couldn't confirm one" if null.
 Ask: "Does all of that look right? Any corrections?"
 Then in one bundled follow-up exchange collect:
 - Any missing affiliations or social handles, confirm the website URL, ask about professional memberships or partnerships not listed.
-- LinkedIn: if no URL is on file, ask for it (or confirm they don't have a company page → set culture.linkedIn.url = null). If they have one, ask "Roughly how useful is your LinkedIn for attracting clients today — low, medium, or high?" → culture.linkedIn.usefulness. Then "Anything you'd want to improve about it?" → culture.linkedIn.roomForImprovement (free text; if the MFP seeded a hint, offer it back for confirmation).
+- LinkedIn: if no URL is on file, ask for it (or confirm they don't have a company page → set culture.linkedIn.url = null). If they have one, ask "Roughly how useful is your LinkedIn for attracting clients today — low, medium, or high?" → culture.linkedIn.usefulness. Then "Anything you'd want to improve about it?" → culture.linkedIn.roomForImprovement (free text; if the MBP seeded a hint, offer it back for confirmation).
 - Google Business Profile: same pattern — URL or null; usefulness if they have one; roomForImprovement (always meaningful — if no GBP, "create and verify a GBP listing" is a fine note). Save to business.googleBusinessProfile.{url, usefulness, roomForImprovement}.
 When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.${chunk1Analyst}${chunk1SubCats}`
   }
@@ -236,7 +236,7 @@ When part 1 is done, call update_session_data with the structured fields populat
       ? "a few quick decisions the analyst flagged"
       : "team photos"
     if (mode === 'staff') {
-      return `PHASE 3 — MFP REVIEW, PART 2a (Content) — staff mode
+      return `PHASE 3 — MBP REVIEW, PART 2a (Content) — staff mode
 Present known data as compact tables / lists in ONE message:
 - Team — name | title (❓ if missing) | certifications
 - Services — name + one-line description
@@ -248,9 +248,9 @@ Then ask in the same message:
 - "Missing team titles?"
 - "Pick a positioning option (A/B/C or a blend description)"
 
-Accept all answers. As soon as positioning is chosen, call update_session_data with business.positioningOption, business.positioningStatement (use the chosen option's statement verbatim from the MFP), team/service/niche updates, and "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase — ${bridgeNext} run next.`
+Accept all answers. As soon as positioning is chosen, call update_session_data with business.positioningOption, business.positioningStatement (use the chosen option's statement verbatim from the MBP), team/service/niche updates, and "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase — ${bridgeNext} run next.`
     }
-    return `PHASE 3 — MFP REVIEW, PART 2 (Content)
+    return `PHASE 3 — MBP REVIEW, PART 2 (Content)
 Present all of the following in one message:
 - Team members (note any with missing titles), services, industry niches
 Ask for corrections and any missing team titles.
@@ -266,21 +266,21 @@ Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "
   }
 
   if (!chunk2bDone) {
-    // No decision content from the MFP — auto-complete and move on without
+    // No decision content from the MBP — auto-complete and move on without
     // burning a chat turn.
     if (!chunk2bHasContent) {
-      return `PHASE 3 — MFP REVIEW, PART 2b (Decisions) — NOTHING TO DECIDE
+      return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — NOTHING TO DECIDE
 
-The MFP didn't surface any decisions for the client to confirm. Immediately call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. No message to the user is necessary; the next agent turn will move into team photos (chunk3).`
+The MBP didn't surface any decisions for the client to confirm. Immediately call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. No message to the user is necessary; the next agent turn will move into team photos (chunk3).`
     }
 
     if (mode === 'staff') {
-      return `PHASE 3 — MFP REVIEW, PART 2b (Decisions) — staff mode
+      return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — staff mode
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Staff can answer in any layout (line-prefixed, key-value, comma list). Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed.
 
 When the staff member's answer lands, call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up) and "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. DO NOT advance phase — chunk3 (team photos) runs next.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
     }
-    return `PHASE 3 — MFP REVIEW, PART 2b (Decisions)
+    return `PHASE 3 — MBP REVIEW, PART 2b (Decisions)
 Open with a short bridge: "Before team photos, a few quick decisions our analyst flagged. Defaults are noted next to each — just call out exceptions."
 
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Keep each ask compact. Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed. If the client agrees with the defaults wholesale, accept that and move on.
@@ -299,7 +299,7 @@ When the client's answer lands, call update_session_data with the captured field
 
   if (!chunk3Done) {
     if (teamMembersList.length === 0) {
-      return `PHASE 3 — MFP REVIEW, PART 3 (Team photos) — NO TEAM CAPTURED
+      return `PHASE 3 — MBP REVIEW, PART 3 (Team photos) — NO TEAM CAPTURED
 
 The team[] array is empty so there's nothing to photograph. Immediately call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"]. No message needed; the next agent turn will be Phase 4.`
     }
@@ -320,7 +320,7 @@ The team[] array is empty so there's nothing to photograph. Immediately call upd
       ? `ON THE LAST MEMBER, after step 4: call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"] and a null current_team_member_name. One line: "Team photos done." Stop.`
       : `ON THE LAST MEMBER, after step 4: call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"] and a null current_team_member_name. Acknowledge: "Team photos done — let's wrap a few last details" and stop.`
 
-    return `PHASE 3 — MFP REVIEW, PART 3 (Team photos)
+    return `PHASE 3 — MBP REVIEW, PART 3 (Team photos)
 
 Walk through uploading one headshot per team member, in order.
 
@@ -384,7 +384,7 @@ Tier 1 gaps MUST be answered before advancing (server-side enforced). If the sta
 When all Tier 1 gaps are resolved, call update_session_data with advancePhase: true. No closing pleasantry needed.${checklist}`
   }
   return `PHASE 4 — GAP FILLING
-Only ask about items still in the gap list below. Anything already in COLLECTED DATA was seeded from the MFP — DO NOT re-ask. If you need light confirmation on a seeded value (e.g. firm history paragraph), do it inline within an unrelated batch, not as a standalone exchange.
+Only ask about items still in the gap list below. Anything already in COLLECTED DATA was seeded from the MBP — DO NOT re-ask. If you need light confirmation on a seeded value (e.g. firm history paragraph), do it inline within an unrelated batch, not as a standalone exchange.
 
 Group remaining gaps into 2–3 per exchange by topic:
 - Firm background (founding year, firm history if missing)

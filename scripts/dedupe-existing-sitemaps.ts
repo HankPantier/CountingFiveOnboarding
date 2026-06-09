@@ -1,5 +1,5 @@
 // One-shot data fix: dedupe sitemap rows by URL on existing sessions and
-// content_jobs that were populated before lib/mfp-parser/index.ts learned to
+// content_jobs that were populated before lib/mbp-parser/index.ts learned to
 // skip duplicate destination URLs.
 //
 // Usage:

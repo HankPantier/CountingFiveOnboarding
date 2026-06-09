@@ -12,9 +12,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const { websiteUrl, mfpContent, schemaData, gapList } = body as {
+  const { websiteUrl, mbpContent, schemaData, gapList } = body as {
     websiteUrl?: unknown
-    mfpContent?: unknown
+    mbpContent?: unknown
     schemaData?: unknown
     gapList?: unknown
   }
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     .from('sessions')
     .insert({
       website_url: websiteUrl,
-      mfp_content: typeof mfpContent === 'string' ? mfpContent : null,
+      mbp_content: typeof mbpContent === 'string' ? mbpContent : null,
       schema_data: (schemaData ?? {}) as Json,
       gap_list: (Array.isArray(gapList) ? gapList : []) as Json,
       status: 'pending',

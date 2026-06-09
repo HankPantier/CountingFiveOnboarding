@@ -59,7 +59,7 @@ export default function NewSessionPage() {
       const res = await fetch('/api/sessions/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mfpContent: text }),
+        body: JSON.stringify({ mbpContent: text }),
       })
       if (!res.ok) {
         const err = await res.json() as { error: string }
@@ -71,7 +71,7 @@ export default function NewSessionPage() {
       setWebsiteUrl(data.websiteUrl)
       setStep('summary')
     } catch {
-      setError('Failed to parse MFP file')
+      setError('Failed to parse MBP file')
     } finally {
       setLoading(false)
     }
@@ -94,7 +94,7 @@ export default function NewSessionPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           websiteUrl,
-          mfpContent: parsed.rawContent,
+          mbpContent: parsed.rawContent,
           schemaData: schemaWithNotes,
           gapList: parsed.gapList,
         }),
@@ -166,7 +166,7 @@ export default function NewSessionPage() {
 
       <h1 className="text-2xl font-heading font-bold text-brand-navy">New Client Session</h1>
       <p className="text-text-secondary font-body mt-1 mb-8">
-        Upload the client&apos;s Master Firm Profile to begin.
+        Upload the client&apos;s Master Business Profile to begin.
       </p>
 
       {/* Dropzone — prominent when empty, compact after parsing */}
@@ -180,7 +180,7 @@ export default function NewSessionPage() {
         } ${loading ? 'cursor-default' : ''}`}>
           <span className="text-text-muted font-body text-sm text-center px-4">
             {loading
-              ? 'Parsing MFP…'
+              ? 'Parsing MBP…'
               : file
               ? `${file.name} — click to change`
               : 'Click to select .md file'}
@@ -366,7 +366,7 @@ export default function NewSessionPage() {
                 <textarea
                   value={additionalNotes}
                   onChange={e => setAdditionalNotes(e.target.value)}
-                  placeholder="Anything the team should know before the client conversation — preferences, context, or anything the MFP didn't capture."
+                  placeholder="Anything the team should know before the client conversation — preferences, context, or anything the MBP didn't capture."
                   rows={4}
                   className="w-full border border-border-default rounded-card px-3 py-2.5 text-text-primary font-body text-sm focus:outline-none focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/15 transition-colors resize-none placeholder:text-text-muted"
                 />

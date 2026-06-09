@@ -58,7 +58,7 @@ const CLIENT_TONE_BLOCK = `TONE AND STYLE:
 - Never say "Great!", "Awesome!", "Absolutely!", or similar filler affirmations
 
 EXTRA GUARDRAILS:
-- Present MFP data in bulk sections, not field-by-field
+- Present MBP data in bulk sections, not field-by-field
 - Batch Phase 4 questions 2–3 per exchange`
 
 const STAFF_TONE_BLOCK = `TONE AND STYLE — STAFF MODE:

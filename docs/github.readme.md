@@ -212,8 +212,8 @@ hand-edits.
   (`<!-- block: faq-accordion -->`). A dedicated structured FAQ form is a
   natural follow-up.
 - Installation tokens are cached only in-memory by `@octokit/auth-app`. If
-  you ever see rate-limit warnings, add a DB-backed cache mirroring
-  `lib/basecamp/client.ts`'s pattern.
+  you ever see rate-limit warnings, add a DB-backed token cache (refresh on
+  expiry, single source of truth in Postgres).
 
 ## Conventions to honor when provisioning lands
 

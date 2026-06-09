@@ -49,7 +49,7 @@ const STATUS_FILTERS = ['all', 'pending', 'in_progress', 'completed', 'approved'
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ basecamp?: string; q?: string; status?: string; page?: string }>
+  searchParams: Promise<{ q?: string; status?: string; page?: string }>
 }) {
   const supabase = createServerClient()
   const sp = await searchParams
@@ -68,11 +68,10 @@ export default async function DashboardPage({
   else query = query.eq('status', statusFilter)
   if (q) query = query.ilike('website_url', `%${q}%`)
 
-  const [{ data: sessions, count: totalCount }, { data: bcToken }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
+  const [{ data: sessions, count: totalCount }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
     query
       .order('last_activity_at', { ascending: true })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
-    supabase.from('basecamp_tokens').select('id').eq('id', 1).single(),
     supabase
       .from('sessions')
       .select('*', { count: 'exact', head: true })
@@ -122,23 +121,8 @@ export default async function DashboardPage({
     (contentJobs ?? []).map(j => [j.session_id, { phase: j.phase, githubRepo: j.github_repo }])
   )
 
-  const basecampConnected = !!bcToken
-  const justConnected = sp.basecamp === 'connected'
-
   return (
     <main className="p-8">
-      {justConnected && (
-        <div className="mb-6 bg-success/10 border border-success/30 text-success font-body text-sm rounded-lg px-4 py-3">
-          Basecamp connected successfully.
-        </div>
-      )}
-
-      {process.env.BASECAMP_ENABLED !== 'true' && (
-        <div className="mb-6 bg-warning/10 border border-warning/30 text-warning font-body text-sm rounded-lg px-4 py-3">
-          Basecamp integration is disabled (BASECAMP_ENABLED is not set) — session
-          approvals will <strong>not</strong> create Basecamp projects.
-        </div>
-      )}
 
       <div className="flex items-center justify-between mb-8">
         <div>
@@ -165,14 +149,6 @@ export default async function DashboardPage({
           )}
         </div>
         <div className="flex items-center gap-3">
-          {!basecampConnected && (
-            <a
-              href="/api/basecamp/auth"
-              className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
-            >
-              Connect Basecamp
-            </a>
-          )}
           <Link
             href="/admin/dashboard/new-session"
             className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"

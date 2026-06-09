@@ -1,4 +1,4 @@
-import { parseMFP } from '@/lib/mfp-parser'
+import { parseMBP } from '@/lib/mbp-parser'
 import { createAuthClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
@@ -10,16 +10,16 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body: unknown = await req.json()
-  const mfpContent =
-    typeof body === 'object' && body !== null && 'mfpContent' in body
-      ? (body as { mfpContent: unknown }).mfpContent
+  const mbpContent =
+    typeof body === 'object' && body !== null && 'mbpContent' in body
+      ? (body as { mbpContent: unknown }).mbpContent
       : undefined
 
-  if (typeof mfpContent !== 'string' || mfpContent.trim() === '') {
+  if (typeof mbpContent !== 'string' || mbpContent.trim() === '') {
     return NextResponse.json({ error: 'No content' }, { status: 400 })
   }
 
-  const { schema, gaps } = parseMFP(mfpContent)
+  const { schema, gaps } = parseMBP(mbpContent)
 
   return NextResponse.json({
     websiteUrl: schema.websiteUrl ?? '',
@@ -29,6 +29,6 @@ export async function POST(req: Request) {
     gapCount: gaps.length,
     schemaData: schema,
     gapList: gaps,
-    rawContent: mfpContent,
+    rawContent: mbpContent,
   })
 }

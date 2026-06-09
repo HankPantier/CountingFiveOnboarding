@@ -2,7 +2,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 import { slugify } from '@/lib/content/sitemap-utils'
 
-export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapItem[] } {
+export function parseMBP(markdown: string): { schema: SessionSchema; gaps: GapItem[] } {
   const gaps: GapItem[] = []
   const schema: SessionSchema = {
     business: {
@@ -69,7 +69,7 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
     try {
       fn()
     } catch (err) {
-      console.warn('[MFP Parser] ' + label + ' failed — returning partial result:', err)
+      console.warn('[MBP Parser] ' + label + ' failed — returning partial result:', err)
     }
   }
 
@@ -78,7 +78,7 @@ export function parseMFP(markdown: string): { schema: SessionSchema; gaps: GapIt
 }
 
 // When a firm has multiple offices, ensure the proposed sitemap has a
-// /locations parent and a /locations/<slug> page per office. The MFP usually
+// /locations parent and a /locations/<slug> page per office. The MBP usually
 // already covers this, but auto-injection guards against omissions and gives
 // the LLM a per-location landing page to populate during research/generation.
 function augmentSitemapWithLocations(schema: SessionSchema): void {
@@ -119,7 +119,7 @@ function extractSection(markdown: string, sectionNumber: number): string | null 
   const pattern = new RegExp('##\\s+Section\\s+' + sectionNumber + '\\b[^\\n]*\\n', 'i')
   const match = markdown.match(pattern)
   if (!match || match.index === undefined) {
-    console.warn('[MFP Parser] Section ' + sectionNumber + ' not found')
+    console.warn('[MBP Parser] Section ' + sectionNumber + ' not found')
     return null
   }
   const start = match.index + match[0].length
@@ -264,7 +264,7 @@ function parseSection2(markdown: string, schema: SessionSchema): void {
     if (prose) business.currentPositioning = prose
   }
 
-  // Competitive Context table (only present in some MFPs).
+  // Competitive Context table (only present in some MBPs).
   const competitiveStart = section.indexOf('### Competitive Context')
   if (competitiveStart > -1) {
     const tail = section.slice(competitiveStart)
@@ -371,7 +371,7 @@ function parseSection4(markdown: string, schema: SessionSchema, gaps: GapItem[])
 
   schema.culture!.socialMediaChannels = channels
 
-  // If the MFP didn't list LinkedIn at all, still seed the field so the agent
+  // If the MBP didn't list LinkedIn at all, still seed the field so the agent
   // knows to ask about it during Phase 3 confirmation.
   if (!linkedInCaptured) {
     schema.culture!.linkedIn = { url: null }
@@ -429,7 +429,7 @@ function parseSection5(markdown: string, schema: SessionSchema): void {
 
   // Locate each ICP block by its heading and slice between them. Stop at the
   // sub-category heading so prose text from later subsections doesn't bleed in.
-  // Korbey MFPs use `\n---\n` separators; Barwick does not — heading-position
+  // Korbey MBPs use `\n---\n` separators; Barwick does not — heading-position
   // slicing handles both shapes.
   const niches: NonNullable<SessionSchema['niches']> = []
   const subAssessmentIdx = section.indexOf('### Industry Sub-Category Assessment')
@@ -551,9 +551,9 @@ function parseSection6(markdown: string, schema: SessionSchema): void {
   const services: NonNullable<SessionSchema['services']> = []
   const SKIP = new Set(['service', 'field'])
 
-  // Detect column layout. Newer MFPs use:
+  // Detect column layout. Newer MBPs use:
   //   | Service | Clarity | Current Framing | Rewrite Direction |
-  // Older MFPs use:
+  // Older MBPs use:
   //   | Service | Tier | Notes | Description |
   // We look at the header row to decide whether row[3] is rewriteDirection
   // (preferred) or just a description.
@@ -1044,7 +1044,7 @@ function parseReviewPrompts(markdown: string, schema: SessionSchema): void {
   }
 }
 
-// ─── Phase 4 gaps (only added when the MFP didn't populate the field) ────────
+// ─── Phase 4 gaps (only added when the MBP didn't populate the field) ────────
 
 function getPath(obj: unknown, path: string): unknown {
   return path.split('.').reduce<unknown>(
@@ -1063,7 +1063,7 @@ function isPopulated(schema: SessionSchema | undefined, path: string): boolean {
   if (typeof v === 'string') return v.trim().length > 0
   if (Array.isArray(v)) return v.length > 0
   // Booleans are initialized to `false` as schema defaults (e.g. hasBrandGuide).
-  // The MFP doesn't set them, so a `false` here is never a real answer — gaps
+  // The MBP doesn't set them, so a `false` here is never a real answer — gaps
   // for boolean fields stay until the agent collects them at runtime.
   if (typeof v === 'boolean') return false
   return true
@@ -1071,7 +1071,7 @@ function isPopulated(schema: SessionSchema | undefined, path: string): boolean {
 
 function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
   // Tier numbering mirrors raw-docs/agent-conversation-flow.md Phase 4. Each
-  // entry is only emitted if the MFP didn't already fill the field — chat fills
+  // entry is only emitted if the MBP didn't already fill the field — chat fills
   // gaps, not duplicates.
   const candidates: GapItem[] = [
     // Firm background
@@ -1107,7 +1107,7 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     if (!isPopulated(schema, g.field)) gaps.push(g)
   }
 
-  // Per-niche pain points & value props — only ask when the MFP didn't fill them.
+  // Per-niche pain points & value props — only ask when the MBP didn't fill them.
   if (schema?.niches?.length) {
     for (let i = 0; i < schema.niches.length; i++) {
       const niche = schema.niches[i]

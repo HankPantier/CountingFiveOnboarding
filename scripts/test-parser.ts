@@ -1,10 +1,10 @@
-import { parseMFP } from '../lib/mfp-parser/index'
+import { parseMBP } from '../lib/mbp-parser/index'
 import * as fs from 'fs'
 import * as path from 'path'
 
-const mfpPath = path.join(__dirname, '../raw-docs/mfp-korbeylague-com-2026-04-24.md')
-const mfp = fs.readFileSync(mfpPath, 'utf-8')
-const { schema, gaps } = parseMFP(mfp)
+const mbpPath = path.join(__dirname, '../raw-docs/mfp-korbeylague-com-2026-04-24.md')
+const mbp = fs.readFileSync(mbpPath, 'utf-8')
+const { schema, gaps } = parseMBP(mbp)
 
 let passed = 0
 let failed = 0
@@ -38,14 +38,14 @@ assert('T3 — Title gaps exist', titleGaps.length > 0, 'got: ' + titleGaps.leng
 console.log('     Title gaps:', titleGaps.map(g => g.label).join(', '))
 
 // T4
-const { schema: emptySchema, gaps: emptyGaps } = parseMFP('')
-assert('T4 — Empty MFP does not throw', true)
-assert('T4 — Empty MFP has 16 base Phase 4 tier-1 gaps', emptyGaps.filter(g => g.tier === 1).length === 16, 'got: ' + emptyGaps.filter(g => g.tier === 1).length)
+const { schema: emptySchema, gaps: emptyGaps } = parseMBP('')
+assert('T4 — Empty MBP does not throw', true)
+assert('T4 — Empty MBP has 16 base Phase 4 tier-1 gaps', emptyGaps.filter(g => g.tier === 1).length === 16, 'got: ' + emptyGaps.filter(g => g.tier === 1).length)
 
 // T5
-const { schema: partialSchema } = parseMFP('## Section 1 — Firm Identity\n| **Firm Name** | Test Co |\n')
-assert('T5 — Partial MFP does not throw', true)
-assert('T5 — Partial MFP parses firm name', partialSchema.business?.name === 'Test Co', 'got: ' + partialSchema.business?.name)
+const { schema: partialSchema } = parseMBP('## Section 1 — Firm Identity\n| **Firm Name** | Test Co |\n')
+assert('T5 — Partial MBP does not throw', true)
+assert('T5 — Partial MBP parses firm name', partialSchema.business?.name === 'Test Co', 'got: ' + partialSchema.business?.name)
 
 // T6
 const confirmedAffiliations = schema.business?.affiliations ?? []

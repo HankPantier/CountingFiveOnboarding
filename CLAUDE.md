@@ -12,7 +12,6 @@ This file is read by AI coding assistants before working on this codebase. Follo
 - **AI:** Anthropic API via Vercel AI SDK (`ai`, `@ai-sdk/anthropic`)
 - **Email:** Resend + React Email
 - **File Storage:** Supabase Storage
-- **Project Management:** Basecamp (OAuth 2.0)
 - **PDF:** `@react-pdf/renderer` (Node.js runtime only)
 - **UI:** Tailwind CSS + shadcn/ui
 
@@ -55,13 +54,10 @@ When adding the first admin (or after migration 016 wipes loose policies), seed 
 INSERT INTO admins (id, email, name) VALUES ('<auth.users.id-uuid>', 'you@example.com', 'Your Name');
 ```
 
-### 7. Basecamp OAuth requires `state`
-The `/api/basecamp/auth` route must generate a random `state`, set it as an httpOnly cookie scoped to `/api/basecamp`, and include it in the authorization URL. The `/api/basecamp/callback` route must reject any request whose query `state` doesn't match the cookie. Without this, an attacker can trick an admin into completing OAuth on the attacker's behalf.
-
-### 8. The `session-assets` bucket is private — never write public URLs
+### 7. The `session-assets` bucket is private — never write public URLs
 Storage paths under `sessions/{sessionId}/` are private. `assets.public_url` is nullable; new inserts MUST write `null`. Admin UIs that render asset thumbnails take server-signed URLs from their parent server component (1-hour TTL via `supabase.storage.from('session-assets').createSignedUrl(path, 3600)`). Calling `.getPublicUrl()` on this bucket is forbidden.
 
-### 9. File paths from clients are decoded before validation
+### 8. File paths from clients are decoded before validation
 Any route that accepts a file path in a query param or JSON body MUST decode-then-normalize before any `startsWith` / prefix check. `content/..%2F..%2Fetc/passwd` passes a raw `startsWith('content/')` check but escapes the root after decoding. Use the helper in `app/api/edit/[id]/_path.ts` (or mirror its pattern).
 
 ---
@@ -102,7 +98,7 @@ Any route that accepts a file path in a query param or JSON body MUST decode-the
 - The system prompt is built fresh for every request in `lib/agent/system-prompt.ts`
 - Always strip `_meta` from `schema_data` before passing to Claude — internal tracking must never appear in Claude's context
 - Only include gap list instructions when `current_phase >= 4`
-- Never include `mfp_content` (raw MFP text) in the system prompt — only the parsed `schema_data`
+- Never include `mbp_content` (raw MBP text) in the system prompt — only the parsed `schema_data`
 - Always run `serializeSchema()` to remove empty/null/blank fields before injecting schema into prompt
 
 ### Token Budget Targets (enforce during development)
@@ -148,7 +144,7 @@ If this flag is not cleared, the session is permanently locked for the client. T
 ### Phase Numbers
 - **Development Phases 1–14:** The build phases defined in `raw-docs/dev-steps/` — these are the implementation steps
 - **Agent Phases 0–7:** The conversation phases the client experiences — defined in `raw-docs/agent-conversation-flow.md`
-- Never confuse these two numbering systems. "Phase 3" in a dev step file means development Phase 3 (admin auth). "Agent Phase 3" means the MFP review conversation.
+- Never confuse these two numbering systems. "Phase 3" in a dev step file means development Phase 3 (admin auth). "Agent Phase 3" means the MBP review conversation.
 
 ### Phase Advancement
 Phase advances are validated server-side in `updateSessionSchema`. Claude calling `advancePhase: true` is a request, not a guarantee. The server checks:
@@ -163,13 +159,13 @@ WHOIS (Phase 2) runs automatically server-side when the session advances to phas
 
 ---
 
-## MFP Parser Rules
+## MBP Parser Rules
 
 - The parser must never throw. Wrap all section parsers in try/catch and always return a partial result.
 - Use regex to find section headers — never use line numbers or character offsets.
-- ✅ items in MFP → add to schema. ❓ items → add to gap list.
-- The Korbey Lague MFP (`raw-docs/mfp-korbeylague-com-2026-04-24.md`) is the primary test fixture. Run the parser against it after any change.
-- Store raw `mfp_content` in the DB — never in the system prompt.
+- ✅ items in MBP → add to schema. ❓ items → add to gap list.
+- The Korbey Lague MBP (`raw-docs/mfp-korbeylague-com-2026-04-24.md`) is the primary test fixture. Run the parser against it after any change.
+- Store raw `mbp_content` in the DB — never in the system prompt.
 
 ---
 
@@ -180,17 +176,6 @@ WHOIS (Phase 2) runs automatically server-side when the session advances to phas
 - PDF storage path: `pdfs/{sessionId}/intake-summary.pdf`
 - Upload uses `upsert: true` — re-generating the PDF overwrites the previous version.
 
----
-
-## Basecamp Integration Rules
-
-- Always call `getValidToken()` before any Basecamp API request — never cache tokens across requests.
-- Basecamp tokens are stored in the `basecamp_tokens` table (singleton row, `id = 1`), never in environment variables.
-- The correct message creation sequence is: (1) create message, (2) upload all attachments to get sgids, (3) update message with `<bc-attachment>` tags. This order is required by the Basecamp API.
-- Add a 200ms delay between attachment uploads to stay within Basecamp's rate limit (50 req/10s).
-- Check `basecamp_project_id IS NULL` before creating a project on approval — never create duplicate projects.
-
----
 
 ## TypeScript Rules
 
@@ -217,13 +202,11 @@ app/
     upload/         # File upload (presign + confirm)
     whois/          # WHOIS lookup trigger
     cron/           # Scheduled jobs — require CRON_SECRET
-    basecamp/       # OAuth routes
     pdf/            # PDF generation
 lib/
   supabase/         # client.ts, server.ts, proxy.ts
   agent/            # system-prompt.ts, phase-instructions.ts, trim-messages.ts, gap-list.ts
-  mfp-parser/       # index.ts + section parsers
-  basecamp/         # client.ts, create-project.ts
+  mbp-parser/       # index.ts + section parsers
   pdf/              # generate-pdf.ts + components/
 components/
   chat/             # ChatInterface, FileUploadButton, MessageBubble
@@ -243,7 +226,7 @@ types/              # database.ts (generated), session-schema.ts, gap-item.ts
    - `grep -r "SUPABASE_SERVICE_ROLE_KEY" ./app` (expect zero matches)
    - `grep -r "GITHUB_APP_PRIVATE_KEY" ./app` (expect zero matches)
    - `grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx"` (expect zero matches outside `scripts/`)
-5. Test against the Korbey Lague MFP fixture for any changes to the parser or agent logic
+5. Test against the Korbey Lague MBP fixture for any changes to the parser or agent logic
 6. Use the Supabase SQL Editor to verify DB state after any session-modifying operation
 
 ---
@@ -278,15 +261,13 @@ The full design specification lives in `raw-docs/design.md`. **Read it before wr
 ## Do Not
 
 - Do not use `localStorage` or `sessionStorage` anywhere in the application
-- Do not put the Basecamp `access_token` or `refresh_token` in environment variables
-- Do not send `mfp_content` to Claude
+- Do not send `mbp_content` to Claude
 - Do not use `export const runtime = 'edge'` on any route that uses `@react-pdf/renderer` or `whoiser`
 - Do not use sequential IDs for session or record lookups
 - Do not advance a phase without server-side validation
-- Do not mark a session as approved if `basecamp_project_id` is already set
+- Do not mark a session as approved if it is already approved
 - Do not clear the `processing` flag only in `onFinish` — also clear it on error
 - Do not call `.getPublicUrl()` on the `session-assets` bucket or write a value into `assets.public_url`
 - Do not write `console.log` in pipeline or production paths — use `console.warn` for non-fatal operational logs, `console.error` for genuine failures
 - Do not use raw Tailwind semantic colors (`text-red-*`, `bg-amber-*`, etc.) — use the `error` / `warning` / `info` / `success` tokens defined in `app/globals.css`
-- Do not skip the `state` cookie check in `/api/basecamp/callback`
 - Do not let `process.env.CRON_SECRET` be empty in any environment that has cron routes deployed

@@ -11,7 +11,6 @@ Written for the operator, not for code — keep it current as infrastructure cha
 | Generated pages, outlines, research, token usage | Supabase Postgres | Regenerate (costs Anthropic tokens + hours) |
 | Uploaded logos/photos + resolved stock photos + package zips | Supabase Storage `session-assets` (private) | Client re-uploads; stock photos re-resolve from Pexels |
 | Site content (markdown, nav, brand) | Per-client GitHub repo (`draft` + `main`) | Git history — effectively self-backing |
-| Basecamp tokens | `basecamp_tokens` table | Re-run OAuth connect from the dashboard |
 
 ## Database recovery (Supabase)
 
@@ -59,7 +58,6 @@ is a publish merge — anything else needs manual Git surgery, on purpose.
 | `PEXELS_API_KEY` | `.env.local` + Vercel | pexels.com/api |
 | `CRON_SECRET` | Vercel env + vercel.json crons | generate new random, update env — cron requests use it immediately |
 | GitHub App private key | Vercel env | GitHub App settings → generate new key, swap, delete old |
-| Basecamp tokens | DB (auto-refreshed) | nothing to rotate manually; re-OAuth if revoked |
 
 ## Failure playbook
 

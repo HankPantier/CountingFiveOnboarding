@@ -82,30 +82,6 @@ export type Database = {
           },
         ]
       }
-      basecamp_tokens: {
-        Row: {
-          access_token: string
-          expires_at: string
-          id: number
-          refresh_token: string
-          updated_at: string
-        }
-        Insert: {
-          access_token: string
-          expires_at: string
-          id?: number
-          refresh_token: string
-          updated_at?: string
-        }
-        Update: {
-          access_token?: string
-          expires_at?: string
-          id?: number
-          refresh_token?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       content_jobs: {
         Row: {
           confirmed_sitemap: Json | null
@@ -584,7 +560,6 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
-          basecamp_project_id: string | null
           client_email: string | null
           completed_at: string | null
           content_generation_phase: number | null
@@ -595,7 +570,7 @@ export type Database = {
           gap_list: Json
           id: string
           last_activity_at: string
-          mfp_content: string | null
+          mbp_content: string | null
           pdf_url: string | null
           processing: boolean
           reminder_count: number
@@ -606,7 +581,6 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
-          basecamp_project_id?: string | null
           client_email?: string | null
           completed_at?: string | null
           content_generation_phase?: number | null
@@ -617,7 +591,7 @@ export type Database = {
           gap_list?: Json
           id?: string
           last_activity_at?: string
-          mfp_content?: string | null
+          mbp_content?: string | null
           pdf_url?: string | null
           processing?: boolean
           reminder_count?: number
@@ -628,7 +602,6 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
-          basecamp_project_id?: string | null
           client_email?: string | null
           completed_at?: string | null
           content_generation_phase?: number | null
@@ -639,7 +612,7 @@ export type Database = {
           gap_list?: Json
           id?: string
           last_activity_at?: string
-          mfp_content?: string | null
+          mbp_content?: string | null
           pdf_url?: string | null
           processing?: boolean
           reminder_count?: number
