@@ -69,6 +69,13 @@ export default function SessionRowActions({
       >
         Session
       </Link>
+      <Link
+        href={`/admin/sessions/${sessionId}/mbp`}
+        className="text-text-secondary hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
+        title="View / edit the Master Business Profile"
+      >
+        MBP
+      </Link>
       {showContentLink && (
         <Link
           href={`/admin/content/${sessionId}`}
