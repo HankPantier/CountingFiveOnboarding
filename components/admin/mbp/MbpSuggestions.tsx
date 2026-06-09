@@ -50,11 +50,13 @@ function SuggestionCard({
       <div className="space-y-1.5">
         {Object.entries(suggestion.changes).map(([fieldPath, change]) => (
           <div key={fieldPath} className="text-xs font-body bg-surface-subtle rounded px-2 py-1.5">
-            <p className="font-heading font-semibold text-text-secondary">{fieldPath}</p>
-            {change.currentValue !== undefined && change.currentValue !== null && change.currentValue !== '' && (
+            <p className="font-heading font-semibold text-text-secondary">
+              {change.op === 'append' ? `Add to ${fieldPath}` : fieldPath}
+            </p>
+            {change.op !== 'append' && change.currentValue !== undefined && change.currentValue !== null && change.currentValue !== '' && (
               <p className="text-text-muted line-through break-words">{String(change.currentValue)}</p>
             )}
-            <p className="text-text-primary break-words">{String(change.proposedValue)}</p>
+            <p className="text-text-primary break-words whitespace-pre-wrap">{String(change.proposedValue)}</p>
             <p className="text-text-muted italic mt-0.5">{change.rationale}</p>
           </div>
         ))}

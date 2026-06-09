@@ -2,9 +2,19 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
+import type { SessionSchema } from '@/types/session-schema'
 import type { MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
 
 export const runtime = 'nodejs'
+
+function getByPath(schema: SessionSchema, path: string): unknown {
+  return path.split('.').reduce<unknown>((acc, key) => {
+    if (acc && typeof acc === 'object' && !Array.isArray(acc)) {
+      return (acc as Record<string, unknown>)[key]
+    }
+    return undefined
+  }, schema as Record<string, unknown>)
+}
 
 // Approve (apply the proposed field changes) or dismiss a pending MBP
 // suggestion. Admin-only — managers have a read-only MBP.
@@ -40,10 +50,30 @@ export async function PATCH(
 
   if (body.action === 'approve') {
     const changes = suggestion.changes as MbpSuggestionChanges
+
+    // For append ops we need the current array to push onto.
+    const { data: sessionRow } = await supabase
+      .from('sessions')
+      .select('schema_data')
+      .eq('id', id)
+      .single()
+    const currentSchema = (sessionRow?.schema_data ?? {}) as SessionSchema
+
     const updates: Record<string, unknown> = {}
     for (const [fieldPath, change] of Object.entries(changes)) {
-      updates[fieldPath] = change.proposedValue
+      if (change.op === 'append') {
+        let item: unknown = change.proposedValue
+        if (typeof change.proposedValue === 'string') {
+          try { item = JSON.parse(change.proposedValue) } catch { item = change.proposedValue }
+        }
+        const existing = getByPath(currentSchema, fieldPath)
+        const base = Array.isArray(existing) ? existing : []
+        updates[fieldPath] = [...base, item]
+      } else {
+        updates[fieldPath] = change.proposedValue
+      }
     }
+
     const result = await applyMbpUpdate(supabase, id, updates)
     if (!result.success) {
       return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })

@@ -19,6 +19,7 @@ import { buildInternalLinkTargets, type InternalLinkTarget } from './internal-li
 import { insertReverseLinks } from './reverse-linker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
+import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import type { NavJson } from '@/types/nav-json'
@@ -597,6 +598,20 @@ export async function generateResourceDraft(
       .eq('id', ideaId)
 
     console.warn(`[resource-draft] Complete: "${fm.title}" → content/posts/${slug}.md (${commitSha.slice(0, 7)})`)
+
+    // The generated post body is genuinely new prose that may surface a service,
+    // office, or positioning shift worth reflecting in the MBP. Non-fatal: a
+    // review failure must never regress the already-published draft.
+    try {
+      await reviewContentForMbpImpact({
+        sessionId: idea.session_id,
+        origin: 'resource',
+        sourceRef: `resource post: ${fm.title}`,
+        changedText: result.body,
+      })
+    } catch (err) {
+      console.error('[mbp-impact] resource draft review failed:', err)
+    }
 
     // Reverse-link pass: link the most relevant existing posts back to the
     // new one, as a second commit on the same draft branch (one reviewable

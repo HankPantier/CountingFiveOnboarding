@@ -2,7 +2,6 @@ import { after, NextResponse } from 'next/server'
 import { resolveEditContext } from '../../../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateResourceDraft } from '@/lib/content/resource-draft-generator'
-import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { checkBrandFit, OFF_BRAND_MARKER } from '@/lib/content/brand-fit'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -109,16 +108,6 @@ export async function POST(
       console.error('[resource-draft] Trigger failed:', err)
     }
   })
-  if (notes) {
-    after(() =>
-      reviewContentForMbpImpact({
-        sessionId: ctx.sessionId,
-        origin: 'resource',
-        sourceRef: 'draft notes',
-        changedText: notes,
-      }).catch(err => console.error('[mbp-impact] resource review failed:', err))
-    )
-  }
 
   return NextResponse.json({ success: true })
 }

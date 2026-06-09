@@ -19,8 +19,9 @@ const CHANGED_TEXT_CAP = 4000
 const reviewSchema = z.object({
   hasImpact: z.boolean(),
   changes: z.array(z.object({
-    fieldPath: z.string().describe('Dotted MBP path, e.g. business.tagline or brand.aspirationalTone'),
-    proposedValue: z.string().describe('The proposed new value (text)'),
+    fieldPath: z.string().describe('Dotted MBP path. For set: a prose/scalar field like business.tagline. For append: the array field name like services, locations, niches.'),
+    op: z.enum(['set', 'append']).describe("'set' to replace a prose/scalar field; 'append' to add a new entry to an array field"),
+    proposedValue: z.string().describe("For set: the new text value. For append: a JSON object for the new array item, matching the shape of existing entries in that array."),
     rationale: z.string().describe('Why this content warrants the change'),
   })),
   summary: z.string(),
@@ -67,19 +68,29 @@ A piece of content was just ${origin.replace('_', ' ')} (${sourceRef}):
 ${changedText.slice(0, CHANGED_TEXT_CAP)}
 """
 
-Decide whether this content reveals anything that should update the MBP to stay consistent — e.g. a new service, a new office/location, a shift in brand voice or positioning, a new differentiator. Only propose changes to PROSE or SCALAR MBP fields (taglines, positioning statements, differentiators, brand tone fields, summaries) — do NOT propose edits to array fields like services/team/locations/niches (flag those in the summary instead). Only propose changes grounded in the content; if nothing warrants a change, return hasImpact: false with an empty changes array.`,
+Decide whether this content reveals anything that should update the MBP to stay consistent — e.g. a new service, a new office/location, a shift in brand voice or positioning, a new differentiator.
+- For prose/scalar fields (taglines, positioning statements, differentiators, brand tone fields, summaries): use op "set" with proposedValue as the new text.
+- For NEW entries in an array field (a new service, office/location, or niche): use op "append", fieldPath as the array name (services, locations, niches), and proposedValue as a JSON object matching the shape of the existing entries in that array (look at the MBP above for the exact keys). Do NOT propose replacing a whole array, and do NOT append a duplicate of something already present.
+Only propose changes grounded in the content; if nothing warrants a change, return hasImpact: false with an empty changes array.`,
   })
 
   if (!object.hasImpact || object.changes.length === 0) return
 
-  const fieldPaths = object.changes.map(c => c.fieldPath).sort()
+  // Dedupe by field + op. For appends we also key on the proposed item so two
+  // genuinely different new entries (e.g. two new services) each get their own
+  // pending slot, while re-proposing the same one supersedes the prior.
+  const signature = object.changes
+    .map(c => `${c.fieldPath}:${c.op}${c.op === 'append' ? `:${c.proposedValue}` : ''}`)
+    .sort()
+    .join(',')
   const dedupeKey = createHash('sha256')
-    .update(`${sessionId}|${fieldPaths.join(',')}`)
+    .update(`${sessionId}|${signature}`)
     .digest('hex')
 
   const changes: MbpSuggestionChanges = {}
   for (const c of object.changes) {
     changes[c.fieldPath] = {
+      op: c.op,
       currentValue: getByPath(schema, c.fieldPath),
       proposedValue: c.proposedValue,
       rationale: c.rationale,
