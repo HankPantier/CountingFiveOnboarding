@@ -1,3 +1,4 @@
+import MbpSectionLink from '@/components/admin/mbp/MbpSectionLink'
 import type { GapItem } from '@/types/gap-item'
 import type { MbpDocument } from '@/types/mbp'
 
@@ -11,6 +12,12 @@ const TIER_LABELS: Record<number, string> = {
 // dot paths (`team.3.title`). Normalize numeric indices so the two align.
 function normalizeGapField(field: string): string {
   return field.replace(/\[(\d+)\]/g, '.$1')
+}
+
+// The document section that holds a gap's field — its first path segment
+// (business.foundingYear → business, team[3].title → team).
+function sectionKeyForGap(field: string): string {
+  return field.split(/[.[]/)[0]
 }
 
 // Focused "what's still genuinely missing" list. Driven by the curated gap
@@ -60,7 +67,10 @@ export default function MbpCompleteness({
               <p className="text-xs font-heading font-semibold text-text-secondary mb-1">{TIER_LABELS[tier]}</p>
               <ul className="space-y-0.5">
                 {items.map(g => (
-                  <li key={g.field} className="text-sm font-body text-text-primary">• {g.label}</li>
+                  <li key={g.field} className="flex gap-1.5 text-sm font-body text-text-primary">
+                    <span className="text-text-muted">•</span>
+                    <MbpSectionLink sectionKey={sectionKeyForGap(g.field)} label={g.label} />
+                  </li>
                 ))}
               </ul>
             </div>

@@ -95,7 +95,7 @@ function SectionCard({
   editable: boolean
 }) {
   return (
-    <details className="border border-border-default rounded-lg overflow-hidden bg-surface-card">
+    <details id={`mbp-${section.key}`} className="scroll-mt-6 border border-border-default rounded-lg overflow-hidden bg-surface-card">
       <summary className="px-4 py-2.5 bg-surface-subtle cursor-pointer text-sm font-heading font-semibold text-text-primary marker:text-text-muted hover:bg-surface-card transition-colors">
         {section.title}
       </summary>
@@ -138,22 +138,12 @@ export default function MbpDocument({
   sessionId: string
   editable?: boolean
 }) {
-  // Sitemap sections are wide tables → full width. Everything else tiles into
-  // a masonry of cards so the page fills horizontal space instead of one tall
-  // column. break-inside-avoid keeps each card intact across columns.
-  const wide = doc.sections.filter(s => SITEMAP_KEYS.has(s.key))
-  const tiled = doc.sections.filter(s => !SITEMAP_KEYS.has(s.key))
-
+  // Full-width stack: each block collapses to its headline, so a single
+  // column stays compact and expands cleanly (a multi-column masonry reflows
+  // awkwardly when a block opens).
   return (
     <div className="space-y-3">
-      <div className="lg:columns-2 xl:columns-3 gap-3">
-        {tiled.map(section => (
-          <div key={section.key} className="mb-3 break-inside-avoid">
-            <SectionCard section={section} overrides={overrides} sessionId={sessionId} editable={editable} />
-          </div>
-        ))}
-      </div>
-      {wide.map(section => (
+      {doc.sections.map(section => (
         <SectionCard key={section.key} section={section} overrides={overrides} sessionId={sessionId} editable={editable} />
       ))}
     </div>
