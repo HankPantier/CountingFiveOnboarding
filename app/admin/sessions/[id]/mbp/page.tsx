@@ -79,7 +79,7 @@ export default async function MbpPage({
           <MbpCompleteness doc={doc} gaps={gaps} />
           {isAdmin && <MbpBackfillButton sessionId={id} />}
           <MbpSuggestions sessionId={id} suggestions={suggestions} isAdmin={isAdmin} />
-          <MbpDocument doc={doc} overrides={overrides} />
+          <MbpDocument doc={doc} overrides={overrides} sessionId={id} editable={isAdmin} />
         </div>
         {isAdmin && (
           <div className="lg:sticky lg:top-6 lg:self-start lg:h-[calc(100vh-8rem)]">

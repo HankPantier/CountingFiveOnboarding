@@ -29,14 +29,16 @@ function isEmpty(v: unknown): boolean {
 }
 
 // Render a leaf value for display. Arrays of primitives join; nested
-// objects/arrays render as compact JSON (the field editor / chat handle
-// structured edits — this view is for reading).
-function displayValue(v: unknown): unknown {
+// objects/arrays render as compact JSON. Exported so the read-only view and
+// the markdown export format values identically. (Fields carry the RAW value
+// so the inline editor can edit structured values; display happens here.)
+export function formatFieldValue(v: unknown): string {
+  if (v === null || v === undefined || v === '') return ''
   if (Array.isArray(v) && v.every(x => typeof x === 'string' || typeof x === 'number')) {
     return v.join(', ')
   }
-  if (v !== null && typeof v === 'object') return JSON.stringify(v)
-  return v
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
 }
 
 function fieldsFromObject(
@@ -47,7 +49,7 @@ function fieldsFromObject(
   return Object.entries(obj).map(([key, value]) => ({
     label: humanize(key),
     fieldPath: `${basePath}.${key}`,
-    value: displayValue(value),
+    value,
     empty: isEmpty(value),
   }))
 }
@@ -101,7 +103,7 @@ export function mbpDocumentToMarkdown(doc: MbpDocument): string {
     lines.push(`## ${section.title}`, '')
     if (section.fields) {
       for (const f of section.fields) {
-        lines.push(`- **${f.label}:** ${f.empty ? '_(empty)_' : String(f.value)}`)
+        lines.push(`- **${f.label}:** ${f.empty ? '_(empty)_' : formatFieldValue(f.value)}`)
       }
       lines.push('')
     }
@@ -110,7 +112,7 @@ export function mbpDocumentToMarkdown(doc: MbpDocument): string {
       for (const item of section.items) {
         lines.push(`### ${item.heading}`)
         for (const f of item.fields) {
-          lines.push(`- **${f.label}:** ${f.empty ? '_(empty)_' : String(f.value)}`)
+          lines.push(`- **${f.label}:** ${f.empty ? '_(empty)_' : formatFieldValue(f.value)}`)
         }
         lines.push('')
       }
