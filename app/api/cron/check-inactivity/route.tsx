@@ -103,7 +103,7 @@ export async function GET(req: Request) {
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL!,
         to: ADMIN_EMAIL,
-        subject: `[CountingFive] Inactive session — ${session.website_url} (${daysInactive}d)`,
+        subject: `[Revaltus] Inactive session — ${session.website_url} (${daysInactive}d)`,
         html: adminHtml,
       })
 

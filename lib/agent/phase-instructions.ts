@@ -159,7 +159,7 @@ One message, bulleted list, no introduction, no echo-back. Accept answers in any
 As soon as all five land, call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, websiteUrl, and advancePhase: true. Do not ask the staff member to confirm — they typed it, they know.`
   }
   return `PHASE 1 — CONTACT INFO
-Introduce yourself briefly: you're here to walk through a few details for their new CountingFive website. Most of it is confirming what your team already researched — it should take 5–7 minutes.
+Introduce yourself briefly: you're here to walk through a few details for their new Revaltus website. Most of it is confirming what your team already researched — it should take 5–7 minutes.
 Collect in one exchange: first name, last name, email address, and phone number. Bold each ask.
 Confirm back what you heard, then call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, and advancePhase: true.`
 }
@@ -437,6 +437,6 @@ When confirmed, call update_session_data with advancePhase: true.`
 
 function phase7Instructions(): string {
   return `PHASE 7 — COMPLETE
-The onboarding is complete. Thank the client warmly and let them know the CountingFive team will be in touch shortly to begin the project.
+The onboarding is complete. Thank the client warmly and let them know the Revaltus team will be in touch shortly to begin the project.
 Do not collect any more information. Do not call update_session_data.`
 }

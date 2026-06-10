@@ -713,7 +713,7 @@ export async function runContentGeneration(
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL,
           to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-          subject: `[CountingFive] Content generation in progress — ${firmName}`,
+          subject: `[Revaltus] Content generation in progress — ${firmName}`,
           html: `
             <h2>Content Generation In Progress</h2>
             <p><strong>${firmName}</strong></p>
@@ -765,7 +765,7 @@ export async function runContentGeneration(
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL,
           to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-          subject: `[CountingFive] Content ready for review — ${firmName}`,
+          subject: `[Revaltus] Content ready for review — ${firmName}`,
           html: `
             <h2>Content Generation Complete</h2>
             <p><strong>${firmName}</strong></p>

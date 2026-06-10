@@ -5,13 +5,15 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* Brand colors */
-  --color-brand-navy: #003B71;
-  --color-brand-cyan: #00C1DE;
-  --color-brand-cyan-dark: #00ADC8; /* hover state for cyan CTAs (design.md: 10% darker) */
-  --color-brand-navy-dark: #0A406B;
-  --color-brand-navy-deeper: #183057;
-  --color-brand-purple: #6B2956;
+  /* Brand colors (Revaltus). Token names brand-navy/brand-cyan are retained so
+     all existing utility classes keep working; their values are now the Revaltus
+     palette — navy ≈ near-black wordmark, cyan ≈ teal accent. */
+  --color-brand-navy: #231f20;   /* near-black — headings, user chat bubbles, structural */
+  --color-brand-cyan: #098195;   /* teal — CTAs, links, active states */
+  --color-brand-cyan-dark: #076B7C; /* hover state for teal CTAs (~10% darker) */
+  --color-brand-navy-dark: #3A3436; /* hover on near-black elements (slightly lighter) */
+  --color-brand-navy-deeper: #1A1718; /* deepest accents/footers */
+  --color-brand-purple: #6B2956; /* error/destructive (semantic, not brand identity) */
 
   /* Surface colors */
   --color-surface-page: #F8FAFC;
@@ -29,10 +31,10 @@
   --color-text-inverse: #FFFFFF;
 
   /* Semantic colors */
-  --color-success: #00C1DE;
+  --color-success: #098195;
   --color-error: #6B2956;
   --color-warning: #F59E0B;
-  --color-info: #003B71;
+  --color-info: #231f20;
 
   /* Font families are defined in @theme inline below using CSS var() references */
 
@@ -41,12 +43,12 @@
   --radius-card: 8px;
   --radius-badge: 100px;
 
-  /* Box shadows (navy-tinted — never generic black) */
-  --shadow-subtle: 0px 5px 22px -6px rgba(0, 59, 113, 0.12);
-  --shadow-medium: 0px 8px 20px rgba(0, 59, 113, 0.15);
+  /* Box shadows (near-black-tinted — never generic black) */
+  --shadow-subtle: 0px 5px 22px -6px rgba(35, 31, 32, 0.12);
+  --shadow-medium: 0px 8px 20px rgba(35, 31, 32, 0.15);
   --shadow-elevated: 0px 12px 18px -6px rgba(0, 0, 0, 0.15);
-  --shadow-cyan-glow: 0px 6px 16px rgba(0, 193, 222, 0.4);
-  --shadow-cyan-base: 0px 4px 12px rgba(0, 193, 222, 0.3);
+  --shadow-cyan-glow: 0px 6px 16px rgba(9, 129, 149, 0.4);
+  --shadow-cyan-base: 0px 4px 12px rgba(9, 129, 149, 0.3);
 }
 
 body {

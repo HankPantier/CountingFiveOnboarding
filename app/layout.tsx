@@ -16,8 +16,8 @@ const openSans = Open_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'CountingFive Onboarding',
-  description: 'Website onboarding for CountingFive clients.',
+  title: 'Revaltus Onboarding',
+  description: 'Website onboarding for Revaltus clients.',
   icons: { icon: '/favicon.png' },
 }
 

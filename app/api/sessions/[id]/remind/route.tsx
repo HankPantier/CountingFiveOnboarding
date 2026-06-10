@@ -73,7 +73,7 @@ export async function POST(
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL!,
     to: ADMIN_EMAIL,
-    subject: `[CountingFive] Manual reminder — ${session.website_url}`,
+    subject: `[Revaltus] Manual reminder — ${session.website_url}`,
     html: adminHtml,
   })
 

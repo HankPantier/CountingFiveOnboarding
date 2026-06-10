@@ -57,17 +57,17 @@ export default async function ReviewPage({
   return (
     <div className="min-h-screen bg-surface-page">
       {/* Header — matches /session/[id] chrome */}
-      <header className="bg-brand-navy flex-shrink-0">
+      <header className="bg-surface-card border-b border-border-default flex-shrink-0">
         <div className="h-16 flex items-center justify-between px-6">
           <Image
-            src="/logo-white.png"
-            alt="CountingFive"
-            height={32}
-            width={180}
-            className="h-8 w-auto"
+            src="/logo.png"
+            alt="Revaltus"
+            height={36}
+            width={200}
+            className="h-9 w-auto"
             priority
           />
-          <span className="text-white/60 text-xs font-body hidden sm:block">
+          <span className="text-text-secondary text-xs font-body hidden sm:block">
             Content review
           </span>
         </div>
@@ -80,7 +80,7 @@ export default async function ReviewPage({
             Review your content
           </h1>
           <p className="mt-2 text-text-secondary font-body text-sm">
-            Hi {firmName} — your CountingFive team has prepared the pages below
+            Hi {firmName} — your Revaltus team has prepared the pages below
             for your review. You can read each one, make edits if anything needs
             changing, and approve when it&apos;s ready. Take your time; you don&apos;t
             need to do this all at once.

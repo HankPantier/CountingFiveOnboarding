@@ -184,7 +184,7 @@ async function notifyIfReviewComplete(
   await resend.emails.send({
     from: fromEmail,
     to: adminEmail,
-    subject: `[CountingFive] Client review complete — ${firmName}`,
+    subject: `[Revaltus] Client review complete — ${firmName}`,
     html: `
       <h2>Client Review Complete</h2>
       <p><strong>${firmName}</strong></p>

@@ -158,14 +158,14 @@ export default function ChatInterface({
 
   return (
     <div className="flex flex-col h-screen bg-surface-page">
-      <header className="bg-brand-navy flex-shrink-0">
+      <header className="bg-surface-card border-b border-border-default flex-shrink-0">
         <div className="h-16 flex items-center justify-between px-6">
           <Image
-            src="/logo-white.png"
-            alt="CountingFive"
-            height={32}
-            width={180}
-            className="h-8 w-auto"
+            src="/logo.png"
+            alt="Revaltus"
+            height={36}
+            width={200}
+            className="h-9 w-auto"
             priority
           />
           <div className="flex items-center gap-3">
@@ -178,20 +178,20 @@ export default function ChatInterface({
               <button
                 type="button"
                 onClick={() => setStaffPanelOpen(true)}
-                className="text-white/70 hover:text-white text-xs font-body underline-offset-2 hover:underline transition"
+                className="text-text-secondary hover:text-text-primary text-xs font-body underline-offset-2 hover:underline transition"
               >
                 I&apos;m staff — switch mode
               </button>
             )}
             {currentPhase > 0 && (
-              <span className="text-white/60 text-xs font-body hidden sm:block">
+              <span className="text-text-secondary text-xs font-body hidden sm:block">
                 {phaseLabel}
               </span>
             )}
           </div>
         </div>
         {currentPhase > 0 && (
-          <div className="h-0.5 bg-white/10">
+          <div className="h-0.5 bg-border-default">
             <div
               className="h-full bg-brand-cyan transition-all duration-700"
               style={{ width: `${progressPct}%` }}

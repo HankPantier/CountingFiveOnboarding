@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 const styles = StyleSheet.create({
   page:       { padding: 48, backgroundColor: '#ffffff' },
-  heading:    { fontSize: 16, fontWeight: 'bold', color: '#003B71', marginBottom: 14, paddingBottom: 6, borderBottom: '1pt solid #E2E8F0' },
+  heading:    { fontSize: 16, fontWeight: 'bold', color: '#231f20', marginBottom: 14, paddingBottom: 6, borderBottom: '1pt solid #E2E8F0' },
   subheading: { fontSize: 12, fontWeight: 'bold', color: '#1E293B', marginTop: 12, marginBottom: 6 },
   section:    { marginBottom: 8 },
   label:      { fontSize: 9, color: '#94A3B8', marginBottom: 2 },

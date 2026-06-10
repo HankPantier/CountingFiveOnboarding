@@ -16,7 +16,7 @@ export default function AdminReminderEmail({ websiteUrl, adminSessionUrl, daysIn
       <Head />
       <Body style={{ backgroundColor: '#F8FAFC', fontFamily: 'Open Sans, Helvetica, Arial, sans-serif' }}>
         <Container style={{ maxWidth: 600, margin: '40px auto', backgroundColor: '#ffffff', padding: 32, borderRadius: 8, border: '1px solid #E2E8F0' }}>
-          <Heading style={{ fontSize: 20, color: '#003B71', fontFamily: 'Inter, Helvetica, Arial, sans-serif', marginBottom: 4 }}>
+          <Heading style={{ fontSize: 20, color: '#231f20', fontFamily: 'Inter, Helvetica, Arial, sans-serif', marginBottom: 4 }}>
             Inactive session — {websiteUrl}
           </Heading>
           <Text style={{ color: '#64748B', fontSize: 13, marginTop: 0 }}>
@@ -31,7 +31,7 @@ export default function AdminReminderEmail({ websiteUrl, adminSessionUrl, daysIn
           <Button
             href={adminSessionUrl}
             style={{
-              backgroundColor: '#003B71',
+              backgroundColor: '#231f20',
               color: '#ffffff',
               padding: '12px 28px',
               borderRadius: 40,

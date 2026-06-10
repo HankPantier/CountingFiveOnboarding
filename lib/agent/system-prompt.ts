@@ -21,11 +21,11 @@ export function buildSystemPrompt(session: Session): string {
   const phaseInstructions = getPhaseInstructions(phase, session, mode)
   const gapInstructions = phase >= 4 ? buildGapListInstructions(gaps) : ''
   const audience = mode === 'staff'
-    ? 'a CountingFive staff member entering data on behalf of the client (NOT the client themselves)'
+    ? 'a Revaltus staff member entering data on behalf of the client (NOT the client themselves)'
     : 'the client'
   const toneBlock = mode === 'staff' ? STAFF_TONE_BLOCK : CLIENT_TONE_BLOCK
 
-  return `You are an AI onboarding agent for CountingFive, a web design firm for CPA firms.
+  return `You are an AI onboarding agent for Revaltus, a web design firm for CPA firms.
 Your job is to capture a complete onboarding profile by talking to ${audience}.
 
 CURRENT PHASE: ${phase}
@@ -62,7 +62,7 @@ EXTRA GUARDRAILS:
 - Batch Phase 4 questions 2–3 per exchange`
 
 const STAFF_TONE_BLOCK = `TONE AND STYLE — STAFF MODE:
-- You are talking to a CountingFive teammate who is entering the client's data on their behalf. They are NOT the client. Skip every piece of client-facing pleasantry.
+- You are talking to a Revaltus teammate who is entering the client's data on their behalf. They are NOT the client. Skip every piece of client-facing pleasantry.
 - Do NOT greet. Do NOT introduce yourself. Do NOT explain what's about to happen.
 - Do NOT echo back what the staff member typed for "confirmation" — they typed it, they know what it is. Only re-ask when a field is genuinely ambiguous.
 - Do NOT batch information as prose paragraphs. Present known data as compact markdown tables or bullet lists.

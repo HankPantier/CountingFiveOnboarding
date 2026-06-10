@@ -148,7 +148,7 @@ export async function runResearchPipeline(
         await resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL,
           to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-          subject: `[CountingFive] Research complete — ${firmContext.name}`,
+          subject: `[Revaltus] Research complete — ${firmContext.name}`,
           html: `
             <h2>Research Pipeline Complete</h2>
             <p><strong>${firmContext.name}</strong></p>

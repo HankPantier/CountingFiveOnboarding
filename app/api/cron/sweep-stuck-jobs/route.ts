@@ -89,7 +89,7 @@ export async function GET(req: Request) {
         await resend.emails.send({
           from: fromEmail,
           to: adminEmail,
-          subject: `[CountingFive] Stuck jobs swept — ${parts.join(', ')}`,
+          subject: `[Revaltus] Stuck jobs swept — ${parts.join(', ')}`,
           html: `
             <h2>Stuck Pipeline Jobs Reset</h2>
             <p>The sweep cron reset rows stuck in 'running' for over 15 minutes: ${parts.join(', ')}.</p>

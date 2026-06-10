@@ -16,21 +16,21 @@ export default async function SettingsLayout({
 
   return (
     <div className="min-h-screen bg-surface-page">
-      <header className="bg-brand-navy h-16 flex items-center justify-between px-6">
+      <header className="bg-surface-card border-b border-border-default h-16 flex items-center justify-between px-6">
         <div className="flex items-center gap-6">
           <Link href="/admin/dashboard">
             <Image
-              src="/logo-white.png"
-              alt="CountingFive"
-              height={32}
-              width={180}
-              style={{ height: '32px', width: 'auto' }}
+              src="/logo.png"
+              alt="Revaltus"
+              height={36}
+              width={200}
+              style={{ height: '36px', width: 'auto' }}
               priority
             />
           </Link>
           <Link
             href="/admin/dashboard"
-            className="text-sm text-text-inverse/70 hover:text-text-inverse font-body transition-colors"
+            className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
           >
             ← Dashboard
           </Link>
@@ -38,7 +38,7 @@ export default async function SettingsLayout({
         <form action={signOut}>
           <button
             type="submit"
-            className="text-sm text-text-inverse/70 hover:text-text-inverse font-body transition-colors"
+            className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
           >
             Sign out
           </button>

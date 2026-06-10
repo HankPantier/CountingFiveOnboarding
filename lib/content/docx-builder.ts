@@ -97,7 +97,7 @@ export async function buildDocx(
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: `Prepared by CountingFive — ${today}`, size: 24, color: '666666' })],
+      children: [new TextRun({ text: `Prepared by Revaltus — ${today}`, size: 24, color: '666666' })],
       spacing: { after: 480 },
     }),
     new Paragraph({ children: [new PageBreak()] }),
@@ -118,7 +118,7 @@ export async function buildDocx(
         new InternalHyperlink({
           anchor: anchorFor(page),
           children: [
-            new TextRun({ text: page.page_title, color: '003B71', underline: {} }),
+            new TextRun({ text: page.page_title, color: '231F20', underline: {} }),
             new TextRun({ text: `  ·  ${page.page_url}`, color: '888888', italics: true }),
           ],
         }),

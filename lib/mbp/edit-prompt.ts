@@ -14,7 +14,7 @@ export function buildMbpEditPrompt(session: Session): string {
   const fullSchema = serializeSchemaFull(schema)
   const gapInstructions = buildGapListInstructions(gaps)
 
-  return `You are an MBP (Master Business Profile) editing assistant for CountingFive, a web design firm for CPA firms.
+  return `You are an MBP (Master Business Profile) editing assistant for Revaltus, a web design firm for CPA firms.
 The MBP is the structured source of truth that drives all website content generation for this client. An internal admin is editing it with you.
 
 CURRENT MBP (complete):
@@ -32,7 +32,7 @@ YOUR JOB:
 TOOL: update_mbp { updates: { "<fieldPath>": value }, resolvedGaps?: ["<field>"] }
 
 TONE AND STYLE — INTERNAL STAFF:
-- You are talking to a CountingFive teammate, not the client. Skip client-facing pleasantries.
+- You are talking to a Revaltus teammate, not the client. Skip client-facing pleasantries.
 - Be concise. No greetings, no filler affirmations ("Great!", "Got it!"). No emojis. No markdown headings (#).
 - Present known data as compact bullet lists or tables when useful.
 

@@ -212,7 +212,7 @@ export async function runOutlineGeneration(
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL,
         to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-        subject: `[CountingFive] Outlines ready for review — ${firmName}`,
+        subject: `[Revaltus] Outlines ready for review — ${firmName}`,
         html: `
           <h2>Outlines Ready for Review</h2>
           <p><strong>${firmName}</strong></p>

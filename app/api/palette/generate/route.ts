@@ -46,8 +46,8 @@ export async function POST(req: Request) {
   if (!logoAsset) {
     // Return default brand palette when no logo is available
     const palette: PaletteData = {
-      primary:       { hex: '#003B71', name: 'Primary' },
-      secondary:     { hex: '#00C1DE', name: 'Secondary' },
+      primary:       { hex: '#231f20', name: 'Primary' },
+      secondary:     { hex: '#098195', name: 'Secondary' },
       complementary: { hex: '#71003B', name: 'Complementary' },
       action:        { hex: '#DE00C1', name: 'Action' },
       nearBlack:     { hex: '#1A1A2E', name: 'Text / Dark' },
@@ -70,8 +70,8 @@ export async function POST(req: Request) {
   try {
     const vibrantPalette = await Vibrant.from(buffer).getPalette()
 
-    const primary = vibrantPalette.Vibrant?.hex ?? '#003B71'
-    const secondary = vibrantPalette.DarkVibrant?.hex ?? vibrantPalette.Muted?.hex ?? '#00C1DE'
+    const primary = vibrantPalette.Vibrant?.hex ?? '#231f20'
+    const secondary = vibrantPalette.DarkVibrant?.hex ?? vibrantPalette.Muted?.hex ?? '#098195'
 
     const complementary = chroma(primary)
       .set('hsl.h', (chroma(primary).get('hsl.h') + 180) % 360)

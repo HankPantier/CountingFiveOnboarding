@@ -19,7 +19,7 @@ export async function sendInviteEmail({ to, name, role, inviteUrl }: SendInviteA
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL!,
     to,
-    subject: 'Your CountingFive admin invitation',
+    subject: 'Your Revaltus admin invitation',
     html,
   })
 }

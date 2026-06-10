@@ -7,22 +7,22 @@ import { signOut } from '@/app/admin/dashboard/actions'
 // admin-only — managers never see it.
 export default function AdminHeader({ role }: { role: Role }) {
   return (
-    <header className="bg-brand-navy h-16 flex items-center justify-between px-6">
+    <header className="bg-surface-card border-b border-border-default h-16 flex items-center justify-between px-6">
       <div className="flex items-center gap-6">
         <Link href="/admin/dashboard">
           <Image
-            src="/logo-white.png"
-            alt="CountingFive"
-            height={32}
-            width={180}
-            style={{ height: '32px', width: 'auto' }}
+            src="/logo.png"
+            alt="Revaltus"
+            height={36}
+            width={200}
+            style={{ height: '36px', width: 'auto' }}
             priority
           />
         </Link>
         {role === 'admin' && (
           <Link
             href="/admin/settings/users"
-            className="text-sm text-text-inverse/70 hover:text-text-inverse font-body transition-colors"
+            className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
           >
             Users
           </Link>
@@ -31,7 +31,7 @@ export default function AdminHeader({ role }: { role: Role }) {
       <form action={signOut}>
         <button
           type="submit"
-          className="text-sm text-text-inverse/70 hover:text-text-inverse font-body transition-colors"
+          className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
         >
           Sign out
         </button>
