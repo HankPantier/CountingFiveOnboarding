@@ -163,9 +163,9 @@ export default function ChatInterface({
           <Image
             src="/logo.png"
             alt="Revaltus"
-            height={36}
-            width={200}
-            className="h-9 w-auto"
+            height={43}
+            width={240}
+            className="h-[43px] w-auto"
             priority
           />
           <div className="flex items-center gap-3">

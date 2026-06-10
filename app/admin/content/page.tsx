@@ -90,10 +90,10 @@ export default async function ContentHubPage() {
         <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
           <table className="w-full text-sm font-body">
             <thead>
-              <tr className="border-b border-border-default bg-surface-subtle">
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Firm / Website</th>
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Approved</th>
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Content Phase</th>
+              <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
+                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Firm / Website</th>
+                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Approved</th>
+                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Content Phase</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -108,7 +108,7 @@ export default async function ContentHubPage() {
                 return (
                   <tr
                     key={session.id}
-                    className={`border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors ${i % 2 === 1 ? 'bg-surface-subtle/40' : ''}`}
+                    className={`border-b border-border-default last:border-0 hover:bg-brand-cyan/10 transition-colors ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <div className="font-body text-text-primary font-semibold">

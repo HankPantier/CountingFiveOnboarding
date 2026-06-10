@@ -62,9 +62,9 @@ export default async function ReviewPage({
           <Image
             src="/logo.png"
             alt="Revaltus"
-            height={36}
-            width={200}
-            className="h-9 w-auto"
+            height={43}
+            width={240}
+            className="h-[43px] w-auto"
             priority
           />
           <span className="text-text-secondary text-xs font-body hidden sm:block">

@@ -13,9 +13,9 @@ export default function AdminHeader({ role }: { role: Role }) {
           <Image
             src="/logo.png"
             alt="Revaltus"
-            height={36}
-            width={200}
-            style={{ height: '36px', width: 'auto' }}
+            height={43}
+            width={240}
+            style={{ height: '43px', width: 'auto' }}
             priority
           />
         </Link>

@@ -53,7 +53,7 @@ export default function UserRow({
 
   return (
     <>
-      <tr className="border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors">
+      <tr className="border-b border-border-default last:border-0 hover:bg-brand-cyan/10 transition-colors">
         <td className="px-4 py-3 font-body text-text-primary">{user.name}</td>
         <td className="px-4 py-3 text-text-secondary">{user.email}</td>
         <td className="px-4 py-3">
