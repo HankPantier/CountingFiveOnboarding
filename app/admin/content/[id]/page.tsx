@@ -89,7 +89,7 @@ export default async function ContentWorkflowPage({
   const navConfig = (contentJob?.nav_config ?? null) as NavJson | null
 
   return (
-    <main className="p-8 max-w-5xl mx-auto">
+    <main className="p-8 max-w-[1200px] mx-auto">
       <div className="mb-8">
         <Link
           href="/admin/content"
