@@ -51,19 +51,39 @@ VOICE RULES:
 - Write like the firm's smartest person talking to a prospective client at a coffee meeting — knowledgeable, direct, no fluff
 - The firm should sound like it already knows the client's problem, not like it's trying to impress them
 - If something would sound like filler in a conversation, it's filler in copy too — cut it
+
+HEADING RULES:
+- Sentence case, specific, benefit-driven
+- No parenthetical subtitles "(Beyond the Buzzwords)"; no colon-clichés ("A Deep Dive", "A Complete Guide", "Everything You Need to Know")
+- No "What X Actually Means", "Beyond the …", "The Importance of …", "A Closer Look", "Demystifying/Decoding/Unpacking", or listicle titles ("5 Reasons …")
+- No dashes in headings
+
+AI-TELL PATTERNS (never use):
+- Negative parallelism ("It's not just X, it's Y", "not only … but also")
+- Copula avoidance ("serves as"/"stands as" — write "is")
+- Signposting/persuasion tropes ("At its core", "Let's dive in", "When it comes to", "In this article")
+- "A testament to", "ever-evolving", "in today's … landscape"
+- Em-dashes/en-dashes — use commas, periods, or colons (en-dashes only for number ranges like 600–1200)
 ```
+
+These heading + AI-tell rules also gate the **outline generator** (`outline-generator.ts`), since clever section titles originate at the outline stage.
 
 ### Post-Processing Validation
 
 After Claude generates each page, run a validation check:
 - Scan for any banned phrases from the list above
-- Flag pages that contain more than 2 banned phrases for automatic regeneration (1 retry)
+- Scan headings for parenthetical/colon-cliché/formulaic patterns, and prose for negative parallelism, copula avoidance, and signposting tropes
+- Flag any violation for automatic regeneration (1 retry)
 - Log flagged phrases to the console for monitoring
 
 Implement as `lib/content/anti-slop-validator.ts`:
 ```typescript
 export function validateContent(content: string): { passed: boolean; flagged: string[] }
+export function humanizeDashes(text: string): string   // deterministic em/en-dash strip, applied before save
+export function cleanHeading(text: string): string      // strips parenthetical subtitle + dashes, used at outline stage
 ```
+
+Em-dashes are handled by the deterministic `humanizeDashes()` pass (applied to the body and visible metadata before save), **not** by `validateContent()` — models resist prompt-only em-dash bans, and routing them through the retry would burn the single regeneration on something we strip mechanically.
 
 ---
 

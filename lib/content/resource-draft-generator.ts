@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
-import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
+import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
@@ -471,6 +471,7 @@ export async function generateResourceDraft(
     }
 
     result.body = stripUnapprovedExternalLinks(result.body, externalLinks)
+    result.body = humanizeDashes(result.body)
     warnUnknownInternalLinks(result.body, slug, targets, postSlugs)
 
     // Hero image via Pexels — non-fatal. Resolution persists an assets row +

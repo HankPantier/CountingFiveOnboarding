@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
-import { validateContent, ANTI_SLOP_RULES } from './anti-slop-validator'
+import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
 import { ensureBlockMedia } from './ensure-block-media'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
@@ -566,6 +566,17 @@ export async function generateSinglePage(
       console.warn(`[content-gen] Injected placeholder image refs on ${outline.page_url}`)
       result.content = ensured
     }
+
+    // Deterministic dash humanizer: strip em-dashes (and word en-dashes) the model
+    // leaves behind, on the body and the visible text metadata. Numeric ranges,
+    // code fences, and block annotations are preserved.
+    result.content = humanizeDashes(result.content)
+    result.metadata.meta_description = humanizeDashes(result.metadata.meta_description)
+    result.metadata.answer_block = humanizeDashes(result.metadata.answer_block)
+    result.metadata.faq_block = result.metadata.faq_block.map(f => ({
+      ...f,
+      answer: humanizeDashes(f.answer),
+    }))
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
     const wcTarget = targetWordCount(sections)

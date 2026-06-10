@@ -42,6 +42,26 @@ const WE_OPENER_RE = /^(we|our)\b/i
 // A "specific" within ±N chars of a vague trigger redeems the sentence.
 const SPECIFIC_PATTERN = /\b(\d+|massachusetts|tyngsborough|cpa|aicpa|pfs|ea|sage intacct|quickbooks)\b/i
 
+// Heading-level AI tells (formulaic / "clever" titles). Scanned per heading line.
+const HEADING_LINE_RE = /^#{1,6}[ \t]+.*$/gm
+const HEADING_PARENTHETICAL_RE = /\([^)]*\)/
+const HEADING_COLON_CLICHE_RE = /:\s*(?:a |an |the )?(?:deep dive|complete guide|ultimate guide|everything you need|what you need to know|a closer look)/i
+const HEADING_FORMULAIC_RE = /\b(?:beyond the|the importance of|a closer look|demystif|decoding|unpacking)\b|\bwhat\b[^.\n]*\bactually\b/i
+const HEADING_LISTICLE_RE = /^#{1,6}\s+\d+\s+(?:reasons|ways|tips|things|steps|secrets)\b/i
+
+// Prose-level AI tells beyond the banned-word list.
+const NEGATIVE_PARALLELISM_RE = /\bnot just\b[^.?!\n]*\bit'?s\b|\bnot only\b[^.?!\n]*\bbut also\b/i
+const COPULA_AVOIDANCE_RE = /\b(?:serves as|stands as)\b/i
+const SIGNPOSTING_PHRASES = [
+  'at its core',
+  "let's dive in",
+  "let's take a look",
+  'in this article',
+  'when it comes to',
+  'a testament to',
+  'ever-evolving',
+]
+
 const FRONTMATTER_RE = /^---\n[\s\S]*?\n---\n/
 const FENCED_CODE_RE = /```[\s\S]*?```/g
 
@@ -97,11 +117,61 @@ export function validateContent(content: string): { passed: boolean; flagged: st
     }
   }
 
+  // Heading + pattern tells run on prose only (frontmatter and code stripped so
+  // a `##` inside a fenced block can't be mistaken for a real heading).
+  const stripped = content.replace(FRONTMATTER_RE, '').replace(FENCED_CODE_RE, '')
+  const strippedLower = stripped.toLowerCase()
+
+  for (const heading of stripped.match(HEADING_LINE_RE) ?? []) {
+    const h = heading.trim()
+    if (HEADING_PARENTHETICAL_RE.test(h)) flagged.push(`Heading with parenthetical subtitle: "${h}"`)
+    else if (HEADING_COLON_CLICHE_RE.test(h)) flagged.push(`Heading with cliché subtitle: "${h}"`)
+    else if (HEADING_FORMULAIC_RE.test(h)) flagged.push(`Formulaic heading: "${h}"`)
+    else if (HEADING_LISTICLE_RE.test(h)) flagged.push(`Listicle heading: "${h}"`)
+  }
+
+  if (NEGATIVE_PARALLELISM_RE.test(stripped)) flagged.push('Negative parallelism ("not just X, it\'s Y")')
+  if (COPULA_AVOIDANCE_RE.test(stripped)) flagged.push('Copula avoidance ("serves as" / "stands as")')
+  for (const phrase of SIGNPOSTING_PHRASES) {
+    if (strippedLower.includes(phrase)) flagged.push(`Signposting/AI trope: "${phrase}"`)
+  }
+
   return {
     // Zero-tolerance retry trigger: if we caught anything, retry once.
     passed: flagged.length === 0,
     flagged,
   }
+}
+
+// Deterministic punctuation humanizer. Em-dashes (and en-dashes used as dashes)
+// are the strongest "written by AI" tell and models resist prompt-only bans, so
+// we strip them after generation. Numeric en-dash ranges (600–1200) are kept,
+// and fenced code / HTML block annotations are protected from rewriting.
+export function humanizeDashes(text: string): string {
+  const protectedBlocks: string[] = []
+  const stash = (s: string): string => {
+    protectedBlocks.push(s)
+    return `\u0000${protectedBlocks.length - 1}\u0000`
+  }
+
+  let out = text
+    .replace(/```[\s\S]*?```/g, stash)
+    .replace(/<!--[\s\S]*?-->/g, stash)
+
+  out = out
+    // Em-dash → comma. Horizontal whitespace only, so we never merge lines.
+    .replace(/[ \t]*—[ \t]*/g, ', ')
+    // En-dash used as a dash between words → comma; digit ranges (9–5, 600–1200) stay.
+    .replace(/([^\d\s])[ \t]*–[ \t]*([^\d\s])/g, '$1, $2')
+
+  return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => protectedBlocks[Number(i)])
+}
+
+// Clean a single heading string: drop a trailing parenthetical subtitle
+// ("… (Beyond the Buzzwords)") and normalize dashes. Used at the outline stage
+// so page headings inherit clean titles. Colons are left alone — often legitimate.
+export function cleanHeading(text: string): string {
+  return humanizeDashes(text.replace(/\s*\([^)]*\)\s*$/, '')).trim()
 }
 
 export const ANTI_SLOP_RULES = `ANTI-SLOP RULES — read before writing a single word:
@@ -131,4 +201,18 @@ STRUCTURAL RULES (validated post-generation; any single violation triggers a ret
 VOICE RULES:
 - Write like the firm's smartest person talking to a prospective client at a coffee meeting — knowledgeable, direct, no fluff
 - The firm should sound like it already knows the client's problem, not like it's trying to impress them
-- If something would sound like filler in a conversation, it's filler in copy too — cut it`
+- If something would sound like filler in a conversation, it's filler in copy too — cut it
+
+HEADING RULES:
+- Headings must be specific and benefit-driven, in sentence case
+- No parenthetical subtitles, e.g. "(Beyond the Buzzwords)"
+- No colon-cliché subtitles: "A Deep Dive", "A Complete/Ultimate Guide", "Everything You Need to Know", "What You Need to Know"
+- Never use "What X Actually Means", "Beyond the …", "The Importance of …", "A Closer Look", "Demystifying / Decoding / Unpacking", or listicle titles ("5 Reasons …")
+- No dashes (— or –) in headings
+
+AI-TELL PATTERNS (never use these):
+- Negative parallelism: "It's not just X, it's Y", "not only … but also"
+- Copula avoidance: write "is", not "serves as" / "stands as"
+- Signposting and persuasion tropes: "At its core", "Let's dive in", "Let's take a look", "In this article", "When it comes to"
+- "A testament to", "ever-evolving", "in today's … landscape"
+- Em-dashes and en-dashes (— –): use commas, periods, or colons instead. Keep en-dashes only for number ranges (e.g. 600–1200).`

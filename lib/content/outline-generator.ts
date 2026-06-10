@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { buildFirmContext } from './brand-voice'
+import { cleanHeading } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
@@ -86,7 +87,14 @@ RULES:
 - H1 must contain or closely relate to the target keyword
 - Section descriptions are for the copywriter — be specific about angle, not just topic
 - Word counts should total 600–1200 words for standard pages, 1500–2000 for pillar pages
-- Do not write any actual copy — structure only`
+- Do not write any actual copy — structure only
+
+HEADING RULES (h1 and every h2):
+- Specific and benefit-driven, in sentence case
+- No parenthetical subtitles, e.g. "(Beyond the Buzzwords)"
+- No colon-cliché subtitles ("A Deep Dive", "A Complete/Ultimate Guide", "Everything You Need to Know")
+- Never "What X Actually Means", "Beyond the …", "The Importance of …", "A Closer Look", "Demystifying/Decoding/Unpacking", or listicle titles ("5 Reasons …")
+- No dashes (— or –) in any heading`
 
   const { text, usage } = await generateText({
     model: anthropic(OUTLINE_MODEL),
@@ -129,6 +137,13 @@ RULES:
       notes: 'Auto-generated fallback — admin must edit before approving.',
     }
   }
+
+  // Humanize headings at the source so page generation inherits clean titles
+  // (strip parenthetical subtitles, normalize dashes). Admins still review before approval.
+  if (typeof outline.h1 === 'string') outline.h1 = cleanHeading(outline.h1)
+  outline.sections = outline.sections.map(s =>
+    typeof s.h2 === 'string' ? { ...s, h2: cleanHeading(s.h2) } : s
+  )
 
   await supabase
     .from('page_outlines')
