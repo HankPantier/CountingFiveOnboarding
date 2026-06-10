@@ -52,7 +52,12 @@ og_description: ${page.meta_description ?? ''}
 og_image: ${ogImage}
 twitter_card: summary_large_image
 ${cta ? `cta_text: ${cta.text}\ncta_url: ${cta.url}\n` : ''}hero: ${page.hero_block ?? 'page-header'}
-${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${page.hero_image_alt.replace(/\n/g, ' ')}\n` : ''}${page.hero_subhead ? `hero_subhead: ${page.hero_subhead.replace(/\n/g, ' ')}\n` : ''}---
+${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${page.hero_image_alt.replace(/\n/g, ' ')}\n` : ''}${page.hero_subhead ? `hero_subhead: ${page.hero_subhead.replace(/\n/g, ' ')}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
+eeat_signals: ${JSON.stringify(eeatSignals)}
+internal_links: ${JSON.stringify(internalLinks)}
+faq_block: ${JSON.stringify(faqBlock)}
+llm_citation_note: ${JSON.stringify(page.llm_citation_note ?? '')}
+---
 
 ${page.content_markdown ?? ''}
 

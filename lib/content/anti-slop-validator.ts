@@ -48,6 +48,9 @@ const HEADING_PARENTHETICAL_RE = /\([^)]*\)/
 const HEADING_COLON_CLICHE_RE = /:\s*(?:a |an |the )?(?:deep dive|complete guide|ultimate guide|everything you need|what you need to know|a closer look)/i
 const HEADING_FORMULAIC_RE = /\b(?:beyond the|the importance of|a closer look|demystif|decoding|unpacking)\b|\bwhat\b[^.\n]*\bactually\b/i
 const HEADING_LISTICLE_RE = /^#{1,6}\s+\d+\s+(?:reasons|ways|tips|things|steps|secrets)\b/i
+// Bare "actually"/"really" in a heading is a strong AI tell ("…the way you
+// Actually run a business"). Heading-scoped, so false-positives stay low.
+const HEADING_FILLER_RE = /\b(?:actually|really)\b/i
 
 // Prose-level AI tells beyond the banned-word list.
 const NEGATIVE_PARALLELISM_RE = /\bnot just\b[^.?!\n]*\bit'?s\b|\bnot only\b[^.?!\n]*\bbut also\b/i
@@ -127,6 +130,7 @@ export function validateContent(content: string): { passed: boolean; flagged: st
     if (HEADING_PARENTHETICAL_RE.test(h)) flagged.push(`Heading with parenthetical subtitle: "${h}"`)
     else if (HEADING_COLON_CLICHE_RE.test(h)) flagged.push(`Heading with cliché subtitle: "${h}"`)
     else if (HEADING_FORMULAIC_RE.test(h)) flagged.push(`Formulaic heading: "${h}"`)
+    else if (HEADING_FILLER_RE.test(h)) flagged.push(`Filler word in heading ("actually"/"really"): "${h}"`)
     else if (HEADING_LISTICLE_RE.test(h)) flagged.push(`Listicle heading: "${h}"`)
   }
 

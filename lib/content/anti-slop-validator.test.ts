@@ -41,6 +41,11 @@ describe('validateContent — heading tells', () => {
     expect(flagged.join(' ')).toMatch(/listicle heading/i)
   })
 
+  it('flags a bare "actually" filler heading', () => {
+    const { flagged } = validateContent('## Built for the way you actually run a business\n\nProse.')
+    expect(flagged.join(' ')).toMatch(/filler word in heading/i)
+  })
+
   it('does not treat a ## inside a code fence as a heading', () => {
     const md = '```\n## 5 reasons this is code\n```\n\nReal prose with a number: 5 offices.'
     expect(validateContent(md).passed).toBe(true)
