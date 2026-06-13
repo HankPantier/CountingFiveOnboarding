@@ -20,12 +20,20 @@ export default function AdminHeader({ role }: { role: Role }) {
           />
         </Link>
         {role === 'admin' && (
-          <Link
-            href="/admin/settings/users"
-            className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
-          >
-            Users
-          </Link>
+          <>
+            <Link
+              href="/admin/audits"
+              className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
+            >
+              Audits
+            </Link>
+            <Link
+              href="/admin/settings/users"
+              className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
+            >
+              Users
+            </Link>
+          </>
         )}
       </div>
       <form action={signOut}>

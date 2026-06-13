@@ -1,0 +1,1005 @@
+{
+  "capturedFrom": "https://books.toscrape.com/",
+  "input": {
+    "pages": [
+      {
+        "url": "https://books.toscrape.com/",
+        "original_url": "https://books.toscrape.com/",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 51294
+      },
+      {
+        "url": "https://books.toscrape.com/index.html",
+        "original_url": "https://books.toscrape.com/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 51294
+      },
+      {
+        "url": "https://books.toscrape.com/catalogue/category/books_1/index.html",
+        "original_url": "https://books.toscrape.com/catalogue/category/books_1/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 50607
+      },
+      {
+        "url": "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "original_url": "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 37009
+      },
+      {
+        "url": "https://books.toscrape.com/catalogue/category/books/mystery_3/index.html",
+        "original_url": "https://books.toscrape.com/catalogue/category/books/mystery_3/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 50388
+      },
+      {
+        "url": "https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html",
+        "original_url": "https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 50109
+      },
+      {
+        "url": "https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html",
+        "original_url": "https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 51455
+      },
+      {
+        "url": "https://books.toscrape.com/catalogue/category/books/classics_6/index.html",
+        "original_url": "https://books.toscrape.com/catalogue/category/books/classics_6/index.html",
+        "status_code": 200,
+        "redirect_chain": [],
+        "redirect_count": 0,
+        "html": "",
+        "response_headers": {},
+        "ssl_error": false,
+        "content_length": 47874
+      }
+    ],
+    "analyzed": [
+      {
+        "title": "All products | Books to Scrape - Sandbox",
+        "title_len": 40,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "All products"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "All products"
+          ],
+          "h2": [],
+          "h3": [
+            "A Light in the ...",
+            "Tipping the Velvet",
+            "Soumission",
+            "Sharp Objects",
+            "Sapiens: A Brief History ...",
+            "The Requiem Red",
+            "The Dirty Little Secrets ...",
+            "The Coming Woman: A ...",
+            "The Boys in the ...",
+            "The Black Maria",
+            "Starving Hearts (Triangular Trade ...",
+            "Shakespeare's Sonnets",
+            "Set Me Free",
+            "Scott Pilgrim's Precious Little ...",
+            "Rip it Up and ...",
+            "Our Band Could Be ...",
+            "Olio",
+            "Mesaerion: The Best Science ...",
+            "Libertarianism for Beginners",
+            "It's Only the Himalayas"
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 20,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 313,
+        "fk_grade": 30.4,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home All products Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime All products 1000 results - showing 1 to 20. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. A Light in the ... £51.77 In stock Add to basket Tipping the Velvet £53.74 In stock Add to basket Soumission £50.10 In stock Add to basket Sharp Objects £47.82 In stock Add to basket Sapiens: A Brief History ... £54.23 In stock Add to basket The Requiem Red £22.65 In stock Add to basket The Dirty Little Secrets ... £33.34 In stock Add to basket The Coming Woman: A ... £17.93 In stock Add to basket The Boys in the ... £22.60 In stock Add to basket The Black Maria £52.15 In stock Add to basket Starving Hearts (Triangular Trade ... £13.99 In stock Add to basket Shakespeare's Sonnets £20.66 In stock Add to basket Set Me Free £17.46 In stock Add to basket Scott Pilgrim's Precious Little ... £52.29 In stock Add to basket Rip it Up and ... £35.02 In stock Add to basket Our Band Could Be ... £57.25 In stock Add to basket Olio £23.88 In stock Add to basket Mesaerion: The Best Science ... £37.59 In stock Add to basket Libertarianism for Beginners £51.33 In stock Add to basket It's Only the Himalayas £45.17 In stock Add to basket Page 1 of 50 next",
+        "content_length_bytes": 51294,
+        "redirect_count": 0
+      },
+      {
+        "title": "All products | Books to Scrape - Sandbox",
+        "title_len": 40,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "All products"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "All products"
+          ],
+          "h2": [],
+          "h3": [
+            "A Light in the ...",
+            "Tipping the Velvet",
+            "Soumission",
+            "Sharp Objects",
+            "Sapiens: A Brief History ...",
+            "The Requiem Red",
+            "The Dirty Little Secrets ...",
+            "The Coming Woman: A ...",
+            "The Boys in the ...",
+            "The Black Maria",
+            "Starving Hearts (Triangular Trade ...",
+            "Shakespeare's Sonnets",
+            "Set Me Free",
+            "Scott Pilgrim's Precious Little ...",
+            "Rip it Up and ...",
+            "Our Band Could Be ...",
+            "Olio",
+            "Mesaerion: The Best Science ...",
+            "Libertarianism for Beginners",
+            "It's Only the Himalayas"
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 20,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 313,
+        "fk_grade": 30.4,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home All products Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime All products 1000 results - showing 1 to 20. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. A Light in the ... £51.77 In stock Add to basket Tipping the Velvet £53.74 In stock Add to basket Soumission £50.10 In stock Add to basket Sharp Objects £47.82 In stock Add to basket Sapiens: A Brief History ... £54.23 In stock Add to basket The Requiem Red £22.65 In stock Add to basket The Dirty Little Secrets ... £33.34 In stock Add to basket The Coming Woman: A ... £17.93 In stock Add to basket The Boys in the ... £22.60 In stock Add to basket The Black Maria £52.15 In stock Add to basket Starving Hearts (Triangular Trade ... £13.99 In stock Add to basket Shakespeare's Sonnets £20.66 In stock Add to basket Set Me Free £17.46 In stock Add to basket Scott Pilgrim's Precious Little ... £52.29 In stock Add to basket Rip it Up and ... £35.02 In stock Add to basket Our Band Could Be ... £57.25 In stock Add to basket Olio £23.88 In stock Add to basket Mesaerion: The Best Science ... £37.59 In stock Add to basket Libertarianism for Beginners £51.33 In stock Add to basket It's Only the Himalayas £45.17 In stock Add to basket Page 1 of 50 next",
+        "content_length_bytes": 51294,
+        "redirect_count": 0
+      },
+      {
+        "title": "Books | \n     Books to Scrape - Sandbox",
+        "title_len": 39,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "Books"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "Books"
+          ],
+          "h2": [],
+          "h3": [
+            "A Light in the ...",
+            "Tipping the Velvet",
+            "Soumission",
+            "Sharp Objects",
+            "Sapiens: A Brief History ...",
+            "The Requiem Red",
+            "The Dirty Little Secrets ...",
+            "The Coming Woman: A ...",
+            "The Boys in the ...",
+            "The Black Maria",
+            "Starving Hearts (Triangular Trade ...",
+            "Shakespeare's Sonnets",
+            "Set Me Free",
+            "Scott Pilgrim's Precious Little ...",
+            "Rip it Up and ...",
+            "Our Band Could Be ...",
+            "Olio",
+            "Mesaerion: The Best Science ...",
+            "Libertarianism for Beginners",
+            "It's Only the Himalayas"
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 20,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 311,
+        "fk_grade": 30.2,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home Books Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime Books 1000 results - showing 1 to 20. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. A Light in the ... £51.77 In stock Add to basket Tipping the Velvet £53.74 In stock Add to basket Soumission £50.10 In stock Add to basket Sharp Objects £47.82 In stock Add to basket Sapiens: A Brief History ... £54.23 In stock Add to basket The Requiem Red £22.65 In stock Add to basket The Dirty Little Secrets ... £33.34 In stock Add to basket The Coming Woman: A ... £17.93 In stock Add to basket The Boys in the ... £22.60 In stock Add to basket The Black Maria £52.15 In stock Add to basket Starving Hearts (Triangular Trade ... £13.99 In stock Add to basket Shakespeare's Sonnets £20.66 In stock Add to basket Set Me Free £17.46 In stock Add to basket Scott Pilgrim's Precious Little ... £52.29 In stock Add to basket Rip it Up and ... £35.02 In stock Add to basket Our Band Could Be ... £57.25 In stock Add to basket Olio £23.88 In stock Add to basket Mesaerion: The Best Science ... £37.59 In stock Add to basket Libertarianism for Beginners £51.33 In stock Add to basket It's Only the Himalayas £45.17 In stock Add to basket Page 1 of 50 next",
+        "content_length_bytes": 50607,
+        "redirect_count": 0
+      },
+      {
+        "title": "Travel | \n     Books to Scrape - Sandbox",
+        "title_len": 40,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "Travel"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "Travel"
+          ],
+          "h2": [],
+          "h3": [
+            "It's Only the Himalayas",
+            "Full Moon over Noah’s ...",
+            "See America: A Celebration ...",
+            "Vagabonding: An Uncommon Guide ...",
+            "Under the Tuscan Sun",
+            "A Summer In Europe",
+            "The Great Railway Bazaar",
+            "A Year in Provence ...",
+            "The Road to Little ...",
+            "Neither Here nor There: ...",
+            "1,000 Places to See ..."
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 11,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 219,
+        "fk_grade": 23.3,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home Books Travel Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime Travel 11 results. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. It's Only the Himalayas £45.17 In stock Add to basket Full Moon over Noah’s ... £49.43 In stock Add to basket See America: A Celebration ... £48.87 In stock Add to basket Vagabonding: An Uncommon Guide ... £36.94 In stock Add to basket Under the Tuscan Sun £37.33 In stock Add to basket A Summer In Europe £44.34 In stock Add to basket The Great Railway Bazaar £30.54 In stock Add to basket A Year in Provence ... £56.88 In stock Add to basket The Road to Little ... £23.21 In stock Add to basket Neither Here nor There: ... £38.95 In stock Add to basket 1,000 Places to See ... £26.08 In stock Add to basket",
+        "content_length_bytes": 37009,
+        "redirect_count": 0
+      },
+      {
+        "title": "Mystery | \n     Books to Scrape - Sandbox",
+        "title_len": 41,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "Mystery"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "Mystery"
+          ],
+          "h2": [],
+          "h3": [
+            "Sharp Objects",
+            "In a Dark, Dark ...",
+            "The Past Never Ends",
+            "A Murder in Time",
+            "The Murder of Roger ...",
+            "The Last Mile (Amos ...",
+            "That Darkness (Gardiner and ...",
+            "Tastes Like Fear (DI ...",
+            "A Time of Torment ...",
+            "A Study in Scarlet ...",
+            "Poisonous (Max Revere Novels ...",
+            "Murder at the 42nd ...",
+            "Most Wanted",
+            "Hide Away (Eve Duncan ...",
+            "Boar Island (Anna Pigeon ...",
+            "The Widow",
+            "Playing with Fire",
+            "What Happened on Beale ...",
+            "The Bachelor Girl's Guide ...",
+            "Delivering the Truth (Quaker ..."
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 20,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 318,
+        "fk_grade": 29.9,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home Books Mystery Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime Mystery 32 results - showing 1 to 20. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. Sharp Objects £47.82 In stock Add to basket In a Dark, Dark ... £19.63 In stock Add to basket The Past Never Ends £56.50 In stock Add to basket A Murder in Time £16.64 In stock Add to basket The Murder of Roger ... £44.10 In stock Add to basket The Last Mile (Amos ... £54.21 In stock Add to basket That Darkness (Gardiner and ... £13.92 In stock Add to basket Tastes Like Fear (DI ... £10.69 In stock Add to basket A Time of Torment ... £48.35 In stock Add to basket A Study in Scarlet ... £16.73 In stock Add to basket Poisonous (Max Revere Novels ... £26.80 In stock Add to basket Murder at the 42nd ... £54.36 In stock Add to basket Most Wanted £35.28 In stock Add to basket Hide Away (Eve Duncan ... £11.84 In stock Add to basket Boar Island (Anna Pigeon ... £59.48 In stock Add to basket The Widow £27.26 In stock Add to basket Playing with Fire £13.71 In stock Add to basket What Happened on Beale ... £25.37 In stock Add to basket The Bachelor Girl's Guide ... £52.30 In stock Add to basket Delivering the Truth (Quaker ... £20.89 In stock Add to basket Page 1 of 2 next",
+        "content_length_bytes": 50388,
+        "redirect_count": 0
+      },
+      {
+        "title": "Historical Fiction | \n     Books to Scrape - Sandbox",
+        "title_len": 52,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "Historical Fiction"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "Historical Fiction"
+          ],
+          "h2": [],
+          "h3": [
+            "Tipping the Velvet",
+            "Forever and Forever: The ...",
+            "A Flight of Arrows ...",
+            "The House by the ...",
+            "Mrs. Houdini",
+            "The Marriage of Opposites",
+            "Glory over Everything: Beyond ...",
+            "Love, Lies and Spies",
+            "A Paris Apartment",
+            "Lilac Girls",
+            "The Constant Princess (The ...",
+            "The Invention of Wings",
+            "World Without End (The ...",
+            "The Passion of Dolssa",
+            "Girl With a Pearl ...",
+            "Voyager (Outlander #3)",
+            "The Red Tent",
+            "The Last Painting of ...",
+            "The Guernsey Literary and ...",
+            "Girl in the Blue ..."
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 20,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 318,
+        "fk_grade": 25.4,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home Books Historical Fiction Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime Historical Fiction 26 results - showing 1 to 20. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. Tipping the Velvet £53.74 In stock Add to basket Forever and Forever: The ... £29.69 In stock Add to basket A Flight of Arrows ... £55.53 In stock Add to basket The House by the ... £36.95 In stock Add to basket Mrs. Houdini £30.25 In stock Add to basket The Marriage of Opposites £28.08 In stock Add to basket Glory over Everything: Beyond ... £45.84 In stock Add to basket Love, Lies and Spies £20.55 In stock Add to basket A Paris Apartment £39.01 In stock Add to basket Lilac Girls £17.28 In stock Add to basket The Constant Princess (The ... £16.62 In stock Add to basket The Invention of Wings £37.34 In stock Add to basket World Without End (The ... £32.97 In stock Add to basket The Passion of Dolssa £28.32 In stock Add to basket Girl With a Pearl ... £26.77 In stock Add to basket Voyager (Outlander #3) £21.07 In stock Add to basket The Red Tent £35.66 In stock Add to basket The Last Painting of ... £55.55 In stock Add to basket The Guernsey Literary and ... £49.53 In stock Add to basket Girl in the Blue ... £46.83 In stock Add to basket Page 1 of 2 next",
+        "content_length_bytes": 50109,
+        "redirect_count": 0
+      },
+      {
+        "title": "Sequential Art | \n     Books to Scrape - Sandbox",
+        "title_len": 48,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "Sequential Art"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "Sequential Art"
+          ],
+          "h2": [],
+          "h3": [
+            "Scott Pilgrim's Precious Little ...",
+            "Tsubasa: WoRLD CHRoNiCLE 2 ...",
+            "This One Summer",
+            "The Nameless City (The ...",
+            "Saga, Volume 5 (Saga ...",
+            "Rat Queens, Vol. 3: ...",
+            "Princess Jellyfish 2-in-1 Omnibus, ...",
+            "Pop Gun War, Volume ...",
+            "Patience",
+            "Outcast, Vol. 1: A ...",
+            "orange: The Complete Collection ...",
+            "Lumberjanes, Vol. 2: Friendship ...",
+            "Lumberjanes, Vol. 1: Beware ...",
+            "Lumberjanes Vol. 3: A ...",
+            "I Hate Fairyland, Vol. ...",
+            "I am a Hero ...",
+            "Giant Days, Vol. 2 ...",
+            "Danganronpa Volume 1",
+            "Codename Baboushka, Volume 1: ...",
+            "Camp Midnight"
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 20,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 322,
+        "fk_grade": 31.3,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home Books Sequential Art Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime Sequential Art 75 results - showing 1 to 20. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. Scott Pilgrim's Precious Little ... £52.29 In stock Add to basket Tsubasa: WoRLD CHRoNiCLE 2 ... £16.28 In stock Add to basket This One Summer £19.49 In stock Add to basket The Nameless City (The ... £38.16 In stock Add to basket Saga, Volume 5 (Saga ... £51.04 In stock Add to basket Rat Queens, Vol. 3: ... £50.40 In stock Add to basket Princess Jellyfish 2-in-1 Omnibus, ... £13.61 In stock Add to basket Pop Gun War, Volume ... £18.97 In stock Add to basket Patience £10.16 In stock Add to basket Outcast, Vol. 1: A ... £15.44 In stock Add to basket orange: The Complete Collection ... £48.41 In stock Add to basket Lumberjanes, Vol. 2: Friendship ... £46.91 In stock Add to basket Lumberjanes, Vol. 1: Beware ... £45.61 In stock Add to basket Lumberjanes Vol. 3: A ... £19.92 In stock Add to basket I Hate Fairyland, Vol. ... £29.17 In stock Add to basket I am a Hero ... £54.63 In stock Add to basket Giant Days, Vol. 2 ... £22.11 In stock Add to basket Danganronpa Volume 1 £51.99 In stock Add to basket Codename Baboushka, Volume 1: ... £36.72 In stock Add to basket Camp Midnight £17.08 In stock Add to basket Page 1 of 4 next",
+        "content_length_bytes": 51455,
+        "redirect_count": 0
+      },
+      {
+        "title": "Classics | \n     Books to Scrape - Sandbox",
+        "title_len": 42,
+        "meta_desc": "",
+        "meta_desc_len": 0,
+        "canonical": "",
+        "noindex": false,
+        "h1_count": 1,
+        "h1_texts": [
+          "Classics"
+        ],
+        "h2_count": 0,
+        "headings": {
+          "h1": [
+            "Classics"
+          ],
+          "h2": [],
+          "h3": [
+            "The Secret Garden",
+            "The Metamorphosis",
+            "The Pilgrim's Progress",
+            "The Hound of the ...",
+            "Little Women (Little Women ...",
+            "Gone with the Wind",
+            "Candide",
+            "Animal Farm",
+            "Wuthering Heights",
+            "The Picture of Dorian ...",
+            "The Complete Stories and ...",
+            "Beowulf",
+            "And Then There Were ...",
+            "The Story of Hong ...",
+            "The Little Prince",
+            "Sense and Sensibility",
+            "Of Mice and Men",
+            "Emma",
+            "Alice in Wonderland (Alice's ..."
+          ],
+          "h4": [],
+          "h5": [],
+          "h6": []
+        },
+        "heading_skip": true,
+        "imgs_total": 19,
+        "imgs_missing_alt": 0,
+        "og_title": false,
+        "og_desc": false,
+        "og_image": false,
+        "tw_card": false,
+        "tw_title": false,
+        "tw_image": false,
+        "viewport": true,
+        "schema_types": [],
+        "schema_valid": true,
+        "word_count": 287,
+        "fk_grade": 28,
+        "has_cta": false,
+        "has_trust": false,
+        "has_phone": false,
+        "has_email": false,
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_px": false,
+        "has_linkedin": false,
+        "has_hotjar": false,
+        "has_clarity": false,
+        "mixed_content": true,
+        "mixed_content_urls": [
+          "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+        ],
+        "sec_headers": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "sec_header_count": 0,
+        "lazy_anchors": 0,
+        "url_has_params": false,
+        "url_has_caps": false,
+        "buttons_missing_label": 0,
+        "inputs_missing_label": 0,
+        "has_skip_nav": false,
+        "page_text_sample": "Home Books Classics Books Travel Mystery Historical Fiction Sequential Art Classics Philosophy Romance Womens Fiction Fiction Childrens Religion Nonfiction Music Default Science Fiction Sports and Games Add a comment Fantasy New Adult Young Adult Science Poetry Paranormal Art Psychology Autobiography Parenting Adult Fiction Humor Horror History Food and Drink Christian Fiction Business Biography Thriller Contemporary Spirituality Academic Self Help Historical Christian Suspense Short Stories Novels Health Politics Cultural Erotica Crime Classics 19 results. Warning! This is a demo website for web scraping purposes. Prices and ratings here were randomly assigned and have no real meaning. The Secret Garden £15.08 In stock Add to basket The Metamorphosis £28.58 In stock Add to basket The Pilgrim's Progress £50.26 In stock Add to basket The Hound of the ... £14.82 In stock Add to basket Little Women (Little Women ... £28.07 In stock Add to basket Gone with the Wind £32.49 In stock Add to basket Candide £58.63 In stock Add to basket Animal Farm £57.22 In stock Add to basket Wuthering Heights £17.73 In stock Add to basket The Picture of Dorian ... £29.70 In stock Add to basket The Complete Stories and ... £26.78 In stock Add to basket Beowulf £38.35 In stock Add to basket And Then There Were ... £35.01 In stock Add to basket The Story of Hong ... £43.19 In stock Add to basket The Little Prince £45.42 In stock Add to basket Sense and Sensibility £37.46 In stock Add to basket Of Mice and Men £47.11 In stock Add to basket Emma £32.93 In stock Add to basket Alice in Wonderland (Alice's ... £55.53 In stock Add to basket",
+        "content_length_bytes": 47874,
+        "redirect_count": 0
+      }
+    ],
+    "robots": {
+      "present": false,
+      "sitemaps": [],
+      "content": "",
+      "ai_blocked": [],
+      "ai_allowed": []
+    },
+    "sitemap": {
+      "found": false,
+      "url": null,
+      "is_index": false,
+      "child_sitemaps": [],
+      "count": 0,
+      "pages": 0,
+      "posts": 0,
+      "other": 0,
+      "page_entries": []
+    },
+    "ssl": {
+      "valid": true,
+      "expiry_days": 58,
+      "error": null
+    },
+    "psiMobile": {
+      "score": null,
+      "error": "PageSpeed API unavailable"
+    },
+    "psiDesktop": {
+      "score": null,
+      "error": "PageSpeed API unavailable"
+    },
+    "llms": {
+      "present": false,
+      "url": "https://books.toscrape.com/llms.txt",
+      "content": ""
+    },
+    "errors": [],
+    "has404": false,
+    "googleIndexCount": 10
+  },
+  "expected": {
+    "scores": {
+      "technical": 50,
+      "performance": null,
+      "onpage_seo": 52,
+      "content": 25,
+      "indexability": 33,
+      "schema": 25,
+      "ai_llm": 29,
+      "ux": 77,
+      "analytics": 0
+    },
+    "overall_score": 41,
+    "overall_grade": "F",
+    "findings": {
+      "technical": {
+        "ssl_valid": true,
+        "ssl_expiry_days": 58,
+        "ssl_error": null,
+        "robots_present": false,
+        "mixed_content_pages": 8,
+        "mixed_content_detail": [
+          {
+            "page": "https://books.toscrape.com/",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/catalogue/category/books_1/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/catalogue/category/books/mystery_3/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/catalogue/category/books/sequential-art_5/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          },
+          {
+            "page": "https://books.toscrape.com/catalogue/category/books/classics_6/index.html",
+            "resources": [
+              "http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"
+            ]
+          }
+        ],
+        "redirect_chain_pages": 0,
+        "broken_links": 0,
+        "avg_security_headers": 0,
+        "security_headers_sample": {
+          "content-security-policy": false,
+          "x-frame-options": false,
+          "x-content-type-options": false,
+          "referrer-policy": false,
+          "permissions-policy": false
+        },
+        "missing_security_headers": [
+          "content-security-policy",
+          "x-frame-options",
+          "x-content-type-options",
+          "referrer-policy",
+          "permissions-policy"
+        ]
+      },
+      "performance": {
+        "error": "PageSpeed API unavailable"
+      },
+      "onpage_seo": {
+        "pct_has_title": 100,
+        "pct_title_len_ok": 88,
+        "pct_unique_titles": 88,
+        "pct_has_meta": 0,
+        "pct_meta_len_ok": 0,
+        "pct_one_h1": 100,
+        "pct_no_heading_skip": 0,
+        "pct_alt_text_ok": 100,
+        "pct_og_complete": 0,
+        "pct_tw_card": 0,
+        "pct_clean_url": 100,
+        "pages_missing_title": []
+      },
+      "content": {
+        "pct_adequate_words": 75,
+        "avg_reading_grade": 28.6,
+        "pct_readable": 0,
+        "pct_has_cta": 0,
+        "pct_has_trust_signals": 0,
+        "homepage_has_contact": false,
+        "duplicate_title_pages": 1
+      },
+      "indexability": {
+        "sitemap_found": false,
+        "sitemap_url": null,
+        "sitemap_is_index": false,
+        "sitemap_child_count": 0,
+        "sitemap_url_count": 0,
+        "sitemap_pages": 0,
+        "sitemap_posts": 0,
+        "sitemap_other": 0,
+        "sitemap_in_robots": false,
+        "pages_with_noindex": 0,
+        "google_index_count": 10,
+        "crawled_pages": 8
+      },
+      "schema": {
+        "types_found": [],
+        "has_organization": false,
+        "has_website": false,
+        "has_breadcrumb": false,
+        "has_local_business": false,
+        "has_article": false,
+        "has_faq": false,
+        "has_product": false,
+        "all_json_valid": true,
+        "pct_pages_with_schema": 0
+      },
+      "ai_llm": {
+        "llms_txt_present": false,
+        "llms_txt_url": "https://books.toscrape.com/llms.txt",
+        "ai_crawlers_blocked": [],
+        "ai_crawlers_allowed": [],
+        "has_faq_schema": false,
+        "has_about_content": false,
+        "contact_info_in_text": false
+      },
+      "ux": {
+        "pct_has_viewport": 100,
+        "pct_buttons_accessible": 100,
+        "pct_form_labels_ok": 100,
+        "pct_skip_nav": 0,
+        "has_custom_404": false
+      },
+      "analytics": {
+        "has_ga4": false,
+        "has_gtm": false,
+        "has_meta_pixel": false,
+        "has_linkedin_pixel": false,
+        "has_heatmap_tool": false,
+        "ga4_page_coverage": 0
+      }
+    }
+  }
+}

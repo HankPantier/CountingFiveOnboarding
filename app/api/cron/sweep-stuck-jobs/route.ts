@@ -26,7 +26,11 @@ export async function GET(req: Request) {
   // resource_ideas sweeps on updated_at: the draft lock bumps it when claimed,
   // so it reflects when the in-flight run actually started (rows are created
   // at brainstorm time, long before drafting).
-  const [research, pages, ideas, socials, oneoffs] = await Promise.all([
+  // audit_runs: a row stuck in a running state with started_at older than the
+  // cutoff means the worker died mid-run. Reset it to 'error' so the UI stops
+  // polling and the admin can re-run.
+  const RUNNING_AUDIT_STATES = ['crawling', 'analyzing', 'scoring', 'rendering']
+  const [research, pages, ideas, socials, oneoffs, audits] = await Promise.all([
     supabase
       .from('research_results')
       .update({ research_status: 'error' })
@@ -59,6 +63,12 @@ export async function GET(req: Request) {
       .in('status', ['pending', 'running'])
       .lt('updated_at', cutoff)
       .select('id'),
+    supabase
+      .from('audit_runs')
+      .update({ audit_status: 'error', error_message: 'Audit timed out (swept by cron)' })
+      .in('audit_status', RUNNING_AUDIT_STATES)
+      .lt('started_at', cutoff)
+      .select('id'),
   ])
 
   const researchSwept = research.data?.length ?? 0
@@ -66,10 +76,11 @@ export async function GET(req: Request) {
   const ideasSwept = ideas.data?.length ?? 0
   const socialsSwept = socials.data?.length ?? 0
   const oneoffsSwept = oneoffs.data?.length ?? 0
+  const auditsSwept = audits.data?.length ?? 0
 
-  if (researchSwept || pagesSwept || ideasSwept || socialsSwept || oneoffsSwept) {
+  if (researchSwept || pagesSwept || ideasSwept || socialsSwept || oneoffsSwept || auditsSwept) {
     console.warn(
-      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} socials=${socialsSwept} oneoffs=${oneoffsSwept} cutoff=${cutoff}`
+      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} socials=${socialsSwept} oneoffs=${oneoffsSwept} audits=${auditsSwept} cutoff=${cutoff}`
     )
 
     // Stuck rows mean a pipeline run died mid-flight — tell the admin instead
@@ -84,6 +95,7 @@ export async function GET(req: Request) {
           ideasSwept && `${ideasSwept} blog draft(s)`,
           socialsSwept && `${socialsSwept} social generation(s)`,
           oneoffsSwept && `${oneoffsSwept} one-off generation(s)`,
+          auditsSwept && `${auditsSwept} site audit(s)`,
         ].filter(Boolean)
         const resend = new Resend(process.env.RESEND_API_KEY)
         await resend.emails.send({
@@ -103,5 +115,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, cutoff })
 }

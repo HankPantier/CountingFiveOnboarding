@@ -1,0 +1,1891 @@
+{
+  "version": "1.0",
+  "domain": "stgcpas.com",
+  "site_name": "Kinexus CPAs & Advisors",
+  "url": "https://stgcpas.com",
+  "audit_date": "2026-04-20",
+  "max_pages": 50,
+  "pages_crawled": 50,
+  "crawl_errors": 0,
+  "overall_score": 55,
+  "overall_grade": "F",
+  "scores": {
+    "technical": 55,
+    "performance": null,
+    "onpage_seo": 23,
+    "content": 47,
+    "indexability": 78,
+    "schema": 75,
+    "ai_llm": 64,
+    "ux": 92,
+    "analytics": 0
+  },
+  "findings": {
+    "technical": {
+      "ssl_valid": true,
+      "ssl_expiry_days": 23,
+      "ssl_error": null,
+      "robots_present": true,
+      "mixed_content_pages": 50,
+      "redirect_chain_pages": 0,
+      "broken_links": 0,
+      "avg_security_headers": 2.0,
+      "security_headers_sample": {
+        "content-security-policy": false,
+        "x-frame-options": false,
+        "x-content-type-options": true,
+        "referrer-policy": true,
+        "permissions-policy": false
+      }
+    },
+    "performance": {
+      "error": "PageSpeed API unavailable"
+    },
+    "onpage_seo": {
+      "pct_has_title": 100,
+      "pct_title_len_ok": 0,
+      "pct_unique_titles": 76,
+      "pct_has_meta": 0,
+      "pct_meta_len_ok": 0,
+      "pct_one_h1": 82,
+      "pct_no_heading_skip": 52,
+      "pct_alt_text_ok": 0,
+      "pct_og_complete": 32,
+      "pct_tw_card": 100,
+      "pct_clean_url": 100,
+      "pages_missing_title": []
+    },
+    "content": {
+      "pct_adequate_words": 82,
+      "avg_reading_grade": 13.9,
+      "pct_readable": 23,
+      "pct_has_cta": 54,
+      "pct_has_trust_signals": 56,
+      "homepage_has_contact": true,
+      "duplicate_title_pages": 12
+    },
+    "indexability": {
+      "sitemap_found": true,
+      "sitemap_url": "https://stgcpas.com/sitemap.xml",
+      "sitemap_is_index": true,
+      "sitemap_child_count": 4,
+      "sitemap_url_count": 181,
+      "sitemap_pages": 42,
+      "sitemap_posts": 134,
+      "sitemap_other": 5,
+      "sitemap_in_robots": false,
+      "pages_with_noindex": 0,
+      "google_index_count": 10,
+      "crawled_pages": 50
+    },
+    "schema": {
+      "types_found": [
+        "Article",
+        "BreadcrumbList",
+        "ImageObject",
+        "Person",
+        "ProfilePage",
+        "WebPage",
+        "WebSite"
+      ],
+      "has_organization": false,
+      "has_website": true,
+      "has_breadcrumb": true,
+      "has_local_business": false,
+      "has_article": true,
+      "has_faq": false,
+      "has_product": false,
+      "all_json_valid": true,
+      "pct_pages_with_schema": 100
+    },
+    "ai_llm": {
+      "llms_txt_present": false,
+      "llms_txt_url": "https://stgcpas.com/llms.txt",
+      "ai_crawlers_blocked": [],
+      "ai_crawlers_allowed": [],
+      "has_faq_schema": false,
+      "has_about_content": true,
+      "contact_info_in_text": true
+    },
+    "ux": {
+      "pct_has_viewport": 100,
+      "pct_buttons_accessible": 100,
+      "pct_form_labels_ok": 100,
+      "pct_skip_nav": 0,
+      "has_custom_404": true
+    },
+    "analytics": {
+      "has_ga4": false,
+      "has_gtm": false,
+      "has_meta_pixel": false,
+      "has_linkedin_pixel": false,
+      "has_heatmap_tool": false,
+      "ga4_page_coverage": 0
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "critical",
+      "category": "On-Page SEO",
+      "title": "Add Missing Meta Descriptions",
+      "detail": "Only 0% of pages have meta descriptions. These appear in search results and affect click-through rate.",
+      "effort": "Low"
+    },
+    {
+      "priority": "critical",
+      "category": "On-Page SEO",
+      "title": "Fix H1 Tag Issues",
+      "detail": "Only 82% of pages have exactly one H1. Every page needs exactly one H1 \u2014 it's the primary on-page signal.",
+      "effort": "Low"
+    },
+    {
+      "priority": "critical",
+      "category": "Schema",
+      "title": "Add Organization Schema",
+      "detail": "No Organization schema found. This is the baseline schema every business site needs \u2014 it tells Google who you are.",
+      "effort": "Low"
+    },
+    {
+      "priority": "critical",
+      "category": "Analytics",
+      "title": "Install Google Analytics 4 (GA4)",
+      "detail": "No GA4 tracking detected. Without it, there is no data on who visits the site, where they come from, or what they do.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "Technical",
+      "title": "Renew SSL Certificate Soon",
+      "detail": "Certificate expires in 23 days.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "On-Page SEO",
+      "title": "Add Open Graph Tags",
+      "detail": "Only 32% of pages have complete Open Graph tags. These control how the site looks when shared on social media.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "On-Page SEO",
+      "title": "Fix Missing Image Alt Text",
+      "detail": "Only 0% of pages have all images tagged with alt text. This hurts accessibility and image SEO.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "Content",
+      "title": "Fix Duplicate Page Titles",
+      "detail": "12 pages share a title with another page. Unique titles are required for SEO.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "Indexability",
+      "title": "Reference Sitemap in robots.txt",
+      "detail": "Add 'Sitemap: https://domain.com/sitemap.xml' to robots.txt so all crawlers find it.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "AI / LLM",
+      "title": "Add llms.txt File",
+      "detail": "Create /llms.txt to help AI systems understand your site. This is the emerging standard for AI-readable site context.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "Analytics",
+      "title": "Install Meta Pixel",
+      "detail": "No Facebook/Meta Pixel detected. Required for retargeting ads and tracking conversions from Meta campaigns.",
+      "effort": "Low"
+    },
+    {
+      "priority": "warning",
+      "category": "Technical",
+      "title": "Fix Mixed Content",
+      "detail": "50 page(s) load HTTP resources on HTTPS. Browsers will block these.",
+      "effort": "Medium"
+    },
+    {
+      "priority": "warning",
+      "category": "Technical",
+      "title": "Add Security Headers",
+      "detail": "Only 2/5 security headers set. Add Content-Security-Policy, X-Frame-Options, and X-Content-Type-Options at minimum.",
+      "effort": "Medium"
+    },
+    {
+      "priority": "warning",
+      "category": "Content",
+      "title": "Add Calls to Action",
+      "detail": "Only 54% of pages have a clear CTA. Every page should guide users to a next step.",
+      "effort": "Medium"
+    }
+  ],
+  "page_analysis_summary": [
+    {
+      "url": "https://stgcpas.com/",
+      "status_code": 200,
+      "title": "Home - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 68,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Healthy Financial Path",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 552,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (68 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Take advantage of our dedicated accounting and strategic advisory services. Who We Serve Small Businesses No two businesses are built the same and your financials shouldn\u2019t be treated like they are. Whether you\u2019re contractor managing project margins, restaurateur navigating tight food costs, an entrepreneur building from the ground up, real estate investor structuring deals, medical professional running practice, or service-based business focused on growth Kinexus brings industry-specific expertise to every engagement. We don\u2019t just keep your books; we learn your business, anticipate your chal"
+    },
+    {
+      "url": "https://stgcpas.com/",
+      "status_code": 200,
+      "title": "Home - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 68,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Healthy Financial Path",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 552,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (68 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Take advantage of our dedicated accounting and strategic advisory services. Who We Serve Small Businesses No two businesses are built the same and your financials shouldn\u2019t be treated like they are. Whether you\u2019re contractor managing project margins, restaurateur navigating tight food costs, an entrepreneur building from the ground up, real estate investor structuring deals, medical professional running practice, or service-based business focused on growth Kinexus brings industry-specific expertise to every engagement. We don\u2019t just keep your books; we learn your business, anticipate your chal"
+    },
+    {
+      "url": "https://stgcpas.com/what-we-do/outsourced-accounting/",
+      "status_code": 200,
+      "title": "Outsourced Accounting - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 85,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 650,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (85 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "eet the needs of growing businesses requiring more complex solutions. The Kinexus CPAs Advisors team delivers suite of services that provides business owners with the right financial information at the right time to help them make informed, intelligent business decisions with confidence. Click on the services below to explore all the ways we support your business. Bookkeeping Running business takes dedication and requires lot of time without the daily upkeep of your ledger. Let Kinexus CPAs Advisors handle the bookkeeping work. From transaction classification, expense tracking, payroll, bill p"
+    },
+    {
+      "url": "https://stgcpas.com/what-we-do/business-management-services/",
+      "status_code": 200,
+      "title": "Business Management Services - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 92,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 365,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (92 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "ices were designed to provide you with the right financial information at the right time\u2014delivered in language business owners understand. We\u2019ll meet with you regularly to discuss your financials and offer insight into your data with business-critical and customized reports\u2014including budgeting and tax planning. We\u2019ll also track and provide analysis of revenue and profits, expenses, payroll, credit card fees, cash flow, and unique KPIs (Key Performance Indicators). It\u2019s like having your own CFO at fraction of the cost! The Challenge Flying blind with your business finances is risky Making criti"
+    },
+    {
+      "url": "https://stgcpas.com/what-we-do/business-tax/",
+      "status_code": 200,
+      "title": "Business Tax - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 76,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 263,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (76 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Thin content (263 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "tax preparation. You need financial clarity, proactive tax planning, and strategic guidance that helps you make confident decisions for maximum tax benefits. Business owners need strategic tax advice Avoid the costs of reactive tax preparation. Many businesses treat taxes as an annual chore\u2014gather receipts in March, hope for the best, and brace for whatever the tax bill turns out to be. This reactive approach means: Missed deductions you didn\u2019t know to look for. Surprise tax liabilities that strain your cash flow. Lost opportunities for strategic tax moves. Constant worry that you\u2019re paying mo"
+    },
+    {
+      "url": "https://stgcpas.com/what-we-do/personal-income-tax/",
+      "status_code": 200,
+      "title": "Personal Income Tax - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 83,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 329,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (83 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "are alike, and we\u2019re committed to giving you solution that\u2019s made just for you, delivered with modern, digital ease. Our team is committed to getting your taxes right and reducing both your financial burden and your anxiety level. We\u2019re on your side. We help make taxes less taxing. We offer better solution for taxes so planning and preparation don\u2019t have to be traumatic experience. We make the process convenient and easy from end-to-end. Work with our tax team, and you can expect: modern process from start to finish \u2014We offer the convenience of secure, digital tax process. From uploading your "
+    },
+    {
+      "url": "https://stgcpas.com/what-we-do/business-foundation-services/",
+      "status_code": 200,
+      "title": "Business Foundation Services - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 92,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 669,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (92 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "rity and confidence. There\u2019s lot to consider and so many tasks to do when starting business. The process can leave entrepreneurs feeling overwhelmed. No worries\u2014our team is here to offer guidance. Let us help you build strong foundation for your business by informing and advising you on key start-up considerations. Click the links on the left to explore our Business Foundation Services. Click the links below to explore our Business Foundation Services. Entity Type Analysis Get smart start with help from our team. Every business must fall under an entity type. The structure you choose directly "
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/",
+      "status_code": 200,
+      "title": "Who We Serve - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 76,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 11,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (76 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Thin content (11 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": ""
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/construction/",
+      "status_code": 200,
+      "title": "Construction - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 76,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "CONSTRUCTION",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 1350,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (76 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Construction accounting built for the way you work From job costing and certified payroll to contractor tax strategy, Kinexus CPAs brings financial clarity to complex industry, so you can build with confidence. Talk to us CPA firm that understands construction Construction is one of the most financially complex industries out there. Managing multiple jobs simultaneously, tracking costs across crews and materials, and staying compliant with payroll rules? It adds up fast. At Kinexus, we work with contractors, builders, and construction business owners who need more than once-a-year tax preparer"
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/restaurants/",
+      "status_code": 200,
+      "title": "Restaurants - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 75,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "RESTAURANTS",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 1384,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (75 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Restaurant accounting that works as hard as you do Running restaurant is relentless. Kinexus CPAs brings financial clarity to food and beverage businesses so you can focus on the food and leave the numbers to us. Talk to us CPA firm that understands the restaurant business Restaurants operate on razor-thin margins, have high employee turnover, and face constant cash flow pressure. The financial demands are unlike almost any other industry, and generalist accountant often isn\u2019t enough. At Kinexus, we work with restaurant owners, operators, and food-and-beverage entrepreneurs who need more than "
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/entrepreneurs/",
+      "status_code": 200,
+      "title": "Entrepreneurs - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 77,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "ENTREPRENEURS",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 1446,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (77 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Financial guidance built for entrepreneurs serious about growth You started your business to build something. Kinexus CPAs gives you the accounting, tax strategy, and advisory support to make sure your finances grow right alongside it. Talk to us CPA firm built for the way entrepreneurs work No two entrepreneurs are alike. Some are solo operators just getting started. Others are running multi-employee businesses with complex finances and big growth plans. What they have in common is need for smart, reliable financial support that keeps pace with where they\u2019re headed. At Kinexus, we work with e"
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/real-estate/",
+      "status_code": 200,
+      "title": "Real Estate - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 75,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Real Estate",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 1503,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (75 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Real Estate Real estate accounting that helps you keep more of what you earn From rental properties to fix-and-flip projects, Kinexus CPAs brings tax strategy and financial clarity to real estate investors and property owners who are serious about building wealth. Talk to us CPA firm that understands real estate investing Real estate is one of the most tax-advantaged investment vehicles available\u2014but only if you have the right strategy in place. Without it, depreciation goes unclaimed, passive losses go unused, and tax bills come in hig"
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/medical-professionals/",
+      "status_code": 200,
+      "title": "Medical Professionals - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 85,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "MEDICAL PROFESSIONALS",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 1487,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (85 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Expert accounting for the professionals who take care of everyone else You spend your career focused on your patients. Kinexus CPAs gives physicians, dentists, and healthcare providers the financial clarity and tax strategy they need to protect their income and build lasting wealth. Talk to us CPA firm that understands the financial complexity of medicine Medical professionals face unique financial situation. Years of education and training often mean starting career with significant student loan debt, high income that arrives later than peers in other fields, and financial decisions that are "
+    },
+    {
+      "url": "https://stgcpas.com/who-we-serve/service-based-businesses/",
+      "status_code": 200,
+      "title": "Service-Based Businesses - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 88,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Service-Based BusinessesS",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 1492,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (88 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Accounting built for businesses that lead with expertise Your business runs on knowledge, relationships, and results. Kinexus CPAs gives service-based businesses the financial clarity and tax strategy to keep growing without getting buried in the back office. Talk to us CPA firm that gets how service businesses operate Service-based businesses come in many forms: consultants, agencies, coaches, staffing firms, IT providers, marketing companies, and more. What they share is business model built on delivering expertise and results rather than selling physical product. And while that model can be"
+    },
+    {
+      "url": "https://stgcpas.com/who-we-are/",
+      "status_code": 200,
+      "title": "Who We Are - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 74,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 166,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (74 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Thin content (166 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "visors team. We\u2019re proud and driven to work shoulder-to-shoulder with our clients and contribute to their success every day. Meet the team: Shawn T. Gubler, CPA, CTC, MAcc Managing Partner RJ Mathews, CPA Partner Andrew (Andy) James Stewart, EA Partner Katie Bowles Partner Operations Manager Peter Williams, EA, MAcc Senior Tax Professional Karma Matthews Client Relations Specialist Chase Gubler, CPA, MAcc Tax Professional Quade Jones Tax Professional Morgan Nethercott, CPA Tax Professional Candi McMullin Payroll Specialist Leslye Haws Bookkeeping Specialist Shelby Barlow Bookkeeping Specialist"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 935,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article The Job Costing Mistake That\u2019s Quietly Killing Your Margins By Kinexus April 9, 2026 Accurate, timely job costing changes how you run the whole business. You can see which project types, customers, and delivery methods are making you money\u2014and which ones are quietly draining it. You build stronger cash flow, improve your credibility with banks and sureties, and make growth decisions based on real data instead of gut instinct. Read More Healthcare costs for the self-emplo"
+    },
+    {
+      "url": "https://stgcpas.com/resources/smart-tips/",
+      "status_code": 200,
+      "title": "Smart Tips - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 74,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Smart Tips",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 20,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (74 chars)",
+        "No meta description",
+        "Thin content (20 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Smart Tips No results found."
+    },
+    {
+      "url": "https://stgcpas.com/resources/forms-documents-links/",
+      "status_code": 200,
+      "title": "Forms, Documents & Links - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 88,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Forms, Documents & Links",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 231,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (88 chars)",
+        "No meta description",
+        "Thin content (231 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Forms, Documents Links Here\u2019s where you\u2019ll find helpful links to essential forms, guides, government websites and more. Not finding what you\u2019re after? Please let us know so we can continue to expand our collection of resources. Kinexus CPAs Advisors Forms (PDFs) Employee Setup Form EFTPS Authorization Form Client Questionnaire ACH Authorization Form Government forms Form W-4 http://www.irs.gov/pub/irs-pdf/fw4.pdf Form W-9 http://www.irs.gov/pub/irs-pdf/fw9.pdf Form I-9 https://www.uscis.gov/i-9 Form SS-4 https://www.irs.gov/pub/irs-pdf/"
+    },
+    {
+      "url": "https://stgcpas.com/contact/",
+      "status_code": 200,
+      "title": "Get in Touch - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 76,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "We\u2019re here to help!",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 173,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (76 chars)",
+        "No meta description",
+        "Thin content (173 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Please take moment to fill out our form and let us know which services you\u2019re interested in. Thank you! indicates required fields Phone This field is for validation purposes and should be left unchanged. Name First Last Email Phone Preferred method of contact Email Phone Industry Construction Hospitality Manufacturing Distribution Non-Profits Physical Therapy Medical Practices Professional Services Other Services of interest Managed eServices Succession growth advisory Technology eServices Core CPA services Not sure. Help me decide. How did you hear about us Referral from current client Google"
+    },
+    {
+      "url": "https://stgcpas.com/contact/",
+      "status_code": 200,
+      "title": "Get in Touch - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 76,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "We\u2019re here to help!",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 173,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (76 chars)",
+        "No meta description",
+        "Thin content (173 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Please take moment to fill out our form and let us know which services you\u2019re interested in. Thank you! indicates required fields Phone This field is for validation purposes and should be left unchanged. Name First Last Email Phone Preferred method of contact Email Phone Industry Construction Hospitality Manufacturing Distribution Non-Profits Physical Therapy Medical Practices Professional Services Other Services of interest Managed eServices Succession growth advisory Technology eServices Core CPA services Not sure. Help me decide. How did you hear about us Referral from current client Google"
+    },
+    {
+      "url": "https://stgcpas.com/the-job-costing-mistake-thats-quietly-killing-your-margins/",
+      "status_code": 200,
+      "title": "The Job Costing Mistake That\u2019s Quietly Killing Your Margins - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 123,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "The Job Costing Mistake That\u2019s Quietly Killing Your Margins",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 843,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (123 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery The Job Costing Mistake That\u2019s Quietly Killing Your Margins by Kinexus Apr 9, 2026 Construction Insights The check cleared. The crew\u2019s already on the next job. You\u2019re busy, so that means you\u2019re making money, right? Not always. Many contractors finish job, tally the final numbers, and then wonder where the margin went. After all, the project hit schedule, and the client was happy. But somehow, job bid at 15% comes back at 11%, and no one can point to one thing that went wrong. That\u2019s the quiet part. And it adds u"
+    },
+    {
+      "url": "https://stgcpas.com/author/donmbn/",
+      "status_code": 200,
+      "title": "Kinexus, Author at Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 80,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "ProfilePage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 324,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (80 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Apr 9, 2026 Construction Insights back to Insights Gallery[/et_pb_code][et_pb_post_title comments=\"off\" featured_placement=\"above\" admin_label=\"Post Info Title, Author, Date, Image _builder_version=\"4.27.4\" _module_preset=\"default\" custom_css_post_title=\"margin-top:20px;||padding-bottom:5px;\"... Spring Into Smarter Decisions by Kinexus Apr 1, 2026 Smart Tips back to Smart Tips Magazine Gallery[/et_pb_code][et_pb_code admin_label=\"Magazine Details\" _builder_version=\"4.27.4\" _module_preset=\"default\" global_colors_info=\"{}\" theme_builder_area=\"post_content\"] April 2026 Spring Into Smarter Decisio"
+    },
+    {
+      "url": "https://stgcpas.com/healthcare-costs-for-the-self-employed-in-2026-strategies-for-rising-premiums/",
+      "status_code": 200,
+      "title": "Healthcare costs for the self-employed in 2026: strategies for rising premiums - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 142,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Healthcare costs for the self-employed in 2026: strategies for rising premiums",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 1397,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (142 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Healthcare costs for the self-employed in 2026: strategies for rising premiums by Kinexus Apr 1, 2026 Insights Smart Tips Article Health insurance has never been inexpensive for self-employed professionals, but in 2026, the pressure is growing. With the expiration of expanded Affordable Care Act (ACA) subsidies, many business owners, consultants, and independent contractors are seeing their monthly premiums spike by thousands of dollars year. And unlike traditional employees, there\u2019s no employer sharing the load"
+    },
+    {
+      "url": "https://stgcpas.com/when-unequal-cash-creates-unequal-risk-disproportionate-distributions-in-s-corps/",
+      "status_code": 200,
+      "title": "When unequal cash creates unequal risk: disproportionate distributions in S-corps - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 145,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "When unequal cash creates unequal risk: disproportionate distributions in S-corp",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 1697,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (145 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery When unequal cash creates unequal risk: disproportionate distributions in S-corps by Kinexus Apr 1, 2026 Insights Smart Tips Article corporations are rarely chosen because they are \u201csimple.\u201d Most owners understand from the outset that maintaining an election involves specific formalities and technical requirements. What often comes as surprise is where the risk actually hides. One of the least intuitive problem areas is the single class of stock rule, particularly as it relates to disproportionate distributions."
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 935,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article The Job Costing Mistake That\u2019s Quietly Killing Your Margins By Kinexus April 9, 2026 Accurate, timely job costing changes how you run the whole business. You can see which project types, customers, and delivery methods are making you money\u2014and which ones are quietly draining it. You build stronger cash flow, improve your credibility with banks and sureties, and make growth decisions based on real data instead of gut instinct. Read More Healthcare costs for the self-emplo"
+    },
+    {
+      "url": "https://stgcpas.com/resources/refund-tracker/",
+      "status_code": 200,
+      "title": "Refund Tracker - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 78,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Refund Tracker",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 91,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (78 chars)",
+        "No meta description",
+        "Thin content (91 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Refund Tracker Track your federal and state status in real-time. Free refund tracking tool.. Use these links to quickly check the status of your refund. Federal Federal (Amended) Alabama Arizona Arkansas California Colorado Connecticut Delaware District of Columbia Florida Georgia Hawaii Idaho Illinois Indiana Iowa Kansas Kentucky Louisiana Maine Maryland Massachusetts Michigan Minnesota Mississippi Missouri Nebraska New Jersey New Mexico New York North Carolina North Dakota Ohio Oklahoma Oregon Pennsylvania Rhode Island South Carolina "
+    },
+    {
+      "url": "https://stgcpas.com/careers/",
+      "status_code": 200,
+      "title": "Careers - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 71,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Take your career to the next level\u2014join the Kinexus CPAs & Advisors team!",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 175,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (71 chars)",
+        "No meta description",
+        "Thin content (175 words)",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Our clients look to us for progressive solutions to support their business and personal financial goals. We honor their trust by investing in tools, technology, and talent that make our firm truly exceptional. We are always looking for quality professionals to make solid contribution to our dynamic, hard-working team. Applicants must demonstrate the Kinexus CPAs Advisors core values of: Excellence Leadership Drive Friendship Flexibility At Kinexus CPAs Advisors, you\u2019ll find career that\u2019s challenging and rewarding for people driven to find opportunities for continuous improvement take the team "
+    },
+    {
+      "url": "https://stgcpas.com/privacy-policy/",
+      "status_code": 200,
+      "title": "Privacy Policy - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 78,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 0,
+      "h1_text": "",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 498,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (78 chars)",
+        "No meta description",
+        "No H1 tag",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "ndividuals who visit our website and use our services. This Privacy Policy outlines how we collect, use, disclose, and protect the information that we gather through our website and during the provision of our services. By accessing our website or using our services, you acknowledge that you have read and understood this Privacy Policy. If you do not agree with this Privacy Policy, please do not use our website or services. INFORMATION WE COLLECT We collect personal information that you voluntarily provide to us, such as your name, email address, phone number, and any other information you cho"
+    },
+    {
+      "url": "https://stgcpas.com/why-estate-taxes-arent-the-only-inheritance-related-costs-to-consider/",
+      "status_code": 200,
+      "title": "Why estate taxes aren\u2019t the only inheritance-related costs to consider - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 134,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Why estate taxes aren\u2019t the only inheritance-related costs to consider",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 1136,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (134 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Why estate taxes aren\u2019t the only inheritance-related costs to consider by Kinexus Apr 1, 2026 Insights Smart Tips Article Estate planning discussions have long centered around one headline number: the federal estate tax exemption. As of 2026, that number is $15 million per person But focusing solely on whether an estate will owe federal estate tax overlooks broader and more persistent issue: the many other costs that can quietly erode the wealth transferred to heirs. In fact, many families who fall below the est"
+    },
+    {
+      "url": "https://stgcpas.com/your-hsa-isnt-a-debit-card-building-a-tax-efficient-healthcare-reserve/",
+      "status_code": 200,
+      "title": "Your HSA isn\u2019t a debit card: building a tax efficient healthcare reserve - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 136,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Your HSA isn\u2019t a debit card: building a tax efficient healthcare reserve",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 2051,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (136 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Your HSA isn\u2019t debit card: building tax efficient healthcare reserve by Kinexus Apr 1, 2026 Insights Smart Tips Article For many people, the Health Savings Account (HSA) functions like specialized checking account. Contributions go in, withdrawals for qualified medical expenses typically via debit card come out, and the balance gradually rises and falls alongside doctor visits, prescriptions, and routine care. That approach captures the convenience of the account but overlooks its real potential. Under federal t"
+    },
+    {
+      "url": "https://stgcpas.com/the-truth-well-told-how-to-prepare-financials-for-lenders-or-investors-after-tax-season/",
+      "status_code": 200,
+      "title": "The truth, well told: How to prepare financials for lenders or investors after tax season - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 153,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "The truth, well told: How to prepare financials for lenders or investors after t",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 769,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (153 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery The truth, well told: How to prepare financials for lenders or investors after tax season by Kinexus Apr 1, 2026 Insights Once tax season ends, many business owners shift their focus from compliance to growth. If you\u2019re planning to seek financing, attract investors or expand operations, this is the ideal time to prepare financial statements that present clear and credible picture of your business\u2019s performance. Lenders and investors rely heavily on financial data when evaluating risk, so well-prepared statements"
+    },
+    {
+      "url": "https://stgcpas.com/expanding-the-talent-pool-why-employers-should-shift-focus-from-degree-requirements-to-skills-based-training/",
+      "status_code": 200,
+      "title": "Expanding the talent pool: Why employers should shift focus from degree requirements to skills-based training - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 173,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Expanding the talent pool:  Why employers should shift focus from degree require",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 980,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (173 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "by Kinexus Apr 1, 2026 Insights For decades, college degree has been signal of qualification for hiring managers, immediately connoting baseline of knowledge, discipline, and capability on the part of the applicant. But as labor markets tighten, technology evolves, and workforce expectations shift, that indicator is increasingly fading in relevance. Forward-thinking employers are beginning to see value in embracing different approach to hiring, prioritizing skills over degrees. This shift is practical, strategic response to real business challenges of staffing shortages, escalating talent acqu"
+    },
+    {
+      "url": "https://stgcpas.com/s-corporations-101-faqs-for-business-owners/",
+      "status_code": 200,
+      "title": "S-corporations 101: FAQs for business owners - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 108,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "S-corporations 101: FAQs for business owners",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 2069,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (108 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery S-corporations 101: FAQs for business owners by Kinexus Mar 1, 2026 Insights Smart Tips Article S-corporations are one of the most frequently discussed (but often misunderstood) tax structures for small business owners. You\u2019ve likely heard that they can help reduce taxes, especially self-employment taxes. And in some cases, that\u2019s true. But the rules are nuanced, and the benefits aren\u2019t automatic. An S-corporation (or S-corp) isn\u2019t separate type of business entity. It is tax classification that eligible business"
+    },
+    {
+      "url": "https://stgcpas.com/living-trust-myths-vs-reality-what-a-revocable-trust-really-does/",
+      "status_code": 200,
+      "title": "Living trust myths vs. reality: what a revocable trust really does - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 130,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Living trust myths vs. reality: what a revocable trust really does",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 1671,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (130 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Living trust myths vs. reality: what revocable trust really does by Kinexus Mar 1, 2026 Insights Smart Tips Article Revocable living trusts (RLTs) are common in estate planning, and commonly misunderstood. They\u2019re sometimes presented as clean, all-purpose solution that avoids probate, reduces taxes, and simplifies everything after death. In reality, they\u2019re more nuanced than that. This article isn\u2019t meant to argue for or against revocable living trusts. Instead, the goal is to explain what they actually do, what"
+    },
+    {
+      "url": "https://stgcpas.com/understanding-the-irss-new-deduction-for-qualified-overtime-compensation/",
+      "status_code": 200,
+      "title": "Understanding the IRS\u2019s new deduction for qualified overtime compensation - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 137,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Understanding the IRS\u2019s new deduction for qualified overtime compensation",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 618,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (137 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Understanding the IRS\u2019s new deduction for qualified overtime compensation by Kinexus Mar 1, 2026 Insights Smart Tips Article The IRS has issued detailed guidance on new federal income tax deduction for qualified overtime compensation. This measure, effective for tax years 2025 through 2028, provides federal income tax deduction that allows eligible individuals to deduct certain qualified overtime compensation. What is qualified overtime compensation? Under the new rules, qualified overtime compensation is define"
+    },
+    {
+      "url": "https://stgcpas.com/can-you-be-freed-from-a-spouses-tax-debt-understanding-innocent-spouse-relief/",
+      "status_code": 200,
+      "title": "Can you be freed from a spouse\u2019s tax debt? Understanding innocent spouse relief - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 143,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Can you be freed from a spouse\u2019s tax debt? Understanding innocent spouse relief",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 1929,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (143 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Can you be freed from spouse\u2019s tax debt? Understanding innocent spouse relief by Kinexus Mar 1, 2026 Insights Smart Tips Article When you file joint tax return with your spouse, both of you are legally responsible for everything on that return. That means if there\u2019s mistake or unpaid tax (even if you didn\u2019t earn the income or weren\u2019t involved in the finances), the IRS can come after you for the full amount. This is referred to as \u201cjoint and several liability.\u201d For many people, that\u2019s surprise. And when marriage "
+    },
+    {
+      "url": "https://stgcpas.com/spring-into-good-payroll-habits/",
+      "status_code": 200,
+      "title": "Spring into good payroll habits - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 95,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Spring into good payroll habits",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 696,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (95 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Insights Gallery Spring into good payroll habits by Kinexus Feb 24, 2026 Insights Payroll tax compliance checks for spring Spring is natural checkpoint for payroll tax compliance. While year-end reporting gets most of the attention, the months following tax season are when businesses are well-served to ensure their payroll processes remain accurate, current, and compliant. Overlooking key considerations can create mistakes that compound through the year and potentially result in penalties, interest, or administrative headaches t"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/2/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 871,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article Remote work, proximal risk By Kinexus February 24, 2026 Remote staff have created shift for employers that has created complex web of tax and regulatory obligations. Learn how employees who work in different states than your company's primary location create nexus and what you as an employer are responsible for doing to stay compliant. Read More Understanding Trump Accounts: what parents need to know about the new child-focused IRA By Kinexus February 1, 2026 Trump Accou"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/3/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 687,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article Buying back your time: everyday outsourcing By Kinexus January 1, 2026 Smart outsourcing isn\u2019t about luxury it\u2019s strategically identifying tasks that drain mental bandwidth without delivering value, from meal prep and household management to admin work and scheduling. The key is starting small with fractional support, establishing clear systems, and focusing delegation on areas where you procrastinate or that create decision fatigue. By protecting what only you can do an"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/4/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 577,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article Launch Smart, Grow Smart By Kinexus November 11, 2025 Getting your small business off the ground? strong launch sets the tone for your business\u2019s future, building fledgling relationships with early customers, establishing financial momentum, and earning credibility with lenders and future strategic partners. Read More 10 Cybersecurity Must-Dos for Small Businesses By Kinexus October 1, 2025 October is National Cybersecurity Awareness Month\u2014the perfect time to give your b"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/5/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 751,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article Quarterly Financial Reporting: Keeping Score and Adjusting Your Game Plan By Kinexus September 1, 2025 Fall is here, and that marks the return of football, game we admire not just because we love the strategy and action, but because, as financial professionals, any game where play is divided into quarters strikes chord with us! Yes, we\u2019re converging on the end of fiscal quarter, and it\u2019s time to look at the monetary scoreboard to see how your business\u2019s game plan is pann"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/6/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 816,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article How To Keep Your Customers By Kinexus July 1, 2025 Retaining existing customers is more than just smart move\u2014it\u2019s essential for sustainable growth. Studies show that repeat customers spend up to 70% more than new ones, and increasing customer retention by just 5% can boost profits by 25% to 95%. As we enter the second half of 2025, successful businesses are doubling down on customer retention initiatives to maximize customer lifetime value (LTV) and secure long-term succ"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/7/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 840,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article What Businesses Should Be Doing After Tax Season By Kinexus May 1, 2025 Tax season is over\u2014the crunch time, the late nights, the final filings\u2026are all behind you (for now). But for business owners, the weeks following tax season are not just for breathing sigh of relief. In fact, this is one of the best times of the year to shift focus toward strategic planning, internal reviews, and tackling any financial housekeeping that got pushed aside during the mad dash to April 1"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/8/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 698,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article Erin go bragh! By Kinexus March 1, 2025 It\u2019s March, the month when everyone claims to be Irish, if only for day. But how well do you really know the Emerald Isle and its celebrated people? See if you can conjure the luck o\u2019 the Irish with this month\u2019s Fact Funhouse quiz! Read More What\u2019s in Your Forecast? By Kinexus February 1, 2025 Sales and revenue are the lifeblood of any for-profit business, and the ability to predict them is critical to making strategic and manageme"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/9/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 767,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article Tax Preparation Checklist for the New Year By Kinexus January 1, 2025 After celebrating the arrival of the new year, it\u2019s time to start thinking about tax preparation. Being organized and proactive can save you headaches and possibly even money when the filing deadline arrives in April. Whether you\u2019re an individual filer or business owner, having checklist can streamline the process and ensure that you don\u2019t miss any crucial details. Read More The Gifts that Give Back By"
+    },
+    {
+      "url": "https://stgcpas.com/resources/insights/page/10/",
+      "status_code": 200,
+      "title": "Insights - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 72,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Insights",
+      "schema_types": [
+        "WebPage",
+        "BreadcrumbList",
+        "WebSite"
+      ],
+      "word_count": 490,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (72 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth Insights All Articles All Construction Insights Smart Tips Article An Attitude of Gratitude By Kinexus November 1, 2024 As Thanksgiving approaches, many of us are naturally drawn to reflect on the year with sense of thankfulness and gratitude. It\u2019s time to recognize the blessings, large and small, that contribute to our personal lives, our professional growth, and our communities. Read More Tax Deductions and Tax Credits: Understanding the Difference By Kinexus October 1, 2024 It\u2019s important to have clear understanding of the various st"
+    },
+    {
+      "url": "https://stgcpas.com/spring-into-smarter-decisions/",
+      "status_code": 200,
+      "title": "Spring Into Smarter Decisions - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 93,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Spring Into Smarter Decisions",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 407,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (93 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Smart Tips Magazine Gallery April 2026 Spring Into Smarter Decisions As spring unfolds, it brings natural opportunity to reassess, refine, and move forward with intention, financially and strategically. This issue highlights key financial considerations, from managing rising costs to making informed structural decisions, so you can stay prepared, and on track for the months ahead. Here\u2019s to making informed decisions and staying ahead this spring. In This Issue: Healthcare costs for the self-employed in 2026: strategies for risin"
+    },
+    {
+      "url": "https://stgcpas.com/marching-through-tax-season/",
+      "status_code": 200,
+      "title": "Marching Through Tax Season - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 91,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Marching Through Tax Season",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 452,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (91 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Smart Tips Magazine Gallery March 2026 Marching Through Tax Season This month\u2019s issue covers key topics for individuals and business owners alike, including innocent spouse relief, common living trust misconceptions, S-corporation basics, and the IRS\u2019s new deduction for qualified overtime compensation. Each article is designed to provide practical insights to support informed financial and tax decisions. In This Issue: Can you be freed from spouse\u2019s tax debt? Understanding innocent spouse relief Living trust myths vs. reality: w"
+    },
+    {
+      "url": "https://stgcpas.com/moving-forward-with-confidence/",
+      "status_code": 200,
+      "title": "Moving Forward With Confidence - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 94,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Moving Forward With Confidence",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 463,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (94 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Smart Tips Magazine Gallery February 2026 Moving Forward With Confidence This February issue of Smart Tips is all about clarity and opportunity. From helping parents understand new savings tools for children to exploring tax-smart gifting and retirement strategies, we\u2019re covering topics that can make meaningful difference over time. Whether you\u2019re laying financial foundation for the next generation or fine-tuning your own plans, these insights are designed to help you move forward with purpose and confidence. In This Issue: Unde"
+    },
+    {
+      "url": "https://stgcpas.com/entering-the-new-year/",
+      "status_code": 200,
+      "title": "Entering the New Year - Kinexus CPAs | Dedicated Partner for Business Growth & Wealth",
+      "title_ok": true,
+      "title_len": 85,
+      "meta_desc": "",
+      "meta_ok": false,
+      "meta_len": 0,
+      "h1_count": 1,
+      "h1_text": "Entering the New Year",
+      "schema_types": [
+        "Article",
+        "WebPage",
+        "ImageObject",
+        "BreadcrumbList",
+        "WebSite",
+        "Person"
+      ],
+      "word_count": 405,
+      "og_complete": false,
+      "has_ga4": false,
+      "issues": [
+        "Title too long (85 chars)",
+        "No meta description",
+        "Missing OG tags",
+        "No GA4 tracking"
+      ],
+      "content_snippet": "Kinexus CPAs Dedicated Partner for Business Growth Wealth back to Smart Tips Magazine Gallery January 2026 Entering the New Year new year brings new decisions. In this issue, we explore practical strategies for managing sudden financial gains, key IRS penalty relief employers need to know for 2025, the growing role of concierge medicine, and smart ways to reclaim your time through everyday outsourcing. Insightful guidance to help you make confident financial choices in the year ahead. In This Issue: Practical strategies for managing sudden financial gain IRS grants employers penalty relief for"
+    }
+  ],
+  "google_indexed_urls": [
+    "https://stgcpas.com",
+    "https://stgcpas.com",
+    "https://stgcpas.com/resources",
+    "https://stgcpas.com/resources",
+    "https://stgcpas.com/resources/refund-tracker",
+    "https://stgcpas.com/resources/refund-tracker",
+    "https://stgcpas.com/contact",
+    "https://stgcpas.com/contact",
+    "https://stgcpas.com/who-we-are",
+    "https://stgcpas.com/who-we-are",
+    "https://stgcpas.com/privacy-policy",
+    "https://stgcpas.com/privacy-policy",
+    "https://stgcpas.com/resources/smart-tips",
+    "https://stgcpas.com/resources/smart-tips"
+  ],
+  "sitemap": {
+    "found": true,
+    "url": "https://stgcpas.com/sitemap.xml",
+    "is_index": true,
+    "child_sitemaps": [
+      "https://stgcpas.com/post-sitemap.xml",
+      "https://stgcpas.com/page-sitemap.xml",
+      "https://stgcpas.com/category-sitemap.xml",
+      "https://stgcpas.com/author-sitemap.xml"
+    ],
+    "count": 181,
+    "pages": 42,
+    "posts": 134,
+    "other": 5,
+    "page_entries": [
+      {
+        "url": "https://stgcpas.com/",
+        "lastmod": "2026-04-14T17:47:17+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/about-us/",
+        "lastmod": "2025-09-24T02:44:26+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/resources/",
+        "lastmod": "2025-09-24T03:15:02+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/products/",
+        "lastmod": "2025-10-21T00:18:51+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/about-us/meet-the-team/",
+        "lastmod": "2025-11-03T16:13:33+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/resources/refund-tracker/",
+        "lastmod": "2025-11-03T16:21:45+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/thank-you/",
+        "lastmod": "2025-11-03T16:31:06+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/what-we-do/",
+        "lastmod": "2025-12-31T15:23:26+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/careers/",
+        "lastmod": "2025-12-31T19:20:27+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/",
+        "lastmod": "2026-02-26T19:21:25+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/what-we-do/personal-income-tax/",
+        "lastmod": "2026-03-03T14:46:01+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/contact/",
+        "lastmod": "2026-03-03T15:05:08+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/resources/smart-tips/",
+        "lastmod": "2026-03-12T18:51:29+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/resources/insights/",
+        "lastmod": "2026-03-12T18:53:05+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/what-we-do/outsourced-accounting/",
+        "lastmod": "2026-03-17T17:27:11+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/what-we-do/business-foundation-services/",
+        "lastmod": "2026-03-17T17:32:23+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/real-estate/",
+        "lastmod": "2026-03-19T14:10:32+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/medical-professionals/",
+        "lastmod": "2026-03-19T14:23:04+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/law-firms/",
+        "lastmod": "2026-03-19T14:41:22+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/service-based-businesses/",
+        "lastmod": "2026-03-19T14:53:27+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/entrepreneurs/",
+        "lastmod": "2026-03-19T16:58:12+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/construction/",
+        "lastmod": "2026-03-19T16:58:57+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-serve/restaurants/",
+        "lastmod": "2026-03-19T16:59:03+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/privacy-policy/",
+        "lastmod": "2026-03-19T20:54:37+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/resources/forms-documents-links/",
+        "lastmod": "2026-03-20T15:14:20+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/what-we-do/business-management-services/",
+        "lastmod": "2026-04-01T12:23:10+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/shawn-gubler/",
+        "lastmod": "2026-04-01T12:34:59+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/",
+        "lastmod": "2026-04-01T12:57:18+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/andrew-stewart/",
+        "lastmod": "2026-04-01T17:16:18+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/katie-bowles/",
+        "lastmod": "2026-04-01T17:16:50+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/candi-mcmullin/",
+        "lastmod": "2026-04-01T17:17:17+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/peter-williams/",
+        "lastmod": "2026-04-01T17:17:49+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/leslye-haws/",
+        "lastmod": "2026-04-01T17:18:10+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/chase-gubler/",
+        "lastmod": "2026-04-01T17:19:07+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/payton-wilcox/",
+        "lastmod": "2026-04-01T17:19:22+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/quade-jones/",
+        "lastmod": "2026-04-01T17:20:00+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/karma-matthews/",
+        "lastmod": "2026-04-01T17:20:27+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/shelby-barlow/",
+        "lastmod": "2026-04-01T17:20:53+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/mandi-clark/",
+        "lastmod": "2026-04-01T17:21:22+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/rj-mathews/",
+        "lastmod": "2026-04-01T17:21:45+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/who-we-are/morgan-nethercott/",
+        "lastmod": "2026-04-01T17:22:08+00:00",
+        "type": "page"
+      },
+      {
+        "url": "https://stgcpas.com/what-we-do/business-tax/",
+        "lastmod": "2026-04-08T14:43:55+00:00",
+        "type": "page"
+      }
+    ]
+  },
+  "logo_dark_path": "/sessions/wonderful-wizardly-tesla/mnt/Counting-Five-Internal-Audit/assets/CountingFive-Logo-040125.png",
+  "logo_rev_path": "/sessions/wonderful-wizardly-tesla/mnt/Counting-Five-Internal-Audit/assets/CountingFive-Logo-revers.png"
+}

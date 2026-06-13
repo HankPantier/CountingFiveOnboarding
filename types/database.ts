@@ -74,6 +74,87 @@ export type Database = {
           }
         ]
       }
+      audit_runs: {
+        Row: {
+          audit_status: string
+          category_scores: Json | null
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          domain: string
+          error_message: string | null
+          focus_segments: string[] | null
+          id: string
+          max_pages: number
+          overall_grade: string | null
+          overall_score: number | null
+          pages_crawled: number | null
+          result: Json | null
+          session_id: string | null
+          site_name: string | null
+          started_at: string | null
+          status_detail: string | null
+          url: string
+        }
+        Insert: {
+          audit_status?: string
+          category_scores?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          domain: string
+          error_message?: string | null
+          focus_segments?: string[] | null
+          id?: string
+          max_pages?: number
+          overall_grade?: string | null
+          overall_score?: number | null
+          pages_crawled?: number | null
+          result?: Json | null
+          session_id?: string | null
+          site_name?: string | null
+          started_at?: string | null
+          status_detail?: string | null
+          url: string
+        }
+        Update: {
+          audit_status?: string
+          category_scores?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          domain?: string
+          error_message?: string | null
+          focus_segments?: string[] | null
+          id?: string
+          max_pages?: number
+          overall_grade?: string | null
+          overall_score?: number | null
+          pages_crawled?: number | null
+          result?: Json | null
+          session_id?: string | null
+          site_name?: string | null
+          started_at?: string | null
+          status_detail?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_runs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assets: {
         Row: {
           asset_category: string | null
