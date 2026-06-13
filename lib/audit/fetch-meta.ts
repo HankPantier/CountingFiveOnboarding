@@ -22,14 +22,12 @@ export async function fetchRobots(baseUrl: string): Promise<RobotsResult> {
   const result: RobotsResult = {
     present: false,
     sitemaps: [],
-    content: '',
     ai_blocked: [],
     ai_allowed: [],
   }
   const r = await safeGet(robotsUrl)
   if (r && r.status === 200) {
     result.present = true
-    result.content = r.body
     for (const rawLine of r.body.split(/\r?\n/)) {
       const line = rawLine.trim()
       if (line.toLowerCase().startsWith('sitemap:')) {
@@ -146,9 +144,5 @@ export async function fetchLlmsTxt(baseUrl: string): Promise<LlmsResult> {
   const url = new URL('/llms.txt', baseUrl).href
   const r = await safeGet(url)
   const present = r !== null && r.status === 200
-  return {
-    present,
-    url,
-    content: present && r ? r.body.slice(0, 500) : '',
-  }
+  return { present, url }
 }

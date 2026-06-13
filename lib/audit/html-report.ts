@@ -24,6 +24,7 @@ const COLORS = {
   textMuted: '#94A3B8',
   success: '#098195',
   warning: '#F59E0B',
+  warningText: '#92400E', // amber-800 — readable warning text (AA)
   error: '#6B2956',
 }
 
@@ -33,6 +34,9 @@ const TOKEN_COLOR: Record<SemanticToken, string> = {
   error: COLORS.error,
   muted: COLORS.textMuted,
 }
+
+// Readable foreground for a chip whose fill is `bg`: amber needs a darker text.
+const chipText = (bg: string): string => (bg === COLORS.warning ? COLORS.warningText : bg)
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -47,7 +51,7 @@ function gradeChip(grade: Grade | null, score: number | null): string {
     return `<span class="chip" style="background:${COLORS.subtle};color:${COLORS.textMuted}">N/A</span>`
   }
   const c = TOKEN_COLOR[gradeToken(grade)]
-  return `<span class="chip" style="background:${c}1a;color:${c}">${esc(grade)} · ${score}</span>`
+  return `<span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(grade)} · ${score}</span>`
 }
 
 function scoreRingSvg(score: number, grade: Grade): string {
@@ -57,7 +61,8 @@ function scoreRingSvg(score: number, grade: Grade): string {
   const circ = 2 * Math.PI * r
   const dash = (Math.max(0, Math.min(100, score)) / 100) * circ
   const color = TOKEN_COLOR[gradeToken(grade)]
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="Overall score ${score} out of 100, grade ${esc(grade)}">
+    <title>Overall score ${score} out of 100, grade ${esc(grade)}</title>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${COLORS.border}" stroke-width="${stroke}" />
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"
       stroke-linecap="round" stroke-dasharray="${dash} ${circ - dash}" transform="rotate(-90 ${size / 2} ${size / 2})" />
@@ -191,9 +196,9 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
             r.effort === 'Low' ? COLORS.success : r.effort === 'Medium' ? COLORS.warning : COLORS.error
           return `<li class="rec">
             <div class="rec-head">
-              <span class="chip" style="background:${pColor}1a;color:${pColor}">${r.priority === 'critical' ? 'Critical' : 'Warning'}</span>
+              <span class="chip" style="background:${pColor}1a;color:${chipText(pColor)}">${r.priority === 'critical' ? 'Critical' : 'Warning'}</span>
               <span class="muted small">${esc(r.category)}</span>
-              <span class="chip right" style="background:${eColor}1a;color:${eColor}">${esc(r.effort)} effort</span>
+              <span class="chip right" style="background:${eColor}1a;color:${chipText(eColor)}">${esc(r.effort)} effort</span>
             </div>
             <div class="rec-title">${esc(r.title)}</div>
             <div class="muted">${esc(r.detail)}</div>
@@ -224,8 +229,9 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
     box-shadow:0 5px 22px -6px rgba(35,31,32,.12); padding:24px; margin-bottom:20px; }
   header.report { background:${COLORS.navy}; color:#fff; display:flex; justify-content:space-between;
     align-items:center; gap:16px; flex-wrap:wrap; }
-  header.report h1 { color:#fff; font-size:20px; }
+  header.report h1 { color:#fff; font-size:20px; margin-top:2px; }
   header.report a { color:${COLORS.cyan}; text-decoration:none; word-break:break-all; font-size:14px; }
+  .brandmark { color:${COLORS.cyan}; font-family:'Inter',sans-serif; font-weight:700; font-size:12px; letter-spacing:.18em; }
   .badge { display:inline-block; background:rgba(9,129,149,.2); color:${COLORS.cyan};
     border-radius:100px; padding:4px 12px; font-family:Inter,sans-serif; font-weight:600; font-size:12px; }
   .chip { display:inline-flex; align-items:center; border-radius:100px; padding:2px 10px;
@@ -257,7 +263,8 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .rec { border:1px solid ${COLORS.border}; border-radius:8px; padding:16px; margin-bottom:12px; background:${COLORS.page}; }
   .rec-head { display:flex; align-items:center; gap:8px; }
   .rec-title { font-family:Inter,sans-serif; font-weight:600; margin-top:8px; }
-  footer { text-align:center; color:${COLORS.textMuted}; font-size:12px; padding:8px 0 24px; }
+  footer { text-align:center; color:${COLORS.textMuted}; font-size:12px; padding:24px 0; line-height:1.8; border-top:1px solid ${COLORS.border}; margin-top:8px; }
+  .footer-brand { color:${COLORS.cyan}; font-family:'Inter',sans-serif; font-weight:700; letter-spacing:.18em; font-size:13px; }
   @media (max-width:640px){ .grid,.findings{grid-template-columns:1fr;} }
 </style>
 </head>
@@ -265,11 +272,12 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
 <div class="wrap">
   <header class="report card">
     <div>
+      <div class="brandmark">REVALTUS</div>
       <h1>${esc(result.site_name)}</h1>
       <a href="${esc(safeHref(result.url))}">${esc(result.url)}</a>
     </div>
     <div style="text-align:right">
-      <span class="badge">Snapshot Report</span>
+      <span class="badge">Site Audit</span>
       <div style="color:rgba(255,255,255,.7);font-size:12px;margin-top:4px">${esc(runDate)}</div>
     </div>
   </header>
@@ -279,7 +287,11 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   ${categorySections}
   ${inventorySection}
   ${recsSection}
-  <footer>Audit generated by Revaltus · ${esc(runDate)}</footer>
+  <footer>
+    <div class="footer-brand">REVALTUS</div>
+    <div>Prepared by Revaltus · ${esc(runDate)}</div>
+    <div>Questions about this report? Just reply to the email it came in.</div>
+  </footer>
 </div>
 </body>
 </html>`

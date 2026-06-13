@@ -133,10 +133,9 @@ describe('analyzePage', () => {
     expect(a.sec_header_count).toBe(2)
   })
 
-  it('flags accessibility gaps + lazy anchors + skip nav', () => {
+  it('flags accessibility gaps + skip nav', () => {
     expect(a.buttons_missing_label).toBe(1)
     expect(a.inputs_missing_label).toBe(1)
-    expect(a.lazy_anchors).toBe(1)
     expect(a.has_skip_nav).toBe(true)
   })
 

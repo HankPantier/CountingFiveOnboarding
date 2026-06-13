@@ -142,8 +142,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -171,7 +169,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -231,8 +228,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -260,7 +255,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -320,8 +314,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -349,7 +341,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -400,8 +391,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -429,7 +418,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -489,8 +477,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -518,7 +504,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -578,8 +563,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -607,7 +590,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -667,8 +649,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -696,7 +676,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -755,8 +734,6 @@
         "og_desc": false,
         "og_image": false,
         "tw_card": false,
-        "tw_title": false,
-        "tw_image": false,
         "viewport": true,
         "schema_types": [],
         "schema_valid": true,
@@ -784,7 +761,6 @@
           "permissions-policy": false
         },
         "sec_header_count": 0,
-        "lazy_anchors": 0,
         "url_has_params": false,
         "url_has_caps": false,
         "buttons_missing_label": 0,
@@ -798,7 +774,6 @@
     "robots": {
       "present": false,
       "sitemaps": [],
-      "content": "",
       "ai_blocked": [],
       "ai_allowed": []
     },
@@ -828,8 +803,7 @@
     },
     "llms": {
       "present": false,
-      "url": "https://books.toscrape.com/llms.txt",
-      "content": ""
+      "url": "https://books.toscrape.com/llms.txt"
     },
     "errors": [],
     "has404": false,

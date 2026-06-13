@@ -3,6 +3,7 @@
 // via onProgress. Pure with respect to the DB: the worker (lib/audit/worker.ts)
 // owns persistence and supplies onProgress.
 import { analyzePage } from './analyze-page'
+import { extractBusinessSignals } from './business-signals'
 import { crawlSite, safeGet } from './crawl'
 import { fetchLlmsTxt, fetchRobots, fetchSitemap } from './fetch-meta'
 import { checkGoogleIndex } from './index-check'
@@ -114,6 +115,7 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
   await report('rendering', 'Generating recommendations…', pages.length)
   const recommendations = generateRecommendations(findings)
   const pageAnalysisSummary = pages.map((p, i) => buildPageSummary(p, analyzed[i], siteName))
+  const businessSignals = extractBusinessSignals(pages)
 
   return {
     version: VERSION,
@@ -133,6 +135,7 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
     page_analysis_summary: pageAnalysisSummary,
     google_indexed_urls: indexCheck.google_indexed_urls,
     sitemap,
+    business_signals: businessSignals,
     raw: {
       pages,
       analyzed,

@@ -14,14 +14,13 @@ const CRAWL_DELAY_MS = 150
 // Cap each response body so a malicious/oversized page can't exhaust memory.
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 // Soft wall-clock budget for the whole crawl; on a large/slow site we stop and
-// score what we have rather than overrun the function's maxDuration and get the
-// row stuck in a running state.
-const CRAWL_BUDGET_MS = 180_000
+// score what we have rather than overrun the function's maxDuration (300s) and
+// get the row stuck in a running state. Leaves ~60s for PSI/analysis/scoring.
+const CRAWL_BUDGET_MS = 240_000
 
 export interface CrawlResult {
   pages: CrawledPage[]
   errors: CrawlError[]
-  allUrls: string[]
 }
 
 const REQUEST_HEADERS: Record<string, string> = {
@@ -246,5 +245,5 @@ export async function crawlSite(
     await sleep(CRAWL_DELAY_MS)
   }
 
-  return { pages, errors, allUrls: [...visited] }
+  return { pages, errors }
 }

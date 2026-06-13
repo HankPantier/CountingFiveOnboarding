@@ -27,7 +27,12 @@ export function ScoreRing({
   const token = gradeToken(grade)
 
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <div
+      role="img"
+      aria-label={`Overall score ${score} out of 100, grade ${grade}`}
+      className="relative inline-flex items-center justify-center"
+      style={{ width: size, height: size }}
+    >
       <svg width={size} height={size} className={RING_STROKE[token]} aria-hidden>
         <circle
           cx={size / 2}

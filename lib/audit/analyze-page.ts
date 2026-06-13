@@ -21,15 +21,6 @@ export function fleschKincaidGrade(text: string): number | null {
   }
 }
 
-const LAZY_ANCHORS = new Set([
-  'click here',
-  'here',
-  'read more',
-  'learn more',
-  'more',
-  'link',
-])
-
 const CTA_RE =
   /\b(contact us|get started|book a|schedule a|request a|sign up|free trial|get a quote|call us|let's talk|try free|start free)\b/i
 const TRUST_RE =
@@ -111,8 +102,6 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
   const ogDesc = $('meta[property="og:description"]').length > 0
   const ogImage = $('meta[property="og:image"]').length > 0
   const twCard = hasMetaName($, 'twitter:card')
-  const twTitle = hasMetaName($, 'twitter:title')
-  const twImage = hasMetaName($, 'twitter:image')
 
   const viewport = hasMetaName($, 'viewport')
 
@@ -125,13 +114,6 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
     } catch {
       schemaTypes.push('__invalid_json__')
     }
-  })
-
-  // ── Links (lazy anchor text) ───────────────────────────────────────────────
-  let lazyAnchors = 0
-  $('a[href]').each((_, el) => {
-    const t = $(el).text().trim().toLowerCase()
-    if (LAZY_ANCHORS.has(t)) lazyAnchors++
   })
 
   // ── Content text (strip script/style/nav/footer/header) ────────────────────
@@ -226,8 +208,6 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
     og_desc: ogDesc,
     og_image: ogImage,
     tw_card: twCard,
-    tw_title: twTitle,
-    tw_image: twImage,
     viewport,
     schema_types: schemaTypes,
     schema_valid: !schemaTypes.includes('__invalid_json__'),
@@ -247,7 +227,6 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
     mixed_content_urls: mixedContentUrls,
     sec_headers: secHeaders,
     sec_header_count: secHeaderCount,
-    lazy_anchors: lazyAnchors,
     url_has_params: urlHasParams,
     url_has_caps: urlHasCaps,
     buttons_missing_label: buttonsMissingLabel,

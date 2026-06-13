@@ -54,8 +54,16 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
               {run.site_name || run.domain}
             </span>
             <AuditStatusBadge status={run.audit_status} />
+            {run.session_id && (
+              <span className="font-body text-xs text-text-muted">· session started</span>
+            )}
           </div>
-          <AuditActions auditId={id} status={run.audit_status} />
+          <AuditActions
+            auditId={id}
+            status={run.audit_status}
+            approved={!!run.approved_at}
+            sessionId={run.session_id}
+          />
         </div>
       </div>
 

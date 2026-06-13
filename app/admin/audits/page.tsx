@@ -69,9 +69,17 @@ export default async function AuditsListPage() {
 
       {rows.length === 0 ? (
         <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
-          <p className="font-body text-sm text-text-secondary">
-            No audits yet. Run your first one to get started.
+          <h2 className="font-heading text-lg font-semibold text-brand-navy">No audits yet</h2>
+          <p className="mx-auto mt-1 max-w-sm font-body text-sm text-text-secondary">
+            Run a site audit to score any website across nine categories and generate a shareable
+            report.
           </p>
+          <Link
+            href="/admin/audits/new"
+            className="mt-5 inline-block rounded-pill bg-brand-cyan px-6 py-3 font-heading text-sm font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+          >
+            Run your first audit
+          </Link>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-border-default bg-surface-card shadow-subtle">
@@ -124,12 +132,19 @@ export default async function AuditsListPage() {
                       </td>
                       <td className="px-4 py-3">
                         {delta === null || delta === undefined ? (
-                          <span className="text-xs text-text-muted">—</span>
+                          <span className="text-xs text-text-muted" title="First audit for this site">
+                            —
+                          </span>
+                        ) : delta === 0 ? (
+                          <span className="text-xs text-text-muted" title="No change since last audit">
+                            ±0
+                          </span>
                         ) : (
                           <span
-                            className={`text-xs font-heading font-semibold ${delta >= 0 ? 'text-success' : 'text-error'}`}
+                            className={`text-xs font-heading font-semibold ${delta > 0 ? 'text-success' : 'text-error'}`}
+                            title={`${delta > 0 ? '+' : ''}${delta} since last audit`}
                           >
-                            {delta > 0 ? `▲ ${delta}` : delta < 0 ? `▼ ${Math.abs(delta)}` : '0'}
+                            {delta > 0 ? `▲ ${delta}` : `▼ ${Math.abs(delta)}`}
                           </span>
                         )}
                       </td>

@@ -48,10 +48,9 @@ describe.skipIf(!process.env.AUDIT_LIVE_TESTS)('crawlSite (live)', () => {
   it(
     'crawls books.toscrape.com without throwing, capturing pages + status codes',
     async () => {
-      const { pages, errors, allUrls } = await crawlSite('https://books.toscrape.com/', 10)
+      const { pages, errors } = await crawlSite('https://books.toscrape.com/', 10)
       expect(pages.length).toBeGreaterThan(0)
       expect(pages.length).toBeLessThanOrEqual(10)
-      expect(allUrls.length).toBeGreaterThanOrEqual(pages.length)
       for (const p of pages) {
         expect(p.status_code).toBe(200)
         expect(p.html.length).toBeGreaterThan(0)

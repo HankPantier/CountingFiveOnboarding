@@ -227,8 +227,6 @@ export interface PageAnalysis {
   og_desc: boolean
   og_image: boolean
   tw_card: boolean
-  tw_title: boolean
-  tw_image: boolean
   viewport: boolean
   schema_types: string[]
   schema_valid: boolean
@@ -248,7 +246,6 @@ export interface PageAnalysis {
   mixed_content_urls: string[]
   sec_headers: Record<string, boolean>
   sec_header_count: number
-  lazy_anchors: number
   url_has_params: boolean
   url_has_caps: boolean
   buttons_missing_label: number
@@ -303,7 +300,6 @@ export interface SitemapInfo {
 export interface RobotsResult {
   present: boolean
   sitemaps: string[]
-  content?: string
   ai_blocked?: string[]
   ai_allowed?: string[]
 }
@@ -330,13 +326,23 @@ export interface PageSpeedResult {
 export interface LlmsResult {
   present: boolean
   url: string | null
-  content?: string
 }
 
 /** Result of the Serper `site:` index check. */
 export interface IndexCheckResult {
   google_index_count: number | 'unverified'
   google_indexed_urls: string[]
+}
+
+/** Business/contact data harvested from crawled pages (JSON-LD + tel/mailto +
+ * social links) to seed an AI-drafted session profile. Display/draft only;
+ * never feeds scoring. Absent on audits run before this was added. */
+export interface BusinessSignals {
+  organizationName: string | null
+  phones: string[]
+  emails: string[]
+  addresses: string[]
+  socialLinks: string[]
 }
 
 /** Raw scoring inputs — our addition (audit.py discarded these). */
@@ -372,6 +378,9 @@ export interface AuditResult {
   page_analysis_summary: PageSummary[]
   google_indexed_urls: string[]
   sitemap: SitemapInfo
+  /** Harvested business/contact data for the audit→session draft. Optional so
+   * older rows (and audits that found nothing) stay valid. */
+  business_signals?: BusinessSignals
   /** Persisted for re-scoring/regression. Optional so older rows stay valid. */
   raw?: AuditRawInputs
 }
@@ -381,6 +390,5 @@ export interface RunAuditInput {
   url: string
   siteName?: string
   maxPages?: number
-  focusSegments?: string[]
   onProgress?: (stage: AuditStage, detail: string, pagesCrawled?: number) => Promise<void>
 }

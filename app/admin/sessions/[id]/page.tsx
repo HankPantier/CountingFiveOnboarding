@@ -30,11 +30,13 @@ export default async function SessionDetailPage({
 
   const supabase = createServerClient()
 
-  const [{ data: session }, { data: messages }, { data: assets }] = await Promise.all([
-    supabase.from('sessions').select('*').eq('id', id).single(),
-    supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
-    supabase.from('assets').select('*').eq('session_id', id).order('uploaded_at', { ascending: true }),
-  ])
+  const [{ data: session }, { data: messages }, { data: assets }, { data: sourceAudit }] =
+    await Promise.all([
+      supabase.from('sessions').select('*').eq('id', id).single(),
+      supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
+      supabase.from('assets').select('*').eq('session_id', id).order('uploaded_at', { ascending: true }),
+      supabase.from('audit_runs').select('id, domain').eq('session_id', id).maybeSingle(),
+    ])
 
   if (!session) notFound()
 
@@ -85,6 +87,14 @@ export default async function SessionDetailPage({
       {/* Right panel: schema + actions */}
       <div className="md:w-1/2 overflow-y-auto p-6">
         <StatusBanner session={session} />
+        {sourceAudit && (
+          <Link
+            href={`/admin/audits/${sourceAudit.id}`}
+            className="mb-3 inline-block font-body text-sm text-brand-cyan hover:underline"
+          >
+            ← Started from audit: {sourceAudit.domain}
+          </Link>
+        )}
         <CopyLinkButton sessionId={id} />
         <Link
           href={`/admin/sessions/${id}/mbp`}

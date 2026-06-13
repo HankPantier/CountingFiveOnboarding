@@ -9,8 +9,7 @@ export const runtime = 'nodejs'
 const CreateAuditSchema = z.object({
   url: z.string().min(1).max(2000),
   siteName: z.string().max(200).optional(),
-  maxPages: z.number().int().min(1).max(100).optional(),
-  focusSegments: z.array(z.string().max(120)).max(20).optional(),
+  maxPages: z.number().int().min(1).max(250).optional(),
 })
 
 // POST /api/audits — create a queued audit run (does not execute it).
@@ -53,7 +52,6 @@ export async function POST(req: Request) {
       domain,
       site_name: parsed.data.siteName ?? null,
       max_pages: parsed.data.maxPages ?? 50,
-      focus_segments: parsed.data.focusSegments ?? null,
       audit_status: 'queued',
     })
     .select('id')

@@ -2,6 +2,15 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 import { slugify } from '@/lib/content/sitemap-utils'
 
+// Phase-4 gaps for an already-populated schema (e.g. an AI-drafted profile from
+// the audit→session bridge), using the same field set + semantics as MBP-seeded
+// sessions so the agent collects the same things regardless of the seed source.
+export function computePhase4Gaps(schema: SessionSchema): GapItem[] {
+  const gaps: GapItem[] = []
+  addPhase4Gaps(gaps, schema)
+  return gaps
+}
+
 export function parseMBP(markdown: string): { schema: SessionSchema; gaps: GapItem[] } {
   const gaps: GapItem[] = []
   const schema: SessionSchema = {

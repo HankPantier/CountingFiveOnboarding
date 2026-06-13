@@ -8,7 +8,7 @@ const badgeBase =
 
 const tokenClasses: Record<string, string> = {
   success: 'bg-success/10 text-success',
-  warning: 'bg-warning/10 text-warning',
+  warning: 'bg-warning/15 text-warning-strong',
   error: 'bg-error/10 text-error',
   muted: 'bg-surface-subtle text-text-muted',
 }

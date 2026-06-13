@@ -76,6 +76,8 @@ export type Database = {
       }
       audit_runs: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           audit_status: string
           category_scores: Json | null
           completed_at: string | null
@@ -97,6 +99,8 @@ export type Database = {
           url: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           audit_status?: string
           category_scores?: Json | null
           completed_at?: string | null
@@ -118,6 +122,8 @@ export type Database = {
           url: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           audit_status?: string
           category_scores?: Json | null
           completed_at?: string | null
@@ -139,6 +145,13 @@ export type Database = {
           url?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "audit_runs_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "audit_runs_created_by_fkey"
             columns: ["created_by"]

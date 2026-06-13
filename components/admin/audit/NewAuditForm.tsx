@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 const inputClass =
-  'w-full rounded-lg border border-border-default bg-surface-card px-4 py-2.5 font-body text-sm text-text-primary focus:border-border-strong focus:outline-none focus:shadow-subtle'
+  'w-full rounded-lg border border-border-default bg-surface-card px-4 py-2.5 font-body text-sm text-text-primary focus:border-brand-cyan focus:outline-none focus:ring-2 focus:ring-brand-cyan/20'
 const labelClass = 'block font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary'
 
 export function NewAuditForm() {
@@ -12,7 +12,6 @@ export function NewAuditForm() {
   const [url, setUrl] = useState('')
   const [siteName, setSiteName] = useState('')
   const [maxPages, setMaxPages] = useState(50)
-  const [segments, setSegments] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,10 +20,6 @@ export function NewAuditForm() {
     setError(null)
     setSubmitting(true)
     try {
-      const focusSegments = segments
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean)
       const createRes = await fetch('/api/audits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32,7 +27,6 @@ export function NewAuditForm() {
           url,
           siteName: siteName || undefined,
           maxPages,
-          focusSegments: focusSegments.length ? focusSegments : undefined,
         }),
       })
       if (!createRes.ok) {
@@ -90,24 +84,9 @@ export function NewAuditForm() {
           id="maxPages"
           type="number"
           min={1}
-          max={100}
+          max={250}
           value={maxPages}
-          onChange={(e) => setMaxPages(Math.max(1, Math.min(100, Number(e.target.value) || 50)))}
-          className={`mt-1.5 ${inputClass}`}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="segments" className={labelClass}>
-          Focus segments{' '}
-          <span className="font-normal normal-case text-text-muted">(optional, comma-separated)</span>
-        </label>
-        <input
-          id="segments"
-          type="text"
-          value={segments}
-          onChange={(e) => setSegments(e.target.value)}
-          placeholder="small businesses, contractors"
+          onChange={(e) => setMaxPages(Math.max(1, Math.min(250, Number(e.target.value) || 50)))}
           className={`mt-1.5 ${inputClass}`}
         />
       </div>

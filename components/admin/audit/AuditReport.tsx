@@ -1,20 +1,30 @@
 import Image from 'next/image'
 import type { CategoryScoreMap, AuditResult, PageSummary, Recommendation } from '@/types/audit-result'
-import { CATEGORY_META, findingRows, safeHref } from '@/lib/audit/report-format'
+import { CATEGORY_META, findingRows, gradeToken, safeHref } from '@/lib/audit/report-format'
 import { AuditStatusBadge, GradeBadge } from './AuditBadges'
 import { ScoreRing } from './ScoreRing'
 
 const cardClass = 'bg-surface-card border border-border-default rounded-lg shadow-subtle'
 const sectionTitle = 'text-lg font-heading font-semibold text-brand-navy'
 
+const ACCENT_BY_TOKEN: Record<string, string> = {
+  success: 'border-l-success',
+  warning: 'border-l-warning',
+  error: 'border-l-error',
+  muted: 'border-l-border-strong',
+}
+
 function Delta({ current, previous }: { current: number | null; previous: number | null }) {
   if (current === null || previous === null || current === previous) {
-    return <span className="text-text-muted text-xs">—</span>
+    return <span className="text-text-muted text-xs" title="No change">—</span>
   }
   const diff = current - previous
   const up = diff > 0
   return (
-    <span className={`text-xs font-heading font-semibold ${up ? 'text-success' : 'text-error'}`}>
+    <span
+      className={`text-xs font-heading font-semibold ${up ? 'text-success' : 'text-error'}`}
+      title={`${up ? '+' : ''}${diff} since last audit`}
+    >
       {up ? '▲' : '▼'} {Math.abs(diff)}
     </span>
   )
@@ -63,10 +73,10 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         </div>
       </header>
 
-      {/* 2. Executive summary */}
-      <section className={`${cardClass} p-6`}>
+      {/* 2. Executive summary — the report's hero */}
+      <section className="rounded-lg border border-border-default border-t-4 border-t-brand-cyan bg-surface-card p-8 shadow-elevated">
         <div className="flex flex-col items-center gap-6 md:flex-row md:items-center md:gap-10">
-          <ScoreRing score={result.overall_score} grade={result.overall_grade} />
+          <ScoreRing score={result.overall_score} grade={result.overall_grade} size={200} />
           <div className="flex-1">
             <h2 className={sectionTitle}>Executive Summary</h2>
             <p className="mt-1 font-body text-sm text-text-secondary">
@@ -143,7 +153,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
           const cs = result.category_scores[key]
           const rows = findingRows(result.findings[key])
           return (
-            <div key={key} className={`${cardClass} p-6`}>
+            <div key={key} className={`${cardClass} border-l-4 ${ACCENT_BY_TOKEN[gradeToken(cs.grade)]} p-6`}>
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
                 <GradeBadge grade={cs.grade} score={cs.score} />
@@ -236,7 +246,7 @@ function PageInventory({ pages }: { pages: PageSummary[] }) {
 
 const EFFORT_CLASS: Record<string, string> = {
   Low: 'bg-success/10 text-success',
-  Medium: 'bg-warning/10 text-warning',
+  Medium: 'bg-warning/15 text-warning-strong',
   High: 'bg-error/10 text-error',
 }
 
@@ -249,11 +259,18 @@ function RecommendationsList({ recommendations }: { recommendations: Recommendat
       </p>
       <ul className="mt-4 space-y-3">
         {recommendations.map((r, i) => (
-          <li key={i} className="rounded-lg border border-border-default bg-surface-page p-4">
+          <li
+            key={i}
+            className={`rounded-lg border border-border-default border-l-4 bg-surface-page p-4 ${
+              r.priority === 'critical' ? 'border-l-error' : 'border-l-warning'
+            }`}
+          >
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold ${
-                  r.priority === 'critical' ? 'bg-error/10 text-error' : 'bg-warning/10 text-warning'
+                  r.priority === 'critical'
+                    ? 'bg-error/10 text-error'
+                    : 'bg-warning/15 text-warning-strong'
                 }`}
               >
                 {r.priority === 'critical' ? 'Critical' : 'Warning'}
