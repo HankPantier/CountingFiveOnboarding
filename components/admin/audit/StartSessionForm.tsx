@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
@@ -24,6 +25,7 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
   const [draft, setDraft] = useState<DraftResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [existingSessionId, setExistingSessionId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const [biz, setBiz] = useState({ name: '', tagline: '', customerDescription: '' })
@@ -89,6 +91,12 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
       })
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
+        if (res.status === 409 && b.existingSessionId) {
+          setExistingSessionId(b.existingSessionId)
+          setError(b.error ?? 'A session already exists for this site.')
+          setSubmitting(false)
+          return
+        }
         throw new Error(b.error ?? 'Failed to create session')
       }
       const { sessionId } = await res.json()
@@ -236,12 +244,24 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
         ) : null}
       </div>
 
-      {error && <p className="rounded-lg bg-error/10 px-4 py-2 font-body text-sm text-error">{error}</p>}
+      {error && (
+        <div className="rounded-lg bg-error/10 px-4 py-2 font-body text-sm text-error">
+          <p>{error}</p>
+          {existingSessionId && (
+            <Link
+              href={`/admin/sessions/${existingSessionId}`}
+              className="mt-1 inline-block font-heading font-semibold text-brand-cyan hover:underline"
+            >
+              Open the existing session →
+            </Link>
+          )}
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <button
           onClick={confirm}
-          disabled={submitting || !biz.name.trim()}
+          disabled={submitting || !biz.name.trim() || !!existingSessionId}
           className="rounded-pill bg-brand-cyan px-6 py-3 font-heading text-sm font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? 'Creating session…' : 'Create session'}

@@ -8,9 +8,15 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
+import type { AuditResult } from '@/types/audit-result'
 import { asJson } from '@/lib/supabase/json-typed'
 
 const OUTLINE_MODEL = 'claude-sonnet-4-6'
+
+// Strip scheme + trailing slash so a sitemap's http:// URL still matches the
+// crawler's final https:// URL for the same page.
+const normUrl = (u: string) =>
+  u.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase()
 
 type OutlineResult = {
   h1: string
@@ -26,7 +32,8 @@ export async function generateOutlineForPage(
   contentJobId: string,
   sessionId: string,
   schema: SessionSchema,
-  palette: PaletteData | null
+  palette: PaletteData | null,
+  auditResult: AuditResult | null = null
 ): Promise<void> {
   const supabase = createServerClient()
 
@@ -53,6 +60,36 @@ export async function generateOutlineForPage(
     600
   )
 
+  // Site-wide content gaps from the audit (if the session came from one).
+  const cg = schema.content_gaps
+  const gapsBlock =
+    cg && (cg.authorityGaps.length || cg.conversionGaps.length || cg.nicheGaps.length)
+      ? [
+          'SITE AUDIT — CONTENT GAPS (address where relevant to this page):',
+          cg.conversionGaps.length ? `Conversion: ${cg.conversionGaps.slice(0, 5).join('; ')}` : '',
+          cg.authorityGaps.length ? `Depth/authority: ${cg.authorityGaps.slice(0, 5).join('; ')}` : '',
+          cg.nicheGaps.length ? `Coverage: ${cg.nicheGaps.slice(0, 5).join('; ')}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : ''
+
+  // Per-page audit findings — what's wrong with this exact page today.
+  const auditedPage = auditResult?.page_analysis_summary?.find(
+    p => normUrl(p.url) === normUrl(pageUrl)
+  )
+  const auditHintsBlock = auditedPage
+    ? [
+        'SITE AUDIT — THIS PAGE TODAY (the rewrite must fix these):',
+        `Current length: ${auditedPage.word_count} words${auditedPage.word_count < 300 ? ' (thin — expand substantially)' : ''}`,
+        auditedPage.issues.length ? `Issues: ${auditedPage.issues.slice(0, 6).join('; ')}` : '',
+        auditedPage.suggested_title ? `Suggested title: ${auditedPage.suggested_title}` : '',
+        auditedPage.suggested_meta ? `Suggested meta: ${auditedPage.suggested_meta}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : ''
+
   const prompt = `You are a website content strategist for a CPA firm. Generate a structured page outline — not copy, just structure.
 
 FIRM CONTEXT:
@@ -71,6 +108,10 @@ SECONDARY KEYWORDS: ${secondaryKeywords.join(', ')}
 ${existingContent ? `EXISTING CONTENT (current site — improve on this):\n${existingContent.slice(0, 800)}` : ''}
 
 ${competitorExcerpts ? `COMPETITOR REFERENCES (SERP top results — differentiate from these):\n${competitorExcerpts}` : ''}
+
+${gapsBlock}
+
+${auditHintsBlock}
 
 OUTPUT FORMAT (JSON only, no prose):
 {
@@ -163,14 +204,25 @@ export async function runOutlineGeneration(
 ): Promise<void> {
   const supabase = createServerClient()
 
-  // Load session and job data
-  const [{ data: session }, { data: job }] = await Promise.all([
+  // Load session, job, and the audit this session was seeded from (if any) so
+  // each outline can target the audit's per-page findings. Only the source
+  // audit is linked via session_id (re-audits are unlinked), so this is the
+  // baseline "before" snapshot.
+  const [{ data: session }, { data: job }, { data: auditRun, error: auditErr }] = await Promise.all([
     supabase.from('sessions').select('schema_data').eq('id', sessionId).single(),
     supabase.from('content_jobs').select('palette').eq('id', contentJobId).single(),
+    supabase
+      .from('audit_runs')
+      .select('result')
+      .eq('session_id', sessionId)
+      .eq('audit_status', 'complete')
+      .maybeSingle(),
   ])
 
+  if (auditErr) console.warn('[outline-gen] audit lookup failed:', auditErr.message)
   const schema = (session?.schema_data ?? {}) as SessionSchema
   const palette = (job?.palette ?? null) as PaletteData | null
+  const auditResult = (auditRun?.result ?? null) as AuditResult | null
 
   // Load all outlines for this job
   const { data: outlines } = await supabase
@@ -197,7 +249,8 @@ export async function runOutlineGeneration(
         contentJobId,
         sessionId,
         schema,
-        palette
+        palette,
+        auditResult
       )
     } catch (err) {
       console.error(`[outline-gen] Error generating outline for ${outline.page_url}:`, err)

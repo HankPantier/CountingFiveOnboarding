@@ -11,6 +11,7 @@ import ApproveButton from '@/components/admin/ApproveButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
 import CopyLinkButton from '@/components/admin/CopyLinkButton'
 import DeleteSessionButton from '@/components/admin/DeleteSessionButton'
+import { ReauditButton } from '@/components/admin/audit/ReauditButton'
 
 export default async function SessionDetailPage({
   params,
@@ -30,12 +31,13 @@ export default async function SessionDetailPage({
 
   const supabase = createServerClient()
 
-  const [{ data: session }, { data: messages }, { data: assets }, { data: sourceAudit }] =
+  const [{ data: session }, { data: messages }, { data: assets }, { data: sourceAudit }, { data: contentJob }] =
     await Promise.all([
       supabase.from('sessions').select('*').eq('id', id).single(),
       supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
       supabase.from('assets').select('*').eq('session_id', id).order('uploaded_at', { ascending: true }),
-      supabase.from('audit_runs').select('id, domain').eq('session_id', id).maybeSingle(),
+      supabase.from('audit_runs').select('id, domain, url').eq('session_id', id).maybeSingle(),
+      supabase.from('content_jobs').select('phase').eq('session_id', id).maybeSingle(),
     ])
 
   if (!session) notFound()
@@ -95,6 +97,7 @@ export default async function SessionDetailPage({
             ← Started from audit: {sourceAudit.domain}
           </Link>
         )}
+        {sourceAudit && contentJob?.phase === 6 && <ReauditButton url={sourceAudit.url} />}
         <CopyLinkButton sessionId={id} />
         <Link
           href={`/admin/sessions/${id}/mbp`}

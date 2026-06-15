@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
+import { normalizeDomain } from '@/lib/audit'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -47,6 +48,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'A session was already started from this audit' }, { status: 409 })
   }
 
+  // Per-domain dedup: don't spin up a second session for a site that already
+  // has a live (non-archived) session. website_url is stored raw, so normalize
+  // both sides to compare by domain.
+  const targetDomain = normalizeDomain(run.url)
+  const { data: candidates } = await supabase
+    .from('sessions')
+    .select('id, website_url')
+    .neq('status', 'archived')
+  const existing = (candidates ?? []).find((s) => normalizeDomain(s.website_url) === targetDomain)
+  if (existing) {
+    return NextResponse.json(
+      { error: `A session already exists for ${targetDomain}.`, existingSessionId: existing.id },
+      { status: 409 },
+    )
+  }
+
   // Mirrors POST /api/sessions: new session at phase 1, no MBP doc.
   const { data: session, error: insertErr } = await supabase
     .from('sessions')
@@ -78,11 +95,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (linkErr || !linked?.length) {
     // Lost the race (or link failed) — roll back the session we just created so
-    // it isn't orphaned, and report the conflict.
+    // it isn't orphaned, and report the conflict. Distinguish a same-audit race
+    // from a concurrent same-domain race so the UI can still link out.
     await supabase.from('sessions').delete().eq('id', session.id)
     if (linkErr) console.error('[audits] start-session link failed:', linkErr)
+    const { data: raceCandidates } = await supabase
+      .from('sessions')
+      .select('id, website_url')
+      .neq('status', 'archived')
+    const conflict = (raceCandidates ?? []).find(
+      (s) => normalizeDomain(s.website_url) === targetDomain,
+    )
     return NextResponse.json(
-      { error: 'A session was already started from this audit' },
+      conflict
+        ? { error: `A session already exists for ${targetDomain}.`, existingSessionId: conflict.id }
+        : { error: 'A session was already started from this audit' },
       { status: 409 },
     )
   }
