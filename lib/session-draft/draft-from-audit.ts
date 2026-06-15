@@ -5,6 +5,7 @@
 // Pure with respect to the DB; the route owns persistence.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
+import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-plan'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult, BusinessSignals } from '@/types/audit-result'
@@ -22,6 +23,8 @@ export interface DraftCoverage {
   totalDraftableFields: number
   thin: boolean
   reasons: string[]
+  /** Summary of the audit-derived content plan (sitemap + redirects). */
+  contentPlan: ContentPlanSummary
 }
 
 export interface DraftResult {
@@ -245,7 +248,7 @@ function assessCoverage(
   contentChars: number,
   hadBusinessSignals: boolean,
   aiFailed: boolean,
-): DraftCoverage {
+): Omit<DraftCoverage, 'contentPlan'> {
   const checks = [
     !!schema.business?.name,
     !!(schema.business?.tagline || schema.business?.customerDescription),
@@ -297,15 +300,18 @@ export async function draftSessionFromAudit(result: AuditResult): Promise<DraftR
   )
 
   const schema = mapToSchema(model ?? {}, signals, result.url)
+
+  // The audit's crawl drives the content plan (deterministic, no AI).
+  const plan = mapAuditToContentPlan(result)
+  schema.current_sitemap = plan.current_sitemap
+  schema.proposed_sitemap = plan.proposed_sitemap
+  schema.content_gaps = plan.content_gaps
+
   const gaps = computePhase4Gaps(schema)
-  const coverage = assessCoverage(
-    schema,
-    result.pages_crawled,
-    pages.length,
-    chars,
-    hadBusinessSignals,
-    model === null,
-  )
+  const coverage: DraftCoverage = {
+    ...assessCoverage(schema, result.pages_crawled, pages.length, chars, hadBusinessSignals, model === null),
+    contentPlan: plan.summary,
+  }
 
   const contact =
     signals && (signals.phones[0] || signals.emails[0])

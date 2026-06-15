@@ -113,6 +113,13 @@ describe('draftSessionFromAudit', () => {
 
     expect(coverage.thin).toBe(false)
     expect(coverage.populatedFields).toBeGreaterThanOrEqual(6)
+
+    // content plan derived from the audit crawl
+    expect(schema.current_sitemap?.length).toBe(2)
+    expect(schema.proposed_sitemap?.length).toBe(2)
+    expect(schema.proposed_sitemap?.[0].status).toBe('update')
+    expect(schema.content_gaps).toBeDefined()
+    expect(coverage.contentPlan.pagesFound).toBe(2)
   })
 
   it('degrades gracefully when the AI draft fails (null)', async () => {

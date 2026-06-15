@@ -203,6 +203,39 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
         </dl>
       </div>
 
+      {/* Content plan derived from the audit crawl */}
+      <div className={cardClass}>
+        <h2 className="font-heading text-lg font-semibold text-brand-navy">Content plan from audit</h2>
+        <p className="mt-1 font-body text-xs text-text-muted">
+          Pre-fills the content build — the audit&apos;s pages, rewrite candidates, and redirects carry
+          into the content step. Add new strategic pages during onboarding.
+        </p>
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {[
+            { label: 'Pages found', value: coverage.contentPlan.pagesFound },
+            { label: 'To rewrite', value: coverage.contentPlan.rewriteCandidates },
+            { label: 'Redirects', value: coverage.contentPlan.redirects },
+          ].map((m) => (
+            <div key={m.label} className="rounded-lg border border-border-default bg-surface-page px-4 py-3 text-center">
+              <div className="font-heading text-xl font-bold text-brand-navy">{m.value}</div>
+              <div className="font-body text-xs text-text-muted">{m.label}</div>
+            </div>
+          ))}
+        </div>
+        {(s.content_gaps?.authorityGaps?.length || s.content_gaps?.conversionGaps?.length) ? (
+          <ul className="mt-4 space-y-1.5">
+            {[...(s.content_gaps?.conversionGaps ?? []), ...(s.content_gaps?.authorityGaps ?? [])]
+              .slice(0, 8)
+              .map((g, i) => (
+                <li key={i} className="flex items-start gap-2 font-body text-sm text-text-secondary">
+                  <span className="mt-0.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />
+                  <span>{g}</span>
+                </li>
+              ))}
+          </ul>
+        ) : null}
+      </div>
+
       {error && <p className="rounded-lg bg-error/10 px-4 py-2 font-body text-sm text-error">{error}</p>}
 
       <div className="flex items-center gap-3">
