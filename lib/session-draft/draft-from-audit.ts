@@ -4,15 +4,13 @@
 // and leaves the rest to Phase-4 gaps (computed with the exact MBP semantics).
 // Pure with respect to the DB; the route owns persistence.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { buildCorpus, type CorpusPage } from '@/lib/audit/corpus'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
 import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-plan'
+import { enrichSchemaFromIntelligence } from './enrich-from-intelligence'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult, BusinessSignals } from '@/types/audit-result'
-
-// ~100k tokens of page text (Sonnet has plenty of headroom; leaves room for the
-// system prompt + ~6k output). page_text_sample is ≤3000 chars/page.
-const CORPUS_CHAR_BUDGET = 400_000
 
 export interface DraftCoverage {
   pagesCrawled: number
@@ -83,50 +81,6 @@ function emptySchema(): SessionSchema {
     },
     culture: { missionVisionValues: '', teamDescription: '', socialMediaChannels: [] },
   }
-}
-
-interface CorpusPage {
-  url: string
-  title: string
-  text: string
-}
-
-const PRIORITY = [
-  { re: /\/$|^\/$|home/i, score: 100 },
-  { re: /about|who-we-are|our-(firm|story|team)/i, score: 80 },
-  { re: /service|what-we-do|solutions|practice/i, score: 70 },
-  { re: /team|staff|people|leadership|attorneys|advisors/i, score: 60 },
-  { re: /industr|niche|sector|who-we-serve/i, score: 55 },
-  { re: /contact|locations?|offices?/i, score: 50 },
-  { re: /pricing|fees/i, score: 40 },
-]
-
-function pagePriority(url: string, title: string): number {
-  const hay = `${url} ${title}`.toLowerCase()
-  let best = 10
-  for (const p of PRIORITY) if (p.re.test(hay)) best = Math.max(best, p.score)
-  return best
-}
-
-function buildCorpus(result: AuditResult): { pages: CorpusPage[]; chars: number } {
-  const summaries = result.page_analysis_summary ?? []
-  const analyzed = result.raw?.analyzed ?? []
-  const candidates: CorpusPage[] = summaries.map((s, i) => ({
-    url: s.url,
-    title: s.title,
-    text: (analyzed[i]?.page_text_sample || s.content_snippet || '').trim(),
-  }))
-  candidates.sort((a, b) => pagePriority(b.url, b.title) - pagePriority(a.url, a.title))
-
-  const pages: CorpusPage[] = []
-  let chars = 0
-  for (const c of candidates) {
-    if (!c.text) continue
-    if (chars + c.text.length > CORPUS_CHAR_BUDGET && pages.length > 0) break
-    pages.push(c)
-    chars += c.text.length
-  }
-  return { pages, chars }
 }
 
 function buildPrompt(corpus: CorpusPage[], signals: BusinessSignals | undefined): string {
@@ -306,6 +260,10 @@ export async function draftSessionFromAudit(result: AuditResult): Promise<DraftR
   schema.current_sitemap = plan.current_sitemap
   schema.proposed_sitemap = plan.proposed_sitemap
   schema.content_gaps = plan.content_gaps
+
+  // The intelligence layer fills niches, reputation, affiliations, and the
+  // reserved content-gap buckets so the chat starts pre-informed.
+  if (result.intelligence) enrichSchemaFromIntelligence(schema, result.intelligence)
 
   const gaps = computePhase4Gaps(schema)
   const coverage: DraftCoverage = {

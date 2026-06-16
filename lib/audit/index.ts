@@ -7,6 +7,7 @@ import { extractBusinessSignals } from './business-signals'
 import { crawlSite, safeGet } from './crawl'
 import { fetchLlmsTxt, fetchRobots, fetchSitemap } from './fetch-meta'
 import { checkGoogleIndex } from './index-check'
+import { buildIntelligence } from './intelligence'
 import { checkPageSpeed } from './pagespeed'
 import { buildPageSummary, generateRecommendations } from './recommendations'
 import { computeOverall, computeScores, getGrade } from './scoring'
@@ -117,7 +118,7 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
   const pageAnalysisSummary = pages.map((p, i) => buildPageSummary(p, analyzed[i], siteName))
   const businessSignals = extractBusinessSignals(pages)
 
-  return {
+  const result: AuditResult = {
     version: VERSION,
     domain,
     site_name: siteName,
@@ -147,6 +148,20 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
       crawl_errors: errors,
     },
   }
+
+  // ── Intelligence (AI + off-site research) ───────────────────────────────────
+  // Best-effort and non-fatal (mirrors the WHOIS rule): a failure here leaves
+  // `intelligence` undefined and the audit still completes. Runs on the
+  // in-memory result while raw HTML/headers are still present (the worker strips
+  // them only at persist time).
+  await report('researching', 'Researching niches, competitors & reputation…', pages.length)
+  try {
+    result.intelligence = await buildIntelligence(result)
+  } catch (err) {
+    console.warn('[audit] intelligence stage failed (non-fatal):', err)
+  }
+
+  return result
 }
 
 function buildCategoryScoreMap(scores: CategoryScores): CategoryScoreMap {

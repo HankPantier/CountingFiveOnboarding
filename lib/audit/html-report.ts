@@ -10,7 +10,23 @@ import {
   safeHref,
   type SemanticToken,
 } from './report-format'
-import type { AuditResult, CategoryScoreMap, Grade, PageSummary, Recommendation } from './types'
+import { SECTION_LABELS, signalLabel, subScoreRows } from './intelligence-format'
+import type {
+  AuditIntelligence,
+  AuditResult,
+  CategoryScoreMap,
+  CompetitiveIntelligence,
+  ContentLibraryIntelligence,
+  DigitalIntelligence,
+  DomainIntelligence,
+  Grade,
+  NarrativeIntelligence,
+  NicheServicesIntelligence,
+  PageSummary,
+  Recommendation,
+  ScoredSection,
+  TechStackIntelligence,
+} from './types'
 
 const COLORS = {
   navy: '#231f20',
@@ -81,6 +97,252 @@ function deltaCell(current: number | null, previous: number | null): string {
   return `<span style="color:${color};font-weight:600;font-size:13px">${up ? '▲' : '▼'} ${Math.abs(diff)}</span>`
 }
 
+// ── Intelligence-layer rendering ─────────────────────────────────────────────
+
+function commentaryHtml(text: string | undefined): string {
+  return text ? `<p class="muted" style="margin-top:12px">${esc(text)}</p>` : ''
+}
+
+function subScoresHtml(sub: Record<string, number>): string {
+  const rows = subScoreRows(sub)
+  if (!rows.length) return ''
+  return `<dl class="findings">${rows
+    .map((r) => `<div class="finding"><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`)
+    .join('')}</dl>`
+}
+
+function scoredHeader(label: string, section: ScoredSection): string {
+  return `<div class="cat-head"><h3>${esc(label)}</h3>${gradeChip(section.grade, section.score)}</div>`
+}
+
+function targetMarketHtml(s: ScoredSection, commentary?: string): string {
+  return `<section class="card">
+    ${scoredHeader(SECTION_LABELS.target_market, s)}
+    ${subScoresHtml(s.sub_scores)}
+    ${commentaryHtml(s.commentary)}
+    ${commentaryHtml(commentary)}
+  </section>`
+}
+
+function nicheServicesHtml(n: NicheServicesIntelligence, commentary?: string): string {
+  const detected = n.detected_niches.length
+    ? `<h4 class="intel-sub">Detected Niches</h4><ul class="intel-list">${n.detected_niches
+        .map((d) => `<li><strong>${esc(d.name)}</strong> <span class="small">(${esc(signalLabel(d.signal))})</span> — ${esc(d.note)}</li>`)
+        .join('')}</ul>`
+    : ''
+  const invisible = n.invisible_niches.length
+    ? `<h4 class="intel-sub">Invisible but High-Opportunity Niches</h4><ul class="intel-list">${n.invisible_niches
+        .map((d) => `<li><strong>${esc(d.name)}</strong> — ${esc(d.opportunity)}</li>`)
+        .join('')}</ul>`
+    : ''
+  const services = n.services_analysis.length
+    ? `<h4 class="intel-sub">Services Communication Analysis</h4>
+      <div class="table-wrap"><table>
+        <thead><tr>${['Service', 'Clarity', 'Framing', 'Audience', 'Rewrite Direction']
+          .map((h) => `<th>${h}</th>`)
+          .join('')}</tr></thead>
+        <tbody>${n.services_analysis
+          .map(
+            (s) => `<tr><td>${esc(s.service)}</td><td>${esc(s.clarity)}</td><td>${esc(s.framing)}</td><td>${esc(s.audience)}</td><td>${esc(s.rewrite_direction)}</td></tr>`,
+          )
+          .join('')}</tbody>
+      </table></div>`
+    : ''
+  const improvements = n.top_improvements.length
+    ? `<h4 class="intel-sub">Top Highest-Impact Improvements</h4><ol class="intel-list">${n.top_improvements
+        .map((i) => `<li>${esc(i)}</li>`)
+        .join('')}</ol>`
+    : ''
+  return `<section class="card">
+    ${scoredHeader(SECTION_LABELS.niche_services, n)}
+    ${subScoresHtml(n.sub_scores)}
+    ${commentaryHtml(n.commentary)}
+    ${commentaryHtml(commentary)}
+    ${detected}${invisible}${services}${improvements}
+  </section>`
+}
+
+function competitiveHtml(c: CompetitiveIntelligence, commentary?: string): string {
+  const ranks = c.keyword_rankings.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Keyword</th><th>Rank</th><th>Note</th></tr></thead>
+        <tbody>${c.keyword_rankings
+          .map(
+            (k) => `<tr><td>${esc(k.keyword)}</td><td>${k.rank === null ? '—' : `#${k.rank}`}</td><td>${esc(k.note)}</td></tr>`,
+          )
+          .join('')}</tbody>
+      </table></div>`
+    : ''
+  const judged = [
+    c.local_seo ? `<p class="muted" style="margin-top:12px"><strong>Local SEO:</strong> ${esc(c.local_seo)}</p>` : '',
+    c.ai_search_presence ? `<p class="muted" style="margin-top:8px"><strong>AI Search:</strong> ${esc(c.ai_search_presence)}</p>` : '',
+  ].join('')
+  return `<section class="card">
+    ${scoredHeader(SECTION_LABELS.competitive, c)}
+    ${subScoresHtml(c.sub_scores)}
+    ${ranks}
+    ${commentaryHtml(c.commentary)}
+    ${judged}
+    ${commentaryHtml(commentary)}
+  </section>`
+}
+
+function techDomainHtml(
+  tech: TechStackIntelligence | undefined,
+  domain: DomainIntelligence | undefined,
+  commentary?: string,
+): string {
+  if (!tech && !domain) return ''
+  const rows: Array<[string, string]> = []
+  if (tech) {
+    if (tech.cms) rows.push(['CMS', tech.cms])
+    if (tech.page_builder) rows.push(['Page Builder', tech.page_builder])
+    if (tech.hosting) rows.push(['Hosting / CDN', tech.hosting])
+    if (tech.frameworks.length) rows.push(['Frameworks', tech.frameworks.join(', ')])
+  }
+  if (domain) {
+    if (domain.registered) rows.push(['Domain Registered', domain.registered])
+    if (domain.age_years !== null) rows.push(['Domain Age', `${domain.age_years} years`])
+    if (domain.last_updated) rows.push(['Last Content Update', domain.last_updated])
+  }
+  const rowsHtml = rows.length
+    ? `<dl class="findings">${rows
+        .map(([k, v]) => `<div class="finding"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`)
+        .join('')}</dl>`
+    : ''
+  const risks = tech?.risk_flags.length
+    ? `<h4 class="intel-sub">Flags</h4><ul class="intel-list">${tech.risk_flags
+        .map((r) => `<li style="color:${COLORS.error}">${esc(r)}</li>`)
+        .join('')}</ul>`
+    : ''
+  return `<section class="card">
+    <h3>${SECTION_LABELS.tech_stack} &amp; Domain</h3>
+    ${rowsHtml}${risks}
+    ${commentaryHtml(tech?.commentary)}
+    ${commentaryHtml(commentary)}
+  </section>`
+}
+
+function contentLibraryHtml(c: ContentLibraryIntelligence, commentary?: string): string {
+  const formats = c.formats.length
+    ? `<div class="table-wrap"><table>
+        <thead><tr><th>Format</th><th>Count</th><th>Cadence</th></tr></thead>
+        <tbody>${c.formats
+          .map((f) => `<tr><td>${esc(f.type)}</td><td>${f.count}</td><td>${esc(f.cadence)}</td></tr>`)
+          .join('')}</tbody>
+      </table></div>`
+    : ''
+  const recs = c.recommendations.length
+    ? `<h4 class="intel-sub">Recommendations</h4><ul class="intel-list">${c.recommendations
+        .map((r) => `<li>${esc(r)}</li>`)
+        .join('')}</ul>`
+    : ''
+  return `<section class="card">
+    <h3>${SECTION_LABELS.content_library}</h3>
+    <p class="muted small">${c.total_pieces} published piece${c.total_pieces === 1 ? '' : 's'}</p>
+    ${formats}
+    ${commentaryHtml(c.syndication_assessment)}
+    ${recs}
+    ${commentaryHtml(commentary)}
+  </section>`
+}
+
+function digitalIntelHtml(d: DigitalIntelligence, commentary?: string): string {
+  const personnel = d.personnel.length
+    ? `<h4 class="intel-sub">Key Personnel</h4>${d.personnel
+        .map(
+          (p) => `<div class="intel-person">
+            <div><strong>${esc(p.name)}</strong> · ${esc(p.role)} <span class="small">(${esc(p.footprint)} footprint)</span></div>
+            ${p.associations.length ? `<div class="small">Associations: ${esc(p.associations.join(', '))}</div>` : ''}
+            ${p.notes ? `<div class="muted">${esc(p.notes)}</div>` : ''}
+          </div>`,
+        )
+        .join('')}`
+    : ''
+  const rep = d.reputation
+  const reputation =
+    rep.sentiment || rep.ratings.length || rep.praise_themes.length || rep.concern_themes.length
+      ? `<h4 class="intel-sub">Reputation Signals</h4>
+        <dl class="findings">
+          ${rep.sentiment ? `<div class="finding"><dt>Sentiment</dt><dd>${esc(rep.sentiment)}</dd></div>` : ''}
+          ${rep.ratings.length ? `<div class="finding"><dt>Ratings</dt><dd>${esc(rep.ratings.join(', '))}</dd></div>` : ''}
+          ${rep.praise_themes.length ? `<div class="finding"><dt>Praise</dt><dd>${esc(rep.praise_themes.join(', '))}</dd></div>` : ''}
+          ${rep.concern_themes.length ? `<div class="finding"><dt>Concerns</dt><dd>${esc(rep.concern_themes.join(', '))}</dd></div>` : ''}
+        </dl>`
+      : ''
+  const affiliations = d.affiliations.length
+    ? `<h4 class="intel-sub">Affiliations</h4><ul class="intel-list">${d.affiliations
+        .map((a) => `<li>${esc(a)}</li>`)
+        .join('')}</ul>`
+    : ''
+  const footprint = d.content_footprint.length
+    ? `<h4 class="intel-sub">Content Footprint</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Type</th><th>Title</th><th>Source</th></tr></thead>
+        <tbody>${d.content_footprint
+          .map((f) => `<tr><td>${esc(f.type)}</td><td>${esc(f.title)}</td><td>${esc(f.source)}</td></tr>`)
+          .join('')}</tbody>
+      </table></div>`
+    : ''
+  const social = d.social_presence.length
+    ? `<h4 class="intel-sub">Social Media Presence</h4><ul class="intel-list">${d.social_presence
+        .map((s) => `<li><strong>${esc(s.platform)}</strong> — ${esc(s.status)}${s.detail ? ` · ${esc(s.detail)}` : ''}</li>`)
+        .join('')}</ul>`
+    : ''
+  const gap = d.niche_gap
+  const gapHtml = gap.external.length || gap.on_site.length || gap.unleveraged.length
+    ? `<h4 class="intel-sub">External vs. Website Niche Gap</h4>
+       ${gap.on_site.length ? `<p class="muted"><strong>On website:</strong> ${esc(gap.on_site.join(', '))}</p>` : ''}
+       ${gap.external.length ? `<p class="muted"><strong>Found externally:</strong> ${esc(gap.external.join(', '))}</p>` : ''}
+       ${gap.unleveraged.length ? `<ul class="intel-list">${gap.unleveraged.map((u) => `<li>${esc(u)}</li>`).join('')}</ul>` : ''}`
+    : ''
+  return `<section class="card">
+    <h2>${SECTION_LABELS.digital_intelligence}</h2>
+    <p class="muted small">External research — not scored</p>
+    ${personnel}${reputation}${affiliations}${footprint}${social}${gapHtml}
+    ${commentaryHtml(commentary)}
+  </section>`
+}
+
+const NARRATIVE_PRIORITY_COLOR: Record<string, string> = {
+  High: COLORS.error,
+  Medium: COLORS.warning,
+  Low: COLORS.success,
+}
+
+function narrativeRecsHtml(narrative: NarrativeIntelligence): string {
+  if (!narrative.recommendations.length) return ''
+  return `<section class="card">
+    <h2>Recommendations &amp; Next Steps</h2>
+    <ul class="recs">${narrative.recommendations
+      .map((r) => {
+        const c = NARRATIVE_PRIORITY_COLOR[r.priority] ?? COLORS.warning
+        return `<li class="rec">
+          <div class="rec-head">
+            <span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(r.priority)} priority</span>
+          </div>
+          <div class="rec-title">${esc(r.title)}</div>
+          ${r.business_impact ? `<div class="muted"><strong>Business impact:</strong> ${esc(r.business_impact)}</div>` : ''}
+          ${r.counting_five_help ? `<div class="muted" style="margin-top:4px"><strong>How we help:</strong> ${esc(r.counting_five_help)}</div>` : ''}
+        </li>`
+      })
+      .join('')}</ul>
+  </section>`
+}
+
+/** All scored/analytical intelligence sections (everything except the exec
+ * summary, which is woven into the summary card, and per-category commentary). */
+function intelligenceSectionsHtml(intel: AuditIntelligence): string {
+  const c = intel.narrative?.section_commentary ?? {}
+  const parts: string[] = []
+  if (intel.target_market) parts.push(targetMarketHtml(intel.target_market, c.target_market))
+  if (intel.niche_services) parts.push(nicheServicesHtml(intel.niche_services, c.niche_services))
+  if (intel.competitive) parts.push(competitiveHtml(intel.competitive, c.competitive))
+  if (intel.tech_stack || intel.domain) parts.push(techDomainHtml(intel.tech_stack, intel.domain, c.tech_stack))
+  if (intel.content_library) parts.push(contentLibraryHtml(intel.content_library, c.content_library))
+  return parts.join('')
+}
+
 export interface BuildAuditHtmlInput {
   result: AuditResult
   createdAt: string
@@ -94,6 +356,8 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
     day: 'numeric',
   })
   const criticals = result.recommendations.filter((r) => r.priority === 'critical')
+  const intel = result.intelligence
+  const execProse = intel?.narrative?.executive_summary
 
   const summarySection = `
     <section class="card exec">
@@ -103,6 +367,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
         <p class="muted">${result.pages_crawled} page${result.pages_crawled === 1 ? '' : 's'} crawled ·
           ${criticals.length} critical issue${criticals.length === 1 ? '' : 's'} ·
           ${result.recommendations.length} total recommendations</p>
+        ${execProse ? `<p style="margin-top:12px">${esc(execProse)}</p>` : ''}
         ${
           criticals.length
             ? `<ul class="criticals">${criticals
@@ -143,6 +408,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
       </section>`
     : ''
 
+  const sectionCommentary = intel?.narrative?.section_commentary ?? {}
   const categorySections = CATEGORY_META.map(({ key, label }) => {
     const cs = result.category_scores[key]
     const rows = findingRows(result.findings[key])
@@ -158,8 +424,16 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
               .join('')}</dl>`
           : ''
       }
+      ${commentaryHtml(sectionCommentary[key])}
     </section>`
   }).join('')
+
+  const intelligenceSections = intel ? intelligenceSectionsHtml(intel) : ''
+  const digitalIntelSection =
+    intel?.digital_intelligence
+      ? digitalIntelHtml(intel.digital_intelligence, sectionCommentary.digital_intelligence)
+      : ''
+  const narrativeRecsSection = intel?.narrative ? narrativeRecsHtml(intel.narrative) : ''
 
   const inventorySection = `
     <section class="card">
@@ -263,6 +537,11 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .rec { border:1px solid ${COLORS.border}; border-radius:8px; padding:16px; margin-bottom:12px; background:${COLORS.page}; }
   .rec-head { display:flex; align-items:center; gap:8px; }
   .rec-title { font-family:Inter,sans-serif; font-weight:600; margin-top:8px; }
+  .intel-sub { font-family:Inter,sans-serif; color:${COLORS.navy}; font-size:14px; margin:20px 0 8px; }
+  .intel-list { margin:8px 0 0; padding-left:18px; }
+  .intel-list li { margin-bottom:6px; font-size:14px; }
+  .intel-person { padding:10px 0; border-bottom:1px solid ${COLORS.border}; font-size:14px; }
+  .intel-person:last-child { border-bottom:0; }
   footer { text-align:center; color:${COLORS.textMuted}; font-size:12px; padding:24px 0; line-height:1.8; border-top:1px solid ${COLORS.border}; margin-top:8px; }
   .footer-brand { color:${COLORS.cyan}; font-family:'Inter',sans-serif; font-weight:700; letter-spacing:.18em; font-size:13px; }
   @media (max-width:640px){ .grid,.findings{grid-template-columns:1fr;} }
@@ -284,9 +563,12 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   ${summarySection}
   ${dashboardSection}
   ${deltaSection}
+  ${intelligenceSections}
   ${categorySections}
-  ${inventorySection}
+  ${narrativeRecsSection}
   ${recsSection}
+  ${digitalIntelSection}
+  ${inventorySection}
   <footer>
     <div class="footer-brand">REVALTUS</div>
     <div>Prepared by Revaltus · ${esc(runDate)}</div>
