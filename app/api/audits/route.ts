@@ -12,6 +12,10 @@ const CreateAuditSchema = z.object({
   maxPages: z.number().int().min(1).max(250).optional(),
 })
 
+const DeleteAuditsSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+})
+
 // POST /api/audits — create a queued audit run (does not execute it).
 export async function POST(req: Request) {
   const auth = await requireAdminUser()
@@ -62,6 +66,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to create audit' }, { status: 500 })
   }
   return NextResponse.json({ id: data.id })
+}
+
+// DELETE /api/audits — bulk-delete audit runs by id. Serves both single-row and
+// multi-select deletes from the list (the client always sends an `ids` array).
+// FK cascade removes audit_messages; token_usage.audit_id is SET NULL (billing
+// rows survive, detached) — no manual dependent cleanup needed.
+export async function DELETE(req: Request) {
+  const auth = await requireAdminUser()
+  if (auth instanceof NextResponse) return auth
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const parsed = DeleteAuditsSchema.safeParse(body)
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  }
+
+  const supabase = createServerClient()
+  const { data, error } = await supabase
+    .from('audit_runs')
+    .delete()
+    .in('id', parsed.data.ids)
+    .select('id')
+
+  if (error) {
+    console.error('[audits] bulk delete failed:', error)
+    return NextResponse.json({ error: 'Failed to delete audits' }, { status: 500 })
+  }
+  return NextResponse.json({ deleted: data?.length ?? 0 })
 }
 
 // GET /api/audits — list audit runs (paginated, newest first).

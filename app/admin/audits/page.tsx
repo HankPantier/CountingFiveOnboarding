@@ -1,20 +1,8 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
-import { AuditStatusBadge, GradeBadge } from '@/components/admin/audit/AuditBadges'
+import AuditsTable, { type AuditRow } from '@/components/admin/audit/AuditsTable'
 
 export const runtime = 'nodejs'
-
-type AuditRow = {
-  id: string
-  url: string
-  domain: string
-  site_name: string | null
-  audit_status: string
-  overall_score: number | null
-  overall_grade: string | null
-  pages_crawled: number | null
-  created_at: string
-}
 
 /** Map each completed run to its score delta vs the previous completed run for
  * the same domain. */
@@ -82,79 +70,7 @@ export default async function AuditsListPage() {
           </Link>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border-default bg-surface-card shadow-subtle">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm font-body">
-              <thead>
-                <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10 text-left">
-                  {['Site', 'Date', 'Status', 'Pages', 'Score', 'Δ'].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => {
-                  const delta = deltas[r.id]
-                  return (
-                    <tr
-                      key={r.id}
-                      className={`border-b border-border-default last:border-0 hover:bg-brand-cyan/10 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
-                    >
-                      <td className="px-4 py-3">
-                        <Link href={`/admin/audits/${r.id}`} className="block">
-                          <span className="font-heading font-semibold text-brand-cyan hover:underline">
-                            {r.site_name || r.domain}
-                          </span>
-                          <span className="block text-xs text-text-muted">{r.domain}</span>
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary">
-                        {new Date(r.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </td>
-                      <td className="px-4 py-3">
-                        <AuditStatusBadge status={r.audit_status} />
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary">{r.pages_crawled ?? '—'}</td>
-                      <td className="px-4 py-3">
-                        <GradeBadge
-                          grade={(r.overall_grade as 'A' | 'B' | 'C' | 'D' | 'F' | null) ?? null}
-                          score={r.overall_score}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
-                        {delta === null || delta === undefined ? (
-                          <span className="text-xs text-text-muted" title="First audit for this site">
-                            —
-                          </span>
-                        ) : delta === 0 ? (
-                          <span className="text-xs text-text-muted" title="No change since last audit">
-                            ±0
-                          </span>
-                        ) : (
-                          <span
-                            className={`text-xs font-heading font-semibold ${delta > 0 ? 'text-success' : 'text-error'}`}
-                            title={`${delta > 0 ? '+' : ''}${delta} since last audit`}
-                          >
-                            {delta > 0 ? `▲ ${delta}` : `▼ ${Math.abs(delta)}`}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <AuditsTable rows={rows} deltas={deltas} />
       )}
     </main>
   )
