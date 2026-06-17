@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ClientAssignmentEditor from '@/components/admin/ClientAssignmentEditor'
-import type { UserSummary } from '@/types/users'
+import type { UserSummary, ResetPasswordResponse } from '@/types/users'
 import type { SessionOption } from '@/app/admin/settings/users/page'
 
 export default function UserRow({
@@ -13,8 +13,10 @@ export default function UserRow({
   sessions: SessionOption[]
 }) {
   const [editing, setEditing] = useState(false)
-  const [busy, setBusy] = useState<'resend' | 'remove' | null>(null)
+  const [busy, setBusy] = useState<'resend' | 'remove' | 'reset' | null>(null)
   const [note, setNote] = useState('')
+  const [resetLink, setResetLink] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const router = useRouter()
 
   async function resend() {
@@ -30,6 +32,35 @@ export default function UserRow({
     } finally {
       setBusy(null)
     }
+  }
+
+  async function resetPassword() {
+    if (!confirm(`Generate a single-use password reset link for ${user.email}?`)) return
+    setBusy('reset')
+    setNote('')
+    setResetLink(null)
+    setCopied(false)
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}/reset-password`, { method: 'POST' })
+      const data = (await res.json()) as Partial<ResetPasswordResponse> & { error?: string }
+      if (res.ok && data.link) {
+        setResetLink(data.link)
+      } else {
+        setNote(data.error ?? 'Failed to generate link')
+      }
+    } catch {
+      setNote('Failed to generate link')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  function copyResetLink() {
+    if (!resetLink) return
+    navigator.clipboard.writeText(resetLink).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    })
   }
 
   async function remove() {
@@ -89,6 +120,13 @@ export default function UserRow({
               {busy === 'resend' ? 'Sending…' : 'Resend invite'}
             </button>
             <button
+              onClick={resetPassword}
+              disabled={busy !== null}
+              className="text-xs font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors disabled:opacity-50"
+            >
+              {busy === 'reset' ? 'Generating…' : 'Reset password'}
+            </button>
+            <button
               onClick={remove}
               disabled={busy !== null}
               className="text-xs font-heading font-semibold text-error hover:text-error/80 transition-colors disabled:opacity-50"
@@ -98,6 +136,43 @@ export default function UserRow({
           </div>
         </td>
       </tr>
+      {resetLink && (
+        <tr>
+          <td colSpan={5} className="px-4 py-3 bg-surface-page">
+            <div className="bg-surface-card border border-border-default rounded-lg px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
+                  Single-use reset link for {user.email}
+                </p>
+                <button
+                  onClick={() => setResetLink(null)}
+                  className="text-xs font-heading font-semibold text-text-muted hover:text-brand-navy transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs font-mono text-text-primary bg-surface-subtle rounded px-2 py-1.5 truncate">
+                  {resetLink}
+                </code>
+                <button
+                  onClick={copyResetLink}
+                  className={`flex-shrink-0 text-xs font-heading font-semibold px-3 py-1.5 rounded-pill border transition-all ${
+                    copied
+                      ? 'border-success/40 text-success bg-success/10'
+                      : 'border-border-default text-text-secondary hover:border-brand-cyan hover:text-brand-cyan'
+                  }`}
+                >
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <p className="text-xs font-body text-text-muted mt-2">
+                Send this to the user securely. It expires per Supabase settings and can be used once.
+              </p>
+            </div>
+          </td>
+        </tr>
+      )}
       {editing && (
         <tr>
           <td colSpan={5} className="p-0">

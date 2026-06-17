@@ -41,3 +41,7 @@ export interface AssignedClient {
 export interface UserAssignmentsResponse {
   assigned: AssignedClient[]
 }
+
+export interface ResetPasswordResponse {
+  link: string
+}
