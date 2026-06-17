@@ -3,9 +3,9 @@
 import { useState } from 'react'
 
 const ghostButton =
-  'rounded-pill border-2 border-brand-navy px-4 py-2 font-heading text-sm font-semibold text-brand-navy transition-colors hover:bg-brand-navy hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-brand-navy transition-colors hover:bg-brand-navy hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
 const copiedButton =
-  'rounded-pill border-2 border-success/50 bg-success/10 px-4 py-2 font-heading text-sm font-semibold text-success'
+  'rounded-pill border border-success/50 bg-success/10 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-success'
 
 export function ShareLinkButton({
   auditId,

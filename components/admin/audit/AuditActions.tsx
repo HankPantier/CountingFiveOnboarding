@@ -7,11 +7,11 @@ import { ShareLinkButton } from './ShareLinkButton'
 import AuditChatModal from './AuditChatModal'
 
 const ghostButton =
-  'rounded-pill border-2 border-brand-navy px-4 py-2 font-heading text-sm font-semibold text-brand-navy transition-colors hover:bg-brand-navy hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-brand-navy transition-colors hover:bg-brand-navy hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
 const dangerButton =
-  'rounded-pill border-2 border-error/50 px-4 py-2 font-heading text-sm font-semibold text-error transition-colors hover:bg-error hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill border border-error/50 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-error transition-colors hover:bg-error hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
 const primaryButton =
-  'rounded-pill bg-brand-cyan px-4 py-2 font-heading text-sm font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50'
 
 export function AuditActions({
   auditId,
@@ -65,7 +65,7 @@ export function AuditActions({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1.5">
       {sessionId ? (
         <Link href={`/admin/sessions/${sessionId}`} className={primaryButton}>
           View session →

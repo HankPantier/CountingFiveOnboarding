@@ -38,14 +38,14 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
     <>
       <div className="border-b border-border-default bg-surface-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-3">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Link
               href="/admin/audits"
-              className="font-body text-sm text-text-secondary hover:text-text-primary"
+              className="shrink-0 font-body text-sm text-text-secondary hover:text-text-primary"
             >
               ← Audits
             </Link>
-            <span className="font-heading text-sm font-semibold text-text-primary">
+            <span className="truncate font-heading text-sm font-semibold text-text-primary">
               {run.site_name || run.domain}
             </span>
             <AuditStatusBadge status={run.audit_status} />
