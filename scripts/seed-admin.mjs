@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
-import 'dotenv/config'
+import dotenv from 'dotenv'
+
+// Next.js keeps secrets in .env.local; fall back to .env if present.
+dotenv.config({ path: '.env' })
+dotenv.config({ path: '.env.local', override: true })
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -10,7 +14,12 @@ if (!url || !key) {
 
 const sb = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 
-const targetEmail = 'webhank@gmail.com'
+// Usage: node scripts/seed-admin.mjs [email] [name] [admin|manager]
+// Rescues an auth.users account that has no matching admins row (so the app,
+// which keys identity off the admins table, can't see or authorize them).
+const targetEmail = (process.argv[2] || 'webhank@gmail.com').toLowerCase()
+const name = process.argv[3] || 'Hank Pantier'
+const role = process.argv[4] === 'manager' ? 'manager' : 'admin'
 
 // Paginate auth.users to find the matching email.
 let foundUser = null
@@ -46,7 +55,7 @@ if (existing) {
 
 const { data: inserted, error: insErr } = await sb
   .from('admins')
-  .insert({ id: foundUser.id, email: foundUser.email, name: 'Hank Pantier' })
+  .insert({ id: foundUser.id, email: foundUser.email, name, role })
   .select()
   .single()
 if (insErr) { console.error('admins insert error:', insErr.message); process.exit(5) }
