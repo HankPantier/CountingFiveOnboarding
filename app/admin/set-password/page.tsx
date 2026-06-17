@@ -44,7 +44,7 @@ export default function SetPasswordPage() {
           Set your password
         </h1>
         <p className="text-sm text-text-secondary font-body mb-6">
-          Choose a password to finish setting up your Revaltus account.
+          Choose a password for your Revaltus account.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">

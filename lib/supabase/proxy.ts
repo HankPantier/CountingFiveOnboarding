@@ -39,12 +39,13 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Admin routes require an authenticated session
-  if (
-    !user &&
-    request.nextUrl.pathname.startsWith('/admin') &&
-    !request.nextUrl.pathname.startsWith('/admin/login')
-  ) {
+  // Admin routes require an authenticated session, except the public pre-login
+  // pages (sign-in and the logged-out forgot-password form).
+  const publicAdminPaths = ['/admin/login', '/admin/forgot-password']
+  const isPublicAdminPath = publicAdminPaths.some((p) =>
+    request.nextUrl.pathname.startsWith(p)
+  )
+  if (!user && request.nextUrl.pathname.startsWith('/admin') && !isPublicAdminPath) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = '/admin/login'
     return NextResponse.redirect(loginUrl)
