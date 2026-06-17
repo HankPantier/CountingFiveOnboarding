@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import type { AuditResult, CategoryScoreMap } from '@/types/audit-result'
+import type { AuditResult } from '@/types/audit-result'
+import { getPreviousRunDeltas, type PreviousRunDeltas } from '@/lib/audit/report-data'
 import { AuditActions } from '@/components/admin/audit/AuditActions'
 import { AuditReport } from '@/components/admin/audit/AuditReport'
 import { AuditProgress } from '@/components/admin/audit/AuditProgress'
@@ -19,25 +20,9 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
   const isComplete = run.audit_status === 'complete' && run.result !== null
 
   // Previous completed run for the same domain → score deltas.
-  let previous: { overall_score: number | null; category_scores: CategoryScoreMap | null } | null =
-    null
-  if (isComplete) {
-    const { data: prev } = await supabase
-      .from('audit_runs')
-      .select('overall_score, category_scores')
-      .eq('domain', run.domain)
-      .eq('audit_status', 'complete')
-      .lt('created_at', run.created_at)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (prev) {
-      previous = {
-        overall_score: prev.overall_score,
-        category_scores: (prev.category_scores as CategoryScoreMap | null) ?? null,
-      }
-    }
-  }
+  const previous: PreviousRunDeltas | null = isComplete
+    ? await getPreviousRunDeltas(supabase, run)
+    : null
 
   return (
     <>
@@ -63,6 +48,7 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
             status={run.audit_status}
             approved={!!run.approved_at}
             sessionId={run.session_id}
+            shareToken={run.share_token}
           />
         </div>
       </div>

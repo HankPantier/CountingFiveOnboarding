@@ -93,6 +93,8 @@ export type Database = {
           pages_crawled: number | null
           result: Json | null
           session_id: string | null
+          share_token: string | null
+          shared_at: string | null
           site_name: string | null
           started_at: string | null
           status_detail: string | null
@@ -116,6 +118,8 @@ export type Database = {
           pages_crawled?: number | null
           result?: Json | null
           session_id?: string | null
+          share_token?: string | null
+          shared_at?: string | null
           site_name?: string | null
           started_at?: string | null
           status_detail?: string | null
@@ -139,6 +143,8 @@ export type Database = {
           pages_crawled?: number | null
           result?: Json | null
           session_id?: string | null
+          share_token?: string | null
+          shared_at?: string | null
           site_name?: string | null
           started_at?: string | null
           status_detail?: string | null
