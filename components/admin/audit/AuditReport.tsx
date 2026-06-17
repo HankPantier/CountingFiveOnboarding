@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Image from 'next/image'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Info } from 'lucide-react'
 import type {
   AuditResult,
   CategoryScoreMap,
@@ -23,6 +23,7 @@ import {
   type SemanticToken,
 } from '@/lib/audit/report-format'
 import {
+  SECTION_HELP,
   SECTION_LABELS,
   intelScorePct,
   signalLabel,
@@ -180,23 +181,20 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         </div>
       </section>
 
-      {/* 3. Score dashboard — intelligence-first, with score bars */}
-      <section className={`${cardClass} p-6`}>
-        <h2 className={sectionTitle}>Score Dashboard</h2>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {dashCards.map((c, i) => (
-            <DashboardCard key={i} card={c} />
-          ))}
-        </div>
-      </section>
-
-      {/* 4. Section details — every section is a collapsible accordion */}
+      {/* 3. Collapsible sections — every section is an accordion, all closed */}
       <section className="space-y-3">
-        <h2 className={sectionTitle}>Section Details</h2>
+        <AuditAccordion label="Score Dashboard" tip={SECTION_HELP.dashboard}>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {dashCards.map((c, i) => (
+              <DashboardCard key={i} card={c} />
+            ))}
+          </div>
+        </AuditAccordion>
 
         {intel?.target_market && (
           <AuditAccordion
             label={SECTION_LABELS.target_market}
+            tip={SECTION_HELP.target_market}
             grade={intel.target_market.grade}
             score={intel.target_market.score}
           >
@@ -209,6 +207,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         {intel?.competitive && (
           <AuditAccordion
             label={SECTION_LABELS.competitive}
+            tip={SECTION_HELP.competitive}
             grade={intel.competitive.grade}
             score={intel.competitive.score}
           >
@@ -219,6 +218,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         {intel?.niche_services && (
           <AuditAccordion
             label={SECTION_LABELS.niche_services}
+            tip={SECTION_HELP.niche_services}
             grade={intel.niche_services.grade}
             score={intel.niche_services.score}
           >
@@ -230,7 +230,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
           const cs = result.category_scores[key]
           const rows = findingRows(result.findings[key])
           return (
-            <AuditAccordion key={key} label={label} grade={cs.grade} score={cs.score}>
+            <AuditAccordion key={key} label={label} tip={SECTION_HELP[key]} grade={cs.grade} score={cs.score}>
               <FindingsDl rows={rows} />
               <Commentary text={sectionCommentary[key]} />
             </AuditAccordion>
@@ -238,7 +238,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         })}
 
         {(intel?.tech_stack || intel?.domain) && (
-          <AuditAccordion label={`${SECTION_LABELS.tech_stack} & Domain`}>
+          <AuditAccordion label={`${SECTION_LABELS.tech_stack} & Domain`} tip={SECTION_HELP.tech_stack}>
             <TechDomainBody
               tech={intel.tech_stack}
               domain={intel.domain}
@@ -246,55 +246,65 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
             />
           </AuditAccordion>
         )}
+
+        {intel?.content_library && (
+          <AuditAccordion label={SECTION_LABELS.content_library} tip={SECTION_HELP.content_library}>
+            <ContentLibraryBody data={intel.content_library} commentary={sectionCommentary.content_library} />
+          </AuditAccordion>
+        )}
+
+        {intel?.digital_intelligence && (
+          <AuditAccordion label={SECTION_LABELS.digital_intelligence} tip={SECTION_HELP.digital_intelligence}>
+            <DigitalIntelBody
+              data={intel.digital_intelligence}
+              commentary={sectionCommentary.digital_intelligence}
+            />
+          </AuditAccordion>
+        )}
+
+        {intel?.narrative?.recommendations?.length ? (
+          <AuditAccordion label="Recommendations &amp; Next Steps" tip={SECTION_HELP.narrative_recs}>
+            <NarrativeRecsBody narrative={intel.narrative} />
+          </AuditAccordion>
+        ) : null}
+
+        <AuditAccordion label="Recommendations" tip={SECTION_HELP.recommendations}>
+          <RecommendationsBody recommendations={result.recommendations} />
+        </AuditAccordion>
       </section>
 
-      {/* 5. Ongoing content — resource library */}
-      {intel?.content_library && (
-        <ContentLibraryCard data={intel.content_library} commentary={sectionCommentary.content_library} />
-      )}
-
-      {/* 6. Digital Intelligence Brief */}
-      {intel?.digital_intelligence && (
-        <DigitalIntelCard
-          data={intel.digital_intelligence}
-          commentary={sectionCommentary.digital_intelligence}
-        />
-      )}
-
-      {/* 7. Recommendations & next steps */}
-      {intel?.narrative && <NarrativeRecs narrative={intel.narrative} />}
-      <RecommendationsList recommendations={result.recommendations} />
-
-      {/* 8. CTA */}
+      {/* 4. CTA */}
       <CtaBox />
 
-      {/* 9. Change since last audit */}
-      {previous && (
-        <section className={`${cardClass} p-6`}>
-          <h2 className={sectionTitle}>Change Since Last Audit</h2>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div className="flex items-center justify-between rounded-lg border border-border-strong bg-surface-page px-4 py-3">
-              <p className="font-heading text-sm font-semibold text-text-primary">Overall</p>
-              <Delta current={result.overall_score} previous={previous.overall_score} />
-            </div>
-            {CATEGORY_META.map(({ key, label }) => (
-              <div
-                key={key}
-                className="flex items-center justify-between rounded-lg border border-border-default bg-surface-page px-4 py-3"
-              >
-                <p className="font-heading text-sm font-semibold text-text-primary">{label}</p>
-                <Delta
-                  current={result.category_scores[key].score}
-                  previous={previous.category_scores?.[key]?.score ?? null}
-                />
+      {/* 5. Supplementary — change + page inventory */}
+      <section className="space-y-3">
+        {previous && (
+          <AuditAccordion label="Change Since Last Audit" tip={SECTION_HELP.change}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="flex items-center justify-between rounded-lg border border-border-strong bg-surface-page px-4 py-3">
+                <p className="font-heading text-sm font-semibold text-text-primary">Overall</p>
+                <Delta current={result.overall_score} previous={previous.overall_score} />
               </div>
-            ))}
-          </div>
-        </section>
-      )}
+              {CATEGORY_META.map(({ key, label }) => (
+                <div
+                  key={key}
+                  className="flex items-center justify-between rounded-lg border border-border-default bg-surface-page px-4 py-3"
+                >
+                  <p className="font-heading text-sm font-semibold text-text-primary">{label}</p>
+                  <Delta
+                    current={result.category_scores[key].score}
+                    previous={previous.category_scores?.[key]?.score ?? null}
+                  />
+                </div>
+              ))}
+            </div>
+          </AuditAccordion>
+        )}
 
-      {/* 10. Page inventory */}
-      <PageInventory pages={result.page_analysis_summary} />
+        <AuditAccordion label="Page Inventory" tip={SECTION_HELP.page_inventory}>
+          <PageInventoryBody pages={result.page_analysis_summary} />
+        </AuditAccordion>
+      </section>
 
       <footer className="pt-2 text-center">
         <p className="font-body text-xs text-text-muted">
@@ -348,23 +358,54 @@ function DashboardCard({ card }: { card: DashCard }) {
   )
 }
 
+// Info icon + CSS-only tooltip (no JS) so it works in both the React page and
+// the standalone HTML export. The icon is focusable for keyboard users; the
+// bubble shows on hover or focus-within. The accordion must NOT use
+// overflow-hidden or the bubble would be clipped — rounding is handled with
+// rounded-[inherit] on the summary instead.
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span className="group/tip relative inline-flex">
+      <span
+        tabIndex={0}
+        role="img"
+        aria-label={text}
+        className="inline-flex text-text-muted transition-colors hover:text-brand-cyan focus-visible:text-brand-cyan focus:outline-none"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </span>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-60 -translate-x-1/2 rounded-md bg-brand-navy px-3 py-2 text-left text-xs font-body font-normal normal-case leading-snug tracking-normal text-text-inverse opacity-0 shadow-elevated transition-opacity duration-150 group-hover/tip:opacity-100 group-focus-within/tip:opacity-100"
+      >
+        {text}
+      </span>
+    </span>
+  )
+}
+
 function AuditAccordion({
   label,
+  tip,
   grade,
   score,
   defaultOpen,
   children,
 }: {
   label: string
+  tip?: string
   grade?: Grade | null
   score?: number | null
   defaultOpen?: boolean
   children: ReactNode
 }) {
   return (
-    <details className={`${cardClass} group overflow-hidden`} {...(defaultOpen ? { open: true } : {})}>
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 transition-colors marker:hidden hover:bg-surface-subtle [&::-webkit-details-marker]:hidden">
-        <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
+    <details className={`${cardClass} group`} {...(defaultOpen ? { open: true } : {})}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-[inherit] p-5 transition-colors marker:hidden hover:bg-surface-subtle [&::-webkit-details-marker]:hidden">
+        <span className="flex min-w-0 items-center gap-2">
+          <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
+          {tip && <InfoTip text={tip} />}
+        </span>
         <span className="flex items-center gap-3">
           {grade !== undefined && <GradeBadge grade={grade} score={score ?? null} />}
           <ChevronDown className="h-4 w-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" />
@@ -414,14 +455,11 @@ function CtaBox() {
   )
 }
 
-function PageInventory({ pages }: { pages: PageSummary[] }) {
+function PageInventoryBody({ pages }: { pages: PageSummary[] }) {
   return (
-    <section className={`${cardClass} overflow-hidden`}>
-      <div className="border-b border-border-default p-6 pb-4">
-        <h2 className={sectionTitle}>Page Inventory</h2>
-        <p className="mt-1 font-body text-xs text-text-muted">{pages.length} pages analyzed</p>
-      </div>
-      <div className="overflow-x-auto">
+    <>
+      <p className="font-body text-xs text-text-muted">{pages.length} pages analyzed</p>
+      <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm font-body">
           <thead>
             <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10 text-left">
@@ -463,7 +501,7 @@ function PageInventory({ pages }: { pages: PageSummary[] }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </>
   )
 }
 
@@ -473,11 +511,10 @@ const EFFORT_CLASS: Record<string, string> = {
   High: 'bg-error/10 text-error',
 }
 
-function RecommendationsList({ recommendations }: { recommendations: Recommendation[] }) {
+function RecommendationsBody({ recommendations }: { recommendations: Recommendation[] }) {
   return (
-    <section className={`${cardClass} p-6`}>
-      <h2 className={sectionTitle}>Recommendations</h2>
-      <p className="mt-1 font-body text-xs text-text-muted">
+    <>
+      <p className="font-body text-xs text-text-muted">
         Sorted by priority, then effort. {recommendations.length} total.
       </p>
       <ul className="mt-4 space-y-3">
@@ -510,7 +547,7 @@ function RecommendationsList({ recommendations }: { recommendations: Recommendat
           </li>
         ))}
       </ul>
-    </section>
+    </>
   )
 }
 
@@ -695,11 +732,10 @@ function TechDomainBody({
   )
 }
 
-function ContentLibraryCard({ data, commentary }: { data: ContentLibraryIntelligence; commentary?: string }) {
+function ContentLibraryBody({ data, commentary }: { data: ContentLibraryIntelligence; commentary?: string }) {
   return (
-    <section className={`${cardClass} p-6`}>
-      <h2 className={sectionTitle}>{SECTION_LABELS.content_library}</h2>
-      <p className="mt-1 font-body text-xs text-text-muted">
+    <>
+      <p className="font-body text-xs text-text-muted">
         {data.total_pieces} published piece{data.total_pieces === 1 ? '' : 's'}
       </p>
       {data.formats.length > 0 && (
@@ -720,7 +756,7 @@ function ContentLibraryCard({ data, commentary }: { data: ContentLibraryIntellig
         </>
       )}
       <Commentary text={commentary} />
-    </section>
+    </>
   )
 }
 
@@ -730,12 +766,9 @@ const NARRATIVE_PRIORITY_CLASS: Record<string, string> = {
   Low: 'bg-success/10 text-success',
 }
 
-function NarrativeRecs({ narrative }: { narrative: NarrativeIntelligence }) {
-  if (!narrative.recommendations.length) return null
+function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) {
   return (
-    <section className={`${cardClass} p-6`}>
-      <h2 className={sectionTitle}>Recommendations &amp; Next Steps</h2>
-      <ul className="mt-4 space-y-3">
+    <ul className="space-y-3">
         {narrative.recommendations.map((r, i) => (
           <li key={i} className="rounded-lg border border-border-default border-l-4 border-l-brand-cyan bg-surface-page p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -760,18 +793,16 @@ function NarrativeRecs({ narrative }: { narrative: NarrativeIntelligence }) {
             )}
           </li>
         ))}
-      </ul>
-    </section>
+    </ul>
   )
 }
 
-function DigitalIntelCard({ data, commentary }: { data: DigitalIntelligence; commentary?: string }) {
+function DigitalIntelBody({ data, commentary }: { data: DigitalIntelligence; commentary?: string }) {
   const rep = data.reputation
   const gap = data.niche_gap
   return (
-    <section className={`${cardClass} p-6`}>
-      <h2 className={sectionTitle}>{SECTION_LABELS.digital_intelligence}</h2>
-      <p className="mt-1 font-body text-xs text-text-muted">External research — not scored</p>
+    <>
+      <p className="font-body text-xs text-text-muted">External research — not scored</p>
 
       {data.personnel.length > 0 && (
         <>
@@ -864,7 +895,7 @@ function DigitalIntelCard({ data, commentary }: { data: DigitalIntelligence; com
       )}
 
       <Commentary text={commentary} />
-    </section>
+    </>
   )
 }
 

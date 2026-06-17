@@ -10,7 +10,7 @@ import {
   safeHref,
   type SemanticToken,
 } from './report-format'
-import { SECTION_LABELS, intelScorePct, signalLabel, subScoreRows } from './intelligence-format'
+import { SECTION_HELP, SECTION_LABELS, intelScorePct, signalLabel, subScoreRows } from './intelligence-format'
 import type {
   AuditIntelligence,
   AuditResult,
@@ -111,11 +111,19 @@ function subScoresHtml(sub: Record<string, number>): string {
     .join('')}</dl>`
 }
 
+// lucide `Info` icon, inlined to match the in-app report's header tooltip.
+const INFO_SVG =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>'
+
 /** Collapsible section. `chip` is the grade chip HTML (empty for unscored
- * sections). Native <details> — no JS, print-friendly. */
-function accordion(label: string, chip: string, body: string): string {
+ * sections); `tip` is the header tooltip text. Native <details> + CSS-only
+ * tooltip — no JS, print-friendly. */
+function accordion(label: string, chip: string, body: string, tip?: string): string {
+  const tipHtml = tip
+    ? `<span class="tip" tabindex="0">${INFO_SVG}<span class="tip-bubble" role="tooltip">${esc(tip)}</span></span>`
+    : ''
   return `<details class="card acc">
-    <summary class="acc-head"><h3>${esc(label)}</h3><span class="acc-right">${chip}<span class="chev" aria-hidden="true">▾</span></span></summary>
+    <summary class="acc-head"><span class="acc-label"><h3>${esc(label)}</h3>${tipHtml}</span><span class="acc-right">${chip}<span class="chev" aria-hidden="true">▾</span></span></summary>
     <div class="acc-body">${body}</div>
   </details>`
 }
@@ -219,7 +227,7 @@ function techDomainBody(
     ${commentaryHtml(commentary)}`
 }
 
-function contentLibraryHtml(c: ContentLibraryIntelligence, commentary?: string): string {
+function contentLibraryBody(c: ContentLibraryIntelligence, commentary?: string): string {
   const formats = c.formats.length
     ? `<div class="table-wrap"><table>
         <thead><tr><th>Format</th><th>Count</th><th>Cadence</th></tr></thead>
@@ -233,17 +241,14 @@ function contentLibraryHtml(c: ContentLibraryIntelligence, commentary?: string):
         .map((r) => `<li>${esc(r)}</li>`)
         .join('')}</ul>`
     : ''
-  return `<section class="card">
-    <h3>${SECTION_LABELS.content_library}</h3>
-    <p class="muted small">${c.total_pieces} published piece${c.total_pieces === 1 ? '' : 's'}</p>
+  return `<p class="muted small">${c.total_pieces} published piece${c.total_pieces === 1 ? '' : 's'}</p>
     ${formats}
     ${commentaryHtml(c.syndication_assessment)}
     ${recs}
-    ${commentaryHtml(commentary)}
-  </section>`
+    ${commentaryHtml(commentary)}`
 }
 
-function digitalIntelHtml(d: DigitalIntelligence, commentary?: string): string {
+function digitalIntelBody(d: DigitalIntelligence, commentary?: string): string {
   const personnel = d.personnel.length
     ? `<h4 class="intel-sub">Key Personnel</h4>${d.personnel
         .map(
@@ -292,12 +297,9 @@ function digitalIntelHtml(d: DigitalIntelligence, commentary?: string): string {
        ${gap.external.length ? `<p class="muted"><strong>Found externally:</strong> ${esc(gap.external.join(', '))}</p>` : ''}
        ${gap.unleveraged.length ? `<ul class="intel-list">${gap.unleveraged.map((u) => `<li>${esc(u)}</li>`).join('')}</ul>` : ''}`
     : ''
-  return `<section class="card">
-    <h2>${SECTION_LABELS.digital_intelligence}</h2>
-    <p class="muted small">External research — not scored</p>
+  return `<p class="muted small">External research — not scored</p>
     ${personnel}${reputation}${affiliations}${footprint}${social}${gapHtml}
-    ${commentaryHtml(commentary)}
-  </section>`
+    ${commentaryHtml(commentary)}`
 }
 
 const NARRATIVE_PRIORITY_COLOR: Record<string, string> = {
@@ -306,14 +308,11 @@ const NARRATIVE_PRIORITY_COLOR: Record<string, string> = {
   Low: COLORS.success,
 }
 
-function narrativeRecsHtml(narrative: NarrativeIntelligence): string {
-  if (!narrative.recommendations.length) return ''
-  return `<section class="card">
-    <h2>Recommendations &amp; Next Steps</h2>
-    <ul class="recs">${narrative.recommendations
-      .map((r) => {
-        const c = NARRATIVE_PRIORITY_COLOR[r.priority] ?? COLORS.warning
-        return `<li class="rec">
+function narrativeRecsBody(narrative: NarrativeIntelligence): string {
+  return `<ul class="recs">${narrative.recommendations
+    .map((r) => {
+      const c = NARRATIVE_PRIORITY_COLOR[r.priority] ?? COLORS.warning
+      return `<li class="rec">
           <div class="rec-head">
             <span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(r.priority)} priority</span>
           </div>
@@ -321,9 +320,8 @@ function narrativeRecsHtml(narrative: NarrativeIntelligence): string {
           ${r.business_impact ? `<div class="muted"><strong>Business impact:</strong> ${esc(r.business_impact)}</div>` : ''}
           ${r.counting_five_help ? `<div class="muted" style="margin-top:4px"><strong>How we help:</strong> ${esc(r.counting_five_help)}</div>` : ''}
         </li>`
-      })
-      .join('')}</ul>
-  </section>`
+    })
+    .join('')}</ul>`
 }
 
 /** The three strategic scored sections as accordions, in the order they lead
@@ -337,6 +335,7 @@ function intelLeadAccordions(intel: AuditIntelligence): string {
         SECTION_LABELS.target_market,
         gradeChip(intel.target_market.grade, intel.target_market.score),
         targetMarketBody(intel.target_market, c.target_market),
+        SECTION_HELP.target_market,
       ),
     )
   }
@@ -346,6 +345,7 @@ function intelLeadAccordions(intel: AuditIntelligence): string {
         SECTION_LABELS.competitive,
         gradeChip(intel.competitive.grade, intel.competitive.score),
         competitiveBody(intel.competitive, c.competitive),
+        SECTION_HELP.competitive,
       ),
     )
   }
@@ -355,6 +355,7 @@ function intelLeadAccordions(intel: AuditIntelligence): string {
         SECTION_LABELS.niche_services,
         gradeChip(intel.niche_services.grade, intel.niche_services.score),
         nicheServicesBody(intel.niche_services, c.niche_services),
+        SECTION_HELP.niche_services,
       ),
     )
   }
@@ -369,6 +370,7 @@ function techDomainAccordion(intel: AuditIntelligence): string {
     `${SECTION_LABELS.tech_stack} & Domain`,
     '',
     techDomainBody(intel.tech_stack, intel.domain, c.tech_stack),
+    SECTION_HELP.tech_stack,
   )
 }
 
@@ -451,25 +453,21 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
     }),
   ]
 
-  const dashboardSection = `
-    <section class="card">
-      <h2>Score Dashboard</h2>
-      <div class="grid">
-        ${dashCards
-          .map(
-            (c) => `<div class="dash">
-            <div class="dash-top"><div class="grid-label">${esc(c.label)}</div>${gradeChip(c.grade, c.score)}</div>
-            ${scoreBar(c.pct, c.grade)}
-          </div>`,
-          )
-          .join('')}
-      </div>
-    </section>`
+  const dashGrid = `<div class="grid">${dashCards
+    .map(
+      (c) => `<div class="dash">
+        <div class="dash-top"><div class="grid-label">${esc(c.label)}</div>${gradeChip(c.grade, c.score)}</div>
+        ${scoreBar(c.pct, c.grade)}
+      </div>`,
+    )
+    .join('')}</div>`
+  const dashboardSection = accordion('Score Dashboard', '', dashGrid, SECTION_HELP.dashboard)
 
   const deltaSection = previous
-    ? `<section class="card">
-        <h2>Change Since Last Audit</h2>
-        <div class="grid">
+    ? accordion(
+        'Change Since Last Audit',
+        '',
+        `<div class="grid">
           <div class="grid-item strong"><div class="grid-label">Overall</div>${deltaCell(result.overall_score, previous.overall_score)}</div>
           ${CATEGORY_META.map(({ key, label }) => {
             return `<div class="grid-item"><div class="grid-label">${esc(label)}</div>${deltaCell(
@@ -477,8 +475,9 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
               previous.category_scores?.[key]?.score ?? null,
             )}</div>`
           }).join('')}
-        </div>
-      </section>`
+        </div>`,
+        SECTION_HELP.change,
+      )
     : ''
 
   const sectionCommentary = intel?.narrative?.section_commentary ?? {}
@@ -490,32 +489,37 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
           .map((row) => `<div class="finding"><dt>${esc(row.label)}</dt><dd>${esc(row.value)}</dd></div>`)
           .join('')}</dl>`
       : ''
-    return accordion(label, gradeChip(cs.grade, cs.score), `${findings}${commentaryHtml(sectionCommentary[key])}`)
+    return accordion(label, gradeChip(cs.grade, cs.score), `${findings}${commentaryHtml(sectionCommentary[key])}`, SECTION_HELP[key])
   }).join('')
 
-  // Section Details — every section is a collapsible accordion, same order as
-  // the dashboard: intelligence leads, then categories, then tech/domain.
+  // Every section is a collapsible accordion, same order as the dashboard:
+  // intelligence leads, then categories, then tech/domain.
   const sectionDetails = `
-    <section>
-      <h2 class="section-heading">Section Details</h2>
-      ${intel ? intelLeadAccordions(intel) : ''}
-      ${categoryAccordions}
-      ${intel ? techDomainAccordion(intel) : ''}
-    </section>`
+    ${intel ? intelLeadAccordions(intel) : ''}
+    ${categoryAccordions}
+    ${intel ? techDomainAccordion(intel) : ''}`
 
   const contentLibrarySection = intel?.content_library
-    ? contentLibraryHtml(intel.content_library, sectionCommentary.content_library)
+    ? accordion(
+        SECTION_LABELS.content_library,
+        '',
+        contentLibraryBody(intel.content_library, sectionCommentary.content_library),
+        SECTION_HELP.content_library,
+      )
     : ''
-  const digitalIntelSection =
-    intel?.digital_intelligence
-      ? digitalIntelHtml(intel.digital_intelligence, sectionCommentary.digital_intelligence)
-      : ''
-  const narrativeRecsSection = intel?.narrative ? narrativeRecsHtml(intel.narrative) : ''
+  const digitalIntelSection = intel?.digital_intelligence
+    ? accordion(
+        SECTION_LABELS.digital_intelligence,
+        '',
+        digitalIntelBody(intel.digital_intelligence, sectionCommentary.digital_intelligence),
+        SECTION_HELP.digital_intelligence,
+      )
+    : ''
+  const narrativeRecsSection = intel?.narrative?.recommendations?.length
+    ? accordion('Recommendations & Next Steps', '', narrativeRecsBody(intel.narrative), SECTION_HELP.narrative_recs)
+    : ''
 
-  const inventorySection = `
-    <section class="card">
-      <h2>Page Inventory</h2>
-      <p class="muted small">${result.page_analysis_summary.length} pages analyzed</p>
+  const inventoryInner = `<p class="muted small">${result.page_analysis_summary.length} pages analyzed</p>
       <div class="table-wrap"><table>
         <thead><tr>${['URL', 'Title', 'Status', 'H1', 'Schema', 'Words', 'Issues']
           .map((h) => `<th>${h}</th>`)
@@ -533,13 +537,10 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
           </tr>`,
           )
           .join('')}</tbody>
-      </table></div>
-    </section>`
+      </table></div>`
+  const inventorySection = accordion('Page Inventory', '', inventoryInner, SECTION_HELP.page_inventory)
 
-  const recsSection = `
-    <section class="card">
-      <h2>Recommendations</h2>
-      <p class="muted small">Sorted by priority, then effort. ${result.recommendations.length} total.</p>
+  const recsInner = `<p class="muted small">Sorted by priority, then effort. ${result.recommendations.length} total.</p>
       <ul class="recs">${result.recommendations
         .map((r: Recommendation) => {
           const pColor = r.priority === 'critical' ? COLORS.error : COLORS.warning
@@ -555,8 +556,8 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
             <div class="muted">${esc(r.detail)}</div>
           </li>`
         })
-        .join('')}</ul>
-    </section>`
+        .join('')}</ul>`
+  const recsSection = accordion('Recommendations', '', recsInner, SECTION_HELP.recommendations)
 
   return `<!doctype html>
 <html lang="en">
@@ -636,13 +637,22 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .bar-fill { height:4px; border-radius:4px; }
   .acc { padding:0; }
   .acc-head { display:flex; justify-content:space-between; align-items:center; gap:12px;
-    padding:18px 24px; cursor:pointer; list-style:none; }
+    padding:18px 24px; cursor:pointer; list-style:none; border-radius:inherit; }
   .acc-head::-webkit-details-marker { display:none; }
   .acc-head:hover { background:${COLORS.subtle}; }
+  .acc-label { display:flex; align-items:center; gap:8px; min-width:0; }
   .acc-right { display:flex; align-items:center; gap:12px; }
   .chev { color:${COLORS.textMuted}; font-size:12px; transition:transform .2s; }
   details[open] .acc-head .chev { transform:rotate(180deg); }
   .acc-body { border-top:1px solid ${COLORS.border}; padding:20px 24px 24px; }
+  .tip { position:relative; display:inline-flex; color:${COLORS.textMuted}; cursor:help; }
+  .tip:hover, .tip:focus { color:${COLORS.cyan}; outline:none; }
+  .tip-bubble { position:absolute; left:0; top:calc(100% + 8px); z-index:20; width:240px;
+    background:${COLORS.navy}; color:#fff; font-family:'Open Sans',sans-serif; font-weight:400;
+    font-size:12px; line-height:1.4; text-transform:none; letter-spacing:normal;
+    padding:8px 12px; border-radius:6px; box-shadow:0 8px 24px -6px rgba(35,31,32,.45);
+    opacity:0; visibility:hidden; transition:opacity .15s; pointer-events:none; }
+  .tip:hover .tip-bubble, .tip:focus .tip-bubble, .tip:focus-within .tip-bubble { opacity:1; visibility:visible; }
   .cta { background:${COLORS.navy}; color:#fff; border-radius:8px; padding:32px 24px; text-align:center;
     box-shadow:0 5px 22px -6px rgba(35,31,32,.12); margin-bottom:20px; }
   .cta h2 { color:#fff; font-size:20px; }
