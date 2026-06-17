@@ -4,6 +4,7 @@
 // niches, a service-rewrite table, and top improvements. We compute the headline
 // 0–100 score + A–F grade ourselves (deterministic) from the sub-scores.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import type { TokenContext } from '@/lib/content/token-usage'
 import { getGrade } from '../scoring'
 import type { CorpusPage } from '../corpus'
 import type {
@@ -149,7 +150,8 @@ function validate(parsed: unknown): NicheServicesResult | null {
 export async function analyzeNicheServices(
   corpus: CorpusPage[],
   siteName: string,
+  ctx?: TokenContext,
 ): Promise<NicheServicesResult | null> {
   if (!corpus.length) return null
-  return generateMbpJson<NicheServicesResult>(buildPrompt(corpus, siteName), validate, 4000)
+  return generateMbpJson<NicheServicesResult>(buildPrompt(corpus, siteName), validate, 4000, ctx)
 }

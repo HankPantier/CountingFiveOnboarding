@@ -7,6 +7,7 @@ import { safePath } from '../_path'
 import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
+import { recordTokenUsage } from '@/lib/content/token-usage'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
 import {
@@ -111,7 +112,16 @@ After writing, briefly tell the admin what you changed.`
         },
       },
       stopWhen: stepCountIs(5),
-      onFinish: async () => {
+      onFinish: async ({ totalUsage }) => {
+        await recordTokenUsage({
+          task: 'content',
+          sessionId: ctx.sessionId,
+          stage: 'content_edit',
+          pageUrl: path,
+          model: 'claude-sonnet-4-6',
+          inputTokens: totalUsage.inputTokens,
+          outputTokens: totalUsage.outputTokens,
+        })
         await supabase
           .from('sessions')
           .update({ last_activity_at: new Date().toISOString() })

@@ -74,6 +74,7 @@ ${ANTI_SLOP_RULES}`
 
   checkTokenBudget('social', input.slug, usage?.inputTokens, 5000)
   await recordTokenUsage({
+    task: 'content',
     contentJobId: input.contentJobId,
     sessionId: input.sessionId,
     stage: 'social',

@@ -84,7 +84,9 @@ Only propose changes grounded in the content; if nothing warrants a change, retu
 
 Return ONLY JSON:
 { "hasImpact": boolean, "summary": "one-line summary", "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "..." } ] }`,
-    parseReview
+    parseReview,
+    undefined,
+    { task: 'onboarding', stage: 'mbp', sessionId }
   )
 
   if (!result || !result.hasImpact || result.changes.length === 0) return

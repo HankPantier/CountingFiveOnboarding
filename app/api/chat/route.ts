@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { deepMerge } from '@/lib/mbp/schema-write'
+import { recordTokenUsage } from '@/lib/content/token-usage'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
@@ -160,6 +161,14 @@ export async function POST(req: Request) {
           console.warn(
             `[tokens] session=${sessionId} input=${totalUsage.inputTokens} output=${totalUsage.outputTokens}`
           )
+          await recordTokenUsage({
+            task: 'onboarding',
+            sessionId,
+            stage: 'onboarding',
+            model: modelName === 'sonnet' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001',
+            inputTokens: totalUsage.inputTokens,
+            outputTokens: totalUsage.outputTokens,
+          })
           if (text) {
             await supabase.from('messages').insert({
               session_id: sessionId,

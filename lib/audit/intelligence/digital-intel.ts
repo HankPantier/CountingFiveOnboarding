@@ -4,6 +4,7 @@
 // social presence, and the external-vs-website niche gap. Requires a Serper key
 // — returns null (section omitted) without one, or when no results come back.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import type { TokenContext } from '@/lib/content/token-usage'
 import { serperEnabled, serperSearch, type SerperOrganicResult } from '../serper-search'
 import type {
   ContentFootprintItem,
@@ -107,6 +108,7 @@ function validate(parsed: unknown): DigitalIntelligence | null {
 
 export async function buildDigitalIntelligence(
   input: DigitalIntelInput,
+  ctx?: TokenContext,
 ): Promise<DigitalIntelligence | null> {
   if (!serperEnabled()) return null
 
@@ -137,5 +139,5 @@ Omit array items you cannot support. Return only the JSON.
 SEARCH RESULTS:
 ${blocks.join('\n')}`
 
-  return generateMbpJson<DigitalIntelligence>(prompt, validate, 3000)
+  return generateMbpJson<DigitalIntelligence>(prompt, validate, 3000, ctx)
 }

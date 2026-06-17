@@ -255,6 +255,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
   )
   checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
   await recordTokenUsage({
+    task: 'content',
     contentJobId,
     sessionId,
     stage: 'content',

@@ -558,4 +558,8 @@ export interface RunAuditInput {
   siteName?: string
   maxPages?: number
   onProgress?: (stage: AuditStage, detail: string, pagesCrawled?: number) => Promise<void>
+  // Attribution for the AI intelligence stage's token usage. auditId is the
+  // audit_runs row; sessionId is set only when the audit is linked to a client.
+  auditId?: string
+  sessionId?: string | null
 }

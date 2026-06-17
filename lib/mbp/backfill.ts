@@ -122,7 +122,8 @@ For each empty field you can confidently fill USING ONLY information already pre
 Return ONLY JSON:
 { "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "..." } ] }`,
     parseBackfill,
-    8000
+    8000,
+    { task: 'onboarding', stage: 'mbp', sessionId }
   )
 
   if (!result || result.changes.length === 0) return { created: 0 }

@@ -4,6 +4,7 @@
 // the business-framed "CountingFive Can Help" recommendations. Grounded strictly
 // in the structured inputs passed in — no new facts.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import type { TokenContext } from '@/lib/content/token-usage'
 import { CATEGORY_META } from '../report-format'
 import type {
   AuditIntelligence,
@@ -111,6 +112,7 @@ function validate(parsed: unknown): NarrativeIntelligence | null {
 export async function buildNarrative(
   result: AuditResult,
   intel: AuditIntelligence,
+  ctx?: TokenContext,
 ): Promise<NarrativeIntelligence | null> {
   const ids = sectionIds(intel)
   const prompt = `You are writing the narrative of a website audit report for "${result.site_name}". Use ONLY the structured findings below — do not invent metrics or facts. Write for a business owner, not a developer: clear, specific, jargon-free, addressed to the firm as "you/your".
@@ -126,5 +128,5 @@ Provide 4-6 recommendations, ordered most-impactful first. Return only the JSON.
 STRUCTURED FINDINGS:
 ${buildContext(result, intel)}`
 
-  return generateMbpJson<NarrativeIntelligence>(prompt, validate, 4000)
+  return generateMbpJson<NarrativeIntelligence>(prompt, validate, 4000, ctx)
 }

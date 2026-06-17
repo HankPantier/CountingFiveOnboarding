@@ -156,7 +156,10 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
   // them only at persist time).
   await report('researching', 'Researching niches, competitors & reputation…', pages.length)
   try {
-    result.intelligence = await buildIntelligence(result)
+    result.intelligence = await buildIntelligence(result, {
+      sessionId: input.sessionId,
+      auditId: input.auditId,
+    })
   } catch (err) {
     console.warn('[audit] intelligence stage failed (non-fatal):', err)
   }

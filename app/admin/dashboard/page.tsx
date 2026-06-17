@@ -146,9 +146,12 @@ export default async function DashboardPage({
             {totalCount ?? 0} {statusFilter === 'all' ? 'active' : statusFilter}
             {q && <span> matching “{q}”</span>}
             {spend.total > 0 && (
-              <span className="ml-3 text-text-muted">
-                · AI spend: ${spend.total.toFixed(2)} total, ${spend.recent.toFixed(2)} last 30 days
-              </span>
+              <Link
+                href="/admin/token-usage"
+                className="ml-3 text-text-muted hover:text-brand-cyan transition-colors"
+              >
+                · AI spend: ${spend.total.toFixed(2)} total, ${spend.recent.toFixed(2)} last 30 days →
+              </Link>
             )}
           </p>
           {(approvedCount ?? 0) > 0 && (

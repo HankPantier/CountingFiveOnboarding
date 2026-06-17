@@ -47,6 +47,7 @@ Return JSON: { "pageUrl": "exact url from the list or null", "teamMemberName": "
       maxOutputTokens: 100,
     })
     await recordTokenUsage({
+      task: 'content',
       contentJobId: args.contentJobId,
       sessionId: args.sessionId,
       stage: 'oneoff',
@@ -186,6 +187,7 @@ ${ANTI_SLOP_RULES}`
     })
     checkTokenBudget('oneoff', generationId, usage?.inputTokens, 5000)
     await recordTokenUsage({
+      task: 'content',
       contentJobId: row.content_job_id,
       sessionId: row.session_id,
       stage: 'oneoff',

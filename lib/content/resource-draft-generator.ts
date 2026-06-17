@@ -159,6 +159,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
   )
   checkTokenBudget('resource-draft', idea.title, usage?.inputTokens, 5000)
   await recordTokenUsage({
+    task: 'content',
     contentJobId: args.contentJobId,
     sessionId: args.sessionId,
     stage: 'resource',

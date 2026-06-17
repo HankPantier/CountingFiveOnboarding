@@ -1,26 +1,20 @@
 import { createServerClient } from '@/lib/supabase/server'
+import { estimateCostUsd, type TokenTask, type TokenStage } from './token-pricing'
 
-export type TokenStage = 'keyword' | 'outline' | 'content' | 'idea' | 'resource' | 'social' | 'oneoff'
-
-// USD per 1,000,000 tokens, keyed by model id. Verify against current
-// Anthropic pricing before relying on cost_usd for actual billing — these
-// are the published Sonnet/Haiku tier rates and may drift over time.
-const PRICING: Record<string, { input: number; output: number }> = {
-  'claude-sonnet-4-6': { input: 3, output: 15 },
-  'claude-haiku-4-5-20251001': { input: 1, output: 5 },
-}
-
-export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
-  const rate = PRICING[model] ?? { input: 0, output: 0 }
-  return (inputTokens / 1_000_000) * rate.input + (outputTokens / 1_000_000) * rate.output
-}
+// Re-export the pure pricing/types so existing importers of this module keep
+// working. Client-reachable code (lib/tokens/aggregate.ts) imports from
+// ./token-pricing directly to avoid pulling the server client into the bundle.
+export { estimateCostUsd } from './token-pricing'
+export type { TokenTask, TokenStage, TokenContext } from './token-pricing'
 
 // Persist one row per Claude call for billing visibility. Recording must
 // never break the pipeline: any failure (e.g. token_usage table not yet
 // migrated) is swallowed with a warning.
 export async function recordTokenUsage(args: {
+  task: TokenTask
   contentJobId?: string | null
   sessionId?: string | null
+  auditId?: string | null
   stage: TokenStage
   pageUrl?: string | null
   model: string
@@ -34,8 +28,10 @@ export async function recordTokenUsage(args: {
   try {
     const supabase = createServerClient()
     const { error } = await supabase.from('token_usage').insert({
+      task: args.task,
       content_job_id: args.contentJobId ?? null,
       session_id: args.sessionId ?? null,
+      audit_id: args.auditId ?? null,
       stage: args.stage,
       page_url: args.pageUrl ?? null,
       model: args.model,

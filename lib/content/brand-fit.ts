@@ -63,6 +63,7 @@ Return ONLY JSON:
       maxOutputTokens: 500,
     })
     await recordTokenUsage({
+      task: 'content',
       contentJobId: args.contentJobId,
       sessionId: args.sessionId,
       stage: 'idea',

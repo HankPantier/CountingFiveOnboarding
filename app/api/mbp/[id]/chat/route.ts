@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { buildMbpEditPrompt } from '@/lib/mbp/edit-prompt'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
+import { recordTokenUsage } from '@/lib/content/token-usage'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
@@ -86,8 +87,16 @@ export async function POST(
         },
       },
       stopWhen: stepCountIs(5),
-      onFinish: async ({ text }) => {
+      onFinish: async ({ text, totalUsage }) => {
         try {
+          await recordTokenUsage({
+            task: 'onboarding',
+            sessionId: id,
+            stage: 'mbp_edit',
+            model: 'claude-sonnet-4-6',
+            inputTokens: totalUsage.inputTokens,
+            outputTokens: totalUsage.outputTokens,
+          })
           if (text) {
             await supabase.from('mbp_messages').insert({ session_id: id, role: 'assistant', content: text })
           }

@@ -3,6 +3,7 @@
 // guessed); Claude then judges only AI-search presence and local-SEO. Requires
 // a Serper key — returns null (section omitted) without one.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import type { TokenContext } from '@/lib/content/token-usage'
 import { getGrade } from '../scoring'
 import { serperEnabled, serperSearch } from '../serper-search'
 import type { CompetitiveIntelligence, DetectedNiche, KeywordRanking } from '../types'
@@ -52,7 +53,7 @@ function rankNote(rank: number | null): string {
   return `Position ${rank}`
 }
 
-async function deriveKeywords(input: CompetitiveInput): Promise<string[] | null> {
+async function deriveKeywords(input: CompetitiveInput, ctx?: TokenContext): Promise<string[] | null> {
   const nicheList = input.niches.map((n) => n.name).filter(Boolean).join(', ') || '(none stated)'
   const prompt = `A prospective client searching Google for "${input.siteName}" or a firm like it would type queries combining a service, an intent word, and a location. The firm's niches: ${nicheList}. Location: ${input.location || '(unknown)'}.
 
@@ -65,6 +66,7 @@ Return JSON: { "keywords": [ up to ${MAX_KEYWORDS} realistic buyer search querie
       return kws.length ? { keywords: kws } : null
     },
     600,
+    ctx,
   )
   return result?.keywords ?? null
 }
@@ -98,6 +100,7 @@ interface JudgeModel {
 async function judge(
   input: CompetitiveInput,
   rankings: KeywordRanking[],
+  ctx?: TokenContext,
 ): Promise<{ ai_search_presence: string; ai_search_score: number; local_seo: string; local_seo_score: number; commentary: string } | null> {
   const rankBlock = rankings
     .map((r) => `- "${r.keyword}": ${r.rank === null ? 'not in top results' : `position ${r.rank}`}`)
@@ -136,14 +139,16 @@ Return only the JSON.`
       }
     },
     900,
+    ctx,
   )
 }
 
 export async function analyzeCompetitive(
   input: CompetitiveInput,
+  ctx?: TokenContext,
 ): Promise<CompetitiveIntelligence | null> {
   if (!serperEnabled()) return null
-  const keywords = await deriveKeywords(input)
+  const keywords = await deriveKeywords(input, ctx)
   if (!keywords?.length) return null
 
   const rankings: KeywordRanking[] = []
@@ -151,7 +156,7 @@ export async function analyzeCompetitive(
     rankings.push(await rankCheck(kw, input.domain, input.location))
   }
 
-  const assessment = await judge(input, rankings)
+  const assessment = await judge(input, rankings, ctx)
 
   // Sub-scores: one per measured keyword (deterministic) + the two judged ones.
   const sub_scores: Record<string, number> = {}

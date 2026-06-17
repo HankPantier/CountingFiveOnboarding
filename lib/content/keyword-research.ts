@@ -38,6 +38,7 @@ Return JSON: { "primary": "keyword phrase", "secondary": ["kw1", "kw2", "kw3"] }
 
   checkTokenBudget('keyword-research', pageUrl, usage?.inputTokens, 800)
   await recordTokenUsage({
+    task: 'content',
     contentJobId: ctx.contentJobId,
     sessionId: ctx.sessionId,
     stage: 'keyword',

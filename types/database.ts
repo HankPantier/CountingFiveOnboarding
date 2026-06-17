@@ -892,6 +892,7 @@ export type Database = {
       }
       token_usage: {
         Row: {
+          audit_id: string | null
           content_job_id: string | null
           cost_usd: number
           created_at: string
@@ -902,8 +903,10 @@ export type Database = {
           page_url: string | null
           session_id: string | null
           stage: string
+          task: string
         }
         Insert: {
+          audit_id?: string | null
           content_job_id?: string | null
           cost_usd?: number
           created_at?: string
@@ -914,8 +917,10 @@ export type Database = {
           page_url?: string | null
           session_id?: string | null
           stage: string
+          task?: string
         }
         Update: {
+          audit_id?: string | null
           content_job_id?: string | null
           cost_usd?: number
           created_at?: string
@@ -926,8 +931,16 @@ export type Database = {
           page_url?: string | null
           session_id?: string | null
           stage?: string
+          task?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "token_usage_audit_id_fkey"
+            columns: ["audit_id"]
+            isOneToOne: false
+            referencedRelation: "audit_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "token_usage_content_job_id_fkey"
             columns: ["content_job_id"]

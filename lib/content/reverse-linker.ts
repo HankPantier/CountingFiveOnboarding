@@ -173,6 +173,7 @@ Return ONLY JSON:
 
   checkTokenBudget('reverse-link', `/resources/${candidate.slug}`, usage?.inputTokens, 5000)
   await recordTokenUsage({
+    task: 'content',
     contentJobId: args.contentJobId,
     sessionId: args.sessionId,
     stage: 'resource',

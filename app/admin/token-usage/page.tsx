@@ -1,0 +1,117 @@
+import { redirect } from 'next/navigation'
+import { getCurrentUser } from '@/lib/auth/access'
+import { createServerClient } from '@/lib/supabase/server'
+import {
+  summarize,
+  byClient,
+  dailySeries,
+  type UsageRow,
+  type Totals,
+} from '@/lib/tokens/aggregate'
+import TokenTrendChart from '@/components/admin/TokenTrendChart'
+import ClientUsageTable from '@/components/admin/ClientUsageTable'
+
+// Token usage is a global operator/billing view — admins only (mirrors the
+// admin-only spend metric on the dashboard and the audits subtree).
+export default async function TokenUsagePage() {
+  const user = await getCurrentUser()
+  if (!user) redirect('/admin/login')
+  if (user.role !== 'admin') redirect('/admin/dashboard')
+
+  const supabase = createServerClient()
+
+  // High range overrides PostgREST's implicit 1000-row cap. At current volume
+  // this is fine; a DB-side aggregate view is the scale path if it grows.
+  const [{ data: usage }, { data: sessions }] = await Promise.all([
+    supabase
+      .from('token_usage')
+      .select('task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_at')
+      .order('created_at', { ascending: false })
+      .range(0, 49999),
+    supabase.from('sessions').select('id, website_url'),
+  ])
+
+  const rows: UsageRow[] = usage ?? []
+  const labels: Record<string, string> = {}
+  for (const s of sessions ?? []) labels[s.id] = s.website_url ?? s.id
+
+  // Server Component renders once per request, so Date.now() is deterministic
+  // for the render — the React-Compiler purity rule doesn't apply.
+  // eslint-disable-next-line react-hooks/purity
+  const summary = summarize(rows, Date.now())
+  const clients = byClient(rows, labels)
+  const series = {
+    all: dailySeries(rows),
+    onboarding: dailySeries(rows, 'onboarding'),
+    audit: dailySeries(rows, 'audit'),
+    content: dailySeries(rows, 'content'),
+  }
+
+  const models = Object.entries(summary.byModel).sort((a, b) => b[1].cost - a[1].cost)
+
+  return (
+    <div className="px-6 py-8 max-w-[1200px] mx-auto">
+      <header className="mb-6">
+        <h1 className="text-2xl font-heading font-bold text-brand-navy">Token Usage</h1>
+        <p className="text-sm font-body text-text-secondary mt-1">
+          AI spend across onboarding, audits, and content. Costs are estimated from per-model rates.
+        </p>
+      </header>
+
+      <div className="grid gap-4 sm:grid-cols-3 mb-6">
+        <StatTile label="This month" totals={summary.thisMonth} />
+        <StatTile label="Last 30 days" totals={summary.last30} />
+        <StatTile label="All time" totals={summary.allTime} />
+      </div>
+
+      {models.length > 0 && (
+        <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle p-5 mb-6">
+          <h2 className="text-sm font-heading font-semibold text-text-muted uppercase tracking-wide mb-3">
+            All-time spend by model
+          </h2>
+          <ul className="space-y-2">
+            {models.map(([model, t]) => (
+              <li key={model} className="flex items-center justify-between text-sm font-body">
+                <span className="text-text-primary">{model}</span>
+                <span className="text-text-secondary tabular-nums">
+                  {money(t.cost)} · {fmtTokens(t.inputTokens + t.outputTokens)} tok · {t.calls} calls
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mb-6">
+        <TokenTrendChart series={series} />
+      </div>
+
+      <section>
+        <h2 className="text-lg font-heading font-bold text-brand-navy mb-3">Usage by client</h2>
+        <ClientUsageTable clients={clients} />
+      </section>
+    </div>
+  )
+}
+
+function money(v: number): string {
+  return `$${v.toFixed(2)}`
+}
+
+function fmtTokens(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`
+  return String(v)
+}
+
+function StatTile({ label, totals }: { label: string; totals: Totals }) {
+  return (
+    <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle p-5">
+      <p className="text-xs font-heading font-semibold text-text-muted uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-heading font-bold text-brand-navy mt-1 tabular-nums">{money(totals.cost)}</p>
+      <p className="text-sm font-body text-text-secondary mt-1 tabular-nums">
+        {fmtTokens(totals.inputTokens + totals.outputTokens)} tokens · {totals.calls} calls
+      </p>
+    </div>
+  )
+}

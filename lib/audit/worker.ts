@@ -40,11 +40,11 @@ export async function runAuditJob(auditRunId: string): Promise<void> {
       .eq('id', auditRunId)
   }
 
-  let row: { url: string; site_name: string | null; max_pages: number } | null
+  let row: { url: string; site_name: string | null; max_pages: number; session_id: string | null } | null
   try {
     const { data } = await supabase
       .from('audit_runs')
-      .select('url, site_name, max_pages')
+      .select('url, site_name, max_pages, session_id')
       .eq('id', auditRunId)
       .single()
     row = data
@@ -84,6 +84,8 @@ export async function runAuditJob(auditRunId: string): Promise<void> {
       siteName: row.site_name ?? undefined,
       maxPages: row.max_pages,
       onProgress,
+      auditId: auditRunId,
+      sessionId: row.session_id,
     })
 
     terminated = true

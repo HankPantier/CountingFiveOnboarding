@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { buildAuditEditPrompt } from '@/lib/audit/edit-prompt'
 import { applyAuditEdit } from '@/lib/audit/apply-edit'
+import { recordTokenUsage } from '@/lib/content/token-usage'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import type { AuditResult } from '@/types/audit-result'
 import { z } from 'zod'
@@ -32,7 +33,7 @@ export async function POST(
 
   const { data: run, error } = await supabase
     .from('audit_runs')
-    .select('audit_status, result')
+    .select('audit_status, result, session_id')
     .eq('id', id)
     .single()
   if (error || !run) {
@@ -83,8 +84,17 @@ export async function POST(
       },
     },
     stopWhen: stepCountIs(5),
-    onFinish: async ({ text }) => {
+    onFinish: async ({ text, totalUsage }) => {
       try {
+        await recordTokenUsage({
+          task: 'audit',
+          auditId: id,
+          sessionId: run.session_id,
+          stage: 'audit_edit',
+          model: 'claude-sonnet-4-6',
+          inputTokens: totalUsage.inputTokens,
+          outputTokens: totalUsage.outputTokens,
+        })
         if (text) {
           await supabase.from('audit_messages').insert({ audit_run_id: id, role: 'assistant', content: text })
         }

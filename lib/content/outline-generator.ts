@@ -148,6 +148,7 @@ HEADING RULES (h1 and every h2):
   )
   checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
   await recordTokenUsage({
+    task: 'content',
     contentJobId,
     sessionId,
     stage: 'outline',

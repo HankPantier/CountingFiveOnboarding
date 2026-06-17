@@ -31,7 +31,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Audit has no page content to draft from' }, { status: 422 })
   }
 
-  const { schema, gaps, contact, coverage } = await draftSessionFromAudit(result)
+  const { schema, gaps, contact, coverage } = await draftSessionFromAudit(result, id)
 
   return NextResponse.json({ schemaData: schema, gapList: gaps, contact, coverage })
 }

@@ -2,6 +2,7 @@
 // are computed deterministically from the sitemap; Claude judges whether the
 // content is original or syndicated/white-labeled and what to do about it.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditResult, ContentLibraryFormat, ContentLibraryIntelligence } from '../types'
 
 const ARTICLE_URL_RE = /\/(blog|resources?|insights?|articles?|news|posts?|quick-?reads?|magazine)\b/i
@@ -40,6 +41,7 @@ interface JudgeModel {
 
 export async function analyzeContentLibrary(
   result: AuditResult,
+  ctx?: TokenContext,
 ): Promise<ContentLibraryIntelligence | null> {
   const sitemap = result.sitemap
   const entries = sitemap?.page_entries ?? []
@@ -96,6 +98,7 @@ ${sampleText}`
         return { syndication_assessment: sa, recommendations: recs }
       },
       1200,
+      ctx,
     )
     if (judged) {
       syndication_assessment = judged.syndication_assessment

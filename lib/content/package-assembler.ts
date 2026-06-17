@@ -261,7 +261,7 @@ export async function assembleContentPackage(
   // them in parallel with each other (the deterministic stitches that depend
   // on neither stay synchronous and run after).
   const [brandDoc, docxBuffer] = await Promise.all([
-    generateBrandDoc(schema),
+    generateBrandDoc(schema, { sessionId: job.session_id, contentJobId: id }),
     buildDocx(pages, firmName),
   ])
 

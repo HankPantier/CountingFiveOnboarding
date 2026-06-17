@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth/access'
-import AdminHeader from '@/components/admin/AdminHeader'
 
+// Auth gate only — the sidebar shell lives in app/admin/layout.tsx.
 export default async function DashboardLayout({
   children,
 }: {
@@ -9,11 +9,5 @@ export default async function DashboardLayout({
 }) {
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-
-  return (
-    <div className="min-h-screen bg-surface-page">
-      <AdminHeader role={user.role} />
-      {children}
-    </div>
-  )
+  return <>{children}</>
 }

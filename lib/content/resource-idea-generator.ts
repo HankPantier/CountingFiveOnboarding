@@ -220,6 +220,7 @@ Return ONLY a JSON array of ${count} objects:
 
   checkTokenBudget('resource-ideas', contentJobId, usage?.inputTokens, 5000)
   await recordTokenUsage({
+    task: 'content',
     contentJobId,
     sessionId,
     stage: 'idea',

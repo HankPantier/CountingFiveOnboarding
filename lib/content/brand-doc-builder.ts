@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { checkTokenBudget } from './truncate-to-token-budget'
+import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
 
 export type BrandDoc = {
@@ -75,7 +76,10 @@ export function compileBrandDoc(schema: SessionSchema): BrandDoc {
   return { summary, fullDoc }
 }
 
-export async function generateBrandDoc(schema: SessionSchema): Promise<BrandDoc> {
+export async function generateBrandDoc(
+  schema: SessionSchema,
+  ctx?: { sessionId?: string | null; contentJobId?: string | null }
+): Promise<BrandDoc> {
   const fallback = compileBrandDoc(schema)
   const firmName = schema.business?.name ?? 'the firm'
 
@@ -106,6 +110,16 @@ RULES:
       maxOutputTokens: 2500,
     })
     checkTokenBudget('brand-doc', firmName, usage?.inputTokens, 4000)
+    await recordTokenUsage({
+      task: 'content',
+      contentJobId: ctx?.contentJobId,
+      sessionId: ctx?.sessionId,
+      stage: 'brand',
+      pageUrl: 'brand-doc',
+      model: 'claude-sonnet-4-6',
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    })
     const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
     const parsed = JSON.parse(cleaned) as Partial<BrandDoc>
     if (nonEmpty(parsed.summary) && nonEmpty(parsed.fullDoc)) {

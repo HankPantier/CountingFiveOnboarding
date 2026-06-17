@@ -235,7 +235,10 @@ function assessCoverage(
   }
 }
 
-export async function draftSessionFromAudit(result: AuditResult): Promise<DraftResult> {
+export async function draftSessionFromAudit(
+  result: AuditResult,
+  auditId?: string
+): Promise<DraftResult> {
   const signals = result.business_signals
   const hadBusinessSignals = !!(
     signals &&
@@ -251,6 +254,7 @@ export async function draftSessionFromAudit(result: AuditResult): Promise<DraftR
     buildPrompt(pages, signals),
     validateDraftModel,
     6000,
+    { task: 'onboarding', stage: 'mbp', auditId },
   )
 
   const schema = mapToSchema(model ?? {}, signals, result.url)

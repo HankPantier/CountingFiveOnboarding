@@ -11,6 +11,7 @@ import { detectDomainAge } from './domain-age'
 import { analyzeNicheServices } from './niche-services'
 import { buildNarrative } from './narrative'
 import { detectTechStack } from './tech-stack'
+import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditIntelligence, AuditResult, DetectedNiche } from '../types'
 
 /** Run a builder, logging and swallowing any failure. Normalizes a null result
@@ -38,18 +39,27 @@ function deriveLocation(result: AuditResult): string {
 
 export async function buildIntelligence(
   result: AuditResult,
+  attribution?: { sessionId?: string | null; auditId?: string | null },
 ): Promise<AuditIntelligence | undefined> {
   const intel: AuditIntelligence = {}
   const { pages } = buildCorpus(result)
   const siteName = result.site_name
   const location = deriveLocation(result)
 
+  // Token attribution for every AI pass below — all are the 'audit' task.
+  const tokenCtx: TokenContext = {
+    task: 'audit',
+    stage: 'audit',
+    sessionId: attribution?.sessionId ?? null,
+    auditId: attribution?.auditId ?? null,
+  }
+
   // ── Deterministic collectors ──────────────────────────────────────────────
   intel.tech_stack = await safe('tech-stack', () => detectTechStack(result.raw?.pages ?? []))
   intel.domain = await safe('domain-age', () => detectDomainAge(result.domain, result.sitemap))
 
   // ── On-site AI analysis ───────────────────────────────────────────────────
-  const niche = await safe('niche-services', () => analyzeNicheServices(pages, siteName))
+  const niche = await safe('niche-services', () => analyzeNicheServices(pages, siteName, tokenCtx))
   if (niche) {
     intel.target_market = niche.target_market
     intel.niche_services = niche.niche_services
@@ -69,9 +79,9 @@ export async function buildIntelligence(
         hasLocalBusiness: result.findings.schema.has_local_business,
         aiCrawlersBlocked: result.findings.ai_llm.ai_crawlers_blocked,
       },
-    }),
+    }, tokenCtx),
   )
-  intel.content_library = await safe('content-library', () => analyzeContentLibrary(result))
+  intel.content_library = await safe('content-library', () => analyzeContentLibrary(result, tokenCtx))
 
   // ── Off-site research ─────────────────────────────────────────────────────
   intel.digital_intelligence = await safe('digital-intelligence', () =>
@@ -80,11 +90,11 @@ export async function buildIntelligence(
       domain: result.domain,
       location,
       onSiteNiches: detectedNiches.map((n) => n.name),
-    }),
+    }, tokenCtx),
   )
 
   // ── Narrative (LAST — consumes everything above) ──────────────────────────
-  intel.narrative = await safe('narrative', () => buildNarrative(result, intel))
+  intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
 
   // Drop undefined keys; return undefined when nothing was produced.
   const cleaned: AuditIntelligence = {}
