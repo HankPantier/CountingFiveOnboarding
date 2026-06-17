@@ -1,32 +1,44 @@
+import type { ReactNode } from 'react'
 import Image from 'next/image'
+import { ChevronDown } from 'lucide-react'
 import type {
-  AuditIntelligence,
-  CategoryScoreMap,
   AuditResult,
+  CategoryScoreMap,
   CompetitiveIntelligence,
   ContentLibraryIntelligence,
   DigitalIntelligence,
   DomainIntelligence,
+  Grade,
   NarrativeIntelligence,
   NicheServicesIntelligence,
   PageSummary,
   Recommendation,
-  ScoredSection,
   TechStackIntelligence,
 } from '@/types/audit-result'
-import { CATEGORY_META, findingRows, gradeToken, safeHref } from '@/lib/audit/report-format'
-import { SECTION_LABELS, signalLabel, subScoreRows } from '@/lib/audit/intelligence-format'
+import {
+  CATEGORY_META,
+  findingRows,
+  gradeToken,
+  safeHref,
+  type SemanticToken,
+} from '@/lib/audit/report-format'
+import {
+  SECTION_LABELS,
+  intelScorePct,
+  signalLabel,
+  subScoreRows,
+} from '@/lib/audit/intelligence-format'
 import { AuditStatusBadge, GradeBadge } from './AuditBadges'
 import { ScoreRing } from './ScoreRing'
 
 const cardClass = 'bg-surface-card border border-border-default rounded-lg shadow-subtle'
 const sectionTitle = 'text-lg font-heading font-semibold text-brand-navy'
 
-const ACCENT_BY_TOKEN: Record<string, string> = {
-  success: 'border-l-success',
-  warning: 'border-l-warning',
-  error: 'border-l-error',
-  muted: 'border-l-border-strong',
+const TOKEN_BG: Record<SemanticToken, string> = {
+  success: 'bg-success',
+  warning: 'bg-warning',
+  error: 'bg-error',
+  muted: 'bg-text-muted',
 }
 
 function Delta({ current, previous }: { current: number | null; previous: number | null }) {
@@ -51,6 +63,13 @@ export interface AuditReportProps {
   previous?: { overall_score: number | null; category_scores: CategoryScoreMap | null } | null
 }
 
+interface DashCard {
+  label: string
+  grade: Grade | null
+  score: number | null
+  pct: number
+}
+
 export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
   const runDate = new Date(createdAt).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -58,9 +77,59 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
     day: 'numeric',
   })
   const criticals = result.recommendations.filter((r) => r.priority === 'critical')
-  const topCritical = criticals.slice(0, 3)
   const intel = result.intelligence
   const sectionCommentary = intel?.narrative?.section_commentary ?? {}
+
+  // Top Recommendations callout — prefer the business-framed narrative recs,
+  // fall back to the first three critical technical findings.
+  const topRecs: Array<{ title: string; detail: string; token: SemanticToken }> = intel?.narrative
+    ?.recommendations?.length
+    ? intel.narrative.recommendations.slice(0, 3).map((r) => ({
+        title: r.title,
+        detail: r.business_impact,
+        token: r.priority === 'High' ? 'error' : r.priority === 'Medium' ? 'warning' : 'success',
+      }))
+    : criticals.slice(0, 3).map((r) => ({ title: r.title, detail: r.detail, token: 'error' as const }))
+
+  // Score dashboard — strategic intelligence sections lead, then the
+  // deterministic technical categories. Intel scores (0–10) are normalized to
+  // a 0–100 percent so every bar shares one axis.
+  const dashCards: DashCard[] = [
+    ...(intel?.target_market
+      ? [
+          {
+            label: SECTION_LABELS.target_market,
+            grade: intel.target_market.grade,
+            score: intel.target_market.score,
+            pct: intelScorePct(intel.target_market.score),
+          },
+        ]
+      : []),
+    ...(intel?.competitive
+      ? [
+          {
+            label: SECTION_LABELS.competitive,
+            grade: intel.competitive.grade,
+            score: intel.competitive.score,
+            pct: intelScorePct(intel.competitive.score),
+          },
+        ]
+      : []),
+    ...(intel?.niche_services
+      ? [
+          {
+            label: SECTION_LABELS.niche_services,
+            grade: intel.niche_services.grade,
+            score: intel.niche_services.score,
+            pct: intelScorePct(intel.niche_services.score),
+          },
+        ]
+      : []),
+    ...CATEGORY_META.map(({ key, label }) => {
+      const cs = result.category_scores[key]
+      return { label, grade: cs.grade, score: cs.score, pct: cs.score ?? 0 }
+    }),
+  ]
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -90,9 +159,9 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         </div>
       </header>
 
-      {/* 2. Executive summary — the report's hero */}
+      {/* 2. Hero — score ring, executive summary, Top Recommendations */}
       <section className="rounded-lg border border-border-default border-t-4 border-t-brand-cyan bg-surface-card p-8 shadow-elevated">
-        <div className="flex flex-col items-center gap-6 md:flex-row md:items-center md:gap-10">
+        <div className="flex flex-col items-center gap-6 md:flex-row md:items-start md:gap-10">
           <ScoreRing score={result.overall_score} grade={result.overall_grade} size={200} />
           <div className="flex-1">
             <h2 className={sectionTitle}>Executive Summary</h2>
@@ -106,45 +175,100 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
                 {intel.narrative.executive_summary}
               </p>
             )}
-            {topCritical.length > 0 && (
-              <ul className="mt-4 space-y-2">
-                {topCritical.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm font-body text-text-primary">
-                    <span className="mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full bg-error" />
-                    <span>
-                      <span className="font-semibold">{r.title}</span> — {r.detail}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <TopRecommendations items={topRecs} />
           </div>
         </div>
       </section>
 
-      {/* 3. Score dashboard */}
+      {/* 3. Score dashboard — intelligence-first, with score bars */}
       <section className={`${cardClass} p-6`}>
-        <h2 className={sectionTitle}>Category Scores</h2>
+        <h2 className={sectionTitle}>Score Dashboard</h2>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {CATEGORY_META.map(({ key, label, weight }) => {
-            const cs = result.category_scores[key]
-            return (
-              <div
-                key={key}
-                className="flex items-center justify-between rounded-lg border border-border-default bg-surface-page px-4 py-3"
-              >
-                <div>
-                  <p className="font-heading text-sm font-semibold text-text-primary">{label}</p>
-                  <p className="font-body text-xs text-text-muted">{weight}% weight</p>
-                </div>
-                <GradeBadge grade={cs.grade} score={cs.score} />
-              </div>
-            )
-          })}
+          {dashCards.map((c, i) => (
+            <DashboardCard key={i} card={c} />
+          ))}
         </div>
       </section>
 
-      {/* 7. Score-delta panel (rendered early when a prior run exists) */}
+      {/* 4. Section details — every section is a collapsible accordion */}
+      <section className="space-y-3">
+        <h2 className={sectionTitle}>Section Details</h2>
+
+        {intel?.target_market && (
+          <AuditAccordion
+            label={SECTION_LABELS.target_market}
+            grade={intel.target_market.grade}
+            score={intel.target_market.score}
+          >
+            <SubScores sub={intel.target_market.sub_scores} />
+            <Commentary text={intel.target_market.commentary} />
+            <Commentary text={sectionCommentary.target_market} />
+          </AuditAccordion>
+        )}
+
+        {intel?.competitive && (
+          <AuditAccordion
+            label={SECTION_LABELS.competitive}
+            grade={intel.competitive.grade}
+            score={intel.competitive.score}
+          >
+            <CompetitiveBody data={intel.competitive} commentary={sectionCommentary.competitive} />
+          </AuditAccordion>
+        )}
+
+        {intel?.niche_services && (
+          <AuditAccordion
+            label={SECTION_LABELS.niche_services}
+            grade={intel.niche_services.grade}
+            score={intel.niche_services.score}
+          >
+            <NicheServicesBody data={intel.niche_services} commentary={sectionCommentary.niche_services} />
+          </AuditAccordion>
+        )}
+
+        {CATEGORY_META.map(({ key, label }) => {
+          const cs = result.category_scores[key]
+          const rows = findingRows(result.findings[key])
+          return (
+            <AuditAccordion key={key} label={label} grade={cs.grade} score={cs.score}>
+              <FindingsDl rows={rows} />
+              <Commentary text={sectionCommentary[key]} />
+            </AuditAccordion>
+          )
+        })}
+
+        {(intel?.tech_stack || intel?.domain) && (
+          <AuditAccordion label={`${SECTION_LABELS.tech_stack} & Domain`}>
+            <TechDomainBody
+              tech={intel.tech_stack}
+              domain={intel.domain}
+              commentary={sectionCommentary.tech_stack}
+            />
+          </AuditAccordion>
+        )}
+      </section>
+
+      {/* 5. Ongoing content — resource library */}
+      {intel?.content_library && (
+        <ContentLibraryCard data={intel.content_library} commentary={sectionCommentary.content_library} />
+      )}
+
+      {/* 6. Digital Intelligence Brief */}
+      {intel?.digital_intelligence && (
+        <DigitalIntelCard
+          data={intel.digital_intelligence}
+          commentary={sectionCommentary.digital_intelligence}
+        />
+      )}
+
+      {/* 7. Recommendations & next steps */}
+      {intel?.narrative && <NarrativeRecs narrative={intel.narrative} />}
+      <RecommendationsList recommendations={result.recommendations} />
+
+      {/* 8. CTA */}
+      <CtaBox />
+
+      {/* 9. Change since last audit */}
       {previous && (
         <section className={`${cardClass} p-6`}>
           <h2 className={sectionTitle}>Change Since Last Audit</h2>
@@ -169,62 +293,124 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         </section>
       )}
 
-      {/* 3b. Intelligence — analytical sections */}
-      {intel && <IntelligenceSections intel={intel} commentary={sectionCommentary} />}
-
-      {/* 4. Per-category findings */}
-      <section className="space-y-4">
-        {CATEGORY_META.map(({ key, label }) => {
-          const cs = result.category_scores[key]
-          const rows = findingRows(result.findings[key])
-          return (
-            <div key={key} className={`${cardClass} border-l-4 ${ACCENT_BY_TOKEN[gradeToken(cs.grade)]} p-6`}>
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
-                <GradeBadge grade={cs.grade} score={cs.score} />
-              </div>
-              {rows.length > 0 && (
-                <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-                  {rows.map((row, i) => (
-                    <div key={i} className="flex items-baseline justify-between gap-4 border-b border-border-default py-1.5 last:border-0">
-                      <dt className="font-body text-sm text-text-secondary">{row.label}</dt>
-                      <dd className="font-heading text-sm font-semibold text-text-primary text-right">
-                        {row.value}
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-              <Commentary text={sectionCommentary[key]} />
-            </div>
-          )
-        })}
-      </section>
-
-      {/* 6a. Strategic recommendations (business-framed) */}
-      {intel?.narrative && <NarrativeRecs narrative={intel.narrative} />}
-
-      {/* 6. Technical recommendations */}
-      <RecommendationsList recommendations={result.recommendations} />
-
-      {/* 6b. Digital Intelligence Brief */}
-      {intel?.digital_intelligence && (
-        <DigitalIntelCard
-          data={intel.digital_intelligence}
-          commentary={sectionCommentary.digital_intelligence}
-        />
-      )}
-
-      {/* 5. Page inventory */}
+      {/* 10. Page inventory */}
       <PageInventory pages={result.page_analysis_summary} />
 
-      {/* 8. Footer */}
       <footer className="pt-2 text-center">
         <p className="font-body text-xs text-text-muted">
           Audit generated by Revaltus · {runDate}
         </p>
       </footer>
     </div>
+  )
+}
+
+// ── Hero / dashboard / accordion primitives ──────────────────────────────────
+
+function TopRecommendations({
+  items,
+}: {
+  items: Array<{ title: string; detail: string; token: SemanticToken }>
+}) {
+  if (!items.length) return null
+  return (
+    <div className="mt-5 rounded-lg border border-brand-cyan/30 bg-brand-cyan/5 p-5">
+      <h3 className="font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
+        Top Recommendations
+      </h3>
+      <ul className="mt-3 space-y-2">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-start gap-2.5 font-body text-sm text-text-primary">
+            <span className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${TOKEN_BG[it.token]}`} />
+            <span>
+              <span className="font-semibold">{it.title}</span>
+              {it.detail ? <> — {it.detail}</> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function DashboardCard({ card }: { card: DashCard }) {
+  const token = gradeToken(card.grade)
+  return (
+    <div className="rounded-lg border border-border-default bg-surface-page px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-heading text-sm font-semibold text-text-primary">{card.label}</p>
+        <GradeBadge grade={card.grade} score={card.score} />
+      </div>
+      <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-border-default">
+        <div className={`h-1 rounded-full ${TOKEN_BG[token]}`} style={{ width: `${card.pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function AuditAccordion({
+  label,
+  grade,
+  score,
+  defaultOpen,
+  children,
+}: {
+  label: string
+  grade?: Grade | null
+  score?: number | null
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  return (
+    <details className={`${cardClass} group overflow-hidden`} {...(defaultOpen ? { open: true } : {})}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-5 transition-colors marker:hidden hover:bg-surface-subtle [&::-webkit-details-marker]:hidden">
+        <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
+        <span className="flex items-center gap-3">
+          {grade !== undefined && <GradeBadge grade={grade} score={score ?? null} />}
+          <ChevronDown className="h-4 w-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+      <div className="border-t border-border-default p-6 pt-5">{children}</div>
+    </details>
+  )
+}
+
+function FindingsDl({ rows }: { rows: Array<{ label: string; value: string }> }) {
+  if (!rows.length) return null
+  return (
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          className="flex items-baseline justify-between gap-4 border-b border-border-default py-1.5 last:border-0"
+        >
+          <dt className="font-body text-sm text-text-secondary">{row.label}</dt>
+          <dd className="font-heading text-sm font-semibold text-text-primary text-right">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+function CtaBox() {
+  return (
+    <section className="rounded-lg bg-brand-navy p-8 text-center shadow-elevated">
+      <h2 className="font-heading text-xl font-bold text-text-inverse">
+        Ready to turn these findings into results?
+      </h2>
+      <p className="mx-auto mt-2 max-w-xl font-body text-sm text-text-inverse/70">
+        Revaltus turns audit insights into a prioritized plan — plus the content, technical fixes,
+        and search-visibility work to execute it.
+      </p>
+      <a
+        href="https://revaltus.com"
+        target="_blank"
+        rel="noreferrer"
+        className="mt-5 inline-flex items-center justify-center rounded-full bg-brand-cyan px-6 py-2.5 font-heading text-sm font-semibold text-text-inverse transition-colors hover:bg-brand-cyan/90"
+      >
+        Let&rsquo;s talk
+      </a>
+    </section>
   )
 }
 
@@ -344,7 +530,7 @@ function SubScores({ sub }: { sub: Record<string, number> }) {
   const rows = subScoreRows(sub)
   if (!rows.length) return null
   return (
-    <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+    <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
       {rows.map((row, i) => (
         <div key={i} className="flex items-baseline justify-between gap-4 border-b border-border-default py-1.5 last:border-0">
           <dt className="font-body text-sm text-text-secondary">{row.label}</dt>
@@ -352,15 +538,6 @@ function SubScores({ sub }: { sub: Record<string, number> }) {
         </div>
       ))}
     </dl>
-  )
-}
-
-function ScoredHead({ label, section }: { label: string; section: ScoredSection }) {
-  return (
-    <div className="flex items-center justify-between">
-      <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
-      <GradeBadge grade={section.grade} score={section.score} />
-    </div>
   )
 }
 
@@ -389,43 +566,9 @@ function IntelTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
   )
 }
 
-function IntelligenceSections({
-  intel,
-  commentary,
-}: {
-  intel: AuditIntelligence
-  commentary: Record<string, string>
-}) {
+function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligence; commentary?: string }) {
   return (
-    <section className="space-y-4">
-      {intel.target_market && (
-        <div className={`${cardClass} p-6`}>
-          <ScoredHead label={SECTION_LABELS.target_market} section={intel.target_market} />
-          <SubScores sub={intel.target_market.sub_scores} />
-          <Commentary text={intel.target_market.commentary} />
-          <Commentary text={commentary.target_market} />
-        </div>
-      )}
-      {intel.niche_services && (
-        <NicheServicesCard data={intel.niche_services} commentary={commentary.niche_services} />
-      )}
-      {intel.competitive && (
-        <CompetitiveCard data={intel.competitive} commentary={commentary.competitive} />
-      )}
-      {(intel.tech_stack || intel.domain) && (
-        <TechDomainCard tech={intel.tech_stack} domain={intel.domain} commentary={commentary.tech_stack} />
-      )}
-      {intel.content_library && (
-        <ContentLibraryCard data={intel.content_library} commentary={commentary.content_library} />
-      )}
-    </section>
-  )
-}
-
-function NicheServicesCard({ data, commentary }: { data: NicheServicesIntelligence; commentary?: string }) {
-  return (
-    <div className={`${cardClass} p-6`}>
-      <ScoredHead label={SECTION_LABELS.niche_services} section={data} />
+    <>
       <SubScores sub={data.sub_scores} />
       <Commentary text={data.commentary} />
       <Commentary text={commentary} />
@@ -473,14 +616,13 @@ function NicheServicesCard({ data, commentary }: { data: NicheServicesIntelligen
           </ol>
         </>
       )}
-    </div>
+    </>
   )
 }
 
-function CompetitiveCard({ data, commentary }: { data: CompetitiveIntelligence; commentary?: string }) {
+function CompetitiveBody({ data, commentary }: { data: CompetitiveIntelligence; commentary?: string }) {
   return (
-    <div className={`${cardClass} p-6`}>
-      <ScoredHead label={SECTION_LABELS.competitive} section={data} />
+    <>
       <SubScores sub={data.sub_scores} />
       {data.keyword_rankings.length > 0 && (
         <IntelTable
@@ -500,11 +642,11 @@ function CompetitiveCard({ data, commentary }: { data: CompetitiveIntelligence; 
         </p>
       )}
       <Commentary text={commentary} />
-    </div>
+    </>
   )
 }
 
-function TechDomainCard({
+function TechDomainBody({
   tech,
   domain,
   commentary,
@@ -526,12 +668,9 @@ function TechDomainCard({
     if (domain.last_updated) rows.push(['Last Content Update', domain.last_updated])
   }
   return (
-    <div className={`${cardClass} p-6`}>
-      <h3 className="text-base font-heading font-semibold text-brand-navy">
-        {SECTION_LABELS.tech_stack} &amp; Domain
-      </h3>
+    <>
       {rows.length > 0 && (
-        <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
           {rows.map(([k, v], i) => (
             <div key={i} className="flex items-baseline justify-between gap-4 border-b border-border-default py-1.5 last:border-0">
               <dt className="font-body text-sm text-text-secondary">{k}</dt>
@@ -552,14 +691,14 @@ function TechDomainCard({
       )}
       <Commentary text={tech?.commentary} />
       <Commentary text={commentary} />
-    </div>
+    </>
   )
 }
 
 function ContentLibraryCard({ data, commentary }: { data: ContentLibraryIntelligence; commentary?: string }) {
   return (
-    <div className={`${cardClass} p-6`}>
-      <h3 className="text-base font-heading font-semibold text-brand-navy">{SECTION_LABELS.content_library}</h3>
+    <section className={`${cardClass} p-6`}>
+      <h2 className={sectionTitle}>{SECTION_LABELS.content_library}</h2>
       <p className="mt-1 font-body text-xs text-text-muted">
         {data.total_pieces} published piece{data.total_pieces === 1 ? '' : 's'}
       </p>
@@ -581,7 +720,7 @@ function ContentLibraryCard({ data, commentary }: { data: ContentLibraryIntellig
         </>
       )}
       <Commentary text={commentary} />
-    </div>
+    </section>
   )
 }
 
