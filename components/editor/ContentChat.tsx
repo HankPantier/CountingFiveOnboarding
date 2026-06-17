@@ -104,12 +104,12 @@ export default function ContentChat({
           onChange={e => setInput(e.target.value)}
           placeholder="Describe the change…"
           disabled={isDirty}
-          className="flex-1 border border-border-default rounded-pill px-4 py-2 text-sm font-body bg-surface-card focus:outline-none focus:border-brand-cyan disabled:opacity-50"
+          className="flex-1 border border-border-default rounded-pill px-3.5 py-1.5 text-xs font-body bg-surface-card focus:outline-none focus:border-brand-cyan disabled:opacity-50"
         />
         <button
           type="submit"
           disabled={isLoading || isDirty || !input.trim()}
-          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Send
         </button>

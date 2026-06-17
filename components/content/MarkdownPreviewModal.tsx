@@ -344,7 +344,7 @@ export default function MarkdownPreviewModal({
                   type="button"
                   onClick={saveEdit}
                   disabled={saving}
-                  className="px-4 py-1.5 text-sm font-heading font-semibold bg-brand-navy text-text-inverse rounded-pill hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="px-3.5 py-1.5 text-xs font-heading font-semibold bg-brand-navy text-text-inverse rounded-pill hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
@@ -352,7 +352,7 @@ export default function MarkdownPreviewModal({
                   type="button"
                   onClick={cancelEdit}
                   disabled={saving}
-                  className="px-4 py-1.5 text-sm font-heading font-semibold border border-border-default rounded-pill text-text-secondary hover:bg-white transition-colors disabled:opacity-50"
+                  className="px-3.5 py-1.5 text-xs font-heading font-semibold border border-border-default rounded-pill text-text-secondary hover:bg-white transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>

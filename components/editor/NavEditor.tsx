@@ -290,7 +290,7 @@ export default function NavEditor({
                 <button
                   type="button"
                   onClick={() => update((d) => { d.primary.push({ label: '', url: '' }) })}
-                  className="rounded-pill border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                  className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                 >
                   + Add menu item
                 </button>
@@ -325,7 +325,7 @@ export default function NavEditor({
                   <button
                     type="button"
                     onClick={() => update((d) => { d.cta = { label: '', url: '' } })}
-                    className="rounded-pill border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                    className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                   >
                     + Add call-to-action
                   </button>

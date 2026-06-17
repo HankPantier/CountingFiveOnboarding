@@ -280,7 +280,7 @@ export default function NavCurationPhase({
           type="button"
           onClick={saveConfig}
           disabled={saving}
-          className="px-5 py-2 rounded-pill bg-brand-cyan text-white text-sm font-heading font-semibold disabled:opacity-50"
+          className="px-3.5 py-1.5 rounded-pill bg-brand-cyan text-white text-xs font-heading font-semibold disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save nav config'}
         </button>

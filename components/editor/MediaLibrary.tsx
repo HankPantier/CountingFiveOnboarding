@@ -125,7 +125,7 @@ export default function MediaLibrary({
             type="button"
             onClick={() => uploadRef.current?.click()}
             disabled={uploading}
-            className="bg-brand-navy disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed"
+            className="bg-brand-navy disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed"
           >
             {uploading ? 'Uploading…' : 'Upload new image'}
           </button>

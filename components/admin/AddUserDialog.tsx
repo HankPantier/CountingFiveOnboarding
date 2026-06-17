@@ -70,7 +70,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     return (
       <button
         onClick={() => setOpen(true)}
-        className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
+        className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
       >
         Add User
       </button>
@@ -117,7 +117,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
                   key={r}
                   type="button"
                   onClick={() => setRole(r)}
-                  className={`flex-1 text-sm font-heading font-semibold px-4 py-2 rounded-pill transition-colors capitalize ${
+                  className={`flex-1 text-xs font-heading font-semibold px-3.5 py-1.5 rounded-pill transition-colors capitalize ${
                     role === r
                       ? 'bg-brand-navy text-text-inverse'
                       : 'border border-border-default text-text-secondary hover:bg-surface-subtle'
@@ -163,14 +163,14 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
                 reset()
                 setOpen(false)
               }}
-              className="flex-1 border border-border-default text-text-secondary font-heading font-semibold text-sm py-3 rounded-pill transition-all hover:bg-surface-subtle"
+              className="flex-1 border border-border-default text-text-secondary font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-surface-subtle"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 bg-brand-cyan text-text-inverse font-heading font-semibold text-sm py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Sending invite…' : 'Add & send invite'}
             </button>

@@ -78,14 +78,14 @@ function SuggestionCard({
           <button
             onClick={() => act('approve')}
             disabled={busy !== null}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-4 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50"
           >
             {busy === 'approve' ? 'Applying…' : 'Approve'}
           </button>
           <button
             onClick={() => act('dismiss')}
             disabled={busy !== null}
-            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-4 py-1.5 rounded-pill transition-all hover:bg-surface-subtle disabled:opacity-50"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-surface-subtle disabled:opacity-50"
           >
             {busy === 'dismiss' ? 'Dismissing…' : 'Dismiss'}
           </button>

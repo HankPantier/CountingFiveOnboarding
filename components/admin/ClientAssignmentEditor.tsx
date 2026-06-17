@@ -109,7 +109,7 @@ export default function ClientAssignmentEditor({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 border border-border-default text-text-secondary font-heading font-semibold text-sm py-3 rounded-pill transition-all hover:bg-surface-subtle"
+            className="flex-1 border border-border-default text-text-secondary font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-surface-subtle"
           >
             Cancel
           </button>
@@ -117,7 +117,7 @@ export default function ClientAssignmentEditor({
             type="button"
             onClick={save}
             disabled={saving || loading}
-            className="flex-1 bg-brand-cyan text-text-inverse font-heading font-semibold text-sm py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving…' : 'Save access'}
           </button>

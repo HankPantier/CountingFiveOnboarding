@@ -170,7 +170,7 @@ export default async function DashboardPage({
           <div className="flex items-center gap-3">
             <Link
               href="/admin/dashboard/new-session"
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
             >
               New Session
             </Link>
@@ -187,7 +187,7 @@ export default async function DashboardPage({
             defaultValue={q}
             placeholder="Search by website…"
             aria-label="Search sessions by website"
-            className="text-sm font-body px-3 py-1.5 rounded-pill border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none w-56"
+            className="text-xs font-body px-3 py-1.5 rounded-pill border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none w-56"
           />
         </form>
         <div className="flex items-center gap-1">

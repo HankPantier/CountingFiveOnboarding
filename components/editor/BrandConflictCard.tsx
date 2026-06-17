@@ -58,13 +58,13 @@ export default function BrandConflictCard({
       <div className="mt-3 flex items-center gap-2 flex-wrap">
         <button
           onClick={onRevise}
-          className="rounded-pill border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+          className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
         >
           Revise request
         </button>
         <button
           onClick={onProceed}
-          className="rounded-pill px-4 py-1.5 text-xs font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors"
+          className="rounded-pill px-3.5 py-1.5 text-xs font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors"
         >
           Proceed off-brand (one time)
         </button>
@@ -72,7 +72,7 @@ export default function BrandConflictCard({
           <button
             onClick={onAmendAndProceed}
             disabled={amending}
-            className="rounded-pill bg-brand-cyan px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
+            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
           >
             {amending ? 'Updating brand…' : 'Update brand & proceed'}
           </button>

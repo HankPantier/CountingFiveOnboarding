@@ -57,7 +57,7 @@ export default function ApproveButton({ sessionId }: { sessionId: string }) {
         onClick={handleApprove}
         disabled={busy || done}
         className={[
-          'w-full font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all',
+          'w-full font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all',
           done
             ? 'bg-success text-white cursor-default'
             : 'bg-brand-navy text-text-inverse hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed',

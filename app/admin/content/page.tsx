@@ -76,7 +76,7 @@ export default async function ContentHubPage() {
         </div>
         <Link
           href="/admin/dashboard"
-          className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+          className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
         >
           Back to Dashboard
         </Link>
@@ -129,7 +129,7 @@ export default async function ContentHubPage() {
                     <td className="px-4 py-3 text-right">
                       <Link
                         href={`/admin/content/${session.id}`}
-                        className={`inline-flex items-center font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all ${
+                        className={`inline-flex items-center font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all ${
                           phase === 6
                             ? 'border border-success/40 text-success hover:bg-success/10'
                             : phase !== null

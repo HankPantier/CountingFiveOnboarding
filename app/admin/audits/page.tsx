@@ -61,7 +61,7 @@ export default async function AuditsListPage() {
         </div>
         <Link
           href="/admin/audits/new"
-          className="rounded-pill bg-brand-cyan px-6 py-3 font-heading text-sm font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+          className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
         >
           New audit
         </Link>
@@ -76,7 +76,7 @@ export default async function AuditsListPage() {
           </p>
           <Link
             href="/admin/audits/new"
-            className="mt-5 inline-block rounded-pill bg-brand-cyan px-6 py-3 font-heading text-sm font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+            className="mt-5 inline-block rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
           >
             Run your first audit
           </Link>

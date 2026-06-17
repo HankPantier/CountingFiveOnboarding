@@ -31,7 +31,7 @@ export default function SendReminderButton({ sessionId }: { sessionId: string })
       <button
         onClick={handleSend}
         disabled={loading || sent}
-        className="w-full border border-border-default text-text-secondary font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? 'Sending…' : sent ? 'Reminder sent' : 'Send Reminder'}
       </button>

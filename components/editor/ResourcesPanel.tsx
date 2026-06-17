@@ -310,7 +310,7 @@ export default function ResourcesPanel({
         <button
           onClick={() => void brainstorm()}
           disabled={brainstorming}
-          className="rounded-pill bg-brand-cyan px-5 py-2 text-sm font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
+          className="rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
         >
           {brainstorming ? 'Brainstorming…' : ideas.length > 0 ? 'Brainstorm more' : 'Brainstorm ideas'}
         </button>
@@ -334,12 +334,12 @@ export default function ResourcesPanel({
           onChange={(e) => setSeed(e.target.value)}
           maxLength={300}
           placeholder="Or seed your own idea — e.g. “year-end equipment purchases for contractors”"
-          className="flex-1 rounded-pill border border-border-default bg-surface-card px-4 py-2 text-xs font-body text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-brand-cyan"
+          className="flex-1 rounded-pill border border-border-default bg-surface-card px-3.5 py-1.5 text-xs font-body text-text-secondary placeholder:text-text-muted focus:outline-none focus:border-brand-cyan"
         />
         <button
           type="submit"
           disabled={brainstorming || !seed.trim()}
-          className="rounded-pill border border-brand-navy px-5 py-2 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 disabled:border-border-default disabled:text-text-muted transition-colors"
+          className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 disabled:border-border-default disabled:text-text-muted transition-colors"
         >
           Extrapolate
         </button>
@@ -478,7 +478,7 @@ export default function ResourcesPanel({
                   <>
                     <button
                       onClick={() => onOpenPost(idea.draft_path!)}
-                      className="rounded-pill bg-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
+                      className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
                     >
                       Open draft
                     </button>
@@ -488,7 +488,7 @@ export default function ResourcesPanel({
                       <>
                         <button
                           onClick={() => onOpenPost(idea.social_path!)}
-                          className="rounded-pill border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                          className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                         >
                           View social
                         </button>
@@ -502,7 +502,7 @@ export default function ResourcesPanel({
                     ) : (
                       <button
                         onClick={() => void generateSocial(idea.id)}
-                        className="rounded-pill border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                        className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                       >
                         Generate social
                       </button>
@@ -521,14 +521,14 @@ export default function ResourcesPanel({
                           setNotesText('')
                         }
                       }}
-                      className="rounded-pill bg-brand-cyan px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
+                      className="rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
                     >
                       Draft post
                     </button>
                     {idea.status === 'suggested' && (
                       <button
                         onClick={() => void setStatus(idea.id, 'approved')}
-                        className="rounded-pill border border-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                        className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                       >
                         ★ Interested
                       </button>
@@ -536,7 +536,7 @@ export default function ResourcesPanel({
                     <button
                       onClick={() => void setStatus(idea.id, 'dismissed')}
                       title="Removes this idea — future brainstorms will avoid this territory"
-                      className="rounded-pill px-4 py-1.5 text-xs font-heading font-semibold text-text-muted hover:text-error transition-colors"
+                      className="rounded-pill px-3.5 py-1.5 text-xs font-heading font-semibold text-text-muted hover:text-error transition-colors"
                     >
                       Remove
                     </button>
@@ -562,7 +562,7 @@ export default function ResourcesPanel({
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={() => void draft(idea.id, notesText.trim())}
-                      className="rounded-pill bg-brand-navy px-4 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
+                      className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
                     >
                       Draft now
                     </button>

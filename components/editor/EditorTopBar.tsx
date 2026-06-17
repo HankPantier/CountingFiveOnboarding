@@ -117,7 +117,7 @@ export default function EditorTopBar({
         <button
           onClick={onSave}
           disabled={!canSave || saving}
-          className="bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed"
+          className="bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed"
           title={selectedPath ? `Save ${selectedPath}` : 'Select a file to save'}
         >
           {saving ? 'Saving…' : 'Save'}
@@ -126,7 +126,7 @@ export default function EditorTopBar({
           <button
             onClick={onRollback}
             disabled={publishing}
-            className="border border-error/40 text-error font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-error/5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            className="border border-error/40 text-error font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-error/5 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             title="Force the live site back to its pre-publish state. Draft keeps the changes for fixing."
           >
             Revert last publish
@@ -135,7 +135,7 @@ export default function EditorTopBar({
         <button
           onClick={onPublish}
           disabled={publishing || (status?.draftAhead ?? 0) === 0 || dirtyCount > 0}
-          className="bg-brand-navy disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed"
+          className="bg-brand-navy disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed"
           title={
             dirtyCount > 0
               ? 'Save your unsaved changes first'

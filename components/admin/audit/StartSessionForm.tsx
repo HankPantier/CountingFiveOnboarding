@@ -143,7 +143,7 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
             This profile was AI-drafted from limited content ({coverage.reasons.join('; ')}). Review
             carefully, or re-run the audit on more pages for a richer draft.
           </p>
-          <button onClick={rerun} className="mt-3 rounded-pill border border-border-strong px-4 py-2 font-heading text-sm font-semibold text-text-secondary hover:bg-surface-subtle">
+          <button onClick={rerun} className="mt-3 rounded-pill border border-border-strong px-3.5 py-1.5 font-heading text-xs font-semibold text-text-secondary hover:bg-surface-subtle">
             Re-run audit →
           </button>
         </div>
@@ -262,7 +262,7 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
         <button
           onClick={confirm}
           disabled={submitting || !biz.name.trim() || !!existingSessionId}
-          className="rounded-pill bg-brand-cyan px-6 py-3 font-heading text-sm font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? 'Creating session…' : 'Create session'}
         </button>

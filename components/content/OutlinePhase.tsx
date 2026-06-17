@@ -171,7 +171,7 @@ export default function OutlinePhase({
           <button
             onClick={approveAll}
             disabled={approvingAll || allApproved || generatingCount > 0}
-            className="border border-brand-cyan text-brand-navy font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan hover:text-text-inverse disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border border-brand-cyan text-brand-navy font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan hover:text-text-inverse disabled:opacity-50 disabled:cursor-not-allowed"
             title="Approve every generated outline at once. Outlines still being generated are left untouched."
           >
             {approvingAll ? 'Approving…' : 'Approve all'}
@@ -179,7 +179,7 @@ export default function OutlinePhase({
           <button
             onClick={regenerateAll}
             disabled={regeneratingAll || generatingCount > 0}
-            className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
             title="Clear and rebuild every outline from scratch. All approvals reset — use after major schema changes."
           >
             {regeneratingAll ? 'Regenerating…' : 'Regenerate all'}
@@ -210,7 +210,7 @@ export default function OutlinePhase({
         <button
           onClick={startContentGeneration}
           disabled={!allApproved || advancing}
-          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {advancing ? 'Starting...' : 'Start Content Generation →'}
         </button>
@@ -218,7 +218,7 @@ export default function OutlinePhase({
           <button
             onClick={retryGeneration}
             disabled={retrying}
-            className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {retrying ? 'Retrying...' : `Retry ${generatingCount} stuck`}
           </button>

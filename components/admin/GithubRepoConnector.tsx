@@ -121,7 +121,7 @@ export default function GithubRepoConnector({
             <button
               type="submit"
               disabled={busy || !isDirty}
-              className="bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed"
+              className="bg-brand-cyan disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed"
             >
               {busy ? 'Saving…' : current ? 'Update' : 'Connect'}
             </button>

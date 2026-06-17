@@ -38,7 +38,7 @@ export default function MbpBackfillButton({ sessionId }: { sessionId: string }) 
         onClick={run}
         disabled={busy}
         title="Derive empty fields from the positioning statement, niches, and service descriptions already in the profile"
-        className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50"
+        className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50"
       >
         {busy ? 'Deriving…' : 'Fill from what we know'}
       </button>

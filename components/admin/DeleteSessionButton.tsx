@@ -32,7 +32,7 @@ export default function DeleteSessionButton({ sessionId }: { sessionId: string }
       <button
         onClick={handleDelete}
         disabled={state === 'deleting'}
-        className="w-full border border-error/20 text-error hover:bg-error/10 hover:border-error/50 font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full border border-error/20 text-error hover:bg-error/10 hover:border-error/50 font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {state === 'deleting' ? 'Deleting…' : 'Delete Session'}
       </button>

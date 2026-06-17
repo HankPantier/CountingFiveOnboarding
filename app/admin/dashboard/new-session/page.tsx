@@ -143,7 +143,7 @@ export default function NewSessionPage() {
                   setTimeout(() => setCopied(false), 2000)
                 })
               }}
-              className="bg-brand-navy text-text-inverse font-heading font-semibold text-sm px-4 py-2 rounded-pill transition-all hover:bg-brand-navy-dark whitespace-nowrap"
+              className="bg-brand-navy text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-navy-dark whitespace-nowrap"
             >
               {copied ? 'Copied!' : 'Copy'}
             </button>
@@ -384,7 +384,7 @@ export default function NewSessionPage() {
               <button
                 onClick={() => setStep('review')}
                 disabled={!websiteUrl.trim()}
-                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-8 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-8 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Save &amp; Review
               </button>
@@ -394,7 +394,7 @@ export default function NewSessionPage() {
                 <button
                   onClick={() => void handleCreate()}
                   disabled={loading}
-                  className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-8 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-8 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Creating…' : 'Create Session'}
                 </button>

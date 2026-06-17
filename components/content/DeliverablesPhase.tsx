@@ -160,7 +160,7 @@ export default function DeliverablesPhase({
           <button
             onClick={assemblePackage}
             disabled={packaging || hasUnapproved || !generationDone}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {packaging
               ? 'Assembling Package...'
@@ -224,7 +224,7 @@ export default function DeliverablesPhase({
           <button
             onClick={downloadPackage}
             disabled={downloading}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {downloading ? 'Preparing...' : 'Download Package'}
           </button>

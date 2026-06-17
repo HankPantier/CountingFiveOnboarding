@@ -216,7 +216,7 @@ export default function ResearchPhase({
           <button
             onClick={restartResearch}
             disabled={restarting}
-            className="bg-brand-cyan text-white font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-brand-cyan text-white font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {restarting ? 'Restarting...' : 'Restart research'}
           </button>
@@ -226,7 +226,7 @@ export default function ResearchPhase({
           <button
             onClick={retryFailed}
             disabled={retrying}
-            className="border border-border-default text-text-secondary font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {retrying ? 'Retrying...' : 'Retry failed pages'}
           </button>

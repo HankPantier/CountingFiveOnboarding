@@ -183,7 +183,7 @@ export default function OneOffPanel({ sessionId }: { sessionId: string }) {
           <button
             type="submit"
             disabled={submitting || !prompt.trim()}
-            className="rounded-pill bg-brand-cyan px-5 py-2 text-sm font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
+            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
           >
             {submitting ? 'Starting…' : 'Generate options'}
           </button>
