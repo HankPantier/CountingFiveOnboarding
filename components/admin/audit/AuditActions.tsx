@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ShareLinkButton } from './ShareLinkButton'
+import AuditChatModal from './AuditChatModal'
 
 const ghostButton =
   'rounded-pill border-2 border-brand-navy px-4 py-2 font-heading text-sm font-semibold text-brand-navy transition-colors hover:bg-brand-navy hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
@@ -18,12 +19,14 @@ export function AuditActions({
   approved,
   sessionId,
   shareToken,
+  chatMessages,
 }: {
   auditId: string
   status: string
   approved: boolean
   sessionId: string | null
   shareToken: string | null
+  chatMessages: { role: string; content: string }[]
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -77,6 +80,7 @@ export function AuditActions({
         </Link>
       ) : null}
 
+      {complete && <AuditChatModal auditId={auditId} initialMessages={chatMessages} />}
       {complete && <ShareLinkButton auditId={auditId} initialToken={shareToken} />}
       <button onClick={rerun} disabled={busy || running} className={ghostButton}>
         {running ? 'Running…' : 'Re-run'}

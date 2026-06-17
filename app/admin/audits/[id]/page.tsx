@@ -24,6 +24,16 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
     ? await getPreviousRunDeltas(supabase, run)
     : null
 
+  // Persisted "Edit report with AI" conversation, replayed into the modal.
+  const { data: chatRows } = isComplete
+    ? await supabase
+        .from('audit_messages')
+        .select('role, content')
+        .eq('audit_run_id', id)
+        .order('created_at', { ascending: true })
+    : { data: null }
+  const chatMessages = chatRows ?? []
+
   return (
     <>
       <div className="border-b border-border-default bg-surface-card">
@@ -49,6 +59,7 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
             approved={!!run.approved_at}
             sessionId={run.session_id}
             shareToken={run.share_token}
+            chatMessages={chatMessages}
           />
         </div>
       </div>
