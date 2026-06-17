@@ -36,14 +36,22 @@ export default function AdminHeader({ role }: { role: Role }) {
           </>
         )}
       </div>
-      <form action={signOut}>
-        <button
-          type="submit"
+      <div className="flex items-center gap-6">
+        <Link
+          href="/admin/account"
           className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
         >
-          Sign out
-        </button>
-      </form>
+          Account
+        </Link>
+        <form action={signOut}>
+          <button
+            type="submit"
+            className="text-sm text-text-secondary hover:text-text-primary font-body transition-colors"
+          >
+            Sign out
+          </button>
+        </form>
+      </div>
     </header>
   )
 }
