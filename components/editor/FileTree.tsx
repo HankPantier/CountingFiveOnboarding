@@ -25,6 +25,10 @@ function isSocial(path: string): boolean {
   return path.startsWith('content/social/') && path.endsWith('.md')
 }
 
+function isDraft(path: string): boolean {
+  return path.startsWith('content/drafts/') && path.endsWith('.md')
+}
+
 function isNav(path: string): boolean {
   return path === VIRTUAL_NAV
 }
@@ -119,6 +123,7 @@ export default function FileTree({
 }) {
   const pages = sortPages(entries.filter((e) => isPage(e.path)))
   const posts = entries.filter((e) => isPost(e.path))
+  const drafts = entries.filter((e) => isDraft(e.path))
   const socialBySlug = new Map(
     entries
       .filter((e) => isSocial(e.path))
@@ -130,6 +135,7 @@ export default function FileTree({
   const [open, setOpen] = useState<Record<string, boolean>>({
     pages: false,
     resources: true,
+    drafts: false,
     configuration: true,
     media: true,
   })
@@ -142,17 +148,19 @@ export default function FileTree({
   if (selectedPath !== prevSelected) {
     setPrevSelected(selectedPath)
     const section = selectedPath
-      ? isPage(selectedPath)
-        ? 'pages'
-        : isPost(selectedPath) || isSocial(selectedPath)
-          ? 'resources'
-          : isNav(selectedPath)
-            ? 'configuration'
-            : selectedPath === MEDIA_VIEW
-              ? 'media'
-              : selectedPath === ONEOFF_VIEW
-                ? 'resources'
-                : null
+      ? isDraft(selectedPath)
+        ? 'drafts'
+        : isPage(selectedPath)
+          ? 'pages'
+          : isPost(selectedPath) || isSocial(selectedPath)
+            ? 'resources'
+            : isNav(selectedPath)
+              ? 'configuration'
+              : selectedPath === MEDIA_VIEW
+                ? 'media'
+                : selectedPath === ONEOFF_VIEW
+                  ? 'resources'
+                  : null
       : null
     if (section && !open[section]) setOpen({ ...open, [section]: true })
   }
@@ -267,6 +275,32 @@ export default function FileTree({
             })
           )}
         </ul>
+      )}
+
+      {drafts.length > 0 && (
+        <>
+          <SectionHeader
+            label="Drafts"
+            count={drafts.length}
+            open={open.drafts}
+            onToggle={() => toggle('drafts')}
+          />
+          {open.drafts && (
+            <ul className="mb-4 pl-[18px]">
+              {drafts.map((d) => (
+                <li key={d.path}>
+                  <button
+                    onClick={() => onSelect(d.path)}
+                    className={fileButtonClass(selectedPath === d.path)}
+                  >
+                    {d.path.split('/').pop()}
+                    {dirtyPaths.has(d.path) && <DirtyDot />}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       <SectionHeader

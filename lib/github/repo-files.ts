@@ -314,6 +314,65 @@ export async function deleteFile(
   return { commitSha: res.data.commit.sha ?? '' }
 }
 
+// Atomically move a file (add at toPath + delete fromPath) in a single commit
+// via the Git Data API, reusing the existing blob sha (no re-upload). Used to
+// "draft"/"restore" a content page by relocating it between content/pages|posts
+// and content/drafts/. expectedSha guards against a move racing a concurrent
+// edit; the target must not already exist so a move never clobbers a file.
+export async function moveFile(
+  slug: string,
+  fromPath: string,
+  toPath: string,
+  branch: string,
+  expectedSha: string,
+  message: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<{ commitSha: string }> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+
+  const existing = await currentSha(slug, fromPath, branch)
+  if (existing === null) throw new FileNotFoundError(fromPath)
+  if (existing !== expectedSha) throw new StaleShaError(fromPath, existing, '')
+  if ((await currentSha(slug, toPath, branch)) !== null) {
+    throw new AssetExistsError(toPath)
+  }
+
+  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+  const baseCommitSha = ref.data.object.sha
+  const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
+
+  // sha: null marks a deletion in the tree; the new entry reuses the moved
+  // blob's sha so no blob upload is needed.
+  const tree: { path: string; mode: '100644'; type: 'blob'; sha: string | null }[] = [
+    { path: toPath, mode: '100644', type: 'blob', sha: existing },
+    { path: fromPath, mode: '100644', type: 'blob', sha: null },
+  ]
+  const newTree = await octokit.git.createTree({
+    owner,
+    repo,
+    base_tree: baseCommit.data.tree.sha,
+    tree,
+  })
+  const commit = await octokit.git.createCommit({
+    owner,
+    repo,
+    message,
+    tree: newTree.data.sha,
+    parents: [baseCommitSha],
+    ...(options.authorName && options.authorEmail
+      ? { author: { name: options.authorName, email: options.authorEmail } }
+      : {}),
+  })
+  await octokit.git.updateRef({
+    owner,
+    repo,
+    ref: `heads/${branch}`,
+    sha: commit.data.sha,
+  })
+  return { commitSha: commit.data.sha }
+}
+
 export async function readFile(
   slug: string,
   path: string,

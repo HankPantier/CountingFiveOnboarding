@@ -31,6 +31,7 @@ export default function EditorShell({
   const [loadingFile, setLoadingFile] = useState(false)
   const [saving, setSaving] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [pageActioning, setPageActioning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<string | null>(null)
   // Set when a save hits a sha conflict (someone else saved the same file).
@@ -321,8 +322,111 @@ export default function EditorShell({
     }
   }
 
+  // Move the selected page between live (content/pages|posts) and drafts.
+  // Staged on the draft branch — goes live on the next Publish.
+  const setPageState = async (action: 'draft' | 'restore') => {
+    if (!selectedPath) return
+    const sha = loaded.get(selectedPath)?.sha
+    if (!sha) return
+    const prompt =
+      action === 'draft'
+        ? 'Set this page to draft (remove it from the live site)?'
+        : 'Restore this page to the live site?'
+    if (!window.confirm(`${prompt} The change goes live when you next Publish.`)) return
+
+    setPageActioning(true)
+    setError(null)
+    setPublishResult(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/page`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: selectedPath, expectedSha: sha, action }),
+      })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Failed: ${res.status}`)
+      }
+      const data = (await res.json()) as { newPath: string }
+      const oldPath = selectedPath
+      setLoaded((prev) => {
+        const m = new Map(prev)
+        m.delete(oldPath)
+        return m
+      })
+      setDirty((prev) => {
+        const m = new Map(prev)
+        m.delete(oldPath)
+        return m
+      })
+      await refreshTree()
+      await refreshStatus()
+      await select(data.newPath)
+      setPublishResult(
+        action === 'draft'
+          ? 'Moved to drafts — Publish to take it off the live site.'
+          : 'Restored — Publish to put it back on the live site.'
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setPageActioning(false)
+    }
+  }
+
+  const deletePage = async () => {
+    if (!selectedPath) return
+    const sha = loaded.get(selectedPath)?.sha
+    if (!sha) return
+    if (
+      !window.confirm(
+        'Delete this page permanently from the repo? The change goes live when you next Publish.'
+      )
+    ) {
+      return
+    }
+    setPageActioning(true)
+    setError(null)
+    setPublishResult(null)
+    try {
+      const res = await fetch(
+        `/api/edit/${sessionId}/page?path=${encodeURIComponent(selectedPath)}&sha=${encodeURIComponent(sha)}`,
+        { method: 'DELETE' }
+      )
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Delete failed: ${res.status}`)
+      }
+      const oldPath = selectedPath
+      setSelectedPath(null)
+      setLoaded((prev) => {
+        const m = new Map(prev)
+        m.delete(oldPath)
+        return m
+      })
+      setDirty((prev) => {
+        const m = new Map(prev)
+        m.delete(oldPath)
+        return m
+      })
+      await refreshTree()
+      await refreshStatus()
+      setPublishResult('Page deleted — Publish to remove it from the live site.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setPageActioning(false)
+    }
+  }
+
   const content = currentContent()
   const isNav = selectedPath === 'content/nav.json'
+  const isLivePage =
+    !!selectedPath &&
+    (selectedPath.startsWith('content/pages/') || selectedPath.startsWith('content/posts/'))
+  const isDraftPage =
+    !!selectedPath && selectedPath.startsWith('content/drafts/') && selectedPath.endsWith('.md')
+  const canPageAct = !!selectedPath && loaded.has(selectedPath) && !pageActioning
 
   return (
     <div className="flex flex-col h-screen bg-surface-default">
@@ -340,18 +444,51 @@ export default function EditorShell({
         onPublish={publish}
         onRollback={rollback}
       />
-      {selectedPath && (selectedPath.startsWith('content/pages/') || selectedPath.startsWith('content/posts/')) && (
-        <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end">
-          <ContentChatModal
-            sessionId={sessionId}
-            path={selectedPath}
-            isDirty={dirty.has(selectedPath)}
-            onSave={() => void save()}
-            onEdited={() => {
-              void reloadFile(selectedPath)
-              void refreshStatus()
-            }}
-          />
+      {(isLivePage || isDraftPage) && selectedPath && (
+        <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end gap-2">
+          {isLivePage && (
+            <ContentChatModal
+              sessionId={sessionId}
+              path={selectedPath}
+              isDirty={dirty.has(selectedPath)}
+              onSave={() => void save()}
+              onEdited={() => {
+                void reloadFile(selectedPath)
+                void refreshStatus()
+              }}
+            />
+          )}
+          {isLivePage && (
+            <button
+              type="button"
+              onClick={() => void setPageState('draft')}
+              disabled={!canPageAct}
+              className="rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading font-semibold text-xs text-brand-navy hover:bg-brand-navy/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Take this page off the live site (keeps it in Drafts)"
+            >
+              Set to draft
+            </button>
+          )}
+          {isDraftPage && (
+            <button
+              type="button"
+              onClick={() => void setPageState('restore')}
+              disabled={!canPageAct}
+              className="rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading font-semibold text-xs text-brand-navy hover:bg-brand-navy/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Put this page back on the live site"
+            >
+              Restore to live
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void deletePage()}
+            disabled={!canPageAct}
+            className="rounded-pill border border-error/40 px-3.5 py-1.5 font-heading font-semibold text-xs text-error hover:bg-error/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Delete this page from the repo"
+          >
+            {pageActioning ? 'Working…' : 'Delete'}
+          </button>
         </div>
       )}
       {error && (
