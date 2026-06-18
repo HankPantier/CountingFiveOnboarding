@@ -2,7 +2,9 @@ import { createServerClient } from '@/lib/supabase/server'
 import AddUserDialog from '@/components/admin/AddUserDialog'
 import UserRow from '@/components/admin/UserRow'
 import type { UserSummary } from '@/types/users'
-import type { Role } from '@/lib/auth/access'
+import type { Capability } from '@/lib/auth/access'
+
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
 
 export interface SessionOption {
   id: string
@@ -13,7 +15,7 @@ export default async function UsersPage() {
   const supabase = createServerClient()
 
   const [{ data: admins }, { data: links }, { data: sessions }] = await Promise.all([
-    supabase.from('admins').select('id, name, email, role, created_at').order('created_at', { ascending: true }),
+    supabase.from('admins').select('id, name, email, role, capabilities, created_at').order('created_at', { ascending: true }),
     supabase.from('manager_clients').select('manager_id'),
     supabase.from('sessions').select('id, website_url').neq('status', 'archived').order('website_url', { ascending: true }),
   ])
@@ -23,14 +25,20 @@ export default async function UsersPage() {
     countByManager.set(l.manager_id, (countByManager.get(l.manager_id) ?? 0) + 1)
   }
 
-  const users: UserSummary[] = (admins ?? []).map(a => ({
-    id: a.id,
-    name: a.name,
-    email: a.email,
-    role: (a.role === 'manager' ? 'manager' : 'admin') as Role,
-    created_at: a.created_at,
-    assignedCount: countByManager.get(a.id) ?? 0,
-  }))
+  const users: UserSummary[] = (admins ?? []).map(a => {
+    const isAdmin = a.role === 'admin'
+    return {
+      id: a.id,
+      name: a.name,
+      email: a.email,
+      role: isAdmin ? 'admin' : 'member',
+      capabilities: isAdmin
+        ? ALL_CAPABILITIES
+        : ALL_CAPABILITIES.filter(c => Array.isArray(a.capabilities) && a.capabilities.includes(c)),
+      created_at: a.created_at,
+      assignedCount: countByManager.get(a.id) ?? 0,
+    }
+  })
 
   const sessionOptions: SessionOption[] = (sessions ?? []).map(s => ({
     id: s.id,

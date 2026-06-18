@@ -88,23 +88,34 @@ export default function UserRow({
         <td className="px-4 py-3 font-body text-text-primary">{user.name}</td>
         <td className="px-4 py-3 text-text-secondary">{user.email}</td>
         <td className="px-4 py-3">
-          <span
-            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold ${
-              user.role === 'admin'
-                ? 'bg-brand-navy/10 text-brand-navy'
-                : 'bg-info/10 text-info'
-            }`}
-          >
-            {user.role === 'admin' ? 'Admin' : 'Manager'}
-          </span>
+          {user.role === 'admin' ? (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-brand-navy/10 text-brand-navy">
+              Admin
+            </span>
+          ) : (
+            <span className="flex flex-wrap gap-1">
+              {user.capabilities.map(cap => (
+                <span
+                  key={cap}
+                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-info/10 text-info capitalize"
+                >
+                  {cap}
+                </span>
+              ))}
+            </span>
+          )}
         </td>
         <td className="px-4 py-3 text-text-secondary">
-          {user.role === 'manager' ? `${user.assignedCount} assigned` : 'All'}
+          {user.role === 'admin'
+            ? 'All'
+            : user.capabilities.includes('manager')
+              ? `${user.assignedCount} assigned`
+              : '—'}
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center justify-end gap-3">
             {note && <span className="text-xs font-body text-text-muted">{note}</span>}
-            {user.role === 'manager' && (
+            {user.role !== 'admin' && user.capabilities.includes('manager') && (
               <button
                 onClick={() => setEditing(true)}
                 className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"

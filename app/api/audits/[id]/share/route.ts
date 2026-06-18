@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'node:crypto'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -8,10 +8,10 @@ export const runtime = 'nodejs'
 // POST /api/audits/[id]/share — enable a public share link (idempotent: an
 // existing token is returned unchanged so the link stays stable).
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminUser()
+  const { id } = await params
+  const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await params
   const supabase = createServerClient()
   const { data: run } = await supabase
     .from('audit_runs')
@@ -37,10 +37,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
 // DELETE /api/audits/[id]/share — revoke the public link.
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminUser()
+  const { id } = await params
+  const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await params
   const supabase = createServerClient()
   const { error } = await supabase
     .from('audit_runs')

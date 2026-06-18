@@ -1,10 +1,11 @@
-import type { Role } from '@/lib/auth/access'
+import type { Role, Capability } from '@/lib/auth/access'
 
 export interface UserSummary {
   id: string
   name: string
   email: string
   role: Role
+  capabilities: Capability[]
   created_at: string
   assignedCount: number
 }
@@ -17,6 +18,7 @@ export interface CreateUserRequest {
   name: string
   email: string
   role: Role
+  capabilities?: Capability[]
   sessionIds?: string[]
 }
 
@@ -27,6 +29,7 @@ export interface CreateUserResponse {
 export interface UpdateUserRequest {
   name?: string
   role?: Role
+  capabilities?: Capability[]
 }
 
 export interface UpdateAssignmentsRequest {

@@ -46,18 +46,24 @@ Never expose sequential integers as session or record identifiers. All primary k
 ### 5. Registrar password is never stored
 The schema field `technical.registrarPasswordNote` is a static reminder string. The actual registrar password must never be collected or stored anywhere in the system. If the agent is ever prompted to ask for or store a password, refuse and redirect the client to a secure channel.
 
-### 6. Authorization checks the `admins` table and its `role`
-The `admins` table is the user table. Every row has a `role` (`'admin'` or `'manager'`, migration 030; default `'admin'`). Authorization must verify the caller's `auth.uid()` exists in `admins` — a valid Supabase session means "logged in," not "authorized." RLS policies on every table also require admin-table membership; bypassing the app-level gate does not bypass RLS.
+### 6. Authorization uses the `admins` table — account tier + capabilities
+The `admins` table is the user table. As of migration 040 it uses a **capabilities model**:
+- `role` is the account tier: `'admin'` (superuser — implicitly holds every capability) or `'member'` (default for non-admins). The legacy `'manager'` value was migrated to `'member'`.
+- `capabilities text[]` (CHECK ⊆ `{'manager','auditor'}`) is the source of truth for a member's non-admin powers — a member may hold both. `manager` = site-scoped content access (via `manager_clients`); `auditor` = access only to audits they created (`audit_runs.created_by`). Admins ignore this column.
 
-Use the role-aware gates in `lib/auth/access.ts` (all return `{ ... } | NextResponse`, same convention as `requireAdmin()`):
-- `requireAdminUser()` — admin-only (403s managers). Use for user management and destructive/global routes.
-- `requireSessionAccess(sessionId)` — admins always pass; managers pass only if a `manager_clients` row links them to that session.
+Authorization must verify the caller's `auth.uid()` exists in `admins` — a valid Supabase session means "logged in," not "authorized." RLS policies on every table also require admin-table membership; bypassing the app-level gate does not bypass RLS.
+
+Use the gates in `lib/auth/access.ts` (all return `{ ... } | NextResponse`, same convention as `requireAdmin()`):
+- `requireAdminUser()` — admin-only (403s members). Use for user management, session creation (incl. audit `approve`/`draft-session`/`start-session`), and destructive/global routes.
+- `requireSessionAccess(sessionId)` — admins pass; otherwise requires the `manager` capability AND a `manager_clients` link to that session.
 - `requireContentJobAccess(jobId)` — resolves the job's `session_id`, then applies the same check.
-- `getCurrentUser()` → `{ id, email, role }` and `getAccessibleSessionIds(user)` (admins → `null` = all; managers → assigned ids) for scoping list/detail server components.
+- `requireAuditorCapability()` — admins pass; otherwise requires the `auditor` capability (gate for audit list/create, before a specific audit exists).
+- `requireAuditAccess(auditId)` — admins pass; otherwise requires the `auditor` capability AND ownership (`audit_runs.created_by === user.id`).
+- `getCurrentUser()` → `{ id, email, role, isAdmin, capabilities }`. Branch on `isAdmin` / `hasCapability(user, cap)`, not on `role` strings. `getAccessibleSessionIds(user)` (admins → `null` = all; manager-cap → assigned ids; else `[]`) and `getAccessibleAuditScope(user)` (admins → `null`; else `{ createdBy }`) scope list/detail server components.
 
 `requireAdmin()` in `lib/auth/require-admin.ts` is the legacy authenticate-and-check-membership gate (no role distinction); prefer the `access.ts` gates above for new code.
 
-**Manager scoping is enforced in app code** (API routes use the service-role client, which bypasses RLS). `manager_clients` (migration 030) is the many-to-many grant of managers → sessions.
+**Scoping is enforced in app code** (API routes use the service-role client, which bypasses RLS). `manager_clients` (migration 030) is the many-to-many grant of managers → sessions; auditor scope reuses `audit_runs.created_by` (no join table).
 
 When adding the first admin (or after migration 016 wipes loose policies), seed the table manually:
 ```sql
@@ -81,7 +87,7 @@ Any route that accepts a file path in a query param or JSON body MUST decode-the
 
 ### API Route Patterns
 - All routes that touch Supabase session data use the service role client (`lib/supabase/server.ts`)
-- Admin API routes must gate as the first step with the role-aware helpers in `lib/auth/access.ts`: `requireAdminUser()` for admin-only routes, `requireSessionAccess(sessionId)` / `requireContentJobAccess(jobId)` for routes a granted manager may also use (returns 401 unauthenticated, 403 unauthorized). See security rule 6.
+- Admin API routes must gate as the first step with the helpers in `lib/auth/access.ts`: `requireAdminUser()` for admin-only routes, `requireSessionAccess(sessionId)` / `requireContentJobAccess(jobId)` for routes a manager-capable member may also use, `requireAuditorCapability()` / `requireAuditAccess(auditId)` for audit routes an auditor may use (all return 401 unauthenticated, 403 unauthorized). See security rule 6.
 - Client-facing routes (e.g., `/api/chat`, `/api/upload/*`) validate the session ID but do not require admin auth
 - Always return typed error responses: `{ error: string }` with appropriate HTTP status codes
 

@@ -17,7 +17,7 @@ export async function POST(
 
   const { data: target } = await supabase
     .from('admins')
-    .select('id, name, email, role')
+    .select('id, name, email, role, capabilities')
     .eq('id', id)
     .maybeSingle()
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -36,10 +36,14 @@ export async function POST(
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
+  const isAdmin = target.role === 'admin'
   await sendInviteEmail({
     to: target.email,
     name: target.name,
-    role: target.role === 'manager' ? 'manager' : 'admin',
+    role: isAdmin ? 'admin' : 'member',
+    capabilities: isAdmin
+      ? []
+      : (['manager', 'auditor'] as const).filter(c => Array.isArray(target.capabilities) && target.capabilities.includes(c)),
     inviteUrl: linkData.properties.action_link,
   })
 

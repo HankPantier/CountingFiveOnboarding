@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
 // GET /api/audits/[id] — full audit run (including the result JSON).
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminUser()
+  const { id } = await params
+  const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await params
   const supabase = createServerClient()
   const { data, error } = await supabase.from('audit_runs').select('*').eq('id', id).single()
 
@@ -19,12 +19,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({ audit: data })
 }
 
-// DELETE /api/audits/[id] — remove a run.
+// DELETE /api/audits/[id] — remove a run (admins; auditors for their own).
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminUser()
+  const { id } = await params
+  const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await params
   const supabase = createServerClient()
   const { data, error } = await supabase.from('audit_runs').delete().eq('id', id).select('id')
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdminUser, type Role } from '@/lib/auth/access'
+import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
 import { sendInviteEmail } from '@/lib/email/send-invite'
 import type {
   CreateUserRequest,
@@ -12,9 +12,16 @@ import type {
 export const runtime = 'nodejs'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
 
 function isRole(v: unknown): v is Role {
-  return v === 'admin' || v === 'manager'
+  return v === 'admin' || v === 'member'
+}
+
+// Keep only known capabilities, in canonical order.
+function normalizeCapabilities(raw: unknown): Capability[] {
+  if (!Array.isArray(raw)) return []
+  return ALL_CAPABILITIES.filter(c => raw.includes(c))
 }
 
 export async function GET() {
@@ -24,7 +31,7 @@ export async function GET() {
   const supabase = createServerClient()
 
   const [{ data: admins, error }, { data: links }] = await Promise.all([
-    supabase.from('admins').select('id, name, email, role, created_at').order('created_at', { ascending: true }),
+    supabase.from('admins').select('id, name, email, role, capabilities, created_at').order('created_at', { ascending: true }),
     supabase.from('manager_clients').select('manager_id'),
   ])
 
@@ -38,14 +45,18 @@ export async function GET() {
     countByManager.set(l.manager_id, (countByManager.get(l.manager_id) ?? 0) + 1)
   }
 
-  const users: UserSummary[] = (admins ?? []).map(a => ({
-    id: a.id,
-    name: a.name,
-    email: a.email,
-    role: a.role === 'manager' ? 'manager' : 'admin',
-    created_at: a.created_at,
-    assignedCount: countByManager.get(a.id) ?? 0,
-  }))
+  const users: UserSummary[] = (admins ?? []).map(a => {
+    const isAdmin = a.role === 'admin'
+    return {
+      id: a.id,
+      name: a.name,
+      email: a.email,
+      role: isAdmin ? 'admin' : 'member',
+      capabilities: isAdmin ? ALL_CAPABILITIES : normalizeCapabilities(a.capabilities),
+      created_at: a.created_at,
+      assignedCount: countByManager.get(a.id) ?? 0,
+    }
+  })
 
   return NextResponse.json<ListUsersResponse>({ users })
 }
@@ -62,7 +73,14 @@ export async function POST(req: Request) {
 
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
   if (!EMAIL_RE.test(email)) return NextResponse.json({ error: 'Valid email required' }, { status: 400 })
-  if (!isRole(role)) return NextResponse.json({ error: 'role must be admin or manager' }, { status: 400 })
+  if (!isRole(role)) return NextResponse.json({ error: 'role must be admin or member' }, { status: 400 })
+
+  // Admins implicitly hold every capability, so only members carry an explicit set.
+  const capabilities = role === 'admin' ? [] : normalizeCapabilities(body.capabilities)
+  if (role === 'member' && capabilities.length === 0) {
+    return NextResponse.json({ error: 'A member needs at least one capability' }, { status: 400 })
+  }
+  const isManager = capabilities.includes('manager')
 
   const supabase = createServerClient()
 
@@ -83,7 +101,7 @@ export async function POST(req: Request) {
 
   const { error: insertErr } = await supabase
     .from('admins')
-    .insert({ id: userId, name, email, role })
+    .insert({ id: userId, name, email, role, capabilities })
 
   if (insertErr) {
     // Roll back the orphaned auth user so a retry can re-create cleanly.
@@ -92,7 +110,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 })
   }
 
-  if (role === 'manager' && sessionIds.length > 0) {
+  if (isManager && sessionIds.length > 0) {
     const rows = sessionIds.map(session_id => ({ manager_id: userId, session_id }))
     const { error: linkInsertErr } = await supabase.from('manager_clients').insert(rows)
     if (linkInsertErr) {
@@ -104,6 +122,7 @@ export async function POST(req: Request) {
     to: email,
     name,
     role,
+    capabilities,
     inviteUrl: linkData.properties.action_link,
   })
 

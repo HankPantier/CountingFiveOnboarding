@@ -53,11 +53,12 @@ export async function PUT(
 
   const { data: target } = await supabase
     .from('admins')
-    .select('id, role')
+    .select('id, role, capabilities')
     .eq('id', id)
     .maybeSingle()
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  if (target.role !== 'manager') {
+  const isManager = target.role !== 'admin' && Array.isArray(target.capabilities) && target.capabilities.includes('manager')
+  if (!isManager) {
     return NextResponse.json({ error: 'Only managers can be assigned clients' }, { status: 400 })
   }
 

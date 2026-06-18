@@ -4,14 +4,19 @@ import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { Role } from '@/lib/auth/access'
+import type { Capability } from '@/lib/auth/access'
 import { signOut } from '@/app/admin/dashboard/actions'
+
+// Visibility predicate for a nav item:
+//   'manager' / 'auditor' — admins plus members holding that capability
+//   'admin'               — admins only
+type NavRequires = 'manager' | 'auditor' | 'admin'
 
 type NavItem = {
   href: string
   label: string
   icon: React.ReactNode
-  adminOnly?: boolean
+  requires: NavRequires
 }
 
 // Inline icons keep the sidebar dependency-free. 20px, currentColor stroke.
@@ -33,19 +38,29 @@ function Icon({ d }: { d: string }) {
 }
 
 const NAV: NavItem[] = [
-  { href: '/admin/dashboard', label: 'Clients', icon: <Icon d="M3 12h18M3 6h18M3 18h18" /> },
-  { href: '/admin/content', label: 'Content', icon: <Icon d="M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01" /> },
-  { href: '/admin/audits', label: 'Audits', icon: <Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35" />, adminOnly: true },
-  { href: '/admin/token-usage', label: 'Token Usage', icon: <Icon d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V11" />, adminOnly: true },
-  { href: '/admin/settings/users', label: 'Users', icon: <Icon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11" />, adminOnly: true },
+  { href: '/admin/dashboard', label: 'Clients', icon: <Icon d="M3 12h18M3 6h18M3 18h18" />, requires: 'manager' },
+  { href: '/admin/content', label: 'Content', icon: <Icon d="M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01" />, requires: 'manager' },
+  { href: '/admin/audits', label: 'Audits', icon: <Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35" />, requires: 'auditor' },
+  { href: '/admin/token-usage', label: 'Token Usage', icon: <Icon d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V11" />, requires: 'admin' },
+  { href: '/admin/settings/users', label: 'Users', icon: <Icon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11" />, requires: 'admin' },
 ]
 
-export default function AdminSidebar({ role }: { role: Role }) {
+export default function AdminSidebar({
+  isAdmin,
+  capabilities,
+}: {
+  isAdmin: boolean
+  capabilities: Capability[]
+}) {
   const [collapsed, setCollapsed] = useState(false)
   const pathname = usePathname()
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
-  const items = NAV.filter((item) => !item.adminOnly || role === 'admin')
+  const items = NAV.filter((item) =>
+    item.requires === 'admin'
+      ? isAdmin
+      : isAdmin || capabilities.includes(item.requires)
+  )
 
   const rowBase =
     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-body transition-colors'

@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditAccess } from '@/lib/auth/access'
 import { buildAuditEditPrompt } from '@/lib/audit/edit-prompt'
 import { applyAuditEdit } from '@/lib/audit/apply-edit'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -24,8 +24,8 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid audit id' }, { status: 400 })
   }
 
-  // Audits are admin-only.
-  const auth = await requireAdminUser()
+  // Admins and the auditor who owns this audit.
+  const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
   const { messages }: { messages: UIMessage[] } = await req.json()

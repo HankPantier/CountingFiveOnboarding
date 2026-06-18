@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/auth/access'
 import type { AuditResult } from '@/types/audit-result'
 import { getPreviousRunDeltas, type PreviousRunDeltas } from '@/lib/audit/report-data'
 import { AuditActions } from '@/components/admin/audit/AuditActions'
@@ -16,6 +17,15 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
 
   const { data: run } = await supabase.from('audit_runs').select('*').eq('id', id).single()
   if (!run) notFound()
+
+  // Auditors may only open audits they own; admins may open any. (The layout
+  // already gates on the auditor capability; re-assert it here as defense in
+  // depth so the page is safe even if reached without the layout.)
+  const user = await getCurrentUser()
+  const isAdmin = !!user?.isAdmin
+  if (!isAdmin && (!user?.capabilities.includes('auditor') || run.created_by !== user.id)) {
+    notFound()
+  }
 
   const isComplete = run.audit_status === 'complete' && run.result !== null
 
@@ -60,6 +70,7 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
             sessionId={run.session_id}
             shareToken={run.share_token}
             chatMessages={chatMessages}
+            isAdmin={isAdmin}
           />
         </div>
       </div>

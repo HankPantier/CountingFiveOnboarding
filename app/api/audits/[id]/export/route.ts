@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildAuditHtml } from '@/lib/audit/html-report'
 import type { AuditResult, CategoryScoreMap } from '@/types/audit-result'
@@ -8,10 +8,10 @@ export const runtime = 'nodejs'
 
 // GET /api/audits/[id]/export — download a self-contained, shareable HTML report.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminUser()
+  const { id } = await params
+  const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
-  const { id } = await params
   const supabase = createServerClient()
   const { data: run } = await supabase.from('audit_runs').select('*').eq('id', id).single()
 
@@ -20,16 +20,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Audit is not complete' }, { status: 409 })
   }
 
-  // Previous completed run for the same domain → score deltas in the export.
-  const { data: prev } = await supabase
-    .from('audit_runs')
-    .select('overall_score, category_scores')
-    .eq('domain', run.domain)
-    .eq('audit_status', 'complete')
-    .lt('created_at', run.created_at)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // Previous completed run of the same domain BY THE SAME OWNER → score deltas.
+  // Scoping to created_by avoids leaking another owner's prior scores when
+  // auditors share a domain (see getPreviousRunDeltas).
+  const { data: prev } = run.created_by
+    ? await supabase
+        .from('audit_runs')
+        .select('overall_score, category_scores')
+        .eq('domain', run.domain)
+        .eq('created_by', run.created_by)
+        .eq('audit_status', 'complete')
+        .lt('created_at', run.created_at)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null }
 
   const html = buildAuditHtml({
     result: run.result as unknown as AuditResult,

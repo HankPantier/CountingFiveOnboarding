@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireAdminUser, type Role } from '@/lib/auth/access'
+import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
 import type { UpdateUserRequest } from '@/types/users'
 
 export const runtime = 'nodejs'
 
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
+
 function isRole(v: unknown): v is Role {
-  return v === 'admin' || v === 'manager'
+  return v === 'admin' || v === 'member'
+}
+
+function normalizeCapabilities(raw: unknown): Capability[] {
+  if (!Array.isArray(raw)) return []
+  return ALL_CAPABILITIES.filter(c => raw.includes(c))
 }
 
 async function adminCount(supabase: ReturnType<typeof createServerClient>): Promise<number> {
@@ -30,12 +37,12 @@ export async function PATCH(
 
   const { data: target } = await supabase
     .from('admins')
-    .select('id, role')
+    .select('id, role, capabilities')
     .eq('id', id)
     .maybeSingle()
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
-  const update: { name?: string; role?: Role } = {}
+  const update: { name?: string; role?: Role; capabilities?: Capability[] } = {}
 
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -43,10 +50,12 @@ export async function PATCH(
     update.name = name
   }
 
+  // Resolve the final account tier (admin | member), guarding lockout.
+  const finalRole: Role = body.role !== undefined ? (body.role as Role) : (target.role === 'admin' ? 'admin' : 'member')
   if (body.role !== undefined) {
-    if (!isRole(body.role)) return NextResponse.json({ error: 'role must be admin or manager' }, { status: 400 })
+    if (!isRole(body.role)) return NextResponse.json({ error: 'role must be admin or member' }, { status: 400 })
     // Guard against demoting the last admin or self-demotion (lockout).
-    if (target.role === 'admin' && body.role === 'manager') {
+    if (target.role === 'admin' && body.role !== 'admin') {
       if (id === auth.user.id) {
         return NextResponse.json({ error: 'You cannot demote yourself' }, { status: 400 })
       }
@@ -57,6 +66,19 @@ export async function PATCH(
     update.role = body.role
   }
 
+  // Admins implicitly hold every capability, so their explicit set is cleared.
+  if (finalRole === 'admin') {
+    if (update.role !== undefined || body.capabilities !== undefined) update.capabilities = []
+  } else if (body.capabilities !== undefined || update.role !== undefined) {
+    const caps = body.capabilities !== undefined
+      ? normalizeCapabilities(body.capabilities)
+      : normalizeCapabilities(target.capabilities)
+    if (caps.length === 0) {
+      return NextResponse.json({ error: 'A member needs at least one capability' }, { status: 400 })
+    }
+    update.capabilities = caps
+  }
+
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'No changes provided' }, { status: 400 })
   }
@@ -64,8 +86,10 @@ export async function PATCH(
   const { error } = await supabase.from('admins').update(update).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Promotion to admin makes per-client assignments meaningless — clear them.
-  if (update.role === 'admin') {
+  // Per-client assignments only mean something for a member holding the manager
+  // capability — clear them once the user is an admin or loses that capability.
+  const keepsManager = finalRole !== 'admin' && (update.capabilities ?? normalizeCapabilities(target.capabilities)).includes('manager')
+  if (!keepsManager) {
     await supabase.from('manager_clients').delete().eq('manager_id', id)
   }
 

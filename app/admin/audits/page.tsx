@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser, getAccessibleAuditScope } from '@/lib/auth/access'
 import AuditsTable, { type AuditRow } from '@/components/admin/audit/AuditsTable'
 
 export const runtime = 'nodejs'
@@ -27,13 +28,18 @@ function computeDeltas(rows: AuditRow[]): Record<string, number | null> {
 
 export default async function AuditsListPage() {
   const supabase = createServerClient()
-  const { data } = await supabase
+  const user = await getCurrentUser()
+  const scope = user ? getAccessibleAuditScope(user) : { createdBy: '' }
+
+  let query = supabase
     .from('audit_runs')
     .select(
       'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at',
     )
     .order('created_at', { ascending: false })
     .limit(200)
+  if (scope) query = query.eq('created_by', scope.createdBy)
+  const { data } = await query
 
   const rows = (data ?? []) as AuditRow[]
   const deltas = computeDeltas(rows)

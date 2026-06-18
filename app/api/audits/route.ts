@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditorCapability, getAccessibleAuditScope } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeDomain, normalizeInputUrl } from '@/lib/audit'
 
@@ -18,7 +18,7 @@ const DeleteAuditsSchema = z.object({
 
 // POST /api/audits — create a queued audit run (does not execute it).
 export async function POST(req: Request) {
-  const auth = await requireAdminUser()
+  const auth = await requireAuditorCapability()
   if (auth instanceof NextResponse) return auth
 
   let body: unknown
@@ -70,10 +70,11 @@ export async function POST(req: Request) {
 
 // DELETE /api/audits — bulk-delete audit runs by id. Serves both single-row and
 // multi-select deletes from the list (the client always sends an `ids` array).
+// Auditors may only delete audits they own; admins may delete any.
 // FK cascade removes audit_messages; token_usage.audit_id is SET NULL (billing
 // rows survive, detached) — no manual dependent cleanup needed.
 export async function DELETE(req: Request) {
-  const auth = await requireAdminUser()
+  const auth = await requireAuditorCapability()
   if (auth instanceof NextResponse) return auth
 
   let body: unknown
@@ -89,11 +90,10 @@ export async function DELETE(req: Request) {
   }
 
   const supabase = createServerClient()
-  const { data, error } = await supabase
-    .from('audit_runs')
-    .delete()
-    .in('id', parsed.data.ids)
-    .select('id')
+  const scope = getAccessibleAuditScope(auth.user)
+  let query = supabase.from('audit_runs').delete().in('id', parsed.data.ids)
+  if (scope) query = query.eq('created_by', scope.createdBy)
+  const { data, error } = await query.select('id')
 
   if (error) {
     console.error('[audits] bulk delete failed:', error)
@@ -102,9 +102,10 @@ export async function DELETE(req: Request) {
   return NextResponse.json({ deleted: data?.length ?? 0 })
 }
 
-// GET /api/audits — list audit runs (paginated, newest first).
+// GET /api/audits — list audit runs (paginated, newest first). Auditors see
+// only their own runs; admins see all.
 export async function GET(req: Request) {
-  const auth = await requireAdminUser()
+  const auth = await requireAuditorCapability()
   if (auth instanceof NextResponse) return auth
 
   const { searchParams } = new URL(req.url)
@@ -112,13 +113,16 @@ export async function GET(req: Request) {
   const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
 
   const supabase = createServerClient()
-  const { data, error } = await supabase
+  const scope = getAccessibleAuditScope(auth.user)
+  let query = supabase
     .from('audit_runs')
     .select(
       'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at, completed_at, error_message',
     )
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
+  if (scope) query = query.eq('created_by', scope.createdBy)
+  const { data, error } = await query
 
   if (error) {
     console.error('[audits] list failed:', error)

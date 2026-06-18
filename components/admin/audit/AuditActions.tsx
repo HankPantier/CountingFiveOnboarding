@@ -20,6 +20,7 @@ export function AuditActions({
   sessionId,
   shareToken,
   chatMessages,
+  isAdmin,
 }: {
   auditId: string
   status: string
@@ -27,6 +28,7 @@ export function AuditActions({
   sessionId: string | null
   shareToken: string | null
   chatMessages: { role: string; content: string }[]
+  isAdmin: boolean
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -66,7 +68,9 @@ export function AuditActions({
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      {sessionId ? (
+      {/* The approve → start-session flow creates an onboarding session, which
+          is admin-only. Auditors get the report tools below but not this block. */}
+      {isAdmin && (sessionId ? (
         <Link href={`/admin/sessions/${sessionId}`} className={primaryButton}>
           View session →
         </Link>
@@ -78,7 +82,7 @@ export function AuditActions({
         <Link href={`/admin/audits/${auditId}/start-session`} className={primaryButton}>
           Start session →
         </Link>
-      ) : null}
+      ) : null)}
 
       {complete && <AuditChatModal auditId={auditId} initialMessages={chatMessages} />}
       {complete && <ShareLinkButton auditId={auditId} initialToken={shareToken} />}

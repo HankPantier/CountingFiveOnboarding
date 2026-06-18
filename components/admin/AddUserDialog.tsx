@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { Role } from '@/lib/auth/access'
+import type { Role, Capability } from '@/lib/auth/access'
 import type { SessionOption } from '@/app/admin/settings/users/page'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -10,16 +10,20 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<Role>('manager')
+  const [role, setRole] = useState<Role>('member')
+  const [capabilities, setCapabilities] = useState<Set<Capability>>(new Set(['manager']))
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
+  const isManager = role === 'member' && capabilities.has('manager')
+
   function reset() {
     setName('')
     setEmail('')
-    setRole('manager')
+    setRole('member')
+    setCapabilities(new Set(['manager']))
     setSelected(new Set())
     setError('')
   }
@@ -33,11 +37,24 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     })
   }
 
+  function toggleCapability(cap: Capability) {
+    setCapabilities(prev => {
+      const next = new Set(prev)
+      if (next.has(cap)) next.delete(cap)
+      else next.add(cap)
+      return next
+    })
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     if (!name.trim()) { setError('Name is required'); return }
     if (!EMAIL_RE.test(email.trim())) { setError('Please enter a valid email address'); return }
+    if (role === 'member' && capabilities.size === 0) {
+      setError('Select at least one capability for a member')
+      return
+    }
     setSaving(true)
     try {
       const res = await fetch('/api/admin/users', {
@@ -47,7 +64,8 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
           name,
           email,
           role,
-          sessionIds: role === 'manager' ? [...selected] : [],
+          capabilities: role === 'member' ? [...capabilities] : [],
+          sessionIds: isManager ? [...selected] : [],
         }),
       })
       const data = (await res.json()) as { error?: string }
@@ -110,26 +128,53 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-semibold text-text-secondary font-body">Role</label>
+            <label className="text-sm font-semibold text-text-secondary font-body">Account type</label>
             <div className="flex gap-2">
-              {(['manager', 'admin'] as const).map(r => (
+              {([['member', 'Member'], ['admin', 'Admin']] as const).map(([r, labelText]) => (
                 <button
                   key={r}
                   type="button"
                   onClick={() => setRole(r)}
-                  className={`flex-1 text-xs font-heading font-semibold px-3.5 py-1.5 rounded-pill transition-colors capitalize ${
+                  className={`flex-1 text-xs font-heading font-semibold px-3.5 py-1.5 rounded-pill transition-colors ${
                     role === r
                       ? 'bg-brand-navy text-text-inverse'
                       : 'border border-border-default text-text-secondary hover:bg-surface-subtle'
                   }`}
                 >
-                  {r}
+                  {labelText}
                 </button>
               ))}
             </div>
+            <p className="text-xs text-text-muted font-body pt-1">
+              {role === 'admin'
+                ? 'Admins can do everything.'
+                : 'Members hold the capabilities you select below.'}
+            </p>
           </div>
 
-          {role === 'manager' && (
+          {role === 'member' && (
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-text-secondary font-body">Capabilities</label>
+              <div className="flex flex-col gap-2">
+                {([['manager', 'Manager — view & edit content for assigned clients'], ['auditor', 'Auditor — run & manage their own site audits']] as const).map(([cap, desc]) => (
+                  <label
+                    key={cap}
+                    className="flex items-start gap-2 cursor-pointer rounded-card border border-border-default px-3 py-2 hover:bg-surface-subtle"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={capabilities.has(cap)}
+                      onChange={() => toggleCapability(cap)}
+                      className="accent-brand-cyan mt-0.5"
+                    />
+                    <span className="text-sm font-body text-text-primary">{desc}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isManager && (
             <div className="space-y-1">
               <label className="text-sm font-semibold text-text-secondary font-body">
                 Client access ({selected.size} selected)

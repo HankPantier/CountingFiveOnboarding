@@ -1,15 +1,24 @@
 import {
   Html, Head, Body, Container, Heading, Text, Button, Hr,
 } from '@react-email/components'
+import type { Role, Capability } from '@/lib/auth/access'
 
 type Props = {
   name: string
   inviteUrl: string
-  role: 'admin' | 'manager'
+  label: string
 }
 
-export default function InviteUserEmail({ name, inviteUrl, role }: Props) {
-  const roleLabel = role === 'admin' ? 'an administrator' : 'a manager'
+// Human-readable role description for the invite copy, derived from the account
+// tier and the member's capability set (e.g. "a manager & auditor").
+export function roleLabel(role: Role, capabilities: Capability[]): string {
+  if (role === 'admin') return 'an administrator'
+  const names = capabilities.map(c => (c === 'manager' ? 'manager' : 'auditor'))
+  if (names.length === 0) return 'a team member'
+  return `a ${names.join(' & ')}`
+}
+
+export default function InviteUserEmail({ name, inviteUrl, label }: Props) {
   return (
     <Html>
       <Head />
@@ -19,7 +28,7 @@ export default function InviteUserEmail({ name, inviteUrl, role }: Props) {
             You&rsquo;ve been invited to Revaltus
           </Heading>
           <Text style={{ color: '#1E293B', fontSize: 15, lineHeight: 1.6 }}>
-            Hi {name}, you&rsquo;ve been added to the Revaltus admin as {roleLabel}.
+            Hi {name}, you&rsquo;ve been added to the Revaltus admin as {label}.
             Click below to set your password and sign in.
           </Text>
           <Button

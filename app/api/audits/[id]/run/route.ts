@@ -1,5 +1,5 @@
 import { after, NextResponse } from 'next/server'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAuditJob } from '@/lib/audit/worker'
 
@@ -11,7 +11,7 @@ const RUNNING_STATES = '(crawling,analyzing,scoring,rendering)'
 
 // POST /api/audits/[id]/run — execute the audit in the background.
 // Two valid auth paths, mirroring content-jobs/[id]/generate:
-//   1. Admin session — a human clicked "Run" in the UI.
+//   1. Authorized user — an admin, or an auditor who owns this audit.
 //   2. Bearer CRON_SECRET — reserved for an internal/scheduled trigger.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const cronSecret = process.env.CRON_SECRET
@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
 
   if (!isInternalChain) {
-    const auth = await requireAdminUser()
+    const auth = await requireAuditAccess(id)
     if (auth instanceof NextResponse) return auth
   }
 
