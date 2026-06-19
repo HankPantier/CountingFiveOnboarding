@@ -239,14 +239,21 @@ function parseSection2(markdown: string, schema: SessionSchema): void {
   const optionTexts: string[] = []
   for (let i = 0; i < positions.length; i++) {
     const start = positions[i]
-    const end = i + 1 < positions.length ? positions[i + 1] : section.length
-    const block = section
-      .slice(start, end)
-      .split('\n')
-      .map(line => line.replace(/^>\s?/, ''))
-      .join('\n')
-      .trim()
-    optionTexts.push(block)
+    const hardEnd = i + 1 < positions.length ? positions[i + 1] : section.length
+    // Each option is a contiguous blockquote. Stop at the first non-quote line
+    // so the LAST option doesn't swallow the trailing analyst note, the
+    // blockquoted "Client Review Action" prompt, or the Competitive Context
+    // table that follow it in the section.
+    const quoted: string[] = []
+    for (const line of section.slice(start, hardEnd).split('\n')) {
+      if (!line.trimStart().startsWith('>')) {
+        if (quoted.length) break
+        continue
+      }
+      quoted.push(line.replace(/^\s*>\s?/, ''))
+    }
+    const block = quoted.join('\n').trim()
+    if (block) optionTexts.push(block)
   }
 
   if (optionTexts.length > 0) {
@@ -403,7 +410,9 @@ function parseSection4(markdown: string, schema: SessionSchema, gaps: GapItem[])
     const urlMatch = gbpText.match(/https?:\/\/[^\s)]+/)
     if (urlMatch) gbpUrl = urlMatch[0]
     if (/no listing|no google|not directly confirmed|unclaimed|no reviews|no photos/i.test(gbpText)) {
-      gbpHint = gbpText.replace(/\*+/g, '').trim().slice(0, 240)
+      // Only the GBP line itself — `gbpText` may run to the next blank line and
+      // pull in the following field (e.g. "Review Summary:"); keep line one.
+      gbpHint = gbpText.split('\n')[0].replace(/\*+/g, '').trim().slice(0, 240)
     }
   }
   schema.business!.googleBusinessProfile = {
