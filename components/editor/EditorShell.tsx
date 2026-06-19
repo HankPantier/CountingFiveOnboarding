@@ -86,6 +86,14 @@ export default function EditorShell({
     return () => window.removeEventListener('beforeunload', handler)
   }, [dirty.size])
 
+  // Publish/rollback results surface as a transient toast, not a permanent
+  // top-bar item — auto-dismiss so the header stays uncluttered.
+  useEffect(() => {
+    if (!publishResult) return
+    const t = setTimeout(() => setPublishResult(null), 6000)
+    return () => clearTimeout(t)
+  }, [publishResult])
+
   const select = useCallback(
     async (path: string) => {
       setError(null)
@@ -439,7 +447,6 @@ export default function EditorShell({
         canSave={!!selectedPath && dirty.has(selectedPath)}
         saving={saving}
         publishing={publishing}
-        publishResult={publishResult}
         onSave={save}
         onPublish={publish}
         onRollback={rollback}
@@ -565,6 +572,22 @@ export default function EditorShell({
           <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} onChange={onEdit} />
         )}
       </div>
+      {publishResult && (
+        <div
+          role="status"
+          className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-border-default border-l-4 border-l-brand-cyan bg-surface-card px-4 py-3 shadow-elevated"
+        >
+          <span className="text-xs font-body text-text-primary">{publishResult}</span>
+          <button
+            type="button"
+            onClick={() => setPublishResult(null)}
+            aria-label="Dismiss"
+            className="ml-auto text-sm leading-none text-text-muted hover:text-brand-navy"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }
