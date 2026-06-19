@@ -349,6 +349,8 @@ export default function PageEditor({
         {fm && !isPost && !isSocial && (
           <StructuredContentEditor
             key={path}
+            sessionId={sessionId}
+            path={path}
             initialFaq={displayFaq}
             onFaqChange={onFaqChange}
             initialAnswer={getAnswerBlock(fm)}

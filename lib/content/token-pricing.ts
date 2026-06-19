@@ -20,6 +20,7 @@ export type TokenStage =
   | 'audit'
   | 'audit_edit'
   | 'content_edit'
+  | 'seo_fields'
   | 'brand'
 
 // Attribution context threaded into shared AI helpers (e.g. generateMbpJson)

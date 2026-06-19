@@ -1,0 +1,179 @@
+import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
+import type { SessionSchema } from '@/types/session-schema'
+import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
+
+const MODEL = 'claude-sonnet-4-6'
+
+export type SeoField = 'faq' | 'answer' | 'eeat' | 'links'
+
+export const SEO_FIELDS: readonly SeoField[] = ['faq', 'answer', 'eeat', 'links']
+
+export function isSeoField(v: unknown): v is SeoField {
+  return typeof v === 'string' && (SEO_FIELDS as readonly string[]).includes(v)
+}
+
+// Pull the first JSON value out of a model response, tolerating ```json fences
+// or surrounding prose. Throws if no JSON object/array is present.
+function extractJson(text: string): unknown {
+  const trimmed = text.trim()
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    // fall through to fence/bracket extraction below
+  }
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fenced ? fenced[1] : text
+  const start = candidate.search(/[[{]/)
+  if (start < 0) throw new Error('No JSON found in model output')
+  const slice = candidate.slice(start)
+  // Walk back from the end to the matching closing bracket for a forgiving parse.
+  const lastObj = slice.lastIndexOf('}')
+  const lastArr = slice.lastIndexOf(']')
+  const end = Math.max(lastObj, lastArr)
+  if (end < 0) throw new Error('No JSON terminator in model output')
+  return JSON.parse(slice.slice(0, end + 1))
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+}
+
+export function parseAnswerOutput(text: string): string {
+  const obj = asRecord(extractJson(text))
+  const answer = obj['answer_block']
+  return typeof answer === 'string' ? answer.trim() : ''
+}
+
+export function parseEeatOutput(text: string): string[] {
+  const obj = asRecord(extractJson(text))
+  const list = obj['eeat_signals']
+  if (!Array.isArray(list)) return []
+  return list.filter((s): s is string => typeof s === 'string').map((s) => s.trim()).filter(Boolean)
+}
+
+export function parseFaqOutput(text: string): FaqItem[] {
+  const obj = asRecord(extractJson(text))
+  const list = obj['faq_block']
+  if (!Array.isArray(list)) return []
+  return list
+    .filter(
+      (it): it is FaqItem =>
+        it != null &&
+        typeof it === 'object' &&
+        typeof (it as FaqItem).question === 'string' &&
+        typeof (it as FaqItem).answer === 'string'
+    )
+    .map((it) => ({ question: it.question.trim(), answer: it.answer.trim() }))
+    .filter((it) => it.question !== '' && it.answer !== '')
+}
+
+// Links are constrained to the site's real URLs — drop anything Claude invented
+// or any self-link, normalizing trailing slashes for the comparison.
+export function parseLinksOutput(
+  text: string,
+  allowedUrls: string[],
+  selfUrl?: string
+): InternalLink[] {
+  const obj = asRecord(extractJson(text))
+  const list = obj['internal_links']
+  if (!Array.isArray(list)) return []
+  const norm = (u: string) => u.replace(/\/+$/, '') || '/'
+  const allowed = new Set(allowedUrls.map(norm))
+  const self = selfUrl ? norm(selfUrl) : null
+  return list
+    .filter(
+      (it): it is InternalLink =>
+        it != null &&
+        typeof it === 'object' &&
+        typeof (it as InternalLink).url === 'string' &&
+        typeof (it as InternalLink).anchor_text === 'string' &&
+        typeof (it as InternalLink).reason === 'string'
+    )
+    .map((it) => ({
+      url: it.url.trim(),
+      anchor_text: it.anchor_text.trim(),
+      reason: it.reason.trim(),
+    }))
+    .filter((it) => allowed.has(norm(it.url)) && norm(it.url) !== self)
+}
+
+function fieldInstruction(field: SeoField, sitemapUrls: string[], selfUrl: string): string {
+  switch (field) {
+    case 'answer':
+      return `Write the AIO answer_block — 2-3 sentences answering the likely search query for this page directly. Return ONLY JSON: {"answer_block": "..."}`
+    case 'faq':
+      return `Generate 4-6 FAQ entries for this page — 40-60 words per answer. Return ONLY JSON: {"faq_block": [{"question": "...", "answer": "..."}]}`
+    case 'eeat':
+      return `List the E-E-A-T trust signals for this page — specific credential/experience claims supported by the firm profile. Return ONLY JSON: {"eeat_signals": ["..."]}`
+    case 'links': {
+      const noSelf = selfUrl ? `, and never link to this page (${selfUrl})` : ''
+      return `Suggest internal links for this page. ONLY use URLs from this exact list — never invent paths${noSelf}: ${sitemapUrls.join(' ')}. Return ONLY JSON: {"internal_links": [{"url": "...", "anchor_text": "...", "reason": "..."}]}`
+    }
+  }
+}
+
+export type SeoFieldResult =
+  | { field: 'faq'; value: FaqItem[] }
+  | { field: 'answer'; value: string }
+  | { field: 'eeat'; value: string[] }
+  | { field: 'links'; value: InternalLink[] }
+
+export async function generateSeoField(args: {
+  field: SeoField
+  pageTitle: string
+  pageUrl: string
+  pageContent: string
+  schema: SessionSchema
+  sitemapUrls: string[]
+}): Promise<{ result: SeoFieldResult; inputTokens: number; outputTokens: number }> {
+  const { field, pageTitle, pageUrl, pageContent, schema, sitemapUrls } = args
+  const firmName = schema.business?.name ?? 'the firm'
+
+  const prompt = `You are writing structured SEO metadata for ${firmName}, a CPA firm.
+
+${buildBrandVoiceBlock(schema)}
+
+${buildFirmContext(schema)}
+
+PAGE: ${pageTitle} (${pageUrl})
+PAGE CONTENT:
+"""
+${pageContent.slice(0, 6000)}
+"""
+
+TASK: ${fieldInstruction(field, sitemapUrls, pageUrl)}
+
+Ground everything in the page content and firm profile above. NEVER invent facts — credentials, numbers, named people, or dates not supported by the profile or the page content. Output JSON only, no commentary.`
+
+  const { text, usage } = await generateText({
+    model: anthropic(MODEL),
+    prompt,
+    maxOutputTokens: 1500,
+  })
+
+  let result: SeoFieldResult
+  switch (field) {
+    case 'answer':
+      result = { field, value: parseAnswerOutput(text) }
+      break
+    case 'faq':
+      result = { field, value: parseFaqOutput(text) }
+      break
+    case 'eeat':
+      result = { field, value: parseEeatOutput(text) }
+      break
+    case 'links':
+      result = { field, value: parseLinksOutput(text, sitemapUrls, pageUrl) }
+      break
+  }
+
+  return {
+    result,
+    inputTokens: usage?.inputTokens ?? 0,
+    outputTokens: usage?.outputTokens ?? 0,
+  }
+}
+
+export const SEO_MODEL = MODEL
