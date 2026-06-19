@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
 
 const inputClass =
@@ -29,29 +30,54 @@ function SectionCard({
 }
 
 export default function StructuredContentEditor({
-  faq,
+  initialFaq,
   onFaqChange,
-  answer,
+  initialAnswer,
   onAnswerChange,
-  eeat,
+  initialEeat,
   onEeatChange,
-  links,
+  initialLinks,
   onLinksChange,
 }: {
-  faq: FaqItem[]
+  initialFaq: FaqItem[]
   onFaqChange: (items: FaqItem[]) => void
-  answer: string
+  initialAnswer: string
   onAnswerChange: (text: string) => void
-  eeat: string[]
+  initialEeat: string[]
   onEeatChange: (signals: string[]) => void
-  links: InternalLink[]
+  initialLinks: InternalLink[]
   onLinksChange: (links: InternalLink[]) => void
 }) {
+  // Local editing buffer so in-progress blank rows persist in the UI; the parent
+  // persists a cleaned (blank-stripped) copy to frontmatter on every change. The
+  // parent remounts this component per page (key={path}) to reseed.
+  const [faq, setFaq] = useState<FaqItem[]>(initialFaq)
+  const [answer, setAnswer] = useState<string>(initialAnswer)
+  const [eeat, setEeat] = useState<string[]>(initialEeat)
+  const [links, setLinks] = useState<InternalLink[]>(initialLinks)
+
+  const commitFaq = (next: FaqItem[]) => {
+    setFaq(next)
+    onFaqChange(next)
+  }
+  const commitAnswer = (next: string) => {
+    setAnswer(next)
+    onAnswerChange(next)
+  }
+  const commitEeat = (next: string[]) => {
+    setEeat(next)
+    onEeatChange(next)
+  }
+  const commitLinks = (next: InternalLink[]) => {
+    setLinks(next)
+    onLinksChange(next)
+  }
+
   const updateFaq = (i: number, patch: Partial<FaqItem>) =>
-    onFaqChange(faq.map((f, idx) => (idx === i ? { ...f, ...patch } : f)))
+    commitFaq(faq.map((f, idx) => (idx === i ? { ...f, ...patch } : f)))
 
   const updateLink = (i: number, patch: Partial<InternalLink>) =>
-    onLinksChange(links.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
+    commitLinks(links.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
 
   return (
     <div className="space-y-6">
@@ -69,7 +95,7 @@ export default function StructuredContentEditor({
                 <span className="text-[11px] font-heading text-text-muted">Q&amp;A {i + 1}</span>
                 <button
                   type="button"
-                  onClick={() => onFaqChange(faq.filter((_, idx) => idx !== i))}
+                  onClick={() => commitFaq(faq.filter((_, idx) => idx !== i))}
                   className={removeBtnClass}
                 >
                   Remove
@@ -92,7 +118,7 @@ export default function StructuredContentEditor({
           ))}
           <button
             type="button"
-            onClick={() => onFaqChange([...faq, { question: '', answer: '' }])}
+            onClick={() => commitFaq([...faq, { question: '', answer: '' }])}
             className={addBtnClass}
           >
             + Add question
@@ -102,12 +128,12 @@ export default function StructuredContentEditor({
 
       <SectionCard
         title="AIO answer"
-        hint="A short, direct answer shown on-page and emitted as structured data to help AI overviews cite this page."
+        hint="Generated during AI content creation and shown on-page + as structured data to help AI overviews cite this page. Edit if needed."
       >
         <textarea
           value={answer}
-          placeholder="One or two sentences that directly answer the page's core question."
-          onChange={(e) => onAnswerChange(e.target.value)}
+          placeholder="Generated during content creation — a direct answer to the page's core question."
+          onChange={(e) => commitAnswer(e.target.value)}
           className={`${inputClass} min-h-[90px] resize-y`}
         />
       </SectionCard>
@@ -123,19 +149,19 @@ export default function StructuredContentEditor({
                 type="text"
                 value={signal}
                 placeholder="Trust signal"
-                onChange={(e) => onEeatChange(eeat.map((s, idx) => (idx === i ? e.target.value : s)))}
+                onChange={(e) => commitEeat(eeat.map((s, idx) => (idx === i ? e.target.value : s)))}
                 className={inputClass}
               />
               <button
                 type="button"
-                onClick={() => onEeatChange(eeat.filter((_, idx) => idx !== i))}
+                onClick={() => commitEeat(eeat.filter((_, idx) => idx !== i))}
                 className={removeBtnClass}
               >
                 Remove
               </button>
             </div>
           ))}
-          <button type="button" onClick={() => onEeatChange([...eeat, ''])} className={addBtnClass}>
+          <button type="button" onClick={() => commitEeat([...eeat, ''])} className={addBtnClass}>
             + Add signal
           </button>
         </div>
@@ -152,7 +178,7 @@ export default function StructuredContentEditor({
                 <span className="text-[11px] font-heading text-text-muted">Link {i + 1}</span>
                 <button
                   type="button"
-                  onClick={() => onLinksChange(links.filter((_, idx) => idx !== i))}
+                  onClick={() => commitLinks(links.filter((_, idx) => idx !== i))}
                   className={removeBtnClass}
                 >
                   Remove
@@ -192,7 +218,7 @@ export default function StructuredContentEditor({
           ))}
           <button
             type="button"
-            onClick={() => onLinksChange([...links, { url: '', anchor_text: '', reason: '' }])}
+            onClick={() => commitLinks([...links, { url: '', anchor_text: '', reason: '' }])}
             className={addBtnClass}
           >
             + Add link

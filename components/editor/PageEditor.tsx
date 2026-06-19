@@ -153,7 +153,10 @@ export default function PageEditor({
   const faqHeading = 'Frequently Asked Questions'
   const onFaqChange = (items: FaqItem[]) => {
     if (!fm) return
-    commit(setFaqBlock(fm, items), setFaqAccordionBody(bodyContent, items, faqHeading))
+    // Drop in-progress blank rows before persisting so neither frontmatter nor
+    // the on-page accordion gets an empty Q&A.
+    const cleaned = items.filter((it) => it.question.trim() !== '' || it.answer.trim() !== '')
+    commit(setFaqBlock(fm, cleaned), setFaqAccordionBody(bodyContent, cleaned, faqHeading))
   }
   const onAnswerChange = (text: string) => {
     if (fm) commit(setAnswerBlock(fm, text), bodyContent)
@@ -345,13 +348,14 @@ export default function PageEditor({
 
         {fm && !isPost && !isSocial && (
           <StructuredContentEditor
-            faq={displayFaq}
+            key={path}
+            initialFaq={displayFaq}
             onFaqChange={onFaqChange}
-            answer={getAnswerBlock(fm)}
+            initialAnswer={getAnswerBlock(fm)}
             onAnswerChange={onAnswerChange}
-            eeat={getEeatSignals(fm)}
+            initialEeat={getEeatSignals(fm)}
             onEeatChange={onEeatChange}
-            links={getInternalLinks(fm)}
+            initialLinks={getInternalLinks(fm)}
             onLinksChange={onLinksChange}
           />
         )}
