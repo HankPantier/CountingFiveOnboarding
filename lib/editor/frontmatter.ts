@@ -42,9 +42,15 @@ export function splitFile(text: string): PageFile {
 function parseInlineArray(value: string): string[] | null {
   const trimmed = value.trim()
   if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return null
-  const inner = trimmed.slice(1, -1).trim()
-  if (inner === '') return []
-  return inner.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+  const inner = trimmed.slice(1, -1)
+  // Only bare scalar lists (e.g. `secondary_keywords: [a, b, c]`) are inline
+  // string arrays. JSON arrays of objects/strings (faq_block, internal_links,
+  // eeat_signals) contain quotes/braces — comma-splitting would corrupt them,
+  // so leave them as a verbatim string field for the typed accessors to parse.
+  if (/["{}]/.test(inner)) return null
+  const innerTrim = inner.trim()
+  if (innerTrim === '') return []
+  return innerTrim.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
 }
 
 export function parseFrontmatter(raw: string): Frontmatter {
