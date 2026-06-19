@@ -26,6 +26,8 @@ import IconPickerControl from './IconPickerControl'
 import StructuredContentEditor from './StructuredContentEditor'
 import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
 
+type EditorTab = 'preview' | 'content' | 'seo' | 'media'
+
 // Editable subset of frontmatter keys. Other keys are preserved on save but
 // not exposed as form fields.
 const PROMOTED_FIELDS = [
@@ -80,7 +82,8 @@ export default function PageEditor({
     [bodyContent]
   )
   const imageBlocks = useMemo(() => extractImageBlocks(bodyContent), [bodyContent])
-  const [mode, setMode] = useState<'view' | 'edit'>('view')
+  // Default to the writing surface; switching files remounts via key={path}.
+  const [tab, setTab] = useState<EditorTab>('content')
   const isPost = path.startsWith('content/posts/')
   // Social suggestion files are plain copy — body-only editing, no metadata form.
   const isSocial = path.startsWith('content/social/')
@@ -173,210 +176,240 @@ export default function PageEditor({
     ? `/api/edit/${sessionId}/asset?path=${encodeURIComponent(ASSET_ROOT + heroFile)}`
     : ''
 
+  const metadataSection =
+    parsed.frontmatter && !isSocial ? (
+      <section className="bg-surface-card border border-border-default rounded-lg p-4">
+        <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
+          {isPost ? 'Post metadata' : 'Page metadata'}
+        </h2>
+        {isPost && (
+          <div className="mb-4">
+            <HeaderImagePicker
+              sessionId={sessionId}
+              value={parsed.frontmatter.fields['image'] ?? ''}
+              onChange={(filename) =>
+                filename ? setField('image', filename) : removeField('image')
+              }
+            />
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-3">
+          {promotedFields.map((key) => {
+            const value = parsed.frontmatter!.fields[key] ?? ''
+            return (
+              <label key={key} className="block">
+                <span className="block text-xs font-heading text-text-secondary mb-1">{key}</span>
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => setField(key, e.target.value)}
+                  className="w-full text-sm font-body px-3 py-2 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
+                />
+              </label>
+            )
+          })}
+        </div>
+      </section>
+    ) : null
+
+  const iconsSection =
+    iconItems.length > 0 || emptyIconBlocks.length > 0 ? (
+      <section className="bg-surface-card border border-border-default rounded-lg p-4">
+        <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">Icons on this page</h2>
+        <p className="text-xs font-body text-text-muted mb-3">
+          Card icons for feature, industry, and service blocks. Changes update the page markdown —
+          save to apply.
+        </p>
+        {iconItems.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {iconItems.map((item, idx) => (
+              <IconPickerControl
+                key={`${item.kind}-${idx}-${item.title}`}
+                item={item}
+                onChange={(name) => setBody(setItemIcon(bodyContent, item, name))}
+              />
+            ))}
+          </div>
+        )}
+        {emptyIconBlocks.map((blk, i) => (
+          <div
+            key={`${blk.blockId}-${i}`}
+            className="mt-2 bg-warning/10 border border-warning/30 text-warning text-xs font-body rounded px-3 py-2"
+          >
+            “{blk.heading || blk.blockId}” ({blk.blockId}) can show icons, but its items aren&apos;t
+            in a recognizable list format — rewrite them as “**Title**” paragraphs or “### Title”
+            chunks in the page body to attach icons.
+          </div>
+        ))}
+      </section>
+    ) : null
+
+  const sectionImagesSection =
+    !isPost && !isSocial && imageBlocks.length > 0 ? (
+      <section className="bg-surface-card border border-border-default rounded-lg p-4">
+        <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">Section images</h2>
+        <p className="text-xs font-body text-text-muted mb-3">
+          These sections can show an image. Pick one from the library or upload — changes update the
+          page markdown, save to apply.
+        </p>
+        <div className="space-y-4">
+          {imageBlocks.map((blk) => (
+            <div key={`${blk.commentIndex}-${blk.blockId}`}>
+              <HeaderImagePicker
+                sessionId={sessionId}
+                value={blk.image ?? ''}
+                label={blk.heading ? `${blk.heading} (${blk.blockId})` : blk.blockId}
+                onChange={(filename) => setBody(setBlockImage(bodyContent, blk, filename || null))}
+              />
+              {blk.image && (
+                <label className="block mt-2">
+                  <span className="block text-[11px] font-heading text-text-muted mb-0.5">
+                    Alt text (what the photo shows — screen readers &amp; SEO)
+                  </span>
+                  <input
+                    type="text"
+                    value={blk.alt ?? ''}
+                    placeholder={blk.heading || 'Describe the image'}
+                    onChange={(e) => setBody(setBlockAlt(bodyContent, blk, e.target.value))}
+                    className="w-full text-xs font-body px-2.5 py-1.5 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
+                  />
+                </label>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    ) : null
+
+  const imagesSection =
+    images.length > 0 ? (
+      <section className="bg-surface-card border border-border-default rounded-lg p-4">
+        <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">Images on this page</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {images.map((img) => (
+            <ImageReplaceControl
+              key={img.key}
+              sessionId={sessionId}
+              assetPath={img.assetPath}
+              alt={img.alt}
+            />
+          ))}
+        </div>
+      </section>
+    ) : null
+
+  const structuredSection =
+    fm && !isPost && !isSocial ? (
+      <StructuredContentEditor
+        sessionId={sessionId}
+        path={path}
+        initialFaq={displayFaq}
+        onFaqChange={onFaqChange}
+        initialAnswer={getAnswerBlock(fm)}
+        onAnswerChange={onAnswerChange}
+        initialEeat={getEeatSignals(fm)}
+        onEeatChange={onEeatChange}
+        initialLinks={getInternalLinks(fm)}
+        onLinksChange={onLinksChange}
+      />
+    ) : null
+
+  const hasMedia = !!iconsSection || !!sectionImagesSection || !!imagesSection
+  const showSeo = !!fm && !isSocial
+  const showMedia = !isSocial
+
+  const tabs: { id: EditorTab; label: string }[] = [
+    { id: 'preview', label: 'Preview' },
+    { id: 'content', label: 'Content' },
+    ...(showSeo ? [{ id: 'seo' as const, label: 'SEO' }] : []),
+    ...(showMedia ? [{ id: 'media' as const, label: 'Media' }] : []),
+  ]
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'content'
+
   return (
     <div className="flex-1 overflow-y-auto bg-surface-default">
       <div className="max-w-4xl mx-auto p-6 space-y-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs font-heading text-text-muted">{mode === 'view' ? 'Viewing' : 'Editing'}</div>
+            <div className="text-xs font-heading text-text-muted">Editing</div>
             <div className="font-heading font-semibold text-brand-navy text-lg truncate">{path}</div>
           </div>
-          <div className="flex items-center rounded-pill border border-border-default overflow-hidden flex-shrink-0">
-            {(['view', 'edit'] as const).map((m) => (
+          <div
+            role="tablist"
+            aria-label="Editor sections"
+            className="flex items-center rounded-pill border border-border-default overflow-hidden flex-shrink-0"
+          >
+            {tabs.map((t) => (
               <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`text-xs font-heading font-semibold px-4 py-1.5 transition-colors capitalize ${
-                  mode === m ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'
+                key={t.id}
+                role="tab"
+                aria-selected={activeTab === t.id}
+                onClick={() => setTab(t.id)}
+                className={`text-xs font-heading font-semibold px-4 py-1.5 transition-colors ${
+                  activeTab === t.id
+                    ? 'bg-brand-navy text-text-inverse'
+                    : 'text-text-secondary hover:bg-surface-subtle'
                 }`}
               >
-                {m}
+                {t.label}
               </button>
             ))}
           </div>
         </div>
 
-        {mode === 'view' ? (
-          <article className="bg-surface-card border border-border-default rounded-lg p-8 text-sm font-body text-text-primary leading-relaxed">
-            {heroSrc && (
-              // eslint-disable-next-line @next/next/no-img-element -- private admin asset route
-              <img src={heroSrc} alt={title} className="rounded-card w-full mb-6" />
-            )}
-            {title && (
-              <h1 className="font-heading font-bold text-2xl text-brand-navy mb-5">{title}</h1>
-            )}
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...MARKDOWN_COMPONENTS, img: markdownImg }}>
-              {viewBody}
-            </ReactMarkdown>
-          </article>
-        ) : (
-        <>
-        {parsed.frontmatter && !isSocial && (
-          <section className="bg-surface-card border border-border-default rounded-lg p-4">
-            <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
-              {isPost ? 'Post metadata' : 'Page metadata'}
-            </h2>
-            {isPost && (
-              <div className="mb-4">
-                <HeaderImagePicker
-                  sessionId={sessionId}
-                  value={parsed.frontmatter.fields['image'] ?? ''}
-                  onChange={(filename) =>
-                    filename ? setField('image', filename) : removeField('image')
-                  }
-                />
-              </div>
-            )}
-            <div className="grid grid-cols-1 gap-3">
-              {promotedFields.map((key) => {
-                const value = parsed.frontmatter!.fields[key] ?? ''
-                return (
-                  <label key={key} className="block">
-                    <span className="block text-xs font-heading text-text-secondary mb-1">
-                      {key}
-                    </span>
-                    <input
-                      type="text"
-                      value={value}
-                      onChange={(e) => setField(key, e.target.value)}
-                      className="w-full text-sm font-body px-3 py-2 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
-                    />
-                  </label>
-                )
-              })}
-            </div>
-          </section>
-        )}
+        <div role="tabpanel" className="space-y-6">
+          {activeTab === 'preview' && (
+            <article className="bg-surface-card border border-border-default rounded-lg p-8 text-sm font-body text-text-primary leading-relaxed">
+              {heroSrc && (
+                // eslint-disable-next-line @next/next/no-img-element -- private admin asset route
+                <img src={heroSrc} alt={title} className="rounded-card w-full mb-6" />
+              )}
+              {title && (
+                <h1 className="font-heading font-bold text-2xl text-brand-navy mb-5">{title}</h1>
+              )}
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...MARKDOWN_COMPONENTS, img: markdownImg }}>
+                {viewBody}
+              </ReactMarkdown>
+            </article>
+          )}
 
-        {(iconItems.length > 0 || emptyIconBlocks.length > 0) && (
-          <section className="bg-surface-card border border-border-default rounded-lg p-4">
-            <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
-              Icons on this page
-            </h2>
-            <p className="text-xs font-body text-text-muted mb-3">
-              Card icons for feature, industry, and service blocks. Changes update the
-              page markdown — save to apply.
-            </p>
-            {iconItems.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {iconItems.map((item, idx) => (
-                  <IconPickerControl
-                    key={`${item.kind}-${idx}-${item.title}`}
-                    item={item}
-                    onChange={(name) => setBody(setItemIcon(bodyContent, item, name))}
-                  />
-                ))}
+          {activeTab === 'content' && (
+            <section className="bg-surface-card border border-border-default rounded-lg">
+              <div className="px-4 py-2 border-b border-border-default">
+                <h2 className="text-sm font-heading font-semibold text-brand-navy">
+                  Page body (markdown source)
+                </h2>
               </div>
-            )}
-            {emptyIconBlocks.map((blk, i) => (
-              <div
-                key={`${blk.blockId}-${i}`}
-                className="mt-2 bg-warning/10 border border-warning/30 text-warning text-xs font-body rounded px-3 py-2"
-              >
-                “{blk.heading || blk.blockId}” ({blk.blockId}) can show icons, but its
-                items aren&apos;t in a recognizable list format — rewrite them as
-                “**Title**” paragraphs or “### Title” chunks in the page body to attach
-                icons.
-              </div>
+              <textarea
+                value={bodyContent}
+                onChange={(e) => setBody(e.target.value)}
+                spellCheck
+                className="w-full min-h-[480px] text-sm font-mono px-4 py-3 outline-none resize-y"
+              />
+            </section>
+          )}
+
+          {activeTab === 'seo' && (
+            <>
+              {metadataSection}
+              {structuredSection}
+            </>
+          )}
+
+          {activeTab === 'media' &&
+            (hasMedia ? (
+              <>
+                {iconsSection}
+                {sectionImagesSection}
+                {imagesSection}
+              </>
+            ) : (
+              <section className="bg-surface-card border border-border-default rounded-lg p-6 text-sm font-body text-text-muted">
+                No icons or images on this page yet. Add image blocks in the content body, or use the
+                Image library in the file tree.
+              </section>
             ))}
-          </section>
-        )}
-
-        {!isPost && !isSocial && imageBlocks.length > 0 && (
-          <section className="bg-surface-card border border-border-default rounded-lg p-4">
-            <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
-              Section images
-            </h2>
-            <p className="text-xs font-body text-text-muted mb-3">
-              These sections can show an image. Pick one from the library or upload —
-              changes update the page markdown, save to apply.
-            </p>
-            <div className="space-y-4">
-              {imageBlocks.map((blk) => (
-                <div key={`${blk.commentIndex}-${blk.blockId}`}>
-                  <HeaderImagePicker
-                    sessionId={sessionId}
-                    value={blk.image ?? ''}
-                    label={
-                      blk.heading
-                        ? `${blk.heading} (${blk.blockId})`
-                        : blk.blockId
-                    }
-                    onChange={(filename) =>
-                      setBody(setBlockImage(bodyContent, blk, filename || null))
-                    }
-                  />
-                  {blk.image && (
-                    <label className="block mt-2">
-                      <span className="block text-[11px] font-heading text-text-muted mb-0.5">
-                        Alt text (what the photo shows — screen readers &amp; SEO)
-                      </span>
-                      <input
-                        type="text"
-                        value={blk.alt ?? ''}
-                        placeholder={blk.heading || 'Describe the image'}
-                        onChange={(e) =>
-                          setBody(setBlockAlt(bodyContent, blk, e.target.value))
-                        }
-                        className="w-full text-xs font-body px-2.5 py-1.5 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
-                      />
-                    </label>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {images.length > 0 && (
-          <section className="bg-surface-card border border-border-default rounded-lg p-4">
-            <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">
-              Images on this page
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {images.map((img) => (
-                <ImageReplaceControl
-                  key={img.key}
-                  sessionId={sessionId}
-                  assetPath={img.assetPath}
-                  alt={img.alt}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {fm && !isPost && !isSocial && (
-          <StructuredContentEditor
-            key={path}
-            sessionId={sessionId}
-            path={path}
-            initialFaq={displayFaq}
-            onFaqChange={onFaqChange}
-            initialAnswer={getAnswerBlock(fm)}
-            onAnswerChange={onAnswerChange}
-            initialEeat={getEeatSignals(fm)}
-            onEeatChange={onEeatChange}
-            initialLinks={getInternalLinks(fm)}
-            onLinksChange={onLinksChange}
-          />
-        )}
-
-        <section className="bg-surface-card border border-border-default rounded-lg">
-          <div className="px-4 py-2 border-b border-border-default">
-            <h2 className="text-sm font-heading font-semibold text-brand-navy">
-              Page body (markdown source)
-            </h2>
-          </div>
-          <textarea
-            value={bodyContent}
-            onChange={(e) => setBody(e.target.value)}
-            spellCheck
-            className="w-full min-h-[480px] text-sm font-mono px-4 py-3 outline-none resize-y"
-          />
-        </section>
-        </>
-        )}
+        </div>
       </div>
     </div>
   )

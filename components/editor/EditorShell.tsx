@@ -562,7 +562,7 @@ export default function EditorShell({
         ) : isNav ? (
           <NavEditor path={selectedPath} contents={content} onChange={onEdit} />
         ) : (
-          <PageEditor sessionId={sessionId} path={selectedPath} contents={content} onChange={onEdit} />
+          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} onChange={onEdit} />
         )}
       </div>
     </div>
