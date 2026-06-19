@@ -99,11 +99,11 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
       {/* 1. Header */}
-      <header className={`${cardClass} flex items-center justify-between gap-4 bg-brand-navy p-6`}>
+      <header className={`${cardClass} flex items-center justify-between gap-4 p-6`}>
         <div className="flex items-center gap-4">
           <Image src="/logo.png" alt="Revaltus" height={36} width={200} style={{ height: 36, width: 'auto' }} />
           <div>
-            <h1 className="text-xl font-heading font-bold text-text-inverse">
+            <h1 className="text-xl font-heading font-bold text-brand-navy">
               {result.site_name}
             </h1>
             <a
@@ -120,7 +120,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
           <span className="inline-flex items-center rounded-full bg-brand-cyan/20 px-3 py-1 text-xs font-heading font-semibold text-brand-cyan">
             Snapshot Report
           </span>
-          <p className="mt-1 text-xs font-body text-text-inverse/70">{runDate}</p>
+          <p className="mt-1 text-xs font-body text-text-muted">{runDate}</p>
         </div>
       </header>
 
