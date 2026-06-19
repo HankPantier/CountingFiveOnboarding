@@ -1119,6 +1119,10 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     { field: 'brand.primaryColors',     label: 'Brand Colors',                             phase: 4, tier: 1, resolved: false },
     { field: 'brand.hasBrandGuide',     label: 'Has Existing Brand Guide',                 phase: 4, tier: 1, resolved: false },
     { field: 'brand.logoStyle',         label: 'Logo / Visual Style (modern, traditional, etc.)', phase: 4, tier: 2, resolved: false },
+    // brandPersonality + typography feed downstream design-token / brand-voice
+    // generation (lib/content/*); ask for them when the MBP didn't supply them.
+    { field: 'brand.brandPersonality',  label: 'Brand Personality (a few descriptive traits)', phase: 4, tier: 2, resolved: false },
+    { field: 'brand.typography',        label: 'Typography Preference (if any)',           phase: 4, tier: 2, resolved: false },
   ]
 
   for (const g of candidates) {
