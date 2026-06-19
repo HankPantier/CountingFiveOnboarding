@@ -6,20 +6,27 @@
 import {
   CATEGORY_META,
   findingRows,
-  gradeToken,
+  gradeWithModifier,
   safeHref,
+  score10,
+  tokenForScore,
   type SemanticToken,
 } from './report-format'
-import { SECTION_HELP, SECTION_LABELS, intelScorePct, signalLabel, subScoreRows } from './intelligence-format'
+import {
+  deriveDashboard,
+  inferSection,
+  passingCounts,
+  siteHealthExtraRows,
+  type DashboardBucket,
+} from './report-buckets'
+import { SECTION_HELP, SECTION_LABELS, signalLabel, subScoreRows } from './intelligence-format'
 import type {
-  AuditIntelligence,
   AuditResult,
   CategoryScoreMap,
   CompetitiveIntelligence,
   ContentLibraryIntelligence,
   DigitalIntelligence,
   DomainIntelligence,
-  Grade,
   NarrativeIntelligence,
   NicheServicesIntelligence,
   PageSummary,
@@ -62,28 +69,31 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;')
 }
 
-function gradeChip(grade: Grade | null, score: number | null): string {
-  if (grade === null || score === null) {
+/** Grade chip on the 0–10 scale: "C+ · 7.0". `score` is 0–100. */
+function gradeChip(score: number | null): string {
+  if (score === null) {
     return `<span class="chip" style="background:${COLORS.subtle};color:${COLORS.textMuted}">N/A</span>`
   }
-  const c = TOKEN_COLOR[gradeToken(grade)]
-  return `<span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(grade)} · ${score}</span>`
+  const c = TOKEN_COLOR[tokenForScore(score)]
+  return `<span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(gradeWithModifier(score))} · ${score10(score)}</span>`
 }
 
-function scoreRingSvg(score: number, grade: Grade): string {
+function scoreRingSvg(score: number): string {
   const size = 160
   const stroke = 12
   const r = (size - stroke) / 2
   const circ = 2 * Math.PI * r
   const dash = (Math.max(0, Math.min(100, score)) / 100) * circ
-  const color = TOKEN_COLOR[gradeToken(grade)]
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="Overall score ${score} out of 100, grade ${esc(grade)}">
-    <title>Overall score ${score} out of 100, grade ${esc(grade)}</title>
+  const color = TOKEN_COLOR[tokenForScore(score)]
+  const grade = gradeWithModifier(score)
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="Overall score ${score10(score)} out of 10, grade ${esc(grade)}">
+    <title>Overall score ${score10(score)} out of 10, grade ${esc(grade)}</title>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${COLORS.border}" stroke-width="${stroke}" />
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}"
       stroke-linecap="round" stroke-dasharray="${dash} ${circ - dash}" transform="rotate(-90 ${size / 2} ${size / 2})" />
-    <text x="50%" y="46%" text-anchor="middle" font-size="42" font-weight="700" fill="${COLORS.textPrimary}" font-family="Inter,sans-serif">${score}</text>
-    <text x="50%" y="64%" text-anchor="middle" font-size="14" font-weight="600" fill="${COLORS.textSecondary}" font-family="Inter,sans-serif">Grade ${esc(grade)}</text>
+    <text x="50%" y="44%" text-anchor="middle" font-size="42" font-weight="700" fill="${COLORS.textPrimary}" font-family="Inter,sans-serif">${score10(score)}</text>
+    <text x="50%" y="58%" text-anchor="middle" font-size="12" font-weight="600" fill="${COLORS.textSecondary}" font-family="Inter,sans-serif">out of 10</text>
+    <text x="50%" y="70%" text-anchor="middle" font-size="13" font-weight="700" fill="${color}" font-family="Inter,sans-serif">${esc(grade)}</text>
   </svg>`
 }
 
@@ -128,10 +138,31 @@ function accordion(label: string, chip: string, body: string, tip?: string): str
   </details>`
 }
 
-function scoreBar(pct: number, grade: Grade | null): string {
-  const color = TOKEN_COLOR[gradeToken(grade)]
-  const w = Math.max(0, Math.min(100, pct))
+function scoreBar(score: number | null): string {
+  const color = TOKEN_COLOR[tokenForScore(score)]
+  const w = Math.max(0, Math.min(100, score ?? 0))
   return `<div class="bar"><div class="bar-fill" style="width:${w}%;background:${color}"></div></div>`
+}
+
+/** "What This Means" labeled narrative block (matches the design target). */
+function whatThisMeans(text: string | undefined): string {
+  return text
+    ? `<div class="wtm"><div class="wtm-label">What This Means</div><p>${esc(text)}</p></div>`
+    : ''
+}
+
+/** Merged Metric/Score findings for a composite card's member categories,
+ * plus any extra rows (e.g. domain age, crawl errors for Site Health). */
+function compositeBody(
+  rows: Array<{ label: string; value: string }>,
+  commentary: string | undefined,
+): string {
+  const findings = rows.length
+    ? `<dl class="findings">${rows
+        .map((r) => `<div class="finding"><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`)
+        .join('')}</dl>`
+    : ''
+  return `${whatThisMeans(commentary)}${findings}`
 }
 
 function targetMarketBody(s: ScoredSection, commentary?: string): string {
@@ -309,69 +340,53 @@ const NARRATIVE_PRIORITY_COLOR: Record<string, string> = {
 }
 
 function narrativeRecsBody(narrative: NarrativeIntelligence): string {
-  return `<ul class="recs">${narrative.recommendations
-    .map((r) => {
-      const c = NARRATIVE_PRIORITY_COLOR[r.priority] ?? COLORS.warning
-      return `<li class="rec">
-          <div class="rec-head">
-            <span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(r.priority)} priority</span>
-          </div>
-          <div class="rec-title">${esc(r.title)}</div>
-          ${r.business_impact ? `<div class="muted"><strong>Business impact:</strong> ${esc(r.business_impact)}</div>` : ''}
-          ${r.counting_five_help ? `<div class="muted" style="margin-top:4px"><strong>How we help:</strong> ${esc(r.counting_five_help)}</div>` : ''}
-        </li>`
-    })
-    .join('')}</ul>`
+  return `<div class="table-wrap"><table class="recs-table">
+    <thead><tr><th>Priority</th><th>Issue &amp; Impact</th><th>Section</th><th>Revaltus Service</th></tr></thead>
+    <tbody>${narrative.recommendations
+      .map((r) => {
+        const c = NARRATIVE_PRIORITY_COLOR[r.priority] ?? COLORS.warning
+        return `<tr>
+          <td><span class="chip" style="background:${c}1a;color:${chipText(c)}">${esc(r.priority)}</span></td>
+          <td><div class="rec-title">${esc(r.title)}</div>${r.business_impact ? `<div class="muted small">${esc(r.business_impact)}</div>` : ''}</td>
+          <td class="muted small">${esc(inferSection(`${r.title} ${r.business_impact}`))}</td>
+          <td class="muted small">${esc(r.counting_five_help)}</td>
+        </tr>`
+      })
+      .join('')}</tbody>
+  </table></div>`
 }
 
-/** The three strategic scored sections as accordions, in the order they lead
- * the report — ahead of the deterministic technical categories. */
-function intelLeadAccordions(intel: AuditIntelligence): string {
-  const c = intel.narrative?.section_commentary ?? {}
-  const parts: string[] = []
-  if (intel.target_market) {
-    parts.push(
-      accordion(
-        SECTION_LABELS.target_market,
-        gradeChip(intel.target_market.grade, intel.target_market.score),
-        targetMarketBody(intel.target_market, c.target_market),
-        SECTION_HELP.target_market,
-      ),
+/** One accordion for a dashboard card, dispatching on its kind. */
+function bucketAccordion(
+  result: AuditResult,
+  bucket: DashboardBucket,
+  sectionCommentary: Record<string, string>,
+): string {
+  const intel = result.intelligence
+  if (bucket.kind === 'intel') {
+    let body = ''
+    if (bucket.key === 'target_market' && intel?.target_market) body = targetMarketBody(intel.target_market)
+    else if (bucket.key === 'competitive' && intel?.competitive) body = competitiveBody(intel.competitive)
+    else if (bucket.key === 'niche_services' && intel?.niche_services) body = nicheServicesBody(intel.niche_services)
+    return accordion(
+      bucket.label,
+      gradeChip(bucket.score),
+      `${whatThisMeans(sectionCommentary[bucket.key])}${body}`,
+      SECTION_HELP[bucket.key],
     )
   }
-  if (intel.competitive) {
-    parts.push(
-      accordion(
-        SECTION_LABELS.competitive,
-        gradeChip(intel.competitive.grade, intel.competitive.score),
-        competitiveBody(intel.competitive, c.competitive),
-        SECTION_HELP.competitive,
-      ),
+  if (bucket.kind === 'tech_stack') {
+    return accordion(
+      bucket.label,
+      gradeChip(bucket.score),
+      `${whatThisMeans(sectionCommentary.tech_stack ?? intel?.tech_stack?.commentary)}${techDomainBody(intel?.tech_stack, undefined)}`,
+      SECTION_HELP.tech_stack,
     )
   }
-  if (intel.niche_services) {
-    parts.push(
-      accordion(
-        SECTION_LABELS.niche_services,
-        gradeChip(intel.niche_services.grade, intel.niche_services.score),
-        nicheServicesBody(intel.niche_services, c.niche_services),
-        SECTION_HELP.niche_services,
-      ),
-    )
-  }
-  return parts.join('')
-}
-
-/** Technology Stack & Domain accordion (unscored — no grade chip). */
-function techDomainAccordion(intel: AuditIntelligence): string {
-  if (!intel.tech_stack && !intel.domain) return ''
-  const c = intel.narrative?.section_commentary ?? {}
-  return accordion(
-    `${SECTION_LABELS.tech_stack} & Domain`,
-    '',
-    techDomainBody(intel.tech_stack, intel.domain, c.tech_stack),
-    SECTION_HELP.tech_stack,
-  )
+  const rows = bucket.members.flatMap((k) => findingRows(result.findings[k]))
+  if (bucket.key === 'site_health') rows.push(...siteHealthExtraRows(result))
+  const wtm = bucket.members.map((k) => sectionCommentary[k]).filter(Boolean).join(' ') || undefined
+  return accordion(bucket.label, gradeChip(bucket.score), compositeBody(rows, wtm), SECTION_HELP[bucket.key])
 }
 
 function topRecommendationsHtml(
@@ -421,43 +436,32 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
         .map((r) => ({ title: r.title, detail: r.business_impact, color: narrativeColor(r.priority) }))
     : criticals.slice(0, 3).map((r) => ({ title: r.title, detail: r.detail, color: COLORS.error }))
 
+  // Eight client-friendly dashboard cards: strategic intel leads, then the
+  // consolidated technical buckets. Drives the dashboard, the hero pills, and
+  // the section accordions below — all from one grouping.
+  const buckets = deriveDashboard(result)
+  const { passing, needsWork } = passingCounts(buckets)
+  const heroPills = `<div class="hero-pills"><span class="pill">${passing} Passing</span><span class="pill red">${needsWork} Need Work</span></div>`
+
   const summarySection = `
     <section class="card exec">
-      <div class="ring">${scoreRingSvg(result.overall_score, result.overall_grade)}</div>
+      <div class="ring">${scoreRingSvg(result.overall_score)}</div>
       <div class="exec-body">
         <h2>Executive Summary</h2>
         <p class="muted">${result.pages_crawled} page${result.pages_crawled === 1 ? '' : 's'} crawled ·
           ${criticals.length} critical issue${criticals.length === 1 ? '' : 's'} ·
           ${result.recommendations.length} total recommendations</p>
+        ${heroPills}
         ${execProse ? `<p style="margin-top:12px">${esc(execProse)}</p>` : ''}
         ${topRecommendationsHtml(topRecs)}
       </div>
     </section>`
 
-  // Score dashboard — strategic intelligence sections lead, then the
-  // deterministic categories. Intel scores (0–10) normalize to a 0–100 bar.
-  type DashCard = { label: string; grade: Grade | null; score: number | null; pct: number }
-  const dashCards: DashCard[] = [
-    ...(intel?.target_market
-      ? [{ label: SECTION_LABELS.target_market, grade: intel.target_market.grade, score: intel.target_market.score, pct: intelScorePct(intel.target_market.score) }]
-      : []),
-    ...(intel?.competitive
-      ? [{ label: SECTION_LABELS.competitive, grade: intel.competitive.grade, score: intel.competitive.score, pct: intelScorePct(intel.competitive.score) }]
-      : []),
-    ...(intel?.niche_services
-      ? [{ label: SECTION_LABELS.niche_services, grade: intel.niche_services.grade, score: intel.niche_services.score, pct: intelScorePct(intel.niche_services.score) }]
-      : []),
-    ...CATEGORY_META.map(({ key, label }) => {
-      const cs = result.category_scores[key]
-      return { label, grade: cs.grade, score: cs.score, pct: cs.score ?? 0 }
-    }),
-  ]
-
-  const dashGrid = `<div class="grid">${dashCards
+  const dashGrid = `<div class="grid">${buckets
     .map(
-      (c) => `<div class="dash">
-        <div class="dash-top"><div class="grid-label">${esc(c.label)}</div>${gradeChip(c.grade, c.score)}</div>
-        ${scoreBar(c.pct, c.grade)}
+      (b) => `<div class="dash">
+        <div class="dash-top"><div class="grid-label">${esc(b.label)}</div>${gradeChip(b.score)}</div>
+        ${scoreBar(b.score)}
       </div>`,
     )
     .join('')}</div>`
@@ -481,23 +485,10 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
     : ''
 
   const sectionCommentary = intel?.narrative?.section_commentary ?? {}
-  const categoryAccordions = CATEGORY_META.map(({ key, label }) => {
-    const cs = result.category_scores[key]
-    const rows = findingRows(result.findings[key])
-    const findings = rows.length
-      ? `<dl class="findings">${rows
-          .map((row) => `<div class="finding"><dt>${esc(row.label)}</dt><dd>${esc(row.value)}</dd></div>`)
-          .join('')}</dl>`
-      : ''
-    return accordion(label, gradeChip(cs.grade, cs.score), `${findings}${commentaryHtml(sectionCommentary[key])}`, SECTION_HELP[key])
-  }).join('')
 
-  // Every section is a collapsible accordion, same order as the dashboard:
-  // intelligence leads, then categories, then tech/domain.
-  const sectionDetails = `
-    ${intel ? intelLeadAccordions(intel) : ''}
-    ${categoryAccordions}
-    ${intel ? techDomainAccordion(intel) : ''}`
+  // One accordion per dashboard card, in the same order — strategic intel,
+  // then the consolidated technical buckets (with their member findings inside).
+  const sectionDetails = buckets.map((b) => bucketAccordion(result, b, sectionCommentary)).join('')
 
   const contentLibrarySection = intel?.content_library
     ? accordion(
@@ -614,7 +605,19 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .recs { list-style:none; margin:16px 0 0; padding:0; }
   .rec { border:1px solid ${COLORS.border}; border-radius:8px; padding:16px; margin-bottom:12px; background:${COLORS.page}; }
   .rec-head { display:flex; align-items:center; gap:8px; }
-  .rec-title { font-family:Inter,sans-serif; font-weight:600; margin-top:8px; }
+  .rec-title { font-family:Inter,sans-serif; font-weight:600; }
+  .recs-table td { vertical-align:top; }
+  .recs-table .rec-title { margin-bottom:4px; }
+  .hero-pills { display:flex; gap:8px; margin-top:14px; }
+  .pill { display:inline-flex; align-items:center; border-radius:100px; padding:4px 14px;
+    font-family:Inter,sans-serif; font-weight:600; font-size:12px;
+    background:${COLORS.success}1a; color:${COLORS.success}; }
+  .pill.red { background:${COLORS.error}1a; color:${COLORS.error}; }
+  .wtm { margin-bottom:4px; border-left:3px solid ${COLORS.cyan}; background:${COLORS.subtle};
+    border-radius:0 6px 6px 0; padding:12px 16px; }
+  .wtm-label { font-family:Inter,sans-serif; font-weight:700; font-size:11px; text-transform:uppercase;
+    letter-spacing:.06em; color:${COLORS.cyan}; margin-bottom:4px; }
+  .wtm p { margin:0; font-size:14px; color:${COLORS.textSecondary}; }
   .intel-sub { font-family:Inter,sans-serif; color:${COLORS.navy}; font-size:14px; margin:20px 0 8px; }
   .intel-list { margin:8px 0 0; padding-left:18px; }
   .intel-list li { margin-bottom:6px; font-size:14px; }

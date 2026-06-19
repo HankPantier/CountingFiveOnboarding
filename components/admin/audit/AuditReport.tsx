@@ -8,7 +8,6 @@ import type {
   ContentLibraryIntelligence,
   DigitalIntelligence,
   DomainIntelligence,
-  Grade,
   NarrativeIntelligence,
   NicheServicesIntelligence,
   PageSummary,
@@ -18,14 +17,20 @@ import type {
 import {
   CATEGORY_META,
   findingRows,
-  gradeToken,
   safeHref,
+  tokenForScore,
   type SemanticToken,
 } from '@/lib/audit/report-format'
 import {
+  deriveDashboard,
+  inferSection,
+  passingCounts,
+  siteHealthExtraRows,
+  type DashboardBucket,
+} from '@/lib/audit/report-buckets'
+import {
   SECTION_HELP,
   SECTION_LABELS,
-  intelScorePct,
   signalLabel,
   subScoreRows,
 } from '@/lib/audit/intelligence-format'
@@ -64,13 +69,6 @@ export interface AuditReportProps {
   previous?: { overall_score: number | null; category_scores: CategoryScoreMap | null } | null
 }
 
-interface DashCard {
-  label: string
-  grade: Grade | null
-  score: number | null
-  pct: number
-}
-
 export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
   const runDate = new Date(createdAt).toLocaleDateString('en-US', {
     year: 'numeric',
@@ -92,45 +90,11 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
       }))
     : criticals.slice(0, 3).map((r) => ({ title: r.title, detail: r.detail, token: 'error' as const }))
 
-  // Score dashboard — strategic intelligence sections lead, then the
-  // deterministic technical categories. Intel scores (0–10) are normalized to
-  // a 0–100 percent so every bar shares one axis.
-  const dashCards: DashCard[] = [
-    ...(intel?.target_market
-      ? [
-          {
-            label: SECTION_LABELS.target_market,
-            grade: intel.target_market.grade,
-            score: intel.target_market.score,
-            pct: intelScorePct(intel.target_market.score),
-          },
-        ]
-      : []),
-    ...(intel?.competitive
-      ? [
-          {
-            label: SECTION_LABELS.competitive,
-            grade: intel.competitive.grade,
-            score: intel.competitive.score,
-            pct: intelScorePct(intel.competitive.score),
-          },
-        ]
-      : []),
-    ...(intel?.niche_services
-      ? [
-          {
-            label: SECTION_LABELS.niche_services,
-            grade: intel.niche_services.grade,
-            score: intel.niche_services.score,
-            pct: intelScorePct(intel.niche_services.score),
-          },
-        ]
-      : []),
-    ...CATEGORY_META.map(({ key, label }) => {
-      const cs = result.category_scores[key]
-      return { label, grade: cs.grade, score: cs.score, pct: cs.score ?? 0 }
-    }),
-  ]
+  // Eight client-friendly dashboard cards: strategic intel leads, then the
+  // consolidated technical buckets. One grouping drives the dashboard, the hero
+  // pills, and the section accordions below.
+  const buckets = deriveDashboard(result)
+  const { passing, needsWork } = passingCounts(buckets)
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -163,7 +127,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
       {/* 2. Hero — score ring, executive summary, Top Recommendations */}
       <section className="rounded-lg border border-border-default border-t-4 border-t-brand-cyan bg-surface-card p-8 shadow-elevated">
         <div className="flex flex-col items-center gap-6 md:flex-row md:items-start md:gap-10">
-          <ScoreRing score={result.overall_score} grade={result.overall_grade} size={200} />
+          <ScoreRing score={result.overall_score} size={200} />
           <div className="flex-1">
             <h2 className={sectionTitle}>Executive Summary</h2>
             <p className="mt-1 font-body text-sm text-text-secondary">
@@ -171,6 +135,14 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
               {criticals.length} critical issue{criticals.length === 1 ? '' : 's'} ·{' '}
               {result.recommendations.length} total recommendations
             </p>
+            <div className="mt-3.5 flex gap-2">
+              <span className="inline-flex items-center rounded-full bg-success/10 px-3.5 py-1 font-heading text-xs font-semibold text-success">
+                {passing} Passing
+              </span>
+              <span className="inline-flex items-center rounded-full bg-error/10 px-3.5 py-1 font-heading text-xs font-semibold text-error">
+                {needsWork} Need Work
+              </span>
+            </div>
             {intel?.narrative?.executive_summary && (
               <p className="mt-3 font-body text-sm text-text-primary">
                 {intel.narrative.executive_summary}
@@ -185,67 +157,15 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
       <section className="space-y-3">
         <AuditAccordion label="Score Dashboard" tip={SECTION_HELP.dashboard}>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {dashCards.map((c, i) => (
-              <DashboardCard key={i} card={c} />
+            {buckets.map((b) => (
+              <DashboardCard key={b.key} card={b} />
             ))}
           </div>
         </AuditAccordion>
 
-        {intel?.target_market && (
-          <AuditAccordion
-            label={SECTION_LABELS.target_market}
-            tip={SECTION_HELP.target_market}
-            grade={intel.target_market.grade}
-            score={intel.target_market.score}
-          >
-            <SubScores sub={intel.target_market.sub_scores} />
-            <Commentary text={intel.target_market.commentary} />
-            <Commentary text={sectionCommentary.target_market} />
-          </AuditAccordion>
-        )}
-
-        {intel?.competitive && (
-          <AuditAccordion
-            label={SECTION_LABELS.competitive}
-            tip={SECTION_HELP.competitive}
-            grade={intel.competitive.grade}
-            score={intel.competitive.score}
-          >
-            <CompetitiveBody data={intel.competitive} commentary={sectionCommentary.competitive} />
-          </AuditAccordion>
-        )}
-
-        {intel?.niche_services && (
-          <AuditAccordion
-            label={SECTION_LABELS.niche_services}
-            tip={SECTION_HELP.niche_services}
-            grade={intel.niche_services.grade}
-            score={intel.niche_services.score}
-          >
-            <NicheServicesBody data={intel.niche_services} commentary={sectionCommentary.niche_services} />
-          </AuditAccordion>
-        )}
-
-        {CATEGORY_META.map(({ key, label }) => {
-          const cs = result.category_scores[key]
-          const rows = findingRows(result.findings[key])
-          return (
-            <AuditAccordion key={key} label={label} tip={SECTION_HELP[key]} grade={cs.grade} score={cs.score}>
-              <FindingsDl rows={rows} />
-              <Commentary text={sectionCommentary[key]} />
-            </AuditAccordion>
-          )
-        })}
-
-        {(intel?.tech_stack || intel?.domain) && (
-          <AuditAccordion label={`${SECTION_LABELS.tech_stack} & Domain`} tip={SECTION_HELP.tech_stack}>
-            <TechDomainBody
-              tech={intel.tech_stack}
-              domain={intel.domain}
-              commentary={sectionCommentary.tech_stack}
-            />
-          </AuditAccordion>
-        )}
+        {buckets.map((b) => (
+          <BucketSection key={b.key} result={result} bucket={b} sectionCommentary={sectionCommentary} />
+        ))}
 
         {intel?.content_library && (
           <AuditAccordion label={SECTION_LABELS.content_library} tip={SECTION_HELP.content_library}>
@@ -343,18 +263,81 @@ function TopRecommendations({
   )
 }
 
-function DashboardCard({ card }: { card: DashCard }) {
-  const token = gradeToken(card.grade)
+function DashboardCard({ card }: { card: DashboardBucket }) {
+  const token = tokenForScore(card.score)
   return (
     <div className="rounded-lg border border-border-default bg-surface-page px-4 py-3">
       <div className="flex items-start justify-between gap-2">
         <p className="font-heading text-sm font-semibold text-text-primary">{card.label}</p>
-        <GradeBadge grade={card.grade} score={card.score} />
+        <GradeBadge score={card.score} />
       </div>
       <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-border-default">
-        <div className={`h-1 rounded-full ${TOKEN_BG[token]}`} style={{ width: `${card.pct}%` }} />
+        <div className={`h-1 rounded-full ${TOKEN_BG[token]}`} style={{ width: `${card.score ?? 0}%` }} />
       </div>
     </div>
+  )
+}
+
+/** "What This Means" labeled narrative block — matches the design target. */
+function WhatThisMeans({ text }: { text?: string }) {
+  if (!text) return null
+  return (
+    <div className="mb-1 rounded-r-md border-l-[3px] border-brand-cyan bg-surface-subtle px-4 py-3">
+      <p className="font-heading text-[11px] font-bold uppercase tracking-wide text-brand-cyan">
+        What This Means
+      </p>
+      <p className="mt-1 font-body text-sm text-text-secondary">{text}</p>
+    </div>
+  )
+}
+
+/** One accordion for a dashboard card, dispatching on its kind. Intel cards
+ * render their rich body; composite cards merge their member findings; the
+ * tech-stack card renders the stack (domain folds into Site Health). */
+function BucketSection({
+  result,
+  bucket,
+  sectionCommentary,
+}: {
+  result: AuditResult
+  bucket: DashboardBucket
+  sectionCommentary: Record<string, string>
+}) {
+  const intel = result.intelligence
+  const wtm =
+    bucket.kind === 'composite'
+      ? bucket.members.map((k) => sectionCommentary[k]).filter(Boolean).join(' ') || undefined
+      : bucket.kind === 'tech_stack'
+        ? sectionCommentary.tech_stack ?? intel?.tech_stack?.commentary
+        : sectionCommentary[bucket.key]
+
+  let body: ReactNode = null
+  if (bucket.kind === 'intel') {
+    if (bucket.key === 'target_market' && intel?.target_market) {
+      body = (
+        <>
+          <SubScores sub={intel.target_market.sub_scores} />
+          <Commentary text={intel.target_market.commentary} />
+        </>
+      )
+    } else if (bucket.key === 'competitive' && intel?.competitive) {
+      body = <CompetitiveBody data={intel.competitive} />
+    } else if (bucket.key === 'niche_services' && intel?.niche_services) {
+      body = <NicheServicesBody data={intel.niche_services} />
+    }
+  } else if (bucket.kind === 'tech_stack') {
+    body = <TechDomainBody tech={intel?.tech_stack} />
+  } else {
+    const rows = bucket.members.flatMap((k) => findingRows(result.findings[k]))
+    if (bucket.key === 'site_health') rows.push(...siteHealthExtraRows(result))
+    body = <FindingsDl rows={rows} />
+  }
+
+  return (
+    <AuditAccordion label={bucket.label} tip={SECTION_HELP[bucket.key]} score={bucket.score}>
+      <WhatThisMeans text={wtm} />
+      {body}
+    </AuditAccordion>
   )
 }
 
@@ -387,14 +370,12 @@ function InfoTip({ text }: { text: string }) {
 function AuditAccordion({
   label,
   tip,
-  grade,
   score,
   defaultOpen,
   children,
 }: {
   label: string
   tip?: string
-  grade?: Grade | null
   score?: number | null
   defaultOpen?: boolean
   children: ReactNode
@@ -407,7 +388,7 @@ function AuditAccordion({
           {tip && <InfoTip text={tip} />}
         </span>
         <span className="flex items-center gap-3">
-          {grade !== undefined && <GradeBadge grade={grade} score={score ?? null} />}
+          {score !== undefined && <GradeBadge score={score ?? null} />}
           <ChevronDown className="h-4 w-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" />
         </span>
       </summary>
@@ -768,32 +749,47 @@ const NARRATIVE_PRIORITY_CLASS: Record<string, string> = {
 
 function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) {
   return (
-    <ul className="space-y-3">
-        {narrative.recommendations.map((r, i) => (
-          <li key={i} className="rounded-lg border border-border-default border-l-4 border-l-brand-cyan bg-surface-page p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold ${
-                  NARRATIVE_PRIORITY_CLASS[r.priority] ?? 'bg-warning/15 text-warning-strong'
-                }`}
-              >
-                {r.priority} priority
-              </span>
-            </div>
-            <p className="mt-2 font-heading text-sm font-semibold text-text-primary">{r.title}</p>
-            {r.business_impact && (
-              <p className="mt-1 font-body text-sm text-text-secondary">
-                <span className="font-semibold">Business impact:</span> {r.business_impact}
-              </p>
-            )}
-            {r.counting_five_help && (
-              <p className="mt-1 font-body text-sm text-text-secondary">
-                <span className="font-semibold">How we help:</span> {r.counting_five_help}
-              </p>
-            )}
-          </li>
-        ))}
-    </ul>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm font-body">
+        <thead>
+          <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
+            {['Priority', 'Issue & Impact', 'Section', 'Revaltus Service'].map((h) => (
+              <th key={h} className={intelTableHead}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {narrative.recommendations.map((r, i) => (
+            <tr
+              key={i}
+              className={`border-b border-border-default last:border-0 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
+            >
+              <td className="px-4 py-2 align-top">
+                <span
+                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold ${
+                    NARRATIVE_PRIORITY_CLASS[r.priority] ?? 'bg-warning/15 text-warning-strong'
+                  }`}
+                >
+                  {r.priority}
+                </span>
+              </td>
+              <td className="px-4 py-2 align-top">
+                <span className="font-heading font-semibold text-text-primary">{r.title}</span>
+                {r.business_impact && (
+                  <p className="mt-1 text-text-secondary">{r.business_impact}</p>
+                )}
+              </td>
+              <td className="px-4 py-2 align-top text-text-secondary">
+                {inferSection(`${r.title} ${r.business_impact}`)}
+              </td>
+              <td className="px-4 py-2 align-top text-text-secondary">{r.counting_five_help}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

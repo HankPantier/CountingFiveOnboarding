@@ -188,10 +188,7 @@ export default function AuditsTable({
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{r.pages_crawled ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <GradeBadge
-                        grade={(r.overall_grade as 'A' | 'B' | 'C' | 'D' | 'F' | null) ?? null}
-                        score={r.overall_score}
-                      />
+                      <GradeBadge score={r.overall_score} />
                     </td>
                     <td className="px-4 py-3">
                       {delta === null || delta === undefined ? (

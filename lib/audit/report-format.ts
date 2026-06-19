@@ -25,6 +25,36 @@ export function gradeToken(grade: Grade | null): SemanticToken {
   return 'error'
 }
 
+/** Semantic token straight from a 0–100 score — mirrors `gradeToken` thresholds
+ * (A/B ≥80 success, C ≥70 warning, else error) without a Grade in hand. */
+export function tokenForScore(score: number | null): SemanticToken {
+  if (score === null) return 'muted'
+  if (score >= 80) return 'success'
+  if (score >= 70) return 'warning'
+  return 'error'
+}
+
+/** Client-facing 0–10 display of a 0–100 score, one decimal (e.g. 82 → "8.2"). */
+export function score10(score: number | null): string {
+  return score === null ? '—' : (score / 10).toFixed(1)
+}
+
+/** US-style letter grade with +/- modifier from a 0–100 score. The shareable
+ * report speaks in graded bands (e.g. "C+") rather than the engine's bare A–F;
+ * thresholds follow the conventional GPA scale. */
+export function gradeWithModifier(score: number | null): string {
+  if (score === null) return 'N/A'
+  const scale: ReadonlyArray<readonly [number, string]> = [
+    [97, 'A+'], [93, 'A'], [90, 'A-'],
+    [87, 'B+'], [83, 'B'], [80, 'B-'],
+    [77, 'C+'], [73, 'C'], [70, 'C-'],
+    [67, 'D+'], [63, 'D'], [60, 'D-'],
+    [0, 'F'],
+  ]
+  for (const [min, g] of scale) if (score >= min) return g
+  return 'F'
+}
+
 export function humanizeKey(key: string): string {
   return key
     .replace(/^pct_/, '% ')
@@ -62,7 +92,7 @@ export function findingRows(
   findings: Findings[CategoryKey],
 ): Array<{ label: string; value: string }> {
   const rows: Array<{ label: string; value: string }> = []
-  for (const [k, v] of Object.entries(findings)) {
+  for (const [k, v] of Object.entries(findings ?? {})) {
     const formatted = formatValue(v)
     if (formatted === null) continue
     rows.push({ label: humanizeKey(k), value: formatted })

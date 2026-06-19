@@ -1,5 +1,4 @@
-import type { Grade } from '@/types/audit-result'
-import { gradeToken } from '@/lib/audit/report-format'
+import { gradeToken, gradeWithModifier, score10, tokenForScore } from '@/lib/audit/report-format'
 
 export { gradeToken }
 
@@ -13,13 +12,14 @@ const tokenClasses: Record<string, string> = {
   muted: 'bg-surface-subtle text-text-muted',
 }
 
-export function GradeBadge({ grade, score }: { grade: Grade | null; score: number | null }) {
-  if (grade === null || score === null) {
+/** Grade chip on the client-facing 0–10 scale: "C+ · 7.0". `score` is 0–100. */
+export function GradeBadge({ score }: { score: number | null }) {
+  if (score === null) {
     return <span className={`${badgeBase} ${tokenClasses.muted}`}>N/A</span>
   }
   return (
-    <span className={`${badgeBase} ${tokenClasses[gradeToken(grade)]}`}>
-      {grade} · {score}
+    <span className={`${badgeBase} ${tokenClasses[tokenForScore(score)]}`}>
+      {gradeWithModifier(score)} · {score10(score)}
     </span>
   )
 }
