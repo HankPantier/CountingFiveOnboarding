@@ -6,7 +6,7 @@ import type {
   Grade,
   NicheServicesIntelligence,
 } from '@/types/audit-result'
-import { deriveDashboard, inferSection, passingCounts, siteHealthExtraRows } from './report-buckets'
+import { bucketMemberGrades, deriveDashboard, inferSection, passingCounts, siteHealthExtraRows } from './report-buckets'
 
 function cat(score: number | null): { score: number | null; grade: Grade | null } {
   const grade: Grade | null =
@@ -68,9 +68,9 @@ describe('deriveDashboard', () => {
   it('produces the eight client-facing cards in order when intelligence is present', () => {
     const r = result({
       intelligence: {
-        target_market: scored(7),
-        competitive: comp(6),
-        niche_services: niche(4),
+        target_market: scored(72),
+        competitive: comp(61),
+        niche_services: niche(38),
         tech_stack: { cms: 'WordPress', page_builder: null, hosting: null, frameworks: [], risk_flags: ['polyfill.io'], commentary: '' },
       },
     })
@@ -87,10 +87,13 @@ describe('deriveDashboard', () => {
     ])
   })
 
-  it('normalizes intel 0–10 scores to the 0–100 axis', () => {
-    const r = result({ intelligence: { target_market: scored(7) } })
-    const tm = deriveDashboard(r).find((c) => c.key === 'target_market')
-    expect(tm?.score).toBe(70)
+  it('passes intel section scores through on the 0–100 scale (no double-scaling)', () => {
+    const high = deriveDashboard(result({ intelligence: { target_market: scored(92) } })).find((c) => c.key === 'target_market')
+    expect(high?.score).toBe(92)
+    // A low intel score must stay low — the headline grade can't render as an A
+    // when the section's own sub-scores are poor (the bug this guards against).
+    const low = deriveDashboard(result({ intelligence: { target_market: scored(33) } })).find((c) => c.key === 'target_market')
+    expect(low?.score).toBe(33)
   })
 
   it('passes single-category composites straight through', () => {
@@ -124,11 +127,24 @@ describe('deriveDashboard', () => {
 
 describe('passingCounts', () => {
   it('counts A/B (≥80) as passing, C and below as needs-work', () => {
-    const cards = deriveDashboard(result({ intelligence: { target_market: scored(9) } }))
-    // target_market 90 (pass), seo ~ low (work), mobile 50 (work), speed 90 (pass), site_health 67 (work)
+    const cards = deriveDashboard(result({ intelligence: { target_market: scored(90) } }))
+    // target_market 90 (pass), seo 50 (work), mobile 50 (work), speed 90 (pass), site_health 67 (work)
     const { passing, needsWork } = passingCounts(cards)
     expect(passing).toBe(2)
     expect(needsWork).toBe(3)
+  })
+})
+
+describe('bucketMemberGrades', () => {
+  it('returns per-category grades for multi-category composites', () => {
+    const sh = deriveDashboard(result()).find((c) => c.key === 'site_health')!
+    const members = bucketMemberGrades(result(), sh)
+    expect(members.map((m) => m.label)).toEqual(['Technical Health', 'Analytics & Tracking'])
+    expect(members.map((m) => m.score)).toEqual([70, 60])
+  })
+  it('is empty for single-category composites', () => {
+    const speed = deriveDashboard(result()).find((c) => c.key === 'speed')!
+    expect(bucketMemberGrades(result(), speed)).toEqual([])
   })
 })
 

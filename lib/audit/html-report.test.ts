@@ -39,9 +39,9 @@ function result(): AuditResult {
     google_indexed_urls: [],
     sitemap: {} as AuditResult['sitemap'],
     intelligence: {
-      target_market: { score: 7, grade: 'C', sub_scores: {}, commentary: '' },
-      competitive: { score: 6, grade: 'C', sub_scores: {}, commentary: '', keyword_rankings: [], ai_search_presence: '', local_seo: '' },
-      niche_services: { score: 4, grade: 'F', sub_scores: {}, commentary: '', detected_niches: [], invisible_niches: [], services_analysis: [], top_improvements: [] },
+      target_market: { score: 72, grade: 'C', sub_scores: {}, commentary: '' },
+      competitive: { score: 61, grade: 'D', sub_scores: {}, commentary: '', keyword_rankings: [], ai_search_presence: '', local_seo: '' },
+      niche_services: { score: 38, grade: 'F', sub_scores: {}, commentary: '', detected_niches: [], invisible_niches: [], services_analysis: [], top_improvements: [] },
       tech_stack: { cms: 'WordPress', page_builder: null, hosting: null, frameworks: [], risk_flags: [], commentary: '' },
       narrative: {
         executive_summary: 'The site has solid speed but weak niche positioning.',

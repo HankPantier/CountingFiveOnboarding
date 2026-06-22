@@ -22,6 +22,7 @@ import {
   type SemanticToken,
 } from '@/lib/audit/report-format'
 import {
+  bucketMemberGrades,
   deriveDashboard,
   inferSection,
   passingCounts,
@@ -278,6 +279,22 @@ function DashboardCard({ card }: { card: DashboardBucket }) {
   )
 }
 
+/** Per-category grade chips for a composite card, so the weighted headline is
+ * explained by its parts. */
+function MemberGrades({ members }: { members: Array<{ label: string; score: number | null }> }) {
+  if (!members.length) return null
+  return (
+    <div className="mb-1 flex flex-wrap gap-x-4 gap-y-2">
+      {members.map((m, i) => (
+        <span key={i} className="inline-flex items-center gap-1.5">
+          <span className="font-heading text-xs font-semibold text-text-secondary">{m.label}</span>
+          <GradeBadge score={m.score} />
+        </span>
+      ))}
+    </div>
+  )
+}
+
 /** "What This Means" labeled narrative block — matches the design target. */
 function WhatThisMeans({ text }: { text?: string }) {
   if (!text) return null
@@ -326,11 +343,24 @@ function BucketSection({
       body = <NicheServicesBody data={intel.niche_services} />
     }
   } else if (bucket.kind === 'tech_stack') {
-    body = <TechDomainBody tech={intel?.tech_stack} />
+    const flags = intel?.tech_stack?.risk_flags.length ?? 0
+    body = (
+      <>
+        <p className="font-body text-xs text-text-muted">
+          Grade reflects {flags} notable dependency risk{flags === 1 ? '' : 's'}.
+        </p>
+        <TechDomainBody tech={intel?.tech_stack} />
+      </>
+    )
   } else {
     const rows = bucket.members.flatMap((k) => findingRows(result.findings[k]))
     if (bucket.key === 'site_health') rows.push(...siteHealthExtraRows(result))
-    body = <FindingsDl rows={rows} />
+    body = (
+      <>
+        <MemberGrades members={bucketMemberGrades(result, bucket)} />
+        <FindingsDl rows={rows} />
+      </>
+    )
   }
 
   return (

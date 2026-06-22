@@ -57,12 +57,6 @@ export const SECTION_HELP: Record<string, string> = {
 export const INTEL_LEAD_KEYS = ['target_market', 'competitive', 'niche_services'] as const
 export type IntelLeadKey = (typeof INTEL_LEAD_KEYS)[number]
 
-/** Intelligence section scores are on a 0–10 scale; normalize to a 0–100
- * percent so dashboard score bars share one axis with the 0–100 categories. */
-export function intelScorePct(score: number): number {
-  return Math.max(0, Math.min(100, score * 10))
-}
-
 /** Sub-scores → display rows on the sample's 0–10 scale. */
 export function subScoreRows(sub: Record<string, number>): Array<{ label: string; value: string }> {
   return Object.entries(sub).map(([k, v]) => ({ label: humanizeKey(k), value: `${v}/10` }))

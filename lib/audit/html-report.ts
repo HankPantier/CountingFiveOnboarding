@@ -13,6 +13,7 @@ import {
   type SemanticToken,
 } from './report-format'
 import {
+  bucketMemberGrades,
   deriveDashboard,
   inferSection,
   passingCounts,
@@ -151,18 +152,28 @@ function whatThisMeans(text: string | undefined): string {
     : ''
 }
 
+/** Per-category grade chips, so a composite card's weighted headline is
+ * explained by its parts. Empty for single-category cards. */
+function memberGradesHtml(members: Array<{ label: string; score: number | null }>): string {
+  if (!members.length) return ''
+  return `<div class="subgrades">${members
+    .map((m) => `<span class="subgrade"><span class="subgrade-label">${esc(m.label)}</span>${gradeChip(m.score)}</span>`)
+    .join('')}</div>`
+}
+
 /** Merged Metric/Score findings for a composite card's member categories,
  * plus any extra rows (e.g. domain age, crawl errors for Site Health). */
 function compositeBody(
   rows: Array<{ label: string; value: string }>,
   commentary: string | undefined,
+  membersHtml = '',
 ): string {
   const findings = rows.length
     ? `<dl class="findings">${rows
         .map((r) => `<div class="finding"><dt>${esc(r.label)}</dt><dd>${esc(r.value)}</dd></div>`)
         .join('')}</dl>`
     : ''
-  return `${whatThisMeans(commentary)}${findings}`
+  return `${whatThisMeans(commentary)}${membersHtml}${findings}`
 }
 
 function targetMarketBody(s: ScoredSection, commentary?: string): string {
@@ -376,17 +387,20 @@ function bucketAccordion(
     )
   }
   if (bucket.kind === 'tech_stack') {
+    const flags = intel?.tech_stack?.risk_flags.length ?? 0
+    const note = `<p class="muted small">Grade reflects ${flags} notable dependency risk${flags === 1 ? '' : 's'}.</p>`
     return accordion(
       bucket.label,
       gradeChip(bucket.score),
-      `${whatThisMeans(sectionCommentary.tech_stack ?? intel?.tech_stack?.commentary)}${techDomainBody(intel?.tech_stack, undefined)}`,
+      `${whatThisMeans(sectionCommentary.tech_stack ?? intel?.tech_stack?.commentary)}${note}${techDomainBody(intel?.tech_stack, undefined)}`,
       SECTION_HELP.tech_stack,
     )
   }
   const rows = bucket.members.flatMap((k) => findingRows(result.findings[k]))
   if (bucket.key === 'site_health') rows.push(...siteHealthExtraRows(result))
   const wtm = bucket.members.map((k) => sectionCommentary[k]).filter(Boolean).join(' ') || undefined
-  return accordion(bucket.label, gradeChip(bucket.score), compositeBody(rows, wtm), SECTION_HELP[bucket.key])
+  const membersHtml = memberGradesHtml(bucketMemberGrades(result, bucket))
+  return accordion(bucket.label, gradeChip(bucket.score), compositeBody(rows, wtm, membersHtml), SECTION_HELP[bucket.key])
 }
 
 function topRecommendationsHtml(
@@ -618,6 +632,9 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .wtm-label { font-family:Inter,sans-serif; font-weight:700; font-size:11px; text-transform:uppercase;
     letter-spacing:.06em; color:${COLORS.cyan}; margin-bottom:4px; }
   .wtm p { margin:0; font-size:14px; color:${COLORS.textSecondary}; }
+  .subgrades { display:flex; flex-wrap:wrap; gap:8px 12px; margin-top:14px; }
+  .subgrade { display:inline-flex; align-items:center; gap:6px; }
+  .subgrade-label { font-family:Inter,sans-serif; font-weight:600; font-size:12px; color:${COLORS.textSecondary}; }
   .intel-sub { font-family:Inter,sans-serif; color:${COLORS.navy}; font-size:14px; margin:20px 0 8px; }
   .intel-list { margin:8px 0 0; padding-left:18px; }
   .intel-list li { margin-bottom:6px; font-size:14px; }

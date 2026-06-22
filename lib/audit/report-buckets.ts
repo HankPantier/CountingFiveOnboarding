@@ -5,6 +5,7 @@
 // display grouping. Shared by the standalone HTML export (lib/audit/html-report.ts)
 // and the in-app React report (components/admin/audit/AuditReport.tsx).
 import type { AuditResult, CategoryKey } from '@/types/audit-result'
+import { CATEGORY_META } from './report-format'
 import { SECTION_LABELS } from './intelligence-format'
 
 export type BucketKind = 'intel' | 'composite' | 'tech_stack'
@@ -68,14 +69,17 @@ export function deriveDashboard(result: AuditResult): DashboardBucket[] {
   const intel = result.intelligence
   const cards: DashboardBucket[] = []
 
+  // Intelligence section scores are already on the 0–100 scale (the generator
+  // computes round(avg(sub_scores 0–10) × 10) — see lib/audit/intelligence/*),
+  // so they pass straight through like the technical category scores.
   if (intel?.target_market) {
-    cards.push({ key: 'target_market', label: SECTION_LABELS.target_market, kind: 'intel', score: Math.round(intel.target_market.score * 10), members: [] })
+    cards.push({ key: 'target_market', label: SECTION_LABELS.target_market, kind: 'intel', score: intel.target_market.score, members: [] })
   }
   if (intel?.competitive) {
-    cards.push({ key: 'competitive', label: SECTION_LABELS.competitive, kind: 'intel', score: Math.round(intel.competitive.score * 10), members: [] })
+    cards.push({ key: 'competitive', label: SECTION_LABELS.competitive, kind: 'intel', score: intel.competitive.score, members: [] })
   }
   if (intel?.niche_services) {
-    cards.push({ key: 'niche_services', label: SECTION_LABELS.niche_services, kind: 'intel', score: Math.round(intel.niche_services.score * 10), members: [] })
+    cards.push({ key: 'niche_services', label: SECTION_LABELS.niche_services, kind: 'intel', score: intel.niche_services.score, members: [] })
   }
 
   cards.push(composite(result, 'seo_aio_geo'))
@@ -87,6 +91,20 @@ export function deriveDashboard(result: AuditResult): DashboardBucket[] {
   cards.push(composite(result, 'site_health'))
 
   return cards
+}
+
+/** Per-member-category grades for a composite card, so a weighted headline is
+ * explained by its parts. Empty for single-category cards (the headline is that
+ * member's score) and for non-composite cards. */
+export function bucketMemberGrades(
+  result: AuditResult,
+  bucket: DashboardBucket,
+): Array<{ label: string; score: number | null }> {
+  if (bucket.members.length <= 1) return []
+  return bucket.members.map((key) => ({
+    label: CATEGORY_META.find((m) => m.key === key)?.label ?? key,
+    score: result.category_scores[key]?.score ?? null,
+  }))
 }
 
 /** Hero pill counts: a card "passes" at A/B (≥80); C and below "need work". */
