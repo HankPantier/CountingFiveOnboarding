@@ -32,7 +32,7 @@ export default function TokenChipGroup<T extends string>({
               disabled={disabled}
               onClick={() => onChange(opt.value)}
               className={[
-                'px-4 py-2 rounded-full text-sm font-body border transition',
+                'px-3 py-1.5 rounded-pill text-xs font-body border transition',
                 selected
                   ? 'bg-brand-navy text-white border-brand-navy'
                   : 'bg-white text-text-primary border-border-default hover:border-brand-navy',

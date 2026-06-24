@@ -17,7 +17,7 @@ export default function SwatchEditor({
     <div className="flex items-center gap-3">
       <button
         type="button"
-        className="w-16 h-16 rounded-lg border border-border-default shadow-subtle cursor-pointer flex-shrink-0"
+        className="w-11 h-11 rounded-lg border border-border-default shadow-subtle cursor-pointer flex-shrink-0"
         style={{ backgroundColor: hex }}
         onClick={() => pickerRef.current?.click()}
         aria-label={`Pick color for ${name}`}

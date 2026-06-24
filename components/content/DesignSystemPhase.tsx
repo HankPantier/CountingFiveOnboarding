@@ -218,7 +218,7 @@ export default function DesignSystemPhase({
         type="button"
         disabled={saving || !passesContrast}
         onClick={saveAll}
-        className="px-6 py-3 rounded-full bg-brand-cyan text-white font-body disabled:opacity-50 disabled:cursor-not-allowed"
+        className="bg-brand-cyan text-white font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/90 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {saving ? 'Saving...' : isLocked ? 'Save changes' : 'Lock Design System & Continue'}
       </button>
