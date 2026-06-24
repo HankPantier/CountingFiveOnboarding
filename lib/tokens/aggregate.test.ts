@@ -37,6 +37,19 @@ describe('summarize', () => {
     expect(s.byModel[SONNET].cost).toBeCloseTo(18, 6)
     expect(s.byModel[HAIKU].cost).toBeCloseTo(1, 6)
   })
+
+  it('splits all-time totals by task', () => {
+    const rows: UsageRow[] = [
+      row({ task: 'onboarding', input_tokens: 1_000_000 }), // $3
+      row({ task: 'audit', input_tokens: 1_000_000 }), // $3
+      row({ task: 'content', input_tokens: 1_000_000, output_tokens: 1_000_000 }), // $18
+    ]
+    const s = summarize(rows, NOW)
+    expect(s.byTask.onboarding.cost).toBeCloseTo(3, 6)
+    expect(s.byTask.audit.cost).toBeCloseTo(3, 6)
+    expect(s.byTask.content.cost).toBeCloseTo(18, 6)
+    expect(s.byTask.audit.calls).toBe(1)
+  })
 })
 
 describe('byClient', () => {
@@ -57,6 +70,40 @@ describe('byClient', () => {
     expect(unassigned.clientId).toBeNull()
     expect(unassigned.label).toBe('Unassigned / System')
     expect(unassigned.byTask.audit.cost).toBeCloseTo(3, 6)
+  })
+
+  it('attributes an audit row to its linked session via the audits map', () => {
+    const rows: UsageRow[] = [
+      row({ session_id: 's1', task: 'onboarding', input_tokens: 1_000_000 }), // $3
+      row({ session_id: null, audit_id: 'a1', task: 'audit', input_tokens: 1_000_000 }), // $3 → s1
+    ]
+    const clients = byClient(
+      rows,
+      { s1: 'example.com' },
+      { a1: { sessionId: 's1', siteName: 'Example', domain: 'example.com' } }
+    )
+    expect(clients).toHaveLength(1)
+    expect(clients[0].clientId).toBe('s1')
+    expect(clients[0].kind).toBe('session')
+    expect(clients[0].total.cost).toBeCloseTo(6, 6)
+    expect(clients[0].byTask.audit.cost).toBeCloseTo(3, 6)
+    expect(clients[0].byTask.onboarding.cost).toBeCloseTo(3, 6)
+  })
+
+  it('buckets a session-less audit by its audited site', () => {
+    const rows: UsageRow[] = [
+      row({ session_id: null, audit_id: 'a2', task: 'audit', input_tokens: 1_000_000 }), // $3
+    ]
+    const clients = byClient(
+      rows,
+      {},
+      { a2: { sessionId: null, siteName: 'BBL CPAs', domain: 'bblcpa.com' } }
+    )
+    expect(clients).toHaveLength(1)
+    expect(clients[0].kind).toBe('audit-site')
+    expect(clients[0].clientId).toBe('audit:bblcpa.com')
+    expect(clients[0].label).toBe('BBL CPAs')
+    expect(clients[0].byTask.audit.cost).toBeCloseTo(3, 6)
   })
 })
 

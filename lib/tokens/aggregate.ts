@@ -26,8 +26,24 @@ export type Totals = {
   calls: number
 }
 
+// How a client bucket was resolved: a real onboarding session, an audited site
+// with no linked session, or the catch-all system bucket.
+export type ClientKind = 'session' | 'audit-site' | 'unassigned'
+
+// Per-audit metadata used to attribute audit-stage rows to a client. Audit
+// token rows often carry only audit_id (the session link is added later by the
+// audit→onboarding bridge), so we resolve the client through audit_runs.
+export type AuditMeta = {
+  sessionId: string | null
+  siteName: string | null
+  domain: string | null
+}
+
 export type ClientUsage = {
-  clientId: string | null // session id, or null for the Unassigned bucket
+  // Opaque unique bucket key: a session id, an `audit:<domain>` key for an
+  // audited site with no session, or null for the single Unassigned bucket.
+  clientId: string | null
+  kind: ClientKind
   label: string
   total: Totals
   byTask: Record<TokenTask, Totals>
@@ -38,6 +54,7 @@ export type UsageSummary = {
   allTime: Totals
   last30: Totals
   thisMonth: Totals
+  byTask: Record<TokenTask, Totals>
   byModel: Record<string, Totals>
 }
 
@@ -45,6 +62,10 @@ const UNASSIGNED_LABEL = 'Unassigned / System'
 
 export function emptyTotals(): Totals {
   return { cost: 0, inputTokens: 0, outputTokens: 0, calls: 0 }
+}
+
+function emptyByTask(): Record<TokenTask, Totals> {
+  return { onboarding: emptyTotals(), audit: emptyTotals(), content: emptyTotals() }
 }
 
 export function rowCost(row: UsageRow): number {
@@ -72,6 +93,7 @@ export function summarize(rows: UsageRow[], nowMs: number): UsageSummary {
     allTime: emptyTotals(),
     last30: emptyTotals(),
     thisMonth: emptyTotals(),
+    byTask: emptyByTask(),
     byModel: {},
   }
 
@@ -80,31 +102,66 @@ export function summarize(rows: UsageRow[], nowMs: number): UsageSummary {
     addInto(summary.allTime, row)
     if (ts >= thirtyDaysAgo) addInto(summary.last30, row)
     if (ts >= monthStart) addInto(summary.thisMonth, row)
+    addInto(summary.byTask[asTask(row.task)], row)
     summary.byModel[row.model] ??= emptyTotals()
     addInto(summary.byModel[row.model], row)
   }
   return summary
 }
 
-/** Per-client rollup. Rows with a session_id roll up to that client; everything
- * else (standalone audits, system one-offs) collapses into one Unassigned row.
- * `labels` maps session_id → display label (website_url). Sorted by cost desc. */
-export function byClient(rows: UsageRow[], labels: Record<string, string>): ClientUsage[] {
+type ResolvedBucket = { key: string; clientId: string | null; kind: ClientKind; label: string }
+
+// Decide which client bucket a row belongs to. Priority: the row's own
+// session_id → the audit's linked session (audit_runs.session_id) → the audited
+// site itself (grouped by domain) → the catch-all Unassigned bucket.
+function resolveBucket(
+  row: UsageRow,
+  labels: Record<string, string>,
+  audits: Record<string, AuditMeta>
+): ResolvedBucket {
+  const audit = row.audit_id ? audits[row.audit_id] : undefined
+  const sessionId = row.session_id ?? audit?.sessionId ?? null
+
+  if (sessionId) {
+    return { key: sessionId, clientId: sessionId, kind: 'session', label: labels[sessionId] ?? sessionId }
+  }
+  if (audit && (audit.domain || audit.siteName)) {
+    const domainKey = audit.domain ?? row.audit_id ?? 'unknown'
+    return {
+      key: `audit:${domainKey}`,
+      clientId: `audit:${domainKey}`,
+      kind: 'audit-site',
+      label: audit.siteName ?? audit.domain ?? domainKey,
+    }
+  }
+  return { key: '__unassigned__', clientId: null, kind: 'unassigned', label: UNASSIGNED_LABEL }
+}
+
+/** Per-client rollup. A row attributes to its session_id, else to the session
+ * linked to its audit (audit_runs.session_id), else to the audited site itself,
+ * else to one Unassigned row. `labels` maps session_id → display label
+ * (website_url); `audits` maps audit_id → its session/site metadata. Sorted by
+ * cost desc. */
+export function byClient(
+  rows: UsageRow[],
+  labels: Record<string, string>,
+  audits: Record<string, AuditMeta> = {}
+): ClientUsage[] {
   const map = new Map<string, ClientUsage>()
 
   for (const row of rows) {
-    const clientId = row.session_id ?? null
-    const key = clientId ?? '__unassigned__'
-    let entry = map.get(key)
+    const bucket = resolveBucket(row, labels, audits)
+    let entry = map.get(bucket.key)
     if (!entry) {
       entry = {
-        clientId,
-        label: clientId ? labels[clientId] ?? clientId : UNASSIGNED_LABEL,
+        clientId: bucket.clientId,
+        kind: bucket.kind,
+        label: bucket.label,
         total: emptyTotals(),
-        byTask: { onboarding: emptyTotals(), audit: emptyTotals(), content: emptyTotals() },
+        byTask: emptyByTask(),
         byModel: {},
       }
-      map.set(key, entry)
+      map.set(bucket.key, entry)
     }
     addInto(entry.total, row)
     addInto(entry.byTask[asTask(row.task)], row)

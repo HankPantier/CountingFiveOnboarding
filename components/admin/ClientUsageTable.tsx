@@ -94,7 +94,23 @@ export default function ClientUsageTable({ clients }: { clients: ClientUsage[] }
                     <span className="inline-flex items-center gap-2">
                       <span className={`text-text-muted transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
                       <span className="truncate">{c.label}</span>
+                      {c.kind === 'audit-site' && (
+                        <span className="text-xs font-heading font-semibold uppercase tracking-wide text-info bg-info/10 px-2 py-0.5 rounded-pill">
+                          Audit only
+                        </span>
+                      )}
                     </span>
+                    <div className="mt-1 ml-6 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted tabular-nums">
+                      {TASKS.map((task) => {
+                        const t = c.byTask[task]
+                        if (!t.calls) return null
+                        return (
+                          <span key={task}>
+                            {TASK_LABEL[task]} {money(t.cost)}
+                          </span>
+                        )
+                      })}
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-body text-text-primary text-right tabular-nums">{money(c.total.cost)}</td>
                   <td className="px-4 py-3 font-body text-text-secondary text-right tabular-nums">{tokens(totalTokens(c.total))}</td>
