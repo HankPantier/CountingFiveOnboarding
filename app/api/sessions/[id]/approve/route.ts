@@ -45,7 +45,10 @@ export async function POST(
       console.warn('[Approve] PDF/MD generation failed (non-fatal):', err)
     }
 
-    await supabase
+    // Atomic guard: only flip a not-yet-approved row. A concurrent approval that
+    // already set status='approved' matches 0 rows here, closing the TOCTOU window
+    // between the check above and this write (never re-approve a session).
+    const { data: approved } = await supabase
       .from('sessions')
       .update({
         status: 'approved',
@@ -55,6 +58,12 @@ export async function POST(
         pdf_url: pdfStoragePath,
       })
       .eq('id', id)
+      .neq('status', 'approved')
+      .select('id')
+
+    if (!approved?.length) {
+      return NextResponse.json({ error: 'Session already approved' }, { status: 409 })
+    }
 
     return NextResponse.json({ success: true })
   } catch (err) {
