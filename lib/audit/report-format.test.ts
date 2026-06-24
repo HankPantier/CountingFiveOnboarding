@@ -11,6 +11,10 @@ describe('score10', () => {
   it('renders an em dash for null', () => {
     expect(score10(null)).toBe('—')
   })
+  it('clamps out-of-range scores (defends against a regressed double-scale)', () => {
+    expect(score10(330)).toBe('10.0')
+    expect(score10(-5)).toBe('0.0')
+  })
 })
 
 describe('gradeWithModifier', () => {
@@ -27,6 +31,10 @@ describe('gradeWithModifier', () => {
   })
   it('returns N/A for null', () => {
     expect(gradeWithModifier(null)).toBe('N/A')
+  })
+  it('clamps out-of-range scores', () => {
+    expect(gradeWithModifier(330)).toBe('A+')
+    expect(gradeWithModifier(-5)).toBe('F')
   })
 })
 

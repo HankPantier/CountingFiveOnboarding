@@ -34,9 +34,17 @@ export function tokenForScore(score: number | null): SemanticToken {
   return 'error'
 }
 
+/** Scores are 0–100. Clamp defensively so a stray out-of-range value — a
+ * regressed double-scale (intel scores are already 0–100; never ×10 again), or
+ * an over-eager AI sub-score — can never render as a nonsensical ">10 out of 10"
+ * or an inflated grade. */
+function clampScore(score: number): number {
+  return Math.max(0, Math.min(100, score))
+}
+
 /** Client-facing 0–10 display of a 0–100 score, one decimal (e.g. 82 → "8.2"). */
 export function score10(score: number | null): string {
-  return score === null ? '—' : (score / 10).toFixed(1)
+  return score === null ? '—' : (clampScore(score) / 10).toFixed(1)
 }
 
 /** US-style letter grade with +/- modifier from a 0–100 score. The shareable
@@ -44,6 +52,7 @@ export function score10(score: number | null): string {
  * thresholds follow the conventional GPA scale. */
 export function gradeWithModifier(score: number | null): string {
   if (score === null) return 'N/A'
+  const s = clampScore(score)
   const scale: ReadonlyArray<readonly [number, string]> = [
     [97, 'A+'], [93, 'A'], [90, 'A-'],
     [87, 'B+'], [83, 'B'], [80, 'B-'],
@@ -51,7 +60,7 @@ export function gradeWithModifier(score: number | null): string {
     [67, 'D+'], [63, 'D'], [60, 'D-'],
     [0, 'F'],
   ]
-  for (const [min, g] of scale) if (score >= min) return g
+  for (const [min, g] of scale) if (s >= min) return g
   return 'F'
 }
 

@@ -67,6 +67,20 @@ describe('parseMBP — field boundaries are clean (no over-capture)', () => {
   })
 })
 
+describe('parseMBP — non-MBP input is recognized as nothing', () => {
+  it('matches no Section 1–11 structure in a wrong-format doc', () => {
+    // The admin MBP *export* (build-document.ts) is a flat "## Business / -
+    // **Name:**" format with no "## Section N" headers — the parser recognizes
+    // none of it, so /api/sessions/parse rejects it (422) instead of creating a
+    // junk session. A real MBP always carries a firm name + URL in Section 1.
+    const { schema } = parseMBP('# Master Business Profile\n\n## Business\n- **Name:** Acme CPA\n\n## Team\n### Jane Doe\n- **Title:** Partner\n')
+    expect(schema.business?.name ?? '').toBe('')
+    expect(schema.websiteUrl ?? '').toBe('')
+    expect(schema.team?.length ?? 0).toBe(0)
+    expect(schema.services?.length ?? 0).toBe(0)
+  })
+})
+
 describe('parseMBP — gap list is what Phase 4 needs', () => {
   it('seeds the brand block (incl. personality + typography) and unanswered business gaps', () => {
     const fields = new Set(gaps.map((g) => g.field))

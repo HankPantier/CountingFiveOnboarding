@@ -1,5 +1,8 @@
 import { gradeWithModifier, score10, tokenForScore } from '@/lib/audit/report-format'
 
+// These drive the SVG arc color via currentColor — a graphic fill, NOT text.
+// `warning: 'text-warning'` is intentionally the bright amber; do NOT "fix" it
+// to text-warning-strong (that AA rule is for warning *text*, not the gauge arc).
 const RING_STROKE: Record<string, string> = {
   success: 'text-success',
   warning: 'text-warning',
