@@ -218,7 +218,7 @@ export default function OutlinePhase({
           <button
             onClick={retryGeneration}
             disabled={retrying}
-            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {retrying ? 'Retrying...' : `Retry ${generatingCount} stuck`}
           </button>

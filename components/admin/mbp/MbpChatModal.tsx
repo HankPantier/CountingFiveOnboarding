@@ -15,7 +15,7 @@ export default function MbpChatModal({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-6 py-2.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
+        className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
       >
         Edit with AI
       </button>

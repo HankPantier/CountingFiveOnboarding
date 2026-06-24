@@ -77,13 +77,13 @@ export default async function ContentHubPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/admin/blog-batch"
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
           >
             Blog Batch
           </Link>
           <Link
             href="/admin/dashboard"
-            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
           >
             Back to Dashboard
           </Link>

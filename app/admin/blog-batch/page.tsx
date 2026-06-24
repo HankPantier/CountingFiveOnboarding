@@ -81,7 +81,7 @@ export default async function BlogBatchListPage() {
         </div>
         <Link
           href="/admin/blog-batch/new"
-          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
+          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
         >
           New batch
         </Link>

@@ -105,7 +105,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
         <h1 className="text-2xl font-heading font-bold text-brand-navy">New Blog Batch</h1>
         <Link
           href="/admin/blog-batch"
-          className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+          className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
         >
           Cancel
         </Link>
@@ -132,7 +132,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                 type="button"
                 onClick={() => refine(false)}
                 disabled={refining || !seed.trim()}
-                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-5 py-2.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {refining ? 'Refining…' : idea ? 'Regenerate' : 'Refine with AI'}
               </button>
@@ -214,7 +214,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                   type="button"
                   onClick={() => setStep('select')}
                   disabled={!idea.title.trim()}
-                  className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-5 py-2.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Lock idea &amp; choose clients &rarr;
                 </button>
