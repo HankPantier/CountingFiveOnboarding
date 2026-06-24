@@ -39,7 +39,18 @@ export default function CopyLinkButton({ sessionId }: { sessionId: string }) {
         >
           {copied ? 'Copied!' : 'Copy'}
         </button>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="flex-shrink-0 text-xs font-heading font-semibold px-3 py-1.5 rounded-pill bg-brand-cyan text-text-inverse transition-all hover:bg-brand-cyan-dark"
+        >
+          Open session ↗
+        </a>
       </div>
+      <p className="mt-2 text-xs font-body text-text-muted">
+        Share this link with the client, or open it yourself to run the onboarding chat.
+      </p>
     </div>
   )
 }
