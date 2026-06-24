@@ -336,7 +336,7 @@ export default function NavEditor({
         )}
 
         {formUnavailable && (
-          <div className="bg-warning/10 border border-warning/30 text-warning text-xs font-body rounded-lg px-4 py-3">
+          <div className="bg-warning/10 border border-warning/30 text-warning-strong text-xs font-body rounded-lg px-4 py-3">
             The JSON is malformed, so the visual editor can&apos;t load it — fix it below
             and the form view will come back.
           </div>

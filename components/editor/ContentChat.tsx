@@ -87,7 +87,7 @@ export default function ContentChat({
       {error && <p className="px-4 py-2 text-sm text-error bg-error/10 font-body">{error.message}</p>}
 
       {isDirty && (
-        <div className="px-4 py-2 text-xs text-warning bg-warning/10 font-body border-t border-warning/30 flex items-center justify-between gap-2">
+        <div className="px-4 py-2 text-xs text-warning-strong bg-warning/10 font-body border-t border-warning/30 flex items-center justify-between gap-2">
           <span>You have unsaved edits — the assistant works on the saved draft.</span>
           <button
             onClick={onSave}

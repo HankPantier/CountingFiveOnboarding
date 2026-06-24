@@ -3,7 +3,7 @@ export type PhaseStatus = 'locked' | 'active' | 'awaiting_review' | 'complete' |
 const styles: Record<PhaseStatus, string> = {
   locked:          'bg-surface-subtle text-text-muted',
   active:          'bg-info/10 text-info',
-  awaiting_review: 'bg-warning/10 text-warning',
+  awaiting_review: 'bg-warning/10 text-warning-strong',
   complete:        'bg-success/10 text-success',
   error:           'bg-error/10 text-error',
 }

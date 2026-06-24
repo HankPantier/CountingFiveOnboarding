@@ -77,7 +77,7 @@ export default function OutlineCard({
   const statusBadge = outline.admin_approved
     ? { label: 'Approved', cls: 'bg-success/10 text-success' }
     : outline.h1
-      ? { label: 'Pending', cls: 'bg-warning/10 text-warning' }
+      ? { label: 'Pending', cls: 'bg-warning/10 text-warning-strong' }
       : { label: 'Generating...', cls: 'bg-info/10 text-info' }
 
   const saveEdits = async () => {

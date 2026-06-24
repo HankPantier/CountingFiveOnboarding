@@ -26,7 +26,7 @@ function wordCountBadge(
   if (Math.abs(variance) > 0.25) {
     return {
       label: `⚠ ${actual} / ${target} (${pct >= 0 ? '+' : ''}${pct}%)`,
-      cls: 'text-warning bg-warning/10',
+      cls: 'text-warning-strong bg-warning/10',
     }
   }
   return { label: `${actual} / ${target}`, cls: 'text-text-muted bg-surface-subtle' }
@@ -78,7 +78,7 @@ export default function ClientReviewList({
                   className={`text-xs font-mono px-2 py-1 rounded ${
                     page.client_approved_content
                       ? 'text-success bg-success/10'
-                      : 'text-warning bg-warning/10'
+                      : 'text-warning-strong bg-warning/10'
                   }`}
                 >
                   {page.client_approved_content ? 'Client ✓' : 'Awaiting your approval'}

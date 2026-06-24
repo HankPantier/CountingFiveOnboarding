@@ -59,7 +59,7 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
   if (Math.abs(variance) > 0.25) {
     return {
       label: `⚠ ${actual} / ${target} (${pct >= 0 ? '+' : ''}${pct}%)`,
-      cls: 'text-warning bg-warning/10',
+      cls: 'text-warning-strong bg-warning/10',
       title: `${actual} words generated vs target of ${target} (${pct >= 0 ? '+' : ''}${pct}% off target). Flagged when actual is more than ±25% from target — review whether the content is too thin or too verbose.`,
     }
   }
@@ -284,7 +284,7 @@ export default function GenerationPhase({
                       className={`text-xs font-mono px-1.5 py-0.5 rounded ${
                         page.clientApproved
                           ? 'text-success bg-success/10'
-                          : 'text-warning bg-warning/10'
+                          : 'text-warning-strong bg-warning/10'
                       }`}
                       title={
                         page.clientApproved
@@ -351,7 +351,7 @@ export default function GenerationPhase({
       </div>
 
       {status.error > 0 && !isRunning && (
-        <div className="bg-warning/10 border border-warning/30 text-warning text-sm font-body rounded-lg px-4 py-2">
+        <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2">
           {status.complete} pages generated · {status.error} failed — deliverables will include an ERRORS.md noting skipped pages.
         </div>
       )}

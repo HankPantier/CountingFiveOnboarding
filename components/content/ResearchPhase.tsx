@@ -183,12 +183,12 @@ export default function ResearchPhase({
       {status.error > 0 && !isRunning && (() => {
         const firstError = status.pages.find(p => p.errorMessage)?.errorMessage
         return (
-          <div className="bg-warning/10 border border-warning/30 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
+          <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
             <div>
               {status.complete} complete · {status.error} errors — generation will proceed with available research.
             </div>
             {firstError && (
-              <div className="text-xs text-warning font-mono break-words">
+              <div className="text-xs text-warning-strong font-mono break-words">
                 First error: {firstError}
               </div>
             )}

@@ -153,7 +153,7 @@ export default function StructuredContentEditor({
   return (
     <div className="space-y-6">
       {genError && (
-        <div className="bg-warning/10 border border-warning/30 text-warning font-body text-xs rounded px-3 py-2">
+        <div className="bg-warning/10 border border-warning/30 text-warning-strong font-body text-xs rounded px-3 py-2">
           {genError}
         </div>
       )}

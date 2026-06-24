@@ -250,7 +250,7 @@ export default async function DashboardPage({
                     {timeAgo(session.last_activity_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-sm ${daysInactive(session.last_activity_at) >= 3 ? 'text-warning font-semibold' : 'text-text-muted'}`}>
+                    <span className={`text-sm ${daysInactive(session.last_activity_at) >= 3 ? 'text-warning-strong font-semibold' : 'text-text-muted'}`}>
                       {daysInactive(session.last_activity_at)}d
                     </span>
                   </td>

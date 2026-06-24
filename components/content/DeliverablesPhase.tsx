@@ -147,11 +147,11 @@ export default function DeliverablesPhase({
           </p>
 
           {approval && generationDone && hasUnapproved && (
-            <div className="bg-warning/10 border border-warning/30 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
+            <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
               <div>
                 {approval.complete - approval.approved} of {approval.complete} pages still need approval before packaging.
               </div>
-              <div className="text-xs font-mono text-warning">
+              <div className="text-xs font-mono text-warning-strong">
                 Approve them in the Content Generation step above.
               </div>
             </div>
@@ -188,13 +188,13 @@ export default function DeliverablesPhase({
             </div>
           )}
           {pushWarn && (
-            <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2">
+            <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2">
               Package built, but the push to the site repo failed: {pushWarn}. The repo link or GitHub App may need attention; the download below still works.
             </div>
           )}
 
           {redirectIssues.length > 0 && (
-            <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
+            <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
               <div className="font-heading font-semibold">
                 {redirectIssues.length} redirect map issue(s) — fix in redirects.csv before launch:
               </div>
@@ -207,7 +207,7 @@ export default function DeliverablesPhase({
           )}
 
           {linkWarnings.length > 0 && (
-            <div className="bg-warning/10 border border-warning/20 text-warning text-sm font-body rounded-lg px-4 py-2 space-y-1">
+            <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
               <div className="font-heading font-semibold">
                 {linkWarnings.length} internal link(s) point outside the confirmed sitemap:
               </div>

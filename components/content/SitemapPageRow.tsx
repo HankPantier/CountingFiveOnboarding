@@ -10,7 +10,7 @@ type SitemapPage = {
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   new:      { label: '🆕 New',      cls: 'bg-info/10 text-info' },
-  update:   { label: '📈 Update',   cls: 'bg-warning/10 text-warning' },
+  update:   { label: '📈 Update',   cls: 'bg-warning/10 text-warning-strong' },
   existing: { label: '✅ Existing', cls: 'bg-success/10 text-success' },
 }
 

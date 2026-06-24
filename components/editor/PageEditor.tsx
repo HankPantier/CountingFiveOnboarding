@@ -234,7 +234,7 @@ export default function PageEditor({
         {emptyIconBlocks.map((blk, i) => (
           <div
             key={`${blk.blockId}-${i}`}
-            className="mt-2 bg-warning/10 border border-warning/30 text-warning text-xs font-body rounded px-3 py-2"
+            className="mt-2 bg-warning/10 border border-warning/30 text-warning-strong text-xs font-body rounded px-3 py-2"
           >
             “{blk.heading || blk.blockId}” ({blk.blockId}) can show icons, but its items aren&apos;t
             in a recognizable list format — rewrite them as “**Title**” paragraphs or “### Title”

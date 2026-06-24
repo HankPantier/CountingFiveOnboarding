@@ -499,7 +499,7 @@ export default function EditorShell({
         </div>
       )}
       {error && (
-        <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning font-body text-xs">
+        <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning-strong font-body text-xs">
           {error}
         </div>
       )}
@@ -508,7 +508,7 @@ export default function EditorShell({
           role="alert"
           className="px-6 py-3 bg-warning/10 border-b border-warning/30 font-body text-xs flex items-center gap-4 flex-wrap"
         >
-          <span className="text-warning">
+          <span className="text-warning-strong">
             <strong>{conflict.path.split('/').pop()}</strong> was changed on the server while you
             were editing (another admin or a fresh package). Which version should win?
           </span>
