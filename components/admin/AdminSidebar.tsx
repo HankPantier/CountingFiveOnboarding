@@ -40,7 +40,7 @@ function Icon({ d }: { d: string }) {
 const NAV: NavItem[] = [
   { href: '/admin/dashboard', label: 'Clients', icon: <Icon d="M3 12h18M3 6h18M3 18h18" />, requires: 'manager' },
   { href: '/admin/content', label: 'Content', icon: <Icon d="M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01" />, requires: 'manager' },
-  { href: '/admin/blog-batch', label: 'Blog Batch', icon: <Icon d="M4 4h16v4H4zM4 12h10M4 16h10M16 12l4 4-4 4" />, requires: 'manager' },
+  { href: '/admin/blog-batch', label: 'Batch Content', icon: <Icon d="M4 4h16v4H4zM4 12h10M4 16h10M16 12l4 4-4 4" />, requires: 'manager' },
   { href: '/admin/audits', label: 'Audits', icon: <Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35" />, requires: 'auditor' },
   { href: '/admin/token-usage', label: 'Token Usage', icon: <Icon d="M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V11" />, requires: 'admin' },
   { href: '/admin/settings/users', label: 'Users', icon: <Icon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11" />, requires: 'admin' },

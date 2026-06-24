@@ -22,7 +22,7 @@ export default function EditorShell({
   sessionId: string
   firmName: string
   websiteUrl: string
-  // Optional deep-link target (e.g. a Blog Batch "Open draft" link). Selected
+  // Optional deep-link target (e.g. a Batch Content "Open draft" link). Selected
   // once after the tree loads so the file resolves against a populated tree.
   initialPath?: string
 }) {
@@ -123,7 +123,7 @@ export default function EditorShell({
   )
 
   // Apply a deep-link target once, after the tree finishes loading so the file
-  // resolves against a populated tree (a Blog Batch "Open draft" link lands here).
+  // resolves against a populated tree (a Batch Content "Open draft" link lands here).
   const [initialApplied, setInitialApplied] = useState(false)
   useEffect(() => {
     if (initialApplied || !initialPath || loadingTree) return

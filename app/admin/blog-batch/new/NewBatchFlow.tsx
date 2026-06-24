@@ -102,7 +102,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
   return (
     <main className="p-8 max-w-3xl">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-heading font-bold text-brand-navy">New Blog Batch</h1>
+        <h1 className="text-2xl font-heading font-bold text-brand-navy">New Batch Content</h1>
         <Link
           href="/admin/blog-batch"
           className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"

@@ -79,7 +79,7 @@ export default async function ContentHubPage() {
             href="/admin/blog-batch"
             className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
           >
-            Blog Batch
+            Batch Content
           </Link>
           <Link
             href="/admin/dashboard"

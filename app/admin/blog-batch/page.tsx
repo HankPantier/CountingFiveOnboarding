@@ -74,7 +74,7 @@ export default async function BlogBatchListPage() {
     <main className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-brand-navy">Blog Batch</h1>
+          <h1 className="text-2xl font-heading font-bold text-brand-navy">Batch Content</h1>
           <p className="text-text-secondary font-body text-sm mt-1">
             Write one blog idea across many clients — each version tailored to that client&rsquo;s profile.
           </p>

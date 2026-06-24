@@ -15,7 +15,7 @@ export default async function EditPage({
   const { id } = await params
   if (!UUID_RE.test(id)) notFound()
 
-  // Optional deep-link to a specific file (Blog Batch "Open draft"). The file
+  // Optional deep-link to a specific file (Batch Content "Open draft"). The file
   // API validates/normalizes the path server-side; we only sanity-check it
   // points at a content file before forwarding it to the editor.
   const { path } = await searchParams
