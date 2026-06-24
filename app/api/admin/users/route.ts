@@ -118,13 +118,22 @@ export async function POST(req: Request) {
     }
   }
 
-  await sendInviteEmail({
-    to: email,
-    name,
-    role,
-    capabilities,
-    inviteUrl: linkData.properties.action_link,
-  })
+  // The auth user + admins row are already committed; a Resend failure must not
+  // fail the request (a retry can't cleanly recreate them). Surface emailSent so
+  // the admin can recover via the resend-invite action.
+  let emailSent = true
+  try {
+    await sendInviteEmail({
+      to: email,
+      name,
+      role,
+      capabilities,
+      inviteUrl: linkData.properties.action_link,
+    })
+  } catch (err) {
+    emailSent = false
+    console.error('[POST /api/admin/users] invite email failed (user created):', err)
+  }
 
-  return NextResponse.json<CreateUserResponse>({ id: userId })
+  return NextResponse.json<CreateUserResponse>({ id: userId, emailSent })
 }

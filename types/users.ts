@@ -24,6 +24,9 @@ export interface CreateUserRequest {
 
 export interface CreateUserResponse {
   id: string
+  /** false when the user was created but the invite email failed to send
+   * (recoverable via the resend-invite action). */
+  emailSent: boolean
 }
 
 export interface UpdateUserRequest {

@@ -44,6 +44,7 @@ export async function POST(
   const firmName = (business?.name as string) ?? session.website_url
   const clientName = (contact?.firstName as string) ?? 'there'
 
+  let clientEmailOk = true
   if (session.client_email) {
     const clientHtml = await render(
       <ClientReminderEmail
@@ -53,12 +54,24 @@ export async function POST(
         daysInactive={daysInactive}
       />
     )
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL!,
-      to: session.client_email,
-      subject: `Your website intake for ${firmName} is still waiting`,
-      html: clientHtml,
-    })
+    try {
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL!,
+        to: session.client_email,
+        subject: `Your website intake for ${firmName} is still waiting`,
+        html: clientHtml,
+      })
+    } catch (err) {
+      clientEmailOk = false
+      console.error('[remind] client email failed:', err)
+    }
+  }
+
+  // The client reminder is the point of this action — if it failed, don't record
+  // a reminder so the operator can retry cleanly. (The admin copy below is a
+  // non-fatal notification.)
+  if (session.client_email && !clientEmailOk) {
+    return NextResponse.json({ error: 'Reminder email failed to send' }, { status: 502 })
   }
 
   const adminHtml = await render(
@@ -70,12 +83,16 @@ export async function POST(
       reminderCount={newReminderCount}
     />
   )
-  await resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL!,
-    to: ADMIN_EMAIL,
-    subject: `[Revaltus] Manual reminder — ${session.website_url}`,
-    html: adminHtml,
-  })
+  try {
+    await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL!,
+      to: ADMIN_EMAIL,
+      subject: `[Revaltus] Manual reminder — ${session.website_url}`,
+      html: adminHtml,
+    })
+  } catch (err) {
+    console.error('[remind] admin email failed:', err)
+  }
 
   await supabase.from('reminders').insert({
     session_id: session.id,

@@ -37,15 +37,20 @@ export async function POST(
   }
 
   const isAdmin = target.role === 'admin'
-  await sendInviteEmail({
-    to: target.email,
-    name: target.name,
-    role: isAdmin ? 'admin' : 'member',
-    capabilities: isAdmin
-      ? []
-      : (['manager', 'auditor'] as const).filter(c => Array.isArray(target.capabilities) && target.capabilities.includes(c)),
-    inviteUrl: linkData.properties.action_link,
-  })
+  try {
+    await sendInviteEmail({
+      to: target.email,
+      name: target.name,
+      role: isAdmin ? 'admin' : 'member',
+      capabilities: isAdmin
+        ? []
+        : (['manager', 'auditor'] as const).filter(c => Array.isArray(target.capabilities) && target.capabilities.includes(c)),
+      inviteUrl: linkData.properties.action_link,
+    })
+  } catch (err) {
+    console.error('[resend-invite] email failed:', err)
+    return NextResponse.json({ error: 'Invite email failed to send' }, { status: 502 })
+  }
 
   return NextResponse.json({ success: true })
 }
