@@ -74,12 +74,20 @@ export default async function ContentHubPage() {
             {sessions?.length ?? 0} approved session{sessions?.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Link
-          href="/admin/dashboard"
-          className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
-        >
-          Back to Dashboard
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/blog-batch"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:bg-brand-cyan-dark"
+          >
+            Blog Batch
+          </Link>
+          <Link
+            href="/admin/dashboard"
+            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+          >
+            Back to Dashboard
+          </Link>
+        </div>
       </div>
 
       {!sessions?.length ? (

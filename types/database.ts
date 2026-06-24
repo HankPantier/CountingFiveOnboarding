@@ -256,6 +256,121 @@ export type Database = {
           },
         ]
       }
+      blog_batches: {
+        Row: {
+          angle: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          rationale: string | null
+          seed: string | null
+          secondary_keywords: Json
+          status: string
+          target_keyword: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          angle?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          rationale?: string | null
+          seed?: string | null
+          secondary_keywords?: Json
+          status?: string
+          target_keyword?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          angle?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          rationale?: string | null
+          seed?: string | null
+          secondary_keywords?: Json
+          status?: string
+          target_keyword?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_batches_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blog_batch_targets: {
+        Row: {
+          batch_id: string
+          content_job_id: string
+          created_at: string
+          error: string | null
+          id: string
+          resource_idea_id: string | null
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          batch_id: string
+          content_job_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          resource_idea_id?: string | null
+          session_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          batch_id?: string
+          content_job_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          resource_idea_id?: string | null
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_batch_targets_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "blog_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blog_batch_targets_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blog_batch_targets_resource_idea_id_fkey"
+            columns: ["resource_idea_id"]
+            isOneToOne: false
+            referencedRelation: "resource_ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blog_batch_targets_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_jobs: {
         Row: {
           confirmed_sitemap: Json | null
