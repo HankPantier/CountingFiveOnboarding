@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Site Audit &mdash; bblcpa.com &mdash; 2026-06-16</title>
+<style>
+  :root {
+    --dark:   #1A1A2E;
+    --accent: #E94560;
+    --mid:    #16213E;
+    --gray:   #6B7280;
+    --green:  #10B981;
+    --yellow: #F59E0B;
+    --red:    #DC2626;
+    --light:  #F9FAFB;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #F3F4F6; color: #1F2937; font-size: 14px; line-height: 1.6; }
+  a { color: var(--mid); }
+
+  /* ── Header ── */
+  .site-header { background: var(--dark); padding: 16px 32px;
+                 display: flex; align-items: center; justify-content: space-between; }
+  .logo { height: 36px; }
+  .logo-text { color: white; font-size: 18px; font-weight: bold; }
+  .header-meta { color: #9CA3AF; font-size: 12px; text-align: right; }
+  .header-meta strong { color: white; }
+
+  /* ── Hero ── */
+  .hero { background: linear-gradient(135deg, var(--dark) 0%, var(--mid) 100%); padding: 48px 32px; }
+  .hero-inner { max-width: 960px; margin: 0 auto; display: grid;
+                grid-template-columns: auto 1fr; gap: 48px; align-items: center; }
+  .score-ring { width: 140px; height: 140px; border-radius: 50%;
+                display: flex; align-items: center; justify-content: center; }
+  .score-ring-inner { width: 110px; height: 110px; border-radius: 50%; background: var(--mid);
+                      display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .score-number { font-size: 38px; font-weight: 900; line-height: 1; }
+  .score-label  { font-size: 11px; color: #9CA3AF; margin-top: 2px; }
+  .score-grade  { font-size: 14px; color: #9CA3AF; margin-top: 2px; }
+  .hero-text h1 { font-size: 28px; color: white; font-weight: 800; }
+  .hero-text .site-url { color: #9CA3AF; font-size: 13px; margin-top: 4px; }
+  .hero-text .verdict  { color: #D1D5DB; margin-top: 12px; font-size: 15px; line-height: 1.65; }
+  .hero-pills { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .pill { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+          color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; }
+  .pill.red   { background: rgba(220,38,38,0.2);  border-color: rgba(220,38,38,0.4); }
+  .pill.green { background: rgba(16,185,129,0.2); border-color: rgba(16,185,129,0.4); }
+
+  /* ── Top findings box ── */
+  .top-findings { background: rgba(233,69,96,0.1); border: 1px solid rgba(233,69,96,0.3);
+                  border-radius: 8px; padding: 16px 20px; margin-top: 24px; }
+  .top-findings h3 { color: var(--accent); font-size: 12px; text-transform: uppercase;
+                     letter-spacing: 1px; margin-bottom: 10px; }
+  .top-rec { color: #D1D5DB; font-size: 13px; margin-bottom: 6px;
+             display: flex; align-items: flex-start; gap: 8px; }
+  .rec-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .rec-dot.red    { background: var(--red); }
+  .rec-dot.yellow { background: var(--yellow); }
+  .rec-dot.green  { background: var(--green); }
+
+  /* ── Layout ── */
+  .main { max-width: 960px; margin: 0 auto; padding: 32px 16px; }
+  .section-title { font-size: 20px; font-weight: 700; color: var(--dark);
+                   margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+
+  /* ── Dashboard ── */
+  .dashboard { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+               gap: 12px; margin-bottom: 32px; }
+  .dash-card  { background: white; border-radius: 8px; padding: 16px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .dash-label { font-size: 11px; color: var(--gray); text-transform: uppercase;
+                letter-spacing: 0.5px; margin-bottom: 8px; }
+  .dash-score { margin-bottom: 8px; }
+  .dash-bar   { height: 4px; background: #E5E7EB; border-radius: 2px; margin-bottom: 6px; }
+  .dash-bar-fill { height: 4px; border-radius: 2px; }
+
+  /* ── Category sections ── */
+  .cat-section { background: white; border-radius: 8px; margin-bottom: 16px;
+                 overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .cat-header  { display: flex; align-items: center; justify-content: space-between;
+                 padding: 16px 20px; background: var(--dark); cursor: pointer; user-select: none; }
+  .cat-header:hover { background: var(--mid); }
+  .cat-header h3 { color: white; font-size: 15px; }
+  .cat-body       { padding: 20px; display: none; }
+  .cat-body.open  { display: block; }
+  .chevron        { color: #9CA3AF; font-size: 12px; transition: transform 0.2s; display: inline-block; }
+  .chevron.open   { transform: rotate(180deg); }
+
+  /* ── Narrative callout ── */
+  .narrative-label { font-size: 11px; font-weight: 700; color: var(--gray);
+                     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .narrative { color: #374151; font-size: 14px; line-height: 1.65; margin-bottom: 20px;
+               padding: 14px 16px; background: #F8FAFC;
+               border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+
+  /* ── Sub-score table ── */
+  .check-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+  .check-table th { background: var(--dark); color: white; padding: 8px 12px;
+                    text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .check-table tr:nth-child(even) { background: #F9FAFB; }
+  .check-table td { padding: 8px 12px; border-bottom: 1px solid #E5E7EB; vertical-align: middle; }
+  .check-label { font-weight: 500; width: 40%; }
+  .td-pass { color: var(--green); }
+  .td-warn { color: #92400E; }
+  .td-fail { color: var(--red); font-weight: 600; }
+
+  /* ── Badges ── */
+  .badge    { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
+              border-radius: 4px; font-size: 13px; font-weight: 700; }
+  .badge-a  { background: #D1FAE5; color: #065F46; }
+  .badge-b  { background: #DBEAFE; color: #1E3A5F; }
+  .badge-c  { background: #FEF3C7; color: #78350F; }
+  .badge-d  { background: #FEE2E2; color: #7F1D1D; }
+  .badge-f  { background: #FEE2E2; color: #7F1D1D; }
+  .badge-na { background: #F3F4F6; color: #6B7280; }
+
+  /* ── Score bars ── */
+  .bar-wrap  { display: inline-block; width: 80px; height: 8px; background: #E5E7EB;
+               border-radius: 4px; vertical-align: middle; margin-right: 6px; }
+  .bar-fill  { display: block; height: 8px; border-radius: 4px; }
+  .bar-label { font-size: 12px; color: var(--gray); }
+
+  /* ── Priority tags ── */
+  .priority-high   { background: #FEE2E2; color: var(--red);  padding: 2px 8px;
+                     border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .priority-medium { background: #FEF3C7; color: #78350F;    padding: 2px 8px;
+                     border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .priority-low    { background: #D1FAE5; color: #065F46;    padding: 2px 8px;
+                     border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+
+  /* ── Recommendations table ── */
+  .rec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .rec-table th { background: var(--dark); color: white; padding: 10px 14px;
+                  text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .rec-table td { padding: 10px 14px; border-bottom: 1px solid #E5E7EB; vertical-align: top; }
+  .rec-table tr:nth-child(even) { background: #F9FAFB; }
+  .detail-text { color: var(--gray); line-height: 1.5; margin-top: 4px; font-size: 12px; }
+
+  /* ── Services table ── */
+  .svc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+  .svc-table th { background: var(--dark); color: white; padding: 7px 10px;
+                  text-align: left; font-size: 11px; text-transform: uppercase; }
+  .svc-table td { padding: 7px 10px; border-bottom: 1px solid #E5E7EB; vertical-align: top; }
+  .svc-table tr:nth-child(even) { background: #F9FAFB; }
+  .tag-green  { background: #D1FAE5; color: #065F46; padding: 2px 7px;
+                border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .tag-yellow { background: #FEF3C7; color: #92400E; padding: 2px 7px;
+                border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .tag-red    { background: #FEE2E2; color: #7F1D1D; padding: 2px 7px;
+                border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+
+  /* ── Niche pills ── */
+  .niche-pill           { display: inline-block; background: rgba(233,69,96,0.08);
+                          border: 1px solid rgba(233,69,96,0.25); color: var(--dark);
+                          padding: 3px 10px; border-radius: 12px; font-size: 12px;
+                          margin: 3px 4px 3px 0; cursor: default; }
+  .niche-pill.confirmed { background: #D1FAE5; border-color: #6EE7B7; color: #065F46; }
+  .niche-pill.weak      { background: #FEF3C7; border-color: #FCD34D; color: #78350F; }
+  .niche-pill.invisible { background: #EFF6FF; border-color: #BFDBFE; color: #1E3A5F; }
+
+  /* ── CTA box ── */
+  .cta-box    { background: var(--dark); color: white; padding: 28px 32px;
+                border-radius: 8px; margin-top: 32px; text-align: center; }
+  .cta-box h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+  .cta-box p  { color: #9CA3AF; font-size: 14px; line-height: 1.6; }
+  .cta-box a  { color: var(--accent); text-decoration: none; }
+
+  /* ── Digital Intelligence Brief ── */
+  .intel-wrapper { border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+                   margin-bottom: 16px; }
+  .intel-header  { background: var(--dark); color: white; padding: 14px 20px;
+                   display: flex; align-items: center; justify-content: space-between; }
+  .intel-tag     { background: rgba(233,69,96,0.2); border: 1px solid rgba(233,69,96,0.4);
+                   color: var(--accent); padding: 2px 10px; border-radius: 12px; font-size: 11px; }
+  .intel-body    { background: white; padding: 20px; }
+  .intel-sub     { font-size: 12px; font-weight: 700; color: var(--gray);
+                   text-transform: uppercase; letter-spacing: 0.5px;
+                   margin: 20px 0 10px; border-bottom: 1px solid #E5E7EB; padding-bottom: 4px; }
+  .intel-sub:first-child { margin-top: 0; }
+
+  /* ── Staff & Expertise Profile ── */
+  .staff-grid    { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                   gap: 16px; margin: 16px 0; }
+  .staff-card    { background: white; border-radius: 8px; border: 1px solid #E5E7EB;
+                   padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .staff-name    { font-size: 15px; font-weight: 700; color: var(--dark); }
+  .staff-title   { font-size: 12px; color: var(--gray); margin: 2px 0 8px; }
+  .cred-badge    { display: inline-block; background: var(--dark); color: white;
+                   font-size: 10px; font-weight: 700; padding: 2px 7px;
+                   border-radius: 3px; margin: 0 3px 3px 0; letter-spacing: 0.5px; }
+  .leverage-full    { background: #D1FAE5; color: #065F46; padding: 3px 10px;
+                      border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .leverage-partial { background: #FEF3C7; color: #78350F; padding: 3px 10px;
+                      border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .leverage-none    { background: #FEE2E2; color: #7F1D1D; padding: 3px 10px;
+                      border-radius: 12px; font-size: 11px; font-weight: 700; }
+  .opp-table     { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  .opp-table th  { background: #F3F4F6; color: #374151; padding: 6px 10px;
+                   text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .opp-table td  { padding: 7px 10px; border-bottom: 1px solid #F3F4F6; vertical-align: top; }
+  .gap-note-text { font-size: 11px; color: var(--gray); font-style: italic; margin-top: 3px; }
+  .staff-summary-box { background: var(--dark); color: white; border-radius: 8px;
+                       padding: 16px 20px; margin-bottom: 16px; }
+  .staff-summary-box h4 { margin: 0 0 8px; font-size: 13px; font-weight: 700;
+                          color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
+  .staff-summary-box p  { font-size: 13px; line-height: 1.6; margin: 0 0 8px; color: #D1D5DB; }
+  .staff-gaps-list { list-style: none; padding: 10px 0 0; margin: 0; }
+  .staff-gaps-list li { font-size: 12px; color: #374151; padding: 4px 0;
+                        padding-left: 16px; position: relative; }
+  .staff-gaps-list li::before { content: "›"; position: absolute; left: 0;
+                                 color: var(--accent); font-weight: 700; }
+  .staff-summary-box .staff-gaps-list li { color: #D1D5DB; }
+  .staff-summary-box .staff-gaps-list li::before { color: #FCD34D; }
+  @media print {
+    .staff-card { page-break-inside: avoid; box-shadow: none; border: 1px solid #E5E7EB; }
+    .staff-summary-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+
+  /* ── Personnel cards ── */
+  .person-card  { border: 1px solid #E5E7EB; border-radius: 6px; padding: 14px 16px; margin-bottom: 12px; }
+  .person-name  { font-size: 15px; font-weight: 700; color: var(--dark); }
+  .person-title { font-size: 12px; color: var(--gray); margin-top: 2px; }
+  .person-creds { font-size: 11px; font-weight: 600; color: var(--accent); margin-top: 2px; }
+  .person-grid  { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px;
+                  margin-top: 10px; font-size: 12px; }
+  .person-lbl   { color: var(--gray); font-weight: 600; }
+  .person-val   { color: #374151; }
+  .person-summary { font-size: 12px; color: #4B5563; font-style: italic; margin-top: 10px;
+                    padding: 8px 12px; background: #F9FAFB; border-radius: 4px; line-height: 1.5; }
+  .footprint-strong   { color: var(--green); font-weight: 700; }
+  .footprint-moderate { color: var(--yellow); font-weight: 700; }
+  .footprint-minimal  { color: var(--gray); font-weight: 700; }
+
+  /* ── Reputation ── */
+  .rating-row   { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rating-item  { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; padding: 8px 14px; }
+  .rating-stars { font-weight: 700; color: var(--dark); font-size: 14px; }
+  .rating-src   { font-size: 11px; color: var(--gray); margin-top: 2px; }
+  .theme-tag    { display: inline-block; background: #F0FDF4; border: 1px solid #BBF7D0;
+                  color: #065F46; padding: 2px 8px; border-radius: 12px;
+                  font-size: 12px; margin: 2px 3px 2px 0; }
+  .concern-tag  { display: inline-block; background: #FEF2F2; border: 1px solid #FECACA;
+                  color: #7F1D1D; padding: 2px 8px; border-radius: 12px;
+                  font-size: 12px; margin: 2px 3px 2px 0; }
+  .review-quote { font-size: 13px; color: #4B5563; font-style: italic;
+                  border-left: 3px solid #E5E7EB; padding: 6px 12px;
+                  margin: 6px 0; line-height: 1.5; }
+
+  /* ── Social accounts ── */
+  .social-row    { display: flex; gap: 12px; flex-wrap: wrap; }
+  .social-card   { border: 1px solid #E5E7EB; border-radius: 6px; padding: 10px 14px; font-size: 12px; }
+  .social-plat   { font-weight: 700; color: var(--dark); font-size: 13px; }
+  .social-active  { color: var(--green); font-weight: 600; font-size: 11px; }
+  .social-low     { color: var(--yellow); font-weight: 600; font-size: 11px; }
+  .social-dormant { color: var(--gray); font-weight: 600; font-size: 11px; }
+
+  /* ── Niche gap ── */
+  .gap-grid      { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .gap-box       { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; padding: 12px 14px; }
+  .gap-box-label { font-size: 11px; font-weight: 700; color: var(--gray);
+                   text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .gap-summary   { font-size: 13px; color: #374151; font-style: italic;
+                   background: #EFF6FF; border: 1px solid #BFDBFE;
+                   border-radius: 6px; padding: 12px 16px; line-height: 1.6; }
+
+  /* ── Note ── */
+  .note { font-size: 12px; color: var(--gray); margin-top: 12px; padding: 8px 12px;
+          background: #F9FAFB; border-left: 3px solid #E5E7EB; border-radius: 0 4px 4px 0; }
+
+  /* ── Footer ── */
+  .site-footer  { background: var(--dark); padding: 24px 32px; margin-top: 48px;
+                  display: flex; align-items: center; justify-content: space-between; }
+  .logo-footer  { height: 28px; }
+  .footer-text  { color: #6B7280; font-size: 12px; text-align: right; }
+  .footer-text a { color: #9CA3AF; text-decoration: none; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .hero-inner { grid-template-columns: 1fr; gap: 24px; }
+    .score-ring { margin: 0 auto; }
+    .gap-grid   { grid-template-columns: 1fr; }
+  }
+
+  /* ── Print ── */
+  @media print {
+    .cat-body       { display: block !important; }
+    .cat-header     { cursor: default; background: #1A1A2E !important;
+                      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .chevron        { display: none; }
+    .hero           { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .intel-header   { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body            { background: white; }
+    .cat-section    { page-break-inside: avoid; box-shadow: none; border: 1px solid #E5E7EB; }
+    .site-footer    { margin-top: 24px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .dashboard      { page-break-inside: avoid; }
+    .intel-wrapper  { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <img src="data:image/png;base64,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" class="logo" alt="CountingFive">
+  <div class="header-meta">
+    <strong>bblcpa.com</strong><br>
+    Audit Date: 2026-06-16
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="score-ring"
+         style="background:conic-gradient(#F59E0B 234.0deg, rgba(255,255,255,0.1) 0deg)">
+      <div class="score-ring-inner">
+        <span class="score-number" style="color:#F59E0B">6.5</span>
+        <span class="score-label">out of 10</span>
+        <span class="score-grade">C+</span>
+      </div>
+    </div>
+    <div class="hero-text">
+      <h1>Site Audit Report</h1>
+      <div class="site-url">
+        <a href="https://www.bblcpa.com/" style="color:#9CA3AF">https://www.bblcpa.com/</a>
+      </div>
+      <div class="verdict">Brammer, Begnaud &amp; Lattimore is a long-established Port Arthur, TX firm (online since 1998, in business since 1950) with real strengths: top-ten local search rankings for every core CPA keyword, a BBB A+ rating, Texas Society of CPAs leadership among its partners, and a modern, fast desktop site. Three things hold it back. First, the four named niches (Physicians, Restaurants, Dentists, Agriculture) are taglines only — their links load the generic homepage, so the firm gets the downside of claiming specialties with none of the upside. Second, the mobile experience takes nearly 12 seconds to load its main content. Third, the firm's considerable real-world credibility is almost entirely invisible to a visitor. A separate Ongoing Content review (below) finds an active but fully syndicated Resource Library that builds little differentiated authority. Fixing the niche pages, compressing mobile images, surfacing trust signals, and shifting toward original niche content would turn strong rankings into materially more inbound leads.</div>
+      <div class="hero-pills"><span class="pill">4 Passing</span><span class="pill red">4 Need Work</span></div>
+      
+        <div class="top-findings">
+          <h3>Top Recommendations</h3>
+          
+            <div class="top-rec">
+              <span class="rec-dot red"></span>
+              <span>Build real niche pages for the four named verticals</span>
+            </div>
+            <div class="top-rec">
+              <span class="rec-dot red"></span>
+              <span>Replace syndicated Resource Library content with original niche content</span>
+            </div>
+            <div class="top-rec">
+              <span class="rec-dot red"></span>
+              <span>Fix the mobile load time</span>
+            </div>
+        </div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <h2 class="section-title">Score Dashboard</h2>
+  <div class="dashboard">
+    
+    <div class="dash-card">
+      <div class="dash-label">Target Market Clarity</div>
+      <div class="dash-score">
+        <span class="badge badge-d">D+&nbsp;&nbsp;5.3</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:53%;background:#DC2626"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Competitive Search Visibility</div>
+      <div class="dash-score">
+        <span class="badge badge-b">B-&nbsp;&nbsp;7.4</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:74%;background:#F59E0B"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Niche &amp; Services Intelligence</div>
+      <div class="dash-score">
+        <span class="badge badge-f">F&nbsp;&nbsp;2.7</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:27%;background:#DC2626"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">SEO / AIO / GEO Health</div>
+      <div class="dash-score">
+        <span class="badge badge-c">C&nbsp;&nbsp;6.4</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:64%;background:#F59E0B"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Mobile Responsiveness</div>
+      <div class="dash-score">
+        <span class="badge badge-c">C+&nbsp;&nbsp;6.7</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:67%;background:#F59E0B"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Site Speed &amp; Performance</div>
+      <div class="dash-score">
+        <span class="badge badge-b">B+&nbsp;&nbsp;8.3</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:83%;background:#10B981"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Technology Stack</div>
+      <div class="dash-score">
+        <span class="badge badge-b">B&nbsp;&nbsp;7.5</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:75%;background:#10B981"></div></div>
+    </div>
+    <div class="dash-card">
+      <div class="dash-label">Site Age, Health &amp; Errors</div>
+      <div class="dash-score">
+        <span class="badge badge-b">B&nbsp;&nbsp;7.8</span>
+      </div>
+      <div class="dash-bar"><div class="dash-bar-fill" style="width:78%;background:#10B981"></div></div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Section Details</h2>
+  <p style="color:var(--gray);font-size:13px;margin-bottom:16px">
+    Click any section to expand its findings.
+  </p>
+  
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Target Market Clarity</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-d">D+&nbsp;&nbsp;5.3</span>
+        <span class="chevron open">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body open">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">Your homepage does name four industries you serve — Physicians, Restaurants, Dentists, and Agriculture — which is clearer than most CPA sites get. But each is a single tagline, and clicking through doesn't lead to a real industry page (those links reload the homepage). The bigger gap is proof: there are no client testimonials, and your genuine credibility — in business since 1950, a BBB A+ rating, Texas Society of CPAs leadership, and a Port Arthur News 'Best of' award — never appears on the site. A visitor has no quick signal that says 'these people are trusted here.'</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">who they serve</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:70%;background:#F59E0B"></span></span><span class="bar-label">7/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">niche specificity</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:60%;background:#F59E0B"></span></span><span class="bar-label">6/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">cta alignment</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:40%;background:#DC2626"></span></span><span class="bar-label">4/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">trust signals</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:40%;background:#DC2626"></span></span><span class="bar-label">4/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Competitive Search Visibility</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-b">B-&nbsp;&nbsp;7.4</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">This remains a real strength. For the five searches a Port Arthur small business would use to find a CPA, your site appears in the top ten for all of them — third for 'CPA firm Port Arthur TX,' and sixth to seventh for accounting- and tax-firm searches — competing well against national directories like Yelp and H&amp;R Block. The opportunity is AI search (ChatGPT, Perplexity, Gemini): the site has no FAQ or Q&amp;A-style structured content for those tools to cite, so as more buyers research providers through AI, the firm risks being invisible there even while it ranks well on Google.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">keyword 1 cpa firm</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">keyword 2 accounting firm</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">keyword 3 tax firm</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">local seo signals</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:70%;background:#F59E0B"></span></span><span class="bar-label">7/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">ai search presence</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:40%;background:#DC2626"></span></span><span class="bar-label">4/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Niche &amp; Services Intelligence</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-f">F&nbsp;&nbsp;2.7</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">Your site names four industries, which puts you ahead of firms that say nothing — but the execution doesn't back the claim. Each vertical is a one-line tile, the dedicated industry URLs load the generic homepage rather than real content, and there are no industry testimonials or niche-specific calls to action. Service copy leans on accountant language ('garnishment remittance,' 'Business Foundation Services') rather than the outcomes a business owner cares about. Niche clarity is the single biggest conversion lever for accounting firms: a prospect who instantly recognizes 'this firm gets businesses like mine' is three to five times more likely to reach out.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">niche specific language</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:30%;background:#DC2626"></span></span><span class="bar-label">3/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">pain points in headlines</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:40%;background:#DC2626"></span></span><span class="bar-label">4/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">outcome framing</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:50%;background:#DC2626"></span></span><span class="bar-label">5/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">niche testimonials social proof</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:10%;background:#DC2626"></span></span><span class="bar-label">1/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">niche specific ctas</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:10%;background:#DC2626"></span></span><span class="bar-label">1/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">visual language signals</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:20%;background:#DC2626"></span></span><span class="bar-label">2/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+      <p class="narrative-label" style="margin-top:16px">Services Communication Analysis</p>
+      <div style="overflow-x:auto">
+        <table class="svc-table">
+          <thead><tr>
+            <th>Service</th><th>Clarity</th><th>Framing</th><th>Audience</th><th>Rewrite Direction</th>
+          </tr></thead>
+          <tbody>
+          <tr>
+            <td><strong>Accounting / Outsourced Accounting (Basic, Standard, Complete tiers)</strong></td>
+            <td><span class="tag-green">Clear</span></td>
+            <td><span class="tag-yellow">Mixed</span></td>
+            <td><span class="tag-yellow">General</span></td>
+            <td style="font-style:italic;color:#6B7280;font-size:12px">Strong tiered packaging lands well, but feature lists are jargon-heavy; lead each tier with the outcome (clean books, no surprises, time back) and add niche versions like 'Restaurant Books' or 'Dental Practice Books.'</td>
+          </tr>
+          <tr>
+            <td><strong>Payroll</strong></td>
+            <td><span class="tag-green">Clear</span></td>
+            <td><span class="tag-green">Outcome-focused</span></td>
+            <td><span class="tag-yellow">General</span></td>
+            <td style="font-style:italic;color:#6B7280;font-size:12px">Good outcome framing; add niche payroll pains (FICA tip credit for restaurants, multi-provider dental associates) to prove specialization.</td>
+          </tr>
+          <tr>
+            <td><strong>Tax</strong></td>
+            <td><span class="tag-green">Clear</span></td>
+            <td><span class="tag-green">Outcome-focused</span></td>
+            <td><span class="tag-yellow">General</span></td>
+            <td style="font-style:italic;color:#6B7280;font-size:12px">Solid; add proactive planning specifics and niche angles (Schedule F for agriculture, practice-purchase deductions for physicians/dentists).</td>
+          </tr>
+          <tr>
+            <td><strong>Advice / Business Foundation Services</strong></td>
+            <td><span class="tag-yellow">Moderate</span></td>
+            <td><span class="tag-red">Process-focused</span></td>
+            <td><span class="tag-yellow">General</span></td>
+            <td style="font-style:italic;color:#6B7280;font-size:12px">Rename the insider label to a plain-English outcome ('Business Advisory' or 'CFO-level guidance') and show concrete deliverables (KPI reviews, cash-flow planning, industry benchmarking).</td>
+          </tr></tbody>
+        </table>
+      </div>
+      <p class="narrative-label" style="margin-top:16px">Detected Niches</p>
+      <div style="margin-bottom:8px"><span class="niche-pill weak" title="Homepage 'Who We Serve' tile only; the link resolves to the homepage shell, so it is a label, not a page.">Physicians <small>(weak signal)</small></span><span class="niche-pill weak" title="One-line homepage tile ('You run your restaurant...we'll run the numbers') with no restaurant-specific services or proof.">Restaurants <small>(weak signal)</small></span><span class="niche-pill weak" title="Homepage pun headline only; no dedicated page or dentist-specific service detail.">Dentists <small>(weak signal)</small></span><span class="niche-pill weak" title="Homepage tile only; no farm/ranch tax or commodity-specific content anywhere on the site.">Agriculture <small>(weak signal)</small></span></div>
+      <p class="narrative-label" style="margin-top:8px">High-Opportunity Niches (Currently Invisible)</p>
+      <div style="margin-bottom:8px"><span class="niche-pill invisible" title="No medical-practice tax, locum/1099, practice-valuation, or PLLC content — a prospect physician finds nothing beyond a tagline.">Physicians</span><span class="niche-pill invisible" title="Restaurant-specific pains (tip credits, prime cost, sales tax on food and beverage, multi-location payroll) are entirely absent.">Restaurants</span><span class="niche-pill invisible" title="No dental page or dental-specific services (practice acquisition, equipment depreciation, associate buy-ins, DSO structuring).">Dentists</span><span class="niche-pill invisible" title="No farm/ranch page; ag-specific accounting (Schedule F, crop/livestock inventory, Section 179, disaster deferrals) is nowhere on the site.">Agriculture</span></div>
+      <p class="narrative-label" style="margin-top:16px">Top 3 Highest-Impact Improvements</p>
+      <ul style="list-style:none;padding:12px 16px;background:#F0FDF4;
+                 border:1px solid #BBF7D0;border-radius:6px;margin-bottom:12px">
+        <li style="margin-bottom:6px;font-size:13px">1. Build real niche pages for the four named verticals — today the slugs resolve to the homepage shell, so the firm gets the SEO and credibility downside of claiming niches with none of the upside.</li><li style="margin-bottom:6px;font-size:13px">2. Add social proof, especially niche-specific testimonials and outcomes — the site currently shows zero client testimonials, only vendor/partner logos.</li><li style="margin-bottom:6px;font-size:13px">3. Replace generic CTAs and translate insider language into outcome-oriented, niche-specific calls to action a non-accountant instantly understands.</li>
+      </ul>
+    </div>
+  </div>
+  <h2 class="section-title" style="margin-top:40px">Ongoing Content &mdash; Resource Library &amp; eBooks</h2>
+  <div class="cat-section">
+    <div style="padding:20px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <span class="badge badge-c">C&minus;&nbsp;&nbsp;4.0/10</span>
+        <span style="font-size:13px;color:#6B7280;font-style:italic">How effectively the firm's published content supports its online visibility</span>
+      </div>
+      <p style="font-size:14px;color:#374151;line-height:1.7;margin-bottom:16px">
+        For a firm of this size, BBL keeps an unusually active Resource Library &mdash; roughly
+        <strong>96 published pieces</strong> across three formats. The publishing rhythm is genuinely consistent,
+        which is more than most CPA firms manage. The problem isn't volume or frequency; it's that nearly all of
+        it is <strong>white-labeled, syndicated content</strong> (supplied through Rootworks/Rightworks and shared
+        verbatim with many other accounting firms), so it does very little to build authority that is uniquely BBL's.
+      </p>
+      <table class="check-table">
+        <thead><tr>
+          <th>Content Type</th><th>Count</th><th>Publishing Cadence</th><th>Current Status</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Magazine ("Advantage")</strong></td>
+            <td>63 articles</td>
+            <td>~7 articles every 2 months (Jun 2024&ndash;Oct 2025)</td>
+            <td><span class="tag-yellow">Appears paused since Nov&ndash;Dec 2025</span></td>
+          </tr>
+          <tr>
+            <td><strong>Quick Reads</strong></td>
+            <td>24 articles</td>
+            <td>Accelerating: ~3/mo early 2026, 6 in Apr 2026</td>
+            <td><span class="tag-green">Active channel</span></td>
+          </tr>
+          <tr>
+            <td><strong>eBooks</strong></td>
+            <td>9 titles</td>
+            <td>~1 per magazine issue</td>
+            <td><span class="tag-green">Gated (lead capture)</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="narrative-label" style="margin-top:18px">What We Found</p>
+      <p style="font-size:14px;color:#374151;line-height:1.7;margin-bottom:8px">
+        The magazine is a polished bimonthly digital publication, but every article carries third-party attribution
+        ("by ADP," "by Rightworks") rather than a firm byline, and the individual article pages reuse the
+        <em>issue-level</em> title tag and meta description instead of unique per-article SEO tags &mdash; weakening
+        the search value of all 63 pages. The Quick Reads are better built (each has a unique, descriptive title and
+        meta description) and are now the firm's active channel, but they're the same syndicated feed. All 9 eBooks
+        sit behind a lead-capture form, which is the single best conversion mechanism in the program &mdash; though
+        the generic, non-niche topics limit how compelling those lead magnets are.
+      </p>
+
+      <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:12px 16px;margin:14px 0">
+        <strong style="color:#7F1D1D;font-size:13px">The core issue:</strong>
+        <span style="font-size:13px;color:#7F1D1D">Across all ~96 articles and 9 eBooks there is
+        <strong>zero local relevance</strong> (no mention of Port Arthur, Beaumont, or Texas) and
+        <strong>zero niche relevance</strong> (nothing for physicians, restaurants, dentists, or agriculture).
+        The content builds no topical authority in the specialties and local market that would actually win clients.</span>
+      </div>
+
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">
+        <div style="flex:1;min-width:240px;background:#F0FDF4;border:1px solid #BBF7D0;border-radius:6px;padding:12px 16px">
+          <p style="margin:0 0 6px;font-weight:700;font-size:13px;color:#065F46">Strengths</p>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#065F46;line-height:1.6">
+            <li>Steady, reliable cadence &mdash; the site never looks stale to visitors or search engines</li>
+            <li>Quick Reads have clean, unique per-article SEO metadata</li>
+            <li>All 9 eBooks are gated, creating a real lead-generation funnel</li>
+            <li>Evergreen eBook topics (1099s, financial statements, succession) have durable search value</li>
+          </ul>
+        </div>
+        <div style="flex:1;min-width:240px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;padding:12px 16px">
+          <p style="margin:0 0 6px;font-weight:700;font-size:13px;color:#7F1D1D">Weaknesses</p>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#7F1D1D;line-height:1.6">
+            <li>Syndicated/white-labeled &mdash; duplicate-content risk, no differentiation</li>
+            <li>No local or niche relevance anywhere in the library</li>
+            <li>No firm bylines &mdash; readers and Google see third-party authors, not BBL expertise</li>
+            <li>63 magazine articles share issue-level (not unique) SEO tags</li>
+            <li>No in-article CTAs linking content to BBL services</li>
+            <li>Magazine apparently abandoned after Nov&ndash;Dec 2025</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;padding:12px 16px;margin-top:14px">
+        <p style="margin:0 0 4px;font-weight:700;font-size:13px;color:#1E3A5F">Visibility Impact Assessment</p>
+        <p style="margin:0;font-size:13px;color:#1E3A5F;line-height:1.7">
+          The volume and regular cadence give BBL a baseline of freshness and a handful of well-tagged, indexable
+          short-form pages. But because nearly all of it is white-labeled content shared verbatim with countless
+          other firms, it carries duplicate-content risk and builds little unique topical authority. Critically,
+          none of the content targets the firm's named niches or the Port Arthur market, so it does almost nothing
+          to rank BBL for the specialty and local searches that convert to clients. The gated eBooks are the one
+          genuinely useful lead-gen mechanism, but generic topics limit their pull. <strong>Net: an active,
+          well-run content engine pointed at the wrong target.</strong>
+        </p>
+      </div>
+
+      <p class="narrative-label" style="margin-top:18px">Recommendations</p>
+      <ul style="list-style:none;padding:12px 16px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:6px;margin-bottom:4px">
+        <li style="margin-bottom:8px;font-size:13px">1. Commission <strong>original, firm-authored content for each named niche</strong> (e.g., "Tax planning for Port Arthur restaurants," "Physician practice cash flow," "Dental practice entity structuring," "Ag accounting &amp; Section 179") with real staff bylines.</li>
+        <li style="margin-bottom:8px;font-size:13px">2. Add a clear <strong>local layer</strong> (Port Arthur, Beaumont, Southeast Texas) to titles, meta descriptions, and body copy so content can rank for local-intent searches.</li>
+        <li style="margin-bottom:8px;font-size:13px">3. Fix magazine SEO by giving each of the 63 articles <strong>unique per-article title tags and meta descriptions</strong> instead of inheriting issue-level metadata.</li>
+        <li style="margin-bottom:8px;font-size:13px">4. Insert <strong>contextual in-article CTAs</strong> linking to the relevant service/niche page and a booking link, rather than relying on global navigation.</li>
+        <li style="margin-bottom:0;font-size:13px">5. <strong>Resolve the magazine-vs-Quick-Reads strategy</strong> and create at least one niche-specific gated eBook (e.g., a physicians' or restaurant owners' tax guide) to make the lead magnets compelling and on-strategy.</li>
+      </ul>
+    </div>
+  </div>
+  <h2 class="section-title" style="margin-top:40px">Digital Intelligence Brief</h2>
+  
+  <div class="intel-wrapper">
+    <div class="intel-header">
+      <span style="font-size:15px;font-weight:700">&#128269; Digital Intelligence Brief</span>
+      <span class="intel-tag">External Research &mdash; Not Scored</span>
+    </div>
+    <div class="intel-body">
+      <div class="intel-sub">Key Personnel</div>
+          <div class="person-card">
+            <div class="person-name">David L. Lattimore</div>
+            <div class="person-title">Managing Partner</div>
+            <div class="person-creds">CPA</div>
+            <div style="margin-top:6px">
+              <span class="footprint-minimal">Minimal Online Footprint</span>
+            </div>
+            <div class="person-grid"><div class="person-lbl">LinkedIn</div><div class="person-val">Profile exists but bare (~7 connections, no activity); minimal personal brand.</div><div class="person-lbl">Twitter/X</div><div class="person-val">none</div><div class="person-lbl">Associations</div><div class="person-val">Texas Society of CPAs</div><div class="person-lbl">Niche Signals</div><div class="person-val">General CPA / managing partner</div></div>
+            <div class="person-summary">Named managing partner with almost no external digital footprint; search results are dominated by unrelated namesakes.</div>
+          </div>
+          <div class="person-card">
+            <div class="person-name">Erik Angelle</div>
+            <div class="person-title">Senior Partner</div>
+            <div class="person-creds">CPA</div>
+            <div style="margin-top:6px">
+              <span class="footprint-moderate">Moderate Online Footprint</span>
+            </div>
+            <div class="person-grid"><div class="person-lbl">LinkedIn</div><div class="person-val">Listed as Texas CPA, Beaumont-Port Arthur area; modest but real presence.</div><div class="person-lbl">Twitter/X</div><div class="person-val">none</div><div class="person-lbl">Associations</div><div class="person-val">TXCPA Southeast Texas Chapter (Secretary 2023-24, Treasurer 2024-26), Texas Society of CPAs, Lamar University alumnus</div><div class="person-lbl">Niche Signals</div><div class="person-val">Strong regional CPA-community visibility</div><div class="person-lbl">Content Found</div><div class="person-val">Lamar University Cadence alumni magazine (2022) | Beaumont Enterprise CPA-leadership article | Port Arthur News 'Best of 2022' coverage</div></div>
+            <div class="person-summary">The firm's most externally visible professional — multi-year TXCPA Southeast Texas Chapter officer, Lamar alumnus featured in alumni publications, and present in local press. Credibility concentrated in association leadership and regional standing, none of it surfaced on the website.</div>
+          </div>
+          <div class="person-card">
+            <div class="person-name">Larry Begnaud</div>
+            <div class="person-title">Partner Emeritus (firm namesake)</div>
+            <div class="person-creds">CPA</div>
+            <div style="margin-top:6px">
+              <span class="footprint-moderate">Moderate Online Footprint</span>
+            </div>
+            <div class="person-grid"><div class="person-lbl">LinkedIn</div><div class="person-val">Profile lists partner role, Port Neches, Lamar University (~86 connections).</div><div class="person-lbl">Twitter/X</div><div class="person-val">none</div><div class="person-lbl">Associations</div><div class="person-val">Texas Society of CPAs (Distinguished Service honoree), Lamar University alumnus</div><div class="person-lbl">Niche Signals</div><div class="person-val">Long-tenured leadership; TXCPA distinguished-service recognition</div><div class="person-lbl">Content Found</div><div class="person-val">Firm Facebook post on TXCPA Distinguished Service honor</div></div>
+            <div class="person-summary">Firm namesake, now Partner Emeritus, recognized at the TXCPA Annual Meeting for distinguished service — a credibility marker celebrated on Facebook but not featured on the website (he is not on the current team roster).</div>
+          </div>
+          <div class="person-card">
+            <div class="person-name">Chris Lanier</div>
+            <div class="person-title">Principal / CPA</div>
+            <div class="person-creds">CPA</div>
+            <div style="margin-top:6px">
+              <span class="footprint-minimal">Minimal Online Footprint</span>
+            </div>
+            <div class="person-grid"><div class="person-lbl">LinkedIn</div><div class="person-val">Appears in BBB principal contact info and firm photos.</div><div class="person-lbl">Twitter/X</div><div class="person-val">none</div><div class="person-lbl">Associations</div><div class="person-val">Lamar University alumnus</div><div class="person-lbl">Niche Signals</div><div class="person-val">General CPA</div><div class="person-lbl">Content Found</div><div class="person-val">BBB principal contact | Port Arthur News 'Best of 2022' | Lamar University Cadence alumni magazine</div></div>
+            <div class="person-summary">A CPA/principal appearing in BBB records and local press but absent from the published team page, suggesting the website roster is out of date.</div>
+          </div>
+        <div class="intel-sub">Firm Reputation</div>
+        <div style="margin-bottom:8px">Overall Sentiment:
+          <strong style="color:#10B981">Positive</strong>
+        </div>
+        <div class="rating-row"><div class="rating-item"><div class="rating-stars">&#9733; 5.0</div><div class="rating-src">Yelp</div></div><div class="rating-item"><div class="rating-stars">A+ (BBB Accredited since 5/1/2010)</div><div class="rating-src">BBB</div></div></div>
+        <div style="margin:8px 0"><span class="theme-tag">Exceptional, easygoing staff</span><span class="theme-tag">Trusted local provider; voted Best Accounting Firm</span><span class="theme-tag">Long-established full-service firm (since 1950)</span></div>
+        <div style="margin:4px 0"><span class="concern-tag">Very low review volume across platforms</span><span class="concern-tag">Yelp listing unclaimed; no Google Business rating surfaced</span></div>
+        <div class="review-quote">&ldquo;Yelp (Charles Y.): 'Mrs. Cindy and Mr. Freddie were Exceptional and Easy Going and VERY...' (5.0)&rdquo;</div><div class="review-quote">&ldquo;Facebook: 92% recommend based on 11 reviews&rdquo;</div><div class="intel-sub">Associations &amp; Affiliations</div><ul style="list-style:none;padding:0"><li style="margin-bottom:4px;font-size:13px"><strong>Texas Society of CPAs (TXCPA)</strong> &mdash; Firm listed as a TXCPA Professional Group member; partner Erik Angelle holds chapter officer roles and Larry Begnaud was honored for distinguished service.</li><li style="margin-bottom:4px;font-size:13px"><strong>TXCPA Southeast Texas Chapter</strong> &mdash; Erik Angelle named Secretary (2023-24) and Treasurer (2024-26) in published chapter officer lists.</li><li style="margin-bottom:4px;font-size:13px"><strong>Better Business Bureau</strong> &mdash; BBB Accredited Business since 5/1/2010 with an A+ rating.</li><li style="margin-bottom:4px;font-size:13px"><strong>Lamar University alumni network</strong> &mdash; Multiple professionals (Angelle, Lanier, Begnaud) are Lamar graduates featured in the Cadence alumni magazine.</li></ul><div class="intel-sub">Content Footprint</div><table class="svc-table"><thead><tr><th>Type</th><th>Title</th><th>Source</th><th>Niche</th></tr></thead><tbody><tr><td>Press</td><td>Voted Best Accountant, Accounting Firm &amp; Bookkeeping/Tax Service — Best of 2022</td><td>Port Arthur News</td><td style="color:var(--accent);font-style:italic">Local reputation / trust signal, underleveraged on site</td></tr><tr><td>Award</td><td>Larry Begnaud honored for Distinguished Service at TXCPA Annual Meeting</td><td>TXCPA / firm Facebook</td><td style="color:var(--accent);font-style:italic">High-value professional credibility, not on website</td></tr><tr><td>Article</td><td>Resource Library 'Quick Reads' and magazine articles</td><td>bblcpa.com/resources</td><td style="color:var(--accent);font-style:italic">Generic syndicated (Rootworks/Rightworks) content, not original thought leadership</td></tr></tbody></table><div class="intel-sub">Social Presence</div><div class="social-row"><div class="social-card"><div class="social-plat">Facebook</div><div class="social-active">Active &middot; ~473</div></div><div class="social-card"><div class="social-plat">LinkedIn (company)</div><div class="social-dormant">Not Found</div></div><div class="social-card"><div class="social-plat">Yelp</div><div class="social-dormant">Dormant &middot; 5.0 rating, 2 reviews</div></div></div>
+        <div class="intel-sub">External vs. Website Niche Gap</div>
+        <div class="gap-grid">
+          <div class="gap-box">
+            <div class="gap-box-label">Found Externally</div>
+            <div style="font-size:13px">Texas Society of CPAs leadership / professional-association governance, Long-established, award-winning local Southeast Texas small-business accounting authority, Lamar University alumni / local-talent pipeline credibility</div>
+          </div>
+          <div class="gap-box">
+            <div class="gap-box-label">On Website</div>
+            <div style="font-size:13px">Physicians, Restaurants, Dentists, Agriculture</div>
+          </div>
+        </div>
+        <ul style="list-style:none;padding:0;margin-bottom:12px"><li style="margin-bottom:4px;font-size:13px">&#9670; Erik Angelle's multi-year TXCPA chapter officer roles are not surfaced as bios or thought leadership on the site</li><li style="margin-bottom:4px;font-size:13px">&#9670; Larry Begnaud's TXCPA Distinguished Service honor is celebrated on Facebook but not on the website</li><li style="margin-bottom:4px;font-size:13px">&#9670; Chris Lanier, CPA appears in BBB and press but is absent from the published team page</li><li style="margin-bottom:4px;font-size:13px">&#9670; BBB A+, Yelp 5.0, and the Port Arthur News 'Best of 2022' award are not prominently leveraged on the site</li><li style="margin-bottom:4px;font-size:13px">&#9670; On-site content is generic syndicated 'Quick Reads,' not differentiated niche thought leadership</li></ul>
+        <div class="gap-summary">BBL's external credibility is real but concentrated in two underused buckets: Texas Society of CPAs leadership/recognition and deep local reputation (since 1950, BBB A+, Yelp 5.0, 'Best of 2022'). The website surfaces almost none of it — the team page lists titles without credentials, omits awards and association recognition, appears out of date, and the only on-site content is generic syndicated articles rather than differentiated niche thought leadership. The biggest opportunity is converting genuine association leadership and local-award credibility into named-partner bios and original content.</div>
+    </div>
+  </div>
+  <h2 class="section-title" style="margin-top:40px">Technical Site Health</h2>
+  <p style="color:var(--gray);font-size:13px;margin-bottom:16px">
+    Infrastructure, search optimization, and platform performance findings.
+  </p>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>SEO / AIO / GEO Health</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-c">C&nbsp;&nbsp;6.4</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">The fundamentals are mixed. Title tags and meta descriptions are present across pages, Open Graph tags are well done, and there is basic AccountingService schema. But the homepage has no real H1 heading (it renders an empty styling element instead), which is a foundational on-page SEO miss, and the schema is thin — no LocalBusiness, FAQ, or team-member markup that would help both Google and AI search understand the firm. Strengthening the heading structure and adding richer schema would lift how well the site is understood and cited.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">title tags meta descriptions</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">heading structure</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:30%;background:#DC2626"></span></span><span class="bar-label">3/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">schema markup</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:60%;background:#F59E0B"></span></span><span class="bar-label">6/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">open graph tags</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:90%;background:#10B981"></span></span><span class="bar-label">9/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">sitemap robots txt</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:60%;background:#F59E0B"></span></span><span class="bar-label">6/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">internal linking</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:60%;background:#F59E0B"></span></span><span class="bar-label">6/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">keyword alignment</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:70%;background:#F59E0B"></span></span><span class="bar-label">7/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Mobile Responsiveness</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-c">C+&nbsp;&nbsp;6.7</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">On phones the site is visually stable and reasonably accessible, but the main content takes roughly 11–12 seconds to fully appear — far beyond the 2.5-second target — largely because the hero imagery isn't optimized for mobile. With more than half of web visitors on phones and Google ranking mobile-first, that delay quietly costs you visitors who give up before the page finishes loading.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">mobile performance</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:50%;background:#DC2626"></span></span><span class="bar-label">5/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">viewport configuration</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">touch targets</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:70%;background:#F59E0B"></span></span><span class="bar-label">7/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">text readability</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">lcp mobile</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:20%;background:#DC2626"></span></span><span class="bar-label">2/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">cls mobile</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Site Speed &amp; Performance</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-b">B+&nbsp;&nbsp;8.3</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">On desktop the site is genuinely fast — content paints in about 1.5 seconds, layout is rock-stable, and there are no render-blocking resources, helped by a modern build and an image CDN. The one weak spot is image weight, which is what drags the mobile experience down. Compressing and right-sizing images would close the gap between the strong desktop performance and the slow mobile load.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">desktop performance</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:70%;background:#F59E0B"></span></span><span class="bar-label">7/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">time to first byte</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">largest contentful paint</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">cumulative layout shift</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">image optimization</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:30%;background:#DC2626"></span></span><span class="bar-label">3/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">render blocking resources</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Technology Stack</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-b">B&nbsp;&nbsp;7.5</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">The site runs on a modern, custom-built stack (Laravel/Livewire with a Vite build and a Cloudinary image CDN) rather than a dated template — a solid, maintainable foundation that is better than most firms in this space. Two things to flag: the site loads a script from polyfill.io, a third-party source compromised in a 2024 supply-chain attack that should be removed, and security headers beyond HTTPS aren't fully in place. Overall the technology is an asset, not a liability.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">cms platform modernity</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:90%;background:#10B981"></span></span><span class="bar-label">9/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">page builder dependency</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:90%;background:#10B981"></span></span><span class="bar-label">9/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">hosting quality signals</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:90%;background:#10B981"></span></span><span class="bar-label">9/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">ssl security headers</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:60%;background:#F59E0B"></span></span><span class="bar-label">6/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">dependency bloat</td>
+          <td class="td-fail"><span class="bar-wrap"><span class="bar-fill" style="width:50%;background:#DC2626"></span></span><span class="bar-label">5/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">accessibility signals</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="cat-section">
+    <div class="cat-header" onclick="toggleSection(this)">
+      <h3>Site Age, Health &amp; Errors</h3>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="badge badge-b">B&nbsp;&nbsp;7.8</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="cat-body">
+      
+      <p class="narrative-label">What This Means</p>
+      <div class="narrative">The domain has been registered since 1998 — nearly three decades of authority Google rewards — the site is fully crawlable with a working sitemap, and content is fresh (new articles through spring 2026). The main health issue is structural: the four niche URLs resolve to the homepage rather than unique pages, which wastes the credibility of claiming those specialties. Cleaning that up would turn a soft spot into another strength.</div>
+      <table class="check-table">
+        <thead><tr>
+          <th>Metric</th>
+          <th>Score</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td class="check-label">domain age</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:100%;background:#10B981"></span></span><span class="bar-label">10/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">broken links</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">redirect chains</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:60%;background:#F59E0B"></span></span><span class="bar-label">6/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">missing alt text</td>
+          <td class="td-warn"><span class="bar-wrap"><span class="bar-fill" style="width:70%;background:#F59E0B"></span></span><span class="bar-label">7/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">crawl coverage</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:90%;background:#10B981"></span></span><span class="bar-label">9/10</span></td>
+        </tr>
+        <tr>
+          <td class="check-label">last updated</td>
+          <td class="td-pass"><span class="bar-wrap"><span class="bar-fill" style="width:80%;background:#10B981"></span></span><span class="bar-label">8/10</span></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  
+  <h2 class="section-title">Recommendations &amp; Next Steps</h2>
+  <div style="overflow-x:auto">
+    <table class="rec-table">
+      <thead><tr>
+        <th>Priority</th>
+        <th>Issue &amp; Impact</th>
+        <th>Section</th>
+        <th>CountingFive Service</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="priority-high">High</span></td>
+          <td>
+            <strong>Build real niche pages for the four named verticals</strong>
+            <div class="detail-text">Claiming Physicians, Restaurants, Dentists, and Agriculture with no real pages wastes both search visibility and credibility — prospects in those industries find a tagline and a homepage, not proof you serve them.</div>
+          </td>
+          <td style="font-size:12px;color:#374151">Niche &amp; Services Intelligence / Site Health</td>
+          <td style="font-size:12px;color:#374151">CountingFive can build dedicated, conversion-focused industry pages with niche pain points, tailored services, and niche-specific calls to action.</td>
+        </tr>
+        <tr>
+          <td><span class="priority-high">High</span></td>
+          <td>
+            <strong>Replace syndicated Resource Library content with original niche content</strong>
+            <div class="detail-text">The ~96 articles and 9 eBooks are white-labeled Rootworks/Rightworks content shared verbatim with many other firms, so they build little unique authority and never mention Port Arthur or your verticals.</div>
+          </td>
+          <td style="font-size:12px;color:#374151">Ongoing Content</td>
+          <td style="font-size:12px;color:#374151">CountingFive can run a content strategy that produces firm-authored, locally and niche-targeted articles that actually rank for the searches that win clients.</td>
+        </tr>
+        <tr>
+          <td><span class="priority-high">High</span></td>
+          <td>
+            <strong>Fix the mobile load time</strong>
+            <div class="detail-text">A ~12-second mobile load loses phone visitors before they see anything — on the device most prospects use to find a local CPA.</div>
+          </td>
+          <td style="font-size:12px;color:#374151">Mobile Responsiveness / Site Speed</td>
+          <td style="font-size:12px;color:#374151">CountingFive can optimize images and front-end performance to bring mobile load in line with the already-fast desktop experience.</td>
+        </tr>
+        <tr>
+          <td><span class="priority-medium">Medium</span></td>
+          <td>
+            <strong>Surface trust signals and add client testimonials</strong>
+            <div class="detail-text">A BBB A+ rating, 'in business since 1950,' Texas Society of CPAs leadership, and a 'Best of' award are all invisible on the site, so it underperforms the firm's real reputation.</div>
+          </td>
+          <td style="font-size:12px;color:#374151">Target Market Clarity / Digital Intelligence</td>
+          <td style="font-size:12px;color:#374151">CountingFive can redesign key pages to foreground credibility and add niche-attributed client proof.</td>
+        </tr>
+        <tr>
+          <td><span class="priority-medium">Medium</span></td>
+          <td>
+            <strong>Strengthen on-page SEO and AI-search readiness</strong>
+            <div class="detail-text">A missing homepage H1, thin schema, and a third-party polyfill.io script limit how well Google and AI tools understand, trust, and cite the firm.</div>
+          </td>
+          <td style="font-size:12px;color:#374151">SEO / AIO / GEO Health</td>
+          <td style="font-size:12px;color:#374151">CountingFive can fix heading structure, add structured FAQ/LocalBusiness/team schema, and remove the compromised polyfill.io dependency.</td>
+        </tr></tbody>
+    </table>
+  </div>
+
+  
+  <div class="cta-box">
+    <h3>Ready to Turn These Findings Into Results?</h3>
+    <p>CountingFive specializes in web design, development, hosting, and targeted content
+       for accounting and tax professionals.<br>
+       Visit <a href="https://countingfive.com">https://countingfive.com</a> to start a conversation.</p>
+  </div>
+
+
+</div>
+
+<footer class="site-footer">
+  <img src="data:image/png;base64,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" class="logo-footer" alt="CountingFive">
+  <div class="footer-text">
+    CountingFive &mdash; Turning Accounting Expertise Into Online Authority<br>
+    <a href="https://countingfive.com">https://countingfive.com</a>
+  </div>
+</footer>
+
+<script>
+function toggleSection(header) {
+  const body    = header.nextElementSibling;
+  const chevron = header.querySelector('.chevron');
+  body.classList.toggle('open');
+  if (chevron) chevron.classList.toggle('open');
+}
+</script>
+
+</body>
+</html>
