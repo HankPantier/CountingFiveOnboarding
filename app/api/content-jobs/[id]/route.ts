@@ -29,7 +29,14 @@ export async function PATCH(
   if (body.design_tokens !== undefined) updates.design_tokens = body.design_tokens
   if (body.confirmed_sitemap !== undefined) updates.confirmed_sitemap = body.confirmed_sitemap
   if (body.nav_config !== undefined) updates.nav_config = body.nav_config
-  if (body.phase !== undefined) updates.phase = body.phase
+  if (body.phase !== undefined) {
+    // Content-job phases run 1–6 (see PhaseStepper). Phase 5 auto-triggers
+    // generation below, so reject out-of-range values rather than write them.
+    if (!Number.isInteger(body.phase) || body.phase < 1 || body.phase > 6) {
+      return NextResponse.json({ error: 'Invalid phase' }, { status: 400 })
+    }
+    updates.phase = body.phase
+  }
   if (body.status !== undefined) {
     const validStatuses = ['active', 'complete', 'error']
     if (!validStatuses.includes(body.status)) {

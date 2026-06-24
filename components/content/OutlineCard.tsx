@@ -286,7 +286,7 @@ export default function OutlineCard({
               <button
                 onClick={approve}
                 disabled={saving}
-                className="bg-success text-white font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50"
+                className="bg-success text-white font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Saving...' : 'Approve'}
               </button>
@@ -294,14 +294,14 @@ export default function OutlineCard({
             <button
               onClick={saveEdits}
               disabled={saving}
-              className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50"
+              className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Save Edits
             </button>
             <button
               onClick={regenerate}
               disabled={regenerating}
-              className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50"
+              className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {regenerating ? 'Regenerating...' : 'Regenerate'}
             </button>
