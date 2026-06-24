@@ -170,7 +170,7 @@ export default function ChatInterface({
           />
           <div className="flex items-center gap-3">
             {isStaffMode && (
-              <span className="bg-brand-cyan/20 border border-brand-cyan/40 text-brand-cyan text-[11px] font-heading font-semibold uppercase tracking-wide px-2.5 py-1 rounded-pill">
+              <span className="bg-brand-cyan/20 border border-brand-cyan/40 text-brand-cyan-dark text-[11px] font-heading font-semibold uppercase tracking-wide px-2.5 py-1 rounded-pill">
                 Staff mode
               </span>
             )}

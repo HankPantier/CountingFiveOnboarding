@@ -41,7 +41,7 @@ export default function ContentChatModal({
 
       {open && (
         <div className="fixed inset-0 z-50 flex">
-          <button aria-label="Close" onClick={() => setOpen(false)} className="flex-1 bg-brand-navy/40" />
+          <button aria-label="Close" onClick={() => setOpen(false)} className="flex-1 cursor-pointer bg-brand-navy/40" />
           <div className="w-full max-w-[460px] h-full bg-surface-page shadow-xl flex flex-col">
             <div className="flex items-center justify-between px-4 h-14 flex-shrink-0 border-b border-border-default bg-surface-card">
               <span className="text-sm font-heading font-semibold text-brand-navy">Edit content with AI</span>

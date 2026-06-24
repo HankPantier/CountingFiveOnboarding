@@ -64,7 +64,7 @@ export default function BrandConflictCard({
         </button>
         <button
           onClick={onProceed}
-          className="rounded-pill px-3.5 py-1.5 text-xs font-heading font-semibold text-text-secondary hover:text-brand-navy transition-colors"
+          className="rounded-pill border border-border-default px-3.5 py-1.5 text-xs font-heading font-semibold text-text-secondary transition-colors hover:border-brand-navy hover:text-brand-navy"
         >
           Proceed off-brand (one time)
         </button>

@@ -118,7 +118,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
           </div>
         </div>
         <div className="text-right">
-          <span className="inline-flex items-center rounded-full bg-brand-cyan/20 px-3 py-1 text-xs font-heading font-semibold text-brand-cyan">
+          <span className="inline-flex items-center rounded-full bg-brand-cyan/20 px-3 py-1 text-xs font-heading font-semibold text-brand-cyan-dark">
             Snapshot Report
           </span>
           <p className="mt-1 text-xs font-body text-text-muted">{runDate}</p>

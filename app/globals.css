@@ -31,7 +31,7 @@
   --color-text-inverse: #FFFFFF;
 
   /* Semantic colors */
-  --color-success: #098195;
+  --color-success: #076B7C;        /* deep teal — readable success TEXT on light tints (AA); also white-on-success buttons */
   --color-error: #6B2956;
   --color-warning: #F59E0B;        /* amber — fills/borders/indicators only */
   --color-warning-strong: #92400E; /* amber-800 — readable warning TEXT (AA) */

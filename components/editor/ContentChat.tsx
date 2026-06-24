@@ -91,7 +91,7 @@ export default function ContentChat({
           <span>You have unsaved edits — the assistant works on the saved draft.</span>
           <button
             onClick={onSave}
-            className="font-heading font-semibold text-warning hover:text-warning/80 whitespace-nowrap"
+            className="rounded-pill border border-warning-strong/40 px-2.5 py-0.5 font-heading font-semibold text-warning-strong whitespace-nowrap transition-colors hover:bg-warning/10"
           >
             Save now
           </button>

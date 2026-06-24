@@ -46,7 +46,7 @@ const COLORS = {
   textPrimary: '#1E293B',
   textSecondary: '#64748B',
   textMuted: '#94A3B8',
-  success: '#098195',
+  success: '#076B7C', // deep teal — readable success text on light tints (AA), matches --color-success
   warning: '#F59E0B',
   warningText: '#92400E', // amber-800 — readable warning text (AA)
   error: '#6B2956',
