@@ -93,3 +93,27 @@ describe('buildPageMarkdown — structured SEO frontmatter', () => {
     expect(md).toContain('## SEO & AIO Metadata')
   })
 })
+
+describe('buildPageMarkdown — hero headline', () => {
+  it('promotes the first content heading into hero_headline for image heroes', () => {
+    const out = buildPageMarkdown(
+      makePage({
+        hero_block: 'hero',
+        hero_variant: 'image',
+        content_markdown: '<!-- block: intro-text | variant: centered -->\n## Year-Round Advisory, Not Just April Deadlines\n\nBody.',
+      }),
+      'Firm',
+      { websiteUrl: 'https://x.com' }
+    )
+    expect(JSON.parse(frontmatterField(out, 'hero_headline'))).toBe(
+      'Year-Round Advisory, Not Just April Deadlines'
+    )
+  })
+
+  it('does not emit hero_headline for page-header heroes (page title is correct there)', () => {
+    const out = buildPageMarkdown(makePage({ hero_block: 'page-header' }), 'Firm', {
+      websiteUrl: 'https://x.com',
+    })
+    expect(out).not.toMatch(/^hero_headline:/m)
+  })
+})

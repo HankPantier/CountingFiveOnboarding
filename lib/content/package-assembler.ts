@@ -26,6 +26,7 @@ import {
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
+import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
 import { buildNavJson } from '@/lib/content/nav-json-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
@@ -284,17 +285,20 @@ export async function assembleContentPackage(
     console.warn(`[package] Skipping design.md — palette=${!!palette}, design_tokens=${!!designTokens}`)
   }
 
-  // Phase II JSON contract — emitted alongside the existing markdown
-  // outputs. Consumed by the client-site template repo.
-  const brandJson = palette ? buildBrandJson(schema, palette) : null
-  const designJson = designTokens ? buildDesignJson(designTokens) : null
+  // Phase II JSON contract — emitted alongside the existing markdown outputs
+  // and consumed by the client-site template repo. brand.json + design.json
+  // are ALWAYS emitted: the template hard-requires both, so a session that
+  // packages before its palette/tokens are locked falls back to a neutral
+  // default rather than shipping a zip the template can't validate or theme.
+  const brandJson = buildBrandJson(schema, palette ?? FALLBACK_PALETTE)
+  const designJson = buildDesignJson(designTokens ?? FALLBACK_DESIGN_TOKENS)
   const navJson = buildNavJson(
     sitemap as Parameters<typeof buildNavJson>[0],
     job.nav_config
   )
 
-  if (!brandJson) console.warn(`[package] Skipping brand.json — palette not locked`)
-  if (!designJson) console.warn(`[package] Skipping design.json — design tokens not locked`)
+  if (!palette) console.warn(`[package] brand.json — palette not locked, using neutral fallback`)
+  if (!designTokens) console.warn(`[package] design.json — design tokens not locked, using neutral fallback`)
 
   // Override logo.primary with the actual uploaded logo asset filename
   if (brandJson) {
@@ -413,8 +417,8 @@ export async function assembleContentPackage(
     ...pageFiles.map(f => ({ path: `content/pages/${f.filename}`, content: f.content })),
     { path: 'content/brand.md', content: brandDoc.fullDoc },
     ...(designMd ? [{ path: 'content/design.md', content: designMd }] : []),
-    ...(brandJson ? [{ path: 'content/brand.json', content: JSON.stringify(brandJson, null, 2) }] : []),
-    ...(designJson ? [{ path: 'content/design.json', content: JSON.stringify(designJson, null, 2) }] : []),
+    { path: 'content/brand.json', content: JSON.stringify(brandJson, null, 2) },
+    { path: 'content/design.json', content: JSON.stringify(designJson, null, 2) },
     { path: 'content/nav.json', content: JSON.stringify(navJson, null, 2) },
     { path: 'content/redirects.csv', content: redirectsCsv },
 

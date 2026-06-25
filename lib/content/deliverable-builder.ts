@@ -22,6 +22,20 @@ function ogImageUrl(websiteUrl: string, pageUrl: string): string {
   return `${originOf(websiteUrl)}/api/og${path ? `/${path}` : ''}`
 }
 
+// The image/split hero blocks render a large H1. Without a dedicated headline
+// the template falls back to the page title, so a nav-titled page ("Home",
+// "Contact") shows that bare word as its hero — weak copy and a poor on-page
+// H1. Promote the page's first content heading into hero_headline so the hero
+// leads with real value-prop copy; the template de-dupes it from the lead
+// section. page-header heroes show the page title (correct for index pages),
+// so they get no headline.
+function deriveHeroHeadline(page: GeneratedPage): string | null {
+  const heroBlock = page.hero_block ?? 'page-header'
+  if (heroBlock !== 'hero' && heroBlock !== 'hero-split') return null
+  const m = (page.content_markdown ?? '').match(/^##\s+(.+?)\s*$/m)
+  return m ? m[1].trim() : null
+}
+
 export function buildPageMarkdown(
   page: GeneratedPage,
   firmName: string,
@@ -37,6 +51,7 @@ export function buildPageMarkdown(
   const faqBlock = (page.faq_block as Array<{ question: string; answer: string }>) ?? []
   const ogImage = ogImageUrl(options.websiteUrl, page.page_url)
   const cta = options.cta ?? null
+  const heroHeadline = deriveHeroHeadline(page)
 
   let md = `---
 title: ${page.page_title} | ${firmName}
@@ -52,7 +67,7 @@ og_description: ${page.meta_description ?? ''}
 og_image: ${ogImage}
 twitter_card: summary_large_image
 ${cta ? `cta_text: ${cta.text}\ncta_url: ${cta.url}\n` : ''}hero: ${page.hero_block ?? 'page-header'}
-${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${page.hero_image_alt.replace(/\n/g, ' ')}\n` : ''}${page.hero_subhead ? `hero_subhead: ${page.hero_subhead.replace(/\n/g, ' ')}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
+${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${page.hero_image_alt.replace(/\n/g, ' ')}\n` : ''}${page.hero_subhead ? `hero_subhead: ${page.hero_subhead.replace(/\n/g, ' ')}\n` : ''}${heroHeadline ? `hero_headline: ${JSON.stringify(heroHeadline)}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
 eeat_signals: ${JSON.stringify(eeatSignals)}
 internal_links: ${JSON.stringify(internalLinks)}
 faq_block: ${JSON.stringify(faqBlock)}
