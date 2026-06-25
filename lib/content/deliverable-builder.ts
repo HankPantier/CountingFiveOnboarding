@@ -10,18 +10,6 @@ function pageFilename(url: string): string {
   return `${slug}.md`
 }
 
-function originOf(websiteUrl: string): string {
-  return websiteUrl.replace(/\/$/, '')
-}
-
-// The template generates branded OG cards dynamically at /api/og/<path> —
-// point the frontmatter at the real route instead of a static PNG that
-// never ships (the old /og-images/<slug>.png convention was dead cargo).
-function ogImageUrl(websiteUrl: string, pageUrl: string): string {
-  const path = pageUrl.replace(/^\//, '')
-  return `${originOf(websiteUrl)}/api/og${path ? `/${path}` : ''}`
-}
-
 // The image/split hero blocks render a large H1. Without a dedicated headline
 // the template falls back to the page title, so a nav-titled page ("Home",
 // "Contact") shows that bare word as its hero — weak copy and a poor on-page
@@ -49,7 +37,6 @@ export function buildPageMarkdown(
   const eeatSignals = (page.eeat_signals as string[]) ?? []
   const internalLinks = (page.internal_links as Array<{ url: string; anchor_text: string; reason: string }>) ?? []
   const faqBlock = (page.faq_block as Array<{ question: string; answer: string }>) ?? []
-  const ogImage = ogImageUrl(options.websiteUrl, page.page_url)
   const cta = options.cta ?? null
   const heroHeadline = deriveHeroHeadline(page)
 
@@ -62,10 +49,6 @@ target_keyword: ${page.target_keyword ?? ''}
 secondary_keywords: [${secondaryKw.join(', ')}]
 canonical_url: ${page.canonical_url ?? ''}
 schema_markup: ${page.schema_markup_type ?? 'WebPage'}
-og_title: ${page.meta_title ?? page.page_title}
-og_description: ${page.meta_description ?? ''}
-og_image: ${ogImage}
-twitter_card: summary_large_image
 ${cta ? `cta_text: ${cta.text}\ncta_url: ${cta.url}\n` : ''}hero: ${page.hero_block ?? 'page-header'}
 ${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${page.hero_image_alt.replace(/\n/g, ' ')}\n` : ''}${page.hero_subhead ? `hero_subhead: ${page.hero_subhead.replace(/\n/g, ' ')}\n` : ''}${heroHeadline ? `hero_headline: ${JSON.stringify(heroHeadline)}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
 eeat_signals: ${JSON.stringify(eeatSignals)}
