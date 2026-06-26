@@ -6,6 +6,7 @@ import { buildFirmContext } from './brand-voice'
 import { cleanHeading } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
@@ -140,7 +141,9 @@ HEADING RULES (h1 and every h2):
   const { text, usage } = await generateText({
     model: anthropic(OUTLINE_MODEL),
     prompt,
-    maxOutputTokens: 1000,
+    // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
+    maxOutputTokens: 3000,
+    providerOptions: GENERATION_PROVIDER_OPTIONS,
   })
 
   console.warn(

@@ -130,12 +130,26 @@ Log token usage in every `onFinish` callback. Flag any exchange that exceeds the
 If any exchange exceeds 5,000 input tokens, stop and investigate before continuing. `app/api/chat/route.ts` emits a `console.error` (`[token-budget] EXCEEDED ...`) when the estimated input tokens (chars/4) cross 5k — watch server logs for it.
 
 ### Model Selection
+Interactive chat (`/api/chat`) stays Sonnet/Haiku — never use Sonnet for phases 1, 2, 5, or 6:
 ```typescript
 const model = [3, 4].includes(session.current_phase)
   ? anthropic('claude-sonnet-4-6')
   : anthropic('claude-haiku-4-5-20251001')
 ```
-Never use Sonnet for phases 1, 2, 5, or 6.
+Tier map for everything else:
+- **Opus 4.8** (`claude-opus-4-8`) — published client-facing deliverables only: the page-body
+  generator (`lib/content/content-generator.ts`) and the audit→session draft
+  (`lib/session-draft/draft-from-audit.ts`, via the `model` override on `generateMbpJson`).
+- **Sonnet 4.6** — all other content/MBP/draft generation and the admin chats.
+- **Haiku 4.5** — phase 1/2/5/6 intake chat and classification helpers (brand-fit, keyword,
+  reverse-link, oneoff resolve).
+
+The async generation paths use adaptive thinking + `effort` via the shared
+`GENERATION_PROVIDER_OPTIONS` in `lib/content/generation-tuning.ts`. Two hard rules:
+- **Never** send `effort` (or that provider-options object) to a Haiku call — it errors on Haiku 4.5.
+- `budget_tokens` is deprecated — use `thinking: { type: 'adaptive' }`.
+Any new model id must also be added to the `PRICING` map in `lib/content/token-pricing.ts`,
+or its spend silently records as $0 on the Token Usage dashboard.
 
 ### Processing Flag Safety
 The `processing` boolean in `sessions` prevents concurrent Claude calls. It MUST be set to `false` in both:

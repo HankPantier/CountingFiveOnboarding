@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
+import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
 
@@ -150,7 +151,9 @@ Ground everything in the page content and firm profile above. NEVER invent facts
   const { text, usage } = await generateText({
     model: anthropic(MODEL),
     prompt,
-    maxOutputTokens: 1500,
+    // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
+    maxOutputTokens: 3000,
+    providerOptions: GENERATION_PROVIDER_OPTIONS,
   })
 
   let result: SeoFieldResult

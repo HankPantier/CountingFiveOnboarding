@@ -36,8 +36,11 @@ export type TokenContext = {
 
 // USD per 1,000,000 tokens, keyed by model id. Verify against current
 // Anthropic pricing before relying on cost_usd for actual billing — these
-// are the published Sonnet/Haiku tier rates and may drift over time.
+// are the published Opus/Sonnet/Haiku tier rates and may drift over time.
+// A model id missing from this map silently prices at $0, so every model used
+// anywhere in the app must have an entry here.
 const PRICING: Record<string, { input: number; output: number }> = {
+  'claude-opus-4-8': { input: 15, output: 75 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
 }

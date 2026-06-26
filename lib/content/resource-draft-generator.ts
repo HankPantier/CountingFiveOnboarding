@@ -5,6 +5,7 @@ import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-vo
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { resolveStockPhotos, type ImageRef } from './stock-photo-resolver'
 import {
@@ -151,7 +152,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
   const { text, usage } = await generateText({
     model: anthropic(DRAFT_MODEL),
     prompt,
-    maxOutputTokens: 4000,
+    // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
+    maxOutputTokens: 8000,
+    providerOptions: GENERATION_PROVIDER_OPTIONS,
   })
 
   console.warn(

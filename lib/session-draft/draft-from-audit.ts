@@ -4,6 +4,7 @@
 // and leaves the rest to Phase-4 gaps (computed with the exact MBP semantics).
 // Pure with respect to the DB; the route owns persistence.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { buildCorpus, type CorpusPage } from '@/lib/audit/corpus'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
 import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-plan'
@@ -253,8 +254,11 @@ export async function draftSessionFromAudit(
   const model = await generateMbpJson<DraftModel>(
     buildPrompt(pages, signals),
     validateDraftModel,
-    6000,
+    // Opus + adaptive thinking: extra output headroom for reasoning before the
+    // large draft-schema JSON answer.
+    10000,
     { task: 'onboarding', stage: 'mbp', auditId },
+    { model: PUBLISHED_CONTENT_MODEL, providerOptions: GENERATION_PROVIDER_OPTIONS },
   )
 
   const schema = mapToSchema(model ?? {}, signals, result.url)

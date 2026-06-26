@@ -13,23 +13,29 @@ const MBP_JSON_MODEL = 'claude-sonnet-4-6'
 // persisted for the Token Usage dashboard. This helper is shared by MBP
 // generation (task 'onboarding') and the audit intelligence layer (task
 // 'audit'), so the category is supplied per-call by the caller.
+// `opts.model` overrides the default Sonnet tier (e.g. the audit→session draft
+// runs on Opus); `opts.providerOptions` threads adaptive thinking / effort.
+// Both default to the Sonnet, no-thinking behavior used by every other caller.
 export async function generateMbpJson<T>(
   prompt: string,
   validate: (parsed: unknown) => T | null,
   maxOutputTokens = 2500,
-  ctx?: TokenContext
+  ctx?: TokenContext,
+  opts?: { model?: string; providerOptions?: Parameters<typeof generateText>[0]['providerOptions'] }
 ): Promise<T | null> {
+  const model = opts?.model ?? MBP_JSON_MODEL
   try {
     const { text, usage } = await generateText({
-      model: anthropic(MBP_JSON_MODEL),
+      model: anthropic(model),
       system: 'You are a precise assistant for a CPA-firm marketing system. Return ONLY valid JSON — no prose, no markdown code fences.',
       prompt,
       maxOutputTokens,
+      ...(opts?.providerOptions ? { providerOptions: opts.providerOptions } : {}),
     })
     if (ctx) {
       await recordTokenUsage({
         ...ctx,
-        model: MBP_JSON_MODEL,
+        model,
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,
       })

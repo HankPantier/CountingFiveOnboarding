@@ -9,6 +9,7 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
+import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -16,7 +17,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 
 type Cta = { text: string; url: string }
 const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
-const CONTENT_MODEL = 'claude-sonnet-4-6'
+const CONTENT_MODEL = PUBLISHED_CONTENT_MODEL
 
 type GeneratedResult = {
   content: string
@@ -247,7 +248,10 @@ ${ANTI_SLOP_RULES}${retryNote}`
   const { text, usage } = await generateText({
     model: anthropic(CONTENT_MODEL),
     prompt,
-    maxOutputTokens: 4000,
+    // Headroom: adaptive thinking spends output tokens on reasoning before the
+    // JSON answer, so this is larger than the answer alone would need.
+    maxOutputTokens: 8000,
+    providerOptions: GENERATION_PROVIDER_OPTIONS,
   })
 
   console.warn(
