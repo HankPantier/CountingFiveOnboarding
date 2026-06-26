@@ -40,7 +40,7 @@ export type TokenContext = {
 // A model id missing from this map silently prices at $0, so every model used
 // anywhere in the app must have an entry here.
 const PRICING: Record<string, { input: number; output: number }> = {
-  'claude-opus-4-8': { input: 15, output: 75 },
+  'claude-opus-4-8': { input: 5, output: 25 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
 }
