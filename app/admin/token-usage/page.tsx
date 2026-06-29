@@ -13,6 +13,7 @@ import {
 import type { TokenTask } from '@/lib/content/token-pricing'
 import TokenTrendChart from '@/components/admin/TokenTrendChart'
 import ClientUsageTable from '@/components/admin/ClientUsageTable'
+import SpendBreakdownCharts, { type SpendSlice } from '@/components/admin/SpendBreakdownCharts'
 
 // Billing view: always render fresh so newly recorded usage shows immediately
 // (never serve a cached full-route snapshot).
@@ -71,6 +72,17 @@ export default async function TokenUsagePage() {
 
   const models = Object.entries(summary.byModel).sort((a, b) => b[1].cost - a[1].cost)
 
+  const categorySpend: SpendSlice[] = TASKS.map((task) => ({
+    name: TASK_LABEL[task],
+    cost: summary.byTask[task].cost,
+  }))
+  const modelSpend: SpendSlice[] = models.map(([model, t]) => ({ name: model, cost: t.cost }))
+  // Top 8 clients by spend; the long tail folds into a single "Other" bar.
+  const TOP = 8
+  const clientSpend: SpendSlice[] = clients.slice(0, TOP).map((c) => ({ name: c.label, cost: c.total.cost }))
+  const otherCost = clients.slice(TOP).reduce((sum, c) => sum + c.total.cost, 0)
+  if (otherCost > 0) clientSpend.push({ name: 'Other', cost: otherCost })
+
   return (
     <div className="px-6 py-8 max-w-[1200px] mx-auto">
       <header className="mb-6">
@@ -86,42 +98,7 @@ export default async function TokenUsagePage() {
         <StatTile label="All time" totals={summary.allTime} />
       </div>
 
-      <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle p-5 mb-6">
-        <h2 className="text-sm font-heading font-semibold text-text-muted uppercase tracking-wide mb-3">
-          All-time spend by category
-        </h2>
-        <ul className="space-y-2">
-          {TASKS.map((task) => {
-            const t = summary.byTask[task]
-            return (
-              <li key={task} className="flex items-center justify-between text-sm font-body">
-                <span className="text-text-primary">{TASK_LABEL[task]}</span>
-                <span className="text-text-secondary tabular-nums">
-                  {money(t.cost)} · {fmtTokens(t.inputTokens + t.outputTokens)} tok · {t.calls} calls
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
-
-      {models.length > 0 && (
-        <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle p-5 mb-6">
-          <h2 className="text-sm font-heading font-semibold text-text-muted uppercase tracking-wide mb-3">
-            All-time spend by model
-          </h2>
-          <ul className="space-y-2">
-            {models.map(([model, t]) => (
-              <li key={model} className="flex items-center justify-between text-sm font-body">
-                <span className="text-text-primary">{model}</span>
-                <span className="text-text-secondary tabular-nums">
-                  {money(t.cost)} · {fmtTokens(t.inputTokens + t.outputTokens)} tok · {t.calls} calls
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <SpendBreakdownCharts categories={categorySpend} models={modelSpend} clients={clientSpend} />
 
       <div className="mb-6">
         <TokenTrendChart series={series} />

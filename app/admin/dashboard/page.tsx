@@ -4,6 +4,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { estimateCostUsd } from '@/lib/content/token-usage'
 import SessionRowActions from '@/components/admin/SessionRowActions'
+import SessionsFunnelChart from '@/components/admin/SessionsFunnelChart'
+import { sessionsOverview } from '@/lib/audit/report-aggregates'
 import type { Database } from '@/types/database'
 
 type Session = Pick<
@@ -82,7 +84,17 @@ export default async function DashboardPage({
     .eq('status', 'approved')
   if (allowed !== null) approvedQuery = approvedQuery.in('id', allowed)
 
-  const [{ data: sessions, count: totalCount }, { count: approvedCount }, { data: usageRows }] = await Promise.all([
+  // Pipeline overview spans the whole active book (not the current filter/page),
+  // so it gets its own lightweight status+phase query.
+  let pipelineQuery = supabase.from('sessions').select('status, current_phase').neq('status', 'archived')
+  if (allowed !== null) pipelineQuery = pipelineQuery.in('id', allowed)
+
+  const [
+    { data: sessions, count: totalCount },
+    { count: approvedCount },
+    { data: usageRows },
+    { data: pipelineRows },
+  ] = await Promise.all([
     query
       .order('last_activity_at', { ascending: true })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
@@ -91,7 +103,12 @@ export default async function DashboardPage({
     user.role === 'admin'
       ? supabase.from('token_usage').select('model, input_tokens, output_tokens, created_at')
       : Promise.resolve({ data: [] as Array<{ model: string; input_tokens: number; output_tokens: number; created_at: string }> }),
+    pipelineQuery,
   ])
+
+  const pipeline = sessionsOverview(
+    (pipelineRows ?? []).map((r) => ({ status: r.status, current_phase: r.current_phase })),
+  )
 
   const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE))
   const filterHref = (over: { q?: string; status?: string; page?: number }) => {
@@ -177,6 +194,8 @@ export default async function DashboardPage({
           </div>
         )}
       </div>
+
+      <SessionsFunnelChart overview={pipeline} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <form action="/admin/dashboard" className="flex items-center gap-2">

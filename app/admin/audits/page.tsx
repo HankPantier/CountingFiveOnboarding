@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleAuditScope } from '@/lib/auth/access'
 import AuditsTable, { type AuditRow } from '@/components/admin/audit/AuditsTable'
+import AuditsOverviewCharts from '@/components/admin/audit/AuditsOverviewCharts'
+import { auditsOverview } from '@/lib/audit/report-aggregates'
 
 export const runtime = 'nodejs'
 
@@ -76,7 +78,10 @@ export default async function AuditsListPage() {
           </Link>
         </div>
       ) : (
-        <AuditsTable rows={rows} deltas={deltas} />
+        <>
+          <AuditsOverviewCharts overview={auditsOverview(rows)} />
+          <AuditsTable rows={rows} deltas={deltas} />
+        </>
       )}
     </main>
   )

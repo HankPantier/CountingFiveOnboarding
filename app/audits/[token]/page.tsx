@@ -2,7 +2,12 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import type { AuditResult } from '@/types/audit-result'
-import { getPreviousRunDeltas, type PreviousRunDeltas } from '@/lib/audit/report-data'
+import {
+  getDomainScoreHistory,
+  getPreviousRunDeltas,
+  type PreviousRunDeltas,
+  type ScoreHistoryPoint,
+} from '@/lib/audit/report-data'
 import { AuditReport } from '@/components/admin/audit/AuditReport'
 
 export const runtime = 'nodejs'
@@ -24,7 +29,10 @@ export default async function PublicAuditPage({ params }: { params: Promise<{ to
   // Fail closed: missing token, incomplete audit, or no result → 404 (no leak).
   if (!run || run.audit_status !== 'complete' || run.result === null) notFound()
 
-  const previous: PreviousRunDeltas | null = await getPreviousRunDeltas(supabase, run)
+  const [previous, scoreHistory]: [PreviousRunDeltas | null, ScoreHistoryPoint[]] = await Promise.all([
+    getPreviousRunDeltas(supabase, run),
+    getDomainScoreHistory(supabase, run),
+  ])
 
   return (
     <main className="min-h-screen bg-surface-page">
@@ -32,6 +40,7 @@ export default async function PublicAuditPage({ params }: { params: Promise<{ to
         result={run.result as unknown as AuditResult}
         createdAt={run.created_at}
         previous={previous}
+        scoreHistory={scoreHistory}
       />
     </main>
   )

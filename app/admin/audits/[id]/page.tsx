@@ -3,7 +3,12 @@ import { notFound } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser } from '@/lib/auth/access'
 import type { AuditResult } from '@/types/audit-result'
-import { getPreviousRunDeltas, type PreviousRunDeltas } from '@/lib/audit/report-data'
+import {
+  getDomainScoreHistory,
+  getPreviousRunDeltas,
+  type PreviousRunDeltas,
+  type ScoreHistoryPoint,
+} from '@/lib/audit/report-data'
 import { AuditActions } from '@/components/admin/audit/AuditActions'
 import { AuditReport } from '@/components/admin/audit/AuditReport'
 import { AuditProgress } from '@/components/admin/audit/AuditProgress'
@@ -29,10 +34,10 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
 
   const isComplete = run.audit_status === 'complete' && run.result !== null
 
-  // Previous completed run for the same domain → score deltas.
-  const previous: PreviousRunDeltas | null = isComplete
-    ? await getPreviousRunDeltas(supabase, run)
-    : null
+  // Previous completed run for the same domain → score deltas; full history → trend.
+  const [previous, scoreHistory]: [PreviousRunDeltas | null, ScoreHistoryPoint[]] = isComplete
+    ? await Promise.all([getPreviousRunDeltas(supabase, run), getDomainScoreHistory(supabase, run)])
+    : [null, []]
 
   // Persisted "Edit report with AI" conversation, replayed into the modal.
   const { data: chatRows } = isComplete
@@ -80,6 +85,7 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
           result={run.result as unknown as AuditResult}
           createdAt={run.created_at}
           previous={previous}
+          scoreHistory={scoreHistory}
         />
       ) : (
         <AuditProgress auditId={id} initialStatus={run.audit_status} />

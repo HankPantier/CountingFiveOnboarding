@@ -40,6 +40,13 @@ import { MiniGauge, ScoreRing } from './ScoreRing'
 import { IconChip } from './section-icons'
 import { barPercent, MetricBar } from './MetricBars'
 import CategoryRadar, { type RadarDatum } from './CategoryRadar'
+import KeywordRankChart from './KeywordRankChart'
+import ContentFormatsChart from './ContentFormatsChart'
+import RecommendationsBreakdown from './RecommendationsBreakdown'
+import PageInventoryCharts from './PageInventoryCharts'
+import ScoreTrendChart, { type TrendCategory, type TrendPoint } from './ScoreTrendChart'
+import { keywordRankBars, pageInventoryStats, recommendationStats } from '@/lib/audit/report-aggregates'
+import type { ScoreHistoryPoint } from '@/lib/audit/report-data'
 
 const cardClass = 'bg-surface-card border border-border-default rounded-lg shadow-subtle'
 const sectionTitle = 'text-lg font-heading font-semibold text-brand-navy'
@@ -85,9 +92,10 @@ export interface AuditReportProps {
   result: AuditResult
   createdAt: string
   previous?: { overall_score: number | null; category_scores: CategoryScoreMap | null } | null
+  scoreHistory?: ScoreHistoryPoint[]
 }
 
-export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
+export function AuditReport({ result, createdAt, previous, scoreHistory }: AuditReportProps) {
   const runDate = new Date(createdAt).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -118,6 +126,20 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
     label: RADAR_SHORT[key] ?? label,
     score: result.category_scores[key]?.score ?? 0,
   }))
+
+  const trend: TrendPoint[] = (scoreHistory ?? [])
+    .filter((p) => p.overall_score !== null)
+    .map((p) => ({
+      date: new Date(p.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      score: p.overall_score as number,
+    }))
+  const trendCategories: TrendCategory[] | null = previous
+    ? CATEGORY_META.map(({ key, label }) => ({
+        label: RADAR_SHORT[key] ?? label,
+        current: result.category_scores[key]?.score ?? 0,
+        previous: previous.category_scores?.[key]?.score ?? null,
+      }))
+    : null
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
@@ -245,26 +267,29 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
 
       {/* 5. Supplementary — change + page inventory */}
       <section className="space-y-3">
-        {previous && (
+        {(previous || trend.length >= 2) && (
           <AuditAccordion label="Change Since Last Audit" tip={SECTION_HELP.change} iconKey="change">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <div className="flex items-center justify-between rounded-lg border border-border-strong bg-surface-page px-4 py-3">
-                <p className="font-heading text-sm font-semibold text-text-primary">Overall</p>
-                <Delta current={result.overall_score} previous={previous.overall_score} />
-              </div>
-              {CATEGORY_META.map(({ key, label }) => (
-                <div
-                  key={key}
-                  className="flex items-center justify-between rounded-lg border border-border-default bg-surface-page px-4 py-3"
-                >
-                  <p className="font-heading text-sm font-semibold text-text-primary">{label}</p>
-                  <Delta
-                    current={result.category_scores[key].score}
-                    previous={previous.category_scores?.[key]?.score ?? null}
-                  />
+            {trend.length >= 2 && <ScoreTrendChart trend={trend} categories={trendCategories} />}
+            {previous && (
+              <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${trend.length >= 2 ? 'mt-5' : ''}`}>
+                <div className="flex items-center justify-between rounded-lg border border-border-strong bg-surface-page px-4 py-3">
+                  <p className="font-heading text-sm font-semibold text-text-primary">Overall</p>
+                  <Delta current={result.overall_score} previous={previous.overall_score} />
                 </div>
-              ))}
-            </div>
+                {CATEGORY_META.map(({ key, label }) => (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between rounded-lg border border-border-default bg-surface-page px-4 py-3"
+                  >
+                    <p className="font-heading text-sm font-semibold text-text-primary">{label}</p>
+                    <Delta
+                      current={result.category_scores[key].score}
+                      previous={previous.category_scores?.[key]?.score ?? null}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </AuditAccordion>
         )}
 
@@ -532,6 +557,7 @@ function CtaBox() {
 function PageInventoryBody({ pages }: { pages: PageSummary[] }) {
   return (
     <>
+      {pages.length > 0 && <PageInventoryCharts stats={pageInventoryStats(pages)} />}
       <p className="font-body text-xs text-text-muted">{pages.length} pages analyzed</p>
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm font-body">
@@ -588,6 +614,7 @@ const EFFORT_CLASS: Record<string, string> = {
 function RecommendationsBody({ recommendations }: { recommendations: Recommendation[] }) {
   return (
     <>
+      <RecommendationsBreakdown stats={recommendationStats(recommendations)} />
       <p className="font-body text-xs text-text-muted">
         Sorted by priority, then effort. {recommendations.length} total.
       </p>
@@ -749,10 +776,10 @@ function CompetitiveBody({ data, commentary }: { data: CompetitiveIntelligence; 
     <>
       <SubScores sub={data.sub_scores} />
       {data.keyword_rankings.length > 0 && (
-        <IntelTable
-          headers={['Keyword', 'Rank', 'Note']}
-          rows={data.keyword_rankings.map((k) => [k.keyword, k.rank === null ? '—' : `#${k.rank}`, k.note])}
-        />
+        <>
+          <h4 className={intelSubHeading}>Keyword Visibility</h4>
+          <KeywordRankChart data={keywordRankBars(data.keyword_rankings)} />
+        </>
       )}
       <Commentary text={data.commentary} />
       {data.local_seo && (
@@ -826,10 +853,10 @@ function ContentLibraryBody({ data, commentary }: { data: ContentLibraryIntellig
         {data.total_pieces} published piece{data.total_pieces === 1 ? '' : 's'}
       </p>
       {data.formats.length > 0 && (
-        <IntelTable
-          headers={['Format', 'Count', 'Cadence']}
-          rows={data.formats.map((f) => [f.type, String(f.count), f.cadence])}
-        />
+        <>
+          <h4 className={intelSubHeading}>Content by Format</h4>
+          <ContentFormatsChart formats={data.formats} />
+        </>
       )}
       <Commentary text={data.syndication_assessment} />
       {data.recommendations.length > 0 && (
