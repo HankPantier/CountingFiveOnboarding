@@ -126,6 +126,12 @@ function subScoresHtml(sub: Record<string, number>): string {
 const INFO_SVG =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>'
 
+// Inline lucide icons used to spotlight the high-opportunity niches callout.
+const LIGHTBULB_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>'
+const ARROW_UP_RIGHT_SVG =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>'
+
 // Per-section icons mirroring components/admin/audit/section-icons.tsx — the
 // inner markup is the exact lucide v1.14.0 path data so the standalone export
 // matches the in-app chips. Keep keys in sync with that file's SECTION_ICONS.
@@ -223,9 +229,19 @@ function nicheServicesBody(n: NicheServicesIntelligence, commentary?: string): s
         .join('')}</ul>`
     : ''
   const invisible = n.invisible_niches.length
-    ? `<h4 class="intel-sub">Invisible but High-Opportunity Niches</h4><ul class="intel-list">${n.invisible_niches
-        .map((d) => `<li><strong>${esc(d.name)}</strong> — ${esc(d.opportunity)}</li>`)
-        .join('')}</ul>`
+    ? `<div class="opp">
+        <div class="opp-head">
+          <span class="opp-icon">${LIGHTBULB_SVG}</span>
+          <h4>Invisible but High-Opportunity Niches</h4>
+          <span class="opp-pill">${n.invisible_niches.length} Untapped</span>
+        </div>
+        <ul class="opp-list">${n.invisible_niches
+          .map(
+            (d) =>
+              `<li><span class="opp-arrow">${ARROW_UP_RIGHT_SVG}</span><span><strong>${esc(d.name)}</strong> — ${esc(d.opportunity)}</span></li>`,
+          )
+          .join('')}</ul>
+      </div>`
     : ''
   const services = n.services_analysis.length
     ? `<h4 class="intel-sub">Services Communication Analysis</h4>
@@ -703,6 +719,22 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .intel-sub { font-family:Inter,sans-serif; color:${COLORS.navy}; font-size:14px; margin:20px 0 8px; }
   .intel-list { margin:8px 0 0; padding-left:18px; }
   .intel-list li { margin-bottom:6px; font-size:14px; }
+  .opp { margin-top:20px; border:1px solid rgba(9,129,149,.4); border-radius:12px; overflow:hidden;
+    box-shadow:0 5px 22px -6px rgba(35,31,32,.12); background:rgba(9,129,149,.06); }
+  .opp-head { display:flex; align-items:center; gap:10px; padding:12px 16px;
+    background:rgba(9,129,149,.1); border-bottom:1px solid rgba(9,129,149,.2); }
+  .opp-head h4 { font-family:'Inter',sans-serif; color:${COLORS.navy}; font-size:14px; font-weight:700; margin:0; }
+  .opp-icon { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:28px; height:28px; border-radius:50%; background:${COLORS.cyan}; color:#fff; }
+  .opp-pill { margin-left:auto; display:inline-flex; align-items:center; background:${COLORS.cyan}; color:#fff;
+    border-radius:100px; padding:2px 10px; font-family:'Inter',sans-serif; font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:.04em; }
+  .opp-list { list-style:none; margin:0; padding:0; }
+  .opp-list li { display:flex; align-items:flex-start; gap:10px; padding:10px 16px; font-size:14px;
+    color:${COLORS.textSecondary}; border-top:1px solid rgba(9,129,149,.15); }
+  .opp-list li:first-child { border-top:0; }
+  .opp-list strong { color:${COLORS.textPrimary}; }
+  .opp-arrow { color:${COLORS.cyan}; flex-shrink:0; margin-top:1px; }
   .intel-person { padding:10px 0; border-bottom:1px solid ${COLORS.border}; font-size:14px; }
   .intel-person:last-child { border-bottom:0; }
   footer { text-align:center; color:${COLORS.textMuted}; font-size:12px; padding:24px 0; line-height:1.8; border-top:1px solid ${COLORS.border}; margin-top:8px; }

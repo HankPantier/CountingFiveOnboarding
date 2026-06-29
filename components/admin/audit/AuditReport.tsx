@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import Image from 'next/image'
-import { ChevronDown, Info } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, Info, Lightbulb } from 'lucide-react'
 import type {
   AuditResult,
   CategoryScoreMap,
@@ -694,16 +694,32 @@ function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligen
         </>
       )}
       {data.invisible_niches.length > 0 && (
-        <>
-          <h4 className={intelSubHeading}>Invisible but High-Opportunity Niches</h4>
-          <ul className="mt-2 space-y-1.5 font-body text-sm text-text-secondary">
+        <div className="mt-5 overflow-hidden rounded-xl border border-brand-cyan/40 bg-brand-cyan/[0.06] shadow-subtle">
+          <div className="flex items-center gap-2.5 border-b border-brand-cyan/20 bg-brand-cyan/10 px-4 py-3">
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-cyan text-text-inverse">
+              <Lightbulb className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+            </span>
+            <h4 className="font-heading text-sm font-bold text-brand-navy">
+              Invisible but High-Opportunity Niches
+            </h4>
+            <span className="ml-auto inline-flex items-center rounded-full bg-brand-cyan px-2.5 py-0.5 font-heading text-[11px] font-semibold uppercase tracking-wide text-text-inverse">
+              {data.invisible_niches.length} Untapped
+            </span>
+          </div>
+          <ul className="divide-y divide-brand-cyan/15">
             {data.invisible_niches.map((d, i) => (
-              <li key={i}>
-                <span className="font-semibold text-text-primary">{d.name}</span> — {d.opportunity}
+              <li
+                key={i}
+                className="flex items-start gap-2.5 px-4 py-2.5 font-body text-sm text-text-secondary"
+              >
+                <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0 text-brand-cyan" strokeWidth={2.25} aria-hidden />
+                <span>
+                  <span className="font-semibold text-text-primary">{d.name}</span> — {d.opportunity}
+                </span>
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
       {data.services_analysis.length > 0 && (
         <>
