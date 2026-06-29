@@ -126,15 +126,51 @@ function subScoresHtml(sub: Record<string, number>): string {
 const INFO_SVG =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>'
 
+// Per-section icons mirroring components/admin/audit/section-icons.tsx — the
+// inner markup is the exact lucide v1.14.0 path data so the standalone export
+// matches the in-app chips. Keep keys in sync with that file's SECTION_ICONS.
+const ICON_PATHS: Record<string, string> = {
+  dashboard:
+    '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  target_market: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  competitive: '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+  niche_services:
+    '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
+  seo_aio_geo: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
+  mobile: '<rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/>',
+  speed: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  tech_stack:
+    '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/>',
+  site_health:
+    '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  content_library: '<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
+  digital_intelligence:
+    '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  narrative_recs:
+    '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>',
+  recommendations:
+    '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
+  change:
+    '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  page_inventory:
+    '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+}
+
+/** Circular icon chip for a section header, echoing the brand graphic's badge. */
+function iconChip(key: string | undefined): string {
+  const inner = (key ? ICON_PATHS[key] : undefined) ?? ICON_PATHS.seo_aio_geo
+  return `<span class="acc-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg></span>`
+}
+
 /** Collapsible section. `chip` is the grade chip HTML (empty for unscored
- * sections); `tip` is the header tooltip text. Native <details> + CSS-only
- * tooltip — no JS, print-friendly. */
-function accordion(label: string, chip: string, body: string, tip?: string): string {
+ * sections); `tip` is the header tooltip text; `iconKey` selects the header
+ * icon. Native <details> + CSS-only tooltip — no JS, print-friendly. */
+function accordion(label: string, chip: string, body: string, tip?: string, iconKey?: string): string {
   const tipHtml = tip
     ? `<span class="tip" tabindex="0">${INFO_SVG}<span class="tip-bubble" role="tooltip">${esc(tip)}</span></span>`
     : ''
   return `<details class="card acc">
-    <summary class="acc-head"><span class="acc-label"><h3>${esc(label)}</h3>${tipHtml}</span><span class="acc-right">${chip}<span class="chev" aria-hidden="true">▾</span></span></summary>
+    <summary class="acc-head"><span class="acc-label">${iconChip(iconKey)}<h3>${esc(label)}</h3>${tipHtml}</span><span class="acc-right">${chip}<span class="chev" aria-hidden="true">▾</span></span></summary>
     <div class="acc-body">${body}</div>
   </details>`
 }
@@ -384,6 +420,7 @@ function bucketAccordion(
       gradeChip(bucket.score),
       `${whatThisMeans(sectionCommentary[bucket.key])}${body}`,
       SECTION_HELP[bucket.key],
+      bucket.key,
     )
   }
   if (bucket.kind === 'tech_stack') {
@@ -394,13 +431,20 @@ function bucketAccordion(
       gradeChip(bucket.score),
       `${whatThisMeans(sectionCommentary.tech_stack ?? intel?.tech_stack?.commentary)}${note}${techDomainBody(intel?.tech_stack, undefined)}`,
       SECTION_HELP.tech_stack,
+      bucket.key,
     )
   }
   const rows = bucket.members.flatMap((k) => findingRows(result.findings[k]))
   if (bucket.key === 'site_health') rows.push(...siteHealthExtraRows(result))
   const wtm = bucket.members.map((k) => sectionCommentary[k]).filter(Boolean).join(' ') || undefined
   const membersHtml = memberGradesHtml(bucketMemberGrades(result, bucket))
-  return accordion(bucket.label, gradeChip(bucket.score), compositeBody(rows, wtm, membersHtml), SECTION_HELP[bucket.key])
+  return accordion(
+    bucket.label,
+    gradeChip(bucket.score),
+    compositeBody(rows, wtm, membersHtml),
+    SECTION_HELP[bucket.key],
+    bucket.key,
+  )
 }
 
 function topRecommendationsHtml(
@@ -479,7 +523,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
       </div>`,
     )
     .join('')}</div>`
-  const dashboardSection = accordion('Score Dashboard', '', dashGrid, SECTION_HELP.dashboard)
+  const dashboardSection = accordion('Score Dashboard', '', dashGrid, SECTION_HELP.dashboard, 'dashboard')
 
   const deltaSection = previous
     ? accordion(
@@ -495,6 +539,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
           }).join('')}
         </div>`,
         SECTION_HELP.change,
+        'change',
       )
     : ''
 
@@ -510,6 +555,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
         '',
         contentLibraryBody(intel.content_library, sectionCommentary.content_library),
         SECTION_HELP.content_library,
+        'content_library',
       )
     : ''
   const digitalIntelSection = intel?.digital_intelligence
@@ -518,10 +564,17 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
         '',
         digitalIntelBody(intel.digital_intelligence, sectionCommentary.digital_intelligence),
         SECTION_HELP.digital_intelligence,
+        'digital_intelligence',
       )
     : ''
   const narrativeRecsSection = intel?.narrative?.recommendations?.length
-    ? accordion('Recommendations & Next Steps', '', narrativeRecsBody(intel.narrative), SECTION_HELP.narrative_recs)
+    ? accordion(
+        'Recommendations & Next Steps',
+        '',
+        narrativeRecsBody(intel.narrative),
+        SECTION_HELP.narrative_recs,
+        'narrative_recs',
+      )
     : ''
 
   const inventoryInner = `<p class="muted small">${result.page_analysis_summary.length} pages analyzed</p>
@@ -543,7 +596,13 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
           )
           .join('')}</tbody>
       </table></div>`
-  const inventorySection = accordion('Page Inventory', '', inventoryInner, SECTION_HELP.page_inventory)
+  const inventorySection = accordion(
+    'Page Inventory',
+    '',
+    inventoryInner,
+    SECTION_HELP.page_inventory,
+    'page_inventory',
+  )
 
   const recsInner = `<p class="muted small">Sorted by priority, then effort. ${result.recommendations.length} total.</p>
       <ul class="recs">${result.recommendations
@@ -562,7 +621,13 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
           </li>`
         })
         .join('')}</ul>`
-  const recsSection = accordion('Recommendations', '', recsInner, SECTION_HELP.recommendations)
+  const recsSection = accordion(
+    'Recommendations',
+    '',
+    recsInner,
+    SECTION_HELP.recommendations,
+    'recommendations',
+  )
 
   return `<!doctype html>
 <html lang="en">
@@ -653,14 +718,16 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   .dot { width:8px; height:8px; border-radius:50%; margin-top:6px; flex-shrink:0; }
   .dash { border:1px solid ${COLORS.border}; border-radius:8px; padding:12px 16px; background:${COLORS.page}; }
   .dash-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
-  .bar { height:4px; background:${COLORS.border}; border-radius:4px; margin-top:10px; overflow:hidden; }
-  .bar-fill { height:4px; border-radius:4px; }
+  .bar { height:8px; background:${COLORS.border}; border-radius:8px; margin-top:10px; overflow:hidden; }
+  .bar-fill { height:8px; border-radius:8px; }
   .acc { padding:0; }
   .acc-head { display:flex; justify-content:space-between; align-items:center; gap:12px;
     padding:18px 24px; cursor:pointer; list-style:none; border-radius:inherit; }
   .acc-head::-webkit-details-marker { display:none; }
   .acc-head:hover { background:${COLORS.subtle}; }
-  .acc-label { display:flex; align-items:center; gap:8px; min-width:0; }
+  .acc-label { display:flex; align-items:center; gap:10px; min-width:0; }
+  .acc-icon { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:32px; height:32px; border-radius:50%; background:rgba(9,129,149,.1); color:${COLORS.cyan}; }
   .acc-right { display:flex; align-items:center; gap:12px; }
   .chev { color:${COLORS.textMuted}; font-size:12px; transition:transform .2s; }
   details[open] .acc-head .chev { transform:rotate(180deg); }

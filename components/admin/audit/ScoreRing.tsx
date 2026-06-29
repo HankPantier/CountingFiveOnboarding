@@ -63,3 +63,54 @@ export function ScoreRing({ score, size = 168 }: { score: number; size?: number 
     </div>
   )
 }
+
+/** Compact donut echoing the hero ring at section-header scale: just the arc and
+ * the 0–10 number (the adjacent GradeBadge carries the letter). Pure SVG /
+ * server-renderable. */
+export function MiniGauge({ score, size = 44 }: { score: number; size?: number }) {
+  const stroke = 5
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+  const clamped = Math.max(0, Math.min(100, score))
+  const dash = (clamped / 100) * circumference
+  const token = tokenForScore(score)
+
+  return (
+    <div
+      role="img"
+      aria-label={`Score ${score10(score)} out of 10`}
+      className="relative inline-flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <svg width={size} height={size} className={RING_STROKE[token]} aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={stroke}
+          className="text-border-default"
+          stroke="currentColor"
+          opacity={0.25}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          strokeWidth={stroke}
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${circumference - dash}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      <span
+        className="absolute font-heading font-bold text-text-primary"
+        style={{ fontSize: size * 0.3 }}
+      >
+        {score10(score)}
+      </span>
+    </div>
+  )
+}

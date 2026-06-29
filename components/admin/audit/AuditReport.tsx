@@ -36,10 +36,27 @@ import {
   subScoreRows,
 } from '@/lib/audit/intelligence-format'
 import { AuditStatusBadge, GradeBadge } from './AuditBadges'
-import { ScoreRing } from './ScoreRing'
+import { MiniGauge, ScoreRing } from './ScoreRing'
+import { IconChip } from './section-icons'
+import { barPercent, MetricBar } from './MetricBars'
+import CategoryRadar, { type RadarDatum } from './CategoryRadar'
 
 const cardClass = 'bg-surface-card border border-border-default rounded-lg shadow-subtle'
 const sectionTitle = 'text-lg font-heading font-semibold text-brand-navy'
+
+// Short axis labels for the category radar — the full CATEGORY_META labels are
+// too long to sit around a 9-point polygon without clipping.
+const RADAR_SHORT: Record<string, string> = {
+  performance: 'Performance',
+  technical: 'Technical',
+  onpage_seo: 'On-Page SEO',
+  ux: 'UX & A11y',
+  content: 'Content',
+  indexability: 'Indexability',
+  schema: 'Schema',
+  ai_llm: 'AI / LLM',
+  analytics: 'Analytics',
+}
 
 const TOKEN_BG: Record<SemanticToken, string> = {
   success: 'bg-success',
@@ -97,6 +114,11 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
   const buckets = deriveDashboard(result)
   const { passing, needsWork } = passingCounts(buckets)
 
+  const radarData: RadarDatum[] = CATEGORY_META.map(({ key, label }) => ({
+    label: RADAR_SHORT[key] ?? label,
+    score: result.category_scores[key]?.score ?? 0,
+  }))
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-8 space-y-6">
       {/* 1. Header */}
@@ -125,39 +147,51 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         </div>
       </header>
 
-      {/* 2. Hero — score ring, executive summary, Top Recommendations */}
-      <section className="rounded-lg border border-border-default border-t-4 border-t-brand-cyan bg-surface-card p-8 shadow-elevated">
-        <div className="flex flex-col items-center gap-6 md:flex-row md:items-start md:gap-10">
-          <ScoreRing score={result.overall_score} size={200} />
-          <div className="flex-1">
-            <h2 className={sectionTitle}>Executive Summary</h2>
-            <p className="mt-1 font-body text-sm text-text-secondary">
-              {result.pages_crawled} page{result.pages_crawled === 1 ? '' : 's'} crawled ·{' '}
-              {criticals.length} critical issue{criticals.length === 1 ? '' : 's'} ·{' '}
-              {result.recommendations.length} total recommendations
-            </p>
-            <div className="mt-3.5 flex gap-2">
-              <span className="inline-flex items-center rounded-full bg-success/10 px-3.5 py-1 font-heading text-xs font-semibold text-success">
-                {passing} Passing
-              </span>
-              <span className="inline-flex items-center rounded-full bg-error/10 px-3.5 py-1 font-heading text-xs font-semibold text-error">
-                {needsWork} Need Work
-              </span>
-            </div>
-            {intel?.narrative?.executive_summary && (
-              <p className="mt-3 font-body text-sm text-text-primary">
-                {intel.narrative.executive_summary}
+      {/* 2. Hero — brand "box card": navy band, overlapping icon badge, score
+          ring, executive summary, and the Top Recommendations checklist. */}
+      <section className="rounded-2xl bg-gradient-to-br from-brand-navy to-brand-navy-deeper px-2 pb-2 pt-10 shadow-elevated">
+        <div className="relative rounded-[14px] border-t-4 border-t-brand-cyan bg-surface-card p-8">
+          <span className="absolute -top-5 left-8">
+            <IconChip iconKey="audit" size="lg" />
+          </span>
+          <div className="flex flex-col items-center gap-6 md:flex-row md:items-start md:gap-10">
+            <ScoreRing score={result.overall_score} size={200} />
+            <div className="flex-1">
+              <h2 className={sectionTitle}>Executive Summary</h2>
+              <p className="mt-1 font-body text-sm text-text-secondary">
+                {result.pages_crawled} page{result.pages_crawled === 1 ? '' : 's'} crawled ·{' '}
+                {criticals.length} critical issue{criticals.length === 1 ? '' : 's'} ·{' '}
+                {result.recommendations.length} total recommendations
               </p>
-            )}
-            <TopRecommendations items={topRecs} />
+              <div className="mt-3.5 flex gap-2">
+                <span className="inline-flex items-center rounded-full bg-success/10 px-3.5 py-1 font-heading text-xs font-semibold text-success">
+                  {passing} Passing
+                </span>
+                <span className="inline-flex items-center rounded-full bg-error/10 px-3.5 py-1 font-heading text-xs font-semibold text-error">
+                  {needsWork} Need Work
+                </span>
+              </div>
+              {intel?.narrative?.executive_summary && (
+                <p className="mt-3 font-body text-sm text-text-primary">
+                  {intel.narrative.executive_summary}
+                </p>
+              )}
+            </div>
           </div>
+          <TopRecommendations items={topRecs} />
         </div>
       </section>
 
       {/* 3. Collapsible sections — every section is an accordion, all closed */}
       <section className="space-y-3">
-        <AuditAccordion label="Score Dashboard" tip={SECTION_HELP.dashboard}>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <AuditAccordion label="Score Dashboard" tip={SECTION_HELP.dashboard} iconKey="dashboard">
+          <div className="rounded-lg border border-border-default bg-surface-page p-4">
+            <p className="mb-1 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
+              Category Profile
+            </p>
+            <CategoryRadar data={radarData} />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {buckets.map((b) => (
               <DashboardCard key={b.key} card={b} />
             ))}
@@ -169,13 +203,21 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         ))}
 
         {intel?.content_library && (
-          <AuditAccordion label={SECTION_LABELS.content_library} tip={SECTION_HELP.content_library}>
+          <AuditAccordion
+            label={SECTION_LABELS.content_library}
+            tip={SECTION_HELP.content_library}
+            iconKey="content_library"
+          >
             <ContentLibraryBody data={intel.content_library} commentary={sectionCommentary.content_library} />
           </AuditAccordion>
         )}
 
         {intel?.digital_intelligence && (
-          <AuditAccordion label={SECTION_LABELS.digital_intelligence} tip={SECTION_HELP.digital_intelligence}>
+          <AuditAccordion
+            label={SECTION_LABELS.digital_intelligence}
+            tip={SECTION_HELP.digital_intelligence}
+            iconKey="digital_intelligence"
+          >
             <DigitalIntelBody
               data={intel.digital_intelligence}
               commentary={sectionCommentary.digital_intelligence}
@@ -184,12 +226,16 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
         )}
 
         {intel?.narrative?.recommendations?.length ? (
-          <AuditAccordion label="Recommendations &amp; Next Steps" tip={SECTION_HELP.narrative_recs}>
+          <AuditAccordion
+            label="Recommendations &amp; Next Steps"
+            tip={SECTION_HELP.narrative_recs}
+            iconKey="narrative_recs"
+          >
             <NarrativeRecsBody narrative={intel.narrative} />
           </AuditAccordion>
         ) : null}
 
-        <AuditAccordion label="Recommendations" tip={SECTION_HELP.recommendations}>
+        <AuditAccordion label="Recommendations" tip={SECTION_HELP.recommendations} iconKey="recommendations">
           <RecommendationsBody recommendations={result.recommendations} />
         </AuditAccordion>
       </section>
@@ -200,7 +246,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
       {/* 5. Supplementary — change + page inventory */}
       <section className="space-y-3">
         {previous && (
-          <AuditAccordion label="Change Since Last Audit" tip={SECTION_HELP.change}>
+          <AuditAccordion label="Change Since Last Audit" tip={SECTION_HELP.change} iconKey="change">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="flex items-center justify-between rounded-lg border border-border-strong bg-surface-page px-4 py-3">
                 <p className="font-heading text-sm font-semibold text-text-primary">Overall</p>
@@ -222,7 +268,7 @@ export function AuditReport({ result, createdAt, previous }: AuditReportProps) {
           </AuditAccordion>
         )}
 
-        <AuditAccordion label="Page Inventory" tip={SECTION_HELP.page_inventory}>
+        <AuditAccordion label="Page Inventory" tip={SECTION_HELP.page_inventory} iconKey="page_inventory">
           <PageInventoryBody pages={result.page_analysis_summary} />
         </AuditAccordion>
       </section>
@@ -245,14 +291,18 @@ function TopRecommendations({
 }) {
   if (!items.length) return null
   return (
-    <div className="mt-5 rounded-lg border border-brand-cyan/30 bg-brand-cyan/5 p-5">
+    <div className="mt-6 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 p-5">
       <h3 className="font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
         Top Recommendations
       </h3>
-      <ul className="mt-3 space-y-2">
+      <ul className="mt-3 space-y-2.5">
         {items.map((it, i) => (
-          <li key={i} className="flex items-start gap-2.5 font-body text-sm text-text-primary">
-            <span className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${TOKEN_BG[it.token]}`} />
+          <li key={i} className="flex items-start gap-3 font-body text-sm text-text-primary">
+            <span
+              className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-heading text-[11px] font-bold text-text-inverse ${TOKEN_BG[it.token]}`}
+            >
+              {i + 1}
+            </span>
             <span>
               <span className="font-semibold">{it.title}</span>
               {it.detail ? <> — {it.detail}</> : null}
@@ -272,8 +322,8 @@ function DashboardCard({ card }: { card: DashboardBucket }) {
         <p className="font-heading text-sm font-semibold text-text-primary">{card.label}</p>
         <GradeBadge score={card.score} />
       </div>
-      <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-border-default">
-        <div className={`h-1 rounded-full ${TOKEN_BG[token]}`} style={{ width: `${card.score ?? 0}%` }} />
+      <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-border-default">
+        <div className={`h-2 rounded-full ${TOKEN_BG[token]}`} style={{ width: `${card.score ?? 0}%` }} />
       </div>
     </div>
   )
@@ -364,7 +414,7 @@ function BucketSection({
   }
 
   return (
-    <AuditAccordion label={bucket.label} tip={SECTION_HELP[bucket.key]} score={bucket.score}>
+    <AuditAccordion label={bucket.label} tip={SECTION_HELP[bucket.key]} score={bucket.score} iconKey={bucket.key}>
       <WhatThisMeans text={wtm} />
       {body}
     </AuditAccordion>
@@ -401,23 +451,27 @@ function AuditAccordion({
   label,
   tip,
   score,
+  iconKey,
   defaultOpen,
   children,
 }: {
   label: string
   tip?: string
   score?: number | null
+  iconKey?: string
   defaultOpen?: boolean
   children: ReactNode
 }) {
   return (
     <details className={`${cardClass} group`} {...(defaultOpen ? { open: true } : {})}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-[inherit] p-5 transition-colors marker:hidden hover:bg-surface-subtle [&::-webkit-details-marker]:hidden">
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2.5">
+          {iconKey && <IconChip iconKey={iconKey} />}
           <h3 className="text-base font-heading font-semibold text-brand-navy">{label}</h3>
           {tip && <InfoTip text={tip} />}
         </span>
         <span className="flex items-center gap-3">
+          {score != null && <MiniGauge score={score} />}
           {score !== undefined && <GradeBadge score={score ?? null} />}
           <ChevronDown className="h-4 w-4 shrink-0 text-text-muted transition-transform group-open:rotate-180" />
         </span>
@@ -432,15 +486,24 @@ function FindingsDl({ rows }: { rows: Array<{ label: string; value: string }> })
   return (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
       {rows.map((row, i) => (
-        <div
-          key={i}
-          className="flex items-baseline justify-between gap-4 border-b border-border-default py-1.5 last:border-0"
-        >
-          <dt className="font-body text-sm text-text-secondary">{row.label}</dt>
-          <dd className="font-heading text-sm font-semibold text-text-primary text-right">{row.value}</dd>
-        </div>
+        <MetricRow key={i} label={row.label} value={row.value} />
       ))}
     </dl>
+  )
+}
+
+/** A finding/sub-score row: label + value on one line, with a grade-colored bar
+ * beneath when the value is a bar-able quantity (percentage or 0–10 score). */
+function MetricRow({ label, value }: { label: string; value: string }) {
+  const pct = barPercent(label, value)
+  return (
+    <div className="border-b border-border-default py-1.5 last:border-0">
+      <div className="flex items-baseline justify-between gap-4">
+        <dt className="font-body text-sm text-text-secondary">{label}</dt>
+        <dd className="font-heading text-sm font-semibold text-text-primary text-right">{value}</dd>
+      </div>
+      {pct !== null && <MetricBar pct={pct} />}
+    </div>
   )
 }
 
@@ -580,10 +643,7 @@ function SubScores({ sub }: { sub: Record<string, number> }) {
   return (
     <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
       {rows.map((row, i) => (
-        <div key={i} className="flex items-baseline justify-between gap-4 border-b border-border-default py-1.5 last:border-0">
-          <dt className="font-body text-sm text-text-secondary">{row.label}</dt>
-          <dd className="font-heading text-sm font-semibold text-text-primary text-right">{row.value}</dd>
-        </div>
+        <MetricRow key={i} label={row.label} value={row.value} />
       ))}
     </dl>
   )
