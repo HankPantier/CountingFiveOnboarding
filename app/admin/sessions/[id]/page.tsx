@@ -8,6 +8,8 @@ import AssetsViewer from '@/components/admin/AssetsViewer'
 import TeamPhotoManager from '@/components/admin/TeamPhotoManager'
 import StockPhotoManager from '@/components/admin/StockPhotoManager'
 import ApproveButton from '@/components/admin/ApproveButton'
+import MarkCompleteButton from '@/components/admin/MarkCompleteButton'
+import RegenerateMbpButton from '@/components/admin/RegenerateMbpButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
 import CopyLinkButton from '@/components/admin/CopyLinkButton'
 import DeleteSessionButton from '@/components/admin/DeleteSessionButton'
@@ -127,16 +129,27 @@ export default async function SessionDetailPage({
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"
             >
-              Download PDF
+              Download MBP (PDF)
             </a>
             <a
-              href={`/api/pdf/download?path=${encodeURIComponent(`pdfs/${id}/intake-summary.md`)}`}
+              href={`/api/pdf/download?path=${encodeURIComponent(`pdfs/${id}/mbp.md`)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"
             >
-              Download Markdown
+              Download MBP (Markdown)
             </a>
+            <RegenerateMbpButton sessionId={id} />
+          </div>
+        )}
+        {/* Deliverable generation failed during approval — let the admin retry
+            rather than leaving the approved session with no MBP artifact. */}
+        {!session.pdf_url && session.status === 'approved' && (
+          <div className="mt-4">
+            <p className="text-error text-sm font-body mb-1">
+              The MBP deliverable wasn&apos;t generated. Generate it now:
+            </p>
+            <RegenerateMbpButton sessionId={id} label="Generate MBP" />
           </div>
         )}
         {session.status === 'approved' && (
@@ -156,6 +169,9 @@ export default async function SessionDetailPage({
           <div className="mt-4">
             <SendReminderButton sessionId={id} />
           </div>
+        )}
+        {['pending', 'in_progress'].includes(session.status) && isAdmin && (
+          <MarkCompleteButton sessionId={id} />
         )}
         <DeleteSessionButton sessionId={id} />
       </div>

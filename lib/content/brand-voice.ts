@@ -39,6 +39,7 @@ export function buildFirmContext(schema: SessionSchema): string {
     if (items.length) lines.push(`${label}: ${items.join(', ')}`)
   }
 
+  add('Tagline', b?.tagline, 160)
   add('Founded', b?.foundingYear, 40)
   add('Firm history', b?.firmHistory)
   add('Mission / vision / values', c?.missionVisionValues)
@@ -50,14 +51,54 @@ export function buildFirmContext(schema: SessionSchema): string {
   add('How clients find them', b?.howClientsFind)
   add('Client mix', b?.clientMixBreakdown)
   list('Client age ranges', b?.clientAgeRanges)
+  add('Growth goals', b?.growthGoals)
 
   const services = (schema.services ?? [])
     .filter(s => s.name)
     .map(s => (s.description ? `${s.name} (${s.description.slice(0, 80)})` : s.name))
   if (services.length) lines.push(`Services: ${services.join('; ')}`)
 
-  const niches = (schema.niches ?? []).map(n => n.name).filter(Boolean)
-  if (niches.length) lines.push(`Niches served: ${niches.join(', ')}`)
+  // Per-niche pain points + value prop (not just names) so niche pages can speak
+  // to the specific audience, not generically.
+  const niches = (schema.niches ?? []).filter(n => n.name)
+  if (niches.length) {
+    const nicheLines = niches.map(n => {
+      const bits = [n.name]
+      if (n.painPoints?.trim()) bits.push(`pain: ${n.painPoints.trim().slice(0, 120)}`)
+      if (n.valueProp?.trim()) bits.push(`value: ${n.valueProp.trim().slice(0, 120)}`)
+      return bits.join(' — ')
+    })
+    lines.push(`Niches served:\n  ${nicheLines.join('\n  ')}`)
+  }
+
+  // Client success stories — proof/E-E-A-T material for testimonials & stats.
+  const stories = (b?.clientSuccessStories ?? []).filter(Boolean).slice(0, 3).map(s => s.slice(0, 200))
+  if (stories.length) lines.push(`Client success stories (use as proof, don't fabricate specifics): ${stories.join(' | ')}`)
+
+  // Reputation & trust signals (ratings, review themes, press).
+  const rep = schema.reputation
+  if (rep) {
+    const repBits: string[] = []
+    if (rep.googleRating?.trim()) repBits.push(`Google ${rep.googleRating.trim()}`)
+    if (rep.yelpRating?.trim()) repBits.push(`Yelp ${rep.yelpRating.trim()}`)
+    if (rep.reviewSummary?.trim()) repBits.push(rep.reviewSummary.trim().slice(0, 160))
+    if (rep.pressAndMedia?.length) repBits.push(`Press: ${rep.pressAndMedia.slice(0, 3).join(', ')}`)
+    if (repBits.length) lines.push(`Reputation & trust signals: ${repBits.join(' | ')}`)
+  }
+
+  // Local competitors — for differentiation only. Never name them in copy.
+  const competitors = (b?.competitors ?? [])
+    .filter(c2 => c2.name?.trim())
+    .slice(0, 5)
+    .map(c2 => {
+      const bits = [c2.name.trim()]
+      if (c2.nicheClaim?.trim()) bits.push(c2.nicheClaim.trim().slice(0, 60))
+      if (c2.positioningNotes?.trim()) bits.push(c2.positioningNotes.trim().slice(0, 80))
+      return bits.join(' — ')
+    })
+  if (competitors.length) {
+    lines.push(`Local competitors (differentiate against these — do NOT name them in published copy): ${competitors.join('; ')}`)
+  }
 
   return lines.length
     ? `FIRM PROFILE (ground all copy in these specifics — never contradict or generalize away from them):\n${lines.join('\n')}`

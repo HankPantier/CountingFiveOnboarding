@@ -151,9 +151,16 @@ export default function ChatInterface({
 
   const totalPhases = 7
   const progressPct = Math.round((currentPhase / totalPhases) * 100)
+  const isComplete = currentPhase >= totalPhases
   const phaseLabel = isStaffMode
     ? STAFF_PHASE_LABELS[currentPhase] ?? ''
     : PHASE_LABELS[currentPhase] ?? ''
+  // Staff labels already read "Staff · Phase N"; only client labels get the
+  // "Step X of 7 · …" framing so the client always sees where they are.
+  const stepLabel =
+    isStaffMode || currentPhase < 1
+      ? phaseLabel
+      : `Step ${currentPhase} of ${totalPhases} · ${phaseLabel}`
   const showStaffButton = isAdmin && !isStaffMode && currentPhase <= 1
 
   return (
@@ -185,7 +192,7 @@ export default function ChatInterface({
             )}
             {currentPhase > 0 && (
               <span className="text-text-secondary text-xs font-body hidden sm:block">
-                {phaseLabel}
+                {stepLabel}
               </span>
             )}
           </div>
@@ -290,6 +297,16 @@ export default function ChatInterface({
       </div>
 
       <div className="border-t border-border-default bg-surface-card px-4 py-4 flex-shrink-0">
+        {isComplete ? (
+          <div className="max-w-2xl mx-auto text-center py-2">
+            <p className="text-base font-heading font-semibold text-brand-navy">
+              You&apos;re all set — onboarding complete.
+            </p>
+            <p className="text-text-secondary text-sm font-body mt-1">
+              Thanks for walking through this. Our team will be in touch shortly to begin your project.
+            </p>
+          </div>
+        ) : (
         <div className="max-w-2xl mx-auto flex flex-col gap-2">
           {currentPhase >= 5 && (
             <div>
@@ -321,6 +338,7 @@ export default function ChatInterface({
             </button>
           </form>
         </div>
+        )}
       </div>
     </div>
   )

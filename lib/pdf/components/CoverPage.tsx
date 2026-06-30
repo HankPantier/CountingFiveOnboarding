@@ -32,7 +32,7 @@ export function CoverPage({ schema, approvedAt }: { schema: Schema; approvedAt: 
     <Page size="A4" style={styles.page}>
       <View style={styles.header}>
         <Text style={styles.title}>{business?.name ?? 'Unnamed Firm'}</Text>
-        <Text style={styles.subtitle}>Website Intake Summary</Text>
+        <Text style={styles.subtitle}>Master Business Profile</Text>
       </View>
 
       <Field label="Website" value={schema.websiteUrl as string} />

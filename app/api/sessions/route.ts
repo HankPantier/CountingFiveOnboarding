@@ -1,6 +1,8 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
+import { computePhase4Gaps } from '@/lib/mbp-parser'
 import type { Json } from '@/types/database'
+import type { SessionSchema } from '@/types/session-schema'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
@@ -25,13 +27,21 @@ export async function POST(req: Request) {
 
   const db = createServerClient()
 
+  // If no gap list was supplied (e.g. a manually-created session with no MBP
+  // upload), derive the baseline Phase-4 gaps from whatever schema we have so
+  // the chat still has questions to ask. Without this, an empty gap list lets
+  // Phase 4 trivially pass and collect almost nothing.
+  const seededSchema = (schemaData ?? {}) as SessionSchema
+  const providedGaps = Array.isArray(gapList) ? gapList : []
+  const finalGaps = providedGaps.length > 0 ? providedGaps : computePhase4Gaps(seededSchema)
+
   const { data, error } = await db
     .from('sessions')
     .insert({
       website_url: websiteUrl,
       mbp_content: typeof mbpContent === 'string' ? mbpContent : null,
       schema_data: (schemaData ?? {}) as Json,
-      gap_list: (Array.isArray(gapList) ? gapList : []) as Json,
+      gap_list: finalGaps as Json,
       status: 'pending',
       current_phase: 1,
     })

@@ -1,4 +1,5 @@
 import MbpSectionLink from '@/components/admin/mbp/MbpSectionLink'
+import { computeOpenGaps } from '@/lib/mbp/completeness'
 import type { GapItem } from '@/types/gap-item'
 import type { MbpDocument } from '@/types/mbp'
 
@@ -6,12 +7,6 @@ const TIER_LABELS: Record<number, string> = {
   1: 'Tier 1 — must have',
   2: 'Tier 2 — nice to have',
   3: 'Tier 3 — optional',
-}
-
-// Onboarding gaps store array indices as `team[3].title`; the document uses
-// dot paths (`team.3.title`). Normalize numeric indices so the two align.
-function normalizeGapField(field: string): string {
-  return field.replace(/\[(\d+)\]/g, '.$1')
 }
 
 // The document section that holds a gap's field — its first path segment
@@ -33,18 +28,7 @@ export default function MbpCompleteness({
   doc: MbpDocument
   gaps: GapItem[]
 }) {
-  const profileSections = doc.sections.filter(s => s.key !== 'site_map')
-  const emptyByPath = new Map(
-    profileSections
-      .flatMap(s => [...(s.fields ?? []), ...(s.items ?? []).flatMap(it => it.fields)])
-      .map(f => [f.fieldPath, f.empty])
-  )
-
-  const stillOpen = gaps.filter(g => {
-    if (g.resolved) return false
-    const norm = normalizeGapField(g.field)
-    return emptyByPath.has(norm) ? emptyByPath.get(norm) === true : true
-  })
+  const stillOpen = computeOpenGaps(doc, gaps)
 
   const byTier = [1, 2, 3]
     .map(tier => ({ tier, items: stillOpen.filter(g => (g.tier ?? 3) === tier) }))

@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
+import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { getByPath } from '@/lib/mbp/schema-write'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
@@ -91,6 +92,8 @@ export async function PATCH(
     if (!result.success) {
       return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })
     }
+    // Keep the downloadable MBP fresh if this session is already approved.
+    after(() => regenerateMbpIfApproved(supabase, id))
   }
 
   const { error: updateErr } = await supabase

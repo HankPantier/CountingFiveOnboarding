@@ -36,12 +36,20 @@ export function getPhaseInstructions(
   }
 }
 
+// Analyst free-text is unbounded length; cap each injected string so Phase 3/4
+// prompts hold within the CLAUDE.md token budgets (a single verbose review_prompt
+// could otherwise blow the 3.5k Sonnet target on its own).
+function capText(s: string, max: number): string {
+  const t = s.trim()
+  return t.length > max ? `${t.slice(0, max).trimEnd()}…` : t
+}
+
 function analystPromptsBlock(meta: SchemaMeta | undefined, sectionIds: string[]): string {
   const prompts = meta?.review_prompts ?? {}
   const lines = sectionIds
     .map(id => {
       const text = prompts[`section_${id}`]
-      return text ? `Section ${id}: ${text}` : null
+      return text ? `Section ${id}: ${capText(text, 500)}` : null
     })
     .filter((s): s is string => s !== null)
   if (lines.length === 0) return ''
@@ -78,7 +86,7 @@ function opportunitiesBlock(meta: SchemaMeta | undefined): string {
 function section11Block(meta: SchemaMeta | undefined): string {
   const items = meta?.before_you_review_checklist ?? []
   if (items.length === 0) return ''
-  const numbered = items.slice(0, 30).map((it, i) => `${i + 1}. ${it}`).join('\n')
+  const numbered = items.slice(0, 30).map((it, i) => `${i + 1}. ${capText(it, 200)}`).join('\n')
   return `\n\nANALYST CHECKLIST FROM SECTION 11 (asks the analyst pre-wrote for this client — work through anything not already covered by the gap list above; skip anything answered earlier):\n${numbered}\nCapture answers into _meta.section11_responses keyed by a short slug of the item (e.g. "optometry-niche-origin").`
 }
 
@@ -109,7 +117,7 @@ function readCurrentSitemap(session: Session): CurrentSitemapItem[] {
 function trustSignalsBlock(reputation: ReputationLike): string {
   const items = reputation.trustSignalGaps ?? []
   if (items.length === 0) return ''
-  const numbered = items.slice(0, 12).map((it, i) => `${i + 1}. ${it}`).join('\n')
+  const numbered = items.slice(0, 12).map((it, i) => `${i + 1}. ${capText(it, 200)}`).join('\n')
   return `\n\nTRUST SIGNALS MISSING FROM CURRENT SITE (analyst-flagged — ask the client which to address on the new site; default answer is "yes to all"):\n${numbered}\nCapture confirmed items as a string array into _meta.trust_signals_confirmed using the analyst's short label for each (the bold heading is fine).`
 }
 
@@ -126,7 +134,7 @@ function sitemapDecisionsBlock(
   const lines: string[] = []
   if (newPages.length > 0) {
     lines.push(`PROPOSED NEW PAGES (default: build all — ask the client which, if any, to skip):`)
-    for (const p of newPages.slice(0, 20)) lines.push(`- ${p.url}${p.title ? ` (${p.title})` : ''}`)
+    for (const p of newPages.slice(0, 20)) lines.push(`- ${p.url}${p.title ? ` (${capText(p.title, 120)})` : ''}`)
   }
   if (consolidations.length > 0) {
     if (lines.length > 0) lines.push('')
@@ -159,9 +167,10 @@ One message, bulleted list, no introduction, no echo-back. Accept answers in any
 As soon as all five land, call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, websiteUrl, and advancePhase: true. Do not ask the staff member to confirm — they typed it, they know.`
   }
   return `PHASE 1 — CONTACT INFO
-Introduce yourself briefly: you're here to walk through a few details for their new Revaltus website. Most of it is confirming what your team already researched — it should take 5–7 minutes.
+Introduce yourself briefly: you're here to walk through a few details for their new Revaltus website. We've already researched their firm and will confirm what we found as we go — it should take 5–7 minutes, mostly confirming.
 Collect in one exchange: first name, last name, email address, and phone number. Bold each ask.
-Confirm back what you heard, then call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, and advancePhase: true.`
+Confirm back what you heard, then call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, and advancePhase: true.
+Once the tool confirms the advance, briefly acknowledge their details and continue — do not pause to ask whether they're ready for the next step.`
 }
 
 function phase2Instructions(mode: AgentMode): string {
@@ -424,7 +433,7 @@ Then: "Last on assets — team headshots or office photos you'd like us to use? 
 
 Prompt for uploads via the button below. Confirm receipt of each file by name. If a client uploads a logo, acknowledge it by name explicitly so they know it landed ("Got it — drinks-logo.png saved as your primary logo.").
 
-When done (or client confirms they have nothing more to upload), call update_session_data with advancePhase: true.`
+When done (or client confirms they have nothing more to upload), call update_session_data with advancePhase: true, then move straight into wrapping up — don't ask whether they're ready to continue.`
 }
 
 function phase6Instructions(): string {
@@ -432,7 +441,7 @@ function phase6Instructions(): string {
 Present a concise summary of all collected data, organized by section.
 Check the schema for any required fields still empty — ask about them before summarizing.
 Ask: "Does everything look right? Anything to change before I submit?"
-When confirmed, call update_session_data with advancePhase: true.`
+When confirmed, call update_session_data with advancePhase: true. After the advance, give the closing thank-you directly — do not ask the client to confirm they're ready to finish.`
 }
 
 function phase7Instructions(): string {

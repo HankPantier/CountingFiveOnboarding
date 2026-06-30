@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { buildMbpEditPrompt } from '@/lib/mbp/edit-prompt'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
+import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { z } from 'zod'
@@ -66,6 +67,9 @@ export async function POST(
     }
   }
 
+  // Track whether any MBP field actually changed this turn so we only refresh
+  // the downloadable deliverable when there's something new to render.
+  let mutated = false
   const result = streamText({
       model: anthropic('claude-sonnet-4-6'),
       system: buildMbpEditPrompt(session),
@@ -82,8 +86,11 @@ export async function POST(
               .optional()
               .describe('Gap field paths now resolved'),
           }),
-          execute: async ({ updates, resolvedGaps }) =>
-            applyMbpUpdate(supabase, id, updates, resolvedGaps),
+          execute: async ({ updates, resolvedGaps }) => {
+            const r = await applyMbpUpdate(supabase, id, updates, resolvedGaps)
+            if (r.success) mutated = true
+            return r
+          },
         },
       },
       stopWhen: stepCountIs(5),
@@ -104,6 +111,8 @@ export async function POST(
             .from('sessions')
             .update({ last_activity_at: new Date().toISOString() })
             .eq('id', id)
+          // Refresh the downloadable MBP if fields changed and the session is approved.
+          if (mutated) await regenerateMbpIfApproved(supabase, id)
         } catch (err) {
           console.error('[mbp-chat] onFinish failed:', err)
         }

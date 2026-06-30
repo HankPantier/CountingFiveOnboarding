@@ -1,5 +1,8 @@
 import type { Database, Json } from '@/types/database'
 import type { GapItem } from '@/types/gap-item'
+import type { SessionSchema } from '@/types/session-schema'
+
+type AuditContext = NonNullable<NonNullable<SessionSchema['_meta']>['audit_context']>
 import { getPhaseInstructions } from './phase-instructions'
 import { buildGapListInstructions } from './gap-list'
 
@@ -20,6 +23,10 @@ export function buildSystemPrompt(session: Session): string {
   const sparseSchema = serializeSchema(schema)
   const phaseInstructions = getPhaseInstructions(phase, session, mode)
   const gapInstructions = phase >= 4 ? buildGapListInstructions(gaps) : ''
+  // Audit intelligence (narrative/tech/competitive) is reference context for the
+  // confirmation phases — surface it from phase 3 onward so the agent confirms
+  // it rather than asking blind. Kept out of phases 1–2 to protect token budget.
+  const auditContextBlock = phase >= 3 ? buildAuditContextBlock(schema) : ''
   const audience = mode === 'staff'
     ? 'a Revaltus staff member entering data on behalf of the client (NOT the client themselves)'
     : 'the client'
@@ -33,13 +40,18 @@ ${phaseInstructions}
 
 COLLECTED DATA SO FAR:
 ${sparseSchema}
-
+${auditContextBlock}
 ${gapInstructions}
 
 TOOL INSTRUCTIONS:
 - Call update_session_data whenever new information is confirmed or provided
 - Only set advancePhase: true when the current phase goals are genuinely complete
 - Never skip required fields without explicit permission
+- The tool result reports phaseAdvanced (true/false). If it returns a "blocked" reason, the phase did NOT advance — collect the field it names; do not claim you've moved on.
+
+PHASE TRANSITIONS:
+- Never wait for the client to confirm they're ready to continue. Do not say "let me know when you're ready" or "we'll move into the next section." Advance and flow straight into the next topic in the same message.
+- Don't narrate the mechanics ("moving to the next phase"). Just acknowledge what you captured in a few words and continue.
 
 ${toneBlock}
 
@@ -71,6 +83,41 @@ const STAFF_TONE_BLOCK = `TONE AND STYLE — STAFF MODE:
 - No emojis. No markdown headings (#).
 - The data-quality guardrails still apply: same fields, same gap list, same advancePhase gates. Server-side validation is identical.`
 
+// Renders the audit-derived reference context (no typed schema home) into a
+// compact, length-bounded block. Used phase 3+ so the agent confirms what the
+// audit found instead of asking blind. Returns '' when nothing was seeded.
+function buildAuditContextBlock(schema: Json): string {
+  const ctx = (schema as { _meta?: { audit_context?: AuditContext } } | null)?._meta?.audit_context
+  if (!ctx) return ''
+
+  const cap = (s: string | undefined, n: number): string | undefined =>
+    s && s.length > n ? `${s.slice(0, n).trimEnd()}…` : s || undefined
+
+  const lines: string[] = []
+  if (ctx.narrative?.executiveSummary) lines.push(`- Audit summary: ${cap(ctx.narrative.executiveSummary, 500)}`)
+  if (ctx.narrative?.recommendations?.length) {
+    lines.push(`- Audit recommendations: ${ctx.narrative.recommendations.slice(0, 5).join('; ')}`)
+  }
+  if (ctx.techStack) {
+    const t = ctx.techStack
+    const parts = [t.cms && `CMS ${t.cms}`, t.pageBuilder && `builder ${t.pageBuilder}`, t.hosting && `host ${t.hosting}`]
+      .filter(Boolean)
+    if (parts.length) lines.push(`- Tech stack: ${parts.join(', ')}`)
+  }
+  if (ctx.domain?.registered || ctx.domain?.ageYears != null) {
+    lines.push(`- Domain: registered ${ctx.domain.registered ?? '?'}${ctx.domain.ageYears != null ? ` (~${ctx.domain.ageYears}y old)` : ''}`)
+  }
+  if (ctx.contentLibrary?.totalPieces) lines.push(`- Content library: ~${ctx.contentLibrary.totalPieces} pieces`)
+  if (ctx.competitive?.keywordRankings?.length) {
+    const kw = ctx.competitive.keywordRankings.slice(0, 6)
+      .map((k) => `${k.keyword}${k.rank != null ? ` (#${k.rank})` : ' (unranked)'}`)
+    lines.push(`- Keyword positions: ${kw.join(', ')}`)
+  }
+  if (lines.length === 0) return ''
+
+  return `\nAUDIT FINDINGS (reference — confirm/use as relevant, don't re-derive):\n${lines.join('\n')}\n`
+}
+
 // Complete serialization for MBP editing/review contexts (NOT the onboarding
 // chat): strips only internal `_meta` and omits empties, but keeps every
 // content-gen field, sitemaps, reputation, and content_gaps. The opposite of
@@ -94,7 +141,9 @@ function serializeSchema(schema: Json): string {
   // the per-phase token budgets in CLAUDE.md.
   const trimmed = trimContentGenFields(rest)
   const sparse = deepOmitEmpty(trimmed)
-  return JSON.stringify(sparse, null, 2)
+  // deepOmitEmpty returns undefined for an all-empty object; stringifying that
+  // yields the literal "undefined" in the prompt. Use a readable placeholder.
+  return sparse === undefined ? '(nothing captured yet)' : JSON.stringify(sparse, null, 2)
 }
 
 function trimContentGenFields(rest: Record<string, unknown>): Record<string, unknown> {
@@ -102,14 +151,15 @@ function trimContentGenFields(rest: Record<string, unknown>): Record<string, unk
 
   const business = out.business as Record<string, unknown> | undefined
   if (business) {
+    // firmHistory is kept in chat context so Phase 4 can confirm the seeded
+    // history paragraph; the rest are content-gen-only and trimmed.
     const {
       competitors,
       competitiveContext,
       currentPositioning,
-      firmHistory,
       ...keepBusiness
     } = business
-    void competitors; void competitiveContext; void currentPositioning; void firmHistory
+    void competitors; void competitiveContext; void currentPositioning
     out.business = keepBusiness
   }
 

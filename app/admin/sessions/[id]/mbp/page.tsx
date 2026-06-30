@@ -30,7 +30,7 @@ export default async function MbpPage({
   const supabase = createServerClient()
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, website_url, schema_data, gap_list')
+    .select('id, website_url, schema_data, gap_list, mbp_content')
     .eq('id', id)
     .single()
   if (!session) notFound()
@@ -94,6 +94,20 @@ export default async function MbpPage({
         <MbpCompleteness doc={doc} gaps={gaps} />
         <MbpSuggestions sessionId={id} suggestions={suggestions} isAdmin={isAdmin} />
       </div>
+
+      {/* Original analyst MBP doc (only present for MBP-upload sessions; audit
+          sessions have none). Read-only, for traceability — schema_data is the
+          source of truth and may have diverged via edits since import. */}
+      {session.mbp_content && (
+        <details className="border border-border-default rounded-lg overflow-hidden">
+          <summary className="px-4 py-2.5 bg-surface-subtle text-sm font-heading font-semibold text-text-primary cursor-pointer">
+            View original analyst doc
+          </summary>
+          <pre className="px-4 py-3 text-xs font-mono text-text-secondary whitespace-pre-wrap break-words max-h-[32rem] overflow-y-auto">
+            {session.mbp_content}
+          </pre>
+        </details>
+      )}
 
       <MbpDocument doc={doc} overrides={overrides} sessionId={id} editable={isAdmin} />
     </main>

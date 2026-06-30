@@ -122,6 +122,27 @@ describe('draftSessionFromAudit', () => {
     expect(coverage.contentPlan.pagesFound).toBe(2)
   })
 
+  it('carries audit intelligence into the seed (rewriteDirection + _meta.audit_context)', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    const withIntel = auditResult({
+      intelligence: {
+        niche_services: {
+          detected_niches: [], invisible_niches: [], top_improvements: [],
+          services_analysis: [
+            { service: 'Tax Planning', clarity: '', framing: '', audience: '', rewrite_direction: 'Lead with proactive strategy.' },
+          ],
+        },
+        tech_stack: { cms: 'WordPress', page_builder: null, hosting: 'WP Engine', frameworks: [], risk_flags: [], commentary: '' },
+        domain: { registered: '2008-04-01', age_years: 18, last_updated: null },
+      } as unknown as AuditResult['intelligence'],
+    })
+    const { schema } = await draftSessionFromAudit(withIntel)
+    expect(schema.services?.find((s) => s.name === 'Tax Planning')?.rewriteDirection).toBe('Lead with proactive strategy.')
+    expect(schema.technical?.hostingProvider).toBe('WP Engine')
+    expect(schema._meta?.audit_context?.techStack?.cms).toBe('WordPress')
+    expect(schema._meta?.audit_context?.domain?.ageYears).toBe(18)
+  })
+
   it('degrades gracefully when the AI draft fails (null)', async () => {
     mockGen.mockResolvedValue(null)
     const { schema, gaps, coverage } = await draftSessionFromAudit(auditResult())
