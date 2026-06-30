@@ -315,15 +315,16 @@ ${ANTI_SLOP_RULES}${retryNote}`
     }
   }
 
-  // First pass at the standard budget. A parse failure means the JSON truncated
-  // (a `length` finish confirms it) — retry once with a much larger budget and
-  // low effort (less thinking → more room for the answer) before storing raw.
-  let res = await attempt(16000, CONTENT_PROVIDER_OPTIONS)
+  // First pass: high effort with a generous budget so thinking + the full page
+  // JSON both fit. A parse failure means the JSON still truncated (a `length`
+  // finish confirms it) — retry once with an even larger budget and low effort
+  // (less thinking → more room for the answer) before storing raw.
+  let res = await attempt(24000, CONTENT_PROVIDER_OPTIONS)
   if (!res.ok) {
     console.warn(
       `[content-gen] JSON parse failed for ${pageUrl} (finish=${res.finishReason}) — retrying with larger budget`
     )
-    res = await attempt(24000, OUTLINE_PROVIDER_OPTIONS)
+    res = await attempt(32000, OUTLINE_PROVIDER_OPTIONS)
   }
   if (res.ok) return res.result
 

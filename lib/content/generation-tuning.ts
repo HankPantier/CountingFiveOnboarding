@@ -21,14 +21,15 @@ export const GENERATION_PROVIDER_OPTIONS = {
   } satisfies AnthropicProviderOptions,
 }
 
-// Page-body generation: a large markdown+metadata JSON answer. `effort: 'high'`
-// thinking consumed too much of the output budget and truncated the JSON (parse
-// failure → raw text stored). Medium effort keeps strong writing quality while
-// leaving room for the full answer; the call also raises maxOutputTokens.
+// Page-body generation: a large markdown+metadata JSON answer. High effort for
+// best writing quality on the published deliverable. The earlier truncation
+// (effort:'high' starving an 8000-token budget) is solved by the generous
+// maxOutputTokens at the call site (24000) plus a low-effort retry safety net,
+// NOT by lowering effort.
 export const CONTENT_PROVIDER_OPTIONS = {
   anthropic: {
     thinking: { type: 'adaptive', display: 'omitted' },
-    effort: 'medium',
+    effort: 'high',
   } satisfies AnthropicProviderOptions,
 }
 
