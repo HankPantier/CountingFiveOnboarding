@@ -21,6 +21,32 @@ export type SessionSchema = {
       keep_pages?: string[]
       notes?: string
     }
+    // Audit intelligence that has no typed schema home. Seeded by the
+    // audit→session draft so the chat can confirm it and the MBP can render it,
+    // instead of discarding it. Everything optional — sub-sections appear only
+    // when the audit produced them.
+    audit_context?: {
+      narrative?: { executiveSummary?: string; recommendations?: string[] }
+      techStack?: {
+        cms?: string | null
+        pageBuilder?: string | null
+        hosting?: string | null
+        frameworks?: string[]
+        riskFlags?: string[]
+        commentary?: string
+      }
+      domain?: { registered?: string | null; ageYears?: number | null; lastUpdated?: string | null }
+      contentLibrary?: {
+        totalPieces?: number
+        formats?: Array<{ type: string; count: number; cadence: string }>
+        recommendations?: string[]
+      }
+      competitive?: {
+        keywordRankings?: Array<{ keyword: string; rank: number | null; note: string }>
+        aiSearchPresence?: string
+        localSeo?: string
+      }
+    }
   }
   contact?: {
     firstName: string

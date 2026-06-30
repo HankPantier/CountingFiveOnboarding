@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { runContentGeneration } from '@/lib/content/content-generator'
+import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
 // Routes that trigger content generation need a long maxDuration because the
@@ -45,6 +46,23 @@ export async function PATCH(
     updates.status = body.status
   }
   if (body.error_message !== undefined) updates.error_message = body.error_message
+
+  // Minimum completeness gate before content generation (phase 5 trigger):
+  // without a firm name the generator falls back to "the firm"/"Unknown firm"
+  // everywhere, producing unusable content. Block the advance instead.
+  if (body.phase === 5) {
+    const { data: job } = await supabase.from('content_jobs').select('session_id').eq('id', id).single()
+    if (job?.session_id) {
+      const { data: sess } = await supabase.from('sessions').select('schema_data').eq('id', job.session_id).single()
+      const name = (sess?.schema_data as SessionSchema | null)?.business?.name
+      if (!name || !name.trim()) {
+        return NextResponse.json(
+          { error: 'Cannot start content generation: the MBP has no firm name. Add it on the MBP page first.' },
+          { status: 422 },
+        )
+      }
+    }
+  }
 
   const { data, error } = await supabase
     .from('content_jobs')

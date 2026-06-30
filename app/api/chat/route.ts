@@ -1,4 +1,5 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
+import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
@@ -15,6 +16,35 @@ type Session = Database['public']['Tables']['sessions']['Row']
 type Supabase = ReturnType<typeof createServerClient>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Per-phase input-token targets from CLAUDE.md, checked against ACTUAL usage in
+// onFinish (the request-time chars/4 estimate only catches the 5k hard ceiling).
+const PHASE_INPUT_BUDGET: Record<number, number> = { 1: 1000, 2: 1000, 3: 3500, 4: 3000, 5: 1500, 6: 1500 }
+
+// Resolves a gap path against the schema. Unlike mbp-parser's getPath this
+// understands array indices (niches[0].painPoints) so per-niche gaps can be
+// auto-resolved when their field is filled.
+function getByPath(obj: unknown, path: string): unknown {
+  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean)
+  let cur: unknown = obj
+  for (const p of parts) {
+    if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[p]
+    else return undefined
+  }
+  return cur
+}
+
+// Mirrors mbp-parser isPopulated semantics: a default `false` boolean is NOT a
+// real answer, so boolean gaps (e.g. brand.hasBrandGuide) resolve only via an
+// explicit resolvedGaps signal, never by auto-fill.
+function isFieldFilled(schema: Record<string, unknown>, field: string): boolean {
+  const v = getByPath(schema, field)
+  if (v === undefined || v === null) return false
+  if (typeof v === 'string') return v.trim().length > 0
+  if (Array.isArray(v)) return v.length > 0
+  if (typeof v === 'boolean') return false
+  return true
+}
 
 // Per-session abuse cap: the processing flag serializes concurrent calls, but
 // nothing bounded sequential volume — a leaked session URL could drain the
@@ -161,6 +191,12 @@ export async function POST(req: Request) {
           console.warn(
             `[tokens] session=${sessionId} input=${totalUsage.inputTokens} output=${totalUsage.outputTokens}`
           )
+          const budget = PHASE_INPUT_BUDGET[session.current_phase]
+          if (budget && typeof totalUsage.inputTokens === 'number' && totalUsage.inputTokens > budget) {
+            console.error(
+              `[token-budget] phase=${session.current_phase} input=${totalUsage.inputTokens} exceeds target=${budget}`
+            )
+          }
           await recordTokenUsage({
             task: 'onboarding',
             sessionId,
@@ -203,7 +239,7 @@ async function updateSessionSchema(
   updates: Record<string, unknown>,
   resolvedGaps?: string[],
   advancePhase?: boolean
-): Promise<{ success: boolean; phaseAdvanced?: boolean; blocked?: string }> {
+): Promise<{ success: boolean; phaseAdvanced: boolean; blocked?: string }> {
   // Reload for latest state (multi-step tool calls)
   const { data: current } = await supabase
     .from('sessions')
@@ -214,19 +250,38 @@ async function updateSessionSchema(
   const currentSchema = (current?.schema_data as Record<string, unknown>) ?? {}
   const mergedSchema = deepMerge(currentSchema, updates)
 
+  // The authoritative website URL lives in the `website_url` column, not in
+  // schema_data. The phase-1 client agent collects contact info but never sets
+  // schema.websiteUrl, so backfill it from the column — otherwise the phase-1
+  // advance is silently blocked (and WHOIS below has no domain to look up).
+  if (!mergedSchema.websiteUrl) {
+    const columnUrl = current?.website_url ?? originalSession.website_url
+    if (columnUrl) mergedSchema.websiteUrl = columnUrl
+  }
+
   const currentGaps = (current?.gap_list as GapItem[]) ?? []
-  const updatedGaps = resolvedGaps
-    ? currentGaps.map(g => (resolvedGaps.includes(g.field) ? { ...g, resolved: true } : g))
-    : currentGaps
+  const explicit = new Set(resolvedGaps ?? [])
+  // Resolve a gap when the model explicitly says so OR when its field is now
+  // filled in the merged schema. The field-filled path is robust to the model
+  // not echoing the exact gap path — notably positional niche paths
+  // (niches[2].painPoints) that drift if niches are reordered mid-chat.
+  const updatedGaps = currentGaps.map(g =>
+    g.resolved || explicit.has(g.field) || isFieldFilled(mergedSchema, g.field)
+      ? { ...g, resolved: true }
+      : g
+  )
 
   const currentPhase = current?.current_phase ?? 0
   let newPhase = currentPhase
+  let blocked: string | undefined
 
   if (advancePhase) {
     const validationError = validatePhaseAdvance(currentPhase, mergedSchema, updatedGaps)
     if (validationError) {
       console.warn(`[phase-advance] Blocked phase ${currentPhase}→${currentPhase + 1}: ${validationError}`)
-      // Don't advance — Claude will try again next exchange
+      // Don't advance — return the reason so the model knows it did NOT advance
+      // and what's still missing (internal tool result; never surfaced to the client).
+      blocked = validationError
     } else {
       newPhase = Math.min(currentPhase + 1, 7)
     }
@@ -251,9 +306,14 @@ async function updateSessionSchema(
       (originalSession.website_url as string)
 
     if (domain) {
-      // Fire and forget — WHOIS will advance the session to Phase 3 when done
-      runWhoisLookup(sessionId, domain).catch(err =>
-        console.error('[WHOIS trigger] Failed:', err)
+      // after() runs the lookup post-response but within maxDuration — a bare
+      // fire-and-forget can be frozen/killed once the response returns on
+      // serverless, stranding the session at Phase 2. The cron sweep is the
+      // backstop for any that still don't complete.
+      after(() =>
+        runWhoisLookup(sessionId, domain).catch(err =>
+          console.error('[WHOIS trigger] Failed:', err)
+        )
       )
     } else {
       // No domain — skip WHOIS and advance directly to Phase 3
@@ -264,7 +324,7 @@ async function updateSessionSchema(
     }
   }
 
-  return { success: true, phaseAdvanced: newPhase > currentPhase }
+  return { success: true, phaseAdvanced: newPhase > currentPhase, blocked }
 }
 
 function validatePhaseAdvance(
@@ -307,11 +367,16 @@ function validatePhaseAdvance(
       const li = culture?.linkedIn as { url?: unknown; usefulness?: unknown } | undefined
       const gbp = business?.googleBusinessProfile as { url?: unknown; usefulness?: unknown } | undefined
 
-      if (!li || li.url === undefined) return 'culture.linkedIn.url not captured'
-      if (!gbp || gbp.url === undefined) return 'business.googleBusinessProfile.url not captured'
+      // "Captured" = a real URL (non-empty string) OR an explicit null meaning
+      // "no profile". An empty string is treated as not-yet-captured so the
+      // agent can't silently skip the usefulness rating for a profile that exists.
+      const captured = (a: { url?: unknown } | undefined) =>
+        !!a && (a.url === null || (typeof a.url === 'string' && a.url.trim() !== ''))
+      if (!captured(li)) return 'culture.linkedIn.url not captured (use null when the firm has no LinkedIn)'
+      if (!captured(gbp)) return 'business.googleBusinessProfile.url not captured (use null when there is no Google Business Profile)'
       // If the asset exists (non-empty URL), require a usefulness rating too.
-      if (typeof li.url === 'string' && li.url && !li.usefulness) return 'culture.linkedIn.usefulness not captured'
-      if (typeof gbp.url === 'string' && gbp.url && !gbp.usefulness) return 'business.googleBusinessProfile.usefulness not captured'
+      if (typeof li!.url === 'string' && li!.url.trim() && !li!.usefulness) return 'culture.linkedIn.usefulness not captured'
+      if (typeof gbp!.url === 'string' && gbp!.url.trim() && !gbp!.usefulness) return 'business.googleBusinessProfile.usefulness not captured'
       return null
     }
     case 4: {

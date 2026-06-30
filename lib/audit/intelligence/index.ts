@@ -5,6 +5,7 @@
 // and the whole stage is additionally guarded by the caller in runAudit().
 import { buildCorpus } from '../corpus'
 import { analyzeCompetitive } from './competitive'
+import { analyzeCompetitors } from './competitors'
 import { analyzeContentLibrary } from './content-library'
 import { buildDigitalIntelligence } from './digital-intel'
 import { detectDomainAge } from './domain-age'
@@ -82,6 +83,12 @@ export async function buildIntelligence(
     }, tokenCtx),
   )
   intel.content_library = await safe('content-library', () => analyzeContentLibrary(result, tokenCtx))
+
+  // Competitor firms (off-site discovery via Serper + LLM extraction) — fills
+  // business.competitors, which audit-seeded sessions otherwise never get.
+  intel.competitors = await safe('competitors', () =>
+    analyzeCompetitors({ siteName, domain: result.domain, niches: detectedNiches, location }, tokenCtx),
+  )
 
   // ── Off-site research ─────────────────────────────────────────────────────
   intel.digital_intelligence = await safe('digital-intelligence', () =>

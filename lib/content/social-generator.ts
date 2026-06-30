@@ -1,7 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { buildBrandVoiceBlock } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { ANTI_SLOP_RULES } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -38,9 +38,12 @@ type SocialInput = {
 // on-demand backfill route. Returns null on unparseable output (non-fatal for
 // callers).
 export async function generateSocialJson(input: SocialInput): Promise<SocialJson | null> {
-  const prompt = `You are writing social media promotion copy for a blog post by ${input.schema.business?.name ?? 'a CPA firm'}.
+  const loc = firmLocation(input.schema)
+  const prompt = `You are writing social media promotion copy for a blog post by ${input.schema.business?.name ?? 'a CPA firm'}${loc ? ` (${loc})` : ''}.
 
 ${buildBrandVoiceBlock(input.schema)}
+
+${buildFirmContext(input.schema)}
 
 THE POST BEING PROMOTED:
 Title: ${input.title}

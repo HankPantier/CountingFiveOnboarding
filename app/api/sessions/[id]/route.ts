@@ -1,7 +1,8 @@
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
-import { NextResponse } from 'next/server'
 import { deepSetPath } from '@/lib/mbp/schema-write'
+import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import type { Json } from '@/types/database'
 
 export async function DELETE(
@@ -83,6 +84,9 @@ export async function PATCH(
     .from('sessions')
     .update({ schema_data: updated as Json })
     .eq('id', id)
+
+  // Refresh the downloadable MBP if this session is already approved.
+  after(() => regenerateMbpIfApproved(supabase, id))
 
   return NextResponse.json({ success: true })
 }

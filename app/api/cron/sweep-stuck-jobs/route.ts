@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
+import { runWhoisLookup } from '@/lib/whois/lookup'
 
 export const runtime = 'nodejs'
+export const maxDuration = 120
 
 const STUCK_THRESHOLD_MS = 15 * 60 * 1000
 
@@ -71,12 +73,38 @@ export async function GET(req: Request) {
       .select('id'),
   ])
 
+  // Sessions stranded at Phase 2: the WHOIS after()-task never completed (cold
+  // kill, network drop). Re-run the lookup — it advances them to Phase 3 (and is
+  // a no-op for any that have since moved on). Bounded to keep the cron quick.
+  const { data: stuckSessions } = await supabase
+    .from('sessions')
+    .select('id, website_url')
+    .eq('current_phase', 2)
+    .in('status', ['pending', 'in_progress'])
+    .lt('last_activity_at', cutoff)
+    .limit(10)
+
+  let whoisRetried = 0
+  for (const s of stuckSessions ?? []) {
+    if (!s.website_url) continue
+    try {
+      await runWhoisLookup(s.id, s.website_url)
+      whoisRetried++
+    } catch (err) {
+      console.error('[sweep-stuck-jobs] WHOIS retry failed for', s.id, err)
+    }
+  }
+
   const researchSwept = research.data?.length ?? 0
   const pagesSwept = pages.data?.length ?? 0
   const ideasSwept = ideas.data?.length ?? 0
   const socialsSwept = socials.data?.length ?? 0
   const oneoffsSwept = oneoffs.data?.length ?? 0
   const auditsSwept = audits.data?.length ?? 0
+
+  if (whoisRetried) {
+    console.warn(`[sweep-stuck-jobs] whois-retried=${whoisRetried} cutoff=${cutoff}`)
+  }
 
   if (researchSwept || pagesSwept || ideasSwept || socialsSwept || oneoffsSwept || auditsSwept) {
     console.warn(
@@ -115,5 +143,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, whoisRetried, cutoff })
 }

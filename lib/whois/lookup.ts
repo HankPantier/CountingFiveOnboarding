@@ -34,22 +34,40 @@ export async function runWhoisLookup(sessionId: string, domain: string): Promise
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('schema_data')
+    .select('schema_data, current_phase')
     .eq('id', sessionId)
     .single()
+
+  // Only advance a session that is still on Phase 2. If it has moved on (a
+  // concurrent run, a manual advance), this lookup is stale — don't clobber
+  // the phase or overwrite newer schema_data.
+  if (session?.current_phase !== 2) {
+    console.warn('[WHOIS] Session', sessionId, 'no longer on Phase 2 — skipping write')
+    return
+  }
 
   const currentSchema = (session?.schema_data as Record<string, unknown>) ?? {}
   const currentTechnical = (currentSchema.technical as Record<string, unknown>) ?? {}
 
-  const updatedSchema: Record<string, unknown> = {
-    ...currentSchema,
-    technical: { ...currentTechnical, ...technicalData },
+  // Only fill WHOIS fields that came back non-empty so an empty lookup doesn't
+  // wipe values the audit draft already seeded (registrationDate, hosting).
+  const mergedTechnical = { ...currentTechnical }
+  for (const [k, v] of Object.entries(technicalData)) {
+    if (Array.isArray(v) ? v.length > 0 : v) mergedTechnical[k] = v
   }
 
+  const updatedSchema: Record<string, unknown> = {
+    ...currentSchema,
+    technical: mergedTechnical,
+  }
+
+  // Atomic-ish guard: the .eq('current_phase', 2) means a concurrent advance
+  // past Phase 2 makes this write a no-op rather than a clobber.
   await supabase
     .from('sessions')
     .update({ schema_data: updatedSchema as Json, current_phase: 3 })
     .eq('id', sessionId)
+    .eq('current_phase', 2)
 
   console.warn('[WHOIS] Done for session', sessionId, '— advanced to Phase 3')
 }

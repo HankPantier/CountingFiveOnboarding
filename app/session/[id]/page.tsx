@@ -37,7 +37,7 @@ export default async function SessionPage({
     session.current_phase = 1
   }
 
-  if (session.status === 'approved') {
+  if (session.status === 'completed' || session.status === 'approved') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-page">
         <div className="text-center px-8">

@@ -434,6 +434,21 @@ export interface CompetitiveIntelligence extends ScoredSection {
   local_seo: string
 }
 
+// A competitor firm discovered off-site (Serper organic results + an LLM
+// extraction pass). Shape mirrors SessionSchema business.competitors[] so the
+// audit→session draft can map it across directly. Unknown fields are ''.
+export interface CompetitorEntity {
+  name: string
+  location: string
+  size: string
+  nicheClaim: string
+  positioningNotes: string
+}
+
+export interface CompetitorIntelligence {
+  competitors: CompetitorEntity[]
+}
+
 export interface TechStackIntelligence {
   cms: string | null
   page_builder: string | null
@@ -515,6 +530,7 @@ export interface AuditIntelligence {
   target_market?: ScoredSection
   niche_services?: NicheServicesIntelligence
   competitive?: CompetitiveIntelligence
+  competitors?: CompetitorIntelligence
   tech_stack?: TechStackIntelligence
   domain?: DomainIntelligence
   content_library?: ContentLibraryIntelligence
