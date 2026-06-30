@@ -1,9 +1,11 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
-import { deepSetPath } from '@/lib/mbp/schema-write'
+import { deepSetPath, isPathFilled } from '@/lib/mbp/schema-write'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
+import { normalizeGapField } from '@/lib/mbp/completeness'
 import type { Json } from '@/types/database'
+import type { GapItem } from '@/types/gap-item'
 
 export async function DELETE(
   _req: Request,
@@ -62,7 +64,7 @@ export async function PATCH(
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('schema_data')
+    .select('schema_data, gap_list')
     .eq('id', id)
     .single()
 
@@ -80,9 +82,21 @@ export async function PATCH(
     }
   }
 
+  // Mark the matching gap resolved when the field is now filled, so gap_list
+  // stays honest for any consumer not going through computeOpenGaps. Gap fields
+  // use bracket form (niches[0].x); the editor sends dot form — normalize to match.
+  const gaps = (session.gap_list as GapItem[] | null) ?? null
+  const filledGaps =
+    gaps && isPathFilled(updated, fieldPath)
+      ? gaps.map(g => (!g.resolved && normalizeGapField(g.field) === fieldPath ? { ...g, resolved: true } : g))
+      : gaps
+
   await supabase
     .from('sessions')
-    .update({ schema_data: updated as Json })
+    .update({
+      schema_data: updated as Json,
+      ...(filledGaps ? { gap_list: filledGaps as Json } : {}),
+    })
     .eq('id', id)
 
   // Refresh the downloadable MBP if this session is already approved.

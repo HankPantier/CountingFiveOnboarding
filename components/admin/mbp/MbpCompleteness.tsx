@@ -1,5 +1,5 @@
-import MbpSectionLink from '@/components/admin/mbp/MbpSectionLink'
-import { computeOpenGaps } from '@/lib/mbp/completeness'
+import MbpFillLink from '@/components/admin/mbp/MbpFillLink'
+import { computeOpenGaps, normalizeGapField } from '@/lib/mbp/completeness'
 import type { GapItem } from '@/types/gap-item'
 import type { MbpDocument } from '@/types/mbp'
 
@@ -7,12 +7,6 @@ const TIER_LABELS: Record<number, string> = {
   1: 'Tier 1 — must have',
   2: 'Tier 2 — nice to have',
   3: 'Tier 3 — optional',
-}
-
-// The document section that holds a gap's field — its first path segment
-// (business.foundingYear → business, team[3].title → team).
-function sectionKeyForGap(field: string): string {
-  return field.split(/[.[]/)[0]
 }
 
 // Focused "what's still genuinely missing" list. Driven by the curated gap
@@ -53,7 +47,7 @@ export default function MbpCompleteness({
                 {items.map(g => (
                   <li key={g.field} className="flex gap-1.5 text-sm font-body text-text-primary">
                     <span className="text-text-muted">•</span>
-                    <MbpSectionLink sectionKey={sectionKeyForGap(g.field)} label={g.label} />
+                    <MbpFillLink fieldPath={normalizeGapField(g.field)} label={g.label} />
                   </li>
                 ))}
               </ul>

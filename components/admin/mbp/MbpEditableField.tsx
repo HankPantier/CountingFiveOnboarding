@@ -1,7 +1,8 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatFieldValue } from '@/lib/mbp/build-document'
+import { MBP_FOCUS_EVENT } from '@/components/admin/mbp/focus-field'
 
 function isPrimitive(v: unknown): v is string | number | boolean {
   return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
@@ -59,6 +60,18 @@ export default function MbpEditableField({
     setDraft(toEditString(value))
     setEditing(true)
   }
+
+  // Enter edit mode when the "Still needed" list (or a deep link) targets this
+  // field — so filling a missing field is one click, not a hunt-then-click.
+  useEffect(() => {
+    function onFocus(e: Event) {
+      if ((e as CustomEvent<string>).detail === fieldPath) start()
+    }
+    window.addEventListener(MBP_FOCUS_EVENT, onFocus)
+    return () => window.removeEventListener(MBP_FOCUS_EVENT, onFocus)
+    // start closes over `value`; re-bind when it changes so the draft seeds correctly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldPath, value])
 
   async function commit() {
     setEditing(false)

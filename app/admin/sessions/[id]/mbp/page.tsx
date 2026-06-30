@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
 import MbpDocument from '@/components/admin/mbp/MbpDocument'
+import MbpDeepLinkFocus from '@/components/admin/mbp/MbpDeepLinkFocus'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
 import MbpSuggestions from '@/components/admin/mbp/MbpSuggestions'
 import MbpBackfillButton from '@/components/admin/mbp/MbpBackfillButton'
@@ -73,6 +74,7 @@ export default async function MbpPage({
 
   return (
     <main className="p-8 space-y-6">
+      <MbpDeepLinkFocus />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-heading font-bold text-brand-navy">Master Business Profile</h1>

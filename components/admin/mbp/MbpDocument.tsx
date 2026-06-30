@@ -20,7 +20,7 @@ function FieldRow({
 }) {
   const display = formatFieldValue(field.value)
   return (
-    <div className="flex items-start gap-3 py-1.5 border-b border-border-default last:border-0">
+    <div id={`mbp-field-${field.fieldPath}`} className="scroll-mt-6 flex items-start gap-3 py-1.5 border-b border-border-default last:border-0">
       <span className="text-text-secondary text-xs font-body w-40 flex-shrink-0 pt-0.5">
         {field.label}
         {overridden && <span className="ml-1 text-brand-cyan" title="Admin override">●</span>}

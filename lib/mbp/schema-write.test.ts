@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { deepSetPath, deepMerge, getByPath } from './schema-write'
+import { deepSetPath, deepMerge, getByPath, isPathFilled } from './schema-write'
+
+describe('isPathFilled', () => {
+  const obj = {
+    business: { name: 'Acme', tagline: '', foundingYear: '2005' },
+    brand: { hasBrandGuide: false, toneAdjectives: ['clear'] },
+    niches: [{ name: 'Dental', painPoints: '' }, { name: 'Legal', painPoints: 'compliance' }],
+  }
+  it('is true for a non-empty string', () => expect(isPathFilled(obj, 'business.name')).toBe(true))
+  it('is false for an empty string', () => expect(isPathFilled(obj, 'business.tagline')).toBe(false))
+  it('is false for a missing path', () => expect(isPathFilled(obj, 'business.pricing')).toBe(false))
+  it('is false for a default boolean (never a real answer)', () =>
+    expect(isPathFilled(obj, 'brand.hasBrandGuide')).toBe(false))
+  it('is true for a non-empty array', () => expect(isPathFilled(obj, 'brand.toneAdjectives')).toBe(true))
+  it('handles bracket array paths', () => {
+    expect(isPathFilled(obj, 'niches[0].painPoints')).toBe(false)
+    expect(isPathFilled(obj, 'niches[1].painPoints')).toBe(true)
+  })
+  it('handles dot array paths', () => {
+    expect(isPathFilled(obj, 'niches.1.painPoints')).toBe(true)
+  })
+})
 
 describe('deepSetPath', () => {
   it('sets a top-level scalar without touching siblings', () => {
