@@ -9,7 +9,7 @@ import { listTree, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 
-const IDEA_MODEL = 'claude-sonnet-4-6'
+const IDEA_MODEL = 'claude-sonnet-5'
 const DEFAULT_IDEA_COUNT = 9
 const SEEDED_IDEA_COUNT = 5
 

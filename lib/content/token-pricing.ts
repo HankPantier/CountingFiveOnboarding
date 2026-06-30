@@ -42,6 +42,10 @@ export type TokenContext = {
 // anywhere in the app must have an entry here.
 const PRICING: Record<string, { input: number; output: number }> = {
   'claude-opus-4-8': { input: 5, output: 25 },
+  // Sonnet 5 standard rate. Introductory pricing of $2/$10 applies through
+  // 2026-08-31 — kept at standard $3/$15 so spend never silently under-records
+  // when the intro period ends (slight over-estimate during the intro window).
+  'claude-sonnet-5': { input: 3, output: 15 },
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
 }

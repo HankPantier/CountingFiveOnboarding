@@ -9,7 +9,7 @@ import type { ExternalLink } from './link-checker'
 // is later fanned out to many clients. There is NO client/MBP context here on
 // purpose — per-client voice is applied downstream by generateResourceDraft,
 // once specific clients are selected.
-const REFINE_MODEL = 'claude-sonnet-4-6'
+const REFINE_MODEL = 'claude-sonnet-5'
 
 export type RefinedBlogIdea = {
   title: string

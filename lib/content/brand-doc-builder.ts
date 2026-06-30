@@ -105,7 +105,7 @@ RULES:
 
   try {
     const { text, usage } = await generateText({
-      model: anthropic('claude-sonnet-4-6'),
+      model: anthropic('claude-sonnet-5'),
       prompt,
       maxOutputTokens: 2500,
     })
@@ -116,7 +116,7 @@ RULES:
       sessionId: ctx?.sessionId,
       stage: 'brand',
       pageUrl: 'brand-doc',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       inputTokens: usage?.inputTokens,
       outputTokens: usage?.outputTokens,
     })

@@ -11,7 +11,7 @@ export async function generateMbpText(
 ): Promise<string | null> {
   try {
     const { text } = await generateText({
-      model: anthropic('claude-sonnet-4-6'),
+      model: anthropic('claude-sonnet-5'),
       system,
       prompt,
       maxOutputTokens,

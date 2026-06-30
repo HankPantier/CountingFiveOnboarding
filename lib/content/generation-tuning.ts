@@ -4,9 +4,11 @@ import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
 // pipeline. Kept here so the published-content model and the thinking/effort
 // settings live in one place rather than drifting across generator modules.
 
-// Opus 4.8 is reserved for client-facing published deliverables (page bodies
-// and the audit→session draft). Everything else stays on Sonnet/Haiku.
-export const PUBLISHED_CONTENT_MODEL = 'claude-opus-4-8'
+// Sonnet 5 is the writing-tuned tier used for client-facing published
+// deliverables (page bodies and the audit→session draft). Moved off Opus 4.8
+// (2026-06-30): Sonnet 5 is purpose-tuned for writing and far cheaper. It still
+// supports adaptive thinking + effort, so GENERATION_PROVIDER_OPTIONS applies.
+export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5'
 
 // Adaptive thinking + high effort raises quality on reasoning-heavy generation.
 // `display: 'omitted'` keeps the reasoning out of the response (these callers

@@ -12,7 +12,7 @@ import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
 import { asJson } from '@/lib/supabase/json-typed'
 
-const OUTLINE_MODEL = 'claude-sonnet-4-6'
+const OUTLINE_MODEL = 'claude-sonnet-5'
 
 // Strip scheme + trailing slash so a sitemap's http:// URL still matches the
 // crawler's final https:// URL for the same page.

@@ -11,7 +11,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 
 const RESOLVE_MODEL = 'claude-haiku-4-5-20251001'
-const ONEOFF_MODEL = 'claude-sonnet-4-6'
+const ONEOFF_MODEL = 'claude-sonnet-5'
 
 export type OneOffContext = { pageUrl?: string; teamMemberName?: string }
 export type OneOffOption = { label: string; text: string }

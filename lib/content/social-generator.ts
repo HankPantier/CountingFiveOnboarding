@@ -9,7 +9,7 @@ import { DRAFT_BRANCH, readFile, writeFile, FileNotFoundError } from '@/lib/gith
 import { splitFile } from '@/lib/editor/frontmatter'
 import type { SessionSchema } from '@/types/session-schema'
 
-const SOCIAL_MODEL = 'claude-sonnet-4-6'
+const SOCIAL_MODEL = 'claude-sonnet-5'
 
 export type SocialJson = {
   linkedin: string

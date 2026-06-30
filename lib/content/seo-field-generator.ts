@@ -5,7 +5,7 @@ import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
 
-const MODEL = 'claude-sonnet-4-6'
+const MODEL = 'claude-sonnet-5'
 
 export type SeoField = 'faq' | 'answer' | 'eeat' | 'links'
 

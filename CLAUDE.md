@@ -137,10 +137,14 @@ const model = [3, 4].includes(session.current_phase)
   : anthropic('claude-haiku-4-5-20251001')
 ```
 Tier map for everything else:
-- **Opus 4.8** (`claude-opus-4-8`) — published client-facing deliverables only: the page-body
-  generator (`lib/content/content-generator.ts`) and the audit→session draft
-  (`lib/session-draft/draft-from-audit.ts`, via the `model` override on `generateMbpJson`).
-- **Sonnet 4.6** — all other content/MBP/draft generation and the admin chats.
+- **Sonnet 5** (`claude-sonnet-5`) — all async content writing: the published page-body
+  generator (`lib/content/content-generator.ts`) and audit→session draft
+  (`lib/session-draft/draft-from-audit.ts`, via `PUBLISHED_CONTENT_MODEL`), plus outlines,
+  sitemap proposal, MBP/draft JSON & text, SEO fields, social, and resource generation. It is
+  writing-tuned and supports adaptive thinking + `effort` (intro pricing $2/$10 through
+  2026-08-31; the PRICING map carries the standard $3/$15). Replaced Opus 4.8 here on 2026-06-30.
+- **Sonnet 4.6** (`claude-sonnet-4-6`) — interactive chats only: the client intake chat
+  (`/api/chat` phases 3/4) and the admin audit/MBP/editor chats.
 - **Haiku 4.5** — phase 1/2/5/6 intake chat and classification helpers (brand-fit, keyword,
   reverse-link, oneoff resolve).
 

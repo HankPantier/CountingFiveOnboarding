@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { recordTokenUsage, type TokenContext } from '@/lib/content/token-usage'
 
-const MBP_JSON_MODEL = 'claude-sonnet-4-6'
+const MBP_JSON_MODEL = 'claude-sonnet-5'
 
 // JSON-mode generation matching the codebase convention (generateText +
 // fenced-JSON parse, e.g. lib/content/brand-fit.ts) rather than the AI SDK's

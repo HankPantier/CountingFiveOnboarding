@@ -28,7 +28,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { ExternalLink } from './link-checker'
 
-const DRAFT_MODEL = 'claude-sonnet-4-6'
+const DRAFT_MODEL = 'claude-sonnet-5'
 
 type DraftFrontmatter = {
   title: string
