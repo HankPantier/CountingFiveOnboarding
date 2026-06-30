@@ -6,7 +6,7 @@ import { buildFirmContext } from './brand-voice'
 import { cleanHeading } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
-import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
+import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
@@ -138,16 +138,17 @@ HEADING RULES (h1 and every h2):
 - Never "What X Actually Means", "Beyond the …", "The Importance of …", "A Closer Look", "Demystifying/Decoding/Unpacking", or listicle titles ("5 Reasons …")
 - No dashes (— or –) in any heading`
 
-  const { text, usage } = await generateText({
+  const { text, usage, finishReason } = await generateText({
     model: anthropic(OUTLINE_MODEL),
     prompt,
-    // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
-    maxOutputTokens: 3000,
-    providerOptions: GENERATION_PROVIDER_OPTIONS,
+    // Ample headroom for adaptive-thinking tokens ahead of the JSON answer. 3000
+    // truncated the answer once thinking ran, collapsing pages into the fallback.
+    maxOutputTokens: 8000,
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
   })
 
   console.warn(
-    `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
+    `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} finish=${finishReason}`
   )
   checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
   await recordTokenUsage({
@@ -172,9 +173,13 @@ HEADING RULES (h1 and every h2):
       console.warn(`[outline-gen] Non-array sections for ${pageUrl} — using fallback`)
       outline.sections = [{ h2: 'Overview', description: 'Add content here', word_count: 300 }]
     }
-  } catch {
-    // Fallback outline
-    console.warn(`[outline-gen] Failed to parse outline JSON for ${pageUrl}, using fallback`)
+  } catch (err) {
+    // A 'length' finishReason means the model hit maxOutputTokens before closing
+    // the JSON — surface it so truncation is diagnosable rather than silently
+    // collapsing into the single-section placeholder.
+    console.warn(
+      `[outline-gen] Failed to parse outline JSON for ${pageUrl} (finish=${finishReason}): ${err instanceof Error ? err.message : String(err)} — using fallback`
+    )
     outline = {
       h1: pageTitle,
       sections: [{ h2: 'Overview', description: 'Add content here', word_count: 300 }],
@@ -240,40 +245,92 @@ export async function runOutlineGeneration(
     return
   }
 
-  // Process sequentially to manage rate limits
-  for (const outline of outlines) {
-    // Skip if already generated (has h1)
-    if (outline.h1) continue
+  // Process in small parallel batches with a soft deadline + self-chain, mirroring
+  // the page-body generator (runContentGeneration). A single 120s/300s invocation
+  // could not finish a 40+ page job sequentially and got killed mid-run, leaving
+  // most rows with null h1 ("still generating") and nothing to resume them. The
+  // `!o.h1` filter makes this idempotent, so a chained continuation picks up
+  // exactly where the prior invocation was cut off.
+  const BATCH_SIZE = 3
+  const SOFT_DEADLINE_MS = 240_000
+  const startedAt = Date.now()
+  let completedThisRun = 0
 
-    try {
-      await generateOutlineForPage(
-        outline.id,
-        outline.page_title,
-        outline.page_url,
-        contentJobId,
-        sessionId,
-        schema,
-        palette,
-        auditResult
-      )
-    } catch (err) {
-      console.error(`[outline-gen] Error generating outline for ${outline.page_url}:`, err)
-      // Store fallback
-      await supabase
-        .from('page_outlines')
-        .update({
-          h1: outline.page_title,
-          sections: asJson([{ h2: 'Overview', description: 'Add content here', word_count: 300 }]),
-          admin_notes: 'Auto-generated fallback — generation failed. Admin must edit before approving.',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', outline.id)
+  const pending = outlines.filter(o => !o.h1)
+  for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+    if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
+      console.warn(`[outline-gen] Soft deadline reached after ${i} pages, chaining continuation.`)
+      break
     }
+    const batch = pending.slice(i, i + BATCH_SIZE)
+    await Promise.all(batch.map(async (outline) => {
+      try {
+        await generateOutlineForPage(
+          outline.id,
+          outline.page_title,
+          outline.page_url,
+          contentJobId,
+          sessionId,
+          schema,
+          palette,
+          auditResult
+        )
+      } catch (err) {
+        console.error(`[outline-gen] Error generating outline for ${outline.page_url}:`, err)
+        // Store fallback
+        await supabase
+          .from('page_outlines')
+          .update({
+            h1: outline.page_title,
+            sections: asJson([{ h2: 'Overview', description: 'Add content here', word_count: 300 }]),
+            admin_notes: 'Auto-generated fallback — generation failed. Admin must edit before approving.',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', outline.id)
+      }
+      // A fallback write still sets h1, so the row is no longer "still generating"
+      // and this counts as forward progress for the chain guard below.
+      completedThisRun += 1
+    }))
+  }
+
+  // Re-query the true remaining count so a chained continuation reasons about the
+  // live state, not this invocation's stale snapshot.
+  const { data: remaining } = await supabase
+    .from('page_outlines')
+    .select('id')
+    .eq('content_job_id', contentJobId)
+    .is('h1', null)
+  const remainingCount = remaining?.length ?? 0
+
+  if (remainingCount > 0) {
+    // Guard against an infinite cascade: only chain when this run made progress.
+    if (completedThisRun === 0) {
+      console.warn(`[outline-gen] ${remainingCount} pages remain but no progress this run — not chaining.`)
+      return
+    }
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+    const cronSecret = process.env.CRON_SECRET
+    if (!baseUrl || !cronSecret) {
+      console.warn('[outline-gen] Auto-chain skipped — NEXT_PUBLIC_APP_URL or CRON_SECRET missing.')
+      return
+    }
+    const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+    try {
+      const res = await fetch(`${url}/api/content-jobs/${contentJobId}/outlines/generate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${cronSecret}` },
+      })
+      console.warn(`[outline-gen] Chained continuation: completed=${completedThisRun} this run, status=${res.status}`)
+    } catch (err) {
+      console.error('[outline-gen] Auto-chain self-call failed:', err)
+    }
+    return
   }
 
   console.warn(`[content-job] Outlines generated for job=${contentJobId}`)
 
-  // Send email notification
+  // Final invocation — every page is written. Send the "ready for review" email once.
   const firmName = schema.business?.name ?? 'Unknown firm'
   if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
     try {
