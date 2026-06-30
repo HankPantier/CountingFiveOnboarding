@@ -100,12 +100,36 @@ export default function DesignSystemPhase({
 
   async function handleLogoUpload(file: File) {
     setUploading(true); setUploadError(null)
+    // Upload directly to storage via a presigned URL (bypasses the 4.5MB
+    // serverless body cap), then confirm server-side. Responses are parsed
+    // defensively so a non-JSON error page never surfaces as a parse error.
+    const readJson = async (res: Response): Promise<{ error?: string; [k: string]: unknown } | null> => {
+      try { return await res.json() } catch { return null }
+    }
+    const mimeType = file.type || (file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream')
     try {
-      const body = new FormData()
-      body.append('file', file)
-      const res = await fetch(`/api/sessions/${sessionId}/logo`, { method: 'POST', body })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Logo upload failed')
+      const presignRes = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, fileName: file.name, mimeType, fileSize: file.size, assetCategory: 'logo' }),
+      })
+      const presign = await readJson(presignRes)
+      if (!presignRes.ok) throw new Error(presign?.error ?? `Could not start upload (HTTP ${presignRes.status})`)
+      const signedUrl = presign?.signedUrl as string | undefined
+      const storagePath = presign?.storagePath as string | undefined
+      if (!signedUrl || !storagePath) throw new Error('Invalid upload response')
+
+      const putRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: file })
+      if (!putRes.ok) throw new Error(`Upload to storage failed (HTTP ${putRes.status})`)
+
+      const confirmRes = await fetch(`/api/sessions/${sessionId}/logo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storagePath, fileName: file.name }),
+      })
+      const confirm = await readJson(confirmRes)
+      if (!confirmRes.ok) throw new Error(confirm?.error ?? `Logo save failed (HTTP ${confirmRes.status})`)
+
       setLogoPreview(prev => {
         if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
         return URL.createObjectURL(file)
@@ -173,8 +197,8 @@ export default function DesignSystemPhase({
             </p>
             <p className="text-xs text-text-muted font-body mt-0.5">
               {fromLogo === false
-                ? 'No logo yet — upload one to derive the palette, or edit swatches below.'
-                : 'Palette derived from the logo. Re-upload to regenerate, or edit swatches below.'}
+                ? 'No logo yet — upload one, then generate the palette, or edit swatches below.'
+                : 'Palette derived from the logo. Re-generate any time, or edit swatches below.'}
               {' '}PNG, JPG, WebP, or SVG.
             </p>
             {uploadError && <p className="text-xs text-error font-body mt-1">{uploadError}</p>}
@@ -194,6 +218,21 @@ export default function DesignSystemPhase({
             />
           </label>
         </div>
+        {logoPreview && (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void generatePalette()}
+              disabled={loading || uploading || saving}
+              className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white transition-all hover:bg-brand-navy-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Generating…' : 'Generate color palette from logo'}
+            </button>
+            <span className="text-xs text-text-muted font-body">
+              Pulls primary &amp; secondary from the logo, with derived complementary, action, and WCAG-AA neutrals.
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {SWATCH_KEYS.map(key => (
             <SwatchEditor

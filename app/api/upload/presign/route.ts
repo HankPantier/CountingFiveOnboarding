@@ -2,7 +2,10 @@ import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 
-const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'application/pdf']
+// image/svg+xml is allowed here so the admin logo flow can presign an SVG; the
+// bytes are validated/sanitized at its own confirm step (the generic
+// /api/upload/confirm still rejects SVG via magic-byte checks).
+const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'application/pdf', 'image/svg+xml']
 const MAX_BYTES = 300 * 1024 * 1024
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
