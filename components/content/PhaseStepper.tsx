@@ -27,6 +27,7 @@ export default function PhaseStepper({
   existingPalette,
   existingTokens,
   brand,
+  logoUrl,
   confirmedPageCount,
   navConfig,
   confirmedSitemap,
@@ -37,6 +38,7 @@ export default function PhaseStepper({
   existingPalette: PaletteData | null
   existingTokens: DesignTokens | null
   brand: SessionSchema['brand']
+  logoUrl: string | null
   confirmedPageCount: number
   navConfig: NavJson | null
   confirmedSitemap: SitemapEntry[]
@@ -57,6 +59,7 @@ export default function PhaseStepper({
               existingPalette={existingPalette}
               existingTokens={existingTokens}
               brand={brand}
+              logoUrl={logoUrl}
               isLocked={isComplete}
             />
           )

@@ -36,6 +36,7 @@ export default function DesignSystemPhase({
   existingPalette,
   existingTokens,
   brand,
+  logoUrl = null,
   isLocked = false,
 }: {
   sessionId: string
@@ -43,6 +44,7 @@ export default function DesignSystemPhase({
   existingPalette: PaletteData | null
   existingTokens: DesignTokens | null
   brand: SessionSchema['brand'] | undefined
+  logoUrl?: string | null
   isLocked?: boolean
 }) {
   const [palette, setPalette] = useState<PaletteData | null>(existingPalette)
@@ -50,6 +52,9 @@ export default function DesignSystemPhase({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fromLogo, setFromLogo] = useState<boolean | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(logoUrl)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   // Computed suggestion (changes if palette changes).
   const suggested = suggestDesignTokens(brand, palette)
@@ -93,6 +98,26 @@ export default function DesignSystemPhase({
     if (!palette) generatePalette()
   }, [palette, generatePalette])
 
+  async function handleLogoUpload(file: File) {
+    setUploading(true); setUploadError(null)
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const res = await fetch(`/api/sessions/${sessionId}/logo`, { method: 'POST', body })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Logo upload failed')
+      setLogoPreview(prev => {
+        if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev)
+        return URL.createObjectURL(file)
+      })
+      await generatePalette()
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Logo upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function saveAll() {
     if (!palette) return
     setSaving(true); setError(null)
@@ -133,11 +158,42 @@ export default function DesignSystemPhase({
       {/* Sub-step 1: Palette */}
       <section className="space-y-3">
         <h3 className="text-lg font-semibold font-heading">1. Color Palette</h3>
-        {fromLogo === false && (
-          <div className="text-sm text-text-muted font-body">
-            No logo found — using neutral defaults. Edit any swatch below.
+        <div className="flex items-center gap-4 rounded-lg border border-border-default bg-surface-card p-3">
+          <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-border-default bg-surface-subtle">
+            {logoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoPreview} alt="Logo" className="max-h-full max-w-full object-contain" />
+            ) : (
+              <span className="text-[10px] text-text-muted font-body text-center px-1">No logo</span>
+            )}
           </div>
-        )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-heading font-semibold text-text-primary">
+              {logoPreview ? 'Logo' : 'Upload a logo'}
+            </p>
+            <p className="text-xs text-text-muted font-body mt-0.5">
+              {fromLogo === false
+                ? 'No logo yet — upload one to derive the palette, or edit swatches below.'
+                : 'Palette derived from the logo. Re-upload to regenerate, or edit swatches below.'}
+              {' '}PNG, JPG, WebP, or SVG.
+            </p>
+            {uploadError && <p className="text-xs text-error font-body mt-1">{uploadError}</p>}
+          </div>
+          <label className={`flex-shrink-0 rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white transition-all hover:bg-brand-cyan/90 ${uploading || saving ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+            {uploading ? 'Uploading…' : logoPreview ? 'Replace logo' : 'Upload logo'}
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+              className="hidden"
+              disabled={uploading || saving}
+              onChange={e => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (f) void handleLogoUpload(f)
+              }}
+            />
+          </label>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {SWATCH_KEYS.map(key => (
             <SwatchEditor

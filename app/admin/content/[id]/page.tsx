@@ -88,6 +88,24 @@ export default async function ContentWorkflowPage({
   const confirmedPageCount = confirmedSitemap.length
   const navConfig = (contentJob?.nav_config ?? null) as NavJson | null
 
+  // Current logo (if any) for the palette step's preview — signed since the
+  // session-assets bucket is private.
+  const { data: logoAsset } = await supabase
+    .from('assets')
+    .select('storage_path')
+    .eq('session_id', id)
+    .eq('asset_category', 'logo')
+    .order('uploaded_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  let logoUrl: string | null = null
+  if (logoAsset?.storage_path) {
+    const { data: signed } = await supabase.storage
+      .from('session-assets')
+      .createSignedUrl(logoAsset.storage_path, 3600)
+    logoUrl = signed?.signedUrl ?? null
+  }
+
   return (
     <main className="p-8 max-w-[1200px] mx-auto">
       <div className="mb-8">
@@ -136,6 +154,7 @@ export default async function ContentWorkflowPage({
         existingPalette={existingPalette}
         existingTokens={existingTokens}
         brand={brand}
+        logoUrl={logoUrl}
         confirmedPageCount={confirmedPageCount}
         navConfig={navConfig}
         confirmedSitemap={confirmedSitemap}
