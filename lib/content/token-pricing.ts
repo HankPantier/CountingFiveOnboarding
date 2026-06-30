@@ -8,6 +8,7 @@ export type TokenTask = 'onboarding' | 'audit' | 'content'
 
 export type TokenStage =
   | 'keyword'
+  | 'sitemap'
   | 'outline'
   | 'content'
   | 'idea'

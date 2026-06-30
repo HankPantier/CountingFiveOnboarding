@@ -8,6 +8,7 @@ import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS } from '@/lib/cont
 import { buildCorpus, type CorpusPage } from '@/lib/audit/corpus'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
 import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-plan'
+import { proposeSitemap } from '@/lib/content/sitemap-proposer'
 import { enrichSchemaFromIntelligence } from './enrich-from-intelligence'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
@@ -272,6 +273,16 @@ export async function draftSessionFromAudit(
   // The intelligence layer fills niches, reputation, affiliations, and the
   // reserved content-gap buckets so the chat starts pre-informed.
   if (result.intelligence) enrichSchemaFromIntelligence(schema, result.intelligence)
+
+  // Now that niches/services are populated, propose a differentiated, hierarchical
+  // sitemap (new niche/service pages + parent grouping) in place of the flat,
+  // update-only deterministic list. Falls back to the deterministic plan internally
+  // on AI failure; the try/catch guards the whole draft against a thrown call.
+  try {
+    schema.proposed_sitemap = await proposeSitemap(schema, result, { auditId })
+  } catch (err) {
+    console.warn('[draft-from-audit] sitemap proposal failed, keeping deterministic plan:', err)
+  }
 
   const gaps = computePhase4Gaps(schema)
   const coverage: DraftCoverage = {
