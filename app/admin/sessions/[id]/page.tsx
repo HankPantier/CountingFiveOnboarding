@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { computeCompleteness } from '@/lib/mbp/completeness'
 import StatusBanner from '@/components/admin/StatusBanner'
 import SchemaViewer from '@/components/admin/SchemaViewer'
 import AssetsViewer from '@/components/admin/AssetsViewer'
@@ -14,6 +15,8 @@ import SendReminderButton from '@/components/admin/SendReminderButton'
 import CopyLinkButton from '@/components/admin/CopyLinkButton'
 import DeleteSessionButton from '@/components/admin/DeleteSessionButton'
 import { ReauditButton } from '@/components/admin/audit/ReauditButton'
+import type { SessionSchema } from '@/types/session-schema'
+import type { GapItem } from '@/types/gap-item'
 
 export default async function SessionDetailPage({
   params,
@@ -43,6 +46,17 @@ export default async function SessionDetailPage({
     ])
 
   if (!session) notFound()
+
+  // Surface still-missing required fields once a session is past the chat, with
+  // a direct link to fill the first one. The MBP page reconciles against live
+  // values, so this stays accurate as fields get filled.
+  const { tier1Open } = computeCompleteness(
+    (session.schema_data as SessionSchema) ?? {},
+    (session.gap_list as GapItem[]) ?? [],
+  )
+  const showFillCta =
+    (session.status === 'completed' || session.status === 'approved') && tier1Open.length > 0
+  const firstMissingPath = tier1Open[0]?.field.replace(/\[(\d+)\]/g, '.$1')
 
   // Sign URLs for every asset server-side so the components never need to
   // know the bucket is private. 1-hour expiry covers a typical admin
@@ -91,6 +105,20 @@ export default async function SessionDetailPage({
       {/* Right panel: schema + actions */}
       <div className="md:w-1/2 overflow-y-auto p-6">
         <StatusBanner session={session} />
+        {showFillCta && (
+          <Link
+            href={`/admin/sessions/${id}/mbp#mbp-field-${firstMissingPath}`}
+            className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-2.5 transition-colors hover:bg-warning/15"
+          >
+            <span className="text-sm font-body text-text-primary">
+              <span className="font-heading font-semibold">{tier1Open.length}</span> required field
+              {tier1Open.length === 1 ? '' : 's'} still missing
+            </span>
+            <span className="text-sm font-heading font-semibold text-brand-cyan whitespace-nowrap">
+              Fill them &rarr;
+            </span>
+          </Link>
+        )}
         {sourceAudit && (
           <Link
             href={`/admin/audits/${sourceAudit.id}`}

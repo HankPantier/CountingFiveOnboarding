@@ -4,7 +4,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { trimMessages } from '@/lib/agent/trim-messages'
-import { deepMerge } from '@/lib/mbp/schema-write'
+import { deepMerge, isPathFilled } from '@/lib/mbp/schema-write'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { z } from 'zod'
@@ -20,31 +20,6 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Per-phase input-token targets from CLAUDE.md, checked against ACTUAL usage in
 // onFinish (the request-time chars/4 estimate only catches the 5k hard ceiling).
 const PHASE_INPUT_BUDGET: Record<number, number> = { 1: 1000, 2: 1000, 3: 3500, 4: 3000, 5: 1500, 6: 1500 }
-
-// Resolves a gap path against the schema. Unlike mbp-parser's getPath this
-// understands array indices (niches[0].painPoints) so per-niche gaps can be
-// auto-resolved when their field is filled.
-function getByPath(obj: unknown, path: string): unknown {
-  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean)
-  let cur: unknown = obj
-  for (const p of parts) {
-    if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[p]
-    else return undefined
-  }
-  return cur
-}
-
-// Mirrors mbp-parser isPopulated semantics: a default `false` boolean is NOT a
-// real answer, so boolean gaps (e.g. brand.hasBrandGuide) resolve only via an
-// explicit resolvedGaps signal, never by auto-fill.
-function isFieldFilled(schema: Record<string, unknown>, field: string): boolean {
-  const v = getByPath(schema, field)
-  if (v === undefined || v === null) return false
-  if (typeof v === 'string') return v.trim().length > 0
-  if (Array.isArray(v)) return v.length > 0
-  if (typeof v === 'boolean') return false
-  return true
-}
 
 // Per-session abuse cap: the processing flag serializes concurrent calls, but
 // nothing bounded sequential volume — a leaked session URL could drain the
@@ -266,7 +241,7 @@ async function updateSessionSchema(
   // not echoing the exact gap path — notably positional niche paths
   // (niches[2].painPoints) that drift if niches are reordered mid-chat.
   const updatedGaps = currentGaps.map(g =>
-    g.resolved || explicit.has(g.field) || isFieldFilled(mergedSchema, g.field)
+    g.resolved || explicit.has(g.field) || isPathFilled(mergedSchema, g.field)
       ? { ...g, resolved: true }
       : g
   )

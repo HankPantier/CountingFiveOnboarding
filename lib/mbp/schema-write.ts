@@ -48,6 +48,25 @@ export function getByPath(obj: Record<string, unknown>, path: string): unknown {
   }, obj)
 }
 
+// True when a dotted/bracketed path resolves to a non-empty value. Mirrors the
+// gap "is this filled?" semantics: empty string / null / [] count as unfilled,
+// and a default `false` boolean is NOT a real answer (so boolean gaps resolve
+// only via an explicit signal, never auto-fill). Accepts both `niches[0].x` and
+// `niches.0.x` forms.
+export function isPathFilled(obj: unknown, path: string): boolean {
+  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean)
+  let cur: unknown = obj
+  for (const p of parts) {
+    if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[p]
+    else return false
+  }
+  if (cur === undefined || cur === null) return false
+  if (typeof cur === 'string') return cur.trim().length > 0
+  if (Array.isArray(cur)) return cur.length > 0
+  if (typeof cur === 'boolean') return false
+  return true
+}
+
 // Recursively merge source into target. Plain objects merge deeply; arrays
 // and primitives replace.
 export function deepMerge(
