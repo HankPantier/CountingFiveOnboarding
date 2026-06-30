@@ -50,7 +50,7 @@ export async function POST(
   const updatedSchema: SessionSchema = { ...schema, proposed_sitemap: pages }
   const { error: schemaErr } = await supabase
     .from('sessions')
-    .update({ schema_data: asJson(updatedSchema), updated_at: new Date().toISOString() })
+    .update({ schema_data: asJson(updatedSchema) })
     .eq('id', sessionId)
   if (schemaErr) {
     return NextResponse.json({ error: schemaErr.message }, { status: 500 })
