@@ -258,6 +258,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
       prompt,
       maxOutputTokens,
       providerOptions,
+      // Ride out transient overload/rate-limit (529/429) on big batched jobs
+      // with the SDK's built-in exponential backoff instead of failing the page.
+      maxRetries: 4,
     })
 
     console.warn(
@@ -415,7 +418,10 @@ export async function generateSinglePage(
   // claimed for (re-)generation.
   const { data: locked } = await supabase
     .from('generated_pages')
-    .update({ generation_status: 'running' })
+    // Stamp when generation actually started so the stuck-job sweep judges
+    // "stuck" by this, not created_at (which is set at sitemap-confirm and made
+    // the sweep falsely error healthy in-flight pages on long jobs).
+    .update({ generation_status: 'running', generation_started_at: new Date().toISOString() })
     .eq('id', genPage.id)
     .neq('generation_status', 'running')
     .select('id')

@@ -22,9 +22,10 @@ export async function GET(req: Request) {
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString()
 
   // research_results uses `created_at` (no updated_at column); we treat a
-  // row stuck in 'running' for >15 min as orphaned. generated_pages has
-  // `created_at` too; the running flag is set inside generateSinglePage
-  // so the same heuristic applies.
+  // row stuck in 'running' for >15 min as orphaned. generated_pages sweeps on
+  // `generation_started_at` (stamped when the page is claimed) — NOT created_at,
+  // which is set at sitemap-confirm and made long jobs falsely error their
+  // healthy in-flight pages every cron tick.
   // resource_ideas sweeps on updated_at: the draft lock bumps it when claimed,
   // so it reflects when the in-flight run actually started (rows are created
   // at brainstorm time, long before drafting).
@@ -43,7 +44,7 @@ export async function GET(req: Request) {
       .from('generated_pages')
       .update({ generation_status: 'error', generation_error: 'Generation timed out (swept by cron after >15 min running)' })
       .eq('generation_status', 'running')
-      .lt('created_at', cutoff)
+      .lt('generation_started_at', cutoff)
       .select('id'),
     supabase
       .from('resource_ideas')
@@ -95,6 +96,50 @@ export async function GET(req: Request) {
     }
   }
 
+  // Auto-resume content generation that stalled (Vercel killed the function
+  // before the self-chain fired, or the chain's progress-guard stopped it).
+  // Mirror the WHOIS retry: re-trigger /generate for any job that still has
+  // PENDING (never-attempted) pages and nothing currently running. Keyed on
+  // 'pending' so genuinely-failed 'error' pages aren't auto-retried forever —
+  // those surface in the UI for manual retry. The job's atomic per-page claim
+  // and complete-skip make a re-trigger idempotent if a run is actually healthy.
+  const { data: liveGen } = await supabase
+    .from('generated_pages')
+    .select('content_job_id, generation_status')
+    .in('generation_status', ['pending', 'running'])
+
+  const jobCounts = new Map<string, { pending: number; running: number }>()
+  for (const p of liveGen ?? []) {
+    const c = jobCounts.get(p.content_job_id) ?? { pending: 0, running: 0 }
+    if (p.generation_status === 'running') c.running++
+    else c.pending++
+    jobCounts.set(p.content_job_id, c)
+  }
+  const resumableJobs = [...jobCounts.entries()]
+    .filter(([, c]) => c.pending > 0 && c.running === 0)
+    .map(([jobId]) => jobId)
+    .slice(0, 5)
+
+  let generationResumed = 0
+  const resumeBase = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+  if (resumeBase && resumableJobs.length) {
+    const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
+    for (const jobId of resumableJobs) {
+      try {
+        const res = await fetch(`${url}/api/content-jobs/${jobId}/generate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+        if (res.ok) generationResumed++
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] content auto-resume failed for', jobId, err)
+      }
+    }
+    if (generationResumed) {
+      console.warn(`[sweep-stuck-jobs] content-generation auto-resumed jobs=${generationResumed}`)
+    }
+  }
+
   const researchSwept = research.data?.length ?? 0
   const pagesSwept = pages.data?.length ?? 0
   const ideasSwept = ideas.data?.length ?? 0
@@ -143,5 +188,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, whoisRetried, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, whoisRetried, generationResumed, cutoff })
 }

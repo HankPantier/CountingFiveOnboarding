@@ -16,6 +16,7 @@ function makePage(overrides: Partial<GeneratedPage>): GeneratedPage {
     eeat_signals: null,
     faq_block: null,
     generation_error: null,
+    generation_started_at: null,
     generation_status: 'complete',
     hero_block: 'page-header',
     hero_image: null,
