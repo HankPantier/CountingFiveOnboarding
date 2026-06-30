@@ -41,7 +41,7 @@ export async function GET(req: Request) {
       .select('id'),
     supabase
       .from('generated_pages')
-      .update({ generation_status: 'error' })
+      .update({ generation_status: 'error', generation_error: 'Generation timed out (swept by cron after >15 min running)' })
       .eq('generation_status', 'running')
       .lt('created_at', cutoff)
       .select('id'),

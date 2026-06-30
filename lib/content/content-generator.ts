@@ -640,6 +640,7 @@ export async function generateSinglePage(
         word_count_target: wcTarget || null,
         admin_approved_content: false,  // re-review required after every generation
         generation_status: 'complete',
+        generation_error: null,  // clear any prior failure on a successful (re)generation
       })
       .eq('id', genPage.id)
 
@@ -650,7 +651,8 @@ export async function generateSinglePage(
     const message = err instanceof Error ? err.message : String(err)
     await supabase
       .from('generated_pages')
-      .update({ generation_status: 'error' })
+      // Persist the reason (capped) so the admin UI can show why this page failed.
+      .update({ generation_status: 'error', generation_error: message.slice(0, 2000) })
       .eq('id', genPage.id)
     return { status: 'error', pageUrl: outline.page_url, error: message }
   }

@@ -8,6 +8,7 @@ type PageStatus = {
   url: string
   title: string
   status: string
+  errorMessage?: string | null
   parent?: string
   approved?: boolean
   needsClientReview?: boolean
@@ -83,6 +84,7 @@ export default function GenerationPhase({
   const [restarting, setRestarting] = useState(false)
   const [restartError, setRestartError] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [showErrors, setShowErrors] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -173,6 +175,20 @@ export default function GenerationPhase({
     }
   }
 
+  // Retry a failed page: same regenerate endpoint, but no "replace approved
+  // content" confirm since an errored page has nothing worth keeping.
+  const retryPage = async (page: PageStatus) => {
+    setAction(`regen:${page.id}`, true)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}/regenerate`, {
+        method: 'POST',
+      })
+      if (res.ok) setPollNonce(n => n + 1)
+    } finally {
+      setAction(`regen:${page.id}`, false)
+    }
+  }
+
   const regenerate = async (page: PageStatus) => {
     const warning = page.approved
       ? `Regenerate "${page.title}"? The current approved content will be replaced and approval reset.`
@@ -239,7 +255,19 @@ export default function GenerationPhase({
           </span>
           <span className="text-xs font-body text-text-muted">
             {isRunning ? 'Generating...' : 'Complete'}
-            {status.error > 0 && ` · ${status.error} error${status.error !== 1 ? 's' : ''}`}
+            {status.error > 0 && (
+              <>
+                {' · '}
+                <button
+                  type="button"
+                  onClick={() => setShowErrors(v => !v)}
+                  className="text-error font-semibold hover:underline"
+                  title="Show why these pages failed and retry them"
+                >
+                  {status.error} error{status.error !== 1 ? 's' : ''} {showErrors ? '▲' : '▾'}
+                </button>
+              </>
+            )}
           </span>
         </div>
         <div className="w-full h-2 bg-surface-subtle rounded-full overflow-hidden">
@@ -251,6 +279,54 @@ export default function GenerationPhase({
           />
         </div>
       </div>
+
+      {showErrors && status.error > 0 && (
+        <div className="border border-error/30 bg-error/5 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-heading font-semibold text-error">
+              Failed pages ({status.error})
+            </span>
+            <button
+              type="button"
+              onClick={restartGeneration}
+              disabled={restarting}
+              className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Re-run generation for every failed page at once"
+            >
+              {restarting ? 'Retrying…' : 'Retry all failed'}
+            </button>
+          </div>
+          {status.pages.filter(p => p.status === 'error').map(page => {
+            const retryBusy = pendingActions.has(`regen:${page.id}`)
+            return (
+              <div
+                key={page.id}
+                className="text-xs font-body border-t border-error/15 pt-2 first:border-t-0 first:pt-0"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-text-primary flex-1 truncate" title={page.title}>
+                    {page.title}
+                  </span>
+                  <span className="font-mono text-text-muted truncate max-w-[40%]" title={page.url}>
+                    {page.url}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => retryPage(page)}
+                    disabled={retryBusy}
+                    className="text-brand-cyan hover:text-brand-navy font-heading font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                  >
+                    {retryBusy ? '…' : 'Retry'}
+                  </button>
+                </div>
+                <p className="text-error mt-0.5 font-mono break-words whitespace-pre-wrap">
+                  {page.errorMessage || 'No error detail recorded (page failed before error tracking — retry to capture the reason).'}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="max-h-[400px] overflow-y-auto space-y-1">
         {(() => {
