@@ -255,9 +255,10 @@ export async function draftSessionFromAudit(
   const model = await generateMbpJson<DraftModel>(
     buildPrompt(pages, signals),
     validateDraftModel,
-    // Opus + adaptive thinking: extra output headroom for reasoning before the
-    // large draft-schema JSON answer.
-    10000,
+    // Adaptive thinking spends output tokens on reasoning before the large
+    // draft-schema JSON answer; 16000 leaves room so it doesn't truncate under
+    // Sonnet 5's effort:'high' thinking + newer (heavier) tokenizer.
+    16000,
     { task: 'onboarding', stage: 'mbp', auditId },
     { model: PUBLISHED_CONTENT_MODEL, providerOptions: GENERATION_PROVIDER_OPTIONS },
   )

@@ -21,6 +21,17 @@ export const GENERATION_PROVIDER_OPTIONS = {
   } satisfies AnthropicProviderOptions,
 }
 
+// Page-body generation: a large markdown+metadata JSON answer. `effort: 'high'`
+// thinking consumed too much of the output budget and truncated the JSON (parse
+// failure → raw text stored). Medium effort keeps strong writing quality while
+// leaving room for the full answer; the call also raises maxOutputTokens.
+export const CONTENT_PROVIDER_OPTIONS = {
+  anthropic: {
+    thinking: { type: 'adaptive', display: 'omitted' },
+    effort: 'medium',
+  } satisfies AnthropicProviderOptions,
+}
+
 // Outline generation is a small, structural JSON task — it does not need the
 // high-effort reasoning the page-body generator uses. High effort against a
 // tight output budget starved the JSON answer (truncated → parse failure →

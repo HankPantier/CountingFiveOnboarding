@@ -9,7 +9,7 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { countWords, targetWordCount } from './word-count-validator'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
-import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
+import { PUBLISHED_CONTENT_MODEL, CONTENT_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -245,87 +245,113 @@ Default to "page-header" if uncertain. Use "hero" only on the homepage and high-
 
 ${ANTI_SLOP_RULES}${retryNote}`
 
-  const { text, usage } = await generateText({
-    model: anthropic(CONTENT_MODEL),
-    prompt,
-    // Headroom: adaptive thinking spends output tokens on reasoning before the
-    // JSON answer, so this is larger than the answer alone would need.
-    maxOutputTokens: 8000,
-    providerOptions: GENERATION_PROVIDER_OPTIONS,
-  })
+  // One generation attempt: call the model, record usage, and try to parse the
+  // JSON answer. Returns the parsed result, or { ok:false } carrying the raw text
+  // + finishReason so the caller can retry or fall back. Factored so the retry
+  // path reuses identical parsing.
+  const attempt = async (
+    maxOutputTokens: number,
+    providerOptions: Parameters<typeof generateText>[0]['providerOptions']
+  ): Promise<{ ok: true; result: GeneratedResult } | { ok: false; text: string; finishReason: string }> => {
+    const { text, usage, finishReason } = await generateText({
+      model: anthropic(CONTENT_MODEL),
+      prompt,
+      maxOutputTokens,
+      providerOptions,
+    })
 
-  console.warn(
-    `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
+    console.warn(
+      `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} finish=${finishReason}`
+    )
+    checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
+    await recordTokenUsage({
+      task: 'content',
+      contentJobId,
+      sessionId,
+      stage: 'content',
+      pageUrl,
+      model: CONTENT_MODEL,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    })
+
+    try {
+      const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
+      const parsed = JSON.parse(cleaned)
+      return {
+        ok: true,
+        result: {
+          content: parsed.content ?? '',
+          metadata: {
+            meta_title: parsed.metadata?.meta_title ?? pageTitle,
+            meta_description: parsed.metadata?.meta_description ?? '',
+            target_keyword: parsed.metadata?.target_keyword ?? targetKeyword,
+            secondary_keywords: parsed.metadata?.secondary_keywords ?? secondaryKeywords,
+            url_slug: parsed.metadata?.url_slug ?? pageUrl,
+            canonical_url: parsed.metadata?.canonical_url ?? '',
+            answer_block: parsed.metadata?.answer_block ?? '',
+            schema_markup_type: parsed.metadata?.schema_markup_type ?? 'WebPage',
+            eeat_signals: parsed.metadata?.eeat_signals ?? [],
+            internal_links: parsed.metadata?.internal_links ?? [],
+            faq_block: parsed.metadata?.faq_block ?? [],
+            llm_citation_note: parsed.metadata?.llm_citation_note ?? '',
+            hero_block: parsed.metadata?.hero_block ?? 'page-header',
+            hero_variant: parsed.metadata?.hero_variant ?? null,
+            hero_image: parsed.metadata?.hero_image ?? null,
+            hero_image_alt: typeof parsed.metadata?.hero_image_alt === 'string' && parsed.metadata.hero_image_alt.trim()
+              ? parsed.metadata.hero_image_alt.trim()
+              : null,
+            hero_subhead: typeof parsed.metadata?.hero_subhead === 'string' && parsed.metadata.hero_subhead.trim()
+              ? parsed.metadata.hero_subhead.trim()
+              : null,
+            hero_image_query: typeof parsed.metadata?.hero_image_query === 'string' && parsed.metadata.hero_image_query.trim()
+              ? parsed.metadata.hero_image_query.trim()
+              : null,
+          },
+        },
+      }
+    } catch {
+      return { ok: false, text, finishReason }
+    }
+  }
+
+  // First pass at the standard budget. A parse failure means the JSON truncated
+  // (a `length` finish confirms it) — retry once with a much larger budget and
+  // low effort (less thinking → more room for the answer) before storing raw.
+  let res = await attempt(16000, CONTENT_PROVIDER_OPTIONS)
+  if (!res.ok) {
+    console.warn(
+      `[content-gen] JSON parse failed for ${pageUrl} (finish=${res.finishReason}) — retrying with larger budget`
+    )
+    res = await attempt(24000, OUTLINE_PROVIDER_OPTIONS)
+  }
+  if (res.ok) return res.result
+
+  console.error(
+    `[content-gen] Failed to parse JSON for ${pageUrl} after retry (finish=${res.finishReason}), storing raw text`
   )
-  checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
-  await recordTokenUsage({
-    task: 'content',
-    contentJobId,
-    sessionId,
-    stage: 'content',
-    pageUrl,
-    model: CONTENT_MODEL,
-    inputTokens: usage?.inputTokens,
-    outputTokens: usage?.outputTokens,
-  })
-
-  try {
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
-    return {
-      content: parsed.content ?? '',
-      metadata: {
-        meta_title: parsed.metadata?.meta_title ?? pageTitle,
-        meta_description: parsed.metadata?.meta_description ?? '',
-        target_keyword: parsed.metadata?.target_keyword ?? targetKeyword,
-        secondary_keywords: parsed.metadata?.secondary_keywords ?? secondaryKeywords,
-        url_slug: parsed.metadata?.url_slug ?? pageUrl,
-        canonical_url: parsed.metadata?.canonical_url ?? '',
-        answer_block: parsed.metadata?.answer_block ?? '',
-        schema_markup_type: parsed.metadata?.schema_markup_type ?? 'WebPage',
-        eeat_signals: parsed.metadata?.eeat_signals ?? [],
-        internal_links: parsed.metadata?.internal_links ?? [],
-        faq_block: parsed.metadata?.faq_block ?? [],
-        llm_citation_note: parsed.metadata?.llm_citation_note ?? '',
-        hero_block: parsed.metadata?.hero_block ?? 'page-header',
-        hero_variant: parsed.metadata?.hero_variant ?? null,
-        hero_image: parsed.metadata?.hero_image ?? null,
-        hero_image_alt: typeof parsed.metadata?.hero_image_alt === 'string' && parsed.metadata.hero_image_alt.trim()
-          ? parsed.metadata.hero_image_alt.trim()
-          : null,
-        hero_subhead: typeof parsed.metadata?.hero_subhead === 'string' && parsed.metadata.hero_subhead.trim()
-          ? parsed.metadata.hero_subhead.trim()
-          : null,
-        hero_image_query: typeof parsed.metadata?.hero_image_query === 'string' && parsed.metadata.hero_image_query.trim()
-          ? parsed.metadata.hero_image_query.trim()
-          : null,
-      },
-    }
-  } catch {
-    console.error(`[content-gen] Failed to parse JSON for ${pageUrl}, storing raw text`)
-    return {
-      content: text,
-      metadata: {
-        meta_title: pageTitle,
-        meta_description: '',
-        target_keyword: targetKeyword,
-        secondary_keywords: secondaryKeywords,
-        url_slug: pageUrl,
-        canonical_url: '',
-        answer_block: '',
-        schema_markup_type: 'WebPage',
-        eeat_signals: [],
-        internal_links: [],
-        faq_block: [],
-        llm_citation_note: '',
-        hero_block: 'page-header',
-        hero_variant: null,
-        hero_image: null,
-        hero_image_alt: null,
-        hero_subhead: null,
-        hero_image_query: null,
-      },
-    }
+  return {
+    content: res.text,
+    metadata: {
+      meta_title: pageTitle,
+      meta_description: '',
+      target_keyword: targetKeyword,
+      secondary_keywords: secondaryKeywords,
+      url_slug: pageUrl,
+      canonical_url: '',
+      answer_block: '',
+      schema_markup_type: 'WebPage',
+      eeat_signals: [],
+      internal_links: [],
+      faq_block: [],
+      llm_citation_note: '',
+      hero_block: 'page-header',
+      hero_variant: null,
+      hero_image: null,
+      hero_image_alt: null,
+      hero_subhead: null,
+      hero_image_query: null,
+    },
   }
 }
 
