@@ -32,35 +32,40 @@ export default function SitemapPageRow({
   const badge = STATUS_BADGES[page.status] ?? STATUS_BADGES.new
 
   return (
-    <div className="flex items-center gap-2 py-2 px-3 rounded-md hover:bg-surface-subtle transition-colors group">
-      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-heading font-semibold flex-shrink-0 ${badge.cls}`}>
-        {badge.label}
-      </span>
-      <input
-        type="text"
-        value={page.title}
-        onChange={e => onChange({ ...page, title: e.target.value })}
-        placeholder="Page title"
-        className="flex-1 min-w-0 px-2 py-1 text-sm font-body bg-transparent border border-transparent hover:border-border-default focus:border-brand-cyan focus:outline-none rounded transition-colors"
-      />
-      <input
-        type="text"
-        value={page.url}
-        onChange={e => onChange({ ...page, url: e.target.value })}
-        onBlur={e => onChange({ ...page, url: formatSlug(e.target.value) })}
-        placeholder="/url-slug"
-        className="w-[220px] flex-shrink-0 px-2 py-1 text-sm font-mono text-text-secondary bg-transparent border border-transparent hover:border-border-default focus:border-brand-cyan focus:outline-none rounded transition-colors"
-      />
-      <button
-        type="button"
-        onClick={onRemove}
-        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all p-1 flex-shrink-0"
-        aria-label={`Remove ${page.title}`}
-      >
-        <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+    <div className="py-2 px-3 rounded-md hover:bg-surface-subtle transition-colors group">
+      <div className="flex items-center gap-2">
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-heading font-semibold flex-shrink-0 ${badge.cls}`}>
+          {badge.label}
+        </span>
+        <input
+          type="text"
+          value={page.title}
+          onChange={e => onChange({ ...page, title: e.target.value })}
+          placeholder="Page title"
+          className="flex-1 min-w-0 px-2 py-1 text-sm font-body bg-transparent border border-transparent hover:border-border-default focus:border-brand-cyan focus:outline-none rounded transition-colors"
+        />
+        <input
+          type="text"
+          value={page.url}
+          onChange={e => onChange({ ...page, url: e.target.value })}
+          onBlur={e => onChange({ ...page, url: formatSlug(e.target.value) })}
+          placeholder="/url-slug"
+          className="w-[220px] flex-shrink-0 px-2 py-1 text-sm font-mono text-text-secondary bg-transparent border border-transparent hover:border-border-default focus:border-brand-cyan focus:outline-none rounded transition-colors"
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all p-1 flex-shrink-0"
+          aria-label={`Remove ${page.title}`}
+        >
+          <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      {page.notes && (
+        <p className="pl-[4.5rem] pr-8 pt-0.5 text-xs font-body text-text-muted">{page.notes}</p>
+      )}
     </div>
   )
 }

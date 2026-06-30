@@ -18,3 +18,15 @@ export const GENERATION_PROVIDER_OPTIONS = {
     effort: 'high',
   } satisfies AnthropicProviderOptions,
 }
+
+// Outline generation is a small, structural JSON task — it does not need the
+// high-effort reasoning the page-body generator uses. High effort against a
+// tight output budget starved the JSON answer (truncated → parse failure →
+// single-section fallback placeholder) and made each call slow. Low effort keeps
+// the reasoning short so the full outline JSON fits and returns fast.
+export const OUTLINE_PROVIDER_OPTIONS = {
+  anthropic: {
+    thinking: { type: 'adaptive', display: 'omitted' },
+    effort: 'low',
+  } satisfies AnthropicProviderOptions,
+}

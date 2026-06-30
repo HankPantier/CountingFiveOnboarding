@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuditResult } from '@/types/audit-result'
 
 vi.mock('@/lib/mbp/generate-json', () => ({ generateMbpJson: vi.fn() }))
+// proposeSitemap is exercised by its own test; here we mock it so the draft test
+// asserts the wiring (its return is assigned to schema.proposed_sitemap) without
+// triggering the proposer's own AI call.
+vi.mock('@/lib/content/sitemap-proposer', () => ({ proposeSitemap: vi.fn() }))
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { proposeSitemap } from '@/lib/content/sitemap-proposer'
 import { draftSessionFromAudit, validateDraftModel } from './draft-from-audit'
 
 const mockGen = vi.mocked(generateMbpJson)
+const mockPropose = vi.mocked(proposeSitemap)
 
 const longText = (label: string) => `${label}. ` + 'Acme provides tax planning, bookkeeping, and advisory services to small businesses across Texas. '.repeat(20)
 
@@ -91,10 +97,18 @@ describe('validateDraftModel (coercion)', () => {
 })
 
 describe('draftSessionFromAudit', () => {
-  beforeEach(() => mockGen.mockReset())
+  beforeEach(() => {
+    mockGen.mockReset()
+    mockPropose.mockReset()
+    mockPropose.mockResolvedValue([])
+  })
 
   it('maps a model into a valid SessionSchema, merges signals, computes gaps', async () => {
     mockGen.mockResolvedValue(MODEL)
+    mockPropose.mockResolvedValue([
+      { url: 'https://acme.example/', title: 'Home', status: 'update' },
+      { url: '/industries/construction', title: 'Construction', status: 'new', parent: '/industries', notes: 'Contractor focus.' },
+    ])
     const { schema, gaps, contact, coverage } = await draftSessionFromAudit(auditResult())
 
     expect(schema.business?.name).toBe('Acme Accounting')
@@ -114,8 +128,10 @@ describe('draftSessionFromAudit', () => {
     expect(coverage.thin).toBe(false)
     expect(coverage.populatedFields).toBeGreaterThanOrEqual(6)
 
-    // content plan derived from the audit crawl
+    // current_sitemap + content_gaps are the deterministic audit-crawl plan;
+    // proposed_sitemap is assigned from the (mocked) AI proposer.
     expect(schema.current_sitemap?.length).toBe(2)
+    expect(mockPropose).toHaveBeenCalled()
     expect(schema.proposed_sitemap?.length).toBe(2)
     expect(schema.proposed_sitemap?.[0].status).toBe('update')
     expect(schema.content_gaps).toBeDefined()

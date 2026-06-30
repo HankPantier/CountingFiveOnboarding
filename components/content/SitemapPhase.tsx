@@ -17,44 +17,45 @@ type SectionGroup = {
   pages: SitemapPage[]
 }
 
+function titleFromUrl(url: string): string {
+  const seg = url.split('/').filter(Boolean).pop() ?? ''
+  const t = seg.replace(/[-_]+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase())
+  return t || url
+}
+
 function groupBySections(pages: SitemapPage[]): SectionGroup[] {
-  // Find top-level pages (parent is "/" or undefined) and group children under them
-  const topLevel = pages.filter(p => !p.parent || p.parent === '/')
-  const children = pages.filter(p => p.parent && p.parent !== '/')
+  const byUrl = new Map(pages.map(p => [p.url, p] as const))
+  const isTop = (p: SitemapPage) => !p.parent || p.parent === '/'
 
-  const groups: SectionGroup[] = []
-
-  // Root pages that have children become section headers
-  const parentUrls = new Set(children.map(c => c.parent!))
-
-  for (const page of topLevel) {
-    if (parentUrls.has(page.url)) {
-      // This page is a section header
-      const sectionChildren = children.filter(c => c.parent === page.url)
-      groups.push({
-        title: page.title,
-        url: page.url,
-        pages: [page, ...sectionChildren],
-      })
-    } else {
-      // Standalone top-level page — group under "Root"
-      const existing = groups.find(g => g.url === '/')
-      if (existing) {
-        existing.pages.push(page)
-      } else {
-        groups.push({ title: 'Root', url: '/', pages: [page] })
-      }
+  // One section per parent that actually has children — works whether or not the
+  // parent hub page itself is in the list (a niche/service hub without its own
+  // row still forms a section, instead of dumping children into "Root").
+  const childrenByParent = new Map<string, SitemapPage[]>()
+  for (const p of pages) {
+    if (!isTop(p)) {
+      const arr = childrenByParent.get(p.parent as string) ?? []
+      arr.push(p)
+      childrenByParent.set(p.parent as string, arr)
     }
   }
 
-  // Any children whose parent wasn't found as a top-level page
-  const assignedUrls = new Set(groups.flatMap(g => g.pages.map(p => p.url)))
-  const orphans = children.filter(c => !assignedUrls.has(c.url))
-  if (orphans.length > 0) {
-    const misc = groups.find(g => g.url === '/')
-    if (misc) misc.pages.push(...orphans)
-    else groups.push({ title: 'Other', url: '/', pages: orphans })
+  const groups: SectionGroup[] = []
+  const claimed = new Set<string>()
+
+  for (const [parentUrl, kids] of childrenByParent) {
+    const hub = byUrl.get(parentUrl)
+    if (hub) claimed.add(hub.url)
+    kids.forEach(k => claimed.add(k.url))
+    groups.push({
+      title: hub?.title || titleFromUrl(parentUrl),
+      url: parentUrl,
+      pages: hub ? [hub, ...kids] : kids,
+    })
   }
+
+  // Remaining top-level pages that aren't section hubs.
+  const rest = pages.filter(p => !claimed.has(p.url))
+  if (rest.length) groups.unshift({ title: 'Main pages', url: '/', pages: rest })
 
   return groups
 }
@@ -67,6 +68,7 @@ export default function SitemapPhase({
   const [pages, setPages] = useState<SitemapPage[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [proposing, setProposing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const loadSitemap = useCallback(async () => {
@@ -101,6 +103,24 @@ export default function SitemapPhase({
       const otherPages = prev.filter(p => !oldUrls.has(p.url))
       return [...otherPages, ...updatedPages]
     })
+  }
+
+  const regenerateWithAI = async () => {
+    setProposing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/sitemap/propose`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? 'Failed to generate proposals')
+      }
+      window.location.reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate proposals')
+      setProposing(false)
+    }
   }
 
   const confirmSitemap = async () => {
@@ -182,13 +202,21 @@ export default function SitemapPhase({
         </div>
       )}
 
-      <div className="pt-2">
+      <div className="pt-2 flex items-center gap-2">
         <button
           onClick={confirmSitemap}
-          disabled={saving || pages.length === 0}
+          disabled={saving || proposing || pages.length === 0}
           className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? 'Saving...' : 'Confirm Sitemap & Continue'}
+        </button>
+        <button
+          type="button"
+          onClick={regenerateWithAI}
+          disabled={proposing || saving}
+          className="border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-colors hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {proposing ? 'Generating proposals…' : '✨ Regenerate with AI'}
         </button>
       </div>
     </div>

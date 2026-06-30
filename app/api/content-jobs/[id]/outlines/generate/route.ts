@@ -4,16 +4,27 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { runOutlineGeneration } from '@/lib/content/outline-generator'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: _jobId } = await params
-  const auth = await requireContentJobAccess(_jobId)
-  if (auth instanceof NextResponse) return auth
+  // Two valid auth paths (mirrors the page-body generate route):
+  //   1. Admin/manager session — when a human triggers from the UI.
+  //   2. Bearer CRON_SECRET — when runOutlineGeneration chains itself across
+  //      function lifecycles for jobs too large to finish in one invocation.
+  const cronSecret = process.env.CRON_SECRET
+  const authHeader = req.headers.get('Authorization')
+  const isInternalChain = !!cronSecret && authHeader === `Bearer ${cronSecret}`
+
   const { id } = await params
+
+  if (!isInternalChain) {
+    const auth = await requireContentJobAccess(id)
+    if (auth instanceof NextResponse) return auth
+  }
+
   const supabase = createServerClient()
 
   const { data: job } = await supabase
@@ -39,5 +50,5 @@ export async function POST(
     }
   })
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, chained: isInternalChain })
 }

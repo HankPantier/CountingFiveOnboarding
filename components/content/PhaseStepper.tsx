@@ -5,6 +5,7 @@ import ResearchPhase from './ResearchPhase'
 import OutlinePhase from './OutlinePhase'
 import GenerationPhase from './GenerationPhase'
 import DeliverablesPhase from './DeliverablesPhase'
+import SitemapUnapproveButton from './SitemapUnapproveButton'
 import type { PhaseStatus } from './PhaseStatusBadge'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -65,7 +66,10 @@ export default function PhaseStepper({
           )
         } else if (phase === 2) {
           content = isComplete ? (
-            <p className="text-sm text-text-muted font-body">Sitemap confirmed.</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-text-muted font-body">Sitemap confirmed.</p>
+              <SitemapUnapproveButton contentJobId={contentJobId} />
+            </div>
           ) : (
             <SitemapPhase contentJobId={contentJobId} />
           )
