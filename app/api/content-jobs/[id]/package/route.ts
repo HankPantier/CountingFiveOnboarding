@@ -3,7 +3,11 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { assembleContentPackage } from '@/lib/content/package-assembler'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+// Assembly (asset downloads + LLM brand doc + docx + ~45MB resumable upload)
+// plus the git push of the full deliverable (hundreds of blobs) runs well past
+// 120s once the repo is seeded and the push actually executes. Match the other
+// heavy content routes at 300.
+export const maxDuration = 300
 
 export async function POST(
   _req: Request,

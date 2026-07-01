@@ -1,5 +1,11 @@
 import { RequestError } from '@octokit/request-error'
 import { getOctokit, resolveRepo } from './app-client'
+import { withRateLimitRetry } from './rate-limit'
+
+// How many blobs to upload at once when pushing a deliverable. Kept low so a
+// ~300-file content push doesn't trip GitHub's secondary rate limit; each call
+// also retries on a throttle. Mirrors the template seeder.
+const PUSH_BLOB_CONCURRENCY = 4
 
 export const DRAFT_BRANCH = 'draft'
 export const MAIN_BRANCH = 'main'
@@ -105,41 +111,52 @@ export async function pushEntriesToBranch(
   const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
 
   // Explicit literal types for mode/type — Octokit's overloaded createTree
-  // signature defeats `Parameters<...>['tree']` index access.
+  // signature defeats `Parameters<...>['tree']` index access. Upload blobs in
+  // bounded-concurrency batches with rate-limit retry so a large push (hundreds
+  // of assets) neither bursts past GitHub's secondary limit nor fails outright.
   const tree: { path: string; mode: '100644'; type: 'blob'; sha: string }[] = []
-  for (const e of entries) {
-    const buf = typeof e.content === 'string' ? Buffer.from(e.content, 'utf-8') : e.content
-    const blob = await octokit.git.createBlob({
-      owner,
-      repo,
-      content: buf.toString('base64'),
-      encoding: 'base64',
-    })
-    tree.push({ path: e.path, mode: '100644', type: 'blob', sha: blob.data.sha })
+  for (let i = 0; i < entries.length; i += PUSH_BLOB_CONCURRENCY) {
+    const batch = entries.slice(i, i + PUSH_BLOB_CONCURRENCY)
+    const created = await Promise.all(
+      batch.map(async (e) => {
+        const buf = typeof e.content === 'string' ? Buffer.from(e.content, 'utf-8') : e.content
+        const blob = await withRateLimitRetry(() =>
+          octokit.git.createBlob({ owner, repo, content: buf.toString('base64'), encoding: 'base64' })
+        )
+        return { path: e.path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha }
+      })
+    )
+    tree.push(...created)
   }
 
-  const newTree = await octokit.git.createTree({
-    owner,
-    repo,
-    base_tree: baseCommit.data.tree.sha,
-    tree,
-  })
-  const commit = await octokit.git.createCommit({
-    owner,
-    repo,
-    message,
-    tree: newTree.data.sha,
-    parents: [baseCommitSha],
-    ...(options.authorName && options.authorEmail
-      ? { author: { name: options.authorName, email: options.authorEmail } }
-      : {}),
-  })
-  await octokit.git.updateRef({
-    owner,
-    repo,
-    ref: `heads/${branch}`,
-    sha: commit.data.sha,
-  })
+  const newTree = await withRateLimitRetry(() =>
+    octokit.git.createTree({
+      owner,
+      repo,
+      base_tree: baseCommit.data.tree.sha,
+      tree,
+    })
+  )
+  const commit = await withRateLimitRetry(() =>
+    octokit.git.createCommit({
+      owner,
+      repo,
+      message,
+      tree: newTree.data.sha,
+      parents: [baseCommitSha],
+      ...(options.authorName && options.authorEmail
+        ? { author: { name: options.authorName, email: options.authorEmail } }
+        : {}),
+    })
+  )
+  await withRateLimitRetry(() =>
+    octokit.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${branch}`,
+      sha: commit.data.sha,
+    })
+  )
   return { commitSha: commit.data.sha, fileCount: tree.length }
 }
 
