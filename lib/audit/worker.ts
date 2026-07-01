@@ -5,6 +5,7 @@
 import { asJson } from '@/lib/supabase/json-typed'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAudit } from './index'
+import { nicheContentCaptured } from './intelligence'
 import type { AuditResult, AuditStage } from './types'
 
 const PROGRESS_WRITE_INTERVAL_MS = 1500
@@ -89,11 +90,19 @@ export async function runAuditJob(auditRunId: string): Promise<void> {
     })
 
     terminated = true
+    // The niche & services section is the report's centerpiece. We never fail
+    // the whole run over it (the crawl + scores are still valuable), but if it
+    // came back empty after the generator's retries, flag it in status_detail so
+    // the gap is visible in the admin instead of passing as a clean "complete".
+    const nicheOk = nicheContentCaptured(result.intelligence)
+    if (!nicheOk) {
+      console.warn(`[audit-worker] niche content missing on completed run ${auditRunId}`)
+    }
     await supabase
       .from('audit_runs')
       .update({
         audit_status: 'complete',
-        status_detail: 'Audit complete',
+        status_detail: nicheOk ? 'Audit complete' : 'Audit complete — niche content incomplete',
         result: asJson(trimForStorage(result)),
         category_scores: asJson(result.category_scores),
         overall_score: result.overall_score,

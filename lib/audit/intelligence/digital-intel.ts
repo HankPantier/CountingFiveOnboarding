@@ -21,6 +21,11 @@ export interface DigitalIntelInput {
   onSiteNiches: string[]
 }
 
+// Synthesis passes before accepting the brief. Retries re-run only the model
+// (Serper results are already captured), so this is cheap insurance against a
+// transient miss on the niche-gap block.
+const DIGITAL_INTEL_ATTEMPTS = 2
+
 const asStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 const asStrArr = (v: unknown): string[] =>
   Array.isArray(v)
@@ -100,10 +105,22 @@ function validate(parsed: unknown): DigitalIntelligence | null {
     content_footprint.length ||
     social_presence.length ||
     niche_gap.external.length ||
+    niche_gap.on_site.length ||
     niche_gap.unleveraged.length
   if (!hasAny) return null
 
   return { personnel, reputation, affiliations: asStrArr(p.affiliations), content_footprint, social_presence, niche_gap }
+}
+
+/** The niche-gap block (external vs. on-site niche visibility) is the reason this
+ * brief matters for the audit — treat a result with an empty gap as incomplete
+ * so the synthesis pass is retried before we accept it. */
+export function hasNicheGap(d: DigitalIntelligence): boolean {
+  return (
+    d.niche_gap.external.length > 0 ||
+    d.niche_gap.on_site.length > 0 ||
+    d.niche_gap.unleveraged.length > 0
+  )
 }
 
 export async function buildDigitalIntelligence(
@@ -121,7 +138,10 @@ export async function buildDigitalIntelligence(
     if (results && results.length) gotAny = true
     blocks.push(renderResults(labels[i], results))
   }
-  if (!gotAny) return null
+  if (!gotAny) {
+    console.warn('[digital-intel] no external search results — niche gap cannot be captured')
+    return null
+  }
 
   const prompt = `You are compiling a Digital Intelligence Brief on "${input.siteName}" (domain ${input.domain}${input.location ? `, ${input.location}` : ''}) from external web-search results. Use ONLY what the results support; do not invent. The firm's website names these niches: ${input.onSiteNiches.join(', ') || '(none)'}.
 
@@ -139,5 +159,15 @@ Omit array items you cannot support. Return only the JSON.
 SEARCH RESULTS:
 ${blocks.join('\n')}`
 
-  return generateMbpJson<DigitalIntelligence>(prompt, validate, 3000, ctx)
+  // Retry the synthesis (search results are already in the prompt, so retries
+  // only re-run the model) until the niche gap is populated, falling back to the
+  // best partial brief if it stays empty.
+  const result = await generateMbpJson<DigitalIntelligence>(prompt, validate, 4000, ctx, {
+    attempts: DIGITAL_INTEL_ATTEMPTS,
+    accept: hasNicheGap,
+  })
+  if (result && !hasNicheGap(result)) {
+    console.warn(`[digital-intel] brief captured but niche gap still empty after ${DIGITAL_INTEL_ATTEMPTS} attempts`)
+  }
+  return result
 }

@@ -9,20 +9,23 @@ import { analyzeCompetitors } from './competitors'
 import { analyzeContentLibrary } from './content-library'
 import { buildDigitalIntelligence } from './digital-intel'
 import { detectDomainAge } from './domain-age'
-import { analyzeNicheServices } from './niche-services'
+import { analyzeNicheServices, hasNicheContent } from './niche-services'
 import { buildNarrative } from './narrative'
 import { detectTechStack } from './tech-stack'
 import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditIntelligence, AuditResult, DetectedNiche } from '../types'
 
 /** Run a builder, logging and swallowing any failure. Normalizes a null result
- * (a builder that ran but produced nothing) to undefined. */
+ * (a builder that ran but produced nothing) to undefined. A null is logged too,
+ * so a silently-dropped section leaves a trace instead of just vanishing. */
 async function safe<T>(
   label: string,
   fn: () => Promise<T> | T,
 ): Promise<NonNullable<T> | undefined> {
   try {
-    return (await fn()) ?? undefined
+    const value = (await fn()) ?? undefined
+    if (value === undefined) console.warn(`[audit-intelligence] ${label} produced no result`)
+    return value
   } catch (err) {
     console.warn(`[audit-intelligence] ${label} failed:`, err)
     return undefined
@@ -103,10 +106,21 @@ export async function buildIntelligence(
   // ── Narrative (LAST — consumes everything above) ──────────────────────────
   intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
 
+  if (!nicheContentCaptured(intel)) {
+    console.warn('[audit-intelligence] niche content NOT captured — the report will be missing its centerpiece section')
+  }
+
   // Drop undefined keys; return undefined when nothing was produced.
   const cleaned: AuditIntelligence = {}
   for (const [k, v] of Object.entries(intel)) {
     if (v !== undefined && v !== null) cleaned[k as keyof AuditIntelligence] = v as never
   }
   return Object.keys(cleaned).length ? cleaned : undefined
+}
+
+/** True when the on-site niche & services section carries real content — the bar
+ * the audit must clear to be considered a complete niche capture. Used to flag
+ * (not fail) a run whose centerpiece section came back empty. */
+export function nicheContentCaptured(intel: AuditIntelligence | undefined): boolean {
+  return !!intel?.niche_services && hasNicheContent(intel.niche_services)
 }

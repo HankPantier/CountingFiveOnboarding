@@ -147,11 +147,42 @@ function validate(parsed: unknown): NicheServicesResult | null {
   }
 }
 
+// Number of model passes before we accept a niche result. The niche & services
+// section is the report's centerpiece, so a single transient failure/truncation
+// must not silently drop it — we retry until the content arrays are populated.
+const NICHE_ATTEMPTS = 3
+
+/** A niche result is only "complete" when it carries actual niche content, not
+ * just sub-scores — an all-empty result is treated as a failed capture and
+ * retried. */
+export function hasNicheContent(ns: NicheServicesIntelligence): boolean {
+  return (
+    ns.detected_niches.length > 0 ||
+    ns.invisible_niches.length > 0 ||
+    ns.services_analysis.length > 0
+  )
+}
+
 export async function analyzeNicheServices(
   corpus: CorpusPage[],
   siteName: string,
   ctx?: TokenContext,
 ): Promise<NicheServicesResult | null> {
-  if (!corpus.length) return null
-  return generateMbpJson<NicheServicesResult>(buildPrompt(corpus, siteName), validate, 4000, ctx)
+  if (!corpus.length) {
+    console.warn('[niche-services] no crawlable text corpus — niche content cannot be captured')
+    return null
+  }
+  const result = await generateMbpJson<NicheServicesResult>(
+    buildPrompt(corpus, siteName),
+    validate,
+    6000,
+    ctx,
+    { attempts: NICHE_ATTEMPTS, accept: (r) => hasNicheContent(r.niche_services) },
+  )
+  if (!result) {
+    console.warn(`[niche-services] no usable result after ${NICHE_ATTEMPTS} attempts`)
+  } else if (!hasNicheContent(result.niche_services)) {
+    console.warn(`[niche-services] sub-scores captured but niche content still empty after ${NICHE_ATTEMPTS} attempts`)
+  }
+  return result
 }
