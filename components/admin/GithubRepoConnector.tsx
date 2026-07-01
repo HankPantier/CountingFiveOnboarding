@@ -34,12 +34,16 @@ export default function GithubRepoConnector({
         seeded?: boolean
         skipped?: string
         fileCount?: number
+        skippedWorkflowFiles?: number
         error?: string
       }
       if (!res.ok) throw new Error(data.error ?? `Request failed: ${res.status}`)
+      const workflowNote = data.skippedWorkflowFiles
+        ? ` Skipped ${data.skippedWorkflowFiles} .github/workflows file(s) — grant the App "Workflows" permission and re-seed to include them.`
+        : ''
       setSeedMsg(
         data.seeded
-          ? `Seeded ${data.fileCount} template file(s) to the repo.`
+          ? `Seeded ${data.fileCount} template file(s) to the repo.${workflowNote}`
           : 'Repo already has template files — nothing to seed.'
       )
     } catch (err) {

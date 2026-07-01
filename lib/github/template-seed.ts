@@ -80,7 +80,7 @@ export function resolveTemplateSlug(): string {
 
 export type SeedResult =
   | { seeded: false; skipped: 'already-seeded'; fileCount: 0 }
-  | { seeded: true; fileCount: number; commitSha: string }
+  | { seeded: true; fileCount: number; commitSha: string; skippedWorkflowFiles: number }
 
 // True when the target repo already contains the template marker on main.
 // A missing marker, a missing main branch, or an empty repo all read as "not
@@ -132,10 +132,25 @@ export async function seedRepoFromTemplate(
     throw new Error('Template tree is too large to seed in one pass (GitHub truncated the listing)')
   }
 
-  const blobs = templateTree.data.tree.filter(
+  const allBlobs = templateTree.data.tree.filter(
     (n): n is { path: string; sha: string; type: 'blob'; mode?: string } =>
       n.type === 'blob' && typeof n.path === 'string' && typeof n.sha === 'string'
   )
+
+  // Committing files under .github/workflows/ requires the GitHub App to hold
+  // the "Workflows" permission; without it createTree/createCommit is refused
+  // with 403 "Resource not accessible by integration" (blobs upload fine — the
+  // tree is where the workflow paths get assigned). These are CI/Lighthouse dev
+  // gates, irrelevant to a Vercel-deployed client site, so skip them and report
+  // the count rather than failing the whole seed. Grant the App "Workflows:
+  // Read & Write" and re-seed if you want them included.
+  const isWorkflowPath = (p: string) => p.startsWith('.github/workflows/')
+  const skippedWorkflowFiles = allBlobs.filter((b) => isWorkflowPath(b.path)).length
+  const blobs = allBlobs.filter((b) => !isWorkflowPath(b.path))
+  if (skippedWorkflowFiles > 0) {
+    console.warn(`[seed-repo] Skipping ${skippedWorkflowFiles} .github/workflows file(s) — App lacks Workflows permission`)
+  }
+
   if (blobs.length === 0) {
     throw new Error(`Template ${template.owner}/${template.repo} has no files to seed`)
   }
@@ -250,5 +265,5 @@ export async function seedRepoFromTemplate(
   // it exists now that main does.
   await ensureDraftBranch(slug)
 
-  return { seeded: true, fileCount: treeEntries.length, commitSha: commit.data.sha }
+  return { seeded: true, fileCount: treeEntries.length, commitSha: commit.data.sha, skippedWorkflowFiles }
 }
