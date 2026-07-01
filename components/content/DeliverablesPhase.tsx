@@ -9,6 +9,7 @@ type SitemapEntry = { url: string; title: string; parent?: string; status?: stri
 type ApprovalSnapshot = {
   total: number
   complete: number
+  error: number
   approved: number
   unapproved: Array<{ id: string; title: string; url: string }>
 }
@@ -54,6 +55,7 @@ export default function DeliverablesPhase({
         const snap: ApprovalSnapshot = {
           total: data.total ?? 0,
           complete: data.complete ?? 0,
+          error: data.error ?? 0,
           approved: data.approved ?? 0,
           unapproved,
         }
@@ -112,7 +114,10 @@ export default function DeliverablesPhase({
 
   const allApproved = approval ? approval.complete > 0 && approval.complete === approval.approved : false
   const hasUnapproved = approval ? approval.complete - approval.approved > 0 : false
-  const generationDone = approval !== null && approval.total > 0 && approval.complete >= approval.total
+  // "Done" means every page has reached a terminal state, not that all succeeded.
+  // Failed pages are skipped by the assembler and listed in ERRORS.md, so they
+  // must not block assembly forever (they otherwise stall the whole deliverable).
+  const generationDone = approval !== null && approval.total > 0 && approval.complete + approval.error >= approval.total
 
   return (
     <div className="space-y-6">
@@ -129,13 +134,19 @@ export default function DeliverablesPhase({
       {/* Package Assembly */}
       <div className="space-y-4">
       {generationDone ? (
-        <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-3">
-          Content generation complete.
-        </div>
+        approval && approval.error > 0 ? (
+          <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-3">
+            Content generation finished — {approval.complete} of {approval.total} pages. {approval.error} failed and will be skipped (listed in ERRORS.md). Retry them in the Content Generation step above if you want them included.
+          </div>
+        ) : (
+          <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-3">
+            Content generation complete.
+          </div>
+        )
       ) : (
         <div className="bg-info/10 border border-info/20 text-info text-sm font-body rounded-lg px-4 py-3">
           {approval
-            ? `Waiting for content generation — ${approval.complete} of ${approval.total} pages ready.`
+            ? `Waiting for content generation — ${approval.complete} of ${approval.total} pages ready${approval.error > 0 ? ` (${approval.error} failed)` : ''}.`
             : 'Loading generation status…'}
         </div>
       )}
