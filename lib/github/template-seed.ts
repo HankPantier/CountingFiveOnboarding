@@ -37,7 +37,9 @@ function isRequestError(err: unknown): err is RequestError {
 }
 
 export function resolveTemplateSlug(): string {
-  return process.env.GITHUB_TEMPLATE_REPO?.trim() || 'counting-five-client-template'
+  // Fully-qualified default: the target repo slug may carry an explicit owner
+  // that differs from GITHUB_ORG, so don't rely on the bare-name owner default.
+  return process.env.GITHUB_TEMPLATE_REPO?.trim() || 'HankPantier/CountingFiveTemplate'
 }
 
 export type SeedResult =
