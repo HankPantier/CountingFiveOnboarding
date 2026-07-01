@@ -4,11 +4,36 @@ type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 
 export type CtaInfo = { text: string; url: string }
 
+// page_url may arrive root-relative (/services) or as a full origin URL —
+// crawled pages store scheme+host. Routing and filenames are path-based, so
+// normalize to a clean root-relative path: strip scheme+host, drop trailing
+// slash(es), guarantee a leading slash. Root stays '/'.
+export function toPagePath(rawUrl: string): string {
+  let path = (rawUrl ?? '').trim()
+  if (/^https?:\/\//i.test(path)) {
+    try {
+      path = new URL(path).pathname
+    } catch {
+      // malformed URL — fall through and slugify whatever we were handed
+    }
+  }
+  path = path.replace(/\/+$/, '')
+  if (!path.startsWith('/')) path = `/${path}`
+  return path
+}
+
 function pageFilename(url: string): string {
-  // /services/virtual-cfo-advisory → services--virtual-cfo-advisory.md
-  const slug = url.replace(/^\//, '').replace(/\//g, '--') || 'home'
+  // /services/virtual-cfo-advisory → services--virtual-cfo-advisory.md; / → home.md
+  const slug = toPagePath(url).replace(/^\//, '').replace(/\//g, '--') || 'home'
   return `${slug}.md`
 }
+
+// Frontmatter scalars can contain colons, quotes, or newlines (meta_description
+// often reads "City, ST: summary"), which break unquoted YAML. JSON.stringify
+// emits a valid YAML double-quoted scalar, keeping the hand-built frontmatter
+// parseable — the same guarantee the structured fields below already rely on.
+const yv = (value: string | null | undefined): string =>
+  JSON.stringify(value == null ? '' : String(value))
 
 // The image/split hero blocks render a large H1. Without a dedicated headline
 // the template falls back to the page title, so a nav-titled page ("Home",
@@ -41,16 +66,16 @@ export function buildPageMarkdown(
   const heroHeadline = deriveHeroHeadline(page)
 
   let md = `---
-title: ${page.page_title} | ${firmName}
-url: ${page.page_url}
-meta_title: ${page.meta_title ?? page.page_title}
-meta_description: ${page.meta_description ?? ''}
-target_keyword: ${page.target_keyword ?? ''}
-secondary_keywords: [${secondaryKw.join(', ')}]
-canonical_url: ${page.canonical_url ?? ''}
-schema_markup: ${page.schema_markup_type ?? 'WebPage'}
-${cta ? `cta_text: ${cta.text}\ncta_url: ${cta.url}\n` : ''}hero: ${page.hero_block ?? 'page-header'}
-${page.hero_variant ? `hero_variant: ${page.hero_variant}\n` : ''}${page.hero_image ? `hero_image: ${page.hero_image}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${page.hero_image_alt.replace(/\n/g, ' ')}\n` : ''}${page.hero_subhead ? `hero_subhead: ${page.hero_subhead.replace(/\n/g, ' ')}\n` : ''}${heroHeadline ? `hero_headline: ${JSON.stringify(heroHeadline)}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
+title: ${yv(`${page.page_title} | ${firmName}`)}
+url: ${yv(toPagePath(page.page_url))}
+meta_title: ${yv(page.meta_title ?? page.page_title)}
+meta_description: ${yv(page.meta_description ?? '')}
+target_keyword: ${yv(page.target_keyword ?? '')}
+secondary_keywords: ${JSON.stringify(secondaryKw)}
+canonical_url: ${yv(page.canonical_url ?? '')}
+schema_markup: ${yv(page.schema_markup_type ?? 'WebPage')}
+${cta ? `cta_text: ${yv(cta.text)}\ncta_url: ${yv(cta.url)}\n` : ''}hero: ${yv(page.hero_block ?? 'page-header')}
+${page.hero_variant ? `hero_variant: ${yv(page.hero_variant)}\n` : ''}${page.hero_image ? `hero_image: ${yv(page.hero_image)}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${yv(page.hero_image_alt.replace(/\n/g, ' '))}\n` : ''}${page.hero_subhead ? `hero_subhead: ${yv(page.hero_subhead.replace(/\n/g, ' '))}\n` : ''}${heroHeadline ? `hero_headline: ${yv(heroHeadline)}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
 eeat_signals: ${JSON.stringify(eeatSignals)}
 internal_links: ${JSON.stringify(internalLinks)}
 faq_block: ${JSON.stringify(faqBlock)}

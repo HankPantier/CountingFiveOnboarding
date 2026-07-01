@@ -216,7 +216,11 @@ function stripUnapprovedExternalLinks(body: string, approved: ExternalLink[]): s
 }
 
 function escapeFrontmatterValue(value: string): string {
-  return value.replace(/\n/g, ' ').trim()
+  // Collapse newlines, then emit a YAML double-quoted scalar. Free-text fields
+  // (title, excerpt, meta_description…) routinely contain a colon-space
+  // ("City, ST: summary") which breaks unquoted YAML. JSON strings are valid
+  // YAML double-quoted scalars, so JSON.stringify makes every value safe.
+  return JSON.stringify(value.replace(/\n/g, ' ').trim())
 }
 
 function buildPostMarkdown(args: {

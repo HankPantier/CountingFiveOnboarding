@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPageMarkdown } from './deliverable-builder'
+import { buildAllPageFiles, buildPageMarkdown, toPagePath } from './deliverable-builder'
 import type { Database } from '@/types/database'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
@@ -93,6 +93,77 @@ describe('buildPageMarkdown — structured SEO frontmatter', () => {
 
   it('still includes the human-readable review trailer', () => {
     expect(md).toContain('## SEO & AIO Metadata')
+  })
+})
+
+describe('toPagePath — full-URL / root-relative normalization', () => {
+  it('strips scheme+host from crawled full-URL page_url', () => {
+    expect(toPagePath('https://www.bblcpa.com/what-we-do/outsourced-accounting')).toBe(
+      '/what-we-do/outsourced-accounting'
+    )
+  })
+  it('collapses the origin root to /', () => {
+    expect(toPagePath('https://www.bblcpa.com/')).toBe('/')
+    expect(toPagePath('https://www.bblcpa.com')).toBe('/')
+  })
+  it('leaves clean root-relative paths untouched (minus trailing slash)', () => {
+    expect(toPagePath('/services')).toBe('/services')
+    expect(toPagePath('/services/')).toBe('/services')
+  })
+})
+
+describe('buildAllPageFiles — filenames are clean slugs (Issue #1/#2)', () => {
+  const files = buildAllPageFiles(
+    [
+      makePage({ id: 'p-home', page_url: 'https://www.bblcpa.com/' }),
+      makePage({ id: 'p-deep', page_url: 'https://www.bblcpa.com/what-we-do/tax' }),
+      makePage({ id: 'p-rel', page_url: '/who-we-are' }),
+    ],
+    'Brammer, Begnaud & Lattimore',
+    { websiteUrl: 'https://www.bblcpa.com', ctaByUrl: new Map(), jsonLdByUrl: new Map() }
+  )
+  const names = files.map((f) => f.filename)
+
+  it('maps the origin root to home.md (overwrites the template seed)', () => {
+    expect(names).toContain('home.md')
+  })
+  it('slugifies a full-URL page into a clean -- path, not the origin', () => {
+    expect(names).toContain('what-we-do--tax.md')
+    expect(names.some((n) => n.startsWith('https:'))).toBe(false)
+  })
+  it('leaves already-clean paths correct', () => {
+    expect(names).toContain('who-we-are.md')
+  })
+  it('writes the normalized root-relative url into frontmatter', () => {
+    const deep = files.find((f) => f.filename === 'what-we-do--tax.md')!
+    expect(JSON.parse(frontmatterField(deep.content, 'url'))).toBe('/what-we-do/tax')
+  })
+})
+
+describe('buildPageMarkdown — colon-safe scalar frontmatter (Issue #3)', () => {
+  const md = buildPageMarkdown(
+    makePage({
+      meta_description:
+        'A guide to 1099s from BBL CPAs in Port Arthur, TX: forms, deadlines, penalties, and common filing mistakes explained.',
+      meta_title: 'Outsourced Accounting: What You Get',
+      page_title: 'Services: Overview',
+    }),
+    'Brammer, Begnaud & Lattimore',
+    { websiteUrl: 'https://www.bblcpa.com' }
+  )
+
+  it('quotes meta_description so the embedded colon does not break YAML', () => {
+    expect(JSON.parse(frontmatterField(md, 'meta_description'))).toBe(
+      'A guide to 1099s from BBL CPAs in Port Arthur, TX: forms, deadlines, penalties, and common filing mistakes explained.'
+    )
+  })
+  it('quotes meta_title with a colon', () => {
+    expect(JSON.parse(frontmatterField(md, 'meta_title'))).toBe('Outsourced Accounting: What You Get')
+  })
+  it('quotes the title (colon in page title + pipe join stay safe)', () => {
+    expect(JSON.parse(frontmatterField(md, 'title'))).toBe(
+      'Services: Overview | Brammer, Begnaud & Lattimore'
+    )
   })
 })
 
