@@ -17,6 +17,7 @@ import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
 import { resumableUpload, RESUMABLE_THRESHOLD } from '@/lib/supabase/resumable-upload'
+import { githubErrorMessage } from '@/lib/github/error-hint'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
@@ -549,7 +550,7 @@ export async function assembleContentPackage(
         console.warn(`[content-job] Stale sitemap cleanup failed for ${job.github_repo}:`, err)
       }
     } catch (err) {
-      pushError = err instanceof Error ? err.message : 'Push to repo failed'
+      pushError = githubErrorMessage(err, job.github_repo)
       console.error(`[content-job] Push to ${job.github_repo} failed:`, pushError)
     }
   }

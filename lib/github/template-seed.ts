@@ -104,26 +104,64 @@ export async function seedRepoFromTemplate(
     throw new Error(`Template ${template.owner}/${template.repo} has no files to seed`)
   }
 
-  // Re-create each template blob in the target and collect tree entries.
+  // Fetch a template blob's bytes as normalized base64. getBlob returns
+  // 'base64' (normal) or 'utf-8'; it returns 'none' for blobs >100MB, which
+  // can't be round-tripped this way — guard so that surfaces as a clear,
+  // file-named error instead of a cryptic "Unknown encoding" crash.
+  const fetchTemplateBlobBase64 = async (sha: string, path: string): Promise<string> => {
+    const blob = await octokit.git.getBlob({ owner: template.owner, repo: template.repo, file_sha: sha })
+    if (blob.data.encoding !== 'base64' && blob.data.encoding !== 'utf-8') {
+      throw new Error(`Cannot seed ${path}: unsupported blob encoding "${blob.data.encoding}"`)
+    }
+    return Buffer.from(blob.data.content, blob.data.encoding).toString('base64')
+  }
+
+  // The Git Data API (createBlob/createTree/createCommit) refuses to operate on
+  // a repo with zero commits ("Git Repository is empty"). If main doesn't exist
+  // yet, bootstrap it with a single initial commit via the Contents API — which
+  // DOES work on an empty repo and creates the branch — then overlay the full
+  // template on top. Bootstrapping with a NON-marker file keeps re-runs safe:
+  // SEED_MARKER_PATH only lands in the final overlay commit, so a bootstrap that
+  // fails before the overlay still reads as "not seeded" on the next attempt.
+  let mainExists = true
+  try {
+    await octokit.git.getRef({ owner: target.owner, repo: target.repo, ref: `heads/${MAIN_BRANCH}` })
+  } catch (err) {
+    if (isRequestError(err) && (err.status === 404 || err.status === 409)) mainExists = false
+    else throw err
+  }
+
+  if (!mainExists) {
+    const bootstrap = blobs.find((b) => b.path !== SEED_MARKER_PATH) ?? blobs[0]
+    await octokit.repos.createOrUpdateFileContents({
+      owner: target.owner,
+      repo: target.repo,
+      path: bootstrap.path,
+      message: 'Initialize repository',
+      content: await fetchTemplateBlobBase64(bootstrap.sha, bootstrap.path),
+      branch: MAIN_BRANCH,
+      ...(options.authorName && options.authorEmail
+        ? { author: { name: options.authorName, email: options.authorEmail } }
+        : {}),
+    })
+  }
+
+  // main now exists (pre-existing or just bootstrapped) — read it for base_tree.
+  const mainRef = await octokit.git.getRef({ owner: target.owner, repo: target.repo, ref: `heads/${MAIN_BRANCH}` })
+  const mainCommit = await octokit.git.getCommit({
+    owner: target.owner,
+    repo: target.repo,
+    commit_sha: mainRef.data.object.sha,
+  })
+
+  // Re-create each template blob in the target and collect tree entries. Safe
+  // now that the repo has at least one commit.
   const treeEntries: { path: string; mode: BlobMode; type: 'blob'; sha: string }[] = []
   for (let i = 0; i < blobs.length; i += BLOB_COPY_CONCURRENCY) {
     const batch = blobs.slice(i, i + BLOB_COPY_CONCURRENCY)
     const copied = await Promise.all(
       batch.map(async (b) => {
-        const blob = await octokit.git.getBlob({
-          owner: template.owner,
-          repo: template.repo,
-          file_sha: b.sha,
-        })
-        // getBlob returns 'base64' (normal) or 'utf-8'; it returns 'none' for
-        // blobs >100MB, whose content can't be round-tripped this way. Guard so
-        // that surfaces as a clear, file-named error instead of a cryptic
-        // "Unknown encoding" crash mid-batch.
-        if (blob.data.encoding !== 'base64' && blob.data.encoding !== 'utf-8') {
-          throw new Error(`Cannot seed ${b.path}: unsupported blob encoding "${blob.data.encoding}"`)
-        }
-        // Normalize to base64 (getBlob wraps base64 at 60 cols) before re-upload.
-        const content = Buffer.from(blob.data.content, blob.data.encoding).toString('base64')
+        const content = await fetchTemplateBlobBase64(b.sha, b.path)
         const created = await octokit.git.createBlob({
           owner: target.owner,
           repo: target.repo,
@@ -136,55 +174,28 @@ export async function seedRepoFromTemplate(
     treeEntries.push(...copied)
   }
 
-  // Determine whether main already exists (repo created with a README) so we
-  // overlay onto it, or is empty (no commits) so we create the first commit.
-  let baseTreeSha: string | undefined
-  let parents: string[] = []
-  try {
-    const mainRef = await octokit.git.getRef({ owner: target.owner, repo: target.repo, ref: `heads/${MAIN_BRANCH}` })
-    const mainCommit = await octokit.git.getCommit({
-      owner: target.owner,
-      repo: target.repo,
-      commit_sha: mainRef.data.object.sha,
-    })
-    baseTreeSha = mainCommit.data.tree.sha
-    parents = [mainRef.data.object.sha]
-  } catch (err) {
-    if (!isRequestError(err) || (err.status !== 404 && err.status !== 409)) throw err
-  }
-
   const newTree = await octokit.git.createTree({
     owner: target.owner,
     repo: target.repo,
+    base_tree: mainCommit.data.tree.sha,
     tree: treeEntries,
-    ...(baseTreeSha ? { base_tree: baseTreeSha } : {}),
   })
   const commit = await octokit.git.createCommit({
     owner: target.owner,
     repo: target.repo,
     message: `Seed site from ${template.owner}/${template.repo}`,
     tree: newTree.data.sha,
-    parents,
+    parents: [mainRef.data.object.sha],
     ...(options.authorName && options.authorEmail
       ? { author: { name: options.authorName, email: options.authorEmail } }
       : {}),
   })
-
-  if (parents.length > 0) {
-    await octokit.git.updateRef({
-      owner: target.owner,
-      repo: target.repo,
-      ref: `heads/${MAIN_BRANCH}`,
-      sha: commit.data.sha,
-    })
-  } else {
-    await octokit.git.createRef({
-      owner: target.owner,
-      repo: target.repo,
-      ref: `refs/heads/${MAIN_BRANCH}`,
-      sha: commit.data.sha,
-    })
-  }
+  await octokit.git.updateRef({
+    owner: target.owner,
+    repo: target.repo,
+    ref: `heads/${MAIN_BRANCH}`,
+    sha: commit.data.sha,
+  })
 
   // The editor and the assembly push both work off the draft branch — make sure
   // it exists now that main does.
