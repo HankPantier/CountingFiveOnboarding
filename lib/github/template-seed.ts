@@ -21,9 +21,11 @@ import { ensureDraftBranch, MAIN_BRANCH } from './repo-files'
 // been seeded (created from the template, or seeded by a prior run).
 const SEED_MARKER_PATH = 'package.json'
 
-// How many template blobs to copy at once. Bounded so a 177-file template can't
-// burst hundreds of concurrent GitHub calls (mirrors the assembler's batching).
-const BLOB_COPY_CONCURRENCY = 10
+// How many template blobs to copy at once. Kept low: GitHub imposes a
+// SECONDARY rate limit on bursts of content-creating requests, and copying a
+// 177-file template is exactly such a burst. Low concurrency + retry (below) is
+// GitHub's documented remedy — serialize writes and honor retry-after.
+const BLOB_COPY_CONCURRENCY = 3
 
 // Git tree blob modes we preserve verbatim; anything else is coerced to a
 // regular file. (Submodules / directory entries are filtered out before here.)
@@ -34,6 +36,40 @@ function normalizeMode(mode: string | undefined): BlobMode {
 
 function isRequestError(err: unknown): err is RequestError {
   return err instanceof RequestError
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// GitHub returns 403/429 with a "rate limit" message when a primary or
+// SECONDARY rate limit trips. Secondary limits fire on bursts of mutative
+// requests (exactly what bulk seeding is).
+function isRateLimited(err: unknown): err is RequestError {
+  return (
+    err instanceof RequestError &&
+    (err.status === 403 || err.status === 429) &&
+    /rate limit/i.test(err.message)
+  )
+}
+
+// Wrap a GitHub call so a rate-limit response is waited out and retried rather
+// than aborting the whole seed. Honors the server's retry-after header when
+// present, else backs off exponentially. Non-rate-limit errors propagate.
+async function withRateLimitRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const MAX_ATTEMPTS = 6
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (attempt >= MAX_ATTEMPTS || !isRateLimited(err)) throw err
+      const retryAfter = Number(err.response?.headers?.['retry-after'])
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? (retryAfter + 1) * 1000
+        : Math.min(60_000, 1000 * 2 ** attempt)
+      await sleep(waitMs)
+    }
+  }
 }
 
 export function resolveTemplateSlug(): string {
@@ -109,7 +145,9 @@ export async function seedRepoFromTemplate(
   // can't be round-tripped this way — guard so that surfaces as a clear,
   // file-named error instead of a cryptic "Unknown encoding" crash.
   const fetchTemplateBlobBase64 = async (sha: string, path: string): Promise<string> => {
-    const blob = await octokit.git.getBlob({ owner: template.owner, repo: template.repo, file_sha: sha })
+    const blob = await withRateLimitRetry(() =>
+      octokit.git.getBlob({ owner: template.owner, repo: template.repo, file_sha: sha })
+    )
     if (blob.data.encoding !== 'base64' && blob.data.encoding !== 'utf-8') {
       throw new Error(`Cannot seed ${path}: unsupported blob encoding "${blob.data.encoding}"`)
     }
@@ -133,17 +171,20 @@ export async function seedRepoFromTemplate(
 
   if (!mainExists) {
     const bootstrap = blobs.find((b) => b.path !== SEED_MARKER_PATH) ?? blobs[0]
-    await octokit.repos.createOrUpdateFileContents({
-      owner: target.owner,
-      repo: target.repo,
-      path: bootstrap.path,
-      message: 'Initialize repository',
-      content: await fetchTemplateBlobBase64(bootstrap.sha, bootstrap.path),
-      branch: MAIN_BRANCH,
-      ...(options.authorName && options.authorEmail
-        ? { author: { name: options.authorName, email: options.authorEmail } }
-        : {}),
-    })
+    const bootstrapContent = await fetchTemplateBlobBase64(bootstrap.sha, bootstrap.path)
+    await withRateLimitRetry(() =>
+      octokit.repos.createOrUpdateFileContents({
+        owner: target.owner,
+        repo: target.repo,
+        path: bootstrap.path,
+        message: 'Initialize repository',
+        content: bootstrapContent,
+        branch: MAIN_BRANCH,
+        ...(options.authorName && options.authorEmail
+          ? { author: { name: options.authorName, email: options.authorEmail } }
+          : {}),
+      })
+    )
   }
 
   // main now exists (pre-existing or just bootstrapped) — read it for base_tree.
@@ -162,40 +203,48 @@ export async function seedRepoFromTemplate(
     const copied = await Promise.all(
       batch.map(async (b) => {
         const content = await fetchTemplateBlobBase64(b.sha, b.path)
-        const created = await octokit.git.createBlob({
-          owner: target.owner,
-          repo: target.repo,
-          content,
-          encoding: 'base64',
-        })
+        const created = await withRateLimitRetry(() =>
+          octokit.git.createBlob({
+            owner: target.owner,
+            repo: target.repo,
+            content,
+            encoding: 'base64',
+          })
+        )
         return { path: b.path, mode: normalizeMode(b.mode), type: 'blob' as const, sha: created.data.sha }
       })
     )
     treeEntries.push(...copied)
   }
 
-  const newTree = await octokit.git.createTree({
-    owner: target.owner,
-    repo: target.repo,
-    base_tree: mainCommit.data.tree.sha,
-    tree: treeEntries,
-  })
-  const commit = await octokit.git.createCommit({
-    owner: target.owner,
-    repo: target.repo,
-    message: `Seed site from ${template.owner}/${template.repo}`,
-    tree: newTree.data.sha,
-    parents: [mainRef.data.object.sha],
-    ...(options.authorName && options.authorEmail
-      ? { author: { name: options.authorName, email: options.authorEmail } }
-      : {}),
-  })
-  await octokit.git.updateRef({
-    owner: target.owner,
-    repo: target.repo,
-    ref: `heads/${MAIN_BRANCH}`,
-    sha: commit.data.sha,
-  })
+  const newTree = await withRateLimitRetry(() =>
+    octokit.git.createTree({
+      owner: target.owner,
+      repo: target.repo,
+      base_tree: mainCommit.data.tree.sha,
+      tree: treeEntries,
+    })
+  )
+  const commit = await withRateLimitRetry(() =>
+    octokit.git.createCommit({
+      owner: target.owner,
+      repo: target.repo,
+      message: `Seed site from ${template.owner}/${template.repo}`,
+      tree: newTree.data.sha,
+      parents: [mainRef.data.object.sha],
+      ...(options.authorName && options.authorEmail
+        ? { author: { name: options.authorName, email: options.authorEmail } }
+        : {}),
+    })
+  )
+  await withRateLimitRetry(() =>
+    octokit.git.updateRef({
+      owner: target.owner,
+      repo: target.repo,
+      ref: `heads/${MAIN_BRANCH}`,
+      sha: commit.data.sha,
+    })
+  )
 
   // The editor and the assembly push both work off the draft branch — make sure
   // it exists now that main does.
