@@ -33,8 +33,7 @@ export default function DeliverablesPhase({
   const [error, setError] = useState<string | null>(null)
   const [unapprovedFromGate, setUnapprovedFromGate] = useState<Unapproved[] | null>(null)
   const [packageInfo, setPackageInfo] = useState<{ pageCount: number; sizeKB: number } | null>(null)
-  const [pushInfo, setPushInfo] = useState<{ fileCount: number } | null>(null)
-  const [pushWarn, setPushWarn] = useState<string | null>(null)
+  const [deployState, setDeployState] = useState<'idle' | 'deploying' | 'deployed' | 'unknown'>('idle')
   const [linkWarnings, setLinkWarnings] = useState<string[]>([])
   const [redirectIssues, setRedirectIssues] = useState<Array<{ severity: string; oldUrl: string; reason: string }>>([])
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
@@ -73,10 +72,45 @@ export default function DeliverablesPhase({
     return () => { cancelled = true; clearInterval(intervalId) }
   }, [contentJobId])
 
+  // Poll the linked repo's draft HEAD until a new "Deploy packaged content"
+  // commit appears (the background push landed) or we give up. `baselineSha` is
+  // the pre-push HEAD captured before assembly, so a fresh deploy commit is a
+  // sha change — no clock comparison needed.
+  const trackDeploy = async (baselineSha: string | null) => {
+    setDeployState('deploying')
+    const MAX_POLLS = 40 // ~3.3 min at 5s
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, 5000))
+      try {
+        const res = await fetch(`/api/content-jobs/${contentJobId}/deploy-status`)
+        if (!res.ok) continue
+        const data = await res.json()
+        if (data.repo == null) { setDeployState('idle'); return }
+        if (data.reachable && data.isDeployCommit && data.lastCommitSha && data.lastCommitSha !== baselineSha) {
+          setDeployState('deployed')
+          return
+        }
+      } catch {
+        // keep polling
+      }
+    }
+    setDeployState('unknown')
+  }
+
   const assemblePackage = async () => {
     setPackaging(true)
     setError(null)
     setUnapprovedFromGate(null)
+    setDeployState('idle')
+    // Capture the repo's current HEAD before the push runs so trackDeploy can
+    // detect the new deploy commit.
+    let baselineSha: string | null = null
+    try {
+      const b = await fetch(`/api/content-jobs/${contentJobId}/deploy-status`)
+      if (b.ok) baselineSha = (await b.json()).lastCommitSha ?? null
+    } catch {
+      // baseline is best-effort
+    }
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/package`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
@@ -85,11 +119,10 @@ export default function DeliverablesPhase({
         throw new Error(data?.error ?? 'Failed to assemble package')
       }
       setPackageInfo({ pageCount: data.pageCount, sizeKB: data.sizeKB })
-      setPushInfo(data.pushedToRepo ? { fileCount: data.pushedToRepo.fileCount } : null)
-      setPushWarn(typeof data.pushError === 'string' ? data.pushError : null)
       setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
       setRedirectIssues(Array.isArray(data.redirectIssues) ? data.redirectIssues : [])
       setPackaged(true)
+      if (data.pushScheduled) void trackDeploy(baselineSha)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to assemble')
     } finally {
@@ -192,15 +225,19 @@ export default function DeliverablesPhase({
             )}
           </div>
 
-          {pushInfo && (
+          {deployState === 'deploying' && (
             <div className="bg-info/10 border border-info/20 text-info text-sm font-body rounded-lg px-4 py-2">
-              Deployed {pushInfo.fileCount} file(s) to the site repo&rsquo;s <span className="font-mono">draft</span> branch.
-              Review in the content editor, then <span className="font-semibold">Publish to live</span> when ready.
+              Deploying content to the site repo&rsquo;s <span className="font-mono">draft</span> branch in the background… This can take a minute for image-heavy sites. The download below is ready now.
             </div>
           )}
-          {pushWarn && (
+          {deployState === 'deployed' && (
+            <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-2">
+              Deployed to the site repo&rsquo;s <span className="font-mono">draft</span> branch. Review in the content editor, then <span className="font-semibold">Publish to live</span> when ready.
+            </div>
+          )}
+          {deployState === 'unknown' && (
             <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2">
-              Package built, but the push to the site repo failed: {pushWarn}. The repo link or GitHub App may need attention; the download below still works.
+              Couldn&rsquo;t confirm the repo deploy from here — it may still be finishing. Check the content editor for the latest <span className="font-mono">draft</span> commit; the download below works regardless.
             </div>
           )}
 

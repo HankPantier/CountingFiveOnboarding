@@ -1,7 +1,7 @@
 // Operator tool: assemble the deliverable package for a content job from the
 // CLI — same code path as the admin UI's "Assemble Package" button. Run with:
 //   npx tsx scripts/package-job.ts <contentJobId>
-import { assembleContentPackage } from '../lib/content/package-assembler'
+import { assembleContentPackage, pushAssembledDeliverable } from '../lib/content/package-assembler'
 
 const jobId = process.argv[2]
 if (!jobId) throw new Error('usage: package-job.ts <contentJobId>')
@@ -27,7 +27,16 @@ async function main() {
   console.log(`zip:     ${result.storagePath} (${result.sizeKB} KB)`)
   console.log(`pages:   ${result.pageCount}`)
   console.log(`assets:  ${result.assetCount}`)
-  console.log(`push:    ${result.pushedToRepo ? `${result.pushedToRepo.fileCount} files @ ${result.pushedToRepo.commitSha.slice(0, 7)}` : result.pushError ?? 'no repo linked'}`)
+
+  // The route runs the push in a background after(); the CLI awaits it so
+  // operators see the outcome inline.
+  if (result.deploy) {
+    const push = await pushAssembledDeliverable(result.deploy)
+    console.log(`push:    ${push.ok ? `${push.fileCount} files @ ${push.commitSha.slice(0, 7)}` : `FAILED — ${push.error}`}`)
+  } else {
+    console.log('push:    no repo linked')
+  }
+
   if (result.redirectIssues.length) {
     console.log(`redirect issues: ${result.redirectIssues.length}`)
     for (const i of result.redirectIssues) console.log(`  [${i.severity}] ${i.oldUrl}: ${i.reason}`)

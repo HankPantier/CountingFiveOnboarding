@@ -1,12 +1,12 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
-import { assembleContentPackage } from '@/lib/content/package-assembler'
+import { assembleContentPackage, pushAssembledDeliverable } from '@/lib/content/package-assembler'
 
 export const runtime = 'nodejs'
-// Assembly (asset downloads + LLM brand doc + docx + ~45MB resumable upload)
-// plus the git push of the full deliverable (hundreds of blobs) runs well past
-// 120s once the repo is seeded and the push actually executes. Match the other
-// heavy content routes at 300.
+// Assembly (asset downloads + LLM brand doc + docx + ~45MB resumable upload) is
+// what the response waits on. The git push of the full deliverable (hundreds of
+// blobs) is decoupled into an after() background task, but it still shares this
+// invocation's budget — keep 300 so the background push has room.
 export const maxDuration = 300
 
 export async function POST(
@@ -41,6 +41,16 @@ export async function POST(
     return NextResponse.json(body, { status })
   }
 
-  const { ok: _ok, ...body } = result
-  return NextResponse.json({ success: true, ...body })
+  // Decouple the push: the response returns as soon as the zip is uploaded, and
+  // the (slow, rate-limit-prone) git push runs in the background. `deploy` holds
+  // file Buffers and must never be JSON-serialized — strip it here and pass it
+  // to after(). Its outcome shows up via the deploy-status endpoint, not this
+  // response.
+  const { ok: _ok, deploy, ...body } = result
+  if (deploy) {
+    after(async () => {
+      await pushAssembledDeliverable(deploy)
+    })
+  }
+  return NextResponse.json({ success: true, ...body, pushScheduled: deploy !== null })
 }

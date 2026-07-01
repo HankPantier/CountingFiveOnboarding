@@ -58,6 +58,21 @@ GeneratedMarkdownPage.tsx), which currently always uses /api/og.
 
 type PageRef = { id: string; page_url: string; page_title: string }
 
+// Everything the git push needs, carried in memory from assembly to the push
+// step. `entries` holds file Buffers, so this must NEVER be JSON-serialized
+// into an HTTP response — the route strips it before responding and hands it to
+// a background after() task.
+export type DeployContext = {
+  githubRepo: string
+  entries: { path: string; content: string | Buffer }[]
+  siteUrl: string
+  author: { authorName: string; authorEmail: string }
+}
+
+export type PushOutcome =
+  | { ok: true; commitSha: string; fileCount: number }
+  | { ok: false; error: string }
+
 export type PackageResult =
   | { ok: false; status: 400 | 404 | 500; error: string; unapproved?: PageRef[]; awaitingClient?: PageRef[] }
   | {
@@ -68,8 +83,10 @@ export type PackageResult =
       sizeKB: number
       redirectIssues: RedirectIssue[]
       linkWarnings: string[]
-      pushedToRepo: { commitSha: string; fileCount: number } | null
-      pushError: string | null
+      // The push is decoupled: assembly returns this context and the caller
+      // runs pushAssembledDeliverable() in the background (or awaits it in the
+      // CLI). null when no repo is linked. Not part of the JSON response.
+      deploy: DeployContext | null
     }
 
 export async function assembleContentPackage(
@@ -512,46 +529,21 @@ export async function assembleContentPackage(
 
   console.warn(`[content-job] Package assembled: ${storagePath} (${(zipBuffer.length / 1024).toFixed(0)} KB)`)
 
-  // Auto-deploy to the linked repo's draft branch so the in-admin editor and
-  // Vercel preview reflect the freshly-packaged content. Only content/ and
-  // public/ files are pushed (the .docx + ERRORS.md review artifacts stay out
-  // of the site repo). Non-fatal: a GitHub hiccup must not fail packaging.
-  let pushedToRepo: { commitSha: string; fileCount: number } | null = null
-  let pushError: string | null = null
+  // The push to the linked repo is decoupled from assembly: it's the slow,
+  // rate-limit-prone part (hundreds of blobs) and must not block the zip/
+  // download or risk the route's timeout. Build the context here; the caller
+  // runs pushAssembledDeliverable() in a background after() task (or awaits it
+  // in the CLI). Only content/ + public/ files ship to the repo — the .docx +
+  // ERRORS.md review artifacts stay out.
+  let deploy: DeployContext | null = null
   if (job.github_repo) {
-    const repoEntries = entries.filter(
-      (e) => e.path.startsWith('content/') || e.path.startsWith('public/')
-    )
-    try {
-      await ensureDraftBranch(job.github_repo)
-      pushedToRepo = await pushEntriesToBranch(
-        job.github_repo,
-        DRAFT_BRANCH,
-        repoEntries,
-        `Deploy packaged content via admin${actor.email ? ` (${actor.email})` : ''}`,
-        { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' }
-      )
-      console.warn(
-        `[content-job] Pushed ${pushedToRepo.fileCount} file(s) to ${job.github_repo}@${DRAFT_BRANCH} (${pushedToRepo.commitSha.slice(0, 7)})`
-      )
-      // Point the dynamic sitemap (and other siteConfig consumers) at the
-      // canonical host the content already uses, and drop any stale static
-      // sitemap a prior package left behind. Both non-fatal.
-      const siteUrl = session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://')
-      const author = { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' }
-      try {
-        await patchSiteConfigSiteUrl(job.github_repo, DRAFT_BRANCH, siteUrl, author)
-      } catch (err) {
-        console.warn(`[content-job] site.config siteUrl patch failed for ${job.github_repo}:`, err)
-      }
-      try {
-        await removeStaleStaticSitemap(job.github_repo, DRAFT_BRANCH, author)
-      } catch (err) {
-        console.warn(`[content-job] Stale sitemap cleanup failed for ${job.github_repo}:`, err)
-      }
-    } catch (err) {
-      pushError = githubErrorMessage(err, job.github_repo)
-      console.error(`[content-job] Push to ${job.github_repo} failed:`, pushError)
+    deploy = {
+      githubRepo: job.github_repo,
+      entries: entries.filter(
+        (e) => e.path.startsWith('content/') || e.path.startsWith('public/')
+      ),
+      siteUrl: session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://'),
+      author: { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' },
     }
   }
 
@@ -573,7 +565,46 @@ export async function assembleContentPackage(
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
     linkWarnings,
-    pushedToRepo,
-    pushError,
+    deploy,
+  }
+}
+
+// Push an assembled deliverable's content/ + public/ files to the linked repo's
+// draft branch. Decoupled from assembly so it can run in a background after()
+// task (route) or be awaited (CLI). Self-contained and non-throwing: returns a
+// PushOutcome rather than throwing, since a GitHub hiccup must never surface as
+// an assembly failure.
+export async function pushAssembledDeliverable(deploy: DeployContext): Promise<PushOutcome> {
+  const { githubRepo, entries, siteUrl, author } = deploy
+  try {
+    await ensureDraftBranch(githubRepo)
+    const pushed = await pushEntriesToBranch(
+      githubRepo,
+      DRAFT_BRANCH,
+      entries,
+      `Deploy packaged content via admin${author.authorEmail ? ` (${author.authorEmail})` : ''}`,
+      author
+    )
+    console.warn(
+      `[content-job] Pushed ${pushed.fileCount} file(s) to ${githubRepo}@${DRAFT_BRANCH} (${pushed.commitSha.slice(0, 7)})`
+    )
+    // Point the dynamic sitemap (and other siteConfig consumers) at the
+    // canonical host, and drop any stale static sitemap a prior package left
+    // behind. Both non-fatal.
+    try {
+      await patchSiteConfigSiteUrl(githubRepo, DRAFT_BRANCH, siteUrl, author)
+    } catch (err) {
+      console.warn(`[content-job] site.config siteUrl patch failed for ${githubRepo}:`, err)
+    }
+    try {
+      await removeStaleStaticSitemap(githubRepo, DRAFT_BRANCH, author)
+    } catch (err) {
+      console.warn(`[content-job] Stale sitemap cleanup failed for ${githubRepo}:`, err)
+    }
+    return { ok: true, commitSha: pushed.commitSha, fileCount: pushed.fileCount }
+  } catch (err) {
+    const error = githubErrorMessage(err, githubRepo)
+    console.error(`[content-job] Push to ${githubRepo} failed:`, error)
+    return { ok: false, error }
   }
 }
