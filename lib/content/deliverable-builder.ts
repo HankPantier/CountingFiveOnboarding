@@ -35,6 +35,50 @@ function pageFilename(url: string): string {
 const yv = (value: string | null | undefined): string =>
   JSON.stringify(value == null ? '' : String(value))
 
+// The firm's registration domain, minus a leading www — the identity we treat
+// as "internal" for link normalization. Apex and www forms both match.
+function siteHost(siteUrl: string): string {
+  const raw = (siteUrl ?? '').trim()
+  try {
+    const host = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).host
+    return host.replace(/^www\./i, '').toLowerCase()
+  } catch {
+    return raw.replace(/^www\./i, '').toLowerCase()
+  }
+}
+
+// Clickable internal links must be origin-relative so they resolve against
+// whatever origin serves the page (Vercel preview before launch, the live
+// domain after) instead of hard-jumping to production. Rewrite an absolute
+// http(s) URL on the firm's own host to a root-relative path; leave already-
+// relative hrefs, fragments, queries, mailto:/tel:, and genuinely external
+// URLs untouched. SEO fields (canonical_url, OG) never pass through here — they
+// stay absolute → production by design.
+export function internalizeHref(href: string, host: string): string {
+  const h = (href ?? '').trim()
+  if (!/^https?:\/\//i.test(h)) return h
+  try {
+    const u = new URL(h)
+    if (u.host.replace(/^www\./i, '').toLowerCase() === host) {
+      return `${u.pathname}${u.search}${u.hash}` || '/'
+    }
+  } catch {
+    // malformed URL — leave it as-is
+  }
+  return h
+}
+
+// Relativize inline markdown link targets (`[text](https://firm-host/...)`) on
+// the firm's own host. Image links (`![alt](...)`) and external targets are
+// left alone.
+function internalizeMarkdownLinks(md: string, host: string): string {
+  return md.replace(
+    /(!?)(\[[^\]]*\]\()(https?:\/\/[^)\s]+)/g,
+    (full, bang: string, open: string, url: string) =>
+      bang ? full : open + internalizeHref(url, host)
+  )
+}
+
 // The image/split hero blocks render a large H1. Without a dedicated headline
 // the template falls back to the page title, so a nav-titled page ("Home",
 // "Contact") shows that bare word as its hero — weak copy and a poor on-page
@@ -58,11 +102,14 @@ export function buildPageMarkdown(
     jsonLd?: string
   }
 ): string {
+  const host = siteHost(options.websiteUrl)
   const secondaryKw = (page.secondary_keywords as string[]) ?? []
   const eeatSignals = (page.eeat_signals as string[]) ?? []
-  const internalLinks = (page.internal_links as Array<{ url: string; anchor_text: string; reason: string }>) ?? []
+  const internalLinks = ((page.internal_links as Array<{ url: string; anchor_text: string; reason: string }>) ?? [])
+    .map((l) => ({ ...l, url: internalizeHref(l.url, host) }))
   const faqBlock = (page.faq_block as Array<{ question: string; answer: string }>) ?? []
-  const cta = options.cta ?? null
+  const cta = options.cta ? { ...options.cta, url: internalizeHref(options.cta.url, host) } : null
+  const body = internalizeMarkdownLinks(page.content_markdown ?? '', host)
   const heroHeadline = deriveHeroHeadline(page)
 
   let md = `---
@@ -82,7 +129,7 @@ faq_block: ${JSON.stringify(faqBlock)}
 llm_citation_note: ${JSON.stringify(page.llm_citation_note ?? '')}
 ---
 
-${page.content_markdown ?? ''}
+${body}
 
 ---
 ## SEO & AIO Metadata

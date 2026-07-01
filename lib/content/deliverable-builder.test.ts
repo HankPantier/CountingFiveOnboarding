@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildAllPageFiles, buildPageMarkdown, toPagePath } from './deliverable-builder'
+import { buildAllPageFiles, buildPageMarkdown, internalizeHref, toPagePath } from './deliverable-builder'
 import type { Database } from '@/types/database'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
@@ -164,6 +164,64 @@ describe('buildPageMarkdown — colon-safe scalar frontmatter (Issue #3)', () =>
     expect(JSON.parse(frontmatterField(md, 'title'))).toBe(
       'Services: Overview | Brammer, Begnaud & Lattimore'
     )
+  })
+})
+
+describe('internalizeHref — firm-host links become origin-relative', () => {
+  const host = 'bblcpa.com'
+  it('strips the firm origin (www) to a root-relative path', () => {
+    expect(internalizeHref('https://www.bblcpa.com/what-we-do/tax', host)).toBe('/what-we-do/tax')
+  })
+  it('treats apex and www as the same internal host', () => {
+    expect(internalizeHref('https://bblcpa.com/contact', host)).toBe('/contact')
+  })
+  it('preserves query + hash on internal links', () => {
+    expect(internalizeHref('https://www.bblcpa.com/team?x=1#bio', host)).toBe('/team?x=1#bio')
+  })
+  it('leaves genuinely external URLs absolute', () => {
+    expect(internalizeHref('https://www.facebook.com/bbl', host)).toBe('https://www.facebook.com/bbl')
+  })
+  it('leaves already-relative, fragment, mailto, and tel hrefs untouched', () => {
+    expect(internalizeHref('/services', host)).toBe('/services')
+    expect(internalizeHref('#top', host)).toBe('#top')
+    expect(internalizeHref('mailto:hi@bblcpa.com', host)).toBe('mailto:hi@bblcpa.com')
+    expect(internalizeHref('tel:+15550100', host)).toBe('tel:+15550100')
+  })
+})
+
+describe('buildPageMarkdown — internal links are relativized, SEO stays absolute (relative-links-fix)', () => {
+  const md = buildPageMarkdown(
+    makePage({
+      canonical_url: 'https://www.bblcpa.com/services',
+      content_markdown:
+        '## Overview\n\nSee our [tax services](https://www.bblcpa.com/what-we-do/tax) and follow us on [Facebook](https://www.facebook.com/bbl).',
+      internal_links: [
+        { url: 'https://www.bblcpa.com/who-we-are', anchor_text: 'our team', reason: 'about' },
+      ],
+    }),
+    'BBL',
+    {
+      websiteUrl: 'https://www.bblcpa.com',
+      cta: { text: 'Get started', url: 'https://www.bblcpa.com/contact' },
+    }
+  )
+
+  it('relativizes internal_links frontmatter to the firm host', () => {
+    expect(JSON.parse(frontmatterField(md, 'internal_links'))).toEqual([
+      { url: '/who-we-are', anchor_text: 'our team', reason: 'about' },
+    ])
+  })
+  it('relativizes the CTA url', () => {
+    expect(JSON.parse(frontmatterField(md, 'cta_url'))).toBe('/contact')
+  })
+  it('relativizes internal body-prose links', () => {
+    expect(md).toContain('[tax services](/what-we-do/tax)')
+  })
+  it('leaves external body-prose links absolute', () => {
+    expect(md).toContain('[Facebook](https://www.facebook.com/bbl)')
+  })
+  it('keeps canonical_url absolute → production (SEO invariant)', () => {
+    expect(JSON.parse(frontmatterField(md, 'canonical_url'))).toBe('https://www.bblcpa.com/services')
   })
 })
 
