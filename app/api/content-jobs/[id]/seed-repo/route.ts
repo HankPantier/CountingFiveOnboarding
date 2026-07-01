@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { RequestError } from '@octokit/request-error'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { seedRepoFromTemplate } from '@/lib/github/template-seed'
@@ -34,8 +35,14 @@ export async function POST(
     })
     return NextResponse.json(result)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to seed repo'
     console.error('[seed-repo] Seed failed:', err)
+    let message = err instanceof Error ? err.message : 'Failed to seed repo'
+    // A 403 "Resource not accessible by integration" on a write endpoint means
+    // the GitHub App lacks Contents: Read & Write on the target repo. Make that
+    // actionable rather than leaving the raw octokit string.
+    if (err instanceof RequestError && err.status === 403) {
+      message = `${message} — the GitHub App needs "Contents: Read & Write" on ${job.github_repo} (and the repo must be in its installation scope).`
+    }
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
