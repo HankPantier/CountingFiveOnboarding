@@ -14,10 +14,23 @@ export async function POST(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const result = await assembleContentPackage(id, {
-    name: 'CountingFive Admin',
-    email: auth.user.email ?? null,
-  })
+
+  // Surface real failures. Without this, a thrown exception becomes a bodyless
+  // 500 and the client can only show its generic "Failed to assemble package"
+  // — undiagnosable. This route is admin-gated, so returning the message is
+  // safe and expected. (A hard Vercel maxDuration timeout still can't be caught
+  // here — that's addressed by bounding the assembler's I/O.)
+  let result
+  try {
+    result = await assembleContentPackage(id, {
+      name: 'CountingFive Admin',
+      email: auth.user.email ?? null,
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Package assembly failed'
+    console.error('[package] Unhandled assembly error:', err)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 
   if (!result.ok) {
     const { ok: _ok, status, ...body } = result

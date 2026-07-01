@@ -16,6 +16,7 @@ import { buildJsonLdForPage } from '@/lib/content/json-ld-builder'
 import { buildRedirectsCsv } from '@/lib/content/redirect-map-builder'
 import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
+import { resumableUpload, RESUMABLE_THRESHOLD } from '@/lib/supabase/resumable-upload'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
@@ -226,35 +227,53 @@ export async function assembleContentPackage(
   const assetEntries: Array<{ path: string; content: Buffer; fileName: string; category: string | null }> = []
   const seenFilenames = new Set<string>()
 
-  await Promise.all(sessionAssets.map(async (asset) => {
-    const { data, error } = await supabase.storage
-      .from('session-assets')
-      .download(asset.storage_path)
-    if (error || !data) {
-      console.warn(`[package] Failed to download asset ${asset.storage_path}: ${error?.message}`)
-      return
-    }
-    const buffer = Buffer.from(await data.arrayBuffer())
+  // Download session assets in bounded batches. A prior unbounded Promise.all
+  // over every asset fired hundreds of concurrent storage downloads at once,
+  // exhausting the Supabase connection pool ("Too many connections issued to
+  // the database") and poisoning the socket state so the final zip upload died
+  // with EPIPE — and on Vercel it blew the maxDuration budget. Mirror the
+  // chunked pattern in lib/content/link-checker.ts. Naming/collision handling
+  // stays sequential in array order so filenames are deterministic across runs.
+  const ASSET_DOWNLOAD_CONCURRENCY = 8
+  for (let i = 0; i < sessionAssets.length; i += ASSET_DOWNLOAD_CONCURRENCY) {
+    const batch = sessionAssets.slice(i, i + ASSET_DOWNLOAD_CONCURRENCY)
+    const downloaded = await Promise.all(
+      batch.map(async (asset) => {
+        const { data, error } = await supabase.storage
+          .from('session-assets')
+          .download(asset.storage_path)
+        if (error || !data) {
+          console.warn(`[package] Failed to download asset ${asset.storage_path}: ${error?.message}`)
+          return null
+        }
+        return { asset, buffer: Buffer.from(await data.arrayBuffer()) }
+      })
+    )
 
-    // Use the original file_name. On collision, append a numeric suffix.
-    let cleanName = asset.file_name
-    let counter = 1
-    while (seenFilenames.has(cleanName)) {
-      const dotIdx = asset.file_name.lastIndexOf('.')
-      const stem = dotIdx > 0 ? asset.file_name.slice(0, dotIdx) : asset.file_name
-      const ext = dotIdx > 0 ? asset.file_name.slice(dotIdx) : ''
-      cleanName = `${stem}-${counter}${ext}`
-      counter++
-    }
-    seenFilenames.add(cleanName)
+    for (const item of downloaded) {
+      if (!item) continue
+      const { asset, buffer } = item
 
-    assetEntries.push({
-      path: `public/content-assets/${cleanName}`,
-      content: buffer,
-      fileName: cleanName,
-      category: asset.asset_category,
-    })
-  }))
+      // Use the original file_name. On collision, append a numeric suffix.
+      let cleanName = asset.file_name
+      let counter = 1
+      while (seenFilenames.has(cleanName)) {
+        const dotIdx = asset.file_name.lastIndexOf('.')
+        const stem = dotIdx > 0 ? asset.file_name.slice(0, dotIdx) : asset.file_name
+        const ext = dotIdx > 0 ? asset.file_name.slice(dotIdx) : ''
+        cleanName = `${stem}-${counter}${ext}`
+        counter++
+      }
+      seenFilenames.add(cleanName)
+
+      assetEntries.push({
+        path: `public/content-assets/${cleanName}`,
+        content: buffer,
+        fileName: cleanName,
+        category: asset.asset_category,
+      })
+    }
+  }
 
   console.warn(`[package] Bundled ${assetEntries.length} session asset(s) into public/content-assets/`)
 
@@ -455,18 +474,33 @@ export async function assembleContentPackage(
 
   const zipBuffer = await assembleZip(entries)
 
-  // Upload to Supabase Storage
+  // Upload to Supabase Storage. The standard upload path rejects large request
+  // bodies (an image-heavy ~45MB package dies with EPIPE) well under the
+  // bucket's 300MB limit, so anything at/above the resumable threshold goes
+  // through the TUS resumable uploader instead of a single POST.
   const storagePath = `content-packages/${job.session_id}/content-package.zip`
-  const { error: uploadError } = await supabase.storage
-    .from('session-assets')
-    .upload(storagePath, zipBuffer, {
-      contentType: 'application/zip',
-      upsert: true,
-    })
-
-  if (uploadError) {
+  try {
+    if (zipBuffer.length >= RESUMABLE_THRESHOLD) {
+      await resumableUpload({
+        bucket: 'session-assets',
+        path: storagePath,
+        body: zipBuffer,
+        contentType: 'application/zip',
+        upsert: true,
+      })
+    } else {
+      const { error: uploadError } = await supabase.storage
+        .from('session-assets')
+        .upload(storagePath, zipBuffer, { contentType: 'application/zip', upsert: true })
+      if (uploadError) throw uploadError
+    }
+  } catch (uploadError) {
     console.error('[package] Upload failed:', uploadError)
-    return { ok: false, status: 500, error: 'Failed to upload package' }
+    return {
+      ok: false,
+      status: 500,
+      error: `Failed to upload package: ${uploadError instanceof Error ? uploadError.message : 'unknown error'}`,
+    }
   }
 
   // Update job

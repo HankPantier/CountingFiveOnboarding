@@ -20,6 +20,34 @@ export default function GithubRepoConnector({
   const [draft, setDraft] = useState<string>(initialRepo ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [seeding, setSeeding] = useState(false)
+  const [seedMsg, setSeedMsg] = useState<string | null>(null)
+  const [seedError, setSeedError] = useState<string | null>(null)
+
+  const seedRepo = async () => {
+    setSeeding(true)
+    setSeedMsg(null)
+    setSeedError(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/seed-repo`, { method: 'POST' })
+      const data = (await res.json().catch(() => ({}))) as {
+        seeded?: boolean
+        skipped?: string
+        fileCount?: number
+        error?: string
+      }
+      if (!res.ok) throw new Error(data.error ?? `Request failed: ${res.status}`)
+      setSeedMsg(
+        data.seeded
+          ? `Seeded ${data.fileCount} template file(s) to the repo.`
+          : 'Repo already has template files — nothing to seed.'
+      )
+    } catch (err) {
+      setSeedError(err instanceof Error ? err.message : 'Seed failed')
+    } finally {
+      setSeeding(false)
+    }
+  }
 
   const repoUrl = (slug: string): string => {
     return slug.includes('/')
@@ -103,6 +131,24 @@ export default function GithubRepoConnector({
             The Edit content button on the dashboard is enabled once the
             content job reaches phase 6 and this slug is set.
           </p>
+
+          <div className="pt-2 border-t border-border-default space-y-2">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={seedRepo}
+                disabled={seeding}
+                className="border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan hover:text-text-inverse disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {seeding ? 'Seeding…' : 'Seed from template'}
+              </button>
+              <span className="text-xs font-body text-text-muted">
+                One-time: copies the site template into an empty repo. Skips if it already has the template.
+              </span>
+            </div>
+            {seedMsg && <p className="text-xs font-body text-success">{seedMsg}</p>}
+            {seedError && <p className="text-xs font-body text-error">{seedError}</p>}
+          </div>
         </div>
       ) : (
         <form onSubmit={onSubmit} className="space-y-2">
