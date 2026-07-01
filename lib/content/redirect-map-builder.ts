@@ -1,4 +1,5 @@
 import type { SessionSchema } from '@/types/session-schema'
+import { toSitePath } from './url-path'
 
 type CurrentSitemapEntry = NonNullable<SessionSchema['current_sitemap']>[number]
 
@@ -35,17 +36,10 @@ const COMMENT_HEADER =
 
 const CSV_HEADER = 'old_url,new_url,status_code,reason\n'
 
-// Phase I sitemap data annotates destinations with prose — real examples:
-// "/contact (merge into contact page)", "/resources/articles/ (bulk)".
-// Take the first whitespace-delimited token and normalize the trailing
-// slash so the intent maps onto a real page instead of failing validation.
-function sanitizeUrl(raw: string | undefined): string | undefined {
-  if (!raw) return undefined
-  const first = raw.trim().split(/\s+/)[0] ?? ''
-  if (!first.startsWith('/')) return undefined
-  const noTrailing = first.replace(/\/+$/, '')
-  return noTrailing === '' ? '/' : noTrailing
-}
+// Normalize a sitemap URL to a comparable site path. toSitePath strips the
+// origin (so https://host/contact and /contact match), drops trailing prose
+// ("/contact (merge into contact page)"), and trims trailing slashes.
+const sanitizeUrl = toSitePath
 
 // Emit a CSV migration plan from the firm's current site to the new sitemap.
 // Validates redirect targets against the confirmed sitemap and returns both

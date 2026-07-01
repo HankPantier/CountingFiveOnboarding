@@ -45,4 +45,12 @@ describe('validateInternalLinks', () => {
     const md = '[a](/nope)\n[b](/nope)'
     expect(validateInternalLinks([page({ content_markdown: md })], SITEMAP)).toHaveLength(1)
   })
+
+  it('matches path links against absolute-URL sitemap entries (origin stripped)', () => {
+    // Sitemap stores kept pages as absolute URLs; page links use paths. These
+    // are the same page and must not warn.
+    const sitemap = ['https://www.acme.com/contact', 'https://www.acme.com/services']
+    const md = '[c](/contact)\n[s](/services)'
+    expect(validateInternalLinks([page({ content_markdown: md })], sitemap)).toHaveLength(0)
+  })
 })

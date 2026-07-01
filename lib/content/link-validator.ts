@@ -5,6 +5,8 @@
 // links are a quality issue, not a packaging blocker.
 // ---------------------------------------------------------------------------
 
+import { toSitePath } from './url-path'
+
 type PageForLinkCheck = {
   page_url: string
   content_markdown: string | null
@@ -13,11 +15,6 @@ type PageForLinkCheck = {
 
 const MD_LINK_RE = /\[[^\]]*\]\((\/[^)\s#?]*)/g
 const ASSET_EXT_RE = /\.(png|jpe?g|webp|gif|svg|pdf|docx?|xlsx?|zip|xml|txt|ico)$/i
-
-function normalize(url: string): string {
-  const noTrailing = url.replace(/\/+$/, '')
-  return noTrailing === '' ? '/' : noTrailing
-}
 
 function isCheckable(path: string): boolean {
   if (ASSET_EXT_RE.test(path)) return false
@@ -31,7 +28,10 @@ export function validateInternalLinks(
   sitemapUrls: Iterable<string>
 ): string[] {
   const known = new Set<string>()
-  for (const url of sitemapUrls) known.add(normalize(url))
+  for (const url of sitemapUrls) {
+    const p = toSitePath(url)
+    if (p) known.add(p)
+  }
   known.add('/') // home is always a real page
 
   const warnings: string[] = []
@@ -49,15 +49,15 @@ export function validateInternalLinks(
       : []
     for (const link of links) {
       if (typeof link?.url !== 'string' || !link.url.startsWith('/')) continue
-      const target = normalize(link.url)
-      if (isCheckable(target) && !known.has(target)) {
+      const target = toSitePath(link.url)
+      if (target && isCheckable(target) && !known.has(target)) {
         warn(page.page_url, target, 'internal_links metadata')
       }
     }
 
     for (const match of (page.content_markdown ?? '').matchAll(MD_LINK_RE)) {
-      const target = normalize(match[1])
-      if (isCheckable(target) && !known.has(target)) {
+      const target = toSitePath(match[1])
+      if (target && isCheckable(target) && !known.has(target)) {
         warn(page.page_url, target, 'body link')
       }
     }

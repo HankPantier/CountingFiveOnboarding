@@ -61,4 +61,14 @@ describe('buildRedirectsCsv — Phase I annotated destinations', () => {
     )
     expect(issues).toHaveLength(0)
   })
+
+  it('matches absolute old/new URLs against a path sitemap (origin stripped)', () => {
+    // Real data stores kept pages as absolute URLs in BOTH the current and the
+    // confirmed sitemap. A kept page present in the new sitemap must not warn.
+    const { issues } = buildRedirectsCsv(
+      [{ url: 'https://www.acme.com/contact', title: 'T', live: true, action: 'keep' }],
+      [{ url: 'https://www.acme.com/contact', title: 'Contact', status: 'update' }]
+    )
+    expect(issues).toHaveLength(0)
+  })
 })
