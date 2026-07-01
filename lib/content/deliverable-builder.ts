@@ -37,7 +37,7 @@ const yv = (value: string | null | undefined): string =>
 
 // The firm's registration domain, minus a leading www — the identity we treat
 // as "internal" for link normalization. Apex and www forms both match.
-function siteHost(siteUrl: string): string {
+export function siteHost(siteUrl: string): string {
   const raw = (siteUrl ?? '').trim()
   try {
     const host = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).host

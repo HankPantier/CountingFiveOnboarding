@@ -29,7 +29,8 @@ import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
-import { buildNavJson } from '@/lib/content/nav-json-builder'
+import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { siteHost } from '@/lib/content/deliverable-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
@@ -329,9 +330,9 @@ export async function assembleContentPackage(
   // default rather than shipping a zip the template can't validate or theme.
   const brandJson = buildBrandJson(schema, palette ?? FALLBACK_PALETTE)
   const designJson = buildDesignJson(designTokens ?? FALLBACK_DESIGN_TOKENS)
-  const navJson = buildNavJson(
-    sitemap as Parameters<typeof buildNavJson>[0],
-    job.nav_config
+  const navJson = normalizeNavUrls(
+    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config),
+    siteHost(session.website_url)
   )
 
   if (!palette) console.warn(`[package] brand.json — palette not locked, using neutral fallback`)

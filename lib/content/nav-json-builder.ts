@@ -1,4 +1,5 @@
 import type { NavJson, NavItem } from '@/types/nav-json'
+import { internalizeHref } from '@/lib/content/deliverable-builder'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,6 +117,28 @@ function isRootItem(entry: SitemapEntry): boolean {
 // ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
+
+/**
+ * Rewrite every clickable nav URL (primary items, nested children, header CTA)
+ * that points at the firm's own host into an origin-relative path, so the nav
+ * follows the current origin — the Vercel preview before launch, the live
+ * domain after — instead of hard-jumping to production. Nav URLs are usually
+ * already relative; this is belt-and-suspenders for a crawl-seeded sitemap that
+ * carried absolute URLs. `host` is the bare firm host (www stripped) from
+ * `siteHost()`. Already-relative / external URLs are left untouched.
+ */
+export function normalizeNavUrls(nav: NavJson, host: string): NavJson {
+  const normItem = (item: NavItem): NavItem => ({
+    ...item,
+    url: internalizeHref(item.url, host),
+    ...(item.children ? { children: item.children.map(normItem) } : {}),
+  })
+  return {
+    ...nav,
+    primary: nav.primary.map(normItem),
+    ...(nav.cta ? { cta: { ...nav.cta, url: internalizeHref(nav.cta.url, host) } } : {}),
+  }
+}
 
 export function buildNavJson(
   sitemap: SitemapEntry[],
