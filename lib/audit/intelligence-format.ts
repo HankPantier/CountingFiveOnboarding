@@ -57,8 +57,11 @@ export const SECTION_HELP: Record<string, string> = {
 export const INTEL_LEAD_KEYS = ['target_market', 'competitive', 'niche_services'] as const
 export type IntelLeadKey = (typeof INTEL_LEAD_KEYS)[number]
 
-/** Sub-scores → display rows on the sample's 0–10 scale. */
+/** Sub-scores → display rows on the sample's 0–10 scale. Tolerates a missing or
+ * non-object `sub` — the intelligence layer is an editable JSONB blob and an
+ * Edit-with-AI write can leave it malformed. */
 export function subScoreRows(sub: Record<string, number>): Array<{ label: string; value: string }> {
+  if (!sub || typeof sub !== 'object') return []
   return Object.entries(sub).map(([k, v]) => ({ label: humanizeKey(k), value: `${v}/10` }))
 }
 

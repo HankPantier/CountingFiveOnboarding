@@ -107,9 +107,11 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
 
   // Top Recommendations callout — prefer the business-framed narrative recs,
   // fall back to the first three critical technical findings.
-  const topRecs: Array<{ title: string; detail: string; token: SemanticToken }> = intel?.narrative
-    ?.recommendations?.length
-    ? intel.narrative.recommendations.slice(0, 3).map((r) => ({
+  const narrativeRecs = asArray<NarrativeIntelligence['recommendations'][number]>(
+    intel?.narrative?.recommendations
+  )
+  const topRecs: Array<{ title: string; detail: string; token: SemanticToken }> = narrativeRecs.length
+    ? narrativeRecs.slice(0, 3).map((r) => ({
         title: r.title,
         detail: r.business_impact,
         token: r.priority === 'High' ? 'error' : r.priority === 'Medium' ? 'warning' : 'success',
@@ -247,7 +249,7 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
           </AuditAccordion>
         )}
 
-        {intel?.narrative?.recommendations?.length ? (
+        {intel?.narrative && narrativeRecs.length ? (
           <AuditAccordion
             label="Recommendations &amp; Next Steps"
             tip={SECTION_HELP.narrative_recs}
@@ -418,7 +420,7 @@ function BucketSection({
       body = <NicheServicesBody data={intel.niche_services} />
     }
   } else if (bucket.kind === 'tech_stack') {
-    const flags = intel?.tech_stack?.risk_flags.length ?? 0
+    const flags = asArray(intel?.tech_stack?.risk_flags).length
     body = (
       <>
         <p className="font-body text-xs text-text-muted">
@@ -659,6 +661,14 @@ const intelTableHead =
   'px-4 py-2 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy text-left'
 const intelTd = 'px-4 py-2 align-top text-text-secondary'
 
+// The intelligence layer is an editable JSONB blob (Edit-with-AI can write a
+// scalar where an array belongs, or leave `null` holes from a sparse-index
+// write). Coerce any array field to a clean array so the report renders a
+// degraded section instead of throwing and 500-ing the whole route.
+function asArray<T>(x: unknown): T[] {
+  return Array.isArray(x) ? (x.filter((v) => v != null) as T[]) : []
+}
+
 function Commentary({ text }: { text?: string }) {
   if (!text) return null
   return <p className="mt-3 font-body text-sm text-text-secondary">{text}</p>
@@ -702,16 +712,20 @@ function IntelTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
 }
 
 function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligence; commentary?: string }) {
+  const detected = asArray<(typeof data.detected_niches)[number]>(data.detected_niches)
+  const invisible = asArray<(typeof data.invisible_niches)[number]>(data.invisible_niches)
+  const services = asArray<(typeof data.services_analysis)[number]>(data.services_analysis)
+  const improvements = asArray<string>(data.top_improvements)
   return (
     <>
       <SubScores sub={data.sub_scores} />
       <Commentary text={data.commentary} />
       <Commentary text={commentary} />
-      {data.detected_niches.length > 0 && (
+      {detected.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Detected Niches</h4>
           <ul className="mt-2 space-y-1.5 font-body text-sm text-text-secondary">
-            {data.detected_niches.map((d, i) => (
+            {detected.map((d, i) => (
               <li key={i}>
                 <span className="font-semibold text-text-primary">{d.name}</span>{' '}
                 <span className="text-text-muted">({signalLabel(d.signal)})</span> — {d.note}
@@ -720,7 +734,7 @@ function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligen
           </ul>
         </>
       )}
-      {data.invisible_niches.length > 0 && (
+      {invisible.length > 0 && (
         <div className="mt-5 overflow-hidden rounded-xl border border-brand-cyan/40 bg-brand-cyan/[0.06] shadow-subtle">
           <div className="flex items-center gap-2.5 border-b border-brand-cyan/20 bg-brand-cyan/10 px-4 py-3">
             <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-cyan text-text-inverse">
@@ -730,11 +744,11 @@ function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligen
               Invisible but High-Opportunity Niches
             </h4>
             <span className="ml-auto inline-flex items-center rounded-full bg-brand-cyan px-2.5 py-0.5 font-heading text-[11px] font-semibold uppercase tracking-wide text-text-inverse">
-              {data.invisible_niches.length} Untapped
+              {invisible.length} Untapped
             </span>
           </div>
           <ul className="divide-y divide-brand-cyan/15">
-            {data.invisible_niches.map((d, i) => (
+            {invisible.map((d, i) => (
               <li
                 key={i}
                 className="flex items-start gap-2.5 px-4 py-2.5 font-body text-sm text-text-secondary"
@@ -748,20 +762,20 @@ function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligen
           </ul>
         </div>
       )}
-      {data.services_analysis.length > 0 && (
+      {services.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Services Communication Analysis</h4>
           <IntelTable
             headers={['Service', 'Clarity', 'Framing', 'Audience', 'Rewrite Direction']}
-            rows={data.services_analysis.map((s) => [s.service, s.clarity, s.framing, s.audience, s.rewrite_direction])}
+            rows={services.map((s) => [s.service, s.clarity, s.framing, s.audience, s.rewrite_direction])}
           />
         </>
       )}
-      {data.top_improvements.length > 0 && (
+      {improvements.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Top Highest-Impact Improvements</h4>
           <ol className="mt-2 list-decimal space-y-1.5 pl-5 font-body text-sm text-text-secondary">
-            {data.top_improvements.map((t, i) => (
+            {improvements.map((t, i) => (
               <li key={i}>{t}</li>
             ))}
           </ol>
@@ -772,13 +786,14 @@ function NicheServicesBody({ data, commentary }: { data: NicheServicesIntelligen
 }
 
 function CompetitiveBody({ data, commentary }: { data: CompetitiveIntelligence; commentary?: string }) {
+  const keywordRankings = asArray<(typeof data.keyword_rankings)[number]>(data.keyword_rankings)
   return (
     <>
       <SubScores sub={data.sub_scores} />
-      {data.keyword_rankings.length > 0 && (
+      {keywordRankings.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Keyword Visibility</h4>
-          <KeywordRankChart data={keywordRankBars(data.keyword_rankings)} />
+          <KeywordRankChart data={keywordRankBars(keywordRankings)} />
         </>
       )}
       <Commentary text={data.commentary} />
@@ -811,7 +826,8 @@ function TechDomainBody({
     if (tech.cms) rows.push(['CMS', tech.cms])
     if (tech.page_builder) rows.push(['Page Builder', tech.page_builder])
     if (tech.hosting) rows.push(['Hosting / CDN', tech.hosting])
-    if (tech.frameworks.length) rows.push(['Frameworks', tech.frameworks.join(', ')])
+    const frameworks = asArray<string>(tech.frameworks)
+    if (frameworks.length) rows.push(['Frameworks', frameworks.join(', ')])
   }
   if (domain) {
     if (domain.registered) rows.push(['Domain Registered', domain.registered])
@@ -830,11 +846,11 @@ function TechDomainBody({
           ))}
         </dl>
       )}
-      {tech && tech.risk_flags.length > 0 && (
+      {tech && asArray<string>(tech.risk_flags).length > 0 && (
         <>
           <h4 className={intelSubHeading}>Flags</h4>
           <ul className="mt-2 space-y-1.5 font-body text-sm text-error">
-            {tech.risk_flags.map((r, i) => (
+            {asArray<string>(tech.risk_flags).map((r, i) => (
               <li key={i}>{r}</li>
             ))}
           </ul>
@@ -847,23 +863,25 @@ function TechDomainBody({
 }
 
 function ContentLibraryBody({ data, commentary }: { data: ContentLibraryIntelligence; commentary?: string }) {
+  const formats = asArray<(typeof data.formats)[number]>(data.formats)
+  const recommendations = asArray<string>(data.recommendations)
   return (
     <>
       <p className="font-body text-xs text-text-muted">
         {data.total_pieces} published piece{data.total_pieces === 1 ? '' : 's'}
       </p>
-      {data.formats.length > 0 && (
+      {formats.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Content by Format</h4>
-          <ContentFormatsChart formats={data.formats} />
+          <ContentFormatsChart formats={formats} />
         </>
       )}
       <Commentary text={data.syndication_assessment} />
-      {data.recommendations.length > 0 && (
+      {recommendations.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Recommendations</h4>
           <ul className="mt-2 list-disc space-y-1.5 pl-5 font-body text-sm text-text-secondary">
-            {data.recommendations.map((r, i) => (
+            {recommendations.map((r, i) => (
               <li key={i}>{r}</li>
             ))}
           </ul>
@@ -881,6 +899,7 @@ const NARRATIVE_PRIORITY_CLASS: Record<string, string> = {
 }
 
 function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) {
+  const recommendations = asArray<(typeof narrative.recommendations)[number]>(narrative.recommendations)
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm font-body">
@@ -894,7 +913,7 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
           </tr>
         </thead>
         <tbody>
-          {narrative.recommendations.map((r, i) => (
+          {recommendations.map((r, i) => (
             <tr
               key={i}
               className={`border-b border-border-default last:border-0 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
@@ -927,70 +946,83 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
 }
 
 function DigitalIntelBody({ data, commentary }: { data: DigitalIntelligence; commentary?: string }) {
-  const rep = data.reputation
-  const gap = data.niche_gap
+  const rep = data.reputation && typeof data.reputation === 'object' ? data.reputation : null
+  const gap = data.niche_gap && typeof data.niche_gap === 'object' ? data.niche_gap : null
+  const personnel = asArray<(typeof data.personnel)[number]>(data.personnel)
+  const affiliations = asArray<string>(data.affiliations)
+  const contentFootprint = asArray<(typeof data.content_footprint)[number]>(data.content_footprint)
+  const socialPresence = asArray<(typeof data.social_presence)[number]>(data.social_presence)
+  const ratings = asArray<string>(rep?.ratings)
+  const praise = asArray<string>(rep?.praise_themes)
+  const concerns = asArray<string>(rep?.concern_themes)
+  const gapExternal = asArray<string>(gap?.external)
+  const gapOnSite = asArray<string>(gap?.on_site)
+  const gapUnleveraged = asArray<string>(gap?.unleveraged)
   return (
     <>
       <p className="font-body text-xs text-text-muted">External research — not scored</p>
 
-      {data.personnel.length > 0 && (
+      {personnel.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Key Personnel</h4>
           <div className="mt-2 divide-y divide-border-default">
-            {data.personnel.map((p, i) => (
+            {personnel.map((p, i) => {
+              const associations = asArray<string>(p.associations)
+              return (
               <div key={i} className="py-2.5 font-body text-sm">
                 <div>
                   <span className="font-semibold text-text-primary">{p.name}</span> · {p.role}{' '}
                   <span className="text-text-muted">({p.footprint} footprint)</span>
                 </div>
-                {p.associations.length > 0 && (
-                  <div className="text-xs text-text-muted">Associations: {p.associations.join(', ')}</div>
+                {associations.length > 0 && (
+                  <div className="text-xs text-text-muted">Associations: {associations.join(', ')}</div>
                 )}
                 {p.notes && <div className="text-text-secondary">{p.notes}</div>}
               </div>
-            ))}
+              )
+            })}
           </div>
         </>
       )}
 
-      {(rep.sentiment || rep.ratings.length > 0 || rep.praise_themes.length > 0 || rep.concern_themes.length > 0) && (
+      {rep && (rep.sentiment || ratings.length > 0 || praise.length > 0 || concerns.length > 0) && (
         <>
           <h4 className={intelSubHeading}>Reputation Signals</h4>
           <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
             {rep.sentiment && <Field label="Sentiment" value={rep.sentiment} />}
-            {rep.ratings.length > 0 && <Field label="Ratings" value={rep.ratings.join(', ')} />}
-            {rep.praise_themes.length > 0 && <Field label="Praise" value={rep.praise_themes.join(', ')} />}
-            {rep.concern_themes.length > 0 && <Field label="Concerns" value={rep.concern_themes.join(', ')} />}
+            {ratings.length > 0 && <Field label="Ratings" value={ratings.join(', ')} />}
+            {praise.length > 0 && <Field label="Praise" value={praise.join(', ')} />}
+            {concerns.length > 0 && <Field label="Concerns" value={concerns.join(', ')} />}
           </dl>
         </>
       )}
 
-      {data.affiliations.length > 0 && (
+      {affiliations.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Affiliations</h4>
           <ul className="mt-2 list-disc space-y-1 pl-5 font-body text-sm text-text-secondary">
-            {data.affiliations.map((a, i) => (
+            {affiliations.map((a, i) => (
               <li key={i}>{a}</li>
             ))}
           </ul>
         </>
       )}
 
-      {data.content_footprint.length > 0 && (
+      {contentFootprint.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Content Footprint</h4>
           <IntelTable
             headers={['Type', 'Title', 'Source']}
-            rows={data.content_footprint.map((f) => [f.type, f.title, f.source])}
+            rows={contentFootprint.map((f) => [f.type, f.title, f.source])}
           />
         </>
       )}
 
-      {data.social_presence.length > 0 && (
+      {socialPresence.length > 0 && (
         <>
           <h4 className={intelSubHeading}>Social Media Presence</h4>
           <ul className="mt-2 space-y-1.5 font-body text-sm text-text-secondary">
-            {data.social_presence.map((s, i) => (
+            {socialPresence.map((s, i) => (
               <li key={i}>
                 <span className="font-semibold text-text-primary">{s.platform}</span> — {s.status}
                 {s.detail ? ` · ${s.detail}` : ''}
@@ -1000,22 +1032,22 @@ function DigitalIntelBody({ data, commentary }: { data: DigitalIntelligence; com
         </>
       )}
 
-      {(gap.external.length > 0 || gap.on_site.length > 0 || gap.unleveraged.length > 0) && (
+      {gap && (gapExternal.length > 0 || gapOnSite.length > 0 || gapUnleveraged.length > 0) && (
         <>
           <h4 className={intelSubHeading}>External vs. Website Niche Gap</h4>
-          {gap.on_site.length > 0 && (
+          {gapOnSite.length > 0 && (
             <p className="mt-2 font-body text-sm text-text-secondary">
-              <span className="font-semibold text-text-primary">On website:</span> {gap.on_site.join(', ')}
+              <span className="font-semibold text-text-primary">On website:</span> {gapOnSite.join(', ')}
             </p>
           )}
-          {gap.external.length > 0 && (
+          {gapExternal.length > 0 && (
             <p className="mt-1 font-body text-sm text-text-secondary">
-              <span className="font-semibold text-text-primary">Found externally:</span> {gap.external.join(', ')}
+              <span className="font-semibold text-text-primary">Found externally:</span> {gapExternal.join(', ')}
             </p>
           )}
-          {gap.unleveraged.length > 0 && (
+          {gapUnleveraged.length > 0 && (
             <ul className="mt-2 list-disc space-y-1 pl-5 font-body text-sm text-text-secondary">
-              {gap.unleveraged.map((u, i) => (
+              {gapUnleveraged.map((u, i) => (
                 <li key={i}>{u}</li>
               ))}
             </ul>
