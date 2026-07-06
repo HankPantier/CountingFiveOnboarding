@@ -14,7 +14,9 @@ export function useDialog(onClose: () => void) {
   // Keep the latest close handler without re-running the mount effect when
   // callers pass inline closures.
   const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     const node = ref.current

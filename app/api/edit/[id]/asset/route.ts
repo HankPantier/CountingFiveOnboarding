@@ -67,10 +67,20 @@ export async function GET(
     // their sniffed mime; SVG (unsniffable) is served as svg but sandboxed by
     // the security headers below. Anything else is refused rather than guessed.
     let contentType: string
+    let body: Uint8Array<ArrayBuffer> = new Uint8Array(blob.content)
     if (sniffed && (ALLOWED_MIMES as readonly string[]).includes(sniffed.mime)) {
       contentType = sniffed.mime
     } else if (path.toLowerCase().endsWith('.svg')) {
       contentType = 'image/svg+xml'
+      // Defense in depth: the upload path blocks SVGs, but a file committed
+      // straight to the repo bypasses it — and the sandbox CSP below doesn't
+      // apply when the response is embedded via <img>. Sanitize before serving.
+      const { sanitizeSvg } = await import('@/lib/assets/sanitize-svg')
+      const clean = sanitizeSvg(blob.content.toString('utf8'))
+      if (!clean) {
+        return NextResponse.json({ error: 'SVG failed sanitization' }, { status: 415 })
+      }
+      body = new TextEncoder().encode(clean)
     } else {
       return NextResponse.json(
         { error: 'Unsupported or unverifiable image type' },
@@ -78,10 +88,10 @@ export async function GET(
       )
     }
 
-    return new NextResponse(new Uint8Array(blob.content), {
+    return new NextResponse(body, {
       headers: {
         'Content-Type': contentType,
-        'Content-Length': String(blob.size),
+        'Content-Length': String(body.byteLength),
         // Private to the admin; never cache across the draft→publish reset.
         'Cache-Control': 'private, no-store',
         ...ASSET_SECURITY_HEADERS,
