@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Security greps (CLAUDE.md pre-commit gates)
+        run: |
+          set -e
+          if grep -r "SUPABASE_SERVICE_ROLE_KEY" ./app --include="*.ts" --include="*.tsx"; then
+            echo "::error::service-role key referenced under app/"; exit 1
+          fi
+          if grep -r "GITHUB_APP_PRIVATE_KEY" ./app --include="*.ts" --include="*.tsx"; then
+            echo "::error::GitHub App private key referenced under app/"; exit 1
+          fi
+          if grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx"; then
+            echo "::error::console.log in production paths (use console.warn/error)"; exit 1
+          fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build-time placeholders — no real backends are reachable in CI.
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+          SUPABASE_SERVICE_ROLE_KEY: placeholder
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          CRON_SECRET: ci-placeholder

@@ -6,7 +6,7 @@ This file is read by AI coding assistants before working on this codebase. Follo
 
 ## Stack
 
-- **Framework:** Next.js 15 (App Router, TypeScript)
+- **Framework:** Next.js 16 (App Router, TypeScript; `proxy.ts` is the middleware convention)
 - **Database & Auth:** Supabase (SSR client, Row Level Security)
 - **Hosting:** Vercel
 - **AI:** Anthropic API via Vercel AI SDK (`ai`, `@ai-sdk/anthropic`)
