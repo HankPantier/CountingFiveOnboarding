@@ -20,3 +20,20 @@ alter table rate_limit_events enable row level security;
 -- filter audit_runs by created_by on every request; only domain/created_at
 -- were indexed.
 create index audit_runs_created_by_idx on audit_runs (created_by);
+
+-- Per-model token totals for the dashboard spend cards. The dashboard used to
+-- fetch every token_usage row and sum in JS — unbounded growth. Aggregate in
+-- the database instead; cost-per-model math stays in app code (PRICING map).
+create or replace function token_usage_model_totals(since timestamptz default null)
+returns table(model text, input_tokens bigint, output_tokens bigint)
+language sql
+stable
+as $$
+  select
+    model,
+    coalesce(sum(input_tokens), 0)::bigint as input_tokens,
+    coalesce(sum(output_tokens), 0)::bigint as output_tokens
+  from token_usage
+  where since is null or created_at >= since
+  group by model
+$$;

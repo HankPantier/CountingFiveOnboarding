@@ -1,7 +1,8 @@
 import type { Database } from '@/types/database'
 import type { AgentMode } from './system-prompt'
 
-type Session = Database['public']['Tables']['sessions']['Row']
+// Narrowed: instructions only ever read schema_data (see system-prompt.ts).
+type Session = Pick<Database['public']['Tables']['sessions']['Row'], 'schema_data'>
 
 type SchemaMeta = {
   review_prompts?: Record<string, string>

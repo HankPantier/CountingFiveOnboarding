@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useDialog } from '@/components/ui/use-dialog'
 import type { Role, Capability } from '@/lib/auth/access'
 import type { SessionOption } from '@/app/admin/settings/users/page'
 
@@ -95,10 +96,44 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     )
   }
 
+  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isManager }} />
+}
+
+interface PanelProps {
+  onClose: () => void
+  sessions: SessionOption[]
+  name: string
+  setName: (v: string) => void
+  email: string
+  setEmail: (v: string) => void
+  role: Role
+  setRole: (r: Role) => void
+  capabilities: Set<Capability>
+  toggleCapability: (c: Capability) => void
+  selected: Set<string>
+  toggle: (id: string) => void
+  error: string
+  saving: boolean
+  handleSubmit: (e: React.FormEvent) => void
+  isManager: boolean
+}
+
+// Separate component so useDialog mounts/unmounts with the panel itself —
+// focus is captured on open and restored to the trigger on close.
+function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isManager }: PanelProps) {
+  const dialogRef = useDialog(onClose)
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-4">
-      <div className="w-full max-w-md bg-surface-card rounded-card p-6 shadow-subtle max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-heading font-bold text-brand-navy mb-4">Add User</h2>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-user-title"
+        tabIndex={-1}
+        className="w-full max-w-md bg-surface-card rounded-card p-6 shadow-subtle max-h-[90vh] overflow-y-auto"
+      >
+        <h2 id="add-user-title" className="text-lg font-heading font-bold text-brand-navy mb-4">Add User</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -204,10 +239,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
           <div className="flex gap-2 pt-2">
             <button
               type="button"
-              onClick={() => {
-                reset()
-                setOpen(false)
-              }}
+              onClick={onClose}
               className="flex-1 border border-border-default text-text-secondary font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-surface-subtle"
             >
               Cancel

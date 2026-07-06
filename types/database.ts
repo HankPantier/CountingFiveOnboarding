@@ -1104,7 +1104,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      token_usage_model_totals: {
+        Args: { since?: string }
+        Returns: {
+          model: string
+          input_tokens: number
+          output_tokens: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

@@ -61,13 +61,16 @@ export default async function SessionDetailPage({
   // Sign URLs for every asset server-side so the components never need to
   // know the bucket is private. 1-hour expiry covers a typical admin
   // session; refreshing the page mints new URLs via router.refresh().
+  // Batched: one storage call instead of one round-trip per asset.
   const signedUrls: Record<string, string> = {}
-  for (const asset of assets ?? []) {
-    if (!asset.storage_path) continue
+  const signable = (assets ?? []).filter(a => !!a.storage_path)
+  if (signable.length) {
     const { data: signed } = await supabase.storage
       .from('session-assets')
-      .createSignedUrl(asset.storage_path, 3600)
-    if (signed?.signedUrl) signedUrls[asset.id] = signed.signedUrl
+      .createSignedUrls(signable.map(a => a.storage_path), 3600)
+    signed?.forEach((entry, i) => {
+      if (entry.signedUrl && !entry.error) signedUrls[signable[i].id] = entry.signedUrl
+    })
   }
 
   return (

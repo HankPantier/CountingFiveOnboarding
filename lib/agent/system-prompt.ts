@@ -6,7 +6,12 @@ type AuditContext = NonNullable<NonNullable<SessionSchema['_meta']>['audit_conte
 import { getPhaseInstructions } from './phase-instructions'
 import { buildGapListInstructions } from './gap-list'
 
-type Session = Database['public']['Tables']['sessions']['Row']
+// Only the columns the prompt builder reads — lets callers fetch a narrow
+// select instead of the full row (mbp_content is large and must never be here).
+type Session = Pick<
+  Database['public']['Tables']['sessions']['Row'],
+  'schema_data' | 'gap_list' | 'current_phase'
+>
 export type AgentMode = 'client' | 'staff'
 
 export function getMode(session: Session): AgentMode {

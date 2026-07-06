@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useDialog } from '@/components/ui/use-dialog'
 import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
 
 type FaqItem = { question: string; answer: string }
@@ -94,12 +95,8 @@ export default function MarkdownPreviewModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentJobId, pageId, mode])
 
-  // Close on Escape.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+  // Dialog semantics: Escape, focus trap, focus restore (see use-dialog.ts).
+  const dialogRef = useDialog(onClose)
 
   const toggleApproval = async (next: boolean) => {
     if (!page) return
@@ -168,6 +165,11 @@ export default function MarkdownPreviewModal({
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={page?.page_title ?? 'Page preview'}
+        tabIndex={-1}
         className="bg-white rounded-xl shadow-elevated w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >

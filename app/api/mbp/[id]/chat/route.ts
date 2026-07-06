@@ -34,7 +34,7 @@ export async function POST(
 
   const { data: session, error } = await supabase
     .from('sessions')
-    .select('*')
+    .select('id, schema_data, gap_list')
     .eq('id', id)
     .single()
   if (error || !session) {

@@ -29,48 +29,49 @@ export default async function MbpPage({
   const isAdmin = user.role === 'admin'
 
   const supabase = createServerClient()
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('id, website_url, schema_data, gap_list, mbp_content')
-    .eq('id', id)
-    .single()
+  // All four queries are independent (keyed only on the session id) — fetch in
+  // parallel instead of the old four-step waterfall.
+  const [{ data: session }, { data: job }, { data: suggestionRows }, { data: msgs }] =
+    await Promise.all([
+      supabase
+        .from('sessions')
+        .select('id, website_url, schema_data, gap_list, mbp_content')
+        .eq('id', id)
+        .single(),
+      // The live site structure is the content job's confirmed_sitemap (what the
+      // generated content was built from), not the stale onboarding sitemaps.
+      supabase
+        .from('content_jobs')
+        .select('confirmed_sitemap')
+        .eq('session_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('mbp_suggestions')
+        .select('*')
+        .eq('session_id', id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
+      isAdmin
+        ? supabase
+            .from('mbp_messages')
+            .select('role, content')
+            .eq('session_id', id)
+            .order('created_at', { ascending: true })
+        : Promise.resolve({ data: null }),
+    ])
   if (!session) notFound()
 
   const schema = (session.schema_data ?? {}) as SessionSchema
   const gaps = (session.gap_list as GapItem[]) ?? []
-
-  // The live site structure is the content job's confirmed_sitemap (what the
-  // generated content was built from), not the stale onboarding sitemaps.
-  const { data: job } = await supabase
-    .from('content_jobs')
-    .select('confirmed_sitemap')
-    .eq('session_id', id)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
   const confirmedSitemap = (job?.confirmed_sitemap ?? null) as SessionSchema['proposed_sitemap'] | null
 
   const doc = buildMbpDocument(schema, confirmedSitemap)
   const overrides =
     ((schema._meta?.admin_overrides as Record<string, boolean> | undefined)) ?? {}
-
-  const { data: suggestionRows } = await supabase
-    .from('mbp_suggestions')
-    .select('*')
-    .eq('session_id', id)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
   const suggestions = (suggestionRows ?? []) as unknown as MbpSuggestion[]
-
-  let initialMessages: { role: string; content: string }[] = []
-  if (isAdmin) {
-    const { data: msgs } = await supabase
-      .from('mbp_messages')
-      .select('role, content')
-      .eq('session_id', id)
-      .order('created_at', { ascending: true })
-    initialMessages = msgs ?? []
-  }
+  const initialMessages: { role: string; content: string }[] = msgs ?? []
 
   return (
     <main className="p-8 space-y-6">

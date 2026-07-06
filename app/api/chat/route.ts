@@ -36,9 +36,11 @@ export async function POST(req: Request) {
 
   const supabase = createServerClient()
 
+  // Explicit columns: this runs on every chat turn, and '*' dragged the large
+  // mbp_content text + unused fields across the wire each time.
   const { data: session, error } = await supabase
     .from('sessions')
-    .select('*')
+    .select('id, current_phase, schema_data, gap_list, website_url, processing, status')
     .eq('id', sessionId)
     .single()
 
@@ -226,7 +228,7 @@ export async function POST(req: Request) {
 async function updateSessionSchema(
   supabase: Supabase,
   sessionId: string,
-  originalSession: Session,
+  originalSession: Pick<Session, 'website_url'>,
   updates: Record<string, unknown>,
   resolvedGaps?: string[],
   advancePhase?: boolean

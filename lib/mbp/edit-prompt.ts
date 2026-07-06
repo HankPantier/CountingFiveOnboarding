@@ -3,7 +3,8 @@ import type { GapItem } from '@/types/gap-item'
 import { serializeSchemaFull } from '@/lib/agent/system-prompt'
 import { buildGapListInstructions } from '@/lib/agent/gap-list'
 
-type Session = Database['public']['Tables']['sessions']['Row']
+// Narrowed to what the prompt reads so callers can select specific columns.
+type Session = Pick<Database['public']['Tables']['sessions']['Row'], 'schema_data' | 'gap_list'>
 
 // System prompt for the admin MBP edit chat. Unlike the onboarding prompt,
 // this gets the COMPLETE current profile and is oriented toward filling gaps

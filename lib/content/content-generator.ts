@@ -697,6 +697,16 @@ export async function runContentGeneration(
   const startedAt = Date.now()
   let completedThisRun = 0
 
+  // Load already-complete pages once up front (idempotency on re-run) instead
+  // of a per-page status SELECT inside every batch. generateSinglePage's atomic
+  // claim still protects against a page completing concurrently after this read.
+  const { data: donePages } = await supabase
+    .from('generated_pages')
+    .select('page_url')
+    .eq('content_job_id', contentJobId)
+    .eq('generation_status', 'complete')
+  const doneUrls = new Set((donePages ?? []).map(p => p.page_url))
+
   for (let i = 0; i < outlines.length; i += BATCH_SIZE) {
     if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
       console.warn(
@@ -706,14 +716,7 @@ export async function runContentGeneration(
     }
     const batch = outlines.slice(i, i + BATCH_SIZE)
     await Promise.all(batch.map(async (outline) => {
-      // Skip pages already complete to make this loop idempotent on re-run.
-      const { data: genPage } = await supabase
-        .from('generated_pages')
-        .select('generation_status')
-        .eq('content_job_id', contentJobId)
-        .eq('page_url', outline.page_url)
-        .single()
-      if (genPage?.generation_status === 'complete') return
+      if (doneUrls.has(outline.page_url)) return
 
       await generateSinglePage(contentJobId, outline.id)
       completedThisRun += 1

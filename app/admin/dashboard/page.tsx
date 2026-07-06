@@ -89,20 +89,27 @@ export default async function DashboardPage({
   let pipelineQuery = supabase.from('sessions').select('status, current_phase').neq('status', 'archived')
   if (allowed !== null) pipelineQuery = pipelineQuery.in('id', allowed)
 
+  // AI spend is a global operator metric — admins only. Aggregated in the DB
+  // (token_usage_model_totals, migration 044): the old fetch-every-row-and-sum
+  // approach grew without bound.
+  // eslint-disable-next-line react-hooks/purity
+  const thirtyDaysAgoIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const emptyTotals = Promise.resolve({
+    data: [] as Array<{ model: string; input_tokens: number; output_tokens: number }>,
+  })
   const [
     { data: sessions, count: totalCount },
     { count: approvedCount },
-    { data: usageRows },
+    { data: totalUsage },
+    { data: recentUsage },
     { data: pipelineRows },
   ] = await Promise.all([
     query
       .order('last_activity_at', { ascending: true })
       .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1),
     approvedQuery,
-    // AI spend is a global operator metric — admins only.
-    user.role === 'admin'
-      ? supabase.from('token_usage').select('model, input_tokens, output_tokens, created_at')
-      : Promise.resolve({ data: [] as Array<{ model: string; input_tokens: number; output_tokens: number; created_at: string }> }),
+    user.isAdmin ? supabase.rpc('token_usage_model_totals') : emptyTotals,
+    user.isAdmin ? supabase.rpc('token_usage_model_totals', { since: thirtyDaysAgoIso }) : emptyTotals,
     pipelineQuery,
   ])
 
@@ -123,20 +130,10 @@ export default async function DashboardPage({
     return `/admin/dashboard${s ? `?${s}` : ''}`
   }
 
-  // Aggregate AI spend so the operator sees burn without opening every job.
-  // Server Component: renders once per request on the server, so Date.now() is
-  // deterministic for the render — the React-Compiler purity rule doesn't apply.
-  // eslint-disable-next-line react-hooks/purity
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
-  const spend = (usageRows ?? []).reduce(
-    (acc, r) => {
-      const cost = estimateCostUsd(r.model, r.input_tokens, r.output_tokens)
-      acc.total += cost
-      if (new Date(r.created_at).getTime() >= thirtyDaysAgo) acc.recent += cost
-      return acc
-    },
-    { total: 0, recent: 0 }
-  )
+  // Cost math stays in app code (PRICING map) over the per-model DB aggregates.
+  const sumCost = (rows: Array<{ model: string; input_tokens: number; output_tokens: number }> | null) =>
+    (rows ?? []).reduce((acc, r) => acc + estimateCostUsd(r.model, r.input_tokens, r.output_tokens), 0)
+  const spend = { total: sumCost(totalUsage), recent: sumCost(recentUsage) }
 
   // Pull each session's content_job state so the row can show:
   //   - "Start content" if no job exists yet

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useDialog } from '@/components/ui/use-dialog'
 import type { SessionOption } from '@/app/admin/settings/users/page'
 import type { UserAssignmentsResponse } from '@/types/users'
 
@@ -18,6 +19,7 @@ export default function ClientAssignmentEditor({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
+  const dialogRef = useDialog(onClose)
 
   useEffect(() => {
     let active = true
@@ -72,8 +74,15 @@ export default function ClientAssignmentEditor({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-4">
-      <div className="w-full max-w-md bg-surface-card rounded-card p-6 shadow-subtle max-h-[90vh] overflow-y-auto">
-        <h2 className="text-lg font-heading font-bold text-brand-navy mb-4">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="client-access-title"
+        tabIndex={-1}
+        className="w-full max-w-md bg-surface-card rounded-card p-6 shadow-subtle max-h-[90vh] overflow-y-auto"
+      >
+        <h2 id="client-access-title" className="text-lg font-heading font-bold text-brand-navy mb-4">
           Client access ({selected.size} selected)
         </h2>
 

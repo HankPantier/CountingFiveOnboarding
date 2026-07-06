@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import ContentChat from '@/components/editor/ContentChat'
+import ChatDrawer from '@/components/ui/ChatDrawer'
 
 export default function ContentChatModal({
   sessionId,
@@ -40,24 +41,9 @@ export default function ContentChatModal({
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex">
-          <button aria-label="Close" onClick={() => setOpen(false)} className="flex-1 cursor-pointer bg-brand-navy/40" />
-          <div className="w-full max-w-[460px] h-full bg-surface-page shadow-xl flex flex-col">
-            <div className="flex items-center justify-between px-4 h-14 flex-shrink-0 border-b border-border-default bg-surface-card">
-              <span className="text-sm font-heading font-semibold text-brand-navy">Edit content with AI</span>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-text-muted hover:text-brand-navy text-lg leading-none transition-colors"
-                aria-label="Close"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 p-3">
-              <ContentChat key={path} sessionId={sessionId} path={path} isDirty={isDirty} onEdited={onEdited} onSave={onSave} />
-            </div>
-          </div>
-        </div>
+        <ChatDrawer title="Edit content with AI" onClose={() => setOpen(false)}>
+          <ContentChat key={path} sessionId={sessionId} path={path} isDirty={isDirty} onEdited={onEdited} onSave={onSave} />
+        </ChatDrawer>
       )}
     </>
   )

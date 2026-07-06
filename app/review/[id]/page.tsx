@@ -31,12 +31,18 @@ export default async function ReviewPage({
     notFound()
   }
 
-  // Load the session to get firm name
-  const { data: session, error: sessionError } = await supabase
-    .from('sessions')
-    .select('schema_data')
-    .eq('id', job.session_id)
-    .single()
+  // Session (firm name) and flagged pages are independent once the job row is
+  // loaded — fetch both in parallel.
+  const [{ data: session, error: sessionError }, { data: pages }] = await Promise.all([
+    supabase.from('sessions').select('schema_data').eq('id', job.session_id).single(),
+    supabase
+      .from('generated_pages')
+      .select('id, page_url, page_title, word_count_actual, word_count_target, client_approved_content')
+      .eq('content_job_id', id)
+      .eq('needs_client_review', true)
+      .eq('generation_status', 'complete')
+      .order('created_at', { ascending: true }),
+  ])
 
   if (sessionError || !session) {
     notFound()
@@ -44,15 +50,6 @@ export default async function ReviewPage({
 
   const schema = (session.schema_data ?? null) as SessionSchema | null
   const firmName = schema?.business?.name?.trim() || 'your firm'
-
-  // Load flagged pages for review
-  const { data: pages } = await supabase
-    .from('generated_pages')
-    .select('id, page_url, page_title, word_count_actual, word_count_target, client_approved_content')
-    .eq('content_job_id', id)
-    .eq('needs_client_review', true)
-    .eq('generation_status', 'complete')
-    .order('created_at', { ascending: true })
 
   return (
     <div className="min-h-screen bg-surface-page">
