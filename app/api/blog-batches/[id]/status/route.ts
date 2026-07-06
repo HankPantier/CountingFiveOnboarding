@@ -69,20 +69,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     .single()
   if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 })
 
-  const { data: targets } = await supabase
+  // Managers see only their assigned clients within the batch — push the scope
+  // into the query (matching the retry route) instead of post-filtering rows
+  // fetched with the service-role client.
+  const allowed = await getAccessibleSessionIds(user)
+  let targetsQuery = supabase
     .from('blog_batch_targets')
     .select('session_id, status, error, resource_idea_id')
     .eq('batch_id', id)
     .order('created_at', { ascending: true })
-
-  let rows = targets ?? []
-
-  // Managers see only their assigned clients within the batch.
-  const allowed = await getAccessibleSessionIds(user)
   if (allowed !== null) {
-    const allowedSet = new Set(allowed)
-    rows = rows.filter((r) => allowedSet.has(r.session_id))
-    if (rows.length === 0) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (allowed.length === 0) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    targetsQuery = targetsQuery.in('session_id', allowed)
+  }
+  const { data: targets } = await targetsQuery
+
+  const rows = targets ?? []
+  if (allowed !== null && rows.length === 0) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const ideaIds = rows.map((r) => r.resource_idea_id).filter((v): v is string => !!v)

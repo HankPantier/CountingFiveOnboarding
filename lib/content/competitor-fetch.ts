@@ -1,3 +1,5 @@
+import { safeGet } from '@/lib/audit/crawl'
+
 type CompetitorRef = {
   url: string
   title: string
@@ -44,19 +46,12 @@ export async function fetchCompetitorPages(
 
   for (const ref of refs.slice(0, 3)) {
     try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 8000)
+      // Serper results are external input — safeGet enforces the SSRF guard on
+      // the initial URL and every redirect hop, and caps the body read.
+      const res = await safeGet(ref.url)
+      if (!res || res.status < 200 || res.status >= 300) continue
 
-      const res = await fetch(ref.url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CountingFiveBot/1.0)' },
-      })
-      clearTimeout(timeout)
-
-      if (!res.ok) continue
-
-      const html = await res.text()
-      const bodyText = extractBodyText(html)
+      const bodyText = extractBodyText(res.body)
       const excerpt = truncateToTokens(bodyText, 800)
 
       if (excerpt.length > 50) {
@@ -89,19 +84,11 @@ export async function fetchExistingContent(
   const fullUrl = mapping.url.startsWith('http') ? mapping.url : `${baseUrl}${mapping.url}`
 
   try {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8000)
+    // Sitemap rows are session-influenced input — same SSRF rules as the crawler.
+    const res = await safeGet(fullUrl)
+    if (!res || res.status < 200 || res.status >= 300) return null
 
-    const res = await fetch(fullUrl, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CountingFiveBot/1.0)' },
-    })
-    clearTimeout(timeout)
-
-    if (!res.ok) return null
-
-    const html = await res.text()
-    const bodyText = extractBodyText(html)
+    const bodyText = extractBodyText(res.body)
     return truncateToTokens(bodyText, 1200)
   } catch {
     return null

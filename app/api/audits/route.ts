@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuditorCapability, getAccessibleAuditScope } from '@/lib/auth/access'
+import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeDomain, normalizeInputUrl } from '@/lib/audit'
 
@@ -20,6 +21,12 @@ const DeleteAuditsSchema = z.object({
 export async function POST(req: Request) {
   const auth = await requireAuditorCapability()
   if (auth instanceof NextResponse) return auth
+
+  // Each audit is a 250-page crawl plus AI intelligence calls — bound how many
+  // one user can queue per hour (open item from the 2026-06-24 hardening pass).
+  if (!(await checkRateLimit(`audit-create:${auth.user.id}`, 20, 60 * 60 * 1000))) {
+    return NextResponse.json({ error: 'Audit limit reached — try again later' }, { status: 429 })
+  }
 
   let body: unknown
   try {

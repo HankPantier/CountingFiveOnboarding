@@ -1,5 +1,6 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
+import { GENERATION_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
@@ -105,9 +106,12 @@ RULES:
 
   try {
     const { text, usage } = await generateText({
-      model: anthropic('claude-sonnet-5'),
+      model: anthropic(PUBLISHED_CONTENT_MODEL),
       prompt,
-      maxOutputTokens: 2500,
+      // Generous budget: adaptive thinking shares maxOutputTokens, and a tight
+      // cap starves the JSON answer (see OUTLINE_PROVIDER_OPTIONS history).
+      maxOutputTokens: 6000,
+      providerOptions: GENERATION_PROVIDER_OPTIONS,
     })
     checkTokenBudget('brand-doc', firmName, usage?.inputTokens, 4000)
     await recordTokenUsage({

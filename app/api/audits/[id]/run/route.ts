@@ -6,8 +6,9 @@ import { runAuditJob } from '@/lib/audit/worker'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
-// Running states the atomic guard must not start a second run over.
-const RUNNING_STATES = '(crawling,analyzing,scoring,rendering)'
+// Running states the atomic guard must not start a second run over. Keep in
+// sync with RUNNING_AUDIT_STATES in app/api/cron/sweep-stuck-jobs/route.ts.
+const RUNNING_STATES = '(crawling,analyzing,researching,scoring,rendering)'
 
 // POST /api/audits/[id]/run — execute the audit in the background.
 // Two valid auth paths, mirroring content-jobs/[id]/generate:

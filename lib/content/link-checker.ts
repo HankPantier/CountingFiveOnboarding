@@ -1,3 +1,5 @@
+import { isUrlPubliclyFetchable } from '@/lib/audit/ssrf-guard'
+
 export type ExternalLink = { url: string; title?: string }
 
 const DEFAULT_TIMEOUT_MS = 8_000
@@ -5,6 +7,10 @@ const DEFAULT_CONCURRENCY = 5
 
 async function checkOne(link: ExternalLink, timeoutMs: number): Promise<boolean> {
   try {
+    // Candidate URLs are AI-generated — treat as untrusted and refuse
+    // private/metadata targets before any outbound request.
+    if (!(await isUrlPubliclyFetchable(link.url))) return false
+
     const head = await fetch(link.url, {
       method: 'HEAD',
       redirect: 'follow',

@@ -1,7 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
-import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 import { NextResponse } from 'next/server'
 
@@ -40,8 +40,8 @@ export async function POST(req: Request) {
     .insert({
       website_url: websiteUrl,
       mbp_content: typeof mbpContent === 'string' ? mbpContent : null,
-      schema_data: (schemaData ?? {}) as Json,
-      gap_list: finalGaps as Json,
+      schema_data: asJson(schemaData ?? {}),
+      gap_list: asJson(finalGaps),
       status: 'pending',
       current_phase: 1,
     })

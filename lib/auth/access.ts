@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { NextResponse } from 'next/server'
 import { createAuthClient, createServerClient } from '@/lib/supabase/server'
 
@@ -29,7 +30,9 @@ function normalizeCapabilities(raw: unknown): Capability[] {
 // unauthenticated or the authenticated user is not enrolled in `admins`.
 // Uses the auth client (request cookies) — the self-read policy on `admins`
 // from migration 001 lets a user read its own row.
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+// React.cache() dedupes within one RSC render pass: the root layout, section
+// layout, and page each call this, which was 3× two DB round-trips per request.
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createAuthClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -49,7 +52,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     isAdmin,
     capabilities: isAdmin ? ALL_CAPABILITIES : normalizeCapabilities(admin.capabilities),
   }
-}
+})
 
 // True when the user is an admin or holds the given capability. Admins hold
 // every capability implicitly.

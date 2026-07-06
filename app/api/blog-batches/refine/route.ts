@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getCurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, hasCapability } from '@/lib/auth/access'
 import { refineBlogIdea, type RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
 
 export const runtime = 'nodejs'
@@ -14,12 +14,15 @@ interface RefineBody {
   instruction?: string
 }
 
-// Brand-agnostic idea refinement for the blog-first tool. Any authenticated
-// admin/manager may iterate on an idea; no client is selected yet, so there is
-// nothing session-scoped to gate here beyond enrolment in `admins`.
+// Brand-agnostic idea refinement for the blog-first tool. No client is selected
+// yet, so there is nothing session-scoped to gate — but each call spends AI
+// budget, so it still requires the manager capability (admins pass implicitly).
 export async function POST(req: Request) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasCapability(user, 'manager')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   let body: RefineBody
   try {

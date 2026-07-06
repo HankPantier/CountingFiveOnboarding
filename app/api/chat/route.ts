@@ -7,9 +7,10 @@ import { trimMessages } from '@/lib/agent/trim-messages'
 import { deepMerge, isPathFilled } from '@/lib/mbp/schema-write'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { runWhoisLookup } from '@/lib/whois/lookup'
+import { asJson } from '@/lib/supabase/json-typed'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
-import type { Database, Json } from '@/types/database'
+import type { Database } from '@/types/database'
 import type { GapItem } from '@/types/gap-item'
 
 type Session = Database['public']['Tables']['sessions']['Row']
@@ -124,7 +125,13 @@ export async function POST(req: Request) {
     // phase, with 5k as the "stop and investigate" threshold. We can't
     // count Anthropic-correct tokens without the tokenizer, so a chars/4
     // estimate is good enough for an alert.
-    const estimatedTokens = Math.ceil(systemPrompt.length / 4)
+    const messageChars = trimmed.reduce(
+      (acc, m) =>
+        acc +
+        m.parts.reduce((n, p) => n + (p.type === 'text' ? p.text.length : 0), 0),
+      0
+    )
+    const estimatedTokens = Math.ceil((systemPrompt.length + messageChars) / 4)
     if (estimatedTokens > 5000) {
       console.error(
         `[token-budget] EXCEEDED phase=${session.current_phase} ` +
@@ -161,6 +168,15 @@ export async function POST(req: Request) {
         },
       },
       stopWhen: stepCountIs(5),
+      // Client disconnect mid-stream fires onAbort, not onFinish — without this
+      // the session stays locked until the 3-minute stale-lock reclaim.
+      onAbort: async () => {
+        try {
+          await supabase.from('sessions').update({ processing: false }).eq('id', sessionId)
+        } catch (err) {
+          console.error('[chat] onAbort unlock failed:', err)
+        }
+      },
       onFinish: async ({ text, totalUsage }) => {
         try {
           console.warn(
@@ -265,16 +281,18 @@ async function updateSessionSchema(
   await supabase
     .from('sessions')
     .update({
-      schema_data: mergedSchema as Json,
-      gap_list: updatedGaps as Json,
+      schema_data: asJson(mergedSchema),
+      gap_list: asJson(updatedGaps),
       current_phase: newPhase,
       status: statusForPhase(newPhase),
       completed_at: newPhase === 7 ? new Date().toISOString() : undefined,
     })
     .eq('id', sessionId)
 
-  // Trigger WHOIS automatically when advancing to Phase 2
-  if (newPhase === 2) {
+  // Trigger WHOIS automatically when ADVANCING to Phase 2. Guarding on the
+  // transition (not just newPhase === 2) prevents re-dispatching a lookup every
+  // time the model writes incidental fields while the session sits at phase 2.
+  if (newPhase === 2 && currentPhase < 2) {
     const domain =
       (mergedSchema.websiteUrl as string) ??
       (current?.website_url as string) ??

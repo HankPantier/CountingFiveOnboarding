@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { searchPexelsTop, downloadPexelsImage, type PexelsPhoto } from './pexels-fetcher'
 import type { Database } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 
 type AssetRow = Database['public']['Tables']['assets']['Row']
 
@@ -188,7 +189,7 @@ export async function resolveStockPhotos(
         mime_type: 'image/jpeg',
         file_size_bytes: bytes.length,
         asset_category: 'stock-photo',
-        metadata: metadata as unknown as Database['public']['Tables']['assets']['Insert']['metadata'],
+        metadata: asJson(metadata),
       })
     if (insertErr) {
       console.warn(`[stock-photo] Assets row insert failed for ${filename}: ${insertErr.message}`)

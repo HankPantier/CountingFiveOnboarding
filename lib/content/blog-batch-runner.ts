@@ -58,7 +58,9 @@ export async function runBlogBatch(batchId: string): Promise<void> {
             updated_at: new Date().toISOString(),
           })
           .eq('id', target.id)
-        completedThisRun += 1
+        // Only real terminal outcomes count as progress — counting 'skipped'
+        // (another worker holds the idea lock) lets racing chains multiply.
+        if (result.status !== 'skipped') completedThisRun += 1
       })
     )
   }

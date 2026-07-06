@@ -4,7 +4,7 @@ import { requireAdminUser } from '@/lib/auth/access'
 import { deepSetPath, isPathFilled } from '@/lib/mbp/schema-write'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { normalizeGapField } from '@/lib/mbp/completeness'
-import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 import type { GapItem } from '@/types/gap-item'
 
 export async function DELETE(
@@ -94,8 +94,8 @@ export async function PATCH(
   await supabase
     .from('sessions')
     .update({
-      schema_data: updated as Json,
-      ...(filledGaps ? { gap_list: filledGaps as Json } : {}),
+      schema_data: asJson(updated),
+      ...(filledGaps ? { gap_list: asJson(filledGaps) } : {}),
     })
     .eq('id', id)
 

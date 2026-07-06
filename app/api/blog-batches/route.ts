@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
 import { headCheckUrls, type ExternalLink } from '@/lib/content/link-checker'
 import { asJson } from '@/lib/supabase/json-typed'
@@ -24,6 +24,11 @@ interface CreateBody {
 export async function POST(req: Request) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Content creation is a manager power — an auditor-only member has no
+  // session access and must not be able to spend generation budget.
+  if (!hasCapability(user, 'manager')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   let body: CreateBody
   try {

@@ -1,13 +1,13 @@
 import { parseMBP } from '@/lib/mbp-parser'
-import { createAuthClient } from '@/lib/supabase/server'
+import { requireAdminUser } from '@/lib/auth/access'
 import { NextResponse } from 'next/server'
 
+// Parsing feeds the admin-only session-creation flow (POST /api/sessions is
+// requireAdminUser), so gate it the same way — a bare Supabase session is
+// "logged in", not "authorized" (security rule 6).
 export async function POST(req: Request) {
-  const auth = await createAuthClient()
-  const {
-    data: { user },
-  } = await auth.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = await requireAdminUser()
+  if (auth instanceof NextResponse) return auth
 
   const body: unknown = await req.json()
   const mbpContent =

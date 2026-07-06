@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { fileTypeFromBuffer } from 'file-type'
+import { asJson } from '@/lib/supabase/json-typed'
 
 export const runtime = 'nodejs'
 // Allow up to 25MB photo uploads — Vercel's default body-size cap is 4.5MB
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
     .update({
       mime_type: detected.mime,
       file_size_bytes: buffer.length,
-      metadata: newMetadata as unknown as never,
+      metadata: asJson(newMetadata),
     })
     .eq('id', assetId)
   if (updateErr) {

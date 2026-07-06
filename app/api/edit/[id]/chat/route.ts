@@ -35,7 +35,7 @@ export async function POST(
 
   // resolveEditContext allows assigned managers; the AI editor is admin-only.
   const user = await getCurrentUser()
-  if (!user || user.role !== 'admin') {
+  if (!user || !user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

@@ -1,6 +1,6 @@
 import { whoisDomain, firstResult } from 'whoiser'
 import { createServerClient } from '@/lib/supabase/server'
-import type { Json } from '@/types/database'
+import { asJson } from '@/lib/supabase/json-typed'
 
 export async function runWhoisLookup(sessionId: string, domain: string): Promise<void> {
   const supabase = createServerClient()
@@ -65,7 +65,7 @@ export async function runWhoisLookup(sessionId: string, domain: string): Promise
   // past Phase 2 makes this write a no-op rather than a clobber.
   await supabase
     .from('sessions')
-    .update({ schema_data: updatedSchema as Json, current_phase: 3 })
+    .update({ schema_data: asJson(updatedSchema), current_phase: 3 })
     .eq('id', sessionId)
     .eq('current_phase', 2)
 

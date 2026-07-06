@@ -21,9 +21,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid metadata — must be an object' }, { status: 400 })
   }
 
-  // Validate storagePath belongs to this session — prevent cross-session file claiming
+  // Validate storagePath belongs to this session — prevent cross-session file
+  // claiming. Decode before checking (security rule 8) so percent-encoded
+  // traversal can't pass the prefix check, and reject dot segments outright.
+  if (typeof storagePath !== 'string') {
+    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
+  }
+  let decodedPath: string
+  try {
+    decodedPath = decodeURIComponent(storagePath)
+  } catch {
+    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
+  }
   const expectedPrefix = `sessions/${sessionId}/`
-  if (!storagePath.startsWith(expectedPrefix)) {
+  if (
+    decodedPath !== storagePath ||
+    !decodedPath.startsWith(expectedPrefix) ||
+    decodedPath.split('/').some(s => s === '' || s === '.' || s === '..')
+  ) {
     return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
   }
 

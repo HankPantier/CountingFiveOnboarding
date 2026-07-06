@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
+import { checkRateLimit } from '@/lib/auth/rate-limit'
 import type { SessionSchema } from '@/types/session-schema'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -21,9 +22,14 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid pageId' }, { status: 400 })
   }
 
+  // Explicit column list: this row also carries pipeline-internal state
+  // (generation_status/error, admin approval flags) that a public endpoint
+  // must not expose.
   const { data, error } = await supabase
     .from('generated_pages')
-    .select('*')
+    .select(
+      'id, content_job_id, page_url, page_title, url_slug, content_markdown, meta_title, meta_description, target_keyword, word_count_actual, word_count_target, needs_client_review, client_approved_content, created_at'
+    )
     .eq('id', pageId)
     .eq('content_job_id', id)
     .eq('needs_client_review', true)
@@ -52,6 +58,12 @@ export async function PATCH(
   }
   if (!UUID_RE.test(pageId)) {
     return NextResponse.json({ error: 'Invalid pageId' }, { status: 400 })
+  }
+
+  // Public write endpoint (two-UUID capability URL) — bound the write volume
+  // per page so a leaked link can't be used to hammer the row.
+  if (!(await checkRateLimit(`review-patch:${pageId}`, 60, 60 * 60 * 1000))) {
+    return NextResponse.json({ error: 'Too many edits — please wait a moment' }, { status: 429 })
   }
 
   const body = await req.json()
@@ -120,7 +132,9 @@ export async function PATCH(
     .eq('id', pageId)
     .eq('content_job_id', id)
     .eq('needs_client_review', true)
-    .select('*')
+    .select(
+      'id, content_job_id, page_url, page_title, url_slug, content_markdown, meta_title, meta_description, target_keyword, word_count_actual, word_count_target, needs_client_review, client_approved_content, created_at'
+    )
     .single()
 
   if (error || !data) {
@@ -173,7 +187,10 @@ async function notifyIfReviewComplete(
     .eq('id', job.session_id)
     .single()
   const schema = (session?.schema_data ?? {}) as SessionSchema
-  const firmName = schema.business?.name ?? session?.website_url ?? 'Client'
+  // Escape: the firm name originates from client input via the intake chat and
+  // is interpolated into admin-inbox HTML.
+  const rawFirmName = schema.business?.name ?? session?.website_url ?? 'Client'
+  const firmName = rawFirmName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
   const adminEmail = process.env.ADMIN_EMAIL
   const fromEmail = process.env.RESEND_FROM_EMAIL

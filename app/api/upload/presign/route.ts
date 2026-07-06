@@ -1,6 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireSessionAccess } from '@/lib/auth/access'
+import { checkRateLimit } from '@/lib/auth/rate-limit'
 
 // image/svg+xml is allowed here so the admin logo flow can presign an SVG; the
 // bytes are validated/sanitized at its own confirm step (the generic
@@ -35,6 +36,12 @@ export async function POST(req: Request) {
     const auth = await requireSessionAccess(sessionId)
     if (auth instanceof NextResponse) {
       return NextResponse.json({ error: 'File uploads not available yet' }, { status: 403 })
+    }
+  } else {
+    // Phase >= 5 is unauthenticated (client flow) — bound presigns per session
+    // so a leaked session URL can't flood the private bucket.
+    if (!(await checkRateLimit(`presign:${sessionId}`, 60, 60 * 60 * 1000))) {
+      return NextResponse.json({ error: 'Upload limit reached — please wait a bit' }, { status: 429 })
     }
   }
 

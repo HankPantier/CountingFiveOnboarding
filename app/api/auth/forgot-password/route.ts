@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { sendPasswordResetEmail } from '@/lib/email/send-password-reset'
+import { checkRateLimit, clientIp } from '@/lib/auth/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -18,6 +19,19 @@ export async function POST(req: Request) {
   const email = body.email?.trim().toLowerCase()
   if (!email || !email.includes('@')) {
     return NextResponse.json({ error: 'A valid email is required' }, { status: 400 })
+  }
+
+  // Throttle: unauthenticated + sends email = amplification vector. When over
+  // the limit, return the same success response — a 429 would leak that the
+  // limiter tripped and break the enumeration-safety contract.
+  const hour = 60 * 60 * 1000
+  const [ipOk, emailOk] = await Promise.all([
+    checkRateLimit(`forgot-password:ip:${clientIp(req)}`, 10, hour),
+    checkRateLimit(`forgot-password:email:${email}`, 3, hour),
+  ])
+  if (!ipOk || !emailOk) {
+    console.warn('[forgot-password] rate limited')
+    return NextResponse.json({ success: true })
   }
 
   try {

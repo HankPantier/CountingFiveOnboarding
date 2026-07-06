@@ -32,8 +32,10 @@ export async function GET(req: Request) {
   // audit_runs: a row stuck in a running state with started_at older than the
   // cutoff means the worker died mid-run. Reset it to 'error' so the UI stops
   // polling and the admin can re-run.
-  const RUNNING_AUDIT_STATES = ['crawling', 'analyzing', 'scoring', 'rendering']
-  const [research, pages, ideas, socials, oneoffs, audits] = await Promise.all([
+  // 'researching' is the AI-intelligence stage — the longest one and the most
+  // likely place for a worker to die; omitting it stranded audits forever.
+  const RUNNING_AUDIT_STATES = ['crawling', 'analyzing', 'researching', 'scoring', 'rendering']
+  const [research, pages, ideas, socials, oneoffs, audits, batchTargets] = await Promise.all([
     supabase
       .from('research_results')
       .update({ research_status: 'error' })
@@ -72,7 +74,24 @@ export async function GET(req: Request) {
       .in('audit_status', RUNNING_AUDIT_STATES)
       .lt('started_at', cutoff)
       .select('id'),
+    // blog_batch_targets stuck at 'generating' (worker died between claim and
+    // terminal write) are invisible to future chained runs, which only select
+    // 'pending' — so the parent batch never completes. Reset them to 'pending'
+    // for the next chain to re-attempt.
+    supabase
+      .from('blog_batch_targets')
+      .update({ status: 'pending' })
+      .eq('status', 'generating')
+      .lt('updated_at', cutoff)
+      .select('id'),
   ])
+
+  // Prune rate-limiter events older than 24h (largest window is 1h; 24h keeps
+  // the table tiny without racing any active window).
+  await supabase
+    .from('rate_limit_events')
+    .delete()
+    .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
 
   // Sessions stranded at Phase 2: the WHOIS after()-task never completed (cold
   // kill, network drop). Re-run the lookup — it advances them to Phase 3 (and is
@@ -140,12 +159,55 @@ export async function GET(req: Request) {
     }
   }
 
+  // Blog batches: a target reset to 'pending' above (or a chain that died
+  // before firing) has no worker coming back for it — re-trigger the batch
+  // runner the same way content generation is auto-resumed.
+  const { data: liveBatchTargets } = await supabase
+    .from('blog_batch_targets')
+    .select('batch_id, status')
+    .in('status', ['pending', 'generating'])
+
+  const batchCounts = new Map<string, { pending: number; generating: number }>()
+  for (const t of liveBatchTargets ?? []) {
+    const c = batchCounts.get(t.batch_id) ?? { pending: 0, generating: 0 }
+    if (t.status === 'generating') c.generating++
+    else c.pending++
+    batchCounts.set(t.batch_id, c)
+  }
+  const resumableBatches = [...batchCounts.entries()]
+    .filter(([, c]) => c.pending > 0 && c.generating === 0)
+    .map(([batchId]) => batchId)
+    .slice(0, 5)
+
+  let batchesResumed = 0
+  if (resumeBase && resumableBatches.length) {
+    const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
+    for (const batchId of resumableBatches) {
+      try {
+        const res = await fetch(`${url}/api/blog-batches/${batchId}/generate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+        if (res.ok) batchesResumed++
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] blog-batch auto-resume failed for', batchId, err)
+      }
+    }
+    if (batchesResumed) {
+      console.warn(`[sweep-stuck-jobs] blog-batches auto-resumed=${batchesResumed}`)
+    }
+  }
+
   const researchSwept = research.data?.length ?? 0
   const pagesSwept = pages.data?.length ?? 0
   const ideasSwept = ideas.data?.length ?? 0
   const socialsSwept = socials.data?.length ?? 0
   const oneoffsSwept = oneoffs.data?.length ?? 0
   const auditsSwept = audits.data?.length ?? 0
+  const batchTargetsSwept = batchTargets.data?.length ?? 0
+  if (batchTargetsSwept) {
+    console.warn(`[sweep-stuck-jobs] blog-batch-targets reset to pending=${batchTargetsSwept}`)
+  }
 
   if (whoisRetried) {
     console.warn(`[sweep-stuck-jobs] whois-retried=${whoisRetried} cutoff=${cutoff}`)
@@ -188,5 +250,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, whoisRetried, generationResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, whoisRetried, generationResumed, batchesResumed, cutoff })
 }
