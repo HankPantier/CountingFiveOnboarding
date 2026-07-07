@@ -11,19 +11,18 @@ import {
   verticalListSortingStrategy, useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical } from 'lucide-react'
+import { GripVertical, IndentIncrease, IndentDecrease } from 'lucide-react'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
-import type { NavJson, NavItem } from '@/types/nav-json'
+import {
+  computeMoves, deriveNavUrls, lastSegment, toEditItems, toNavJson,
+  type EditNavItem, type Move,
+} from '@/lib/editor/nav-urls'
+import type { NavItem, NavJson } from '@/types/nav-json'
 
-// Depth is 0-indexed: 0 = primary (top menu), 1 = secondary (dropdown),
-// 2 = tertiary (side-nav only). Nothing renders below tertiary, so children
-// can be added at depth 0 and 1 but not 2.
+// 0 = primary, 1 = secondary, 2 = tertiary. Children can be added / nested down
+// to tertiary; nothing renders deeper.
 const MAX_DEPTH = 2
 
-// Lenient structural parse for the form view: empty labels/urls are allowed
-// mid-edit (the strict parser would throw and bounce the user to raw mode on
-// every cleared input). Returns null only when the JSON is malformed or the
-// shape is unrecognizable — that's when we fall back to the raw textarea.
 function lenientParse(text: string): NavJson | null {
   let value: unknown
   try {
@@ -43,17 +42,13 @@ function lenientParse(text: string): NavJson | null {
       url: typeof o.url === 'string' ? o.url : '',
     }
     if (Array.isArray(o.children)) {
-      const children = o.children
-        .map(coerceItem)
-        .filter((c): c is NavItem => c !== null)
+      const children = o.children.map(coerceItem).filter((c): c is NavItem => c !== null)
       if (children.length > 0) item.children = children
     }
     return item
   }
 
-  const primary = root.primary
-    .map(coerceItem)
-    .filter((c): c is NavItem => c !== null)
+  const primary = root.primary.map(coerceItem).filter((c): c is NavItem => c !== null)
   const nav: NavJson = { primary }
   if (root.cta && typeof root.cta === 'object') {
     const cta = root.cta as Record<string, unknown>
@@ -72,10 +67,7 @@ function inputClass(empty: boolean): string {
 }
 
 function IconButton({
-  label,
-  disabled,
-  onClick,
-  children,
+  label, disabled, onClick, children,
 }: {
   label: string
   disabled?: boolean
@@ -96,40 +88,8 @@ function IconButton({
   )
 }
 
-function ItemFields({
-  item,
-  onLabel,
-  onUrl,
-}: {
-  item: NavItem
-  onLabel: (v: string) => void
-  onUrl: (v: string) => void
-}) {
-  return (
-    <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
-      <input
-        type="text"
-        value={item.label}
-        placeholder="Label"
-        aria-label="Menu label"
-        onChange={(e) => onLabel(e.target.value)}
-        className={inputClass(item.label.trim() === '')}
-      />
-      <input
-        type="text"
-        value={item.url}
-        placeholder="/page-url"
-        aria-label="Menu URL"
-        onChange={(e) => onUrl(e.target.value)}
-        className={`${inputClass(item.url.trim() === '')} font-mono`}
-      />
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------------------
 // Path helpers — a Path is a list of indices, e.g. [0, 1] = primary[0].children[1].
-// The dnd-kit sortable id for an item is its path joined with '/'.
 // ---------------------------------------------------------------------------
 type Path = number[]
 const pathId = (p: Path): string => p.join('/')
@@ -137,27 +97,19 @@ const parsePath = (id: string): Path => id.split('/').map(Number)
 const parentPath = (p: Path): Path => p.slice(0, -1)
 const lastIndex = (p: Path): number => p[p.length - 1]
 
-// The sibling list that contains the item at `path` (i.e. children of its
-// parent). `[]` resolves to nav.primary. Returns null if the branch is absent.
-function listAt(nav: NavJson, parent: Path): NavItem[] | null {
-  if (parent.length === 0) return nav.primary
-  let node: NavItem | undefined = nav.primary[parent[0]]
-  for (let k = 1; k < parent.length && node; k++) {
-    node = node.children?.[parent[k]]
-  }
+function listAt(root: EditNavItem[], parent: Path): EditNavItem[] | null {
+  if (parent.length === 0) return root
+  let node: EditNavItem | undefined = root[parent[0]]
+  for (let k = 1; k < parent.length && node; k++) node = node.children?.[parent[k]]
   return node?.children ?? null
 }
-
-function nodeAt(nav: NavJson, path: Path): NavItem | null {
-  const list = listAt(nav, parentPath(path))
+function nodeAt(root: EditNavItem[], path: Path): EditNavItem | null {
+  const list = listAt(root, parentPath(path))
   return list?.[lastIndex(path)] ?? null
 }
 
 function SortableRow({
-  path,
-  label,
-  inline,
-  nested,
+  path, label, inline, nested,
 }: {
   path: Path
   label: string
@@ -165,19 +117,10 @@ function SortableRow({
   nested?: ReactNode
 }) {
   const id = pathId(path)
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  }
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className="border border-border-default rounded-lg p-3 space-y-2 bg-surface-card"
-    >
+    <li ref={setNodeRef} style={style} className="border border-border-default rounded-lg p-3 space-y-2 bg-surface-card">
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -199,26 +142,32 @@ export default function NavEditor({
   path,
   contents,
   onChange,
+  onMovesChange,
 }: {
   path: string
   contents: string
   onChange: (next: string) => void
+  onMovesChange?: (moves: Move[]) => void
 }) {
   const [showRaw, setShowRaw] = useState(false)
-
-  // @dnd-kit generates accessibility-announcement IDs that don't line up
-  // between server render and client mount, causing a hydration mismatch.
-  // Mount-gate the sortable tree so it only renders on the client.
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
   }, [])
 
-  const nav = useMemo(() => lenientParse(contents), [contents])
+  // Seed editor state once from the loaded nav.json. External replacements
+  // (conflict "take server", publish reload) remount this component via a key
+  // in EditorShell, which re-seeds. Malformed JSON → empty form + raw fallback.
+  // Seed once from the contents present at mount; external replacements remount
+  // via EditorShell's key, so we deliberately don't re-seed on prop changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const seed = useMemo(() => lenientParse(contents), [])
+  const [items, setItems] = useState<EditNavItem[]>(() =>
+    seed ? toEditItems(seed.primary) : []
+  )
+  const [cta, setCta] = useState<NavJson['cta'] | undefined>(() => seed?.cta)
 
-  // Strict validity drives the badge (and warns about empty fields the
-  // lenient form happily tolerates while typing).
   const strictError = useMemo(() => {
     try {
       parseNavJson(contents)
@@ -233,51 +182,77 @@ export default function NavEditor({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
-  const commit = (next: NavJson) => onChange(serializeNavJson(next))
-
-  const update = (fn: (draft: NavJson) => void) => {
-    if (!nav) return
-    const draft = structuredClone(nav)
-    fn(draft)
-    commit(draft)
+  const emit = (nextItems: EditNavItem[], nextCta: NavJson['cta'] | undefined) => {
+    const derived = deriveNavUrls(nextItems)
+    setItems(derived)
+    setCta(nextCta)
+    onChange(serializeNavJson(toNavJson(derived, nextCta)))
+    onMovesChange?.(computeMoves(derived))
   }
 
-  const setField = (p: Path, field: 'label' | 'url', value: string) =>
-    update((d) => {
-      const node = nodeAt(d, p)
-      if (node) node[field] = value
-    })
+  const update = (fn: (draft: EditNavItem[]) => void) => {
+    const draft = structuredClone(items)
+    fn(draft)
+    emit(draft, cta)
+  }
+  const updateCta = (next: NavJson['cta'] | undefined) => emit(items, next)
+
+  const setLabel = (p: Path, v: string) =>
+    update((d) => { const n = nodeAt(d, p); if (n) n.label = v })
+  const setSlug = (p: Path, v: string) =>
+    update((d) => { const n = nodeAt(d, p); if (n) n.slug = v })
+  const setPrimaryUrl = (p: Path, v: string) =>
+    update((d) => { const n = nodeAt(d, p); if (n) { n.url = v; n.slug = lastSegment(v) } })
 
   const removeAt = (p: Path) =>
     update((d) => {
       const list = listAt(d, parentPath(p))
       if (!list) return
       list.splice(lastIndex(p), 1)
-      // Drop an emptied children array so the JSON stays clean.
       const owner = parentPath(p)
       if (owner.length > 0) {
-        const ownerNode = nodeAt(d, owner)
-        if (ownerNode?.children && ownerNode.children.length === 0) {
-          delete ownerNode.children
-        }
+        const on = nodeAt(d, owner)
+        if (on?.children && on.children.length === 0) delete on.children
       }
     })
 
   const addChild = (p: Path) =>
     update((d) => {
-      const node = nodeAt(d, p)
-      if (!node) return
-      node.children = [...(node.children ?? []), { label: '', url: '' }]
+      const n = nodeAt(d, p)
+      if (!n) return
+      n.children = [...(n.children ?? []), { label: '', url: '', slug: '' }]
     })
 
   const addPrimary = () =>
+    update((d) => { d.push({ label: '', url: '', slug: '' }) })
+
+  // Nest an item under its previous sibling (one level deeper).
+  const indent = (p: Path) =>
     update((d) => {
-      d.primary.push({ label: '', url: '' })
+      const list = listAt(d, parentPath(p))
+      const i = lastIndex(p)
+      if (!list || i === 0) return
+      const prev = list[i - 1]
+      const [moved] = list.splice(i, 1)
+      prev.children = [...(prev.children ?? []), moved]
     })
 
-  // Reorder within a sibling list only. Cross-list drags (dropping an item
-  // under a different parent) are ignored — mirrors the old up/down arrows,
-  // which only moved items within their own level.
+  // Promote an item to its grandparent's list, just after its former parent.
+  const outdent = (p: Path) =>
+    update((d) => {
+      if (p.length < 2) return
+      const parentList = listAt(d, parentPath(p))
+      if (!parentList) return
+      const [moved] = parentList.splice(lastIndex(p), 1)
+      if (parentList.length === 0) {
+        const owner = nodeAt(d, parentPath(p))
+        if (owner) delete owner.children
+      }
+      const grandList = listAt(d, parentPath(parentPath(p)))
+      if (!grandList) return
+      grandList.splice(lastIndex(parentPath(p)) + 1, 0, moved)
+    })
+
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e
     if (!over || active.id === over.id) return
@@ -293,17 +268,14 @@ export default function NavEditor({
     })
   }
 
-  const formUnavailable = nav === null
+  const formUnavailable = seed === null
 
-  const renderLevel = (list: NavItem[], parent: Path, depth: number): ReactNode => {
+  const renderLevel = (list: EditNavItem[], parent: Path, depth: number): ReactNode => {
     const ids = list.map((_, i) => pathId([...parent, i]))
-    const listClass =
-      depth === 0
-        ? 'p-4 space-y-3'
-        : 'ml-8 space-y-2 border-l border-border-default pl-3 pt-1'
+    const containerClass = depth === 0 ? 'p-4 space-y-3' : 'ml-8 space-y-2 border-l border-border-default pl-3 pt-1'
     return (
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-        <ul className={listClass}>
+        <ul className={containerClass}>
           {list.map((item, i) => {
             const p = [...parent, i]
             const hasChildren = (item.children?.length ?? 0) > 0
@@ -314,15 +286,47 @@ export default function NavEditor({
                 label={item.label}
                 inline={
                   <>
-                    <ItemFields
-                      item={item}
-                      onLabel={(v) => setField(p, 'label', v)}
-                      onUrl={(v) => setField(p, 'url', v)}
-                    />
-                    <IconButton
-                      label={`Remove ${item.label || 'item'}`}
-                      onClick={() => removeAt(p)}
-                    >
+                    <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
+                      <input
+                        type="text"
+                        value={item.label}
+                        placeholder="Label"
+                        aria-label="Menu label"
+                        onChange={(e) => setLabel(p, e.target.value)}
+                        className={inputClass(item.label.trim() === '')}
+                      />
+                      {depth === 0 ? (
+                        <input
+                          type="text"
+                          value={item.url}
+                          placeholder="/page-url"
+                          aria-label="Menu URL"
+                          onChange={(e) => setPrimaryUrl(p, e.target.value)}
+                          className={`${inputClass(item.url.trim() === '')} font-mono`}
+                        />
+                      ) : (
+                        <div className="min-w-0">
+                          <input
+                            type="text"
+                            value={item.slug}
+                            placeholder="url-segment"
+                            aria-label="URL segment"
+                            onChange={(e) => setSlug(p, e.target.value)}
+                            className={`${inputClass(item.slug.trim() === '')} font-mono`}
+                          />
+                          <div className="mt-0.5 text-[10px] font-mono text-text-muted truncate" title={item.url}>
+                            {item.url}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <IconButton label={`Indent ${item.label || 'item'}`} disabled={i === 0 || depth >= MAX_DEPTH} onClick={() => indent(p)}>
+                      <IndentIncrease className="w-4 h-4" />
+                    </IconButton>
+                    <IconButton label={`Outdent ${item.label || 'item'}`} disabled={depth === 0} onClick={() => outdent(p)}>
+                      <IndentDecrease className="w-4 h-4" />
+                    </IconButton>
+                    <IconButton label={`Remove ${item.label || 'item'}`} onClick={() => removeAt(p)}>
                       ✕
                     </IconButton>
                   </>
@@ -356,18 +360,18 @@ export default function NavEditor({
       <div className="max-w-4xl mx-auto p-6 space-y-4">
         <div>
           <div className="text-xs font-heading text-text-muted">Editing</div>
-          <div className="font-heading font-semibold text-brand-navy text-lg">
-            Site navigation
-          </div>
+          <div className="font-heading font-semibold text-brand-navy text-lg">Site navigation</div>
+          <p className="text-[11px] font-body text-text-muted mt-1">
+            Indent an item to nest it; its URL becomes <span className="font-mono">/parent/segment</span>.
+            Saving moves the page to the new URL and adds a redirect from the old one.
+          </p>
         </div>
 
         {!formUnavailable && (
           <>
             <section className="bg-surface-card border border-border-default rounded-lg">
               <div className="flex items-center justify-between px-4 py-2 border-b border-border-default">
-                <h2 className="text-sm font-heading font-semibold text-brand-navy">
-                  Menu items
-                </h2>
+                <h2 className="text-sm font-heading font-semibold text-brand-navy">Menu items</h2>
                 {strictError ? (
                   <span className="text-xs font-body text-error">{strictError}</span>
                 ) : (
@@ -375,26 +379,18 @@ export default function NavEditor({
                 )}
               </div>
 
-              {nav.primary.length === 0 && (
-                <p className="px-4 py-4 text-xs font-body text-text-muted">
-                  No menu items yet — add one below.
-                </p>
+              {items.length === 0 && (
+                <p className="px-4 py-4 text-xs font-body text-text-muted">No menu items yet — add one below.</p>
               )}
 
               {mounted ? (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  {renderLevel(nav.primary, [], 0)}
-                </DndContext>
-              ) : (
-                nav.primary.length > 0 && (
-                  <p className="px-4 py-4 text-xs font-body text-text-muted">
-                    Loading nav editor…
-                  </p>
+                items.length > 0 && (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    {renderLevel(items, [], 0)}
+                  </DndContext>
                 )
+              ) : (
+                items.length > 0 && <p className="px-4 py-4 text-xs font-body text-text-muted">Loading nav editor…</p>
               )}
 
               <div className="px-4 pb-4">
@@ -410,32 +406,38 @@ export default function NavEditor({
 
             <section className="bg-surface-card border border-border-default rounded-lg">
               <div className="px-4 py-2 border-b border-border-default">
-                <h2 className="text-sm font-heading font-semibold text-brand-navy">
-                  Call-to-action button
-                </h2>
+                <h2 className="text-sm font-heading font-semibold text-brand-navy">Call-to-action button</h2>
                 <p className="text-[11px] font-body text-text-muted mt-0.5">
                   Optional highlighted button at the end of the menu (e.g. “Get in touch”).
                 </p>
               </div>
               <div className="p-4">
-                {nav.cta ? (
+                {cta ? (
                   <div className="flex items-center gap-2">
-                    <ItemFields
-                      item={nav.cta}
-                      onLabel={(v) => update((d) => { d.cta = { ...d.cta!, label: v } })}
-                      onUrl={(v) => update((d) => { d.cta = { ...d.cta!, url: v } })}
-                    />
-                    <IconButton
-                      label="Remove call-to-action"
-                      onClick={() => update((d) => { delete d.cta })}
-                    >
-                      ✕
-                    </IconButton>
+                    <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
+                      <input
+                        type="text"
+                        value={cta.label}
+                        placeholder="Label"
+                        aria-label="CTA label"
+                        onChange={(e) => updateCta({ ...cta, label: e.target.value })}
+                        className={inputClass(cta.label.trim() === '')}
+                      />
+                      <input
+                        type="text"
+                        value={cta.url}
+                        placeholder="/page-url"
+                        aria-label="CTA URL"
+                        onChange={(e) => updateCta({ ...cta, url: e.target.value })}
+                        className={`${inputClass(cta.url.trim() === '')} font-mono`}
+                      />
+                    </div>
+                    <IconButton label="Remove call-to-action" onClick={() => updateCta(undefined)}>✕</IconButton>
                   </div>
                 ) : (
                   <button
                     type="button"
-                    onClick={() => update((d) => { d.cta = { label: '', url: '' } })}
+                    onClick={() => updateCta({ label: '', url: '' })}
                     className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                   >
                     + Add call-to-action
@@ -448,8 +450,7 @@ export default function NavEditor({
 
         {formUnavailable && (
           <div className="bg-warning/10 border border-warning/30 text-warning-strong text-xs font-body rounded-lg px-4 py-3">
-            The JSON is malformed, so the visual editor can&apos;t load it — fix it below
-            and the form view will come back.
+            The JSON is malformed, so the visual editor can&apos;t load it — fix it below and reopen the file.
           </div>
         )}
 
@@ -460,12 +461,8 @@ export default function NavEditor({
             aria-expanded={showRaw || formUnavailable}
             className="w-full flex items-center justify-between px-4 py-2 text-left"
           >
-            <span className="text-sm font-heading font-semibold text-brand-navy">
-              Raw JSON ({path})
-            </span>
-            <span className="text-xs font-body text-text-muted">
-              {showRaw || formUnavailable ? 'Hide' : 'Show'}
-            </span>
+            <span className="text-sm font-heading font-semibold text-brand-navy">Raw JSON ({path})</span>
+            <span className="text-xs font-body text-text-muted">{showRaw || formUnavailable ? 'Hide' : 'Show'}</span>
           </button>
           {(showRaw || formUnavailable) && (
             <div className="border-t border-border-default">

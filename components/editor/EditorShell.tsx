@@ -10,6 +10,9 @@ import MediaLibrary from './MediaLibrary'
 import ResourcesPanel from './ResourcesPanel'
 import OneOffPanel from './OneOffPanel'
 import { parseNavJson } from '@/lib/editor/nav-config'
+import type { Move } from '@/lib/editor/nav-urls'
+
+const NAV_PATH = 'content/nav.json'
 
 type LoadedFile = { content: string; sha: string }
 
@@ -34,6 +37,9 @@ export default function EditorShell({
   const [loadingTree, setLoadingTree] = useState(true)
   const [loadingFile, setLoadingFile] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Pending page relocations emitted by NavEditor (an item's url changed via
+  // nesting). Applied by the /nav route on save; reset after each nav save.
+  const [navMoves, setNavMoves] = useState<Move[]>([])
   const [publishing, setPublishing] = useState(false)
   const [pageActioning, setPageActioning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -181,7 +187,8 @@ export default function EditorShell({
     const base = loaded.get(selectedPath)
     if (!base) return
 
-    if (selectedPath === 'content/nav.json') {
+    const isNavSave = selectedPath === NAV_PATH
+    if (isNavSave) {
       try {
         parseNavJson(next)
       } catch (err) {
@@ -194,15 +201,19 @@ export default function EditorShell({
     setError(null)
     setPublishResult(null)
     try {
-      const res = await fetch(`/api/edit/${sessionId}/files`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          path: selectedPath,
-          contents: next,
-          expectedSha: base.sha,
-        }),
-      })
+      // nav.json goes through /nav, which also relocates any page whose url
+      // changed (nesting) and adds a 301. Other files use the generic writer.
+      const res = isNavSave
+        ? await fetch(`/api/edit/${sessionId}/nav`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: next, moves: navMoves, expectedSha: base.sha }),
+          })
+        : await fetch(`/api/edit/${sessionId}/files`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: selectedPath, contents: next, expectedSha: base.sha }),
+          })
       if (res.status === 409) {
         const data = (await res.json()) as { currentSha: string; currentContent: string; message?: string }
         setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
@@ -221,6 +232,12 @@ export default function EditorShell({
         m.delete(selectedPath)
         return m
       })
+      if (isNavSave) {
+        setNavMoves([])
+        // Pages were relocated on the draft branch — refresh the tree so the
+        // moved files show at their new paths.
+        await refreshTree()
+      }
       await refreshStatus()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -272,11 +289,18 @@ export default function EditorShell({
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch(`/api/edit/${sessionId}/files`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: conflict.path, contents: mine, expectedSha: conflict.serverSha }),
-      })
+      const isNavConflict = conflict.path === NAV_PATH
+      const res = isNavConflict
+        ? await fetch(`/api/edit/${sessionId}/nav`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: mine, moves: navMoves, expectedSha: conflict.serverSha }),
+          })
+        : await fetch(`/api/edit/${sessionId}/files`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: conflict.path, contents: mine, expectedSha: conflict.serverSha }),
+          })
       if (res.status === 409) {
         // The file moved AGAIN while the conflict bar was open — refresh the
         // conflict to the newest server state so the choice stays valid
@@ -297,6 +321,10 @@ export default function EditorShell({
         return m
       })
       setConflict(null)
+      if (isNavConflict) {
+        setNavMoves([])
+        await refreshTree()
+      }
       await refreshStatus()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -581,7 +609,13 @@ export default function EditorShell({
             Loading {selectedPath}…
           </div>
         ) : isNav ? (
-          <NavEditor path={selectedPath} contents={content} onChange={onEdit} />
+          <NavEditor
+            key={`nav-${loaded.get(NAV_PATH)?.sha ?? 'new'}`}
+            path={selectedPath}
+            contents={content}
+            onChange={onEdit}
+            onMovesChange={setNavMoves}
+          />
         ) : (
           <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} onChange={onEdit} />
         )}
