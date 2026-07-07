@@ -6,6 +6,7 @@ import {
   slugify,
   toEditItems,
   toNavItems,
+  toPathname,
   type EditNavItem,
 } from './nav-urls'
 import type { NavItem } from '@/types/nav-json'
@@ -88,6 +89,59 @@ describe('computeMoves', () => {
       { label: 'Services', url: '/services', children: [{ label: 'Tax', url: '/services/tax' }] },
     ]
     expect(computeMoves(deriveNavUrls(toEditItems(nav)))).toEqual([])
+  })
+
+  it('emits root-relative moves when nav urls are absolute (host-prefixed)', () => {
+    // Regression: nesting "Why Choose BBL" under "Who We Are" when both carry
+    // absolute urls must still produce a move — previously dropped, so the page
+    // never relocated and the nested url 404'd.
+    const derived = deriveNavUrls([
+      {
+        label: 'Who We Are',
+        url: 'https://www.bblcpa.com/who-we-are',
+        slug: 'who-we-are',
+        originalUrl: 'https://www.bblcpa.com/who-we-are',
+        children: [
+          {
+            label: 'Why Choose BBL',
+            url: '/x',
+            slug: 'why-choose-bbl',
+            originalUrl: 'https://www.bblcpa.com/why-bbl',
+          },
+        ],
+      },
+    ])
+    expect(computeMoves(derived)).toEqual([
+      { from: '/why-bbl', to: '/who-we-are/why-choose-bbl' },
+    ])
+  })
+
+  it('skips a change that only differs by host', () => {
+    const derived = deriveNavUrls([
+      {
+        label: 'Contact',
+        url: 'https://www.bblcpa.com/contact',
+        slug: 'contact',
+        originalUrl: '/contact',
+      },
+    ])
+    expect(computeMoves(derived)).toEqual([])
+  })
+})
+
+describe('toPathname', () => {
+  it('strips the host from absolute urls', () => {
+    expect(toPathname('https://www.bblcpa.com/who-we-are/why-choose-bbl')).toBe(
+      '/who-we-are/why-choose-bbl'
+    )
+  })
+  it('passes through root-relative urls, trimming a trailing slash', () => {
+    expect(toPathname('/services/tax/')).toBe('/services/tax')
+    expect(toPathname('/')).toBe('/')
+  })
+  it('returns null for non-path values', () => {
+    expect(toPathname('mailto:hi@x.com')).toBeNull()
+    expect(toPathname('tel:+1')).toBeNull()
   })
 })
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { parseNavJson } from '@/lib/editor/nav-config'
+import { toPathname } from '@/lib/editor/nav-urls'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -105,15 +106,17 @@ export async function POST(
     )
   }
 
-  const validMoves = (Array.isArray(moves) ? moves : []).filter(
-    (m): m is Move =>
-      !!m &&
-      typeof m.from === 'string' &&
-      typeof m.to === 'string' &&
-      m.from.startsWith('/') &&
-      m.to.startsWith('/') &&
-      m.from !== m.to
-  )
+  // Normalize to root-relative paths so absolute, host-prefixed nav urls
+  // (e.g. https://www.firm.com/who-we-are/...) still resolve to a page + get a
+  // redirect. A raw startsWith('/') check would silently drop them, which left
+  // nested pages 404ing after a nav edit.
+  const validMoves = (Array.isArray(moves) ? moves : []).flatMap((m): Move[] => {
+    if (!m || typeof m.from !== 'string' || typeof m.to !== 'string') return []
+    const from = toPathname(m.from)
+    const to = toPathname(m.to)
+    if (!from || !to || from === to) return []
+    return [{ from, to }]
+  })
 
   try {
     await ensureDraftBranch(ctx.githubRepo)

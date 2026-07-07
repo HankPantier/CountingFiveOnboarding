@@ -30,6 +30,29 @@ function joinUrl(parentUrl: string, slug: string): string {
   return `${parentUrl.replace(/\/+$/, '')}/${slug}`
 }
 
+// Root-relative pathname of a nav url. Nav items may carry an absolute,
+// host-prefixed url (e.g. `https://www.firm.com/who-we-are`) or an already
+// root-relative one (`/services`); both map to `/who-we-are` / `/services`.
+// Returns null for anything that isn't a resolvable page path (external hosts
+// still parse, but callers compare pathnames, so a cross-host move collapses to
+// the same path and is skipped). This is why page-move + redirect logic must
+// normalize first — a raw `startsWith('/')` check silently drops absolute urls.
+export function toPathname(url: string): string | null {
+  let pathname: string
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      pathname = new URL(url).pathname
+    } catch {
+      return null
+    }
+  } else if (url.startsWith('/')) {
+    pathname = url
+  } else {
+    return null
+  }
+  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+}
+
 // Seed editor items from a loaded nav: originalUrl = url, slug = last segment.
 export function toEditItems(items: NavItem[]): EditNavItem[] {
   return items.map((it) => ({
@@ -76,13 +99,17 @@ export function toNavJson(items: EditNavItem[], cta?: NavJson['cta']): NavJson {
 
 // Items whose original url differs from their current (derived) url — each one
 // is a page that should move from `from` to `to`. New items (no originalUrl) and
-// unchanged items produce nothing.
+// unchanged items produce nothing. Emits root-relative paths (host stripped) so
+// downstream page-move and redirect logic works uniformly whether nav urls are
+// absolute or relative; a change that only differs by host produces no move.
 export function computeMoves(items: EditNavItem[]): Move[] {
   const moves: Move[] = []
   const walk = (list: EditNavItem[]) => {
     for (const it of list) {
-      if (it.originalUrl && it.originalUrl !== it.url) {
-        moves.push({ from: it.originalUrl, to: it.url })
+      if (it.originalUrl) {
+        const from = toPathname(it.originalUrl)
+        const to = toPathname(it.url)
+        if (from && to && from !== to) moves.push({ from, to })
       }
       if (it.children) walk(it.children)
     }
