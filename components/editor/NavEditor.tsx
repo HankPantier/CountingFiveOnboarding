@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect, type ReactNode } from 'react'
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  DndContext, KeyboardSensor, PointerSensor,
   useSensor, useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, IndentIncrease, IndentDecrease } from 'lucide-react'
+import { siblingScopedCollision } from '@/lib/nav-dnd'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import {
   computeMoves, deriveNavUrls, lastSegment, toEditItems, toNavJson,
@@ -120,8 +121,12 @@ function SortableRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
   return (
-    <li ref={setNodeRef} style={style} className="border border-border-default rounded-lg p-3 space-y-2 bg-surface-card">
-      <div className="flex items-center gap-2">
+    <li>
+      <div
+        ref={setNodeRef}
+        style={style}
+        className="flex items-center gap-2 border border-border-default rounded-lg p-3 bg-surface-card"
+      >
         <button
           type="button"
           {...attributes}
@@ -385,7 +390,7 @@ export default function NavEditor({
 
               {mounted ? (
                 items.length > 0 && (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <DndContext sensors={sensors} collisionDetection={siblingScopedCollision} onDragEnd={handleDragEnd}>
                     {renderLevel(items, [], 0)}
                   </DndContext>
                 )

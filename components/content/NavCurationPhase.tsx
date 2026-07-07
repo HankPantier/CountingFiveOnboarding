@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type ReactNode } from 'react'
 import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  DndContext, KeyboardSensor, PointerSensor,
   useSensor, useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
@@ -12,6 +12,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Trash2, Eye, EyeOff } from 'lucide-react'
+import { siblingScopedCollision } from '@/lib/nav-dnd'
 import type { NavJson, NavItem } from '@/types/nav-json'
 
 type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
@@ -115,8 +116,12 @@ function SortableRow({
   }
 
   return (
-    <div ref={setNodeRef} style={style}>
-      <div className="flex items-center gap-2 bg-white border border-border-default rounded-md px-3 py-2">
+    <div>
+      <div
+        ref={setNodeRef}
+        style={style}
+        className="flex items-center gap-2 bg-white border border-border-default rounded-md px-3 py-2"
+      >
         <button
           type="button"
           {...attributes}
@@ -320,7 +325,7 @@ export default function NavCurationPhase({
         items.length === 0 ? (
           <p className="text-sm font-body text-text-muted py-2">No nav items.</p>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={siblingScopedCollision} onDragEnd={handleDragEnd}>
             {renderLevel(items, [], 0)}
           </DndContext>
         )
