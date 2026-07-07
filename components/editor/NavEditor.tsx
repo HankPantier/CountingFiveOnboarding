@@ -1,8 +1,24 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, type ReactNode } from 'react'
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates,
+  verticalListSortingStrategy, useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { GripVertical } from 'lucide-react'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import type { NavJson, NavItem } from '@/types/nav-json'
+
+// Depth is 0-indexed: 0 = primary (top menu), 1 = secondary (dropdown),
+// 2 = tertiary (side-nav only). Nothing renders below tertiary, so children
+// can be added at depth 0 and 1 but not 2.
+const MAX_DEPTH = 2
 
 // Lenient structural parse for the form view: empty labels/urls are allowed
 // mid-edit (the strict parser would throw and bounce the user to raw mode on
@@ -111,6 +127,74 @@ function ItemFields({
   )
 }
 
+// ---------------------------------------------------------------------------
+// Path helpers — a Path is a list of indices, e.g. [0, 1] = primary[0].children[1].
+// The dnd-kit sortable id for an item is its path joined with '/'.
+// ---------------------------------------------------------------------------
+type Path = number[]
+const pathId = (p: Path): string => p.join('/')
+const parsePath = (id: string): Path => id.split('/').map(Number)
+const parentPath = (p: Path): Path => p.slice(0, -1)
+const lastIndex = (p: Path): number => p[p.length - 1]
+
+// The sibling list that contains the item at `path` (i.e. children of its
+// parent). `[]` resolves to nav.primary. Returns null if the branch is absent.
+function listAt(nav: NavJson, parent: Path): NavItem[] | null {
+  if (parent.length === 0) return nav.primary
+  let node: NavItem | undefined = nav.primary[parent[0]]
+  for (let k = 1; k < parent.length && node; k++) {
+    node = node.children?.[parent[k]]
+  }
+  return node?.children ?? null
+}
+
+function nodeAt(nav: NavJson, path: Path): NavItem | null {
+  const list = listAt(nav, parentPath(path))
+  return list?.[lastIndex(path)] ?? null
+}
+
+function SortableRow({
+  path,
+  label,
+  inline,
+  nested,
+}: {
+  path: Path
+  label: string
+  inline: ReactNode
+  nested?: ReactNode
+}) {
+  const id = pathId(path)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="border border-border-default rounded-lg p-3 space-y-2 bg-surface-card"
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label={`Reorder ${label || 'item'}`}
+          className="cursor-grab active:cursor-grabbing w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-brand-navy hover:bg-surface-subtle transition-colors"
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+        {inline}
+      </div>
+      {nested}
+    </li>
+  )
+}
+
 export default function NavEditor({
   path,
   contents,
@@ -121,6 +205,15 @@ export default function NavEditor({
   onChange: (next: string) => void
 }) {
   const [showRaw, setShowRaw] = useState(false)
+
+  // @dnd-kit generates accessibility-announcement IDs that don't line up
+  // between server render and client mount, causing a hydration mismatch.
+  // Mount-gate the sortable tree so it only renders on the client.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
 
   const nav = useMemo(() => lenientParse(contents), [contents])
 
@@ -135,6 +228,11 @@ export default function NavEditor({
     }
   }, [contents])
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
   const commit = (next: NavJson) => onChange(serializeNavJson(next))
 
   const update = (fn: (draft: NavJson) => void) => {
@@ -144,13 +242,114 @@ export default function NavEditor({
     commit(draft)
   }
 
-  const moveInArray = <T,>(arr: T[], from: number, to: number) => {
-    if (to < 0 || to >= arr.length) return
-    const [moved] = arr.splice(from, 1)
-    arr.splice(to, 0, moved)
+  const setField = (p: Path, field: 'label' | 'url', value: string) =>
+    update((d) => {
+      const node = nodeAt(d, p)
+      if (node) node[field] = value
+    })
+
+  const removeAt = (p: Path) =>
+    update((d) => {
+      const list = listAt(d, parentPath(p))
+      if (!list) return
+      list.splice(lastIndex(p), 1)
+      // Drop an emptied children array so the JSON stays clean.
+      const owner = parentPath(p)
+      if (owner.length > 0) {
+        const ownerNode = nodeAt(d, owner)
+        if (ownerNode?.children && ownerNode.children.length === 0) {
+          delete ownerNode.children
+        }
+      }
+    })
+
+  const addChild = (p: Path) =>
+    update((d) => {
+      const node = nodeAt(d, p)
+      if (!node) return
+      node.children = [...(node.children ?? []), { label: '', url: '' }]
+    })
+
+  const addPrimary = () =>
+    update((d) => {
+      d.primary.push({ label: '', url: '' })
+    })
+
+  // Reorder within a sibling list only. Cross-list drags (dropping an item
+  // under a different parent) are ignored — mirrors the old up/down arrows,
+  // which only moved items within their own level.
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const from = parsePath(String(active.id))
+    const to = parsePath(String(over.id))
+    if (from.length !== to.length) return
+    if (pathId(parentPath(from)) !== pathId(parentPath(to))) return
+    update((d) => {
+      const list = listAt(d, parentPath(from))
+      if (!list) return
+      const moved = arrayMove(list, lastIndex(from), lastIndex(to))
+      list.splice(0, list.length, ...moved)
+    })
   }
 
   const formUnavailable = nav === null
+
+  const renderLevel = (list: NavItem[], parent: Path, depth: number): ReactNode => {
+    const ids = list.map((_, i) => pathId([...parent, i]))
+    const listClass =
+      depth === 0
+        ? 'p-4 space-y-3'
+        : 'ml-8 space-y-2 border-l border-border-default pl-3 pt-1'
+    return (
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        <ul className={listClass}>
+          {list.map((item, i) => {
+            const p = [...parent, i]
+            const hasChildren = (item.children?.length ?? 0) > 0
+            return (
+              <SortableRow
+                key={pathId(p)}
+                path={p}
+                label={item.label}
+                inline={
+                  <>
+                    <ItemFields
+                      item={item}
+                      onLabel={(v) => setField(p, 'label', v)}
+                      onUrl={(v) => setField(p, 'url', v)}
+                    />
+                    <IconButton
+                      label={`Remove ${item.label || 'item'}`}
+                      onClick={() => removeAt(p)}
+                    >
+                      ✕
+                    </IconButton>
+                  </>
+                }
+                nested={
+                  (hasChildren || depth < MAX_DEPTH) && (
+                    <>
+                      {hasChildren && renderLevel(item.children!, p, depth + 1)}
+                      {depth < MAX_DEPTH && (
+                        <button
+                          type="button"
+                          onClick={() => addChild(p)}
+                          className="ml-8 text-[11px] font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"
+                        >
+                          {depth === 0 ? '+ Add sub-item' : '+ Add sub-sub-item'}
+                        </button>
+                      )}
+                    </>
+                  )
+                }
+              />
+            )
+          })}
+        </ul>
+      </SortableContext>
+    )
+  }
 
   return (
     <div className="flex-1 overflow-y-auto bg-surface-default">
@@ -176,120 +375,32 @@ export default function NavEditor({
                 )}
               </div>
 
-              <ul className="p-4 space-y-3">
-                {nav.primary.length === 0 && (
-                  <li className="text-xs font-body text-text-muted">
-                    No menu items yet — add one below.
-                  </li>
-                )}
-                {nav.primary.map((item, i) => (
-                  <li
-                    key={i}
-                    className="border border-border-default rounded-lg p-3 space-y-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col">
-                        <IconButton
-                          label={`Move ${item.label || 'item'} up`}
-                          disabled={i === 0}
-                          onClick={() => update((d) => moveInArray(d.primary, i, i - 1))}
-                        >
-                          ▲
-                        </IconButton>
-                        <IconButton
-                          label={`Move ${item.label || 'item'} down`}
-                          disabled={i === nav.primary.length - 1}
-                          onClick={() => update((d) => moveInArray(d.primary, i, i + 1))}
-                        >
-                          ▼
-                        </IconButton>
-                      </div>
-                      <ItemFields
-                        item={item}
-                        onLabel={(v) => update((d) => { d.primary[i].label = v })}
-                        onUrl={(v) => update((d) => { d.primary[i].url = v })}
-                      />
-                      <IconButton
-                        label={`Remove ${item.label || 'item'}`}
-                        onClick={() => update((d) => { d.primary.splice(i, 1) })}
-                      >
-                        ✕
-                      </IconButton>
-                    </div>
+              {nav.primary.length === 0 && (
+                <p className="px-4 py-4 text-xs font-body text-text-muted">
+                  No menu items yet — add one below.
+                </p>
+              )}
 
-                    {(item.children?.length ?? 0) > 0 && (
-                      <ul className="ml-8 space-y-2 border-l border-border-default pl-3">
-                        {item.children!.map((child, j) => (
-                          <li key={j} className="flex items-center gap-2">
-                            <div className="flex flex-col">
-                              <IconButton
-                                label={`Move ${child.label || 'sub-item'} up`}
-                                disabled={j === 0}
-                                onClick={() =>
-                                  update((d) => moveInArray(d.primary[i].children!, j, j - 1))
-                                }
-                              >
-                                ▲
-                              </IconButton>
-                              <IconButton
-                                label={`Move ${child.label || 'sub-item'} down`}
-                                disabled={j === item.children!.length - 1}
-                                onClick={() =>
-                                  update((d) => moveInArray(d.primary[i].children!, j, j + 1))
-                                }
-                              >
-                                ▼
-                              </IconButton>
-                            </div>
-                            <ItemFields
-                              item={child}
-                              onLabel={(v) =>
-                                update((d) => { d.primary[i].children![j].label = v })
-                              }
-                              onUrl={(v) =>
-                                update((d) => { d.primary[i].children![j].url = v })
-                              }
-                            />
-                            <IconButton
-                              label={`Remove ${child.label || 'sub-item'}`}
-                              onClick={() =>
-                                update((d) => {
-                                  d.primary[i].children!.splice(j, 1)
-                                  if (d.primary[i].children!.length === 0) {
-                                    delete d.primary[i].children
-                                  }
-                                })
-                              }
-                            >
-                              ✕
-                            </IconButton>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        update((d) => {
-                          d.primary[i].children = [
-                            ...(d.primary[i].children ?? []),
-                            { label: '', url: '' },
-                          ]
-                        })
-                      }
-                      className="ml-8 text-[11px] font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"
-                    >
-                      + Add sub-item
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {mounted ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  {renderLevel(nav.primary, [], 0)}
+                </DndContext>
+              ) : (
+                nav.primary.length > 0 && (
+                  <p className="px-4 py-4 text-xs font-body text-text-muted">
+                    Loading nav editor…
+                  </p>
+                )
+              )}
 
               <div className="px-4 pb-4">
                 <button
                   type="button"
-                  onClick={() => update((d) => { d.primary.push({ label: '', url: '' }) })}
+                  onClick={addPrimary}
                   className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                 >
                   + Add menu item

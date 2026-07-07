@@ -4,7 +4,7 @@
 export type NavItem = {
   label: string
   url: string
-  children?: NavItem[]  // one level of nesting only
+  children?: NavItem[]  // up to two nesting levels (secondary + tertiary); nothing renders below tertiary
 }
 
 export type NavJson = {

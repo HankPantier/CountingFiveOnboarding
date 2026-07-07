@@ -16,6 +16,10 @@ export type SitemapEntry = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// 0 = primary, 1 = secondary, 2 = tertiary. Nothing below tertiary is rendered
+// (header dropdowns show secondary; the side-nav shows secondary + tertiary).
+const MAX_NAV_DEPTH = 2
+
 /**
  * Validate that an unknown value has the shape of a NavJson.
  * Checks:
@@ -167,61 +171,63 @@ export function buildNavJson(
     }
   }
 
-  // Separate root and child items
+  // Root items: no parent (or homepage parent). A child whose declared parent
+  // doesn't exist is flattened up to root with a warning.
   const rootItems: SitemapEntry[] = []
-  const childItems: SitemapEntry[] = []
-  const orphanedChildren = new Set<string>() // Track orphaned URLs for warning
-
   for (const entry of included) {
     if (isRootItem(entry)) {
       // Skip homepage itself from primary nav
-      if (!isHomepage(entry.url)) {
-        rootItems.push(entry)
-      }
-    } else {
-      // This is a child item (has a non-root parent)
-      const parent = entry.parent!
-      if (entriesByUrl.has(parent)) {
-        // Parent exists
-        childItems.push(entry)
-      } else {
-        // Parent does not exist → orphaned
-        orphanedChildren.add(entry.url)
-        // Flatten to root with a warning
-        rootItems.push(entry)
-        console.warn(
-          `[nav-json-builder] Orphaned child: url="${entry.url}" parent="${parent}" does not exist. Flattening to root.`
-        )
-      }
+      if (!isHomepage(entry.url)) rootItems.push(entry)
+    } else if (!entriesByUrl.has(entry.parent!)) {
+      rootItems.push(entry)
+      console.warn(
+        `[nav-json-builder] Orphaned child: url="${entry.url}" parent="${entry.parent}" does not exist. Flattening to root.`
+      )
     }
   }
 
-  // Build the primary nav tree
-  const primaryNav: NavItem[] = rootItems.map((root): NavItem => {
-    const children = childItems
-      .filter((child) => child.parent === root.url)
-      .map((child): NavItem => ({
+  // Recursively attach descendants by parent linkage: primary → secondary →
+  // tertiary. Anything nested below tertiary is dropped with a warning. `seen`
+  // guards against parent cycles.
+  const buildChildren = (
+    parentUrl: string,
+    depth: number,
+    seen: Set<string>
+  ): NavItem[] => {
+    const kids = included.filter(
+      (e) => !isHomepage(e.url) && e.url !== parentUrl && e.parent === parentUrl
+    )
+    if (kids.length === 0) return []
+    if (depth > MAX_NAV_DEPTH) {
+      for (const k of kids) {
+        console.warn(
+          `[nav-json-builder] Nesting below tertiary dropped: url="${k.url}" parent="${parentUrl}".`
+        )
+      }
+      return []
+    }
+    const out: NavItem[] = []
+    for (const child of kids) {
+      if (seen.has(child.url)) continue
+      seen.add(child.url)
+      const grandchildren = buildChildren(child.url, depth + 1, seen)
+      out.push({
         label: getLabel(child),
         url: child.url,
-      }))
+        ...(grandchildren.length > 0 && { children: grandchildren }),
+      })
+    }
+    return out
+  }
 
+  const primaryNav: NavItem[] = rootItems.map((root): NavItem => {
+    const children = buildChildren(root.url, 1, new Set<string>([root.url]))
     return {
       label: getLabel(root),
       url: root.url,
       ...(children.length > 0 && { children }),
     }
   })
-
-  // Check for deeper nesting (grandchildren)
-  // If a child's parent itself has a non-root parent, warn and flatten
-  for (const childEntry of childItems) {
-    const parentEntry = entriesByUrl.get(childEntry.parent!)
-    if (parentEntry && !isRootItem(parentEntry)) {
-      console.warn(
-        `[nav-json-builder] Deep nesting detected: url="${childEntry.url}" → parent="${childEntry.parent}" → grandparent="${parentEntry.parent}". Flattening to root.`
-      )
-    }
-  }
 
   return {
     primary: primaryNav,

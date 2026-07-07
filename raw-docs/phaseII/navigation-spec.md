@@ -414,3 +414,39 @@ content/
 scripts/
   (nav-seed-builder lives in the onboarding app, not the client repo)
 ```
+
+---
+
+## Tertiary Navigation + Section Side-Nav (v2)
+
+> The examples above are a v1 draft using a `NavConfig`/`items` shape. The
+> shipped contract is `NavJson` (`{ primary: NavItem[], cta? }`, `NavItem =
+> { label, url, children? }`) in both repos. This section is the authoritative
+> spec for three-level nav; treat it as the source of truth over the v1 examples.
+
+### Three levels
+
+`NavItem.children` may now nest **two levels deep**: primary → secondary →
+tertiary. Nothing renders below tertiary.
+
+- **Onboarding editors.** `components/editor/NavEditor.tsx` (the in-repo
+  `nav.json` editor) reorders every level by drag-and-drop (`@dnd-kit`, within a
+  sibling list only) and can add/remove tertiary items. `NavCurationPhase.tsx`
+  derives tertiary from the sitemap and preserves it on save.
+- **Builder.** `lib/content/nav-json-builder.ts` builds the tree recursively
+  from the sitemap by parent linkage, capped at three levels (deeper is dropped
+  with a warning). A curated `nav_config` is passed through untouched.
+
+### Rendering rules (template repo)
+
+- **Header dropdowns (`NavBar`/`MobileNav`) and `Footer`: unchanged.** They map
+  a single level of `children`, so tertiary items never appear there.
+- **Section side-nav (`SideNav`).** Shown only on **secondary/tertiary pages**
+  of a primary that has tertiary items (see `lib/nav/nav-tree.ts →
+  resolveSideNav`) — never on the primary landing page. It lists every secondary
+  of the active primary as a bold header, with each secondary's tertiary items
+  as lighter, indented links; the active branch gets a left accent bar.
+  Server-rendered from the route URL; mobile collapses it behind an
+  "In this section" accordion (`SideNavCollapse`).
+- **Layout.** `PageLayout` takes an optional `sideNav` slot: the full-bleed hero
+  stays edge-to-edge and the body sits in a two-column grid beside the rail.
