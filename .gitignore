@@ -52,3 +52,8 @@ supabase/.temp/
 # project root only if a PDF is intended as a deliverable.
 /*.pdf
 raw-docs/screenshots/
+
+# Local-only one-off report generator script + its scratch preview output
+# (not part of the app)
+/build_revaltus_report.py
+/_prev_*.png
