@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
         ) : (
           <>
             <p className="text-sm text-text-secondary font-body mb-6">
-              Enter your admin email and we&rsquo;ll send you a link to set a new password.
+              Enter your account email and we&rsquo;ll send you a link to set a new password.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4">

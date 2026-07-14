@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
+import { buildConfirmLink } from '@/lib/auth/confirm-link'
 import type { ResetPasswordResponse } from '@/types/users'
 
 export const runtime = 'nodejs'
@@ -26,17 +27,17 @@ export async function POST(
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
 
   // 'recovery' works whether or not the user has set a password before; it mints
-  // a link that establishes a session on the set-password page.
+  // a token hash we wrap in our own /auth/confirm link (see buildConfirmLink).
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
     type: 'recovery',
     email: target.email,
-    options: { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/admin/set-password` },
   })
 
-  if (linkErr || !linkData?.properties?.action_link) {
+  if (linkErr || !linkData?.properties?.hashed_token) {
     const message = linkErr?.message ?? 'Failed to generate reset link'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 
-  return NextResponse.json<ResetPasswordResponse>({ link: linkData.properties.action_link })
+  const link = buildConfirmLink(linkData.properties.hashed_token, 'recovery')
+  return NextResponse.json<ResetPasswordResponse>({ link })
 }

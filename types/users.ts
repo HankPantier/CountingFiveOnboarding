@@ -51,3 +51,8 @@ export interface UserAssignmentsResponse {
 export interface ResetPasswordResponse {
   link: string
 }
+
+export interface SetPasswordResponse {
+  /** The freshly generated password, returned once for the admin to copy. */
+  password: string
+}

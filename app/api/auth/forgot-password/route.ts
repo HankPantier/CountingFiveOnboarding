@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { sendPasswordResetEmail } from '@/lib/email/send-password-reset'
+import { buildConfirmLink } from '@/lib/auth/confirm-link'
 import { checkRateLimit, clientIp } from '@/lib/auth/rate-limit'
 
 export const runtime = 'nodejs'
@@ -46,12 +47,12 @@ export async function POST(req: Request) {
       const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
         type: 'recovery',
         email: admin.email,
-        options: { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/admin/set-password` },
       })
-      if (linkErr || !linkData?.properties?.action_link) {
+      if (linkErr || !linkData?.properties?.hashed_token) {
         console.error('[forgot-password] failed to generate recovery link:', linkErr?.message)
       } else {
-        await sendPasswordResetEmail({ to: admin.email, resetUrl: linkData.properties.action_link })
+        const resetUrl = buildConfirmLink(linkData.properties.hashed_token, 'recovery')
+        await sendPasswordResetEmail({ to: admin.email, resetUrl })
       }
     }
   } catch (err) {

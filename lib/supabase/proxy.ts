@@ -40,8 +40,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // Admin routes require an authenticated session, except the public pre-login
-  // pages (sign-in and the logged-out forgot-password form).
-  const publicAdminPaths = ['/admin/login', '/admin/forgot-password']
+  // pages (sign-in, the logged-out forgot-password form, and the set-password
+  // landing — reached via /auth/confirm, which sets the session cookie just
+  // before redirecting here; keeping it public avoids a race that would bounce
+  // the user to login).
+  const publicAdminPaths = ['/admin/login', '/admin/forgot-password', '/admin/set-password']
   const isPublicAdminPath = publicAdminPaths.some((p) =>
     request.nextUrl.pathname.startsWith(p)
   )

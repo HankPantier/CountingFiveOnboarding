@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
+import { buildConfirmLink } from '@/lib/auth/confirm-link'
 import { sendInviteEmail } from '@/lib/email/send-invite'
 import type {
   CreateUserRequest,
@@ -85,19 +86,20 @@ export async function POST(req: Request) {
   const supabase = createServerClient()
 
   // Mint an invite link (also creates the auth user) — we deliver it via
-  // Resend rather than Supabase SMTP for full control over the email.
+  // Resend rather than Supabase SMTP for full control over the email. The token
+  // hash is wrapped in our own /auth/confirm link (see buildConfirmLink).
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
     type: 'invite',
     email,
-    options: { redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/admin/set-password` },
   })
 
-  if (linkErr || !linkData?.user || !linkData.properties?.action_link) {
+  if (linkErr || !linkData?.user || !linkData.properties?.hashed_token) {
     const message = linkErr?.message ?? 'Failed to create user'
     return NextResponse.json({ error: message }, { status: 400 })
   }
 
   const userId = linkData.user.id
+  const inviteUrl = buildConfirmLink(linkData.properties.hashed_token, 'invite')
 
   const { error: insertErr } = await supabase
     .from('admins')
@@ -128,7 +130,7 @@ export async function POST(req: Request) {
       name,
       role,
       capabilities,
-      inviteUrl: linkData.properties.action_link,
+      inviteUrl,
     })
   } catch (err) {
     emailSent = false
