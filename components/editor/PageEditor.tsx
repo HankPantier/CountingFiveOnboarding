@@ -1,8 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { splitFile, serializeFile, type Frontmatter } from '@/lib/editor/frontmatter'
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
 import { extractIconItems, extractIconBlockSummaries, setItemIcon } from '@/lib/editor/icon-items'
@@ -30,9 +28,9 @@ import ImageReplaceControl from './ImageReplaceControl'
 import HeaderImagePicker from './HeaderImagePicker'
 import IconPickerControl from './IconPickerControl'
 import StructuredContentEditor from './StructuredContentEditor'
-import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
+import RichBodyEditor from './RichBodyEditor'
 
-type EditorTab = 'preview' | 'content' | 'seo' | 'media'
+type EditorTab = 'editor' | 'seo' | 'media'
 
 // Editable subset of frontmatter keys. Other keys are preserved on save but
 // not exposed as form fields.
@@ -90,23 +88,11 @@ export default function PageEditor({
   const imageBlocks = useMemo(() => extractImageBlocks(bodyContent), [bodyContent])
   const teamMembers = useMemo(() => extractTeamMembers(bodyContent), [bodyContent])
   // Default to the writing surface; switching files remounts via key={path}.
-  const [tab, setTab] = useState<EditorTab>('content')
+  const [tab, setTab] = useState<EditorTab>('editor')
   const isPost = path.startsWith('content/posts/')
   // Social suggestion files are plain copy — body-only editing, no metadata form.
   const isSocial = path.startsWith('content/social/')
   const promotedFields = isPost ? POST_PROMOTED_FIELDS : PROMOTED_FIELDS
-
-  // Rewrite bare image filenames in the preview to the admin asset route so
-  // thumbnails actually render (the repo/bucket isn't public).
-  const markdownImg = (props: { src?: string | Blob; alt?: string }) => {
-    const rawSrc = typeof props.src === 'string' ? props.src : ''
-    const filename = localImageFilename(rawSrc)
-    const resolved = filename
-      ? `/api/edit/${sessionId}/asset?path=${encodeURIComponent(ASSET_ROOT + filename)}`
-      : rawSrc
-    // eslint-disable-next-line @next/next/no-img-element -- private admin route
-    return <img src={resolved} alt={props.alt ?? ''} className="rounded-card max-w-full" />
-  }
 
   const setField = (key: string, value: string) => {
     if (!parsed.frontmatter) return
@@ -151,8 +137,6 @@ export default function PageEditor({
   }
 
   const title = parsed.frontmatter?.fields['title'] ?? ''
-  // Reading view: drop the block-annotation HTML comments so they don't show.
-  const viewBody = useMemo(() => bodyContent.replace(/<!--[\s\S]*?-->/g, '').trim(), [bodyContent])
 
   // Structured SEO content edited as fields (frontmatter is the live source).
   // FAQ falls back to the on-page accordion prose for legacy pages that have no
@@ -388,12 +372,11 @@ export default function PageEditor({
   const showMedia = !isSocial
 
   const tabs: { id: EditorTab; label: string }[] = [
-    { id: 'preview', label: 'Preview' },
-    { id: 'content', label: 'Content' },
+    { id: 'editor', label: 'Editor' },
     ...(showSeo ? [{ id: 'seo' as const, label: 'SEO' }] : []),
     ...(showMedia ? [{ id: 'media' as const, label: 'Media' }] : []),
   ]
-  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'content'
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : 'editor'
 
   return (
     <div className="flex-1 overflow-y-auto bg-surface-default">
@@ -427,35 +410,14 @@ export default function PageEditor({
         </div>
 
         <div role="tabpanel" className="space-y-6">
-          {activeTab === 'preview' && (
-            <article className="bg-surface-card border border-border-default rounded-lg p-8 text-sm font-body text-text-primary leading-relaxed">
-              {heroSrc && (
-                // eslint-disable-next-line @next/next/no-img-element -- private admin asset route
-                <img src={heroSrc} alt={title} className="rounded-card w-full mb-6" />
-              )}
-              {title && (
-                <h1 className="font-heading font-bold text-2xl text-brand-navy mb-5">{title}</h1>
-              )}
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...MARKDOWN_COMPONENTS, img: markdownImg }}>
-                {viewBody}
-              </ReactMarkdown>
-            </article>
-          )}
-
-          {activeTab === 'content' && (
-            <section className="bg-surface-card border border-border-default rounded-lg">
-              <div className="px-4 py-2 border-b border-border-default">
-                <h2 className="text-sm font-heading font-semibold text-brand-navy">
-                  Page body (markdown source)
-                </h2>
-              </div>
-              <textarea
-                value={bodyContent}
-                onChange={(e) => setBody(e.target.value)}
-                spellCheck
-                className="w-full min-h-[480px] text-sm font-mono px-4 py-3 outline-none resize-y"
-              />
-            </section>
+          {activeTab === 'editor' && (
+            <RichBodyEditor
+              sessionId={sessionId}
+              title={title}
+              heroSrc={heroSrc}
+              body={bodyContent}
+              onChange={setBody}
+            />
           )}
 
           {activeTab === 'seo' && (
