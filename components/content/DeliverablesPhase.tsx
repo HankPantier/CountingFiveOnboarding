@@ -130,11 +130,11 @@ export default function DeliverablesPhase({
     }
   }
 
-  const downloadPackage = async () => {
+  const downloadPackage = async (format: 'zip' | 'txt' | 'docx' = 'zip') => {
     setDownloading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/content-jobs/${contentJobId}/download`)
+      const res = await fetch(`/api/content-jobs/${contentJobId}/download?format=${format}`)
       if (!res.ok) throw new Error('Failed to get download URL')
       const data = await res.json()
       window.open(data.url, '_blank')
@@ -187,7 +187,7 @@ export default function DeliverablesPhase({
       {!packaged ? (
         <div className="space-y-3">
           <p className="text-sm font-body text-text-secondary">
-            Ready to assemble the deliverable package: {pageCount} pages, Word document, brand.md, llms.txt, llms-full.txt, robots.txt, sitemap.xml, redirects.csv, and an og-images README.
+            Ready to assemble the deliverable package: {pageCount} pages, Word document, styling-free plain text (.txt) and unstyled Word (.docx), brand.md, llms.txt, llms-full.txt, robots.txt, sitemap.xml, redirects.csv, and an og-images README.
           </p>
 
           {approval && generationDone && hasUnapproved && (
@@ -219,7 +219,7 @@ export default function DeliverablesPhase({
         <div className="space-y-3">
           <div className="text-sm font-body text-text-primary">
             <span className="font-semibold">{packageInfo?.pageCount ?? pageCount} pages</span>
-            <span className="text-text-muted"> · 1 Word document · brand.md · llms.txt · llms-full.txt · robots.txt · sitemap.xml · redirects.csv · og-images/README.md</span>
+            <span className="text-text-muted"> · 1 Word document · plain text (.txt) · unstyled Word (.docx) · brand.md · llms.txt · llms-full.txt · robots.txt · sitemap.xml · redirects.csv · og-images/README.md</span>
             {packageInfo?.sizeKB && (
               <span className="text-text-muted"> · {packageInfo.sizeKB} KB</span>
             )}
@@ -269,13 +269,32 @@ export default function DeliverablesPhase({
             </div>
           )}
 
-          <button
-            onClick={downloadPackage}
-            disabled={downloading}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {downloading ? 'Preparing...' : 'Download Package'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => downloadPackage('zip')}
+              disabled={downloading}
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {downloading ? 'Preparing...' : 'Download Package'}
+            </button>
+            <button
+              onClick={() => downloadPackage('txt')}
+              disabled={downloading}
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Plain text (.txt)
+            </button>
+            <button
+              onClick={() => downloadPackage('docx')}
+              disabled={downloading}
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Unstyled Word (.docx)
+            </button>
+          </div>
+          <p className="text-xs font-body text-text-muted">
+            The plain files strip all formatting so page content pastes cleanly into any CMS or editor.
+          </p>
         </div>
       )}
 

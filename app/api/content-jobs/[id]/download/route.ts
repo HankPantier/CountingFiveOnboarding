@@ -2,8 +2,18 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 
+// Each format maps to a persisted Storage object under the session's package
+// folder, plus the attachment filename the browser should save it as.
+const FORMATS = {
+  zip: { file: 'content-package.zip', download: null },
+  txt: { file: 'content-plain.txt', download: 'content-plain.txt' },
+  docx: { file: 'content-plain.docx', download: 'content-plain.docx' },
+} as const
+
+type DownloadFormat = keyof typeof FORMATS
+
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: _jobId } = await params
@@ -11,6 +21,11 @@ export async function GET(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
+
+  const formatParam = new URL(req.url).searchParams.get('format') ?? 'zip'
+  const format = (formatParam in FORMATS ? formatParam : 'zip') as DownloadFormat
+  const { file, download } = FORMATS[format]
+
   const supabase = createServerClient()
 
   // Get the session_id from content_job
@@ -24,11 +39,13 @@ export async function GET(
     return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
   }
 
-  const storagePath = `content-packages/${job.session_id}/content-package.zip`
+  const storagePath = `content-packages/${job.session_id}/${file}`
 
   const { data: signedUrl, error } = await supabase.storage
     .from('session-assets')
-    .createSignedUrl(storagePath, 3600) // 60 minutes
+    // Plain files force a download (Content-Disposition) so browsers save the
+    // .txt/.docx instead of rendering it inline.
+    .createSignedUrl(storagePath, 3600, download ? { download } : undefined) // 60 minutes
 
   if (error || !signedUrl) {
     return NextResponse.json({ error: 'Failed to generate download URL' }, { status: 500 })

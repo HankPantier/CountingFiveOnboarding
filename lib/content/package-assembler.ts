@@ -8,6 +8,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { buildAllPageFiles, buildErrorsFile, appendFaqBlock, injectTeamPhotos, standardizeContactPage } from '@/lib/content/deliverable-builder'
 import type { CtaInfo } from '@/lib/content/deliverable-builder'
 import { buildDocx } from '@/lib/content/docx-builder'
+import { buildPlainText, buildPlainDocx } from '@/lib/content/plain-content-builder'
 import { buildLlmsTxt, buildLlmsFullTxt } from '@/lib/content/llms-builder'
 import { buildRobotsTxt } from '@/lib/content/robots-builder'
 import { generateBrandDoc } from '@/lib/content/brand-doc-builder'
@@ -299,10 +300,14 @@ export async function assembleContentPackage(
   // The brand-doc LLM call and the docx render are both async/expensive; run
   // them in parallel with each other (the deterministic stitches that depend
   // on neither stay synchronous and run after).
-  const [brandDoc, docxBuffer] = await Promise.all([
+  const [brandDoc, docxBuffer, plainDocxBuffer] = await Promise.all([
     generateBrandDoc(schema, { sessionId: job.session_id, contentJobId: id }),
     buildDocx(pages, firmName),
+    buildPlainDocx(pages, firmName),
   ])
+  // Styling-free plain-text rendition of the page bodies — pastes cleanly into
+  // any CMS/editor without inheriting fonts/colors. Deterministic + cheap.
+  const plainTextContent = buildPlainText(pages, firmName)
 
   const palette = job.palette as PaletteData | null
   const designTokens = job.design_tokens as DesignTokens | null
@@ -471,8 +476,12 @@ export async function assembleContentPackage(
     // Session-uploaded assets (logos, photos, etc.) — served from public/content-assets/
     ...assetEntries.map(a => ({ path: a.path, content: a.content })),
 
-    // Top-level — human review artifacts
+    // Top-level — human review artifacts. The -plain.* pair is styling-free
+    // content for cut-and-paste; kept top-level so the deploy filter (content/
+    // + public/ only) excludes them from the repo push.
     { path: `${folderName}.docx`, content: docxBuffer },
+    { path: `${folderName}-plain.txt`, content: plainTextContent },
+    { path: `${folderName}-plain.docx`, content: plainDocxBuffer },
   ]
 
   if (errorsFile) {
@@ -519,6 +528,34 @@ export async function assembleContentPackage(
       ok: false,
       status: 500,
       error: `Failed to upload package: ${uploadError instanceof Error ? uploadError.message : 'unknown error'}`,
+    }
+  }
+
+  // Upload the styling-free renditions as their own objects so the dedicated
+  // download buttons can re-fetch them without re-assembling the package. Small
+  // files — the standard upload path is always fine (no TUS threshold needed).
+  const plainTxtPath = `content-packages/${job.session_id}/content-plain.txt`
+  const plainDocxPath = `content-packages/${job.session_id}/content-plain.docx`
+  const [{ error: txtUploadError }, { error: docxUploadError }] = await Promise.all([
+    supabase.storage
+      .from('session-assets')
+      .upload(plainTxtPath, Buffer.from(plainTextContent, 'utf-8'), {
+        contentType: 'text/plain; charset=utf-8',
+        upsert: true,
+      }),
+    supabase.storage
+      .from('session-assets')
+      .upload(plainDocxPath, plainDocxBuffer, {
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: true,
+      }),
+  ])
+  if (txtUploadError || docxUploadError) {
+    console.error('[package] Plain-content upload failed:', txtUploadError ?? docxUploadError)
+    return {
+      ok: false,
+      status: 500,
+      error: `Failed to upload plain content: ${(txtUploadError ?? docxUploadError)?.message ?? 'unknown error'}`,
     }
   }
 
