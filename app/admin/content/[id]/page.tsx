@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import PhaseStepper from '@/components/content/PhaseStepper'
+import PackageDownloadBar from '@/components/content/PackageDownloadBar'
 import GithubRepoConnector from '@/components/admin/GithubRepoConnector'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
@@ -106,6 +107,18 @@ export default async function ContentWorkflowPage({
     logoUrl = signed?.signedUrl ?? null
   }
 
+  // A persistent download bar shows at the top once a package has been
+  // assembled. Detect what's in the session's package folder so we only offer
+  // the plain-file buttons when those objects actually exist (packages built
+  // before the plain-content feature won't have them until re-assembled).
+  const { data: packageFiles } = await supabase.storage
+    .from('session-assets')
+    .list(`content-packages/${id}`)
+  const packageFileNames = new Set((packageFiles ?? []).map((f) => f.name))
+  const hasPackage = packageFileNames.has('content-package.zip')
+  const hasPlainFiles =
+    packageFileNames.has('content-plain.txt') && packageFileNames.has('content-plain.docx')
+
   return (
     <main className="p-8 max-w-[1200px] mx-auto">
       <div className="mb-8">
@@ -140,6 +153,18 @@ export default async function ContentWorkflowPage({
           )}
         </div>
       </div>
+
+      {hasPackage && (
+        <div className="mb-8 border border-border-default rounded-lg p-4 space-y-2">
+          <h2 className="text-sm font-heading font-semibold text-brand-navy">Download deliverables</h2>
+          <PackageDownloadBar contentJobId={contentJobId} showPlain={hasPlainFiles} />
+          {!hasPlainFiles && (
+            <p className="text-xs font-body text-text-muted">
+              This package predates the plain-text files — re-assemble it in the Deliverables step to add the .txt and unstyled .docx.
+            </p>
+          )}
+        </div>
+      )}
 
       <GithubRepoConnector
         contentJobId={contentJobId}

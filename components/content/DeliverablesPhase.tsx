@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import NavCurationPhase from './NavCurationPhase'
+import PackageDownloadBar from './PackageDownloadBar'
 import type { NavJson } from '@/types/nav-json'
 
 type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
@@ -28,7 +29,6 @@ export default function DeliverablesPhase({
   confirmedSitemap: SitemapEntry[]
 }) {
   const [packaging, setPackaging] = useState(false)
-  const [downloading, setDownloading] = useState(false)
   const [packaged, setPackaged] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [unapprovedFromGate, setUnapprovedFromGate] = useState<Unapproved[] | null>(null)
@@ -127,21 +127,6 @@ export default function DeliverablesPhase({
       setError(err instanceof Error ? err.message : 'Failed to assemble')
     } finally {
       setPackaging(false)
-    }
-  }
-
-  const downloadPackage = async (format: 'zip' | 'txt' | 'docx' = 'zip') => {
-    setDownloading(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/content-jobs/${contentJobId}/download?format=${format}`)
-      if (!res.ok) throw new Error('Failed to get download URL')
-      const data = await res.json()
-      window.open(data.url, '_blank')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
-    } finally {
-      setDownloading(false)
     }
   }
 
@@ -269,32 +254,7 @@ export default function DeliverablesPhase({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => downloadPackage('zip')}
-              disabled={downloading}
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {downloading ? 'Preparing...' : 'Download Package'}
-            </button>
-            <button
-              onClick={() => downloadPackage('txt')}
-              disabled={downloading}
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Plain text (.txt)
-            </button>
-            <button
-              onClick={() => downloadPackage('docx')}
-              disabled={downloading}
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Unstyled Word (.docx)
-            </button>
-          </div>
-          <p className="text-xs font-body text-text-muted">
-            The plain files strip all formatting so page content pastes cleanly into any CMS or editor.
-          </p>
+          <PackageDownloadBar contentJobId={contentJobId} />
         </div>
       )}
 
