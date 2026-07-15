@@ -7,6 +7,12 @@ import { splitFile, serializeFile, type Frontmatter } from '@/lib/editor/frontma
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
 import { extractIconItems, extractIconBlockSummaries, setItemIcon } from '@/lib/editor/icon-items'
 import { extractImageBlocks, setBlockImage, setBlockAlt } from '@/lib/editor/block-images'
+import {
+  extractTeamMembers,
+  setTeamMemberPhoto,
+  moveTeamMember,
+  removeTeamMember,
+} from '@/lib/editor/team-photos'
 import { splitTrailers, parseFaqFromBody, setFaqAccordionBody } from '@/lib/editor/page-body'
 import {
   getFaqBlock,
@@ -82,6 +88,7 @@ export default function PageEditor({
     [bodyContent]
   )
   const imageBlocks = useMemo(() => extractImageBlocks(bodyContent), [bodyContent])
+  const teamMembers = useMemo(() => extractTeamMembers(bodyContent), [bodyContent])
   // Default to the writing surface; switching files remounts via key={path}.
   const [tab, setTab] = useState<EditorTab>('content')
   const isPost = path.startsWith('content/posts/')
@@ -281,6 +288,67 @@ export default function PageEditor({
       </section>
     ) : null
 
+  const teamMemberKeys = new Set(teamMembers.map((m) => `${m.blockIndex}:${m.memberIndex}`))
+  const teamPhotosSection =
+    !isPost && !isSocial && teamMembers.length > 0 ? (
+      <section className="bg-surface-card border border-border-default rounded-lg p-4">
+        <h2 className="text-sm font-heading font-semibold text-brand-navy mb-3">Team roster</h2>
+        <p className="text-xs font-body text-text-muted mb-3">
+          Upload a real photo to replace a member&apos;s initials avatar; reorder or remove members.
+          Changes update the page markdown — save to apply.
+        </p>
+        <div className="space-y-4">
+          {teamMembers.map((m) => {
+            const canUp = teamMemberKeys.has(`${m.blockIndex}:${m.memberIndex - 1}`)
+            const canDown = teamMemberKeys.has(`${m.blockIndex}:${m.memberIndex + 1}`)
+            return (
+              <div key={m.key} className="border border-border-default rounded-md p-3">
+                <HeaderImagePicker
+                  sessionId={sessionId}
+                  value={m.photo ?? ''}
+                  label={m.name}
+                  onChange={(filename) => setBody(setTeamMemberPhoto(bodyContent, m, filename || null))}
+                />
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setBody(moveTeamMember(bodyContent, m, 'up'))}
+                    disabled={!canUp}
+                    className="border border-border-default text-text-secondary font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBody(moveTeamMember(bodyContent, m, 'down'))}
+                    disabled={!canDown}
+                    className="border border-border-default text-text-secondary font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Move down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Remove ${m.name} from the team section? This deletes their card and bio from the page.`
+                        )
+                      ) {
+                        setBody(removeTeamMember(bodyContent, m))
+                      }
+                    }}
+                    className="ml-auto text-[11px] font-heading font-semibold text-error hover:opacity-80 transition-opacity"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+    ) : null
+
   const imagesSection =
     images.length > 0 ? (
       <section className="bg-surface-card border border-border-default rounded-lg p-4">
@@ -314,7 +382,8 @@ export default function PageEditor({
       />
     ) : null
 
-  const hasMedia = !!iconsSection || !!sectionImagesSection || !!imagesSection
+  const hasMedia =
+    !!iconsSection || !!sectionImagesSection || !!teamPhotosSection || !!imagesSection
   const showSeo = !!fm && !isSocial
   const showMedia = !isSocial
 
@@ -401,6 +470,7 @@ export default function PageEditor({
               <>
                 {iconsSection}
                 {sectionImagesSection}
+                {teamPhotosSection}
                 {imagesSection}
               </>
             ) : (

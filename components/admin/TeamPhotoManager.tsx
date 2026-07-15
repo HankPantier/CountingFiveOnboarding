@@ -19,6 +19,25 @@ type Props = {
   signedUrls: Record<string, string>
 }
 
+// Candidate headshot discovered on the client's live site (shape mirrors
+// HeadshotCandidate from lib/team-photos/scrape-headshots).
+type Candidate = {
+  imageUrl: string
+  altText: string | null
+  nearbyName: string | null
+  filename: string
+  width: number | null
+  height: number | null
+}
+
+type DiscoverResponse = {
+  candidates: Candidate[]
+  suggestions: Record<string, string | null>
+  scannedPages: string[]
+  warnings: string[]
+  error?: string
+}
+
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png', '.webp']
 const MAX_BYTES = 25 * 1024 * 1024  // 25MB per team photo is plenty
 
@@ -27,6 +46,14 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [busyMember, setBusyMember] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Live-site pull state.
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null)
+  const [selected, setSelected] = useState<Record<string, string>>({})
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [scanInfo, setScanInfo] = useState<{ scannedPages: string[]; warnings: string[] } | null>(null)
+  const [assigning, setAssigning] = useState<string | null>(null)
 
   // Build a map: memberName → asset (the most recent team-photo upload for them)
   const photoByMember = new Map<string, Asset>()
@@ -110,54 +137,150 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }
     }
   }
 
+  async function discover() {
+    setScanning(true)
+    setScanError(null)
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/team-photos/discover`)
+      const data = await res.json() as DiscoverResponse
+      if (!res.ok) throw new Error(data.error ?? 'Scan failed')
+      setCandidates(data.candidates)
+      setScanInfo({ scannedPages: data.scannedPages, warnings: data.warnings })
+      const pre: Record<string, string> = {}
+      for (const [name, url] of Object.entries(data.suggestions)) {
+        if (url) pre[name] = url
+      }
+      setSelected(pre)
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : 'Scan failed')
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  async function pull(memberName: string) {
+    const imageUrl = selected[memberName]
+    if (!imageUrl) return
+    setAssigning(memberName)
+    setErrors(prev => ({ ...prev, [memberName]: '' }))
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/team-photos/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberName, imageUrl }),
+      })
+      const data = await res.json() as { assetId?: string; error?: string }
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Pull failed')
+      router.refresh()
+    } catch (err) {
+      setErrors(prev => ({ ...prev, [memberName]: err instanceof Error ? err.message : 'Pull failed' }))
+    } finally {
+      setAssigning(null)
+    }
+  }
+
   return (
     <div className="bg-surface-card border border-border-default rounded-lg p-4 mb-6">
-      <h2 className="text-sm font-heading font-semibold text-text-primary mb-3">
-        Team Photos ({photoByMember.size}/{team.length})
-      </h2>
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <h2 className="text-sm font-heading font-semibold text-text-primary">
+          Team Photos ({photoByMember.size}/{team.length})
+        </h2>
+        <button
+          type="button"
+          onClick={() => void discover()}
+          disabled={scanning}
+          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50"
+        >
+          {scanning ? 'Scanning…' : candidates ? 'Rescan live site' : 'Pull from live site'}
+        </button>
+      </div>
+
+      {scanError && <p className="text-xs text-error font-body mb-2">{scanError}</p>}
+      {scanInfo && (
+        <p className="text-xs text-text-muted font-body mb-3">
+          Scanned {scanInfo.scannedPages.length} page{scanInfo.scannedPages.length === 1 ? '' : 's'}
+          {candidates ? ` · ${candidates.length} candidate photo${candidates.length === 1 ? '' : 's'} found` : ''}
+          {scanInfo.warnings.length > 0 ? ` · ${scanInfo.warnings.join('; ')}` : ''}
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {team.map(member => {
           const asset = photoByMember.get(member.name)
           const isBusy = busyMember === member.name
+          const isAssigning = assigning === member.name
           const err = errors[member.name]
+          const memberCandidates = candidates ?? []
+          const sel = selected[member.name]
           return (
-            <div key={member.name} className="flex items-center gap-3 p-2 border border-border-default rounded-md">
-              <div className="w-12 h-12 rounded bg-surface-subtle flex-shrink-0 overflow-hidden">
-                {asset && signedUrls[asset.id] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={signedUrls[asset.id]} alt={member.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-xs text-text-muted font-heading font-semibold">
-                    {member.name.split(' ').map(t => t[0] || '').join('').slice(0, 2).toUpperCase()}
+            <div key={member.name} className="flex flex-col gap-2 p-2 border border-border-default rounded-md">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded bg-surface-subtle flex-shrink-0 overflow-hidden">
+                  {asset && signedUrls[asset.id] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={signedUrls[asset.id]} alt={member.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-text-muted font-heading font-semibold">
+                      {member.name.split(' ').map(t => t[0] || '').join('').slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-body text-text-primary truncate">{member.name}</p>
+                  <p className="text-xs text-text-muted font-body truncate">
+                    {asset ? asset.file_name : 'No photo — will use initials avatar'}
+                  </p>
+                  {err && <p className="text-xs text-error font-body mt-0.5">{err}</p>}
+                </div>
+                <input
+                  ref={el => { inputRefs.current[member.name] = el }}
+                  type="file"
+                  accept={ALLOWED_EXTENSIONS.join(',')}
+                  className="hidden"
+                  onChange={e => {
+                    const f = e.target.files?.[0]
+                    if (f) handleFile(member.name, f)
+                  }}
+                  disabled={isBusy}
+                />
+                <button
+                  type="button"
+                  onClick={() => inputRefs.current[member.name]?.click()}
+                  disabled={isBusy}
+                  className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors disabled:opacity-50 flex-shrink-0"
+                >
+                  {isBusy ? 'Uploading…' : asset ? 'Swap' : 'Upload'}
+                </button>
+              </div>
+
+              {memberCandidates.length > 0 && (
+                <div className="border-t border-border-default pt-2">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    {memberCandidates.map(c => (
+                      <button
+                        key={c.imageUrl}
+                        type="button"
+                        title={c.nearbyName ?? c.altText ?? c.filename}
+                        onClick={() => setSelected(prev => ({ ...prev, [member.name]: c.imageUrl }))}
+                        className={`w-11 h-11 rounded overflow-hidden border-2 flex-shrink-0 transition-colors ${
+                          sel === c.imageUrl ? 'border-brand-cyan' : 'border-transparent hover:border-border-default'
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- public live-site preview URL */}
+                        <img src={c.imageUrl} alt={c.altText ?? c.filename} className="w-full h-full object-cover" />
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-body text-text-primary truncate">{member.name}</p>
-                <p className="text-xs text-text-muted font-body truncate">
-                  {asset ? asset.file_name : 'No photo — will use initials avatar'}
-                </p>
-                {err && <p className="text-xs text-error font-body mt-0.5">{err}</p>}
-              </div>
-              <input
-                ref={el => { inputRefs.current[member.name] = el }}
-                type="file"
-                accept={ALLOWED_EXTENSIONS.join(',')}
-                className="hidden"
-                onChange={e => {
-                  const f = e.target.files?.[0]
-                  if (f) handleFile(member.name, f)
-                }}
-                disabled={isBusy}
-              />
-              <button
-                type="button"
-                onClick={() => inputRefs.current[member.name]?.click()}
-                disabled={isBusy}
-                className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                {isBusy ? 'Uploading…' : asset ? 'Swap' : 'Upload'}
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => void pull(member.name)}
+                    disabled={!sel || isAssigning}
+                    className="mt-1 border border-brand-navy text-brand-navy font-heading font-semibold text-[11px] px-3 py-1 rounded-pill transition-all hover:bg-brand-navy/5 disabled:border-border-default disabled:text-text-muted"
+                  >
+                    {isAssigning ? 'Saving…' : sel ? 'Use selected photo' : 'Select a photo'}
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}

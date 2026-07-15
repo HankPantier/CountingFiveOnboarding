@@ -170,6 +170,89 @@ export async function safeGet(startUrl: string): Promise<FetchResult | null> {
   return null
 }
 
+export interface BinaryFetchResult {
+  buffer: Buffer
+  contentType: string
+  finalUrl: string
+}
+
+// Binary counterpart of safeGet for fetching an image the server was told to
+// download (e.g. a rep-chosen team headshot on a client's live site). Same
+// SSRF-guarded manual-redirect loop, but returns raw bytes and only on a final
+// 200. Capped so a hostile URL can't stream unbounded data into memory.
+const MAX_BINARY_BYTES = 10 * 1024 * 1024
+
+async function readCappedBinary(res: Response): Promise<Buffer | null> {
+  const reader = res.body?.getReader()
+  if (!reader) {
+    const ab = await res.arrayBuffer().catch(() => null)
+    if (!ab || ab.byteLength > MAX_BINARY_BYTES) return null
+    return Buffer.from(ab)
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        total += value.byteLength
+        if (total > MAX_BINARY_BYTES) {
+          await reader.cancel().catch(() => {})
+          return null
+        }
+        chunks.push(value)
+      }
+    }
+  } catch {
+    return null
+  }
+  return Buffer.concat(chunks)
+}
+
+export async function safeGetBinary(startUrl: string): Promise<BinaryFetchResult | null> {
+  let currentUrl = startUrl
+
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!(await isUrlPubliclyFetchable(currentUrl))) return null
+
+    let res: Response
+    try {
+      res = await fetch(currentUrl, {
+        headers: REQUEST_HEADERS,
+        redirect: 'manual',
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+    } catch {
+      return null
+    }
+
+    const status = res.status
+    const location = res.headers.get('location')
+    if (status >= 300 && status < 400 && location) {
+      await res.body?.cancel().catch(() => {})
+      const next = normalizeUrl(location, currentUrl)
+      if (!next || hop === MAX_REDIRECTS) return null
+      currentUrl = next
+      continue
+    }
+
+    if (status !== 200) {
+      await res.body?.cancel().catch(() => {})
+      return null
+    }
+
+    const buffer = await readCappedBinary(res)
+    if (!buffer) return null
+    return {
+      buffer,
+      contentType: res.headers.get('content-type') ?? '',
+      finalUrl: res.url || currentUrl,
+    }
+  }
+  return null
+}
+
 /** audit.py crawl_site. `onProgress` (if given) is called with the running
  * page count after each successful page — callers should throttle any I/O. */
 export async function crawlSite(
