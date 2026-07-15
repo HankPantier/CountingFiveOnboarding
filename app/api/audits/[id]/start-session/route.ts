@@ -3,6 +3,7 @@ import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { normalizeDomain } from '@/lib/audit'
+import { withStaffMode } from '@/lib/session/seed-mode'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -14,6 +15,7 @@ export const runtime = 'nodejs'
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
+  const { user } = auth
 
   const { id } = await params
 
@@ -64,16 +66,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     )
   }
 
+  // Onboarding is rep-driven: seed staff mode so the agent addresses the rep,
+  // not the client. Preserve any _meta the draft already carries (audit_context).
+  const seededSchema = withStaffMode((body.schemaData ?? {}) as SessionSchema)
+
   // Mirrors POST /api/sessions: new session at phase 1, no MBP doc.
   const { data: session, error: insertErr } = await supabase
     .from('sessions')
     .insert({
       website_url: run.url,
       mbp_content: null,
-      schema_data: asJson((body.schemaData ?? {}) as SessionSchema),
+      schema_data: asJson(seededSchema),
       gap_list: asJson((Array.isArray(body.gapList) ? body.gapList : []) as GapItem[]),
       status: 'pending',
       current_phase: 1,
+      created_by: user.id,
     })
     .select('id')
     .single()

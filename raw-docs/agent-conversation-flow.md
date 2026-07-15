@@ -1,20 +1,18 @@
 # Agent Conversation Flow
 
-**Updated:** 2026-04-30
-**Change:** (1) Added missing schema fields from original intake form cross-reference: registrar credentials (username, PIN), and a separate administrative/technical contact. (2) Restructured Phase 3 from 6 sequential sub-sections into 2 consolidated chunks to meet the 5–7 minute session target. (3) Added batching rules and priority tiers to Phase 4.
+**Updated:** 2026-07-15
+**Change:** Onboarding moved to a rep-driven live call (staff mode by default). The rep captures call notes in the system, the agent extracts them into the profile, then the chat asks the rep about remaining gaps. Removed the hard 5–7 minute budget in favor of a ~15-minute soft cap (good information over speed). Earlier changes: registrar credentials + admin/technical contact fields; Phase 3 consolidated into 2 chunks; Phase 4 batching + priority tiers.
 
 ---
 
 ## Session Time Target
 
-**The full client conversation — Phases 1 through 6 — must complete in 5–7 minutes.**
+Onboarding now runs as a live call the Revaltus rep drives, entering the client's answers on their behalf (staff mode). Good information matters more than speed, so there is **no hard time budget** — but aim to keep the whole conversation **within about 15 minutes**. The MFP/audit pre-populates most of the data and the rep's call notes are extracted into the profile before the chat begins, so the agent's job is confirmation + targeted gap-filling, not discovery. To keep it tight:
 
-This is achievable because the MFP pre-populates 70–80% of the data. The agent's job is not discovery — it's confirmation + targeted gap-filling. To stay in budget:
-
-- **Present MFP data in bulk, not field-by-field.** The agent shows whole sections at once and asks "anything to correct?" rather than reading out each item.
+- **Present known data in bulk, not field-by-field.** The agent shows whole sections at once and asks "anything to correct?" rather than reading out each item.
 - **Batch Phase 4 questions.** Each Phase 4 exchange should cover 2–3 related gaps, not one at a time.
-- **Respect the priority tiers.** Tier 1 questions are asked no matter what. Tier 2 only if the session is under 5 minutes. Tier 3 is skippable — the agent flags them for follow-up instead of asking.
-- **Avoid back-and-forth on individual details.** If a client gives a thin answer to a high-value question, the agent may probe once. If the answer is still thin, record it and move on — do not stall the session.
+- **Respect the priority tiers.** Tier 1 questions are asked no matter what. Tier 2 is asked unless clearly irrelevant. Tier 3 is asked when relevant; otherwise the agent flags it for follow-up instead of asking.
+- **Avoid back-and-forth on individual details.** If an answer to a high-value question is thin, the agent may probe once. If it's still thin, record it and move on — do not stall the session.
 
 ---
 
@@ -196,7 +194,7 @@ The agent maintains a JSON data object throughout the conversation. Every exchan
 
 ## Phase 3: MFP Review — Confirm What We Know
 
-**Goal:** Present the MFP-seeded data for client confirmation. Present in two consolidated chunks — not six sequential sub-sections. The client should be able to scan each chunk and say "looks right" or call out specific corrections. This entire phase should take **2–3 exchanges and under 2 minutes.**
+**Goal:** Present the MFP-seeded data for confirmation. Present in two consolidated chunks — not six sequential sub-sections. The rep should be able to scan each chunk and say "looks right" or call out specific corrections. Keep this phase to **2–3 exchanges** — quick confirmation, not discovery.
 
 The agent leads with: *"Our team already did a full research pass on your firm. I'm going to show you what we found in two quick sections — just flag anything that's off, and we'll fix it as we go."*
 
@@ -252,14 +250,14 @@ Present Option A, B, C (from MFP Section 2).
 
 ## Phase 4: Fill the MFP Gaps
 
-**Goal:** Collect everything the MFP couldn't surface. The agent works through the gap list, but not exhaustively — topics are tiered by priority. This phase should take **2–3 exchanges and under 3 minutes.**
+**Goal:** Collect everything the MFP couldn't surface. The agent works through the gap list, but not exhaustively — topics are tiered by priority. Keep it to **2–3 batched exchanges**.
 
 **Batching rule:** Each exchange must cover 2–3 related gap questions. Never ask one question, wait, then ask another. Group by theme.
 
 **Priority tiers:**
 - **Tier 1 (always ask):** Firm history, differentiators in own words, culture/values, client age/geography/type (from original form), customer needs and how clients find them
-- **Tier 2 (ask if under 5 min elapsed):** Advisory/CFO specifics, client success stories, PFS credential details
-- **Tier 3 (skip if running long — flag for follow-up):** Competitive landscape, Google Business Profile, detailed client mix breakdown
+- **Tier 2 (ask unless clearly irrelevant):** Advisory/CFO specifics, client success stories, PFS credential details
+- **Tier 3 (ask if relevant; otherwise flag for follow-up):** Competitive landscape, Google Business Profile, detailed client mix breakdown
 
 ---
 
@@ -291,9 +289,9 @@ Batch these together:
 
 ---
 
-### Tier 3 Topics (skip if running long — flag for follow-up)
+### Tier 3 Topics (ask if relevant; otherwise flag for follow-up)
 
-If the session is approaching 6 minutes and Tier 1 and 2 are complete, skip these and log them as `_meta.flaggedForFollowup`. The admin will follow up separately.
+If Tier 1 and 2 are complete and these aren't clearly relevant to this firm, skip them and log them as `_meta.flaggedForFollowup`. The admin will follow up separately.
 
 **Competitive Landscape:**
 - *"Are there any competitor names that come up when prospects are shopping around — anyone new in the Tyngsborough/Lowell area we should know about?"*

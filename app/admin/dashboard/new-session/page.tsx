@@ -41,10 +41,9 @@ export default function NewSessionPage() {
   const [parsed, setParsed] = useState<ParsePreview | null>(null)
   const [websiteUrl, setWebsiteUrl] = useState('')
   const [additionalNotes, setAdditionalNotes] = useState('')
-  const [clientUrl, setClientUrl] = useState<string | null>(null)
+  const [createdId, setCreatedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState(false)
   const [gapsExpanded, setGapsExpanded] = useState(false)
 
   async function handleFileSelect(selectedFile: File) {
@@ -104,8 +103,7 @@ export default function NewSessionPage() {
         setError(data.error)
         return
       }
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
-      setClientUrl(`${appUrl}/session/${data.sessionId}`)
+      setCreatedId(data.sessionId ?? null)
       setStep('created')
     } catch {
       setError('Failed to create session')
@@ -114,44 +112,24 @@ export default function NewSessionPage() {
     }
   }
 
-  if (step === 'created' && clientUrl) {
+  if (step === 'created' && createdId) {
     return (
       <main className="p-8 max-w-2xl">
         <h1 className="text-2xl font-heading font-bold text-brand-navy">Session Created</h1>
         <p className="text-text-secondary font-body mt-1 mb-6">
-          Share this link with the client to begin onboarding.
+          Onboarding runs as a live call you drive — capture notes, then run the agent Q&A.
         </p>
-        <div className="bg-surface-card rounded-card shadow-subtle p-6">
-          <p className="text-sm font-semibold text-text-secondary font-body mb-2">Client URL</p>
-          <div className="flex items-center gap-3">
-            <code className="text-sm font-body text-text-primary bg-surface-subtle border border-border-default rounded-card px-3 py-2 flex-1 truncate">
-              {clientUrl}
-            </code>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(clientUrl).then(() => {
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 2000)
-                }).catch(() => {
-                  const el = document.createElement('textarea')
-                  el.value = clientUrl
-                  document.body.appendChild(el)
-                  el.select()
-                  document.execCommand('copy')
-                  document.body.removeChild(el)
-                  setCopied(true)
-                  setTimeout(() => setCopied(false), 2000)
-                })
-              }}
-              className="bg-brand-navy text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-navy-dark whitespace-nowrap"
-            >
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/admin/sessions/${createdId}/onboarding`}
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
+          >
+            Start onboarding call →
+          </Link>
+          <Link href="/admin/dashboard" className="text-sm text-brand-cyan font-body hover:underline">
+            ← Back to dashboard
+          </Link>
         </div>
-        <Link href="/admin/dashboard" className="inline-block mt-6 text-sm text-brand-cyan font-body hover:underline">
-          ← Back to dashboard
-        </Link>
       </main>
     )
   }

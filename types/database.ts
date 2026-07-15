@@ -962,17 +962,20 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          call_notes: string | null
           client_email: string | null
           completed_at: string | null
           content_generation_phase: number | null
           content_generation_ready: boolean
           content_generation_started_at: string | null
           created_at: string
+          created_by: string | null
           current_phase: number
           gap_list: Json
           id: string
           last_activity_at: string
           mbp_content: string | null
+          notes_extracted_at: string | null
           pdf_url: string | null
           processing: boolean
           reminder_count: number
@@ -983,17 +986,20 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          call_notes?: string | null
           client_email?: string | null
           completed_at?: string | null
           content_generation_phase?: number | null
           content_generation_ready?: boolean
           content_generation_started_at?: string | null
           created_at?: string
+          created_by?: string | null
           current_phase?: number
           gap_list?: Json
           id?: string
           last_activity_at?: string
           mbp_content?: string | null
+          notes_extracted_at?: string | null
           pdf_url?: string | null
           processing?: boolean
           reminder_count?: number
@@ -1004,17 +1010,20 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          call_notes?: string | null
           client_email?: string | null
           completed_at?: string | null
           content_generation_phase?: number | null
           content_generation_ready?: boolean
           content_generation_started_at?: string | null
           created_at?: string
+          created_by?: string | null
           current_phase?: number
           gap_list?: Json
           id?: string
           last_activity_at?: string
           mbp_content?: string | null
+          notes_extracted_at?: string | null
           pdf_url?: string | null
           processing?: boolean
           reminder_count?: number
@@ -1026,6 +1035,13 @@ export type Database = {
           {
             foreignKeyName: "sessions_approved_by_fkey"
             columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sessions_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "admins"
             referencedColumns: ["id"]

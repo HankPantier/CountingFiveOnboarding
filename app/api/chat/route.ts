@@ -1,6 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
 import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
+import { requireSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { trimMessages } from '@/lib/agent/trim-messages'
@@ -33,6 +34,12 @@ export async function POST(req: Request) {
   if (!sessionId || !UUID_RE.test(sessionId)) {
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
+
+  // Onboarding is rep-driven and internal-only — the client self-serve chat is
+  // retired. Every chat turn must come from an authenticated rep with access to
+  // this session (admins pass; managers only for an assigned client).
+  const access = await requireSessionAccess(sessionId)
+  if (access instanceof NextResponse) return access
 
   const supabase = createServerClient()
 

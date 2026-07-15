@@ -12,7 +12,6 @@ import ApproveButton from '@/components/admin/ApproveButton'
 import MarkCompleteButton from '@/components/admin/MarkCompleteButton'
 import RegenerateMbpButton from '@/components/admin/RegenerateMbpButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
-import CopyLinkButton from '@/components/admin/CopyLinkButton'
 import DeleteSessionButton from '@/components/admin/DeleteSessionButton'
 import { ReauditButton } from '@/components/admin/audit/ReauditButton'
 import type { SessionSchema } from '@/types/session-schema'
@@ -131,7 +130,22 @@ export default async function SessionDetailPage({
           </Link>
         )}
         {sourceAudit && contentJob?.phase === 6 && <ReauditButton url={sourceAudit.url} />}
-        <CopyLinkButton sessionId={id} />
+        {['pending', 'in_progress'].includes(session.status) && (
+          <Link
+            href={`/admin/sessions/${id}/onboarding`}
+            className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 px-4 py-3 transition-colors hover:bg-brand-cyan/10"
+          >
+            <span className="text-sm font-body text-text-primary">
+              <span className="font-heading font-semibold">Run onboarding call</span>
+              <span className="block text-text-muted text-xs mt-0.5">
+                {session.notes_extracted_at ? 'Notes analyzed — review & continue the Q&A' : 'Capture call notes, then run the agent Q&A'}
+              </span>
+            </span>
+            <span className="text-sm font-heading font-semibold text-brand-cyan whitespace-nowrap">
+              {session.notes_extracted_at ? 'Continue →' : 'Start →'}
+            </span>
+          </Link>
+        )}
         <Link
           href={`/admin/sessions/${id}/mbp`}
           className="inline-flex items-center gap-2 mt-2 text-sm font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"

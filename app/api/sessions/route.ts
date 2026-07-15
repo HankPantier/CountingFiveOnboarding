@@ -2,12 +2,14 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
 import { asJson } from '@/lib/supabase/json-typed'
+import { withStaffMode } from '@/lib/session/seed-mode'
 import type { SessionSchema } from '@/types/session-schema'
 import { NextResponse } from 'next/server'
 
 export async function POST(req: Request) {
   const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
+  const { user } = auth
 
   const body: unknown = await req.json()
   if (typeof body !== 'object' || body === null) {
@@ -40,10 +42,11 @@ export async function POST(req: Request) {
     .insert({
       website_url: websiteUrl,
       mbp_content: typeof mbpContent === 'string' ? mbpContent : null,
-      schema_data: asJson(schemaData ?? {}),
+      schema_data: asJson(withStaffMode(seededSchema)),
       gap_list: asJson(finalGaps),
       status: 'pending',
       current_phase: 1,
+      created_by: user.id,
     })
     .select('id')
     .single()

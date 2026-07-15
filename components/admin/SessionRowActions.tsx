@@ -14,19 +14,10 @@ export default function SessionRowActions({
   hasContentJob?: boolean
   canEditContent?: boolean
 }) {
-  const [copied, setCopied] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const router = useRouter()
   const isArchived = sessionStatus === 'archived'
-
-  function copyLink() {
-    const url = `${window.location.origin}/session/${sessionId}`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
-  }
 
   async function handleDelete() {
     if (!confirm('Delete this session and all associated files? This cannot be undone.')) return
@@ -54,15 +45,19 @@ export default function SessionRowActions({
   }
 
   const showContentLink = sessionStatus === 'approved'
+  const showOnboarding = sessionStatus === 'pending' || sessionStatus === 'in_progress'
 
   return (
     <div className="flex items-center justify-end gap-4">
-      <button
-        onClick={copyLink}
-        className={`text-xs font-heading font-semibold transition-colors ${copied ? 'text-success' : 'text-text-muted hover:text-brand-cyan'}`}
-      >
-        {copied ? 'Copied!' : 'Copy link'}
-      </button>
+      {showOnboarding && (
+        <Link
+          href={`/admin/sessions/${sessionId}/onboarding`}
+          className="text-brand-cyan hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
+          title="Run the onboarding call: capture notes, then the agent Q&A"
+        >
+          Onboarding →
+        </Link>
+      )}
       <Link
         href={`/admin/sessions/${sessionId}`}
         className="text-text-secondary hover:text-brand-navy font-heading font-semibold text-xs transition-colors"

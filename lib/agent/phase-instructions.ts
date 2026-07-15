@@ -168,7 +168,7 @@ One message, bulleted list, no introduction, no echo-back. Accept answers in any
 As soon as all five land, call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, websiteUrl, and advancePhase: true. Do not ask the staff member to confirm — they typed it, they know.`
   }
   return `PHASE 1 — CONTACT INFO
-Introduce yourself briefly: you're here to walk through a few details for their new Revaltus website. We've already researched their firm and will confirm what we found as we go — it should take 5–7 minutes, mostly confirming.
+Introduce yourself briefly: you're here to walk through a few details for their new Revaltus website. We've already researched their firm and will confirm what we found as we go — mostly confirming what we already have.
 Collect in one exchange: first name, last name, email address, and phone number. Bold each ask.
 Confirm back what you heard, then call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, and advancePhase: true.
 Once the tool confirms the advance, briefly acknowledge their details and continue — do not pause to ask whether they're ready for the next step.`
@@ -404,8 +404,8 @@ Group remaining gaps into 2–3 per exchange by topic:
 - Brand & Tone (see below — always last before the close)
 
 - Tier 1: Always ask
-- Tier 2: Ask if the session feels under 5 minutes
-- Tier 3: Skip if running long — add to "_meta.phase4_flagged_for_followup" instead
+- Tier 2: Ask unless clearly irrelevant to this firm
+- Tier 3: Ask if it's relevant; otherwise add to "_meta.phase4_flagged_for_followup" for later follow-up
 One natural follow-up per thin answer, then move on.
 
 BRAND & TONE BLOCK — ask this as the last topic, after differentiators and culture:

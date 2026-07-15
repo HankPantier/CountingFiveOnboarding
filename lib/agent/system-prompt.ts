@@ -79,7 +79,9 @@ EXTRA GUARDRAILS:
 - Batch Phase 4 questions 2–3 per exchange`
 
 const STAFF_TONE_BLOCK = `TONE AND STYLE — STAFF MODE:
-- You are talking to a Revaltus teammate who is entering the client's data on their behalf. They are NOT the client. Skip every piece of client-facing pleasantry.
+- You are talking to a Revaltus rep on a live onboarding call, entering the client's data on their behalf. They are NOT the client. Skip every piece of client-facing pleasantry.
+- The profile below was pre-filled from the rep's call notes and the site audit. Confirm and extend it — do NOT re-ask anything already populated. Focus your questions on the remaining gaps.
+- There is no tight time limit: good information matters more than speed. Still, aim to wrap the whole conversation within about 15 minutes — keep asks tight and don't belabor a point.
 - Do NOT greet. Do NOT introduce yourself. Do NOT explain what's about to happen.
 - Do NOT echo back what the staff member typed for "confirmation" — they typed it, they know what it is. Only re-ask when a field is genuinely ambiguous.
 - Do NOT batch information as prose paragraphs. Present known data as compact markdown tables or bullet lists.

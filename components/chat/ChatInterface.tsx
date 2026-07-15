@@ -164,7 +164,7 @@ export default function ChatInterface({
   const showStaffButton = isAdmin && !isStaffMode && currentPhase <= 1
 
   return (
-    <div className="flex flex-col h-screen bg-surface-page">
+    <div className="flex flex-col h-full bg-surface-page">
       <header className="bg-surface-card border-b border-border-default flex-shrink-0">
         <div className="h-16 flex items-center justify-between px-6">
           <Image
