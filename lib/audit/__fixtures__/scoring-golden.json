@@ -819,9 +819,10 @@
       "schema": 25,
       "ai_llm": 29,
       "ux": 77,
-      "analytics": 0
+      "analytics": 0,
+      "local_seo": 0
     },
-    "overall_score": 41,
+    "overall_score": 36,
     "overall_grade": "F",
     "findings": {
       "technical": {
@@ -973,6 +974,15 @@
         "has_linkedin_pixel": false,
         "has_heatmap_tool": false,
         "ga4_page_coverage": 0
+      },
+      "local_seo": {
+        "has_local_business": false,
+        "local_business_nap_complete": false,
+        "local_business_has_geo": false,
+        "local_business_has_hours": false,
+        "nap_consistent": false,
+        "has_map_embed": false,
+        "homepage_has_contact": false
       }
     }
   }

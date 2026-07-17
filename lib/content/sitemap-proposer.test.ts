@@ -55,6 +55,113 @@ describe('buildSkeletonProposal', () => {
     expect(out.every(p => p.status === 'update')).toBe(true)
   })
 
+  it('adds location hubs + service×geo pages when serviceAreas are present', () => {
+    const out = buildSkeletonProposal(
+      schema({
+        services: [
+          { name: 'Tax Planning', description: '', offerings: [] },
+          { name: 'Bookkeeping', description: '', offerings: [] },
+        ],
+        business: {
+          serviceAreas: [
+            { city: 'Nashua', state: 'NH', primary: true },
+            { city: 'Manchester', state: 'NH' },
+          ],
+        },
+      } as unknown as Partial<SessionSchema>)
+    )
+    const byUrl = Object.fromEntries(out.map(p => [p.url, p]))
+
+    // locations hub + per-city hubs
+    expect(byUrl['/locations']).toMatchObject({ status: 'new', parent: '/' })
+    expect(byUrl['/locations/nashua']).toMatchObject({
+      status: 'new',
+      parent: '/locations',
+      title: 'Nashua CPA',
+    })
+    expect(byUrl['/locations/manchester']).toMatchObject({ status: 'new', parent: '/locations' })
+
+    // service×geo pages nested under their service page, with "<Service> in <City>, <State>"
+    expect(byUrl['/services/tax-planning-nashua']).toMatchObject({
+      status: 'new',
+      parent: '/services/tax-planning',
+      title: 'Tax Planning in Nashua, NH',
+    })
+    expect(byUrl['/services/bookkeeping-manchester']).toMatchObject({
+      status: 'new',
+      parent: '/services/bookkeeping',
+      title: 'Bookkeeping in Manchester, NH',
+    })
+  })
+
+  it('adds no local pages when serviceAreas is empty', () => {
+    const out = buildSkeletonProposal(
+      schema({
+        services: [{ name: 'Tax Planning', description: '', offerings: [] }],
+      })
+    )
+    expect(out.some(p => p.url.startsWith('/locations'))).toBe(false)
+    expect(out.some(p => /^\/services\/.+-.+/.test(p.url) && p.parent?.startsWith('/services/'))).toBe(false)
+  })
+
+  it('skips a service-area city that already has a physical location page', () => {
+    const out = buildSkeletonProposal(
+      schema({
+        locations: [{ city: 'Nashua', state: 'NH' } as never],
+        services: [{ name: 'Tax Planning', description: '', offerings: [] }],
+        business: {
+          serviceAreas: [
+            { city: 'Nashua', state: 'NH', primary: true },
+            { city: 'Manchester', state: 'NH' },
+          ],
+        },
+      } as unknown as Partial<SessionSchema>)
+    )
+    const urls = out.map(p => p.url)
+    // Nashua has a real office → no duplicate hub and no service×geo for it
+    expect(urls).not.toContain('/locations/nashua')
+    expect(urls).not.toContain('/services/tax-planning-nashua')
+    // Manchester (service-area only) still gets a hub + service×geo
+    expect(urls).toContain('/locations/manchester')
+    expect(urls).toContain('/services/tax-planning-manchester')
+  })
+
+  it('caps hubs and service×geo pages, preferring primary areas', () => {
+    const areas = Array.from({ length: 10 }, (_, i) => ({
+      city: `City${i}`,
+      state: 'NH',
+      primary: i >= 8, // the last two are primary
+    }))
+    const services = Array.from({ length: 6 }, (_, i) => ({
+      name: `Service ${i}`,
+      description: '',
+      offerings: [],
+    }))
+    const out = buildSkeletonProposal(
+      schema({ services, business: { serviceAreas: areas } } as unknown as Partial<SessionSchema>)
+    )
+    const hubs = out.filter(p => p.parent === '/locations')
+    // LOCAL_HUB_CAP = 6
+    expect(hubs).toHaveLength(6)
+    // primary cities win the ordering → both appear among the hubs
+    const hubUrls = hubs.map(p => p.url)
+    expect(hubUrls).toContain('/locations/city8')
+    expect(hubUrls).toContain('/locations/city9')
+
+    // service×geo: top 3 services × up to 4 primary-first areas (that have a hub) = 12
+    const geo = out.filter(p => p.parent?.startsWith('/services/') && p.parent !== '/services')
+    expect(geo).toHaveLength(12)
+    // only the 3 capped services appear
+    const geoServiceParents = new Set(geo.map(p => p.parent))
+    expect(geoServiceParents.size).toBe(3)
+    // every service×geo targets a city that has a hub
+    const hubCitySlugs = new Set(hubUrls.map(u => u.replace('/locations/', '')))
+    for (const p of geo) {
+      const citySlug = p.url.split('-').pop()!
+      expect(hubCitySlugs.has(citySlug)).toBe(true)
+    }
+  })
+
   it('dedupes by normalized url', () => {
     const out = buildSkeletonProposal(
       schema({

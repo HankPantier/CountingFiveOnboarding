@@ -28,7 +28,7 @@ export interface DashboardBucket {
 const COMPOSITES: Record<string, { label: string; members: ReadonlyArray<readonly [CategoryKey, number]> }> = {
   seo_aio_geo: {
     label: 'SEO / AIO / GEO Health',
-    members: [['onpage_seo', 0.35], ['schema', 0.2], ['ai_llm', 0.15], ['indexability', 0.15], ['content', 0.15]],
+    members: [['onpage_seo', 0.3], ['schema', 0.2], ['local_seo', 0.15], ['ai_llm', 0.1], ['indexability', 0.15], ['content', 0.1]],
   },
   mobile: { label: 'Mobile Responsiveness', members: [['ux', 1]] },
   speed: { label: 'Site Speed & Performance', members: [['performance', 1]] },

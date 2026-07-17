@@ -1,14 +1,14 @@
 # Step 10 — Admin Dashboard
 
 **Depends on:** Steps 03, 05, 06, 09
-**Unlocks:** Steps 12, 13 (Approve button triggers Basecamp and PDF)
+**Unlocks:** Step 13 (Approve button triggers PDF generation on approval)
 **Estimated time:** Day 13–15
 
 ---
 
 ## What This Step Accomplishes
 
-Admins can view all sessions, track phase progress, review the full collected schema, edit any field inline, and approve completed sessions. The Approve button triggers the downstream pipeline (PDF generation + Basecamp project creation) built in Steps 12 and 13.
+Admins can view all sessions, track phase progress, review the full collected schema, edit any field inline, and approve completed sessions. The Approve button triggers the downstream pipeline: PDF generation (Step 13) followed by the handoff to content generation. There is no external project-management tool.
 
 ---
 
@@ -212,7 +212,7 @@ export default function ApproveButton({ sessionId }: { sessionId: string }) {
   const router = useRouter()
 
   async function handleApprove() {
-    if (!confirm('Approve this session? This will generate the PDF and create a Basecamp project.')) return
+    if (!confirm('Approve this session? This will generate the PDF summary.')) return
     setLoading(true)
     setError('')
 
@@ -243,12 +243,11 @@ export default function ApproveButton({ sessionId }: { sessionId: string }) {
 }
 ```
 
-`app/api/sessions/[id]/approve/route.ts` — stub for now (full implementation in Steps 12–13):
+`app/api/sessions/[id]/approve/route.ts` — stub for now (full implementation in Step 13):
 ```typescript
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   // 1. Generate PDF (Step 13)
-  // 2. Create Basecamp project (Step 12)
-  // 3. Mark session as approved
+  // 2. Mark session as approved + set content_generation_ready
   return Response.json({ success: true })
 }
 ```
@@ -305,6 +304,6 @@ Click Approve, verify button is immediately disabled/spinner shown. After comple
 ## Common Failure Points
 
 - **Admin override tracking** — without `_meta.admin_overrides`, you lose the audit trail of what the admin changed vs. what the client said. Always track it.
-- **Approve button double-tap** — add the `confirm()` dialog as a first gate, then disable immediately on click. Also check server-side that `basecamp_project_id` is null before creating a new project (prevents duplicates).
+- **Approve button double-tap** — add the `confirm()` dialog as a first gate, then disable immediately on click. Also check server-side that the session is not already `approved` before running the approval pipeline (idempotency prevents duplicate PDFs and handoffs).
 - **Large schema in the viewer** — for clients with many team members or services, the schema viewer can get unwieldy. Use collapsible section headers.
 - **Transcript ordering** — always order by `created_at ASC`. If messages don't have the right timestamps, the transcript will be scrambled.

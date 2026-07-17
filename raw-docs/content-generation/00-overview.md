@@ -72,9 +72,6 @@ After a client completes the onboarding chat and an admin approves the session, 
 | `RESEND_FROM_EMAIL` | Sender email address for Resend (must be verified in Resend dashboard) | Same as above — emails skip if either Resend variable is missing |
 | `ADMIN_EMAIL` | Recipient address for pipeline notification emails | Falls back to `RESEND_FROM_EMAIL`. If both are missing, emails skip. |
 | `CRON_SECRET` | Shared secret for Vercel cron job authentication | The inactivity reminder cron endpoint becomes accessible without auth. **Set a strong random value before deploying.** Currently empty = any request with `Bearer ` passes. |
-| `BASECAMP_CLIENT_ID` | Basecamp OAuth client ID | Basecamp integration disabled. Session approval works but no Basecamp project is created. |
-| `BASECAMP_CLIENT_SECRET` | Basecamp OAuth client secret | Same as above |
-| `BASECAMP_ACCOUNT_ID` | Basecamp account ID for project creation | Same as above |
 
 ### Minimum viable `.env.local` for content generation
 
@@ -88,7 +85,7 @@ SERPER_API_KEY=your-serper-key
 ADMIN_EMAIL=you@example.com
 ```
 
-Email notifications, Basecamp, and cron are optional for local development.
+Email notifications and cron are optional for local development.
 
 ---
 
@@ -102,9 +99,7 @@ Email notifications, Basecamp, and cron are optional for local development.
 
 3. ~~Tighten RLS policies~~ — **DONE in remediation Bundle 1.** Migration `016_tighten_rls.sql` rewrites every policy to require admins-table membership. Prerequisite: seed your UUID into `admins` before applying the migration or you'll lock yourself out.
 
-4. ~~Add Basecamp OAuth CSRF protection~~ — **DONE in remediation Bundle 1.** `/api/basecamp/auth` sets a state cookie; `/api/basecamp/callback` rejects on mismatch.
-
-5. **Deploy to Vercel preview** and run the full 6-phase workflow end-to-end in the production environment. The `vercel.json` function timeouts are configured but need real-world verification.
+4. **Deploy to Vercel preview** and run the full 6-phase workflow end-to-end in the production environment. The `vercel.json` function timeouts are configured but need real-world verification.
 
 ### Medium Priority
 

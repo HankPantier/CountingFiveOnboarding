@@ -1,16 +1,14 @@
 # Step 13 — PDF Generation
 
 **Depends on:** Steps 02, 10
-**Unlocks:** Step 12 (Basecamp attaches the PDF on approval)
+**Unlocks:** Approval pipeline (the PDF is generated and stored on approval)
 **Estimated time:** Day 19–20
-
-> **Note:** Build this step before Step 12, even though they're triggered together. The Approve route in Step 12 calls the PDF endpoint first, then Basecamp.
 
 ---
 
 ## What This Step Accomplishes
 
-When an admin approves a session, the system generates a formatted PDF summary of all collected intake data using `@react-pdf/renderer`, uploads it to Supabase Storage, and returns a URL that gets attached to the Basecamp project.
+When an admin approves a session, the system generates a formatted PDF summary of all collected intake data using `@react-pdf/renderer`, uploads it to Supabase Storage, and returns a URL. The PDF is the client-facing intake summary, stored on approval.
 
 ---
 

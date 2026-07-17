@@ -8,7 +8,8 @@ const GUIDING_PROMPTS: { heading: string; hint: string }[] = [
   { heading: 'Contact', hint: 'Name, email, phone of the person we work with' },
   { heading: 'Firm background', hint: 'Founding year, history/origin, growth goals' },
   { heading: 'Services & niches', hint: 'What they offer; which industries/client types they serve' },
-  { heading: 'Ideal clients', hint: 'Who they want more of; geography; how clients find them' },
+  { heading: 'Ideal clients', hint: 'Who they want more of; typical revenue/stage; who decides; how clients find them' },
+  { heading: 'Local & search', hint: 'Cities/counties they serve or want to; office hours; any terms they want to rank for' },
   { heading: 'Differentiators', hint: 'What sets them apart, in their own words' },
   { heading: 'Team & locations', hint: 'Key people + titles; offices' },
   { heading: 'Brand & tone', hint: 'How they sound today vs. aspirational; colors; words to avoid' },
@@ -31,6 +32,7 @@ export default function OnboardingNotes({
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [extracting, setExtracting] = useState(false)
   const [extractError, setExtractError] = useState<string | null>(null)
+  const [applied, setApplied] = useState<{ path: string; label: string }[] | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSaved = useRef(initialNotes)
 
@@ -68,13 +70,24 @@ export default function OnboardingNotes({
     setExtracting(true)
     try {
       const res = await fetch(`/api/sessions/${sessionId}/extract-notes`, { method: 'POST' })
-      const body = (await res.json().catch(() => ({}))) as { error?: string; appliedCount?: number }
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string
+        applied?: { path: string; label: string }[]
+      }
       if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`)
-      router.refresh() // notes_extracted_at now set → server renders the review stage
+      // Surface what the extraction filled and let the rep explicitly proceed,
+      // rather than silently jumping to the review stage.
+      setApplied(body.applied ?? [])
+      setExtracting(false)
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : 'Extraction failed')
       setExtracting(false)
     }
+  }
+
+  function toReview() {
+    // notes_extracted_at is now set → the server re-renders the review stage.
+    router.refresh()
   }
 
   const saveLabel =
@@ -111,7 +124,38 @@ export default function OnboardingNotes({
             </button>
           </div>
         </div>
-        {alreadyExtracted && (
+        {applied !== null && (
+          <div className="mt-4 rounded-2xl border border-brand-cyan/30 bg-brand-cyan/5 p-4" aria-live="polite">
+            <p className="text-sm font-heading font-semibold text-text-primary">
+              {applied.length > 0
+                ? `Analyzed — filled ${applied.length} field${applied.length === 1 ? '' : 's'} from your notes.`
+                : 'Analyzed — no blank fields needed filling (everything was already set).'}
+            </p>
+            {applied.length > 0 && (
+              <ul className="mt-2 flex flex-wrap gap-1.5">
+                {applied.map((a) => (
+                  <li
+                    key={a.path}
+                    className="text-xs font-body text-text-secondary bg-surface-page border border-border-default rounded-pill px-2.5 py-1"
+                  >
+                    {a.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-text-muted text-xs font-body mt-3">
+              Only blank fields were filled — nothing you or the audit already set was changed.
+            </p>
+            <button
+              type="button"
+              onClick={toReview}
+              className="mt-3 bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all duration-150 hover:bg-brand-cyan-dark active:scale-95"
+            >
+              Review profile →
+            </button>
+          </div>
+        )}
+        {applied === null && alreadyExtracted && (
           <p className="text-text-muted text-xs font-body mt-2">
             These notes were already analyzed. Re-analyzing only fills fields that are still blank — it won&apos;t overwrite anything you or the audit already set.
           </p>

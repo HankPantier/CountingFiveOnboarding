@@ -23,7 +23,7 @@ All of these must exist before writing a single line of code. Collect every cred
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API |
 | `NEXT_PUBLIC_APP_URL` | Will be `https://onboard.countingfive.com` |
 
-Remaining credentials (Anthropic, Resend, Basecamp) are not needed yet — leave them as empty placeholders in `.env.example`.
+Remaining credentials (Anthropic, Resend) are not needed yet — leave them as empty placeholders in `.env.example`.
 
 ---
 
@@ -63,9 +63,6 @@ NEXT_PUBLIC_APP_URL=https://onboard.countingfive.com
 ANTHROPIC_API_KEY=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
-BASECAMP_CLIENT_ID=
-BASECAMP_CLIENT_SECRET=
-BASECAMP_ACCOUNT_ID=
 CRON_SECRET=
 ```
 
@@ -78,9 +75,6 @@ NEXT_PUBLIC_APP_URL=
 ANTHROPIC_API_KEY=
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=
-BASECAMP_CLIENT_ID=
-BASECAMP_CLIENT_SECRET=
-BASECAMP_ACCOUNT_ID=
 CRON_SECRET=
 ```
 

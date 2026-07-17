@@ -11,6 +11,7 @@ export const CATEGORY_META: Array<{ key: CategoryKey; label: string; weight: num
   { key: 'content', label: 'Content Quality', weight: 10 },
   { key: 'indexability', label: 'Indexability', weight: 10 },
   { key: 'schema', label: 'Schema & Structured Data', weight: 10 },
+  { key: 'local_seo', label: 'Local SEO', weight: 10 },
   { key: 'ai_llm', label: 'AI / LLM Readiness', weight: 5 },
   { key: 'analytics', label: 'Analytics & Tracking', weight: 5 },
 ]
@@ -69,7 +70,7 @@ export function humanizeKey(key: string): string {
     .replace(/^pct_/, '% ')
     .replace(/_/g, ' ')
     .replace(/\bpct\b/g, '%')
-    .replace(/\b(ssl|url|og|tw|ga4|gtm|ai|cta|html|css)\b/gi, (m) => m.toUpperCase())
+    .replace(/\b(ssl|url|og|tw|ga4|gtm|ai|cta|html|css|nap|seo)\b/gi, (m) => m.toUpperCase())
     .replace(/^\w/, (c) => c.toUpperCase())
 }
 

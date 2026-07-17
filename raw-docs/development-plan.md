@@ -1,7 +1,7 @@
 # Development Plan
 
 **Project:** CountingFive AI Onboarding Agent
-**Stack:** Next.js 15 · Supabase · Vercel · Anthropic · Resend · Basecamp
+**Stack:** Next.js 15 · Supabase · Vercel · Anthropic · Resend
 **Updated:** 2026-04-30
 
 ---
@@ -15,7 +15,6 @@ All of the following must be in place before development begins. Skipping any of
 - [ ] **Vercel** — project created, linked to GitHub repo
 - [ ] **Supabase** — project created (use existing account); note project URL and keys
 - [ ] **Resend** — account created at resend.com; domain verified for sending
-- [ ] **Basecamp** — OAuth app registered at `launchpad.37signals.com/integrations` (requires existing Basecamp account); note Client ID and Client Secret
 - [ ] **Anthropic** — API key generated at `console.anthropic.com`
 
 ### Credentials Checklist
@@ -29,9 +28,6 @@ Gather all of these before starting. Every item here maps to an environment vari
 | `ANTHROPIC_API_KEY` | console.anthropic.com | Phase 5 |
 | `RESEND_API_KEY` | resend.com → API Keys | Phase 9 |
 | `RESEND_FROM_EMAIL` | Verified sending domain in Resend | Phase 9 |
-| `BASECAMP_CLIENT_ID` | launchpad.37signals.com/integrations | Phase 10 |
-| `BASECAMP_CLIENT_SECRET` | launchpad.37signals.com/integrations | Phase 10 |
-| `BASECAMP_ACCOUNT_ID` | Your Basecamp URL: `3.basecamp.com/{ACCOUNT_ID}` | Phase 10 |
 | `CRON_SECRET` | Generate: `openssl rand -base64 32` | Phase 9 |
 | `NEXT_PUBLIC_APP_URL` | `https://onboard.countingfive.com` | Phase 1 |
 
@@ -120,7 +116,6 @@ CREATE TABLE sessions (
   completed_at TIMESTAMPTZ,
   approved_at TIMESTAMPTZ,
   approved_by UUID REFERENCES admins(id),
-  basecamp_project_id TEXT,
   pdf_url TEXT,
   reminder_count INTEGER NOT NULL DEFAULT 0,
   content_generation_ready BOOLEAN NOT NULL DEFAULT FALSE  -- set TRUE on admin approval
@@ -155,16 +150,6 @@ CREATE TABLE reminders (
   sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   days_inactive INTEGER NOT NULL
 );
-
--- Basecamp OAuth tokens (admin-level, one record)
-CREATE TABLE basecamp_tokens (
-  id INTEGER PRIMARY KEY DEFAULT 1,         -- singleton row
-  access_token TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT singleton CHECK (id = 1)
-);
 ```
 
 ### Indexes
@@ -184,7 +169,6 @@ ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE basecamp_tokens ENABLE ROW LEVEL SECURITY;
 
 -- Admins: can only read/write their own record
 CREATE POLICY "Admins manage own record"
@@ -216,12 +200,6 @@ CREATE POLICY "Admins full access to assets"
 -- Reminders: admin full access
 CREATE POLICY "Admins full access to reminders"
   ON reminders FOR ALL
-  TO authenticated
-  USING (true);
-
--- Basecamp tokens: admin full access
-CREATE POLICY "Admins full access to basecamp tokens"
-  ON basecamp_tokens FOR ALL
   TO authenticated
   USING (true);
 ```
@@ -776,7 +754,7 @@ onFinish: async ({ text, usage }) => {
   - Inline edit for any field (admin override)
 - Status banner: pending / in_progress / completed / awaiting approval
 - When status is `completed`: shows **Approve** button
-- Approve triggers: PDF generation → Basecamp project creation → status update to `approved`
+- Approve triggers: PDF generation → content-generation handoff (`content_generation_ready` flag) → status update to `approved`
 
 ### Tasks
 - [ ] Build `/admin/dashboard/page.tsx` with session table
@@ -785,12 +763,12 @@ onFinish: async ({ text, usage }) => {
 - [ ] Build `/admin/sessions/[id]/page.tsx` with transcript + schema viewer
 - [ ] Build inline field editor (click to edit, save on blur)
 - [ ] Build `PATCH /api/sessions/[id]` route — handles schema field updates and status changes
-- [ ] Build Approve button → triggers Phase 10 + 11 pipeline
+- [ ] Build Approve button → triggers the PDF generation + content-generation handoff pipeline
 - [ ] Add "Send Reminder" manual button (sends one-off email regardless of inactivity timer)
 
 ### Failure points
 - **Admin editing schema data** — store admin overrides with a flag so it's clear what was provided by the client vs. overridden by admin. Add `_adminOverrides: { "field.path": true }` to schema_data.
-- **Approve button double-tap** — the approval triggers Basecamp project creation. Disable the button immediately on click, show a spinner, and check `basecamp_project_id` is null before proceeding server-side.
+- **Approve button double-tap** — the approval triggers PDF generation and the content-generation handoff. Disable the button immediately on click, show a spinner, and check the session is not already `approved` before proceeding server-side.
 
 ---
 
@@ -849,70 +827,36 @@ Called daily by Vercel Cron.
 
 ---
 
-## Phase 10 — Basecamp Integration
-**Goal:** Admin approves a completed session. System creates a Basecamp project, posts the intake summary as a message, attaches the PDF, and uploads all assets to the project vault.
-**Credentials needed:** `BASECAMP_CLIENT_ID`, `BASECAMP_CLIENT_SECRET`, `BASECAMP_ACCOUNT_ID`
+## Phase 10 — Approval & Content-Generation Handoff
+**Goal:** Admin approves a completed session. The system generates the intake PDF summary and hands off to content generation via the `content_generation_ready` flag.
+**Credentials needed:** None additional
 
-### OAuth Setup (one-time, done by admin in the dashboard)
-
-Basecamp uses OAuth 2.0 with refresh tokens.
-
-1. Register the app at `launchpad.37signals.com/integrations`:
-   - Redirect URI: `https://onboard.countingfive.com/api/basecamp/callback`
-   - Note the Client ID and Client Secret
-2. Build `/api/basecamp/auth` route — redirects to Basecamp's OAuth URL
-3. Build `/api/basecamp/callback` route — exchanges code for tokens, stores in `basecamp_tokens` table
-4. Build a "Connect Basecamp" button in the admin dashboard (only needs to be clicked once ever)
-
-```typescript
-// Token refresh helper — call before any Basecamp API request
-async function getValidToken(): Promise<string> {
-  const token = await getStoredToken();
-  if (token.expires_at > new Date()) return token.access_token;
-  
-  const refreshed = await refreshBasecampToken(token.refresh_token);
-  await updateStoredToken(refreshed);
-  return refreshed.access_token;
-}
-```
-
-### Project creation sequence
+### Approval sequence
 
 Triggered by admin clicking Approve:
 
 ```typescript
-// lib/basecamp/create-project.ts
-// 1. GET valid access token
-// 2. POST /projects.json → create project named "Korbey Lague PLLP — Website Build"
-// 3. GET project message board URL from project response
-// 4. POST message to message board with formatted intake summary (rich HTML)
-// 5. For each asset: POST /attachments.json with file binary, get attachable_sgid
-// 6. If PDF exists: POST PDF attachment, get attachable_sgid
-// 7. PATCH the message to include <bc-attachment sgid="..."> tags for all files
-// 8. Update session: set basecamp_project_id, status = 'approved'
-// 9. Set a content_generation_ready flag in the session (boolean) — the
-//    content generation process reads this flag to know it can begin.
-//    The actual content generation pipeline is a separate future system.
+// 1. Verify the session is `completed` and not already `approved`
+// 2. Generate the intake PDF summary (see Phase 11) and store it in Supabase Storage
+// 3. Update session: set status = 'approved', approved_at, approved_by
+// 4. Set the content_generation_ready flag (boolean) — the content generation
+//    pipeline reads this flag to know it can begin. There is no external
+//    project-management tool; the pipeline picks the session up from here.
 ```
 
 ### Tasks
-- [ ] Register Basecamp OAuth app (admin does this manually before development)
-- [ ] Build OAuth flow: `/api/basecamp/auth` + `/api/basecamp/callback`
-- [ ] Build `lib/basecamp/client.ts` — wrapper with auto token refresh
-- [ ] Build `lib/basecamp/create-project.ts` — full project creation sequence
+- [ ] Build the Approve action: PDF generation → status update → set `content_generation_ready`
 - [ ] Add Approve button handler in admin dashboard
-- [ ] Show Basecamp project link in admin session detail after approval
+- [ ] Show the generated PDF link in admin session detail after approval
 
 ### Failure points
-- **Token expiry** — Basecamp access tokens expire after 2 weeks. Always refresh before use. The `getValidToken()` helper must be called at the start of every Basecamp API interaction.
-- **Attachment upload order** — the message must be created first (as plain text), then all files attached, then the message updated with `<bc-attachment>` tags. The Basecamp API requires this sequence.
-- **Rate limiting** — Basecamp allows 50 requests per 10 seconds. If a project has many assets, batch uploads carefully. Add a 200ms delay between attachment uploads.
-- **Large file uploads** — Supabase Storage files must be fetched server-side (using signed URLs) and then re-uploaded to Basecamp. For large files, this is a memory concern in serverless functions. Stream the file from Supabase to Basecamp without buffering the full file in memory.
+- **PDF generation failure** — do not mark the session as approved if the PDF step fails; surface an error to the admin with a retry button and log it.
+- **Double approval** — check the session is not already `approved` before proceeding, so a re-click doesn't re-run the handoff.
 
 ---
 
 ## Phase 11 — PDF Generation
-**Goal:** When admin approves, generate a formatted PDF summary of all session data and upload it to Supabase Storage (to be attached to Basecamp).
+**Goal:** When admin approves, generate a formatted PDF summary of all session data and upload it to Supabase Storage (the client-facing intake summary).
 **Credentials needed:** None additional
 
 ### PDF structure (using `@react-pdf/renderer`)
@@ -946,7 +890,7 @@ Pages 2+: Data sections (one per section)
   - Uploads to Supabase Storage at `pdfs/{sessionId}/intake-summary.pdf`
   - Updates `sessions.pdf_url`
   - Returns URL
-- [ ] Trigger PDF generation as first step of the Approve action (before Basecamp calls)
+- [ ] Trigger PDF generation as the first step of the Approve action (before the content-generation handoff)
 
 ### Failure points
 - **`@react-pdf/renderer` in Next.js App Router** — the library requires a Node.js runtime (not edge). In the route file, add `export const runtime = 'nodejs'` and `export const maxDuration = 30` (requires Vercel Pro for durations above 10s). Test PDF generation locally before assuming it works on Vercel.
@@ -971,7 +915,7 @@ Run this manually before launch:
 7. Upload 3 test files in Phase 5
 8. Confirm final summary (Phase 6)
 9. In admin: review data, edit one field, click Approve
-10. Verify: PDF generated, Basecamp project created, message posted, assets uploaded
+10. Verify: PDF generated, session marked `approved`, `content_generation_ready` set
 11. Verify: client URL now shows "completed" screen
 12. Let session sit 3+ days (or manually call cron route) → verify reminder emails arrive
 
@@ -982,15 +926,13 @@ Run this manually before launch:
 - [ ] `/api/upload` validates file type by magic bytes, not just extension or MIME header
 - [ ] Session IDs are UUID v4 — no sequential IDs that could be enumerated
 - [ ] No session data is returned to the client beyond what's needed for the current phase
-- [ ] Basecamp tokens stored in DB, not in environment variables (they rotate)
 - [ ] Admin login rate-limited (Supabase Auth handles this by default)
 
 ### Error handling checklist
 - [ ] Claude API failure → show "something went wrong, try again" message; do not lose message history
 - [ ] WHOIS failure → advance phase anyway, leave technical fields empty (they become Phase 4 gaps)
 - [ ] File upload failure → show error in UI, allow retry; do not advance chat state
-- [ ] Basecamp API failure → do not mark session as approved; show error to admin with retry button
-- [ ] PDF generation failure → same as Basecamp: block approval until resolved; log the error
+- [ ] PDF generation failure → do not mark session as approved; block approval until resolved; show error to admin with retry button; log the error
 
 ### Performance
 - [ ] Conversation history trimmed to last 40 messages before sending to Claude
@@ -1012,8 +954,8 @@ Run this manually before launch:
 | 7 — File Uploads | Client can upload logos/photos in chat | Day 12 |
 | 8 — Admin Dashboard | Admin can review, edit, and approve sessions | Day 13–15 |
 | 9 — Email / Cron | Inactivity reminders firing automatically | Day 16 |
-| 10 — Basecamp | Approval creates Basecamp project with all data | Day 17–18 |
-| 11 — PDF | Intake summary PDF generated and attached | Day 19–20 |
+| 10 — Approval Handoff | Approval marks session ready for content generation | Day 17–18 |
+| 11 — PDF | Intake summary PDF generated and stored | Day 19–20 |
 | 12 — Testing | Full flow tested, edge cases handled | Day 21–22 |
 
 ---
@@ -1027,8 +969,6 @@ Before deploying to production, verify each of the following:
 - [ ] Supabase Auth signups disabled
 - [ ] Storage bucket `session-assets` created with correct size/type limits
 - [ ] DNS CNAME record propagated and SSL active on Vercel
-- [ ] Basecamp OAuth app registered with correct redirect URI
-- [ ] Basecamp connected in admin dashboard (OAuth flow completed once)
 - [ ] Resend domain verified and from-address matches verified domain
 - [ ] Vercel Cron configured in `vercel.json`
 - [ ] `CRON_SECRET` set in Vercel env vars

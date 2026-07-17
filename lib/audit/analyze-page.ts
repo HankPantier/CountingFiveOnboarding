@@ -30,6 +30,15 @@ const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/
 const MIXED_CONTENT_RE =
   /(?:src|href)=["'](http:\/\/[^"']+\.(?:js|css|jpg|jpeg|png|gif|svg|woff|woff2)[^"']*)["']/gi
 
+// Reduce a matched phone to its US 10-digit core so the same number written
+// differently across pages (e.g. "(410) 555-1212" vs "410.555.1212") compares
+// equal for NAP consistency. Returns null for anything that isn't 10 digits.
+function normalizePhone(raw: string): string | null {
+  let digits = raw.replace(/\D/g, '')
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1)
+  return digits.length === 10 ? digits : null
+}
+
 function extractSchemaTypes(obj: unknown): string[] {
   const types: string[] = []
   if (Array.isArray(obj)) {
@@ -42,6 +51,65 @@ function extractSchemaTypes(obj: unknown): string[] {
     else if (typeof t === 'string' && t) types.push(t)
   }
   return types
+}
+
+// JSON-LD @types that count as a local business. Includes service subtypes our
+// own content pipeline emits (AccountingService) — which do NOT contain
+// 'Business', so the explicit list is load-bearing, not just the substring rule.
+const LOCAL_BUSINESS_TYPES = new Set([
+  'LocalBusiness',
+  'AccountingService',
+  'ProfessionalService',
+  'FinancialService',
+  'LegalService',
+  'Attorney',
+  'Notary',
+  'InsuranceAgency',
+])
+
+function isLocalBusinessType(type: unknown): boolean {
+  if (typeof type === 'string') return LOCAL_BUSINESS_TYPES.has(type) || type.includes('Business')
+  if (Array.isArray(type)) return type.some((t) => isLocalBusinessType(t))
+  return false
+}
+
+export interface LocalBusinessSignals {
+  local_biz_nap: boolean
+  local_biz_geo: boolean
+  local_biz_hours: boolean
+}
+
+/** Walk parsed JSON-LD (recursing arrays + @graph) for local-business nodes and
+ * aggregate their local signals. Mirrors extractSchemaTypes' traversal. */
+function extractLocalBusiness(obj: unknown, acc: LocalBusinessSignals): void {
+  if (Array.isArray(obj)) {
+    for (const item of obj) extractLocalBusiness(item, acc)
+    return
+  }
+  if (!obj || typeof obj !== 'object') return
+  const rec = obj as Record<string, unknown>
+  if ('@graph' in rec) extractLocalBusiness(rec['@graph'], acc)
+  if (isLocalBusinessType(rec['@type'])) {
+    const hasAddress = rec['address'] != null
+    const hasPhone = rec['telephone'] != null
+    if (hasAddress && hasPhone) acc.local_biz_nap = true
+    if (rec['geo'] != null) acc.local_biz_geo = true
+    if (rec['openingHours'] != null || rec['openingHoursSpecification'] != null) acc.local_biz_hours = true
+  }
+}
+
+const MAP_EMBED_RE =
+  /(google\.[^"'/]+\/maps\/embed|maps\.google\.[^"']*output=embed|maps\.googleapis\.com\/maps|\/maps\/embed\/)/i
+
+function detectMapEmbed(html: string, $: CheerioAPI): boolean {
+  if (MAP_EMBED_RE.test(html)) return true
+  let found = false
+  $('iframe').each((_, el) => {
+    if (found) return
+    const src = $(el).attr('src') ?? ''
+    if (src.includes('google.com/maps')) found = true
+  })
+  return found
 }
 
 /** Find a <meta> whose name attribute equals `name` (case-insensitive). */
@@ -107,14 +175,23 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
 
   // ── Schema / JSON-LD ──────────────────────────────────────────────────────
   const schemaTypes: string[] = []
+  const localSignals: LocalBusinessSignals = {
+    local_biz_nap: false,
+    local_biz_geo: false,
+    local_biz_hours: false,
+  }
   $('script[type="application/ld+json"]').each((_, el) => {
     const raw = $(el).text().trim() || '{}'
     try {
-      schemaTypes.push(...extractSchemaTypes(JSON.parse(raw)))
+      const parsed = JSON.parse(raw)
+      schemaTypes.push(...extractSchemaTypes(parsed))
+      extractLocalBusiness(parsed, localSignals)
     } catch {
       schemaTypes.push('__invalid_json__')
     }
   })
+
+  const hasMapEmbed = detectMapEmbed(html, $)
 
   // ── Content text (strip script/style/nav/footer/header) ────────────────────
   const $body = cheerio.load(html)
@@ -127,7 +204,9 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
 
   const hasCta = CTA_RE.test(bodyText)
   const hasTrust = TRUST_RE.test(bodyText)
-  const hasPhone = PHONE_RE.test(html)
+  const phoneMatch = html.match(PHONE_RE)
+  const hasPhone = phoneMatch !== null
+  const primaryPhone = phoneMatch ? normalizePhone(phoneMatch[1]) : null
   const hasEmail = EMAIL_RE.test(html)
 
   // ── Analytics detection ────────────────────────────────────────────────────
@@ -217,6 +296,7 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
     has_trust: hasTrust,
     has_phone: hasPhone,
     has_email: hasEmail,
+    primary_phone: primaryPhone,
     has_ga4: hasGa4,
     has_gtm: hasGtm,
     has_meta_px: hasMetaPx,
@@ -232,6 +312,10 @@ export function analyzePage(page: CrawledPage): PageAnalysis {
     buttons_missing_label: buttonsMissingLabel,
     inputs_missing_label: inputsMissingLabel,
     has_skip_nav: hasSkipNav,
+    local_biz_nap: localSignals.local_biz_nap,
+    local_biz_geo: localSignals.local_biz_geo,
+    local_biz_hours: localSignals.local_biz_hours,
+    has_map_embed: hasMapEmbed,
     page_text_sample: pageTextSample,
     content_length_bytes: page.content_length ?? 0,
     redirect_count: page.redirect_count ?? 0,

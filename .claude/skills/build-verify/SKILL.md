@@ -29,7 +29,6 @@ Identify every rule in CLAUDE.md that applies to what you're about to build. Key
 - Cron routes → security rule 2 (CRON_SECRET validation)
 - Phase logic → Phase Logic Rules (never confuse dev phases with agent phases)
 - PDF generation → PDF Generation Rules (Node.js runtime only)
-- Basecamp → Basecamp Integration Rules
 
 **4. Map all integration points.**
 List every file, route, exported type, and DB column your work touches or produces that other parts of the system will consume. This is your integration contract — verify it matches what dependent steps expect.

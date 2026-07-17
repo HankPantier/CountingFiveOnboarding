@@ -5,6 +5,7 @@ import { parentChain, slugify } from './sitemap-utils'
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 type SitemapPage = { url: string; title: string; parent?: string; status: string }
 type Location = NonNullable<SessionSchema['locations']>[number]
+type TeamMember = NonNullable<SessionSchema['team']>[number]
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -99,7 +100,41 @@ function buildLocalBusinessForLocation(
   }
   if (nonEmpty(loc.phone)) node.telephone = loc.phone
   if (nonEmpty(loc.email)) node.email = loc.email
-  if (nonEmpty(schema.business?.geographicScope)) node.areaServed = schema.business!.geographicScope
+
+  // Prefer structured service areas (geo landing-page targeting) over the
+  // free-text geographicScope when present.
+  const areas = schema.business?.serviceAreas ?? []
+  if (areas.length) {
+    node.areaServed = areas
+      .map(a => {
+        const name = [a.city, a.county, a.state].filter(nonEmpty).join(', ')
+        if (!name) return null
+        // A county-only entry is an AdministrativeArea; anything with a city is a City.
+        return { '@type': nonEmpty(a.city) ? 'City' : 'AdministrativeArea', name }
+      })
+      .filter((x): x is { '@type': string; name: string } => x !== null)
+  } else if (nonEmpty(schema.business?.geographicScope)) {
+    node.areaServed = schema.business!.geographicScope
+  }
+
+  const openingHours = (loc.openingHours ?? []).filter(
+    h => Array.isArray(h.dayOfWeek) && h.dayOfWeek.length > 0 && nonEmpty(h.opens) && nonEmpty(h.closes)
+  )
+  if (openingHours.length) {
+    node.openingHoursSpecification = openingHours.map(h => ({
+      '@type': 'OpeningHoursSpecification',
+      dayOfWeek: h.dayOfWeek,
+      opens: h.opens,
+      closes: h.closes,
+    }))
+  }
+
+  if (loc.geo && typeof loc.geo.lat === 'number' && typeof loc.geo.lng === 'number') {
+    node.geo = { '@type': 'GeoCoordinates', latitude: loc.geo.lat, longitude: loc.geo.lng }
+  }
+
+  if (nonEmpty(schema.business?.priceRange)) node.priceRange = schema.business!.priceRange
+  if (nonEmpty(loc.gbpUrl)) node.sameAs = [loc.gbpUrl]
 
   // Aggregate rating only on the primary (first) location to avoid claiming the
   // same rating for every office.
@@ -223,6 +258,55 @@ function buildPageTypeNode(
   return base
 }
 
+function buildPerson(
+  member: TeamMember,
+  firmName: string,
+  origin: string
+): Record<string, unknown> {
+  const node: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: member.name,
+    worksFor: { '@type': 'Organization', name: firmName, url: origin },
+  }
+  if (nonEmpty(member.title)) node.jobTitle = member.title
+  if (nonEmpty(member.bio)) node.description = member.bio
+
+  const credentials = (member.certifications ?? []).filter(nonEmpty)
+  if (credentials.length) {
+    node.hasCredential = credentials.map(cred => ({
+      '@type': 'EducationalOccupationalCredential',
+      credentialCategory: cred,
+    }))
+  }
+
+  const knowsAbout = [...(member.specializations ?? []), ...(member.expertise ?? [])].filter(nonEmpty)
+  if (knowsAbout.length) node.knowsAbout = Array.from(new Set(knowsAbout))
+
+  if (nonEmpty(member.education)) {
+    node.alumniOf = { '@type': 'EducationalOrganization', name: member.education }
+  }
+
+  return node
+}
+
+const TEAM_PAGE_URL = /^\/(about|team|our-team|meet-the-team|people|our-people|staff)(\/|$)/i
+const TEAM_SCHEMA_TYPE = /^(about|aboutpage|team|people)/i
+
+function isTeamPage(page: GeneratedPage): boolean {
+  if (TEAM_PAGE_URL.test(page.page_url)) return true
+  const type = (page.schema_markup_type ?? '').trim()
+  return type.length > 0 && TEAM_SCHEMA_TYPE.test(type)
+}
+
+function buildPeople(schema: SessionSchema, websiteUrl: string): Record<string, unknown>[] {
+  const firmName = schema.business?.name ?? 'Firm'
+  const origin = originOf(websiteUrl)
+  return (schema.team ?? [])
+    .filter(m => nonEmpty(m?.name))
+    .map(m => buildPerson(m, firmName, origin))
+}
+
 function asScript(obj: Record<string, unknown>): string {
   // Escape `</` so a user-supplied string containing `</script>` can't break out
   // of the inline script tag. Standard inline-JSON XSS guard.
@@ -250,6 +334,14 @@ export function buildJsonLdForPage(inputs: {
 
   const faq = buildFAQPage(inputs.page)
   if (faq) blocks.push(asScript(faq))
+
+  // Team Person nodes (E-E-A-T) live only on the about/team page, so they're not
+  // duplicated across the whole site.
+  if (isTeamPage(inputs.page)) {
+    for (const person of buildPeople(inputs.schema, inputs.websiteUrl)) {
+      blocks.push(asScript(person))
+    }
+  }
 
   blocks.push(asScript(buildPageTypeNode(inputs.page, inputs.schema, inputs.websiteUrl, locations)))
 

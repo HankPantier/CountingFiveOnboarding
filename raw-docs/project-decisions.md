@@ -40,15 +40,6 @@ Convert the existing CountingFive website development questionnaire (Gravity For
 
 ### Data Destination
 - **Database** for archival of all collected data
-- **Basecamp integration** — fully automated end-of-chat flow:
-  1. Generate PDF summary of collected data
-  2. Save PDF to database/storage for archival
-  3. Create new Basecamp project for the client (via `POST /projects.json`)
-  4. Post intake summary as rich-text message on project message board (via `POST /message_boards/{id}/messages.json`)
-  5. Upload PDF + client logos/photos to project vault (via `POST /attachments.json` + `POST /vaults/{id}/uploads.json`)
-  6. Attach the PDF to the intake message as well (via `<bc-attachment>` rich text embedding)
-  - **Auth:** Basecamp uses OAuth 2.0 — one-time setup for CountingFive account, then app acts on their behalf
-  - **API rate limit:** 50 requests per 10 seconds per IP (not a concern for this use case)
 - **Admin dashboard** — CountingFive team needs visibility into in-progress and completed sessions
 
 ### File Uploads

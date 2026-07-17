@@ -81,6 +81,11 @@ export type SessionSchema = {
     fax: string
     email: string
     hours: Record<string, string>
+    // Structured for schema.org OpeningHoursSpecification; `hours` above stays
+    // the human-readable/display form. Times are 24h "HH:MM".
+    openingHours?: Array<{ dayOfWeek: string[]; opens: string; closes: string }>
+    geo?: { lat: number; lng: number }
+    gbpUrl?: string
   }>
   team?: Array<{
     name: string
@@ -100,6 +105,7 @@ export type SessionSchema = {
     description: string
     offerings: string[]
     rewriteDirection?: string
+    keywords?: string[]
   }>
   niches?: Array<{
     name: string
@@ -110,6 +116,11 @@ export type SessionSchema = {
     customerTrigger?: string
     typicalRevenueSize?: string
     nicheOrigin?: string
+    keywords?: string[]
+    // Persona detail for buyer-targeted copy and content.
+    revenueBand?: string
+    businessStage?: string
+    decisionMaker?: string
     subCategories?: Array<{
       name: string
       status: 'confirmed' | 'likely' | 'verify'
@@ -135,6 +146,12 @@ export type SessionSchema = {
     howClientsFind: string
     pricing: string
     growthGoals: string
+    // Structured local-SEO targeting. serviceAreas drives geo landing pages and
+    // schema.org areaServed; targetKeywords drives on-page + content targeting.
+    serviceAreas?: Array<{ city: string; county?: string; state?: string; radiusMiles?: number; primary?: boolean }>
+    targetKeywords?: string[]
+    // schema.org priceRange hint (e.g. "$$"), distinct from the free-text `pricing`.
+    priceRange?: string
     formerName?: string
     firmSizeEstimate?: string
     currentPositioning?: string
@@ -205,6 +222,10 @@ export type SessionSchema = {
     reviewSummary?: string
     trustSignalGaps: string[]
     pressAndMedia: string[]
+    // Per-source review volume/rating for aggregate trust signals, plus recurring
+    // themes surfaced from review text.
+    reviewSources?: Array<{ source: string; rating?: string; count?: number }>
+    reviewThemes?: string[]
   }
   content_gaps?: {
     nicheGaps: string[]

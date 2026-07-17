@@ -19,7 +19,6 @@
 | **AI** | Vercel AI SDK + Anthropic | `ai` + `@ai-sdk/anthropic` — streaming built in |
 | **Email** | Resend | Inactivity reminders + admin notifications |
 | **Cron** | Vercel Cron Jobs | Scheduled daily inactivity check |
-| **Basecamp** | Basecamp 4 API (OAuth 2.0) | Admin-triggered project creation + message board |
 | **PDF** | `@react-pdf/renderer` | Server-side PDF from session schema |
 | **UI** | Tailwind CSS + shadcn/ui | Component library for both admin and client UI |
 | **WHOIS** | `whoiser` | Domain lookup for registrar/expiry data |
@@ -48,16 +47,6 @@ RESEND_API_KEY=
 RESEND_FROM_EMAIL=onboarding@countingfive.com
 ```
 
-### Basecamp
-```
-BASECAMP_CLIENT_ID=
-BASECAMP_CLIENT_SECRET=
-BASECAMP_REDIRECT_URI=https://onboard.countingfive.com/api/basecamp/callback
-BASECAMP_ACCOUNT_ID=
-BASECAMP_ACCESS_TOKEN=             # stored in DB after OAuth, not env
-BASECAMP_REFRESH_TOKEN=            # stored in DB after OAuth, not env
-```
-
 ### App
 ```
 NEXT_PUBLIC_APP_URL=https://onboard.countingfive.com
@@ -74,7 +63,6 @@ CRON_SECRET=                       # random string — validates Vercel cron req
 | **Supabase** | DB + auth + file storage | Free tier | Phase 1 |
 | **Anthropic** | Claude API | Pay-per-use | Phase 5 |
 | **Resend** | Transactional email | Free (3k/mo) | Phase 9 |
-| **Basecamp** | Project management integration | Existing account | Phase 10 |
 | **GitHub** | Version control + Vercel deploy hook | Free | Phase 1 |
 
 ---
@@ -107,8 +95,7 @@ Then add `onboard.countingfive.com` as a custom domain in the Vercel project set
 │       ├── chat/             # Claude streaming endpoint
 │       ├── sessions/         # Session CRUD
 │       ├── upload/           # File uploads to Supabase Storage
-│       ├── cron/             # Inactivity monitor (called by Vercel Cron)
-│       └── basecamp/         # OAuth callback + project creation
+│       └── cron/             # Inactivity monitor (called by Vercel Cron)
 ├── components/
 │   ├── chat/                 # Chat UI components
 │   └── admin/                # Admin dashboard components
@@ -116,7 +103,6 @@ Then add `onboard.countingfive.com` as a custom domain in the Vercel project set
 │   ├── supabase/             # Client + server Supabase instances
 │   ├── mfp-parser/           # MFP .md → session schema
 │   ├── agent/                # System prompt builder, phase logic
-│   ├── basecamp/             # Basecamp API client
 │   └── pdf/                  # PDF generation
 └── types/
     └── database.ts           # Generated Supabase types
@@ -134,4 +120,4 @@ Then add `onboard.countingfive.com` as a custom domain in the Vercel project set
 
 **Streaming via Vercel AI SDK.** The `ai` package + `useChat` hook handles all stream parsing on the client. The `/api/chat` route uses `streamText` from the AI SDK — minimal boilerplate, maximum reliability.
 
-**Basecamp is admin-triggered.** Nothing posts to Basecamp automatically. The admin reviews collected data, clicks Approve, and the system handles the rest.
+**Approval is admin-triggered.** The admin reviews collected data and clicks Approve. That generates the intake PDF summary and hands the session off to content generation — nothing happens automatically before approval.

@@ -94,6 +94,15 @@ function healthyFindings(): Findings {
       has_heatmap_tool: true,
       ga4_page_coverage: 10,
     },
+    local_seo: {
+      has_local_business: true,
+      local_business_nap_complete: true,
+      local_business_has_geo: true,
+      local_business_has_hours: true,
+      has_map_embed: true,
+      nap_consistent: true,
+      homepage_has_contact: true,
+    },
   }
 }
 

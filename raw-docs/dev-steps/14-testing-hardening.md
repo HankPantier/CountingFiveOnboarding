@@ -109,12 +109,9 @@ Expected: `status = 'completed'`, `current_phase = 7`, `completed_at` is set.
 
 **Verify:**
 - PDF generated and downloadable from admin dashboard
-- Basecamp project created with correct name
-- Intake summary message posted to Basecamp message board
-- PDF attached to Basecamp message
-- Asset file attached to Basecamp message
+- Session marked `approved` and handed off to content generation
 ```sql
-SELECT status, approved_at, basecamp_project_id, content_generation_ready
+SELECT status, approved_at, content_generation_ready
 FROM sessions WHERE id = 'SESSION_ID';
 ```
 Expected: All fields populated.
@@ -183,13 +180,7 @@ console.log(error?.message)
 # Expected: "Signups not allowed for this instance"
 ```
 
-### S7 — Basecamp tokens stored in DB, not env vars
-```bash
-grep -r "BASECAMP_ACCESS_TOKEN" . --include="*.ts" --include="*.tsx"
-# Expected: No results (tokens are only in the DB, not env vars)
-```
-
-### S8 — Admin rate limiting is active
+### S7 — Admin rate limiting is active
 Supabase Auth applies rate limiting to login attempts by default. Verify no custom login logic bypasses it.
 
 ---
@@ -222,25 +213,19 @@ Temporarily use an invalid domain. Verify the session still advances to Phase 3 
 ### E3 — File upload failure shows retry option
 Upload a malformed file. Verify the chat UI shows an error and the upload button is still available for retry. Chat state does not advance as if the upload succeeded.
 
-### E4 — Basecamp API failure blocks approval
-Temporarily revoke the Basecamp token. Click Approve.
-Expected: Admin sees an error message with retry option. Session is NOT marked as approved. Session status remains `completed`.
-
-### E5 — PDF failure blocks approval
+### E4 — PDF failure blocks approval
 Add a deliberate throw to `generateIntakePdf`. Click Approve.
-Expected: Admin sees an error. Session not marked approved.
+Expected: Admin sees an error. Session not marked approved. Session status remains `completed`.
 
 ---
 
 ## Pre-Launch Final Checklist
 
 - [ ] All env vars set in Vercel (not just `.env.local`)
-- [ ] Supabase RLS enabled on all tables (rerun S1-S7 above)
+- [ ] Supabase RLS enabled on all tables (rerun S1-S6 above)
 - [ ] Supabase Auth signups disabled
 - [ ] Storage bucket `session-assets` created, private
 - [ ] DNS `CNAME onboard` propagated, SSL active
-- [ ] Basecamp OAuth app registered with correct redirect URI
-- [ ] Basecamp connected in admin dashboard (OAuth completed)
 - [ ] Resend domain verified, from-address matches
 - [ ] Vercel Cron configured in `vercel.json` and visible in Vercel dashboard
 - [ ] `CRON_SECRET` set in Vercel env vars

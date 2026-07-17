@@ -24,6 +24,7 @@ const CATEGORY_SCORES: CategoryScoreMap = {
   schema: cat(40),
   ai_llm: cat(20),
   analytics: cat(60),
+  local_seo: cat(30),
 }
 
 function result(over: Partial<AuditResult> = {}): AuditResult {

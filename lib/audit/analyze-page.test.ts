@@ -118,6 +118,8 @@ describe('analyzePage', () => {
     expect(a.has_trust).toBe(true)
     expect(a.has_phone).toBe(true)
     expect(a.has_email).toBe(true)
+    // "(555) 123-4567" → normalized 10-digit core for NAP consistency.
+    expect(a.primary_phone).toBe('5551234567')
   })
 
   it('detects GA4 and mixed content', () => {
@@ -149,5 +151,43 @@ describe('analyzePage', () => {
     // "Footer text here" lives in <footer>, removed before text extraction
     expect(a.page_text_sample).not.toContain('Footer text here')
     expect(a.page_text_sample).toContain('certified team')
+  })
+
+  it('leaves all local-business signals false on a plain page', () => {
+    // FIXTURE_HTML has Organization/WebSite schema only — no local business.
+    expect(a.local_biz_nap).toBe(false)
+    expect(a.local_biz_geo).toBe(false)
+    expect(a.local_biz_hours).toBe(false)
+    expect(a.has_map_embed).toBe(false)
+  })
+})
+
+const LOCAL_BIZ_HTML = `<!doctype html><html><head><title>Local CPA</title>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"AccountingService","name":"Acme CPAs",
+ "telephone":"+1-555-123-4567",
+ "address":{"@type":"PostalAddress","streetAddress":"1 Main St","addressLocality":"Springfield"},
+ "geo":{"@type":"GeoCoordinates","latitude":40.1,"longitude":-74.2},
+ "openingHoursSpecification":[{"@type":"OpeningHoursSpecification","dayOfWeek":"Monday","opens":"09:00","closes":"17:00"}]}
+</script></head><body><h1>Acme CPAs</h1></body></html>`
+
+const MAP_EMBED_HTML = `<!doctype html><html><head><title>Contact</title></head>
+<body><h1>Find us</h1>
+<iframe src="https://www.google.com/maps/embed?pb=!1m18!abc" width="600" height="450"></iframe>
+</body></html>`
+
+describe('analyzePage — local SEO signals', () => {
+  it('reads NAP, geo, and hours from AccountingService JSON-LD', () => {
+    const a = analyzePage(makePage({ html: LOCAL_BIZ_HTML }))
+    expect(a.local_biz_nap).toBe(true)
+    expect(a.local_biz_geo).toBe(true)
+    expect(a.local_biz_hours).toBe(true)
+    // AccountingService counts as a local business despite lacking 'Business'.
+    expect(a.schema_types).toContain('AccountingService')
+  })
+
+  it('detects a Google Maps iframe as a map embed', () => {
+    const a = analyzePage(makePage({ html: MAP_EMBED_HTML }))
+    expect(a.has_map_embed).toBe(true)
   })
 })

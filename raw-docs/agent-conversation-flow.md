@@ -363,21 +363,17 @@ User confirms.
 
 ---
 
-## Phase 7: Submission & Basecamp Setup
+## Phase 7: Submission & Handoff
 
-**Goal:** Persist data + create Basecamp project.
+**Goal:** Persist data + generate the intake PDF summary + hand off to content generation.
 
 Once the user confirms:
 1. Save complete data object to database
-2. Generate PDF summary from collected data
+2. Generate PDF summary from collected data (the client-facing intake summary)
 3. Save PDF to storage
-4. Create Basecamp project (e.g., "Korbey Lague PLLP — Website Build")
-5. Upload PDF as attachment → get `attachable_sgid`
-6. Upload any client logos/photos as attachments
-7. Post intake summary as rich-text message on project message board (with PDF attached via `<bc-attachment>`)
-8. Add PDF + logos to project vault
-9. Confirm to user:
-   > *"All set! Your project has been created and our team will be in touch soon. Thanks for taking the time to go through this with us."*
+4. Hand off to content generation (the pipeline picks up the approved session)
+5. Confirm to user:
+   > *"All set! Your intake is complete and our team will be in touch soon. Thanks for taking the time to go through this with us."*
 
 ---
 

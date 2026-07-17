@@ -223,7 +223,21 @@ export function computeScores(input: ComputeScoresInput): {
   const hasOrg = has('Organization')
   const hasWebsite = has('WebSite')
   const hasBreadcrumb = has('BreadcrumbList')
-  const hasLocalBiz = has('LocalBusiness') || [...allSchemaTypes].some((t) => t.includes('Business'))
+  // Local-business detection mirrors analyze-page's LOCAL_BUSINESS_TYPES set:
+  // service subtypes (esp. AccountingService, which our generator emits) do NOT
+  // contain 'Business', so the explicit list matters alongside the substring rule.
+  const LOCAL_BUSINESS_TYPES = [
+    'LocalBusiness',
+    'AccountingService',
+    'ProfessionalService',
+    'FinancialService',
+    'LegalService',
+    'Attorney',
+    'Notary',
+    'InsuranceAgency',
+  ]
+  const hasLocalBiz =
+    LOCAL_BUSINESS_TYPES.some((t) => has(t)) || [...allSchemaTypes].some((t) => t.includes('Business'))
   const hasArticle = has('Article') || has('BlogPosting')
   const hasFaq = has('FAQPage')
   const hasProduct = has('Product')
@@ -295,6 +309,30 @@ export function computeScores(input: ComputeScoresInput): {
     [anyLinkedin, 0.5],
   ]
 
+  // ─ 10. Local SEO ───────────────────────────────────────────────────────
+  // Rewards local-business JSON-LD (LocalBusiness/AccountingService et al.) with
+  // complete NAP, geo, hours, plus a map embed and reachable homepage contact.
+  const anyLocalNap = analyzed.some((p) => p.local_biz_nap)
+  const anyLocalGeo = analyzed.some((p) => p.local_biz_geo)
+  const anyLocalHours = analyzed.some((p) => p.local_biz_hours)
+  const anyMapEmbed = analyzed.some((p) => p.has_map_embed)
+
+  // NAP consistency: every page that shows a phone shows the SAME one. A
+  // single distinct number passes; zero (nothing to confirm) or ≥2 (conflicting
+  // numbers hurt local ranking) fails.
+  const distinctPhones = new Set(analyzed.map((p) => p.primary_phone).filter((x): x is string => !!x))
+  const napConsistent = distinctPhones.size === 1
+
+  const localChecks: Array<[boolean, number]> = [
+    [hasLocalBiz, 2.0],
+    [anyLocalNap, 2.0],
+    [anyLocalGeo, 1.0],
+    [anyLocalHours, 1.0],
+    [anyMapEmbed, 1.0],
+    [napConsistent, 1.0],
+    [homepageContact, 1.5],
+  ]
+
   const scores: CategoryScores = {
     technical: scoreCategory(techChecks),
     performance: performanceScore,
@@ -305,6 +343,7 @@ export function computeScores(input: ComputeScoresInput): {
     ai_llm: scoreCategory(aiChecks),
     ux: scoreCategory(uxChecks),
     analytics: scoreCategory(analyticsChecks),
+    local_seo: scoreCategory(localChecks),
   }
 
   const findings: Findings = {
@@ -397,6 +436,15 @@ export function computeScores(input: ComputeScoresInput): {
       has_linkedin_pixel: anyLinkedin,
       has_heatmap_tool: anyHotjar,
       ga4_page_coverage: ga4Pages,
+    },
+    local_seo: {
+      has_local_business: hasLocalBiz,
+      local_business_nap_complete: anyLocalNap,
+      local_business_has_geo: anyLocalGeo,
+      local_business_has_hours: anyLocalHours,
+      nap_consistent: napConsistent,
+      has_map_embed: anyMapEmbed,
+      homepage_has_contact: homepageContact,
     },
   }
 

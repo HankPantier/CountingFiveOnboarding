@@ -33,6 +33,7 @@ export type CategoryKey =
   | 'schema'
   | 'ai_llm'
   | 'analytics'
+  | 'local_seo'
 
 /** Per-category score 0–100 (null when the category could not be measured). */
 export type CategoryScores = Record<CategoryKey, number | null>
@@ -155,6 +156,17 @@ export interface AnalyticsFindings {
   ga4_page_coverage: number
 }
 
+export interface LocalSeoFindings {
+  has_local_business: boolean
+  local_business_nap_complete: boolean
+  local_business_has_geo: boolean
+  local_business_has_hours: boolean
+  has_map_embed: boolean
+  homepage_has_contact: boolean
+  /** All pages that show a phone number show the same one (consistent NAP). */
+  nap_consistent: boolean
+}
+
 export interface Findings {
   technical: TechnicalFindings
   performance: PerformanceFindings
@@ -165,6 +177,7 @@ export interface Findings {
   ai_llm: AiLlmFindings
   ux: UxFindings
   analytics: AnalyticsFindings
+  local_seo: LocalSeoFindings
 }
 
 // ── Recommendations ────────────────────────────────────────────────────────
@@ -237,6 +250,9 @@ export interface PageAnalysis {
   has_trust: boolean
   has_phone: boolean
   has_email: boolean
+  /** First phone number on the page, normalized to digits — for cross-page NAP
+   * consistency. null when none detected. */
+  primary_phone: string | null
   has_ga4: boolean
   has_gtm: boolean
   has_meta_px: boolean
@@ -252,6 +268,14 @@ export interface PageAnalysis {
   buttons_missing_label: number
   inputs_missing_label: number
   has_skip_nav: boolean
+  /** Some LocalBusiness (or service subtype) JSON-LD node has BOTH address and telephone. */
+  local_biz_nap: boolean
+  /** Some local-business JSON-LD node carries a geo coordinate. */
+  local_biz_geo: boolean
+  /** Some local-business JSON-LD node declares opening hours. */
+  local_biz_hours: boolean
+  /** The raw HTML embeds a Google Maps map (iframe or embed URL). */
+  has_map_embed: boolean
   page_text_sample: string
   content_length_bytes: number
   redirect_count: number

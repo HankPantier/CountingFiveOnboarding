@@ -33,6 +33,7 @@ const CATEGORY_KEYS: CategoryKey[] = [
   'schema',
   'ai_llm',
   'analytics',
+  'local_seo',
 ]
 
 /** Normalize a user-supplied URL: ensure scheme, strip trailing slash. */

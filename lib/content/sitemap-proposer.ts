@@ -18,6 +18,31 @@ type ProposedPage = ProposedSitemap[number]
 const MAX_PAGES = 60
 const normUrl = (u: string) => u.trim().replace(/\/+$/, '').toLowerCase()
 
+// Local-SEO caps. Geo landing pages help local intent but thin/duplicate geo
+// pages are penalized as doorway pages, so we cap deterministically: at most
+// LOCAL_HUB_CAP per-city location hubs, and (top LOCAL_SERVICE_CAP services) ×
+// (up to LOCAL_AREA_CAP primary areas) service×geo pages. When serviceAreas
+// carry `primary` flags those areas are preferred before the cap is applied.
+const LOCAL_HUB_CAP = 6
+const LOCAL_SERVICE_CAP = 3
+const LOCAL_AREA_CAP = 4
+
+type ServiceArea = NonNullable<
+  NonNullable<SessionSchema['business']>['serviceAreas']
+>[number]
+
+// City label like "Nashua, NH" (or just the city when no state is set).
+const areaLabel = (a: ServiceArea): string =>
+  a.state?.trim() ? `${a.city.trim()}, ${a.state.trim()}` : a.city.trim()
+
+// Order areas so `primary: true` ones come first, preserving input order within
+// each group (stable), then truncate to `cap`.
+function rankAreas(areas: ServiceArea[], cap: number): ServiceArea[] {
+  const primary = areas.filter(a => a.primary)
+  const rest = areas.filter(a => !a.primary)
+  return [...primary, ...rest].slice(0, cap)
+}
+
 // ── Deterministic skeleton ───────────────────────────────────────────────────
 export function buildSkeletonProposal(
   schema: SessionSchema,
@@ -70,6 +95,70 @@ export function buildSkeletonProposal(
     }
   }
 
+  // Local-SEO pages. Only when the firm has structured service areas.
+  const serviceAreas = (schema.business?.serviceAreas ?? []).filter(a => a.city?.trim())
+  if (serviceAreas.length) {
+    // Cities that already have a physical-location page must not get a duplicate
+    // hub (the location's own /locations/<slug> page already covers them).
+    const existingCitySlugs = new Set(
+      (schema.locations ?? [])
+        .map(l => l.city?.trim())
+        .filter((c): c is string => !!c)
+        .map(slugify),
+    )
+
+    // Location hubs: one /locations/<city-slug> per unique service-area city,
+    // capped. Using /locations/<slug> means any city that coincides with a real
+    // office is bound to its LocalBusiness node by json-ld-builder for free.
+    const hubSlugs = new Set<string>()
+    const seenAreaSlugs = new Set<string>()
+    const uniqueAreas = serviceAreas.filter(a => {
+      const s = slugify(a.city)
+      if (!s || seenAreaSlugs.has(s)) return false
+      seenAreaSlugs.add(s)
+      return true
+    })
+    const hubAreas = rankAreas(
+      uniqueAreas.filter(a => !existingCitySlugs.has(slugify(a.city))),
+      LOCAL_HUB_CAP,
+    )
+
+    if (hubAreas.length) {
+      push({ url: '/locations', title: 'Locations we serve', status: 'new', parent: '/' })
+      for (const a of hubAreas) {
+        const citySlug = slugify(a.city)
+        hubSlugs.add(citySlug)
+        push({
+          url: `/locations/${citySlug}`,
+          title: `${a.city.trim()} CPA`,
+          status: 'new',
+          parent: '/locations',
+          notes: `Accounting in ${areaLabel(a)}.`,
+        })
+      }
+    }
+
+    // Service×geo pages: top services × primary areas that HAVE a hub (never a
+    // service×geo for a city without a location hub). Capped on both axes.
+    const geoServices = services.slice(0, LOCAL_SERVICE_CAP)
+    const geoAreas = rankAreas(
+      uniqueAreas.filter(a => hubSlugs.has(slugify(a.city))),
+      LOCAL_AREA_CAP,
+    )
+    for (const s of geoServices) {
+      const serviceSlug = slugify(s.name)
+      for (const a of geoAreas) {
+        push({
+          url: `/services/${serviceSlug}-${slugify(a.city)}`,
+          title: `${s.name} in ${areaLabel(a)}`,
+          status: 'new',
+          parent: `/services/${serviceSlug}`,
+          notes: `${s.name} for businesses in ${areaLabel(a)}.`,
+        })
+      }
+    }
+  }
+
   return out.slice(0, MAX_PAGES)
 }
 
@@ -109,6 +198,10 @@ function buildPrompt(schema: SessionSchema, skeleton: ProposedSitemap): string {
     .filter(s => s.name?.trim())
     .map(s => `- ${s.name}: ${s.description || ''}`.trim())
     .join('\n')
+  const serviceAreas = (schema.business?.serviceAreas ?? [])
+    .filter(a => a.city?.trim())
+    .map(a => `- ${areaLabel(a)}${a.primary ? ' (primary)' : ''}`)
+    .join('\n')
   const cg = schema.content_gaps
   const gaps = cg
     ? [
@@ -127,6 +220,9 @@ ${niches || '(none specified)'}
 SERVICES:
 ${services || '(none specified)'}
 
+SERVICE AREAS (local-SEO geography — the firm serves these cities):
+${serviceAreas || '(none specified)'}
+
 SITE AUDIT — CONTENT GAPS TO FILL WITH NEW PAGES:
 ${gaps || '(none)'}
 
@@ -142,6 +238,7 @@ RULES:
 - status: "update" for pages that already exist on the live site (keep their exact URL); "new" for pages to create.
 - Build a real hierarchy via "parent" (a parent page's url, or "/" for top-level). Group service pages under a /services hub and industry/niche pages under an /industries hub.
 - Propose a dedicated NEW page for each meaningful niche and core service, plus pages that fill the conversion/authority gaps above.
+- LOCAL SEO: when service areas exist, KEEP the per-city location hubs (url "/locations/<city-slug>", parent "/locations") and the service×geo pages (url "/services/<service-slug>-<city-slug>", parent "/services/<service-slug>") from the skeleton. Do NOT invent extra geo pages beyond the skeleton's — thin/duplicate city pages are penalized as doorway pages. Never emit a service×geo page for a city that has no location hub.
 - Every "new" page gets a one-line "notes" explaining why it differentiates the firm.
 - URLs are lowercase slugs starting with "/". Titles are specific, benefit-driven, sentence case. No colons/parentheses/dashes in titles. No "Ultimate Guide", "Everything you need to know", "A Deep Dive", listicle titles.
 - Keep the total under ${MAX_PAGES} pages. Return ONLY the JSON array.`

@@ -4,9 +4,13 @@
 // to mirror audit.py exactly and avoid transcription drift.
 import type { CategoryKey, Grade } from './types'
 
+// Local SEO is a first-class category: CPA firms are local-intent, so local
+// signals (LocalBusiness/AccountingService JSON-LD, NAP, geo, hours, maps)
+// weigh into the overall grade. Funded by taking 0.05 each from performance and
+// technical so the weights still sum to 1.0.
 export const SCORING_WEIGHTS = {
-  performance: 0.2,
-  technical: 0.15,
+  performance: 0.15,
+  technical: 0.1,
   onpage_seo: 0.15,
   ux: 0.1,
   content: 0.1,
@@ -14,6 +18,7 @@ export const SCORING_WEIGHTS = {
   schema: 0.1,
   ai_llm: 0.05,
   analytics: 0.05,
+  local_seo: 0.1,
 } as const satisfies Record<CategoryKey, number>
 
 /** [minScore, grade, label] in descending threshold order. */

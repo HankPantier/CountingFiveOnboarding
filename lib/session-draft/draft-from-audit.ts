@@ -42,6 +42,7 @@ interface DraftModel {
     customerDescription?: string
     differentiators?: string
     idealClients?: string[]
+    serviceAreas?: Array<{ city?: string; county?: string; state?: string }>
   }
   services?: Array<{ name?: string; description?: string; offerings?: string[] }>
   niches?: Array<{ name?: string; description?: string }>
@@ -64,6 +65,14 @@ const asStrArr = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').map((s) => s.trim()).filter(Boolean) : []
 const asObjArr = (v: unknown): Record<string, unknown>[] =>
   Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object') : []
+
+// A Google Business Profile / Maps listing URL, if one is among the site's
+// social/outbound links. Feeds the location's schema.org `sameAs` for local pack.
+function findGbpUrl(links: string[] = []): string | undefined {
+  return links.find((u) =>
+    /(?:google\.[^/]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps|g\.page|business\.google\.)/i.test(u)
+  )
+}
 
 function emptySchema(): SessionSchema {
   return {
@@ -104,7 +113,7 @@ function buildPrompt(corpus: CorpusPage[], signals: BusinessSignals | undefined)
 ${signalBlock}
 Return a JSON object with this exact shape (omit fields/arrays you can't fill):
 {
-  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "idealClients": string[] },
+  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "idealClients": string[], "serviceAreas": [ { "city": string, "county": string, "state": string } ] },
   "services": [ { "name": string, "description": string, "offerings": string[] } ],
   "niches": [ { "name": string, "description": string } ],
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
@@ -113,6 +122,7 @@ Return a JSON object with this exact shape (omit fields/arrays you can't fill):
   "brand": { "currentTone": string, "toneAdjectives": string[] }
 }
 - "niches" = the industries/client types the firm serves.
+- "serviceAreas" = specific cities/counties the site says the firm serves (e.g. an "Areas We Serve" section); omit if none stated.
 - "brand.currentTone" / "toneAdjectives" = how the site's copy actually reads (e.g. "formal", "approachable").
 - Keep descriptions concise (1–2 sentences).
 
@@ -133,6 +143,7 @@ export function validateDraftModel(parsed: unknown): DraftModel | null {
       customerDescription: asStr(b.customerDescription),
       differentiators: asStr(b.differentiators),
       idealClients: asStrArr(b.idealClients),
+      serviceAreas: asObjArr(b.serviceAreas).map((a) => ({ city: asStr(a.city), county: asStr(a.county), state: asStr(a.state) })),
     },
     services: asObjArr(p.services).map((s) => ({
       name: asStr(s.name),
@@ -165,6 +176,16 @@ function mapToSchema(
   b.differentiators = model.business?.differentiators ?? ''
   b.idealClients = model.business?.idealClients ?? []
 
+  const serviceAreas = (model.business?.serviceAreas ?? [])
+    .filter((a) => a.city || a.county)
+    .map((a) => {
+      const area: { city: string; county?: string; state?: string } = { city: a.city ?? '' }
+      if (a.county) area.county = a.county
+      if (a.state) area.state = a.state
+      return area
+    })
+  if (serviceAreas.length) b.serviceAreas = serviceAreas
+
   schema.services = (model.services ?? [])
     .filter((s) => s.name)
     .map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] }))
@@ -179,6 +200,11 @@ function mapToSchema(
       name: l.name ?? '', street: l.street ?? '', line2: '', city: l.city ?? '', state: l.state ?? '',
       zip: l.zip ?? '', phone: l.phone ?? '', fax: '', email: l.email ?? '', hours: {},
     }))
+
+  // Attach a detected GBP listing to the primary office so the LocalBusiness
+  // schema can express it as `sameAs` (local-pack identity signal).
+  const gbpUrl = findGbpUrl(signals?.socialLinks)
+  if (gbpUrl && schema.locations.length) schema.locations[0].gbpUrl = gbpUrl
 
   schema.team = (model.team ?? [])
     .filter((t) => t.name)

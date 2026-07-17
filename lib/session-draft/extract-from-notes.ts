@@ -22,9 +22,10 @@ export interface NotesModel {
     name?: string; tagline?: string; customerDescription?: string; differentiators?: string
     foundingYear?: string; firmHistory?: string; idealClients?: string[]; geographicScope?: string
     customerNeeds?: string; howClientsFind?: string; pricing?: string; growthGoals?: string
+    serviceAreas?: Array<{ city?: string; county?: string; state?: string }>; targetKeywords?: string[]
   }
   services?: Array<{ name?: string; description?: string; offerings?: string[] }>
-  niches?: Array<{ name?: string; description?: string }>
+  niches?: Array<{ name?: string; description?: string; revenueBand?: string; businessStage?: string; decisionMaker?: string }>
   locations?: Array<{ name?: string; street?: string; city?: string; state?: string; zip?: string; phone?: string; email?: string }>
   team?: Array<{ name?: string; title?: string; bio?: string }>
   culture?: { missionVisionValues?: string; teamDescription?: string; socialMediaChannels?: string[] }
@@ -48,9 +49,11 @@ export function validateNotesModel(parsed: unknown): NotesModel | null {
       differentiators: asStr(b.differentiators), foundingYear: asStr(b.foundingYear), firmHistory: asStr(b.firmHistory),
       idealClients: asStrArr(b.idealClients), geographicScope: asStr(b.geographicScope), customerNeeds: asStr(b.customerNeeds),
       howClientsFind: asStr(b.howClientsFind), pricing: asStr(b.pricing), growthGoals: asStr(b.growthGoals),
+      serviceAreas: asObjArr(b.serviceAreas).map((a) => ({ city: asStr(a.city), county: asStr(a.county), state: asStr(a.state) })),
+      targetKeywords: asStrArr(b.targetKeywords),
     },
     services: asObjArr(p.services).map((s) => ({ name: asStr(s.name), description: asStr(s.description), offerings: asStrArr(s.offerings) })),
-    niches: asObjArr(p.niches).map((n) => ({ name: asStr(n.name), description: asStr(n.description) })),
+    niches: asObjArr(p.niches).map((n) => ({ name: asStr(n.name), description: asStr(n.description), revenueBand: asStr(n.revenueBand), businessStage: asStr(n.businessStage), decisionMaker: asStr(n.decisionMaker) })),
     locations: asObjArr(p.locations).map((l) => ({
       name: asStr(l.name), street: asStr(l.street), city: asStr(l.city), state: asStr(l.state),
       zip: asStr(l.zip), phone: asStr(l.phone), email: asStr(l.email),
@@ -103,6 +106,21 @@ function candidates(model: NotesModel): Candidate[] {
   scalar('business.pricing', 'Pricing', b.pricing)
   scalar('business.growthGoals', 'Growth goals', b.growthGoals)
   arr('business.idealClients', 'Ideal clients', b.idealClients)
+  arr('business.targetKeywords', 'Target keywords', b.targetKeywords)
+
+  const serviceAreas = (b.serviceAreas ?? []).filter((a) => a.city || a.county)
+  if (serviceAreas.length) {
+    out.push({
+      path: 'business.serviceAreas',
+      label: `Service areas (${serviceAreas.length})`,
+      value: serviceAreas.map((a) => {
+        const o: { city: string; county?: string; state?: string } = { city: a.city ?? '' }
+        if (a.county) o.county = a.county
+        if (a.state) o.state = a.state
+        return o
+      }),
+    })
+  }
 
   const cu = model.culture ?? {}
   scalar('culture.missionVisionValues', 'Mission / vision / values', cu.missionVisionValues)
@@ -121,7 +139,13 @@ function candidates(model: NotesModel): Candidate[] {
   const services = (model.services ?? []).filter((s) => s.name)
   if (services.length) out.push({ path: 'services', label: `Services (${services.length})`, value: services.map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] })) })
   const niches = (model.niches ?? []).filter((n) => n.name)
-  if (niches.length) out.push({ path: 'niches', label: `Niches (${niches.length})`, value: niches.map((n) => ({ name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: '' })) })
+  if (niches.length) out.push({ path: 'niches', label: `Niches (${niches.length})`, value: niches.map((n) => {
+    const base: Record<string, unknown> = { name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: '' }
+    if (n.revenueBand) base.revenueBand = n.revenueBand
+    if (n.businessStage) base.businessStage = n.businessStage
+    if (n.decisionMaker) base.decisionMaker = n.decisionMaker
+    return base
+  }) })
   const team = (model.team ?? []).filter((t) => t.name)
   if (team.length) out.push({ path: 'team', label: `Team (${team.length})`, value: team.map((t) => ({ name: t.name!, title: t.title ?? '', certifications: [], bio: t.bio ?? '', specializations: [] })) })
   const locations = (model.locations ?? []).filter((l) => l.name || l.street || l.city)
@@ -184,15 +208,16 @@ QUESTIONS THIS CALL WAS MEANT TO ANSWER (fill these where the notes cover them):
 Return a JSON object with this exact shape (omit any field/array you can't fill from the notes):
 {
   "contact": { "firstName": string, "lastName": string, "email": string, "phone": string },
-  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string },
+  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string, "serviceAreas": [ { "city": string, "county": string, "state": string } ], "targetKeywords": string[] },
   "services": [ { "name": string, "description": string, "offerings": string[] } ],
-  "niches": [ { "name": string, "description": string } ],
+  "niches": [ { "name": string, "description": string, "revenueBand": string, "businessStage": string, "decisionMaker": string } ],
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
   "team": [ { "name": string, "title": string, "bio": string } ],
   "culture": { "missionVisionValues": string, "teamDescription": string, "socialMediaChannels": string[] },
   "brand": { "currentTone": string, "aspirationalTone": string, "toneAdjectives": string[], "toneToAvoid": string[], "primaryColors": string, "voiceExample": string, "brandPersonality": string }
 }
-- "niches" = the industries / client types the firm serves.
+- "niches" = the industries / client types the firm serves. Per niche, "revenueBand"/"businessStage"/"decisionMaker" describe the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder") — only when the notes state it.
+- "serviceAreas" = the specific cities/counties the firm serves or targets (local-SEO geography); "targetKeywords" = search terms the firm wants to rank for, if mentioned.
 - Keep descriptions concise (1–2 sentences).
 
 CALL NOTES:

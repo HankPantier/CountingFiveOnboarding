@@ -60,6 +60,34 @@ describe('mergeNotesExtraction — non-destructive fill', () => {
     expect(r2.applied.map((a) => a.path)).toContain('services')
   })
 
+  it('fills structured service areas and target keywords when blank', () => {
+    const schema: SessionSchema = { business: { name: 'Firm' } } as SessionSchema
+    const { schema: merged, applied } = mergeNotesExtraction(schema, [], {
+      business: {
+        serviceAreas: [{ city: 'Bel Air', county: 'Harford County', state: 'MD' }, { county: 'Baltimore County' }],
+        targetKeywords: ['bel air cpa', 'harford county tax'],
+      },
+    })
+    const b = merged.business as Record<string, unknown>
+    expect(b.serviceAreas).toEqual([
+      { city: 'Bel Air', county: 'Harford County', state: 'MD' },
+      { city: '', county: 'Baltimore County' },
+    ])
+    expect(b.targetKeywords).toEqual(['bel air cpa', 'harford county tax'])
+    expect(applied.map((a) => a.path)).toEqual(
+      expect.arrayContaining(['business.serviceAreas', 'business.targetKeywords'])
+    )
+  })
+
+  it('carries niche persona fields when niches come from the notes', () => {
+    const empty: SessionSchema = { niches: [] } as SessionSchema
+    const { schema: merged } = mergeNotesExtraction(empty, [], {
+      niches: [{ name: 'Dentists', description: 'Dental practices', revenueBand: '$1–5M', decisionMaker: 'owner' }],
+    })
+    const n = (merged.niches as Array<Record<string, unknown>>)[0]
+    expect(n).toMatchObject({ name: 'Dentists', revenueBand: '$1–5M', decisionMaker: 'owner' })
+  })
+
   it('resolves a gap once its field is filled from the notes', () => {
     const schema: SessionSchema = { business: { foundingYear: '' } } as SessionSchema
     const gaps: GapItem[] = [

@@ -46,7 +46,6 @@ CREATE TABLE sessions (
   completed_at TIMESTAMPTZ,
   approved_at TIMESTAMPTZ,
   approved_by UUID REFERENCES admins(id),
-  basecamp_project_id TEXT,
   pdf_url TEXT,
   reminder_count INTEGER NOT NULL DEFAULT 0,
   content_generation_ready BOOLEAN NOT NULL DEFAULT FALSE
@@ -89,18 +88,6 @@ CREATE TABLE reminders (
 );
 ```
 
-#### Basecamp tokens table (singleton row)
-```sql
-CREATE TABLE basecamp_tokens (
-  id INTEGER PRIMARY KEY DEFAULT 1,
-  access_token TEXT NOT NULL,
-  refresh_token TEXT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT singleton CHECK (id = 1)
-);
-```
-
 ---
 
 ### 2. Create indexes
@@ -123,7 +110,6 @@ ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE basecamp_tokens ENABLE ROW LEVEL SECURITY;
 ```
 
 ---
@@ -148,9 +134,6 @@ CREATE POLICY "Admins full access to assets"
 
 CREATE POLICY "Admins full access to reminders"
   ON reminders FOR ALL TO authenticated USING (true);
-
-CREATE POLICY "Admins full access to basecamp tokens"
-  ON basecamp_tokens FOR ALL TO authenticated USING (true);
 ```
 
 > **Note:** Client-facing reads (session and message data for the chat UI) go through server-side API routes using the service role key, which bypasses RLS entirely. No public/anon policies are needed for those tables.
@@ -299,7 +282,7 @@ export type SessionSchema = {
 ## Test Process
 
 ### T1 — All tables exist
-In Supabase → Table Editor, verify all 6 tables appear: `admins`, `sessions`, `messages`, `assets`, `reminders`, `basecamp_tokens`.
+In Supabase → Table Editor, verify all 5 tables appear: `admins`, `sessions`, `messages`, `assets`, `reminders`.
 
 ### T2 — Column types are correct
 Run in SQL Editor:
@@ -357,4 +340,3 @@ In Supabase → Storage, confirm `session-assets` bucket exists and is set to pr
 - **Forgetting to regenerate types after schema changes** — make it a habit: any time you run a migration, immediately run `npx supabase gen types typescript` again.
 - **JSONB vs TEXT for schema_data** — JSONB allows indexed querying and operator support. Do not change to TEXT.
 - **Service role key bypasses RLS** — this is intentional for client-facing routes, but must only exist in server-side code. Run the grep from Step 01 after this step too.
-- **Basecamp tokens singleton** — the `CONSTRAINT singleton CHECK (id = 1)` means only one row can ever exist. This is by design; OAuth tokens are rotated in-place on this single row.

@@ -46,7 +46,6 @@ app/
     upload/             — File upload (presign + confirm)
     whois/              — Domain lookup
     cron/               — Scheduled jobs (require CRON_SECRET)
-    basecamp/           — OAuth flow
     pdf/                — PDF generation
 
 lib/
@@ -68,7 +67,6 @@ lib/
     truncate-to-token-budget.ts — Token budget enforcement utility
   mfp-parser/           — Parses Marketing Foundation Profile documents (Sections 1–10B)
   supabase/             — server.ts (service role), client.ts (anon key), proxy.ts
-  basecamp/             — OAuth client + project creation
   pdf/                  — PDF generation components
 
 components/
@@ -212,7 +210,6 @@ Two full code reviews were run (security + architecture). 19 fixes applied inclu
 - Race condition protections (content job upsert, sitemap re-confirmation)
 - Security headers
 - Middleware renamed from proxy.ts
-- Basecamp retry limit
 - UUID validation on client-facing routes
 
 Production build verified passing. All tests green. Pushed as commit `957338d`.
