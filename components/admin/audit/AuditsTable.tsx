@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AuditStatusBadge, GradeBadge } from '@/components/admin/audit/AuditBadges'
@@ -15,6 +15,63 @@ export type AuditRow = {
   overall_grade: string | null
   pages_crawled: number | null
   created_at: string
+  batchId: string | null
+  batchLabel: string | null
+}
+
+type SortKey = 'site' | 'batch' | 'date' | 'status' | 'pages' | 'score'
+// null key = non-sortable column (the per-domain Δ is derived, not row data).
+const COLUMNS: { key: SortKey | null; label: string }[] = [
+  { key: 'site', label: 'Site' },
+  { key: 'batch', label: 'Batch' },
+  { key: 'date', label: 'Date' },
+  { key: 'status', label: 'Status' },
+  { key: 'pages', label: 'Pages' },
+  { key: 'score', label: 'Score' },
+  { key: null, label: 'Δ' },
+]
+
+// Text columns default to ascending, numeric/date to descending, on first click.
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
+  site: 'asc',
+  batch: 'asc',
+  status: 'asc',
+  date: 'desc',
+  pages: 'desc',
+  score: 'desc',
+}
+
+function batchSortValue(r: AuditRow): string | null {
+  return r.batchId ? (r.batchLabel || 'untitled batch').toLowerCase() : null
+}
+
+function sortRows(rows: AuditRow[], key: SortKey, dir: 'asc' | 'desc'): AuditRow[] {
+  const mul = dir === 'asc' ? 1 : -1
+  // Nulls always sort last, regardless of direction.
+  const nullsLast = <T,>(a: T | null, b: T | null, cmp: (x: T, y: T) => number): number => {
+    if (a === null && b === null) return 0
+    if (a === null) return 1
+    if (b === null) return -1
+    return cmp(a, b) * mul
+  }
+  const str = (a: string, b: string) => a.localeCompare(b)
+  const num = (a: number, b: number) => a - b
+  return [...rows].sort((a, b) => {
+    switch (key) {
+      case 'site':
+        return str((a.site_name || a.domain).toLowerCase(), (b.site_name || b.domain).toLowerCase()) * mul
+      case 'batch':
+        return nullsLast(batchSortValue(a), batchSortValue(b), str)
+      case 'date':
+        return str(a.created_at, b.created_at) * mul
+      case 'status':
+        return str(a.audit_status, b.audit_status) * mul
+      case 'pages':
+        return nullsLast(a.pages_crawled, b.pages_crawled, num)
+      case 'score':
+        return nullsLast(a.overall_score, b.overall_score, num)
+    }
+  })
 }
 
 function TrashIcon() {
@@ -46,6 +103,16 @@ export default function AuditsTable({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const headerRef = useRef<HTMLInputElement>(null)
+  // Default order matches the server query (newest first).
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
+
+  const sortedRows = useMemo(() => sortRows(rows, sort.key, sort.dir), [rows, sort])
+
+  const onSort = (key: SortKey) => {
+    setSort((prev) =>
+      prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: DEFAULT_DIR[key] },
+    )
+  }
 
   const allSelected = rows.length > 0 && selected.size === rows.length
   useEffect(() => {
@@ -139,19 +206,33 @@ export default function AuditsTable({
                     className="accent-brand-cyan"
                   />
                 </th>
-                {['Site', 'Date', 'Status', 'Pages', 'Score', 'Δ'].map((h) => (
+                {COLUMNS.map(({ key, label }) => (
                   <th
-                    key={h}
+                    key={label}
                     className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy"
                   >
-                    {h}
+                    {key ? (
+                      <button
+                        type="button"
+                        onClick={() => onSort(key)}
+                        aria-label={`Sort by ${label}`}
+                        className="inline-flex items-center gap-1 uppercase tracking-wide transition-colors hover:text-brand-cyan"
+                      >
+                        {label}
+                        <span className={`text-[10px] ${sort.key === key ? 'text-brand-cyan' : 'text-text-muted/40'}`}>
+                          {sort.key === key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}
+                        </span>
+                      </button>
+                    ) : (
+                      label
+                    )}
                   </th>
                 ))}
                 <th className="w-12 px-4 py-3" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => {
+              {sortedRows.map((r, i) => {
                 const delta = deltas[r.id]
                 const isChecked = selected.has(r.id)
                 return (
@@ -175,6 +256,18 @@ export default function AuditsTable({
                         </span>
                         <span className="block text-xs text-text-muted">{r.domain}</span>
                       </Link>
+                    </td>
+                    <td className="px-4 py-3">
+                      {r.batchId ? (
+                        <Link
+                          href={`/admin/audits/batch/${r.batchId}`}
+                          className="font-heading text-xs font-semibold text-brand-cyan hover:underline"
+                        >
+                          {r.batchLabel || 'Untitled batch'}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-text-muted">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-text-secondary">
                       {new Date(r.created_at).toLocaleDateString('en-US', {

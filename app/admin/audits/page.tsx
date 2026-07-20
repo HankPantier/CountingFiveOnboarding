@@ -36,14 +36,34 @@ export default async function AuditsListPage() {
   let query = supabase
     .from('audit_runs')
     .select(
-      'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at',
+      'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at, audit_batch_id',
     )
     .order('created_at', { ascending: false })
     .limit(200)
   if (scope) query = query.eq('created_by', scope.createdBy)
   const { data } = await query
 
-  const rows = (data ?? []) as AuditRow[]
+  // Resolve batch labels for any runs that belong to a batch (scoped rows only,
+  // so no cross-owner exposure). Runs share created_by with their batch.
+  const batchIds = [...new Set((data ?? []).map((r) => r.audit_batch_id).filter((v): v is string => !!v))]
+  const { data: batches } = batchIds.length
+    ? await supabase.from('audit_batches').select('id, label').in('id', batchIds)
+    : { data: [] }
+  const labelByBatch = new Map((batches ?? []).map((b) => [b.id, b.label]))
+
+  const rows: AuditRow[] = (data ?? []).map((r) => ({
+    id: r.id,
+    url: r.url,
+    domain: r.domain,
+    site_name: r.site_name,
+    audit_status: r.audit_status,
+    overall_score: r.overall_score,
+    overall_grade: r.overall_grade,
+    pages_crawled: r.pages_crawled,
+    created_at: r.created_at,
+    batchId: r.audit_batch_id,
+    batchLabel: r.audit_batch_id ? labelByBatch.get(r.audit_batch_id) ?? null : null,
+  }))
   const deltas = computeDeltas(rows)
 
   return (
