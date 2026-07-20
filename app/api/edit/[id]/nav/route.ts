@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { parseNavJson } from '@/lib/editor/nav-config'
-import { toPathname } from '@/lib/editor/nav-urls'
+import { orderMoves, toPathname } from '@/lib/editor/nav-urls'
 import {
+  AssetExistsError,
   DRAFT_BRANCH,
   FileNotFoundError,
   StaleShaError,
@@ -44,6 +45,14 @@ function swapFrontmatterUrl(content: string, from: string, to: string): string {
     new RegExp('^((?:url|canonical_url):.*?)' + escapeRe(from) + '\\s*$', 'gm'),
     `$1${to}`
   )
+}
+
+// The page's own url from its frontmatter (`url:` preferred, else `canonical_url:`).
+// Used to recognise a destination file that is already the page we're moving —
+// e.g. relocated by an earlier save — so we skip it instead of flagging a collision.
+function frontmatterUrl(content: string): string | null {
+  const m = /^(?:url|canonical_url):\s*(.+?)\s*$/m.exec(content)
+  return m ? m[1] : null
 }
 
 async function appendRedirects(
@@ -110,21 +119,28 @@ export async function POST(
   // (e.g. https://www.firm.com/who-we-are/...) still resolve to a page + get a
   // redirect. A raw startsWith('/') check would silently drop them, which left
   // nested pages 404ing after a nav edit.
+  const seenMoves = new Set<string>()
   const validMoves = (Array.isArray(moves) ? moves : []).flatMap((m): Move[] => {
     if (!m || typeof m.from !== 'string' || typeof m.to !== 'string') return []
     const from = toPathname(m.from)
     const to = toPathname(m.to)
     if (!from || !to || from === to) return []
+    const key = `${from}::${to}`
+    if (seenMoves.has(key)) return []
+    seenMoves.add(key)
     return [{ from, to }]
   })
+  // A chain (A→B, B→C) must run B→C first so B is free when A→B relocates there.
+  const orderedMoves = orderMoves(validMoves)
 
   try {
     await ensureDraftBranch(ctx.githubRepo)
 
-    // Pre-validate: resolve the page for each move, confirm the target is free.
-    // Moves whose source page doesn't exist are nav-only edits — skipped.
+    // Resolve the page behind each move. Moves whose source page doesn't exist
+    // are nav-only edits — skipped. Kept in orderedMoves order so a vacated slot
+    // is freed before the move that reuses it.
     const planned: Array<Move & { fromPath: string; toPath: string; sha: string }> = []
-    for (const m of validMoves) {
+    for (const m of orderedMoves) {
       const fromPath = pagePath(m.from)
       const toPath = pagePath(m.to)
       if (!fromPath || !toPath) continue
@@ -135,17 +151,42 @@ export async function POST(
         if (err instanceof FileNotFoundError) continue
         throw err
       }
-      try {
-        await readFile(ctx.githubRepo, toPath, DRAFT_BRANCH)
-        return NextResponse.json({ error: `A page already exists at ${m.to}` }, { status: 422 })
-      } catch (err) {
-        if (!(err instanceof FileNotFoundError)) throw err
-      }
       planned.push({ ...m, fromPath, toPath, sha: src.sha })
     }
 
-    // Relocate each page (atomic, reuses the blob), then fix its canonical.
+    // Slots this batch will free — a target sitting in `vacated` isn't a real
+    // collision (another move relocates that page first).
+    const vacated = new Set(planned.map((p) => p.fromPath))
+
+    // Confirm each destination is free, treating batch-vacated slots and the
+    // page's own already-relocated file as non-collisions. A foreign page at the
+    // target is a genuine conflict → 422 (client keeps edits and can rename).
+    const toRelocate: typeof planned = []
     for (const p of planned) {
+      let occupant
+      try {
+        occupant = await readFile(ctx.githubRepo, p.toPath, DRAFT_BRANCH)
+      } catch (err) {
+        if (err instanceof FileNotFoundError) {
+          toRelocate.push(p)
+          continue
+        }
+        throw err
+      }
+      if (vacated.has(p.toPath)) {
+        toRelocate.push(p)
+        continue
+      }
+      const occUrl = frontmatterUrl(occupant.content)
+      if (occUrl && toPathname(occUrl) === p.to) continue // same page, already there
+      return NextResponse.json(
+        { error: `A page already exists at ${p.to}`, collision: { from: p.from, to: p.to } },
+        { status: 422 }
+      )
+    }
+
+    // Relocate each page (atomic, reuses the blob), then fix its canonical.
+    for (const p of toRelocate) {
       await moveFile(
         ctx.githubRepo,
         p.fromPath,
@@ -165,8 +206,8 @@ export async function POST(
       }
     }
 
-    if (planned.length > 0) {
-      await appendRedirects(ctx, planned.map((p) => ({ from: p.from, to: p.to })))
+    if (toRelocate.length > 0) {
+      await appendRedirects(ctx, toRelocate.map((p) => ({ from: p.from, to: p.to })))
     }
 
     const result = await writeFile(
@@ -181,9 +222,12 @@ export async function POST(
     return NextResponse.json({
       commitSha: result.commitSha,
       blobSha: result.blobSha,
-      moved: planned.length,
+      moved: toRelocate.length,
     })
   } catch (err) {
+    if (err instanceof AssetExistsError) {
+      return NextResponse.json({ error: 'A page already exists at the destination.' }, { status: 422 })
+    }
     if (err instanceof StaleShaError) {
       return NextResponse.json(
         {

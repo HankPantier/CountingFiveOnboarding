@@ -3,10 +3,13 @@ import {
   computeMoves,
   deriveNavUrls,
   lastSegment,
+  orderMoves,
+  reparentItems,
   slugify,
   toEditItems,
   toNavItems,
   toPathname,
+  validReparentTargets,
   type EditNavItem,
 } from './nav-urls'
 import type { NavItem } from '@/types/nav-json'
@@ -142,6 +145,146 @@ describe('toPathname', () => {
   it('returns null for non-path values', () => {
     expect(toPathname('mailto:hi@x.com')).toBeNull()
     expect(toPathname('tel:+1')).toBeNull()
+  })
+})
+
+describe('reparentItems — nest an item under a chosen sibling', () => {
+  const services = (): EditNavItem[] => [
+    {
+      label: 'Services',
+      url: '/services',
+      slug: 'services',
+      children: [
+        { label: 'Outsourced', url: '/services/outsourced', slug: 'outsourced', originalUrl: '/services/outsourced' },
+        { label: 'Accounting', url: '/services/accounting', slug: 'accounting', originalUrl: '/services/accounting' },
+      ],
+    },
+  ]
+
+  it('moves a secondary to become a tertiary child, preserving originalUrl', () => {
+    // Nest Accounting (services.children[1]) under Outsourced (services.children[0]).
+    const out = reparentItems(services(), [0, 1], [0, 0], 2)
+    const outsourced = out[0].children![0]
+    expect(out[0].children).toHaveLength(1)
+    expect(outsourced.children).toHaveLength(1)
+    const moved = outsourced.children![0]
+    expect(moved.label).toBe('Accounting')
+    expect(moved.originalUrl).toBe('/services/accounting')
+
+    const derived = deriveNavUrls(out)
+    expect(derived[0].children![0].children![0].url).toBe('/services/outsourced/accounting')
+    expect(computeMoves(derived)).toEqual([
+      { from: '/services/accounting', to: '/services/outsourced/accounting' },
+    ])
+  })
+
+  it('rejects nesting an item under itself or a descendant', () => {
+    const tree: EditNavItem[] = [
+      { label: 'A', url: '/a', slug: 'a', children: [{ label: 'B', url: '/a/b', slug: 'b' }] },
+    ]
+    expect(reparentItems(tree, [0], [0], 2)).toEqual(tree) // self
+    expect(reparentItems(tree, [0], [0, 0], 2)).toEqual(tree) // descendant
+  })
+
+  it('rejects a move that would exceed maxDepth', () => {
+    // Parent with a tertiary child (height 1) cannot nest under another secondary
+    // (parent length 2) → would create depth 3.
+    const tree: EditNavItem[] = [
+      {
+        label: 'Services',
+        url: '/services',
+        slug: 'services',
+        children: [
+          { label: 'A', url: '/services/a', slug: 'a', children: [{ label: 'A1', url: '/services/a/a1', slug: 'a1' }] },
+          { label: 'B', url: '/services/b', slug: 'b' },
+        ],
+      },
+    ]
+    expect(reparentItems(tree, [0, 0], [0, 1], 2)).toEqual(tree)
+  })
+
+  it('deletes an emptied children array on the source parent', () => {
+    const tree: EditNavItem[] = [
+      { label: 'A', url: '/a', slug: 'a', children: [{ label: 'A1', url: '/a/a1', slug: 'a1' }] },
+      { label: 'B', url: '/b', slug: 'b' },
+    ]
+    const out = reparentItems(tree, [0, 0], [1], 2) // move A1 under B
+    expect(out[0].children).toBeUndefined()
+    expect(out[1].children).toHaveLength(1)
+  })
+
+  it('lands correctly when moving an earlier sibling under a later one', () => {
+    const tree: EditNavItem[] = [
+      { label: 'A', url: '/a', slug: 'a' },
+      { label: 'B', url: '/b', slug: 'b' },
+      { label: 'C', url: '/c', slug: 'c' },
+    ]
+    const out = reparentItems(tree, [0], [2], 2) // move A under C
+    expect(out.map((n) => n.label)).toEqual(['B', 'C'])
+    expect(out[1].children!.map((n) => n.label)).toEqual(['A'])
+  })
+})
+
+describe('validReparentTargets', () => {
+  const tree: EditNavItem[] = [
+    {
+      label: 'Services',
+      url: '/services',
+      slug: 'services',
+      children: [
+        { label: 'Outsourced', url: '/services/outsourced', slug: 'outsourced' },
+        { label: 'Accounting', url: '/services/accounting', slug: 'accounting' },
+      ],
+    },
+    { label: 'About', url: '/about', slug: 'about' },
+  ]
+
+  it('excludes self, descendants, and current parent; includes valid siblings/parents', () => {
+    // Target for Accounting ([0,1]): its sibling Outsourced ([0,0]) and About ([1]).
+    // Excludes Services ([0], current parent) and itself.
+    const targets = validReparentTargets(tree, [0, 1], 2).map((t) => t.path.join('/'))
+    expect(targets).toContain('0/0')
+    expect(targets).toContain('1')
+    expect(targets).not.toContain('0') // current parent
+    expect(targets).not.toContain('0/1') // self
+  })
+
+  it('drops targets that would exceed maxDepth for the moving subtree', () => {
+    const withChild: EditNavItem[] = [
+      {
+        label: 'Services',
+        url: '/services',
+        slug: 'services',
+        children: [
+          { label: 'A', url: '/services/a', slug: 'a', children: [{ label: 'A1', url: '/services/a/a1', slug: 'a1' }] },
+          { label: 'B', url: '/services/b', slug: 'b' },
+        ],
+      },
+    ]
+    // Moving A (height 1) can't nest under B ([0,1], length 2 → depth 3).
+    const targets = validReparentTargets(withChild, [0, 0], 2).map((t) => t.path.join('/'))
+    expect(targets).not.toContain('0/1')
+  })
+})
+
+describe('orderMoves — vacated slots freed before reuse', () => {
+  it('orders a chain so the target-vacating move runs first', () => {
+    const ordered = orderMoves([
+      { from: '/a', to: '/b' },
+      { from: '/b', to: '/c' },
+    ])
+    expect(ordered).toEqual([
+      { from: '/b', to: '/c' },
+      { from: '/a', to: '/b' },
+    ])
+  })
+
+  it('preserves order for independent moves', () => {
+    const moves = [
+      { from: '/one', to: '/x/one' },
+      { from: '/two', to: '/x/two' },
+    ]
+    expect(orderMoves(moves)).toEqual(moves)
   })
 })
 

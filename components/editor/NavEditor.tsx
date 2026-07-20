@@ -2,9 +2,9 @@
 
 import { useMemo, useState, useEffect, type ReactNode } from 'react'
 import {
-  DndContext, KeyboardSensor, PointerSensor,
-  useSensor, useSensors,
-  type DragEndEvent,
+  DndContext, KeyboardSensor, MeasuringStrategy, PointerSensor,
+  useDroppable, useSensor, useSensors,
+  type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   arrayMove, SortableContext, sortableKeyboardCoordinates,
@@ -12,10 +12,11 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, IndentIncrease, IndentDecrease } from 'lucide-react'
-import { siblingScopedCollision } from '@/lib/nav-dnd'
+import { navEditorCollision } from '@/lib/nav-dnd'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import {
-  computeMoves, deriveNavUrls, lastSegment, toEditItems, toNavJson,
+  computeMoves, deriveNavUrls, lastSegment, reparentItems, toEditItems, toNavJson,
+  validReparentTargets,
   type EditNavItem, type Move,
 } from '@/lib/editor/nav-urls'
 import type { NavItem, NavJson } from '@/types/nav-json'
@@ -110,12 +111,13 @@ function nodeAt(root: EditNavItem[], path: Path): EditNavItem | null {
 }
 
 function SortableRow({
-  path, label, inline, nested,
+  path, label, inline, nested, showNest,
 }: {
   path: Path
   label: string
   inline: ReactNode
   nested?: ReactNode
+  showNest?: boolean
 }) {
   const id = pathId(path)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -125,7 +127,7 @@ function SortableRow({
       <div
         ref={setNodeRef}
         style={style}
-        className="flex items-center gap-2 border border-border-default rounded-lg p-3 bg-surface-card"
+        className="relative flex items-center gap-2 border border-border-default rounded-lg p-3 bg-surface-card"
       >
         <button
           type="button"
@@ -137,9 +139,31 @@ function SortableRow({
           <GripVertical className="w-4 h-4" />
         </button>
         {inline}
+        {showNest && <NestOverlay path={path} label={label} />}
       </div>
       {nested}
     </li>
+  )
+}
+
+// Drop target covering the center band of a valid parent's row while dragging.
+// Overlaying the row (rather than a strip in the flowing list) keeps the target
+// stable — it tracks the row as siblings reflow — and large, so it's easy to hit.
+// The row's top/bottom quarters stay clear for sibling reordering. Rendered only
+// for rows that can accept the active drag; pointer-events-none so it never
+// intercepts the grip or inputs.
+function NestOverlay({ path, label }: { path: Path; label: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'nest:' + pathId(path) })
+  return (
+    <div
+      ref={setNodeRef}
+      aria-hidden
+      className={`pointer-events-none absolute inset-x-1 top-1/4 h-1/2 rounded-md flex items-center justify-center text-[10px] font-heading font-semibold transition-colors ${
+        isOver ? 'bg-brand-cyan/15 ring-2 ring-brand-cyan text-brand-navy' : 'text-transparent'
+      }`}
+    >
+      {isOver ? `Nest under ${label || 'this item'}` : ''}
+    </div>
   )
 }
 
@@ -172,6 +196,7 @@ export default function NavEditor({
     seed ? toEditItems(seed.primary) : []
   )
   const [cta, setCta] = useState<NavJson['cta'] | undefined>(() => seed?.cta)
+  const [activeId, setActiveId] = useState<string | null>(null)
 
   const strictError = useMemo(() => {
     try {
@@ -258,11 +283,25 @@ export default function NavEditor({
       grandList.splice(lastIndex(parentPath(p)) + 1, 0, moved)
     })
 
+  // Nest the item at `from` under the node at `newParent` (reparentItems no-ops
+  // invalid moves, so callers don't need to re-check depth/self).
+  const reparent = (from: Path, newParent: Path) =>
+    emit(reparentItems(items, from, newParent, MAX_DEPTH), cta)
+
+  const handleDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id))
+
   const handleDragEnd = (e: DragEndEvent) => {
+    setActiveId(null)
     const { active, over } = e
-    if (!over || active.id === over.id) return
+    if (!over) return
+    const overId = String(over.id)
+    if (overId.startsWith('nest:')) {
+      reparent(parsePath(String(active.id)), parsePath(overId.slice('nest:'.length)))
+      return
+    }
+    if (active.id === over.id) return
     const from = parsePath(String(active.id))
-    const to = parsePath(String(over.id))
+    const to = parsePath(overId)
     if (from.length !== to.length) return
     if (pathId(parentPath(from)) !== pathId(parentPath(to))) return
     update((d) => {
@@ -275,6 +314,13 @@ export default function NavEditor({
 
   const formUnavailable = seed === null
 
+  // While a row is being dragged, the set of rows it may legally nest under —
+  // used to overlay a nest drop target on each valid parent's row.
+  const activePath = activeId ? parsePath(activeId) : null
+  const nestTargetIds = activePath
+    ? new Set(validReparentTargets(items, activePath, MAX_DEPTH).map((t) => pathId(t.path)))
+    : null
+
   const renderLevel = (list: EditNavItem[], parent: Path, depth: number): ReactNode => {
     const ids = list.map((_, i) => pathId([...parent, i]))
     const containerClass = depth === 0 ? 'p-4 space-y-3' : 'ml-8 space-y-2 border-l border-border-default pl-3 pt-1'
@@ -284,11 +330,14 @@ export default function NavEditor({
           {list.map((item, i) => {
             const p = [...parent, i]
             const hasChildren = (item.children?.length ?? 0) > 0
+            const reparentTargets = validReparentTargets(items, p, MAX_DEPTH)
+            const showNest = nestTargetIds?.has(pathId(p)) ?? false
             return (
               <SortableRow
                 key={pathId(p)}
                 path={p}
                 label={item.label}
+                showNest={showNest}
                 inline={
                   <>
                     <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
@@ -331,6 +380,22 @@ export default function NavEditor({
                     <IconButton label={`Outdent ${item.label || 'item'}`} disabled={depth === 0} onClick={() => outdent(p)}>
                       <IndentDecrease className="w-4 h-4" />
                     </IconButton>
+                    {reparentTargets.length > 0 && (
+                      <select
+                        aria-label={`Move ${item.label || 'item'} under another item`}
+                        title="Move under another item"
+                        value=""
+                        onChange={(e) => { if (e.target.value) reparent(p, parsePath(e.target.value)) }}
+                        className="h-6 max-w-[8rem] text-[11px] font-body px-1.5 rounded border border-border-default bg-surface-card text-text-muted hover:text-brand-navy focus:outline-none focus:border-brand-cyan cursor-pointer"
+                      >
+                        <option value="" disabled>Move under…</option>
+                        {reparentTargets.map((t) => (
+                          <option key={pathId(t.path)} value={pathId(t.path)}>
+                            {' '.repeat((t.path.length - 1) * 2)}{t.label || t.url}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <IconButton label={`Remove ${item.label || 'item'}`} onClick={() => removeAt(p)}>
                       ✕
                     </IconButton>
@@ -367,8 +432,10 @@ export default function NavEditor({
           <div className="text-xs font-heading text-text-muted">Editing</div>
           <div className="font-heading font-semibold text-brand-navy text-lg">Site navigation</div>
           <p className="text-[11px] font-body text-text-muted mt-1">
-            Indent an item to nest it; its URL becomes <span className="font-mono">/parent/segment</span>.
-            Saving moves the page to the new URL and adds a redirect from the old one.
+            Nest an item under another with the <span className="font-semibold">Move under…</span> menu,
+            by dragging it onto a “nest” zone, or with the indent arrows; its URL becomes{' '}
+            <span className="font-mono">/parent/segment</span>. Saving moves the page to the new URL and
+            adds a redirect from the old one.
           </p>
         </div>
 
@@ -390,7 +457,14 @@ export default function NavEditor({
 
               {mounted ? (
                 items.length > 0 && (
-                  <DndContext sensors={sensors} collisionDetection={siblingScopedCollision} onDragEnd={handleDragEnd}>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={navEditorCollision}
+                    measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragCancel={() => setActiveId(null)}
+                  >
                     {renderLevel(items, [], 0)}
                   </DndContext>
                 )

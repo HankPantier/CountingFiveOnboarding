@@ -219,6 +219,13 @@ export default function EditorShell({
         setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
         return
       }
+      if (res.status === 422) {
+        // A page already lives at a target URL. Surface it and keep the edits so
+        // the admin can rename the colliding item and retry (no data loss).
+        const data = (await res.json()) as { error?: string; collision?: { to: string } }
+        setError(data.error ?? `A page already exists at ${data.collision?.to ?? 'the destination'}.`)
+        return
+      }
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
@@ -307,6 +314,11 @@ export default function EditorShell({
         // (otherwise "keep mine" loops on a stale sha forever).
         const data = (await res.json()) as { currentSha: string; currentContent: string }
         setConflict({ path: conflict.path, serverSha: data.currentSha, serverContent: data.currentContent })
+        return
+      }
+      if (res.status === 422) {
+        const data = (await res.json()) as { error?: string; collision?: { to: string } }
+        setError(data.error ?? `A page already exists at ${data.collision?.to ?? 'the destination'}.`)
         return
       }
       if (!res.ok) {
