@@ -14,7 +14,7 @@ Everything in `.env.example` must be set for Production. Highlights:
 | `NEXT_PUBLIC_APP_URL` | Production origin (used in emails, self-chain calls, WHOIS resume) |
 | `ANTHROPIC_API_KEY` | All AI calls |
 | `RESEND_API_KEY` / `RESEND_FROM_EMAIL` / `ADMIN_EMAIL` | `RESEND_FROM_EMAIL` must be on a verified Resend domain; check-inactivity 500s if missing |
-| `SERPER_API_KEY`, `PEXELS_API_KEY`, `PAGESPEED_API_KEY` | Optional — features degrade gracefully |
+| `SERPER_API_KEY`, `PEXELS_API_KEY`, `PAGESPEED_API_KEY`, `GOOGLE_PLACES_API_KEY` | Optional — features degrade gracefully. `GOOGLE_PLACES_API_KEY` (server-only) powers authoritative GBP data in the audit's Social & Local Presence pass; without it the pass falls back to Serper discovery |
 | `GITHUB_APP_*`, `GITHUB_ORG`, `GITHUB_TEMPLATE_REPO` | Required for the content editor / publish pipeline |
 
 ## 2. Database (Supabase project `adkeemcuquotlpbjsdaa`)

@@ -32,7 +32,7 @@ export function AuditActions({
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
-  const running = ['crawling', 'analyzing', 'scoring', 'rendering'].includes(status)
+  const running = ['crawling', 'analyzing', 'researching', 'scoring', 'rendering'].includes(status)
   const complete = status === 'complete'
 
   const approve = async () => {
@@ -49,6 +49,18 @@ export function AuditActions({
     setBusy(true)
     try {
       await fetch(`/api/audits/${auditId}/run`, { method: 'POST' })
+      router.refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Adds the latest analysis (social & local presence) to an existing audit
+  // without a full re-crawl — scores and page analysis are preserved.
+  const refresh = async () => {
+    setBusy(true)
+    try {
+      await fetch(`/api/audits/${auditId}/refresh`, { method: 'POST' })
       router.refresh()
     } finally {
       setBusy(false)
@@ -86,6 +98,16 @@ export function AuditActions({
 
       {complete && <AuditChatModal auditId={auditId} initialMessages={chatMessages} />}
       {complete && <ShareLinkButton auditId={auditId} initialToken={shareToken} />}
+      {complete && (
+        <button
+          onClick={refresh}
+          disabled={busy}
+          className={ghostButton}
+          title="Add the latest analysis (social & local presence) without re-crawling"
+        >
+          Refresh
+        </button>
+      )}
       <button onClick={rerun} disabled={busy || running} className={ghostButton}>
         {running ? 'Running…' : 'Re-run'}
       </button>

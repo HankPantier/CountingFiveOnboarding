@@ -3,21 +3,11 @@
 // social profile links — aggregated into one BusinessSignals object that seeds
 // the AI-drafted session profile (lib/session-draft). Never feeds scoring.
 import * as cheerio from 'cheerio'
+import { isSocialUrl } from './social-hosts'
 import type { BusinessSignals, CrawledPage } from './types'
 
 const PHONE_RE = /(\+?1?\s?[(\-.]?\d{3}[)\-.\s]\s?\d{3}[-.\s]\d{4})/g
 const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g
-const SOCIAL_HOSTS = [
-  'facebook.com',
-  'linkedin.com',
-  'twitter.com',
-  'x.com',
-  'instagram.com',
-  'youtube.com',
-  'tiktok.com',
-  'pinterest.com',
-  'yelp.com',
-]
 
 const MAX_PER_FIELD = 15
 
@@ -93,15 +83,6 @@ function walkJsonLd(node: unknown, h: Harvest): void {
   // Recurse into nested objects (e.g. department, parentOrganization).
   for (const v of Object.values(obj)) {
     if (v && typeof v === 'object') walkJsonLd(v, h)
-  }
-}
-
-function isSocialUrl(href: string): boolean {
-  try {
-    const host = new URL(href).host.toLowerCase().replace(/^www\./, '')
-    return SOCIAL_HOSTS.some((s) => host === s || host.endsWith(`.${s}`))
-  } catch {
-    return false
   }
 }
 

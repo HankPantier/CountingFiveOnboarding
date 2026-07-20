@@ -11,6 +11,7 @@ import { buildDigitalIntelligence } from './digital-intel'
 import { detectDomainAge } from './domain-age'
 import { analyzeNicheServices, hasNicheContent } from './niche-services'
 import { buildNarrative } from './narrative'
+import { buildSocialPresence } from './social-presence'
 import { detectTechStack } from './tech-stack'
 import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditIntelligence, AuditResult, DetectedNiche } from '../types'
@@ -103,6 +104,19 @@ export async function buildIntelligence(
     }, tokenCtx),
   )
 
+  // Social & local presence — GBP + LinkedIn (required) + bonus channels, with
+  // quality assessment. Runs before narrative so its gaps feed the AI prose.
+  intel.social_presence = await safe('social-presence', () =>
+    buildSocialPresence({
+      siteName,
+      domain: result.domain,
+      location,
+      socialLinks: result.business_signals?.socialLinks ?? [],
+      addresses: result.business_signals?.addresses ?? [],
+      onSiteNiches: detectedNiches.map((n) => n.name),
+    }, tokenCtx),
+  )
+
   // ── Narrative (LAST — consumes everything above) ──────────────────────────
   intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
 
@@ -123,4 +137,48 @@ export async function buildIntelligence(
  * (not fail) a run whose centerpiece section came back empty. */
 export function nicheContentCaptured(intel: AuditIntelligence | undefined): boolean {
   return !!intel?.niche_services && hasNicheContent(intel.niche_services)
+}
+
+// Re-runs only the html-independent intelligence — social & local presence, then
+// the narrative that consumes it — over an already-completed audit's stored
+// result. Used by the "Refresh" action to add newer analysis WITHOUT re-crawling
+// or re-scoring: the persisted result's raw HTML is stripped at storage time, so
+// the crawl-dependent sub-sections (niche/services, tech stack, competitive) are
+// preserved as-is rather than regenerated from empty pages. Everything else on
+// the existing intelligence bundle is carried over untouched.
+export async function refreshAuditIntelligence(
+  result: AuditResult,
+  attribution?: { sessionId?: string | null; auditId?: string | null },
+): Promise<AuditIntelligence | undefined> {
+  const intel: AuditIntelligence = { ...(result.intelligence ?? {}) }
+  const siteName = result.site_name
+  const location = deriveLocation(result)
+  const tokenCtx: TokenContext = {
+    task: 'audit',
+    stage: 'audit',
+    sessionId: attribution?.sessionId ?? null,
+    auditId: attribution?.auditId ?? null,
+  }
+  const detectedNiches = intel.niche_services?.detected_niches ?? []
+
+  intel.social_presence = await safe('social-presence', () =>
+    buildSocialPresence({
+      siteName,
+      domain: result.domain,
+      location,
+      socialLinks: result.business_signals?.socialLinks ?? [],
+      addresses: result.business_signals?.addresses ?? [],
+      onSiteNiches: detectedNiches.map((n) => n.name),
+    }, tokenCtx),
+  )
+
+  // Re-run the narrative so the report's "Recommendations & Next Steps" reflects
+  // the refreshed social/local gaps (consumes the whole bundle; needs no HTML).
+  intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
+
+  const cleaned: AuditIntelligence = {}
+  for (const [k, v] of Object.entries(intel)) {
+    if (v !== undefined && v !== null) cleaned[k as keyof AuditIntelligence] = v as never
+  }
+  return Object.keys(cleaned).length ? cleaned : undefined
 }

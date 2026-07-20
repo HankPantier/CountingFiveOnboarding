@@ -7,6 +7,7 @@
 // flags "Missing OG tags" on every page and stores og_complete as always-false.
 // We compute og_complete = og_title && og_desc && og_image (the evident intent,
 // and how scoring already measures OG completeness). No score is affected.
+import { SOCIAL_PLATFORM_LABELS } from './intelligence-format'
 import type {
   CrawledPage,
   Findings,
@@ -15,7 +16,21 @@ import type {
   Recommendation,
   RecommendationEffort,
   RecommendationPriority,
+  SocialPresenceReport,
 } from './types'
+
+// Shared comparator: critical first, then warning, then by effort (Low → High).
+// Stable. Exported so the audit can re-sort after merging the social recs
+// (generated post-intelligence) into the findings-based list.
+const PRIORITY_ORDER: Record<string, number> = { critical: 0, warning: 1, info: 2 }
+const EFFORT_ORDER: Record<string, number> = { Low: 0, Medium: 1, High: 2 }
+export function sortRecommendations(recs: Recommendation[]): Recommendation[] {
+  return recs.sort((a, b) => {
+    const p = (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2)
+    if (p !== 0) return p
+    return (EFFORT_ORDER[a.effort] ?? 1) - (EFFORT_ORDER[b.effort] ?? 1)
+  })
+}
 
 export function generateRecommendations(findings: Findings): Recommendation[] {
   const recs: Recommendation[] = []
@@ -303,16 +318,103 @@ export function generateRecommendations(findings: Findings): Recommendation[] {
       'Low',
     )
 
-  // Sort: critical first, then warning, then by effort (Low → High). Stable.
-  const priorityOrder: Record<string, number> = { critical: 0, warning: 1, info: 2 }
-  const effortOrder: Record<string, number> = { Low: 0, Medium: 1, High: 2 }
-  recs.sort((a, b) => {
-    const p = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2)
-    if (p !== 0) return p
-    return (effortOrder[a.effort] ?? 1) - (effortOrder[b.effort] ?? 1)
-  })
+  return sortRecommendations(recs)
+}
 
-  return recs
+// Social & local presence recommendations, generated from the intelligence
+// layer's SocialPresenceReport (not `findings`) after the audit's off-site pass.
+// Kept separate from generateRecommendations so its findings-based signature and
+// tests stay stable; the audit merges + re-sorts both lists.
+export function generateSocialRecommendations(report: SocialPresenceReport): Recommendation[] {
+  const recs: Recommendation[] = []
+  const add = (
+    priority: RecommendationPriority,
+    title: string,
+    detail: string,
+    effort: RecommendationEffort = 'Medium',
+  ) => recs.push({ priority, category: 'Local & Social', title, detail, effort })
+
+  const gbp = report.profiles.find((p) => p.platform === 'google_business')
+  const linkedin = report.profiles.find((p) => p.platform === 'linkedin')
+
+  // Google Business Profile
+  if (!report.hasGbp) {
+    add(
+      'critical',
+      'Claim & Optimize Your Google Business Profile',
+      'No Google Business Profile was found. Claiming and completing one is the single highest-impact move for local search and map-pack visibility.',
+      'Low',
+    )
+  } else if (gbp) {
+    const m = gbp.metrics
+    if (typeof m.reviewCount === 'number' && m.reviewCount < 10) {
+      add(
+        'warning',
+        'Build Google Reviews',
+        `Only ${m.reviewCount} Google review${m.reviewCount === 1 ? '' : 's'} found. Reviews are a top local ranking factor and a trust signal — set up a steady process to earn new ones.`,
+        'Medium',
+      )
+    }
+    if (typeof m.rating === 'number' && m.rating < 4.0) {
+      add(
+        'warning',
+        'Address Google Review Sentiment',
+        `Your Google rating is ${m.rating.toFixed(1)}. Below 4.0 suppresses clicks — address the recurring concerns behind the reviews and invite satisfied clients to weigh in.`,
+        'High',
+      )
+    }
+    if (m.hoursListed === false || (m.categories && m.categories.length === 0)) {
+      add(
+        'warning',
+        'Complete Your Google Business Profile Details',
+        'Business hours and/or categories are missing from the listing. A complete profile ranks better and converts more searchers.',
+        'Low',
+      )
+    }
+  }
+
+  // LinkedIn (required)
+  if (!report.hasLinkedIn) {
+    add(
+      'warning',
+      'Establish a LinkedIn Company Page',
+      'No LinkedIn company page was found. A company page builds B2B credibility and is often the first result prospects check.',
+      'Medium',
+    )
+  } else if (linkedin) {
+    if (linkedin.metrics.pageType === 'personal') {
+      add(
+        'warning',
+        'Create a LinkedIn Company Page',
+        'Only a personal LinkedIn profile was found. A dedicated company page centralizes the firm’s brand and lets clients follow it.',
+        'Medium',
+      )
+    }
+    if (linkedin.status === 'dormant') {
+      add(
+        'warning',
+        'Reactivate LinkedIn Posting',
+        'Your LinkedIn presence looks dormant. A consistent posting cadence keeps the firm visible to referral sources and prospects.',
+        'Low',
+      )
+    }
+  }
+
+  // Bonus channels: flag dormant ones so they’re revived or removed.
+  for (const p of report.profiles) {
+    if (p.platform === 'google_business' || p.platform === 'linkedin') continue
+    if (p.status === 'dormant') {
+      const label = SOCIAL_PLATFORM_LABELS[p.platform] ?? p.platform
+      add(
+        'warning',
+        `Refresh Your Dormant ${label} Profile`,
+        `Your ${label} profile appears inactive. Either revive it with a posting plan or remove the link so prospects don’t land on a stale channel.`,
+        'Low',
+      )
+    }
+  }
+
+  return sortRecommendations(recs)
 }
 
 /** audit.py _page_issues — short issue strings for one page. `ogComplete` is

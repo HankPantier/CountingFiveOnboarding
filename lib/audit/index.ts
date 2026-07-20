@@ -9,7 +9,12 @@ import { fetchLlmsTxt, fetchRobots, fetchSitemap } from './fetch-meta'
 import { checkGoogleIndex } from './index-check'
 import { buildIntelligence } from './intelligence'
 import { checkPageSpeed } from './pagespeed'
-import { buildPageSummary, generateRecommendations } from './recommendations'
+import {
+  buildPageSummary,
+  generateRecommendations,
+  generateSocialRecommendations,
+  sortRecommendations,
+} from './recommendations'
 import { computeOverall, computeScores, getGrade } from './scoring'
 import { checkSsl } from './ssl'
 import type {
@@ -163,6 +168,16 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
     })
   } catch (err) {
     console.warn('[audit] intelligence stage failed (non-fatal):', err)
+  }
+
+  // Merge social/local presence recommendations into the findings-based list and
+  // re-sort. Social presence never feeds scoring — this is display/recs only.
+  const socialPresence = result.intelligence?.social_presence
+  if (socialPresence) {
+    const socialRecs = generateSocialRecommendations(socialPresence)
+    if (socialRecs.length) {
+      result.recommendations = sortRecommendations([...result.recommendations, ...socialRecs])
+    }
   }
 
   return result

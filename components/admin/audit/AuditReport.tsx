@@ -12,6 +12,8 @@ import type {
   NicheServicesIntelligence,
   PageSummary,
   Recommendation,
+  SocialPresenceReport,
+  SocialProfileAssessment,
   TechStackIntelligence,
 } from '@/types/audit-result'
 import {
@@ -30,9 +32,11 @@ import {
   type DashboardBucket,
 } from '@/lib/audit/report-buckets'
 import {
+  formatSocialMetrics,
   SECTION_HELP,
   SECTION_LABELS,
   signalLabel,
+  SOCIAL_PLATFORM_LABELS,
   subScoreRows,
 } from '@/lib/audit/intelligence-format'
 import { AuditStatusBadge, GradeBadge } from './AuditBadges'
@@ -233,6 +237,19 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
             iconKey="content_library"
           >
             <ContentLibraryBody data={intel.content_library} commentary={sectionCommentary.content_library} />
+          </AuditAccordion>
+        )}
+
+        {intel?.social_presence && (
+          <AuditAccordion
+            label={SECTION_LABELS.social_presence}
+            tip={SECTION_HELP.social_presence}
+            iconKey="social_presence"
+          >
+            <SocialPresenceBody
+              data={intel.social_presence}
+              commentary={sectionCommentary.social_presence}
+            />
           </AuditAccordion>
         )}
 
@@ -942,6 +959,56 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
         </tbody>
       </table>
     </div>
+  )
+}
+
+const SOCIAL_STATUS_STYLE: Record<string, { label: string; cls: string }> = {
+  active: { label: 'Active', cls: 'bg-success/10 text-success' },
+  dormant: { label: 'Dormant', cls: 'bg-warning/10 text-warning' },
+  not_found: { label: 'Not found', cls: 'bg-error/10 text-error' },
+  unknown: { label: 'Unverified', cls: 'bg-info/10 text-info' },
+}
+
+function SocialPresenceBody({ data, commentary }: { data: SocialPresenceReport; commentary?: string }) {
+  const profiles = asArray<SocialProfileAssessment>(data.profiles)
+  if (!profiles.length) return <Commentary text={commentary} />
+  return (
+    <>
+      <p className="font-body text-xs text-text-muted">Presence &amp; quality — not scored</p>
+      {data.summary && <p className="mt-2 font-body text-sm text-text-secondary">{data.summary}</p>}
+      <div className="mt-3 divide-y divide-border-default">
+        {profiles.map((p, i) => {
+          const status = SOCIAL_STATUS_STYLE[p.status] ?? SOCIAL_STATUS_STYLE.unknown
+          const metrics = formatSocialMetrics(p.metrics)
+          return (
+            <div key={i} className="py-3 font-body text-sm">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-semibold text-text-primary">
+                  {SOCIAL_PLATFORM_LABELS[p.platform] ?? p.platform}
+                </span>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.cls}`}>{status.label}</span>
+                <span className="text-xs text-text-muted">{p.usefulness} value</span>
+              </div>
+              {p.url && (
+                <div className="mt-0.5">
+                  <a
+                    href={safeHref(p.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="break-all text-brand-cyan hover:underline"
+                  >
+                    {p.url}
+                  </a>
+                </div>
+              )}
+              {metrics && <div className="mt-0.5 text-xs text-text-muted">{metrics}</div>}
+              {p.roomForImprovement && <div className="mt-0.5 text-text-secondary">{p.roomForImprovement}</div>}
+            </div>
+          )
+        })}
+      </div>
+      <Commentary text={commentary} />
+    </>
   )
 }
 

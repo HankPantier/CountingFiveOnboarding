@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Findings } from './types'
+import type { Findings, SocialPresenceReport, SocialProfileAssessment } from './types'
 import {
   generateRecommendations,
+  generateSocialRecommendations,
   suggestMeta,
   suggestTitle,
 } from './recommendations'
@@ -154,5 +155,86 @@ describe('suggestMeta', () => {
     const meta = suggestMeta(snippet)
     expect(meta).not.toBeNull()
     expect(meta!.length).toBeLessThanOrEqual(160)
+  })
+})
+
+function profile(p: Partial<SocialProfileAssessment> & { platform: SocialProfileAssessment['platform'] }): SocialProfileAssessment {
+  return {
+    url: null,
+    status: 'unknown',
+    metrics: {},
+    usefulness: 'low',
+    roomForImprovement: '',
+    source: 'onpage',
+    ...p,
+  }
+}
+
+function report(overrides: Partial<SocialPresenceReport> & { profiles: SocialProfileAssessment[] }): SocialPresenceReport {
+  const hasGbp = overrides.profiles.some((p) => p.platform === 'google_business' && p.status !== 'not_found')
+  const hasLinkedIn = overrides.profiles.some((p) => p.platform === 'linkedin' && p.status !== 'not_found')
+  return { hasGbp, hasLinkedIn, missingRequired: [], summary: '', ...overrides }
+}
+
+describe('generateSocialRecommendations', () => {
+  it('flags a missing GBP as critical', () => {
+    const recs = generateSocialRecommendations(
+      report({ profiles: [profile({ platform: 'google_business', status: 'not_found' })] }),
+    )
+    const gbp = recs.find((r) => r.title.includes('Google Business Profile'))
+    expect(gbp?.priority).toBe('critical')
+    expect(recs.every((r) => r.category === 'Local & Social')).toBe(true)
+  })
+
+  it('recommends building reviews and completing details for a thin GBP', () => {
+    const recs = generateSocialRecommendations(
+      report({
+        profiles: [
+          profile({
+            platform: 'google_business',
+            status: 'active',
+            metrics: { rating: 3.6, reviewCount: 4, hoursListed: false, categories: [] },
+          }),
+        ],
+      }),
+    )
+    const titles = recs.map((r) => r.title)
+    expect(titles).toContain('Build Google Reviews')
+    expect(titles).toContain('Address Google Review Sentiment')
+    expect(titles).toContain('Complete Your Google Business Profile Details')
+  })
+
+  it('recommends a company page when only a personal LinkedIn exists', () => {
+    const recs = generateSocialRecommendations(
+      report({
+        profiles: [
+          profile({ platform: 'linkedin', status: 'active', metrics: { pageType: 'personal' } }),
+        ],
+      }),
+    )
+    expect(recs.some((r) => r.title === 'Create a LinkedIn Company Page')).toBe(true)
+  })
+
+  it('flags dormant bonus channels', () => {
+    const recs = generateSocialRecommendations(
+      report({
+        profiles: [
+          profile({ platform: 'instagram', status: 'dormant', url: 'https://instagram.com/acme' }),
+        ],
+      }),
+    )
+    expect(recs.some((r) => r.title.includes('Dormant Instagram'))).toBe(true)
+  })
+
+  it('emits nothing for a strong presence', () => {
+    const recs = generateSocialRecommendations(
+      report({
+        profiles: [
+          profile({ platform: 'google_business', status: 'active', metrics: { rating: 4.8, reviewCount: 60, hoursListed: true, categories: ['Accountant'] } }),
+          profile({ platform: 'linkedin', status: 'active', metrics: { pageType: 'company' } }),
+        ],
+      }),
+    )
+    expect(recs).toHaveLength(0)
   })
 })

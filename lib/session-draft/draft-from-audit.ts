@@ -6,6 +6,7 @@
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { buildCorpus, type CorpusPage } from '@/lib/audit/corpus'
+import { GBP_URL_RE } from '@/lib/audit/social-hosts'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
 import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-plan'
 import { proposeSitemap } from '@/lib/content/sitemap-proposer'
@@ -69,9 +70,7 @@ const asObjArr = (v: unknown): Record<string, unknown>[] =>
 // A Google Business Profile / Maps listing URL, if one is among the site's
 // social/outbound links. Feeds the location's schema.org `sameAs` for local pack.
 function findGbpUrl(links: string[] = []): string | undefined {
-  return links.find((u) =>
-    /(?:google\.[^/]+\/maps|maps\.google\.|maps\.app\.goo\.gl|goo\.gl\/maps|g\.page|business\.google\.)/i.test(u)
-  )
+  return links.find((u) => GBP_URL_RE.test(u))
 }
 
 function emptySchema(): SessionSchema {

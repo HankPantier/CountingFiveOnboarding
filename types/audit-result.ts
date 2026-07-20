@@ -547,6 +547,81 @@ export interface DigitalIntelligence {
   niche_gap: NicheGapIntelligence
 }
 
+// ── Social & Local Presence (quality-assessed) ──────────────────────────────
+// A deeper pass than DigitalIntelligence.social_presence (a coarse Serper list):
+// this assesses each channel's QUALITY — GBP rating/reviews/hours/categories,
+// LinkedIn follower/page-type/activity, and bonus IG/FB/X follower + recency —
+// feeds the MBP, and drives the report's Recommended Next Steps. Best-effort and
+// never scored; absent on older rows and when the stage produced nothing.
+
+export type SocialPlatform =
+  | 'google_business'
+  | 'linkedin'
+  | 'instagram'
+  | 'facebook'
+  | 'x'
+  | 'youtube'
+  | 'tiktok'
+  | 'pinterest'
+  | 'yelp'
+  | 'other'
+
+export type ProfileStatus = 'active' | 'dormant' | 'not_found' | 'unknown'
+export type Usefulness = 'low' | 'medium' | 'high'
+
+export interface SocialProfileMetrics {
+  /** GBP / Yelp star rating. */
+  rating?: number | null
+  /** GBP / Yelp review count. */
+  reviewCount?: number | null
+  /** LinkedIn / IG / FB / X follower count. */
+  followerCount?: number | null
+  /** GBP listing categories. */
+  categories?: string[]
+  /** GBP business hours present. */
+  hoursListed?: boolean
+  /** Recency signal, e.g. "posted 3 weeks ago". */
+  lastActivity?: string | null
+  /** LinkedIn company vs. personal page. */
+  pageType?: 'company' | 'personal' | 'unknown'
+  completeness?: 'partial' | 'complete' | 'unknown'
+}
+
+export interface SocialProfileAssessment {
+  platform: SocialPlatform
+  url: string | null
+  status: ProfileStatus
+  metrics: SocialProfileMetrics
+  /** Quality verdict used when mapping into the MBP. */
+  usefulness: Usefulness
+  /** One actionable sentence. */
+  roomForImprovement: string
+  /** Provenance / degradation flag: authoritative Places vs. Serper vs. on-page. */
+  source: 'places_api' | 'serper' | 'onpage' | 'ai'
+}
+
+export interface SocialPresenceReport {
+  profiles: SocialProfileAssessment[]
+  /** A Google Business Profile was located. */
+  hasGbp: boolean
+  /** A LinkedIn company/profile was located. */
+  hasLinkedIn: boolean
+  /** Required platforms with no profile found — drives "missing presence" recs. */
+  missingRequired: SocialPlatform[]
+  summary: string
+}
+
+/** Authoritative Google Business Profile data from the Places API Text Search. */
+export interface PlaceDetails {
+  name: string | null
+  rating: number | null
+  reviewCount: number | null
+  businessStatus: string | null
+  categories: string[]
+  hoursListed: boolean
+  mapsUri: string | null
+}
+
 /** The full intelligence bundle attached to a completed audit. Every field is
  * optional: sub-sections appear only when their builder succeeds. */
 export interface AuditIntelligence {
@@ -559,6 +634,7 @@ export interface AuditIntelligence {
   domain?: DomainIntelligence
   content_library?: ContentLibraryIntelligence
   digital_intelligence?: DigitalIntelligence
+  social_presence?: SocialPresenceReport
 }
 
 // ── Top-level result ───────────────────────────────────────────────────────

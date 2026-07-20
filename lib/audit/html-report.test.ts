@@ -98,3 +98,45 @@ describe('buildAuditHtml — parity with the shareable design target', () => {
     expect(html).toMatch(/[ABCDF][+-]?\s·\s\d/)
   })
 })
+
+describe('buildAuditHtml — social & local presence section', () => {
+  it('renders the section with per-channel status and metrics when present', () => {
+    const r = result()
+    r.intelligence!.social_presence = {
+      profiles: [
+        {
+          platform: 'google_business',
+          url: 'https://maps.google.com/?cid=1',
+          status: 'active',
+          metrics: { rating: 4.6, reviewCount: 30, hoursListed: true },
+          usefulness: 'high',
+          roomForImprovement: 'Keep earning fresh reviews.',
+          source: 'places_api',
+        },
+        {
+          platform: 'linkedin',
+          url: null,
+          status: 'not_found',
+          metrics: {},
+          usefulness: 'low',
+          roomForImprovement: 'Create a LinkedIn company page.',
+          source: 'onpage',
+        },
+      ],
+      hasGbp: true,
+      hasLinkedIn: false,
+      missingRequired: ['linkedin'],
+      summary: '1 of 2 assessed channels are present.',
+    }
+    const html = buildAuditHtml({ result: r, createdAt: '2026-06-19T00:00:00Z' })
+    expect(html).toContain('Social &amp; Local Presence')
+    expect(html).toContain('Google Business Profile')
+    expect(html).toContain('4.6★')
+    expect(html).toContain('Create a LinkedIn company page.')
+  })
+
+  it('omits the section entirely for rows without social presence', () => {
+    const html = buildAuditHtml({ result: result(), createdAt: '2026-06-19T00:00:00Z' })
+    expect(html).not.toContain('Social &amp; Local Presence')
+  })
+})

@@ -71,6 +71,15 @@ function buildContext(result: AuditResult, intel: AuditIntelligence): string {
       `Unleveraged credibility: ${di.niche_gap.unleveraged.join('; ') || 'none'}`,
     )
   }
+  if (intel.social_presence) {
+    const sp = intel.social_presence
+    lines.push(
+      '',
+      `Social & local presence: ${sp.summary}`,
+      `Channels: ${sp.profiles.map((p) => `${p.platform}=${p.status}/${p.usefulness}`).join(', ') || 'none'}`,
+      `Missing required: ${sp.missingRequired.join(', ') || 'none'}`,
+    )
+  }
   return lines.join('\n')
 }
 
@@ -82,6 +91,7 @@ function sectionIds(intel: AuditIntelligence): string[] {
   if (intel.tech_stack) ids.push('tech_stack')
   if (intel.content_library) ids.push('content_library')
   if (intel.digital_intelligence) ids.push('digital_intelligence')
+  if (intel.social_presence) ids.push('social_presence')
   return ids
 }
 

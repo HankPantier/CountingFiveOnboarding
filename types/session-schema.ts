@@ -216,6 +216,28 @@ export type SessionSchema = {
     new_url?: string
     live: boolean
   }>
+  // Audit-derived social & local presence, quality-assessed per channel. Seeded
+  // by the audit→session draft (enrich-from-intelligence); hand-written MBPs keep
+  // populating the shared culture.linkedIn / business.googleBusinessProfile homes.
+  socialPresence?: {
+    profiles: Array<{
+      platform: string
+      url: string | null
+      status: string
+      metrics?: {
+        rating?: number | null
+        reviewCount?: number | null
+        followerCount?: number | null
+        categories?: string[]
+        hoursListed?: boolean
+        lastActivity?: string | null
+        pageType?: string
+        completeness?: string
+      }
+      usefulness?: 'low' | 'medium' | 'high'
+      roomForImprovement?: string
+    }>
+  }
   reputation?: {
     googleRating?: string
     yelpRating?: string

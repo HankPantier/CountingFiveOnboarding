@@ -5,7 +5,7 @@
 // draft used to discard — service rewrite directions, personnel associations,
 // tech stack, domain dates — into typed fields where they exist and into
 // _meta.audit_context otherwise. Mutates the passed schema.
-import type { AuditIntelligence } from '@/types/audit-result'
+import type { AuditIntelligence, SocialProfileMetrics } from '@/types/audit-result'
 import type { SessionSchema } from '@/types/session-schema'
 
 const PRESS_TYPE_RE = /press|award|article|interview|media/i
@@ -110,6 +110,10 @@ export function enrichSchemaFromIntelligence(
     ])
   }
 
+  // ── Social & local presence: the dedicated component + non-destructive
+  //    enrichment of the shared typed homes (AI-draft / MBP values win). ──────
+  enrichSocialPresence(schema, intel)
+
   if (!di) return
 
   // ── Reputation (audit-sourced, previously MBP-only) ─────────────────────────
@@ -158,6 +162,69 @@ export function enrichSchemaFromIntelligence(
         byName.set(p.name.toLowerCase(), member)
       }
     }
+  }
+}
+
+function hasAnyMetric(m: SocialProfileMetrics): boolean {
+  return (
+    m.rating != null ||
+    m.reviewCount != null ||
+    m.followerCount != null ||
+    (m.categories?.length ?? 0) > 0 ||
+    m.hoursListed != null ||
+    !!m.lastActivity ||
+    (m.pageType != null && m.pageType !== 'unknown') ||
+    (m.completeness != null && m.completeness !== 'unknown')
+  )
+}
+
+// Seeds the dedicated socialPresence component and non-destructively enriches the
+// shared typed homes (business.googleBusinessProfile, culture.linkedIn,
+// culture.socialMediaChannels, locations[0].gbpUrl) — an AI-draft or MBP value
+// already present always wins.
+function enrichSocialPresence(schema: SessionSchema, intel: AuditIntelligence): void {
+  const sp = intel.social_presence
+  if (!sp || !sp.profiles.length) return
+
+  schema.socialPresence = {
+    profiles: sp.profiles.map((p) => ({
+      platform: p.platform,
+      url: p.url,
+      status: p.status,
+      ...(hasAnyMetric(p.metrics) ? { metrics: p.metrics } : {}),
+      usefulness: p.usefulness,
+      ...(p.roomForImprovement ? { roomForImprovement: p.roomForImprovement } : {}),
+    })),
+  }
+
+  const gbp = sp.profiles.find((p) => p.platform === 'google_business')
+  const linkedin = sp.profiles.find((p) => p.platform === 'linkedin')
+
+  if (gbp?.url && schema.business && !schema.business.googleBusinessProfile?.url) {
+    schema.business.googleBusinessProfile = {
+      url: gbp.url,
+      usefulness: gbp.usefulness,
+      ...(gbp.roomForImprovement ? { roomForImprovement: gbp.roomForImprovement } : {}),
+    }
+  }
+
+  if (linkedin?.url && schema.culture && !schema.culture.linkedIn?.url) {
+    schema.culture.linkedIn = {
+      url: linkedin.url,
+      usefulness: linkedin.usefulness,
+      ...(linkedin.roomForImprovement ? { roomForImprovement: linkedin.roomForImprovement } : {}),
+    }
+  }
+
+  if (schema.culture) {
+    const urls = sp.profiles.map((p) => p.url).filter((u): u is string => !!u)
+    if (urls.length) {
+      schema.culture.socialMediaChannels = dedup([...(schema.culture.socialMediaChannels ?? []), ...urls])
+    }
+  }
+
+  if (gbp?.url && schema.locations?.length && !schema.locations[0].gbpUrl) {
+    schema.locations[0].gbpUrl = gbp.url
   }
 }
 

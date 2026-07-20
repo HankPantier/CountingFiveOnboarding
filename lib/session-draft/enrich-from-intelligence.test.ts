@@ -112,3 +112,65 @@ describe('enrichSchemaFromIntelligence — audit carry-over', () => {
     expect(s._meta?.audit_context).toBeUndefined()
   })
 })
+
+import type { SocialPresenceReport } from '@/types/audit-result'
+
+function socialReport(): SocialPresenceReport {
+  return {
+    profiles: [
+      {
+        platform: 'google_business',
+        url: 'https://maps.google.com/?cid=1',
+        status: 'active',
+        metrics: { rating: 4.6, reviewCount: 30 },
+        usefulness: 'high',
+        roomForImprovement: 'Keep reviews fresh.',
+        source: 'places_api',
+      },
+      {
+        platform: 'linkedin',
+        url: 'https://linkedin.com/company/acme',
+        status: 'active',
+        metrics: { pageType: 'company', followerCount: 500 },
+        usefulness: 'medium',
+        roomForImprovement: 'Post weekly.',
+        source: 'ai',
+      },
+    ],
+    hasGbp: true,
+    hasLinkedIn: true,
+    missingRequired: [],
+    summary: '2 of 2 channels present.',
+  }
+}
+
+describe('enrichSchemaFromIntelligence — social & local presence', () => {
+  it('seeds the dedicated component and enriches the shared typed homes', () => {
+    const s = baseSchema()
+    s.culture = { missionVisionValues: '', teamDescription: '', socialMediaChannels: [] }
+    s.locations = [{ name: 'HQ', street: '', line2: '', city: 'Austin', state: 'TX', zip: '', phone: '', fax: '', email: '', hours: {} }]
+    enrichSchemaFromIntelligence(s, intel({ social_presence: socialReport() }))
+
+    expect(s.socialPresence?.profiles).toHaveLength(2)
+    expect(s.business?.googleBusinessProfile?.url).toBe('https://maps.google.com/?cid=1')
+    expect(s.business?.googleBusinessProfile?.usefulness).toBe('high')
+    expect(s.culture?.linkedIn?.url).toBe('https://linkedin.com/company/acme')
+    expect(s.culture?.socialMediaChannels).toContain('https://linkedin.com/company/acme')
+    expect(s.locations?.[0].gbpUrl).toBe('https://maps.google.com/?cid=1')
+  })
+
+  it('does not overwrite an existing GBP / LinkedIn value from the draft', () => {
+    const s = baseSchema()
+    s.business!.googleBusinessProfile = { url: 'https://existing.example/gbp', usefulness: 'low' }
+    s.culture = {
+      missionVisionValues: '', teamDescription: '', socialMediaChannels: [],
+      linkedIn: { url: 'https://existing.example/li', usefulness: 'low' },
+    }
+    enrichSchemaFromIntelligence(s, intel({ social_presence: socialReport() }))
+
+    expect(s.business?.googleBusinessProfile?.url).toBe('https://existing.example/gbp')
+    expect(s.culture?.linkedIn?.url).toBe('https://existing.example/li')
+    // The component is still seeded regardless.
+    expect(s.socialPresence?.profiles).toHaveLength(2)
+  })
+})

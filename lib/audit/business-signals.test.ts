@@ -67,4 +67,18 @@ describe('extractBusinessSignals', () => {
     expect(empty.phones).toEqual([])
     expect(empty.socialLinks).toEqual([])
   })
+
+  it('captures Google Business Profile / Maps listing links', () => {
+    const html = `<html><body>
+      <a href="https://g.page/acme-cpa">Find us on Google</a>
+      <a href="https://www.google.com/maps/place/Acme+CPA/@30.2,-97.7,17z">Directions</a>
+      <a href="https://business.google.com/acme">Manage</a>
+      <a href="https://acme.example/contact">Contact</a>
+    </body></html>`
+    const s = extractBusinessSignals([page(html)])
+    expect(s.socialLinks).toContain('https://g.page/acme-cpa')
+    expect(s.socialLinks.some((l) => l.includes('/maps/place/'))).toBe(true)
+    expect(s.socialLinks).toContain('https://business.google.com/acme')
+    expect(s.socialLinks.some((l) => l.includes('acme.example/contact'))).toBe(false)
+  })
 })

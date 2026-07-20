@@ -20,7 +20,14 @@ import {
   siteHealthExtraRows,
   type DashboardBucket,
 } from './report-buckets'
-import { SECTION_HELP, SECTION_LABELS, signalLabel, subScoreRows } from './intelligence-format'
+import {
+  formatSocialMetrics,
+  SECTION_HELP,
+  SECTION_LABELS,
+  signalLabel,
+  SOCIAL_PLATFORM_LABELS,
+  subScoreRows,
+} from './intelligence-format'
 import type {
   AuditResult,
   CategoryScoreMap,
@@ -33,6 +40,7 @@ import type {
   PageSummary,
   Recommendation,
   ScoredSection,
+  SocialPresenceReport,
   TechStackIntelligence,
 } from './types'
 
@@ -152,6 +160,8 @@ const ICON_PATHS: Record<string, string> = {
   content_library: '<path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/>',
   digital_intelligence:
     '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  social_presence:
+    '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
   narrative_recs:
     '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>',
   recommendations:
@@ -396,6 +406,37 @@ function digitalIntelBody(d: DigitalIntelligence, commentary?: string): string {
     ${commentaryHtml(commentary)}`
 }
 
+const SOCIAL_STATUS: Record<string, { label: string; color: string }> = {
+  active: { label: 'Active', color: COLORS.success },
+  dormant: { label: 'Dormant', color: COLORS.warning },
+  not_found: { label: 'Not found', color: COLORS.error },
+  unknown: { label: 'Unverified', color: COLORS.textMuted },
+}
+
+function socialPresenceBody(r: SocialPresenceReport, commentary?: string): string {
+  if (!r.profiles.length) return commentaryHtml(commentary)
+  const items = r.profiles
+    .map((p) => {
+      const s = SOCIAL_STATUS[p.status] ?? SOCIAL_STATUS.unknown
+      const platform = SOCIAL_PLATFORM_LABELS[p.platform] ?? p.platform
+      const metrics = formatSocialMetrics(p.metrics)
+      const link = p.url
+        ? `<div class="small"><a href="${esc(safeHref(p.url))}" target="_blank" rel="noopener noreferrer">${esc(p.url)}</a></div>`
+        : ''
+      return `<div class="intel-person">
+        <div><strong>${esc(platform)}</strong> <span style="color:${s.color}">· ${esc(s.label)}</span> <span class="small">(${esc(p.usefulness)} value)</span></div>
+        ${link}
+        ${metrics ? `<div class="small muted">${esc(metrics)}</div>` : ''}
+        ${p.roomForImprovement ? `<div class="muted">${esc(p.roomForImprovement)}</div>` : ''}
+      </div>`
+    })
+    .join('')
+  return `<p class="muted small">Presence &amp; quality — not scored</p>
+    ${r.summary ? `<p class="muted">${esc(r.summary)}</p>` : ''}
+    ${items}
+    ${commentaryHtml(commentary)}`
+}
+
 const NARRATIVE_PRIORITY_COLOR: Record<string, string> = {
   High: COLORS.error,
   Medium: COLORS.warning,
@@ -572,6 +613,15 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
         contentLibraryBody(intel.content_library, sectionCommentary.content_library),
         SECTION_HELP.content_library,
         'content_library',
+      )
+    : ''
+  const socialPresenceSection = intel?.social_presence
+    ? accordion(
+        SECTION_LABELS.social_presence,
+        '',
+        socialPresenceBody(intel.social_presence, sectionCommentary.social_presence),
+        SECTION_HELP.social_presence,
+        'social_presence',
       )
     : ''
   const digitalIntelSection = intel?.digital_intelligence
@@ -799,6 +849,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   ${dashboardSection}
   ${sectionDetails}
   ${contentLibrarySection}
+  ${socialPresenceSection}
   ${digitalIntelSection}
   ${narrativeRecsSection}
   ${recsSection}

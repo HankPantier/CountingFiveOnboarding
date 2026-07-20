@@ -5,7 +5,8 @@
 import { asJson } from '@/lib/supabase/json-typed'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAudit } from './index'
-import { nicheContentCaptured } from './intelligence'
+import { nicheContentCaptured, refreshAuditIntelligence } from './intelligence'
+import { generateSocialRecommendations, sortRecommendations } from './recommendations'
 import type { AuditResult, AuditStage } from './types'
 
 const PROGRESS_WRITE_INTERVAL_MS = 1500
@@ -115,6 +116,78 @@ export async function runAuditJob(auditRunId: string): Promise<void> {
   } catch (err) {
     console.error('[audit-worker] audit failed:', err)
     terminated = true
+    await writeError(err instanceof Error ? err.message : 'Unknown error').catch(() => {})
+  }
+}
+
+// Lightweight "refresh" of a completed audit: re-runs only the html-independent
+// intelligence (social & local presence + narrative) over the stored result and
+// re-merges the social recommendations. No re-crawl, no re-scoring — scores,
+// findings, and page analysis are preserved. The atomic guard in the /refresh
+// route already flipped this row to a running state, so any early return MUST
+// write a terminal state.
+export async function refreshAuditJob(auditRunId: string): Promise<void> {
+  const supabase = createServerClient()
+
+  const writeError = async (message: string) => {
+    await supabase
+      .from('audit_runs')
+      .update({
+        audit_status: 'error',
+        status_detail: 'Refresh failed',
+        error_message: message,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', auditRunId)
+  }
+
+  let row: { result: unknown; session_id: string | null } | null
+  try {
+    const { data } = await supabase
+      .from('audit_runs')
+      .select('result, session_id')
+      .eq('id', auditRunId)
+      .single()
+    row = data
+  } catch (err) {
+    console.error('[audit-worker] failed to load run for refresh:', err)
+    await writeError('Could not load audit run').catch(() => {})
+    return
+  }
+
+  if (!row?.result) {
+    await writeError('Audit has no stored result to refresh').catch(() => {})
+    return
+  }
+
+  try {
+    const result = row.result as AuditResult
+    result.intelligence = await refreshAuditIntelligence(result, {
+      auditId: auditRunId,
+      sessionId: row.session_id,
+    })
+
+    // Re-merge social recs idempotently: drop any prior 'Local & Social' entries
+    // (a previous refresh), then re-add from the fresh report and re-sort. The
+    // findings-based recs are left exactly as scored.
+    const sp = result.intelligence?.social_presence
+    const base = result.recommendations.filter((r) => r.category !== 'Local & Social')
+    result.recommendations = sp
+      ? sortRecommendations([...base, ...generateSocialRecommendations(sp)])
+      : base
+
+    await supabase
+      .from('audit_runs')
+      .update({
+        audit_status: 'complete',
+        status_detail: 'Audit refreshed',
+        result: asJson(trimForStorage(result)),
+        completed_at: new Date().toISOString(),
+        error_message: null,
+      })
+      .eq('id', auditRunId)
+  } catch (err) {
+    console.error('[audit-worker] refresh failed:', err)
     await writeError(err instanceof Error ? err.message : 'Unknown error').catch(() => {})
   }
 }
