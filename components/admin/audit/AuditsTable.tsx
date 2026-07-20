@@ -19,6 +19,7 @@ export type AuditRow = {
   batchLabel: string | null
   group: string
   runBy: string | null
+  runById: string | null
 }
 
 type SortKey = 'site' | 'batch' | 'folder' | 'runby' | 'date' | 'status' | 'pages' | 'score'
@@ -329,7 +330,19 @@ export default function AuditsTable({
                       <FolderBadge group={r.group} />
                     </td>
                     {showRunBy && (
-                      <td className="px-4 py-3 text-text-secondary">{r.runBy ?? '—'}</td>
+                      <td className="px-4 py-3">
+                        {r.runById && r.runBy ? (
+                          <Link
+                            href={`/admin/audits?runBy=${r.runById}`}
+                            title={`Show all audits by ${r.runBy}`}
+                            className="inline-flex items-center rounded-full bg-surface-subtle px-2.5 py-0.5 font-heading text-xs font-semibold text-text-secondary transition-colors hover:bg-brand-cyan/10 hover:text-brand-cyan"
+                          >
+                            {r.runBy}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-text-muted">—</span>
+                        )}
+                      </td>
                     )}
                     <td className="px-4 py-3 text-text-secondary">
                       {new Date(r.created_at).toLocaleDateString('en-US', {

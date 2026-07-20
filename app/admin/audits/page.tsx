@@ -30,24 +30,39 @@ function computeDeltas(rows: AuditRow[]): Record<string, number | null> {
 
 const FOLDERS = ['prospect', 'working', 'client'] as const
 type Folder = (typeof FOLDERS)[number]
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Build an audits-list URL, preserving the folder + runBy dimensions.
+function auditsHref(folder: string, runBy: string | null): string {
+  const p = new URLSearchParams()
+  if (folder && folder !== 'all') p.set('folder', folder)
+  if (runBy) p.set('runBy', runBy)
+  const qs = p.toString()
+  return qs ? `/admin/audits?${qs}` : '/admin/audits'
+}
 
 export default async function AuditsListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ folder?: string }>
+  searchParams: Promise<{ folder?: string; runBy?: string }>
 }) {
   const supabase = createServerClient()
   const user = await getCurrentUser()
   const scope = user ? getAccessibleAuditScope(user) : { createdBy: '' }
 
-  const folderParam = (await searchParams).folder
+  const sp = await searchParams
+  const folderParam = sp.folder
   const folder: Folder | 'all' =
     folderParam && (FOLDERS as readonly string[]).includes(folderParam) ? (folderParam as Folder) : 'all'
+  // Filter to a single runner (created_by). Admins only in practice — the column
+  // is admin-only and auditor scope already pins created_by to self.
+  const runByFilter = sp.runBy && UUID_RE.test(sp.runBy) ? sp.runBy : null
 
   // Per-folder counts across ALL (scoped) audits, not just the loaded page.
   const countFor = async (g: Folder): Promise<number> => {
     let q = supabase.from('audit_runs').select('id', { count: 'exact', head: true }).eq('audit_group', g)
     if (scope) q = q.eq('created_by', scope.createdBy)
+    if (runByFilter) q = q.eq('created_by', runByFilter)
     const { count } = await q
     return count ?? 0
   }
@@ -68,6 +83,7 @@ export default async function AuditsListPage({
     .limit(200)
   if (scope) query = query.eq('created_by', scope.createdBy)
   if (folder !== 'all') query = query.eq('audit_group', folder)
+  if (runByFilter) query = query.eq('created_by', runByFilter)
   const { data } = await query
 
   // Resolve batch labels for any runs that belong to a batch (scoped rows only,
@@ -78,12 +94,17 @@ export default async function AuditsListPage({
     : { data: [] }
   const labelByBatch = new Map((batches ?? []).map((b) => [b.id, b.label]))
 
-  // Resolve who ran each audit (created_by → admin display name).
-  const creatorIds = [...new Set((data ?? []).map((r) => r.created_by).filter((v): v is string => !!v))]
+  // Resolve who ran each audit (created_by → admin display name). Include the
+  // active runBy filter so its chip name resolves even if the folder+runBy
+  // combination currently yields no rows.
+  const creatorIdSet = new Set((data ?? []).map((r) => r.created_by).filter((v): v is string => !!v))
+  if (runByFilter) creatorIdSet.add(runByFilter)
+  const creatorIds = [...creatorIdSet]
   const { data: creators } = creatorIds.length
     ? await supabase.from('admins').select('id, name, email').in('id', creatorIds)
     : { data: [] }
   const nameByCreator = new Map((creators ?? []).map((a) => [a.id, a.name || a.email]))
+  const runByName = runByFilter ? nameByCreator.get(runByFilter) ?? 'Unknown user' : null
 
   const rows: AuditRow[] = (data ?? []).map((r) => ({
     id: r.id,
@@ -99,6 +120,7 @@ export default async function AuditsListPage({
     batchLabel: r.audit_batch_id ? labelByBatch.get(r.audit_batch_id) ?? null : null,
     group: r.audit_group,
     runBy: r.created_by ? nameByCreator.get(r.created_by) ?? null : null,
+    runById: r.created_by,
   }))
   const deltas = computeDeltas(rows)
 
@@ -129,6 +151,21 @@ export default async function AuditsListPage({
         </div>
       </div>
 
+      {runByFilter && (
+        <div className="mb-4">
+          <span className="inline-flex items-center gap-2 rounded-full bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan">
+            Run by: {runByName}
+            <Link
+              href={auditsHref(folder, null)}
+              aria-label="Clear runner filter"
+              className="leading-none text-brand-cyan transition-colors hover:text-brand-navy"
+            >
+              ✕
+            </Link>
+          </span>
+        </div>
+      )}
+
       {folderCounts.all > 0 && (
         <div className="mb-6 flex items-center gap-1">
           {([
@@ -139,7 +176,7 @@ export default async function AuditsListPage({
           ] as const).map(([key, label]) => (
             <Link
               key={key}
-              href={key === 'all' ? '/admin/audits' : `/admin/audits?folder=${key}`}
+              href={auditsHref(key, runByFilter)}
               className={`rounded-pill px-3 py-1.5 font-heading text-xs font-semibold transition-colors ${
                 folder === key
                   ? 'bg-brand-navy text-text-inverse'
@@ -152,7 +189,7 @@ export default async function AuditsListPage({
         </div>
       )}
 
-      {folderCounts.all === 0 ? (
+      {folderCounts.all === 0 && !runByFilter ? (
         <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
           <h2 className="font-heading text-lg font-semibold text-brand-navy">No audits yet</h2>
           <p className="mx-auto mt-1 max-w-sm font-body text-sm text-text-secondary">
@@ -168,7 +205,7 @@ export default async function AuditsListPage({
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
-          <p className="font-body text-sm text-text-secondary">No audits in this folder.</p>
+          <p className="font-body text-sm text-text-secondary">No audits match this filter.</p>
         </div>
       ) : (
         <>
