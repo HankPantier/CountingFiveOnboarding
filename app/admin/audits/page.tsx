@@ -55,12 +55,22 @@ export default async function AuditsListPage() {
             {rows.length} run{rows.length === 1 ? '' : 's'}
           </p>
         </div>
-        <Link
-          href="/admin/audits/new"
-          className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
-        >
-          New audit
-        </Link>
+        <div className="flex items-center gap-2">
+          {user?.isAdmin && (
+            <Link
+              href="/admin/audits/batch/new"
+              className="rounded-pill border border-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-brand-cyan transition-all hover:bg-brand-cyan/10"
+            >
+              Batch audit
+            </Link>
+          )}
+          <Link
+            href="/admin/audits/new"
+            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+          >
+            New audit
+          </Link>
+        </div>
       </div>
 
       {rows.length === 0 ? (

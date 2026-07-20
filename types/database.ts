@@ -77,6 +77,44 @@ export type Database = {
           }
         ]
       }
+      audit_batches: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string | null
+          status: string
+          total_count: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          status?: string
+          total_count: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          status?: string
+          total_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_batches_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_messages: {
         Row: {
           audit_run_id: string
@@ -113,6 +151,7 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          audit_batch_id: string | null
           audit_status: string
           category_scores: Json | null
           completed_at: string | null
@@ -138,6 +177,7 @@ export type Database = {
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          audit_batch_id?: string | null
           audit_status?: string
           category_scores?: Json | null
           completed_at?: string | null
@@ -163,6 +203,7 @@ export type Database = {
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          audit_batch_id?: string | null
           audit_status?: string
           category_scores?: Json | null
           completed_at?: string | null
@@ -191,6 +232,13 @@ export type Database = {
             columns: ["approved_by"]
             isOneToOne: false
             referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_runs_audit_batch_id_fkey"
+            columns: ["audit_batch_id"]
+            isOneToOne: false
+            referencedRelation: "audit_batches"
             referencedColumns: ["id"]
           },
           {

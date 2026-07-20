@@ -198,6 +198,54 @@ export async function GET(req: Request) {
     }
   }
 
+  // Audit batches: the runner self-chains via after(), which Vercel may kill
+  // before the next hop fires. The audit_runs sweep above already reset any
+  // >15-min-stuck run to 'error', so a stalled batch now shows queued rows and
+  // nothing running — re-trigger its sequential runner the same way.
+  const { data: runningBatches } = await supabase
+    .from('audit_batches')
+    .select('id')
+    .eq('status', 'running')
+
+  let auditBatchesResumed = 0
+  if (resumeBase && runningBatches?.length) {
+    const batchIds = runningBatches.map((b) => b.id)
+    const { data: batchRuns } = await supabase
+      .from('audit_runs')
+      .select('audit_batch_id, audit_status')
+      .in('audit_batch_id', batchIds)
+
+    const RUNNING_AUDIT = new Set(RUNNING_AUDIT_STATES)
+    const auditBatchCounts = new Map<string, { queued: number; running: number }>()
+    for (const r of batchRuns ?? []) {
+      if (!r.audit_batch_id) continue
+      const c = auditBatchCounts.get(r.audit_batch_id) ?? { queued: 0, running: 0 }
+      if (r.audit_status === 'queued') c.queued += 1
+      else if (RUNNING_AUDIT.has(r.audit_status)) c.running += 1
+      auditBatchCounts.set(r.audit_batch_id, c)
+    }
+    const resumableAuditBatches = [...auditBatchCounts.entries()]
+      .filter(([, c]) => c.queued > 0 && c.running === 0)
+      .map(([batchId]) => batchId)
+      .slice(0, 5)
+
+    const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
+    for (const batchId of resumableAuditBatches) {
+      try {
+        const res = await fetch(`${url}/api/audit-batches/${batchId}/run`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+        if (res.ok) auditBatchesResumed += 1
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] audit-batch auto-resume failed for', batchId, err)
+      }
+    }
+    if (auditBatchesResumed) {
+      console.warn(`[sweep-stuck-jobs] audit-batches auto-resumed=${auditBatchesResumed}`)
+    }
+  }
+
   const researchSwept = research.data?.length ?? 0
   const pagesSwept = pages.data?.length ?? 0
   const ideasSwept = ideas.data?.length ?? 0
@@ -250,5 +298,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, whoisRetried, generationResumed, batchesResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, cutoff })
 }
