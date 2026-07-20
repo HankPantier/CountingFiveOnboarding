@@ -44,6 +44,7 @@ export default function EditorShell({
   const [pageActioning, setPageActioning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<string | null>(null)
+  const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
   // Set when a save hits a sha conflict (someone else saved the same file).
   // The admin chooses explicitly: overwrite with their version, or take the
   // server's — no silent last-writer-wins.
@@ -261,6 +262,7 @@ export default function EditorShell({
     setPublishing(true)
     setError(null)
     setPublishResult(null)
+    setConflictPrUrl(null)
     try {
       const res = await fetch(`/api/edit/${sessionId}/publish`, { method: 'POST' })
       if (!res.ok) {
@@ -277,7 +279,9 @@ export default function EditorShell({
         await refreshTree()
         await refreshStatus()
       } else {
-        setPublishResult(`Conflict — review at ${data.prUrl}`)
+        // A merge conflict needs manual resolution in GitHub — surface a
+        // persistent, clickable link rather than a toast that auto-dismisses.
+        setConflictPrUrl(data.prUrl)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Publish failed')
@@ -641,6 +645,36 @@ export default function EditorShell({
           <button
             type="button"
             onClick={() => setPublishResult(null)}
+            aria-label="Dismiss"
+            className="ml-auto text-sm leading-none text-text-muted hover:text-brand-navy"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {conflictPrUrl && (
+        <div
+          role="alert"
+          className="fixed bottom-6 right-6 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-border-default border-l-4 border-l-warning bg-surface-card px-4 py-3 shadow-elevated"
+        >
+          <div className="text-xs font-body text-text-primary">
+            <p className="font-heading font-semibold text-warning-strong">Publish needs a manual merge</p>
+            <p className="mt-1">
+              Draft and live have conflicting changes. Resolve and merge the{' '}
+              <a
+                href={conflictPrUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-brand-cyan underline hover:text-brand-navy"
+              >
+                pull request on GitHub
+              </a>{' '}
+              to deploy.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConflictPrUrl(null)}
             aria-label="Dismiss"
             className="ml-auto text-sm leading-none text-text-muted hover:text-brand-navy"
           >

@@ -7,20 +7,37 @@ const getCommit = vi.fn()
 const createTree = vi.fn()
 const createCommit = vi.fn()
 const updateRef = vi.fn()
+const compareCommits = vi.fn()
+const merge = vi.fn()
+const pullsList = vi.fn()
+const pullsCreate = vi.fn()
 
 vi.mock('./app-client', () => ({
   getOctokit: () => ({
-    repos: { getContent },
+    repos: { getContent, compareCommits, merge },
     git: { getRef, getCommit, createTree, createCommit, updateRef },
+    pulls: { list: pullsList, create: pullsCreate },
   }),
   resolveRepo: () => ({ owner: 'cf', repo: 'site' }),
 }))
 
-import { moveFile, FileNotFoundError, StaleShaError, AssetExistsError } from './repo-files'
+import {
+  moveFile,
+  mergeDraftToMain,
+  FileNotFoundError,
+  StaleShaError,
+  AssetExistsError,
+} from './repo-files'
 
 function notFound(): RequestError {
   return new RequestError('Not Found', 404, {
     request: { method: 'GET', url: 'https://api.github.com', headers: {} },
+  })
+}
+
+function reqError(status: number, message: string): RequestError {
+  return new RequestError(message, status, {
+    request: { method: 'POST', url: 'https://api.github.com', headers: {} },
   })
 }
 
@@ -80,5 +97,52 @@ describe('moveFile', () => {
     await expect(moveFile('site', from, to, 'draft', 'blob1', 'm')).rejects.toBeInstanceOf(
       AssetExistsError
     )
+  })
+})
+
+describe('mergeDraftToMain', () => {
+  it('reports merged with no commit when draft is not ahead', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 0 } })
+    const res = await mergeDraftToMain('site')
+    expect(res).toEqual({ merged: true, mergeCommitSha: '' })
+    expect(merge).not.toHaveBeenCalled()
+  })
+
+  it('fast-forward merges when there is no conflict', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 3 } })
+    merge.mockResolvedValue({ data: { sha: 'mergeSha' } })
+    const res = await mergeDraftToMain('site')
+    expect(res).toEqual({ merged: true, mergeCommitSha: 'mergeSha' })
+  })
+
+  it('opens a PR on conflict when none exists', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 3 } })
+    merge.mockRejectedValue(reqError(409, 'Merge conflict'))
+    pullsList.mockResolvedValue({ data: [] })
+    pullsCreate.mockResolvedValue({ data: { html_url: 'https://github.com/cf/site/pull/7' } })
+    const res = await mergeDraftToMain('site')
+    expect(res).toEqual({ merged: false, prUrl: 'https://github.com/cf/site/pull/7' })
+  })
+
+  it('reuses the open PR on conflict instead of failing to create a duplicate', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 3 } })
+    merge.mockRejectedValue(reqError(409, 'Merge conflict'))
+    pullsList.mockResolvedValue({ data: [{ html_url: 'https://github.com/cf/site/pull/3' }] })
+    const res = await mergeDraftToMain('site')
+    expect(res).toEqual({ merged: false, prUrl: 'https://github.com/cf/site/pull/3' })
+    expect(pullsCreate).not.toHaveBeenCalled()
+  })
+
+  it('recovers when create races into an existing-PR 422', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 3 } })
+    merge.mockRejectedValue(reqError(409, 'Merge conflict'))
+    pullsList
+      .mockResolvedValueOnce({ data: [] }) // first lookup: none
+      .mockResolvedValueOnce({ data: [{ html_url: 'https://github.com/cf/site/pull/9' }] }) // after 422
+    pullsCreate.mockRejectedValue(
+      reqError(422, 'A pull request already exists for cf:draft.')
+    )
+    const res = await mergeDraftToMain('site')
+    expect(res).toEqual({ merged: false, prUrl: 'https://github.com/cf/site/pull/9' })
   })
 })

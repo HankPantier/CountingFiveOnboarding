@@ -535,6 +535,48 @@ export type MergeResult =
   | { merged: true; mergeCommitSha: string }
   | { merged: false; prUrl: string }
 
+// Return the URL of the open draft→main PR, creating it if none exists. Idempotent:
+// GitHub rejects a second PR for the same head branch ("A pull request already
+// exists for owner:draft"), so we look one up first and fall back to a lookup if a
+// create races. Used when a publish hits a merge conflict the admin must resolve.
+async function ensureDraftPr(
+  octokit: ReturnType<typeof getOctokit>,
+  owner: string,
+  repo: string
+): Promise<string> {
+  const head = `${owner}:${DRAFT_BRANCH}`
+  const existing = await octokit.pulls.list({
+    owner,
+    repo,
+    base: MAIN_BRANCH,
+    head,
+    state: 'open',
+  })
+  if (existing.data.length > 0) return existing.data[0].html_url
+
+  try {
+    const pr = await octokit.pulls.create({
+      owner,
+      repo,
+      head: DRAFT_BRANCH,
+      base: MAIN_BRANCH,
+      title: 'Publish draft to live (manual resolve required)',
+      body:
+        'Auto-publish detected a conflict between `draft` and `main`. ' +
+        'Resolve the conflict in this PR and merge to deploy.',
+    })
+    return pr.data.html_url
+  } catch (err) {
+    // A PR was created between our list and create (or already existed) — GitHub
+    // 422s with a custom "already exists" message. Re-fetch and return it.
+    if (isRequestError(err) && err.status === 422) {
+      const retry = await octokit.pulls.list({ owner, repo, base: MAIN_BRANCH, head, state: 'open' })
+      if (retry.data.length > 0) return retry.data[0].html_url
+    }
+    throw err
+  }
+}
+
 export async function mergeDraftToMain(slug: string): Promise<MergeResult> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
@@ -561,18 +603,8 @@ export async function mergeDraftToMain(slug: string): Promise<MergeResult> {
     return { merged: true, mergeCommitSha: res.data.sha }
   } catch (err) {
     if (!isRequestError(err) || err.status !== 409) throw err
-    // Conflict — open a PR so the admin can resolve in GitHub's UI.
-    const pr = await octokit.pulls.create({
-      owner,
-      repo,
-      head: DRAFT_BRANCH,
-      base: MAIN_BRANCH,
-      title: 'Publish draft to live (manual resolve required)',
-      body:
-        'Auto-publish detected a conflict between `draft` and `main`. ' +
-        'Resolve the conflict in this PR and merge to deploy.',
-    })
-    return { merged: false, prUrl: pr.data.html_url }
+    // Conflict — surface a PR (reusing an open one) for the admin to resolve.
+    return { merged: false, prUrl: await ensureDraftPr(octokit, owner, repo) }
   }
 }
 
