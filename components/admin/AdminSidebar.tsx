@@ -8,9 +8,10 @@ import type { Capability } from '@/lib/auth/access'
 import { signOut } from '@/app/admin/dashboard/actions'
 
 // Visibility predicate for a nav item:
+//   'any'                 — every authenticated admin-table user
 //   'manager' / 'auditor' — admins plus members holding that capability
 //   'admin'               — admins only
-type NavRequires = 'manager' | 'auditor' | 'admin'
+type NavRequires = 'any' | 'manager' | 'auditor' | 'admin'
 
 type NavItem = {
   href: string
@@ -38,7 +39,8 @@ function Icon({ d }: { d: string }) {
 }
 
 const NAV: NavItem[] = [
-  { href: '/admin/dashboard', label: 'Clients', icon: <Icon d="M3 12h18M3 6h18M3 18h18" />, requires: 'manager' },
+  { href: '/admin/home', label: 'Home', icon: <Icon d="M3 11l9-8 9 8M5 9v11h5v-6h4v6h5V9" />, requires: 'any' },
+  { href: '/admin/dashboard', label: 'Onboarding', icon: <Icon d="M3 12h18M3 6h18M3 18h18" />, requires: 'manager' },
   { href: '/admin/content', label: 'Content', icon: <Icon d="M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01" />, requires: 'manager' },
   { href: '/admin/blog-batch', label: 'Batch Content', icon: <Icon d="M4 4h16v4H4zM4 12h10M4 16h10M16 12l4 4-4 4" />, requires: 'manager' },
   { href: '/admin/audits', label: 'Audits', icon: <Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35" />, requires: 'auditor' },
@@ -57,11 +59,11 @@ export default function AdminSidebar({
   const pathname = usePathname()
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
-  const items = NAV.filter((item) =>
-    item.requires === 'admin'
-      ? isAdmin
-      : isAdmin || capabilities.includes(item.requires)
-  )
+  const items = NAV.filter((item) => {
+    if (item.requires === 'any') return true
+    if (item.requires === 'admin') return isAdmin
+    return isAdmin || capabilities.includes(item.requires)
+  })
 
   const rowBase =
     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-body transition-colors'
@@ -72,7 +74,7 @@ export default function AdminSidebar({
     >
       <div className="h-16 flex items-center justify-between px-3 border-b border-border-default">
         {!collapsed && (
-          <Link href="/admin/dashboard" className="min-w-0">
+          <Link href="/admin/home" className="min-w-0">
             <Image
               src="/logo.png"
               alt="Revaltus"

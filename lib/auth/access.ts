@@ -16,6 +16,7 @@ const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
 export interface CurrentUser {
   id: string
   email?: string
+  name?: string
   role: Role
   isAdmin: boolean
   capabilities: Capability[]
@@ -39,7 +40,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const { data: admin } = await supabase
     .from('admins')
-    .select('id, email, role, capabilities')
+    .select('id, email, name, role, capabilities')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -48,6 +49,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   return {
     id: admin.id,
     email: admin.email ?? user.email ?? undefined,
+    name: admin.name ?? undefined,
     role: isAdmin ? 'admin' : 'member',
     isAdmin,
     capabilities: isAdmin ? ALL_CAPABILITIES : normalizeCapabilities(admin.capabilities),

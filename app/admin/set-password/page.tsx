@@ -33,7 +33,7 @@ export default function SetPasswordPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      router.push('/admin/dashboard')
+      router.push('/admin/home')
     }
   }
 
