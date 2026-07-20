@@ -5,6 +5,7 @@ import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAuditBatch } from '@/lib/audit/batch-runner'
 import { parseBatchUrls, MAX_BATCH_URLS } from '@/lib/audit/parse-batch-urls'
+import { resolveInheritedGroup } from '@/lib/audit/audit-group'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -71,6 +72,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to create batch' }, { status: 500 })
   }
 
+  // Folders track the business: each queued run inherits its site's current
+  // folder (resolve once per unique domain).
+  const uniqueDomains = [...new Set(valid.map((v) => v.domain))]
+  const groupByDomain = new Map<string, string>()
+  await Promise.all(
+    uniqueDomains.map(async (d) => {
+      groupByDomain.set(d, await resolveInheritedGroup(supabase, { domain: d, createdBy: auth.user.id }))
+    }),
+  )
+
   const { error: runsErr } = await supabase.from('audit_runs').insert(
     valid.map((v) => ({
       created_by: auth.user.id,
@@ -79,6 +90,7 @@ export async function POST(req: Request) {
       max_pages: maxPages,
       audit_status: 'queued',
       audit_batch_id: batch.id,
+      audit_group: groupByDomain.get(v.domain) ?? 'prospect',
     })),
   )
 

@@ -3,6 +3,7 @@ import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { normalizeDomain } from '@/lib/audit'
+import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { withStaffMode } from '@/lib/session/seed-mode'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
@@ -38,7 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: run } = await supabase
     .from('audit_runs')
-    .select('url, approved_at, session_id')
+    .select('url, approved_at, session_id, created_by')
     .eq('id', id)
     .single()
 
@@ -120,6 +121,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       { status: 409 },
     )
   }
+
+  // The audit is now linked to a session — move this site's folder to 'working'
+  // (forward-only, whole-domain). Non-fatal: never fail the start over it.
+  await promoteAuditGroupByDomain(supabase, {
+    domain: targetDomain,
+    createdBy: run.created_by,
+    to: 'working',
+  })
 
   return NextResponse.json({ sessionId: session.id })
 }

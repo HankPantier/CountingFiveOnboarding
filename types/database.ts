@@ -152,6 +152,7 @@ export type Database = {
           approved_at: string | null
           approved_by: string | null
           audit_batch_id: string | null
+          audit_group: string
           audit_status: string
           category_scores: Json | null
           completed_at: string | null
@@ -178,6 +179,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           audit_batch_id?: string | null
+          audit_group?: string
           audit_status?: string
           category_scores?: Json | null
           completed_at?: string | null
@@ -204,6 +206,7 @@ export type Database = {
           approved_at?: string | null
           approved_by?: string | null
           audit_batch_id?: string | null
+          audit_group?: string
           audit_status?: string
           category_scores?: Json | null
           completed_at?: string | null

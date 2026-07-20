@@ -28,19 +28,46 @@ function computeDeltas(rows: AuditRow[]): Record<string, number | null> {
   return deltas
 }
 
-export default async function AuditsListPage() {
+const FOLDERS = ['prospect', 'working', 'client'] as const
+type Folder = (typeof FOLDERS)[number]
+
+export default async function AuditsListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ folder?: string }>
+}) {
   const supabase = createServerClient()
   const user = await getCurrentUser()
   const scope = user ? getAccessibleAuditScope(user) : { createdBy: '' }
 
+  const folderParam = (await searchParams).folder
+  const folder: Folder | 'all' =
+    folderParam && (FOLDERS as readonly string[]).includes(folderParam) ? (folderParam as Folder) : 'all'
+
+  // Per-folder counts across ALL (scoped) audits, not just the loaded page.
+  const countFor = async (g: Folder): Promise<number> => {
+    let q = supabase.from('audit_runs').select('id', { count: 'exact', head: true }).eq('audit_group', g)
+    if (scope) q = q.eq('created_by', scope.createdBy)
+    const { count } = await q
+    return count ?? 0
+  }
+  const [prospectCount, workingCount, clientCount] = await Promise.all(FOLDERS.map(countFor))
+  const folderCounts: Record<Folder | 'all', number> = {
+    prospect: prospectCount,
+    working: workingCount,
+    client: clientCount,
+    all: prospectCount + workingCount + clientCount,
+  }
+
   let query = supabase
     .from('audit_runs')
     .select(
-      'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at, audit_batch_id',
+      'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at, audit_batch_id, audit_group',
     )
     .order('created_at', { ascending: false })
     .limit(200)
   if (scope) query = query.eq('created_by', scope.createdBy)
+  if (folder !== 'all') query = query.eq('audit_group', folder)
   const { data } = await query
 
   // Resolve batch labels for any runs that belong to a batch (scoped rows only,
@@ -63,6 +90,7 @@ export default async function AuditsListPage() {
     created_at: r.created_at,
     batchId: r.audit_batch_id,
     batchLabel: r.audit_batch_id ? labelByBatch.get(r.audit_batch_id) ?? null : null,
+    group: r.audit_group,
   }))
   const deltas = computeDeltas(rows)
 
@@ -72,7 +100,7 @@ export default async function AuditsListPage() {
         <div>
           <h1 className="font-heading text-2xl font-bold text-brand-navy">Site Audits</h1>
           <p className="mt-1 font-body text-sm text-text-secondary">
-            {rows.length} run{rows.length === 1 ? '' : 's'}
+            {folderCounts.all} audit{folderCounts.all === 1 ? '' : 's'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -93,7 +121,30 @@ export default async function AuditsListPage() {
         </div>
       </div>
 
-      {rows.length === 0 ? (
+      {folderCounts.all > 0 && (
+        <div className="mb-6 flex items-center gap-1">
+          {([
+            ['all', 'All'],
+            ['prospect', 'Prospect'],
+            ['working', 'Working'],
+            ['client', 'Client'],
+          ] as const).map(([key, label]) => (
+            <Link
+              key={key}
+              href={key === 'all' ? '/admin/audits' : `/admin/audits?folder=${key}`}
+              className={`rounded-pill px-3 py-1.5 font-heading text-xs font-semibold transition-colors ${
+                folder === key
+                  ? 'bg-brand-navy text-text-inverse'
+                  : 'text-text-secondary hover:bg-surface-subtle'
+              }`}
+            >
+              {label} <span className="opacity-70">{folderCounts[key]}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {folderCounts.all === 0 ? (
         <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
           <h2 className="font-heading text-lg font-semibold text-brand-navy">No audits yet</h2>
           <p className="mx-auto mt-1 max-w-sm font-body text-sm text-text-secondary">
@@ -106,6 +157,10 @@ export default async function AuditsListPage() {
           >
             Run your first audit
           </Link>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
+          <p className="font-body text-sm text-text-secondary">No audits in this folder.</p>
         </div>
       ) : (
         <>

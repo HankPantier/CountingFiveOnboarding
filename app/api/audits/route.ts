@@ -4,6 +4,7 @@ import { requireAuditorCapability, getAccessibleAuditScope } from '@/lib/auth/ac
 import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { createServerClient } from '@/lib/supabase/server'
 import { normalizeDomain, normalizeInputUrl } from '@/lib/audit'
+import { resolveInheritedGroup } from '@/lib/audit/audit-group'
 
 export const runtime = 'nodejs'
 
@@ -55,6 +56,8 @@ export async function POST(req: Request) {
   const domain = normalizeDomain(url)
 
   const supabase = createServerClient()
+  // Folders track the business: a re-audit inherits the site's current folder.
+  const auditGroup = await resolveInheritedGroup(supabase, { domain, createdBy: auth.user.id })
   const { data, error } = await supabase
     .from('audit_runs')
     .insert({
@@ -64,6 +67,7 @@ export async function POST(req: Request) {
       site_name: parsed.data.siteName ?? null,
       max_pages: parsed.data.maxPages ?? 50,
       audit_status: 'queued',
+      audit_group: auditGroup,
     })
     .select('id')
     .single()

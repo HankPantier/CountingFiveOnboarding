@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AuditStatusBadge, GradeBadge } from '@/components/admin/audit/AuditBadges'
+import { AuditStatusBadge, GradeBadge, FolderBadge } from '@/components/admin/audit/AuditBadges'
 
 export type AuditRow = {
   id: string
@@ -17,13 +17,15 @@ export type AuditRow = {
   created_at: string
   batchId: string | null
   batchLabel: string | null
+  group: string
 }
 
-type SortKey = 'site' | 'batch' | 'date' | 'status' | 'pages' | 'score'
+type SortKey = 'site' | 'batch' | 'folder' | 'date' | 'status' | 'pages' | 'score'
 // null key = non-sortable column (the per-domain Δ is derived, not row data).
 const COLUMNS: { key: SortKey | null; label: string }[] = [
   { key: 'site', label: 'Site' },
   { key: 'batch', label: 'Batch' },
+  { key: 'folder', label: 'Folder' },
   { key: 'date', label: 'Date' },
   { key: 'status', label: 'Status' },
   { key: 'pages', label: 'Pages' },
@@ -35,11 +37,16 @@ const COLUMNS: { key: SortKey | null; label: string }[] = [
 const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   site: 'asc',
   batch: 'asc',
+  folder: 'asc',
   status: 'asc',
   date: 'desc',
   pages: 'desc',
   score: 'desc',
 }
+
+// Folder sorts by lifecycle order, not alphabetically.
+const GROUP_RANK: Record<string, number> = { prospect: 0, working: 1, client: 2 }
+const AUDIT_GROUPS = ['prospect', 'working', 'client'] as const
 
 function batchSortValue(r: AuditRow): string | null {
   return r.batchId ? (r.batchLabel || 'untitled batch').toLowerCase() : null
@@ -62,6 +69,8 @@ function sortRows(rows: AuditRow[], key: SortKey, dir: 'asc' | 'desc'): AuditRow
         return str((a.site_name || a.domain).toLowerCase(), (b.site_name || b.domain).toLowerCase()) * mul
       case 'batch':
         return nullsLast(batchSortValue(a), batchSortValue(b), str)
+      case 'folder':
+        return num(GROUP_RANK[a.group] ?? 0, GROUP_RANK[b.group] ?? 0) * mul
       case 'date':
         return str(a.created_at, b.created_at) * mul
       case 'status':
@@ -158,6 +167,33 @@ export default function AuditsTable({
     }
   }
 
+  const moveTo = async (group: (typeof AUDIT_GROUPS)[number]) => {
+    if (selected.size === 0) return
+    // Folders track the business, so this moves every audit sharing the selected
+    // sites' domains — make that explicit before acting.
+    if (!confirm(`Move all audits for the selected site(s) to "${group}"?`)) return
+    setBusy(true)
+    setError('')
+    try {
+      const res = await fetch('/api/audits/group', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...selected], group }),
+      })
+      const data = (await res.json()) as { moved?: number; error?: string }
+      if (!res.ok || data.error) {
+        setError(data.error ?? 'Move failed. Please try again.')
+        return
+      }
+      setSelected(new Set())
+      router.refresh()
+    } catch {
+      setError('Move failed. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const dangerButton =
     'rounded-pill border border-error/50 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-error transition-colors hover:bg-error hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -167,6 +203,17 @@ export default function AuditsTable({
         {selected.size > 0 ? (
           <>
             <span className="font-body text-sm text-text-secondary">{selected.size} selected</span>
+            <span className="font-body text-xs text-text-muted">Move to</span>
+            {AUDIT_GROUPS.map((g) => (
+              <button
+                key={g}
+                onClick={() => moveTo(g)}
+                disabled={busy}
+                className="rounded-pill border border-border-default px-3 py-1 font-heading text-xs font-semibold capitalize text-text-secondary transition-colors hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {g}
+              </button>
+            ))}
             <button
               onClick={() =>
                 deleteIds(
@@ -268,6 +315,9 @@ export default function AuditsTable({
                       ) : (
                         <span className="text-xs text-text-muted">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <FolderBadge group={r.group} />
                     </td>
                     <td className="px-4 py-3 text-text-secondary">
                       {new Date(r.created_at).toLocaleDateString('en-US', {

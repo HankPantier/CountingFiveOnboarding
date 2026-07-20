@@ -7,6 +7,7 @@ import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from 
 import { ensureBlockMedia } from './ensure-block-media'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { countWords, targetWordCount } from './word-count-validator'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { PUBLISHED_CONTENT_MODEL, CONTENT_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
@@ -801,6 +802,24 @@ export async function runContentGeneration(
       .eq('id', contentJobId)
 
     console.warn(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
+
+    // Content is generated for this client — move its audit folder to 'client'
+    // (forward-only, whole-domain). Non-fatal: never fail generation over it.
+    const { data: linkedAudits } = await supabase
+      .from('audit_runs')
+      .select('domain, created_by')
+      .eq('session_id', sessionId)
+    const seenDomains = new Set<string>()
+    for (const a of linkedAudits ?? []) {
+      const key = `${a.domain}|${a.created_by ?? ''}`
+      if (seenDomains.has(key)) continue
+      seenDomains.add(key)
+      await promoteAuditGroupByDomain(supabase, {
+        domain: a.domain,
+        createdBy: a.created_by,
+        to: 'client',
+      })
+    }
 
     const { data: session } = await supabase
       .from('sessions')
