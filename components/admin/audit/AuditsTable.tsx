@@ -18,14 +18,17 @@ export type AuditRow = {
   batchId: string | null
   batchLabel: string | null
   group: string
+  runBy: string | null
 }
 
-type SortKey = 'site' | 'batch' | 'folder' | 'date' | 'status' | 'pages' | 'score'
+type SortKey = 'site' | 'batch' | 'folder' | 'runby' | 'date' | 'status' | 'pages' | 'score'
 // null key = non-sortable column (the per-domain Δ is derived, not row data).
-const COLUMNS: { key: SortKey | null; label: string }[] = [
+// The 'Run by' column is admin-only (auditors only see their own audits).
+const ALL_COLUMNS: { key: SortKey | null; label: string; adminOnly?: boolean }[] = [
   { key: 'site', label: 'Site' },
   { key: 'batch', label: 'Batch' },
   { key: 'folder', label: 'Folder' },
+  { key: 'runby', label: 'Run by', adminOnly: true },
   { key: 'date', label: 'Date' },
   { key: 'status', label: 'Status' },
   { key: 'pages', label: 'Pages' },
@@ -38,6 +41,7 @@ const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
   site: 'asc',
   batch: 'asc',
   folder: 'asc',
+  runby: 'asc',
   status: 'asc',
   date: 'desc',
   pages: 'desc',
@@ -71,6 +75,8 @@ function sortRows(rows: AuditRow[], key: SortKey, dir: 'asc' | 'desc'): AuditRow
         return nullsLast(batchSortValue(a), batchSortValue(b), str)
       case 'folder':
         return num(GROUP_RANK[a.group] ?? 0, GROUP_RANK[b.group] ?? 0) * mul
+      case 'runby':
+        return nullsLast(a.runBy?.toLowerCase() ?? null, b.runBy?.toLowerCase() ?? null, str)
       case 'date':
         return str(a.created_at, b.created_at) * mul
       case 'status':
@@ -103,11 +109,14 @@ function TrashIcon() {
 export default function AuditsTable({
   rows,
   deltas,
+  showRunBy = false,
 }: {
   rows: AuditRow[]
   deltas: Record<string, number | null>
+  showRunBy?: boolean
 }) {
   const router = useRouter()
+  const columns = useMemo(() => ALL_COLUMNS.filter((c) => showRunBy || !c.adminOnly), [showRunBy])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -253,7 +262,7 @@ export default function AuditsTable({
                     className="accent-brand-cyan"
                   />
                 </th>
-                {COLUMNS.map(({ key, label }) => (
+                {columns.map(({ key, label }) => (
                   <th
                     key={label}
                     className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy"
@@ -319,6 +328,9 @@ export default function AuditsTable({
                     <td className="px-4 py-3">
                       <FolderBadge group={r.group} />
                     </td>
+                    {showRunBy && (
+                      <td className="px-4 py-3 text-text-secondary">{r.runBy ?? '—'}</td>
+                    )}
                     <td className="px-4 py-3 text-text-secondary">
                       {new Date(r.created_at).toLocaleDateString('en-US', {
                         month: 'short',

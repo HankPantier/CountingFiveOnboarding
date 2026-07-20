@@ -62,7 +62,7 @@ export default async function AuditsListPage({
   let query = supabase
     .from('audit_runs')
     .select(
-      'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at, audit_batch_id, audit_group',
+      'id, url, domain, site_name, audit_status, overall_score, overall_grade, pages_crawled, created_at, audit_batch_id, audit_group, created_by',
     )
     .order('created_at', { ascending: false })
     .limit(200)
@@ -78,6 +78,13 @@ export default async function AuditsListPage({
     : { data: [] }
   const labelByBatch = new Map((batches ?? []).map((b) => [b.id, b.label]))
 
+  // Resolve who ran each audit (created_by → admin display name).
+  const creatorIds = [...new Set((data ?? []).map((r) => r.created_by).filter((v): v is string => !!v))]
+  const { data: creators } = creatorIds.length
+    ? await supabase.from('admins').select('id, name, email').in('id', creatorIds)
+    : { data: [] }
+  const nameByCreator = new Map((creators ?? []).map((a) => [a.id, a.name || a.email]))
+
   const rows: AuditRow[] = (data ?? []).map((r) => ({
     id: r.id,
     url: r.url,
@@ -91,6 +98,7 @@ export default async function AuditsListPage({
     batchId: r.audit_batch_id,
     batchLabel: r.audit_batch_id ? labelByBatch.get(r.audit_batch_id) ?? null : null,
     group: r.audit_group,
+    runBy: r.created_by ? nameByCreator.get(r.created_by) ?? null : null,
   }))
   const deltas = computeDeltas(rows)
 
@@ -165,7 +173,7 @@ export default async function AuditsListPage({
       ) : (
         <>
           <AuditsOverviewCharts overview={auditsOverview(rows)} />
-          <AuditsTable rows={rows} deltas={deltas} />
+          <AuditsTable rows={rows} deltas={deltas} showRunBy={user?.isAdmin ?? false} />
         </>
       )}
     </main>
