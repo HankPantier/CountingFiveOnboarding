@@ -24,6 +24,7 @@ vi.mock('./app-client', () => ({
 import {
   moveFile,
   mergeDraftToMain,
+  syncMainIntoDraft,
   FileNotFoundError,
   StaleShaError,
   AssetExistsError,
@@ -144,5 +145,33 @@ describe('mergeDraftToMain', () => {
     )
     const res = await mergeDraftToMain('site')
     expect(res).toEqual({ merged: false, prUrl: 'https://github.com/cf/site/pull/9' })
+  })
+})
+
+describe('syncMainIntoDraft', () => {
+  it('reports already-current when main is not ahead of draft', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 0 } })
+    const res = await syncMainIntoDraft('site')
+    expect(res).toEqual({ synced: true, alreadyCurrent: true, mergeCommitSha: null })
+    expect(merge).not.toHaveBeenCalled()
+  })
+
+  it('merges live into draft when main has new commits', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 4 } })
+    merge.mockResolvedValue({ data: { sha: 'draftMergeSha' } })
+    const res = await syncMainIntoDraft('site')
+    expect(res).toEqual({ synced: true, alreadyCurrent: false, mergeCommitSha: 'draftMergeSha' })
+    // Merge direction must be main -> draft (base draft, head main).
+    expect(merge).toHaveBeenCalledWith(
+      expect.objectContaining({ base: 'draft', head: 'main' })
+    )
+  })
+
+  it('reports a conflict without forcing anything', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 4 } })
+    merge.mockRejectedValue(reqError(409, 'Merge conflict'))
+    const res = await syncMainIntoDraft('site')
+    expect(res).toMatchObject({ synced: false })
+    if (!res.synced) expect(res.reason).toMatch(/conflict/i)
   })
 })

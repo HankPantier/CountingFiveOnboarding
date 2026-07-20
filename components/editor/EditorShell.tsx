@@ -45,6 +45,7 @@ export default function EditorShell({
   const [error, setError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<string | null>(null)
   const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
+  const [draftBusy, setDraftBusy] = useState(false)
   // Set when a save hits a sha conflict (someone else saved the same file).
   // The admin chooses explicitly: overwrite with their version, or take the
   // server's — no silent last-writer-wins.
@@ -388,6 +389,89 @@ export default function EditorShell({
     }
   }
 
+  // Reload the branch's files after draft was rewritten server-side (sync/reset),
+  // so the editor shows the new content instead of stale cached blobs.
+  const reloadAfterDraftChange = async () => {
+    setLoaded(new Map())
+    setDirty(new Map())
+    setNavMoves([])
+    await refreshTree()
+    await refreshStatus()
+    if (selectedPath) await reloadFile(selectedPath)
+  }
+
+  // "Keep draft current": pull live (main) into the draft branch so publishing
+  // won't conflict. Requires a clean editor (no unsaved edits) — the merge
+  // rewrites files under you.
+  const syncDraft = async () => {
+    setDraftBusy(true)
+    setError(null)
+    setPublishResult(null)
+    setConflictPrUrl(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync' }),
+      })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Update failed: ${res.status}`)
+      }
+      const data = (await res.json()) as
+        | { synced: true; alreadyCurrent: boolean }
+        | { synced: false; reason: string }
+      if (!data.synced) {
+        setError(data.reason)
+        return
+      }
+      if (data.alreadyCurrent) {
+        setPublishResult('Draft is already up to date with live.')
+        await refreshStatus()
+      } else {
+        setPublishResult('Draft updated from live — review, then publish.')
+        await reloadAfterDraftChange()
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setDraftBusy(false)
+    }
+  }
+
+  // "Reset draft to live": discard the draft entirely and start from what's live.
+  // Destructive — unpublished draft edits are lost.
+  const resetDraft = async () => {
+    if (
+      !window.confirm(
+        'Reset the draft to the live site? This DISCARDS all unpublished draft edits and starts fresh from what is currently live. This cannot be undone.'
+      )
+    ) {
+      return
+    }
+    setDraftBusy(true)
+    setError(null)
+    setPublishResult(null)
+    setConflictPrUrl(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset' }),
+      })
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Reset failed: ${res.status}`)
+      }
+      setPublishResult('Draft reset to live — start editing fresh.')
+      await reloadAfterDraftChange()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Reset failed')
+    } finally {
+      setDraftBusy(false)
+    }
+  }
+
   // Move the selected page between live (content/pages|posts) and drafts.
   // Staged on the draft branch — goes live on the next Publish.
   const setPageState = async (action: 'draft' | 'restore') => {
@@ -505,9 +589,12 @@ export default function EditorShell({
         canSave={!!selectedPath && dirty.has(selectedPath)}
         saving={saving}
         publishing={publishing}
+        draftBusy={draftBusy}
         onSave={save}
         onPublish={publish}
         onRollback={rollback}
+        onSyncDraft={syncDraft}
+        onResetDraft={resetDraft}
       />
       {(isLivePage || isDraftPage) && selectedPath && (
         <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end gap-2">

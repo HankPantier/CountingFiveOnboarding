@@ -44,12 +44,20 @@ function OverflowMenu({
   websiteUrl,
   status,
   publishing,
+  draftBusy,
+  dirtyCount,
   onRollback,
+  onSyncDraft,
+  onResetDraft,
 }: {
   websiteUrl: string
   status: EditorStatus
   publishing: boolean
+  draftBusy: boolean
+  dirtyCount: number
   onRollback: () => void
+  onSyncDraft: () => void
+  onResetDraft: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -118,6 +126,39 @@ function OverflowMenu({
           >
             Open on GitHub ↗
           </a>
+          <div className="border-t border-border-default my-1" />
+          {status.draftBehind > 0 && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={draftBusy || dirtyCount > 0}
+              onClick={() => {
+                setOpen(false)
+                onSyncDraft()
+              }}
+              className={`${itemClass} text-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={
+                dirtyCount > 0
+                  ? 'Save or discard unsaved changes first'
+                  : 'Pull the latest live changes into your draft so publishing won’t conflict.'
+              }
+            >
+              Update draft from live ({status.draftBehind})
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            disabled={draftBusy}
+            onClick={() => {
+              setOpen(false)
+              onResetDraft()
+            }}
+            className={`${itemClass} text-error hover:bg-error/5 disabled:opacity-50 disabled:cursor-not-allowed`}
+            title="Discard all unpublished draft edits and start fresh from the live site."
+          >
+            Reset draft to live
+          </button>
           {status.canRevertPublish && (
             <>
               <div className="border-t border-border-default my-1" />
@@ -151,9 +192,12 @@ export default function EditorTopBar({
   canSave,
   saving,
   publishing,
+  draftBusy,
   onSave,
   onPublish,
   onRollback,
+  onSyncDraft,
+  onResetDraft,
 }: {
   firmName: string
   websiteUrl: string
@@ -163,11 +207,15 @@ export default function EditorTopBar({
   canSave: boolean
   saving: boolean
   publishing: boolean
+  draftBusy: boolean
   onSave: () => void
   onPublish: () => void
   onRollback: () => void
+  onSyncDraft: () => void
+  onResetDraft: () => void
 }) {
   const pill = statusPill(status, dirtyCount)
+  const behind = status?.draftBehind ?? 0
 
   return (
     <header className="flex items-center justify-between gap-4 px-6 py-3 border-b border-border-default bg-surface-card">
@@ -187,6 +235,20 @@ export default function EditorTopBar({
         </span>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
+        {behind > 0 && (
+          <button
+            onClick={onSyncDraft}
+            disabled={draftBusy || dirtyCount > 0 || publishing || saving}
+            className="bg-warning/15 text-warning-strong border border-warning/40 disabled:opacity-50 font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-warning/25 disabled:cursor-not-allowed whitespace-nowrap"
+            title={
+              dirtyCount > 0
+                ? 'Save or discard unsaved changes first'
+                : `Live has ${behind} change(s) your draft is missing — pull them in so publishing won’t conflict.`
+            }
+          >
+            {draftBusy ? 'Updating…' : `Update draft from live (${behind})`}
+          </button>
+        )}
         <button
           onClick={onSave}
           disabled={!canSave || saving}
@@ -214,7 +276,11 @@ export default function EditorTopBar({
             websiteUrl={websiteUrl}
             status={status}
             publishing={publishing}
+            draftBusy={draftBusy}
+            dirtyCount={dirtyCount}
             onRollback={onRollback}
+            onSyncDraft={onSyncDraft}
+            onResetDraft={onResetDraft}
           />
         )}
       </div>

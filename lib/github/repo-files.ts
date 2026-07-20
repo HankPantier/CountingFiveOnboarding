@@ -609,7 +609,9 @@ export async function mergeDraftToMain(slug: string): Promise<MergeResult> {
 }
 
 // Force-update draft branch to point at main's HEAD. Used after a successful
-// publish so the next round of edits starts from a clean base.
+// publish so the next round of edits starts from a clean base, and by the admin
+// "Reset draft to live" action to discard a draft that has drifted too far to
+// merge (e.g. main got direct commits the editor's draft never saw).
 export async function resetDraftToMain(slug: string): Promise<void> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
@@ -621,6 +623,53 @@ export async function resetDraftToMain(slug: string): Promise<void> {
     sha: main.data.object.sha,
     force: true,
   })
+}
+
+export type SyncResult =
+  | { synced: true; alreadyCurrent: boolean; mergeCommitSha: string | null }
+  | { synced: false; reason: string }
+
+// "Keep draft current": merge commits that landed on main (e.g. direct dev
+// pushes, a hand-merged PR) into the long-lived draft branch so a later publish
+// merges cleanly instead of conflicting. Nothing on main to pull → alreadyCurrent;
+// a clean merge → a new merge commit on draft (draft edits preserved). A content
+// conflict can't be auto-resolved, so we report it rather than force anything —
+// the admin resolves on GitHub or uses "Reset draft to live".
+export async function syncMainIntoDraft(slug: string): Promise<SyncResult> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+
+  // ahead_by = commits main has that draft lacks (how stale draft is).
+  const cmp = await octokit.repos.compareCommits({
+    owner,
+    repo,
+    base: DRAFT_BRANCH,
+    head: MAIN_BRANCH,
+  })
+  if (cmp.data.ahead_by === 0) {
+    return { synced: true, alreadyCurrent: true, mergeCommitSha: null }
+  }
+
+  try {
+    const res = await octokit.repos.merge({
+      owner,
+      repo,
+      base: DRAFT_BRANCH,
+      head: MAIN_BRANCH,
+      commit_message: 'Update draft from live',
+    })
+    return { synced: true, alreadyCurrent: false, mergeCommitSha: res.data.sha ?? null }
+  } catch (err) {
+    if (isRequestError(err) && err.status === 409) {
+      return {
+        synced: false,
+        reason:
+          'Live has changes that conflict with the current draft. Resolve them on GitHub, ' +
+          'or use "Reset draft to live" to discard the draft and start from the live site.',
+      }
+    }
+    throw err
+  }
 }
 
 export type RepoStatus = {
