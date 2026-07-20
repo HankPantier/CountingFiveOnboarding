@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  collectExpandablePaths,
   computeMoves,
   deriveNavUrls,
   lastSegment,
@@ -298,5 +299,39 @@ describe('toNavItems — strips editor-only fields', () => {
     expect(toNavItems(derived)).toEqual([
       { label: 'Services', url: '/services', children: [{ label: 'Tax', url: '/services/tax' }] },
     ])
+  })
+})
+
+describe('collectExpandablePaths', () => {
+  const tree: EditNavItem[] = [
+    {
+      label: 'Services',
+      url: '/services',
+      slug: 'services',
+      children: [
+        {
+          label: 'Accounting',
+          url: '/services/accounting',
+          slug: 'accounting',
+          children: [
+            { label: 'Payroll', url: '/services/accounting/payroll', slug: 'payroll' },
+          ],
+        },
+        { label: 'Tax', url: '/services/tax', slug: 'tax' },
+      ],
+    },
+    { label: 'About', url: '/about', slug: 'about' },
+  ]
+
+  it('returns pathIds of every node that has children, depth-first', () => {
+    expect(collectExpandablePaths(tree)).toEqual(['0', '0/0'])
+  })
+
+  it('returns an empty list for a flat menu with no sub-items', () => {
+    const flat: EditNavItem[] = [
+      { label: 'Home', url: '/', slug: '' },
+      { label: 'About', url: '/about', slug: 'about' },
+    ]
+    expect(collectExpandablePaths(flat)).toEqual([])
   })
 })

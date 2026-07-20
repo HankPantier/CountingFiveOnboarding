@@ -11,12 +11,12 @@ import {
   verticalListSortingStrategy, useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, IndentIncrease, IndentDecrease } from 'lucide-react'
+import { GripVertical, IndentIncrease, IndentDecrease, ChevronRight } from 'lucide-react'
 import { navEditorCollision } from '@/lib/nav-dnd'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import {
-  computeMoves, deriveNavUrls, lastSegment, reparentItems, toEditItems, toNavJson,
-  validReparentTargets,
+  collectExpandablePaths, computeMoves, deriveNavUrls, lastSegment, reparentItems,
+  toEditItems, toNavJson, validReparentTargets,
   type EditNavItem, type Move,
 } from '@/lib/editor/nav-urls'
 import type { NavItem, NavJson } from '@/types/nav-json'
@@ -110,18 +110,38 @@ function nodeAt(root: EditNavItem[], path: Path): EditNavItem | null {
   return list?.[lastIndex(path)] ?? null
 }
 
+// After the node at `removed` is spliced out, a path `p` in the same list that
+// sat after it shifts down one index. Used to keep an auto-expanded destination
+// pointing at the right row post-reparent (positional pathIds, matching dnd).
+function adjustAfterRemoval(p: Path, removed: Path): Path {
+  const fp = parentPath(removed)
+  if (p.length <= fp.length) return p
+  for (let i = 0; i < fp.length; i++) if (p[i] !== fp[i]) return p
+  if (p[fp.length] > lastIndex(removed)) {
+    const next = [...p]
+    next[fp.length] -= 1
+    return next
+  }
+  return p
+}
+
 function SortableRow({
-  path, label, inline, nested, showNest,
+  path, label, inline, nested, showNest, expandable, isOpen, childCount, onToggle,
 }: {
   path: Path
   label: string
   inline: ReactNode
   nested?: ReactNode
   showNest?: boolean
+  expandable?: boolean
+  isOpen?: boolean
+  childCount?: number
+  onToggle?: () => void
 }) {
   const id = pathId(path)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  const hasChildren = (childCount ?? 0) > 0
   return (
     <li>
       <div
@@ -138,6 +158,23 @@ function SortableRow({
         >
           <GripVertical className="w-4 h-4" />
         </button>
+        {expandable ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={isOpen}
+            aria-label={`${isOpen ? 'Collapse' : 'Expand'} sub-items of ${label || 'item'}`}
+            title={isOpen ? 'Collapse sub-items' : 'Expand sub-items'}
+            className="shrink-0 h-6 flex items-center gap-0.5 rounded px-1 text-text-muted hover:text-brand-navy hover:bg-surface-subtle transition-colors"
+          >
+            <ChevronRight className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+            {hasChildren && (
+              <span className="text-[10px] font-body tabular-nums">{childCount}</span>
+            )}
+          </button>
+        ) : (
+          <span className="w-6 shrink-0" aria-hidden />
+        )}
         {inline}
         {showNest && <NestOverlay path={path} label={label} />}
       </div>
@@ -198,6 +235,22 @@ export default function NavEditor({
   const [cta, setCta] = useState<NavJson['cta'] | undefined>(() => seed?.cta)
   const [activeId, setActiveId] = useState<string | null>(null)
 
+  // Which expandable rows are open. Empty = all collapsed → only primary items
+  // show. Keyed by positional pathId ("0", "0/1"), matching the dnd/path ids.
+  // View state only: no persistence (CLAUDE.md forbids localStorage/sessionStorage),
+  // and positional ids are re-seeded on remount when the loaded nav changes.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const isExpanded = (p: Path) => expanded.has(pathId(p))
+  const toggleExpanded = (p: Path) =>
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      const id = pathId(p)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const expand = (p: Path) => setExpanded((prev) => new Set(prev).add(pathId(p)))
+
   const strictError = useMemo(() => {
     try {
       parseNavJson(contents)
@@ -246,26 +299,30 @@ export default function NavEditor({
       }
     })
 
-  const addChild = (p: Path) =>
+  const addChild = (p: Path) => {
+    expand(p)
     update((d) => {
       const n = nodeAt(d, p)
       if (!n) return
       n.children = [...(n.children ?? []), { label: '', url: '', slug: '' }]
     })
+  }
 
   const addPrimary = () =>
     update((d) => { d.push({ label: '', url: '', slug: '' }) })
 
   // Nest an item under its previous sibling (one level deeper).
-  const indent = (p: Path) =>
+  const indent = (p: Path) => {
+    const i = lastIndex(p)
+    if (i > 0) expand([...parentPath(p), i - 1])
     update((d) => {
       const list = listAt(d, parentPath(p))
-      const i = lastIndex(p)
       if (!list || i === 0) return
       const prev = list[i - 1]
       const [moved] = list.splice(i, 1)
       prev.children = [...(prev.children ?? []), moved]
     })
+  }
 
   // Promote an item to its grandparent's list, just after its former parent.
   const outdent = (p: Path) =>
@@ -285,8 +342,12 @@ export default function NavEditor({
 
   // Nest the item at `from` under the node at `newParent` (reparentItems no-ops
   // invalid moves, so callers don't need to re-check depth/self).
-  const reparent = (from: Path, newParent: Path) =>
+  // Callers only pass valid targets (validReparentTargets), so the move always
+  // happens and `from` is removed — adjust the destination for that shift.
+  const reparent = (from: Path, newParent: Path) => {
+    expand(adjustAfterRemoval(newParent, from))
     emit(reparentItems(items, from, newParent, MAX_DEPTH), cta)
+  }
 
   const handleDragStart = (e: DragStartEvent) => setActiveId(String(e.active.id))
 
@@ -321,6 +382,13 @@ export default function NavEditor({
     ? new Set(validReparentTargets(items, activePath, MAX_DEPTH).map((t) => pathId(t.path)))
     : null
 
+  // Rows with sub-items — drives the expand-all / collapse-all toggle.
+  const expandablePaths = useMemo(() => collectExpandablePaths(items), [items])
+  const allExpanded =
+    expandablePaths.length > 0 && expandablePaths.every((id) => expanded.has(id))
+  const toggleAll = () =>
+    setExpanded(allExpanded ? new Set() : new Set(expandablePaths))
+
   const renderLevel = (list: EditNavItem[], parent: Path, depth: number): ReactNode => {
     const ids = list.map((_, i) => pathId([...parent, i]))
     const containerClass = depth === 0 ? 'p-4 space-y-3' : 'ml-8 space-y-2 border-l border-border-default pl-3 pt-1'
@@ -330,6 +398,8 @@ export default function NavEditor({
           {list.map((item, i) => {
             const p = [...parent, i]
             const hasChildren = (item.children?.length ?? 0) > 0
+            const expandable = depth < MAX_DEPTH
+            const open = expandable && isExpanded(p)
             const reparentTargets = validReparentTargets(items, p, MAX_DEPTH)
             const showNest = nestTargetIds?.has(pathId(p)) ?? false
             return (
@@ -338,6 +408,10 @@ export default function NavEditor({
                 path={p}
                 label={item.label}
                 showNest={showNest}
+                expandable={expandable}
+                isOpen={open}
+                childCount={item.children?.length ?? 0}
+                onToggle={() => toggleExpanded(p)}
                 inline={
                   <>
                     <div className="flex-1 grid grid-cols-2 gap-2 min-w-0">
@@ -402,7 +476,7 @@ export default function NavEditor({
                   </>
                 }
                 nested={
-                  (hasChildren || depth < MAX_DEPTH) && (
+                  open && (
                     <>
                       {hasChildren && renderLevel(item.children!, p, depth + 1)}
                       {depth < MAX_DEPTH && (
@@ -444,11 +518,22 @@ export default function NavEditor({
             <section className="bg-surface-card border border-border-default rounded-lg">
               <div className="flex items-center justify-between px-4 py-2 border-b border-border-default">
                 <h2 className="text-sm font-heading font-semibold text-brand-navy">Menu items</h2>
-                {strictError ? (
-                  <span className="text-xs font-body text-error">{strictError}</span>
-                ) : (
-                  <span className="text-xs font-body text-success">Valid</span>
-                )}
+                <div className="flex items-center gap-3">
+                  {expandablePaths.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={toggleAll}
+                      className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"
+                    >
+                      {allExpanded ? 'Collapse all' : 'Expand all'}
+                    </button>
+                  )}
+                  {strictError ? (
+                    <span className="text-xs font-body text-error">{strictError}</span>
+                  ) : (
+                    <span className="text-xs font-body text-success">Valid</span>
+                  )}
+                </div>
               </div>
 
               {items.length === 0 && (

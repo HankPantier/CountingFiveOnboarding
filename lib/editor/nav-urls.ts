@@ -222,6 +222,24 @@ export function validReparentTargets(
   return out
 }
 
+// Positional pathIds ("0", "0/1") of every node that has children — the set of
+// rows an "expand all" control opens so the whole subtree becomes visible.
+// Keyed the same way NavEditor tracks expansion and dnd ids.
+export function collectExpandablePaths(items: EditNavItem[]): string[] {
+  const out: string[] = []
+  const walk = (list: EditNavItem[], path: number[]) => {
+    list.forEach((node, i) => {
+      const p = [...path, i]
+      if (node.children && node.children.length > 0) {
+        out.push(p.join('/'))
+        walk(node.children, p)
+      }
+    })
+  }
+  walk(items, [])
+  return out
+}
+
 // Order moves so a move whose target another move vacates runs AFTER that move —
 // i.e. for a chain A→B, B→C, emit B→C before A→B so B is free when A→B runs.
 // Falls back to input order for any residual cycle (which real nav edits can't form).
