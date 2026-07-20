@@ -69,6 +69,25 @@ function DirtyDot() {
   return <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-warning align-middle" />
 }
 
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className={`w-3 h-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
+    >
+      <path
+        d="M6 4l4 4-4 4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function SectionHeader({
   label,
   count,
@@ -86,20 +105,7 @@ function SectionHeader({
       className="w-full flex items-center gap-1.5 text-xs font-heading font-semibold uppercase tracking-wide text-text-muted hover:text-text-secondary px-2 mb-1 transition-colors"
       aria-expanded={open}
     >
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 16 16"
-        className={`w-3 h-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
-      >
-        <path
-          d="M6 4l4 4-4 4"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <Chevron open={open} />
       {label}
       {typeof count === 'number' && (
         <span className="font-body font-normal normal-case tracking-normal text-[10px]">
@@ -131,6 +137,19 @@ export default function FileTree({
   )
   const nav = entries.find((e) => isNav(e.path))
 
+  // Page hierarchy is encoded in filenames via `--` (services--tax.md is a child
+  // of services.md). Key each page by its slash-joined segments so prefixes model
+  // ancestry: `services/tax` is a descendant of `services`. Prefix strings alone
+  // drive collapse — no reliance on every intermediate parent file existing.
+  const pageKeyList = pages.map((p) => pageSegments(p.path).join('/'))
+  // Keys that have at least one descendant page → the rows that get a chevron.
+  const expandableKeys = new Set<string>()
+  for (const child of pageKeyList) {
+    for (const anc of pageKeyList) {
+      if (child !== anc && child.startsWith(anc + '/')) expandableKeys.add(anc)
+    }
+  }
+
   // Pages is the noisy section — start it collapsed; the rest are small.
   const [open, setOpen] = useState<Record<string, boolean>>({
     pages: false,
@@ -140,6 +159,25 @@ export default function FileTree({
     media: true,
   })
   const toggle = (key: string) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
+
+  // Which page rows are expanded. Empty = all collapsed → only top-level pages
+  // show; each parent opens to reveal its sub-pages. View state only (no
+  // localStorage, per CLAUDE.md).
+  const [expandedPages, setExpandedPages] = useState<Set<string>>(() => new Set())
+  const togglePage = (key: string) =>
+    setExpandedPages((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  // A page shows only when every ancestor page (a real-file prefix) is expanded.
+  const isPageVisible = (key: string): boolean => {
+    for (const anc of pageKeyList) {
+      if (key !== anc && key.startsWith(anc + '/') && !expandedPages.has(anc)) return false
+    }
+    return true
+  }
 
   // Selecting a file from elsewhere (e.g. a freshly drafted post) auto-expands
   // its section so the highlight is never hidden. Render-phase derived-state
@@ -163,6 +201,19 @@ export default function FileTree({
                   : null
       : null
     if (section && !open[section]) setOpen({ ...open, [section]: true })
+
+    // Reveal a selected sub-page by expanding each of its ancestor pages.
+    if (selectedPath && isPage(selectedPath)) {
+      const segs = pageSegments(selectedPath)
+      const ancestors: string[] = []
+      for (let k = 1; k < segs.length; k++) {
+        const anc = segs.slice(0, k).join('/')
+        if (pageKeyList.includes(anc)) ancestors.push(anc)
+      }
+      if (ancestors.some((a) => !expandedPages.has(a))) {
+        setExpandedPages((prev) => new Set([...prev, ...ancestors]))
+      }
+    }
   }
 
   return (
@@ -182,21 +233,37 @@ export default function FileTree({
               const segs = pageSegments(p.path)
               const depth = segs.length - 1
               const label = depth === 0 ? `${segs[0]}.md` : segs[segs.length - 1]
+              const key = segs.join('/')
+              if (!isPageVisible(key)) return null
+              const hasChildren = expandableKeys.has(key)
+              const isOpen = expandedPages.has(key)
               return (
                 <li key={p.path}>
-                  <button
-                    onClick={() => onSelect(p.path)}
-                    style={depth > 0 ? { paddingLeft: `${8 + depth * 14}px` } : undefined}
-                    className={fileButtonClass(selectedPath === p.path)}
+                  <div
+                    className="flex items-center"
+                    style={depth > 0 ? { paddingLeft: `${depth * 14}px` } : undefined}
                   >
-                    {depth > 0 && (
-                      <span className="text-text-muted mr-1" aria-hidden>
-                        └
-                      </span>
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        onClick={() => togglePage(key)}
+                        aria-expanded={isOpen}
+                        aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${label}`}
+                        className="shrink-0 w-4 h-4 flex items-center justify-center rounded text-text-muted hover:text-brand-navy transition-colors"
+                      >
+                        <Chevron open={isOpen} />
+                      </button>
+                    ) : (
+                      <span className="shrink-0 w-4" aria-hidden />
                     )}
-                    {label}
-                    {dirtyPaths.has(p.path) && <DirtyDot />}
-                  </button>
+                    <button
+                      onClick={() => onSelect(p.path)}
+                      className={`${fileButtonClass(selectedPath === p.path)} flex-1 min-w-0 truncate`}
+                    >
+                      {label}
+                      {dirtyPaths.has(p.path) && <DirtyDot />}
+                    </button>
+                  </div>
                 </li>
               )
             })
