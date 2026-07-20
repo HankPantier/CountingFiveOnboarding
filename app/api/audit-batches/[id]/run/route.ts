@@ -1,5 +1,5 @@
 import { after, NextResponse } from 'next/server'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditBatchAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAuditBatch } from '@/lib/audit/batch-runner'
 
@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Invalid batch id' }, { status: 400 })
 
   if (!isInternalChain) {
-    const auth = await requireAdminUser()
+    const auth = await requireAuditBatchAccess(id)
     if (auth instanceof NextResponse) return auth
   }
 

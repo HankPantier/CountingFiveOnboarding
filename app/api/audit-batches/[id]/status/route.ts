@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditBatchAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -28,11 +28,11 @@ export interface AuditBatchStatusResponse {
 
 // GET /api/audit-batches/[id]/status — progress feed for the batch detail UI.
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdminUser()
-  if (auth instanceof NextResponse) return auth
-
   const { id } = await params
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Invalid batch id' }, { status: 400 })
+
+  const auth = await requireAuditBatchAccess(id)
+  if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()
 

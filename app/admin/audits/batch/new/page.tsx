@@ -1,15 +1,15 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, hasCapability } from '@/lib/auth/access'
 import { NewBatchAuditForm } from '@/components/admin/audit/NewBatchAuditForm'
 
 export const runtime = 'nodejs'
 
 export default async function NewBatchAuditPage() {
-  // The audits layout already gates to auditor+; batch auditing is admin-only.
+  // Reachable by admins and auditor-capability members (same as single audits).
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-  if (!user.isAdmin) redirect('/admin/audits')
+  if (!hasCapability(user, 'auditor')) redirect('/admin/audits')
 
   return (
     <main className="mx-auto max-w-2xl p-8">

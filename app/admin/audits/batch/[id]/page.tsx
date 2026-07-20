@@ -1,14 +1,15 @@
 import { redirect } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, hasCapability } from '@/lib/auth/access'
 import AuditBatchProgress from './AuditBatchProgress'
 
 export const runtime = 'nodejs'
 
 export default async function AuditBatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  // The audits layout gates to auditor+; batch auditing is admin-only.
+  // Reachable by admins and auditor-capability members; per-batch ownership is
+  // enforced by the /status endpoint (auditors get a 403/404 for others' batches).
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-  if (!user.isAdmin) redirect('/admin/audits')
+  if (!hasCapability(user, 'auditor')) redirect('/admin/audits')
 
   const { id } = await params
   return <AuditBatchProgress batchId={id} />

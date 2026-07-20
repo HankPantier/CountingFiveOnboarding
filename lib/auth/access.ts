@@ -168,6 +168,33 @@ export async function requireAuditAccess(
   return { user }
 }
 
+// Audit-batch ownership gate — mirrors requireAuditAccess. Admins pass; an
+// auditor-capable member passes only for a batch they created. Guards the
+// batch run/status routes against cross-owner reads.
+export async function requireAuditBatchAccess(
+  batchId: string
+): Promise<{ user: CurrentUser } | NextResponse> {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (user.isAdmin) return { user }
+  if (!user.capabilities.includes('auditor')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const supabase = createServerClient()
+  const { data: batch } = await supabase
+    .from('audit_batches')
+    .select('created_by')
+    .eq('id', batchId)
+    .maybeSingle()
+
+  if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 })
+  if (batch.created_by !== user.id) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  return { user }
+}
+
 // Session IDs a user may act on. Admins → null ("all", callers skip the
 // filter). Members → explicit array of manager-assigned ids (empty when they
 // hold no manager capability or have no assignments).

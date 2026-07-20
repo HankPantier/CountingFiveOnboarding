@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { requireAdminUser } from '@/lib/auth/access'
+import { requireAuditorCapability, getAccessibleAuditScope } from '@/lib/auth/access'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAuditBatch } from '@/lib/audit/batch-runner'
@@ -21,7 +21,7 @@ const CreateBatchSchema = z.object({
 
 // POST /api/audit-batches — queue many URLs as one sequential batch.
 export async function POST(req: Request) {
-  const auth = await requireAdminUser()
+  const auth = await requireAuditorCapability()
   if (auth instanceof NextResponse) return auth
 
   // Batch-aware throttle: a whole batch counts as one event, so the per-audit
@@ -111,15 +111,19 @@ interface AuditBatchListItem {
 
 // GET /api/audit-batches — list batches (newest first) with rolled-up counts.
 export async function GET() {
-  const auth = await requireAdminUser()
+  const auth = await requireAuditorCapability()
   if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()
-  const { data: batches, error } = await supabase
+  // Auditors see only batches they created; admins see all.
+  const scope = getAccessibleAuditScope(auth.user)
+  let listQuery = supabase
     .from('audit_batches')
     .select('id, label, status, total_count, created_at')
     .order('created_at', { ascending: false })
     .limit(100)
+  if (scope) listQuery = listQuery.eq('created_by', scope.createdBy)
+  const { data: batches, error } = await listQuery
 
   if (error) {
     console.error('[audit-batch] list failed:', error.message)

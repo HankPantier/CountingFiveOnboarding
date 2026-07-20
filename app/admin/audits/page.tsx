@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleAuditScope } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleAuditScope, hasCapability } from '@/lib/auth/access'
 import AuditsTable, { type AuditRow } from '@/components/admin/audit/AuditsTable'
 import AuditsOverviewCharts from '@/components/admin/audit/AuditsOverviewCharts'
 import { auditsOverview } from '@/lib/audit/report-aggregates'
@@ -56,7 +56,7 @@ export default async function AuditsListPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {user?.isAdmin && (
+          {user && hasCapability(user, 'auditor') && (
             <Link
               href="/admin/audits/batch/new"
               className="rounded-pill border border-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-brand-cyan transition-all hover:bg-brand-cyan/10"
