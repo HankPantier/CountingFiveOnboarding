@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { splitFile, serializeFile, type Frontmatter } from '@/lib/editor/frontmatter'
+import { contentPathToUrl } from '@/lib/editor/content-paths'
 import { ASSET_ROOT, extractPageImages, localImageFilename } from '@/lib/editor/page-images'
 import { extractIconItems, extractIconBlockSummaries, setItemIcon } from '@/lib/editor/icon-items'
 import { extractImageBlocks, setBlockImage, setBlockAlt } from '@/lib/editor/block-images'
@@ -63,13 +64,18 @@ export default function PageEditor({
   sessionId,
   path,
   contents,
+  websiteUrl,
   onChange,
 }: {
   sessionId: string
   path: string
   contents: string
+  websiteUrl: string
   onChange: (next: string) => void
 }) {
+  const urlPath = contentPathToUrl(path)
+  const base = websiteUrl.replace(/\/+$/, '')
+  const liveUrl = urlPath && base ? base + urlPath : null
   const parsed = useMemo(() => splitFile(contents), [contents])
   // The body carries dead `## SEO & AIO Metadata` / `## Structured Data` trailers
   // the template strips at render. Hide them from the editable body and the
@@ -385,6 +391,16 @@ export default function PageEditor({
           <div className="min-w-0">
             <div className="text-xs font-heading text-text-muted">Editing</div>
             <div className="font-heading font-semibold text-brand-navy text-lg truncate">{path}</div>
+            {liveUrl && (
+              <a
+                href={liveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs font-body text-text-muted hover:text-brand-cyan truncate"
+              >
+                {liveUrl}
+              </a>
+            )}
           </div>
           <div
             role="tablist"

@@ -760,7 +760,7 @@ export default function EditorShell({
             onMovesChange={setNavMoves}
           />
         ) : (
-          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} onChange={onEdit} />
+          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} />
         )}
       </div>
       {publishResult && (
