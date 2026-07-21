@@ -16,7 +16,7 @@ import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
 import { asJson } from '@/lib/supabase/json-typed'
 
-type Cta = { text: string; url: string }
+export type Cta = { text: string; url: string }
 const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
 const CONTENT_MODEL = PUBLISHED_CONTENT_MODEL
 
@@ -54,7 +54,7 @@ function normalizeCta(raw: unknown): Cta {
   return DEFAULT_CTA
 }
 
-async function generatePageContent(
+export async function generatePageContent(
   pageTitle: string,
   pageUrl: string,
   outlineSections: Json,
@@ -360,6 +360,171 @@ ${ANTI_SLOP_RULES}${retryNote}`
   }
 }
 
+// Generate a page and run the full quality pass on it: anti-slop retry,
+// block-annotation validation/retry, variant coercion, guaranteed image
+// coverage, and dash humanizing. Returns the finalized GeneratedResult with
+// NO persistence — callers decide where the content lands (a generated_pages
+// row for the bulk pipeline, or a repo file for the post-publish new-page
+// generator). Extracted from generateSinglePage so both paths share identical
+// generation + finalization behavior.
+export type FinalizePageInput = {
+  pageTitle: string
+  pageUrl: string
+  outlineSections: Json
+  targetKeyword: string
+  secondaryKeywords: string[]
+  existingContent: string | null
+  competitorRefs: Array<{ url: string; title: string; excerpt: string }>
+  schema: SessionSchema
+  palette: PaletteData | null
+  websiteUrl: string
+  cta: Cta
+  contentJobId: string
+  sessionId: string
+  sitemapUrls: string[]
+}
+
+export async function generateAndFinalizePage(input: FinalizePageInput): Promise<GeneratedResult> {
+  const gen = (flaggedPhrases?: string[]) =>
+    generatePageContent(
+      input.pageTitle,
+      input.pageUrl,
+      input.outlineSections,
+      input.targetKeyword,
+      input.secondaryKeywords,
+      input.existingContent,
+      input.competitorRefs,
+      input.schema,
+      input.palette,
+      input.websiteUrl,
+      input.cta,
+      input.contentJobId,
+      input.sessionId,
+      input.sitemapUrls,
+      flaggedPhrases
+    )
+
+  let result = await gen()
+
+  const validation = validateContent(result.content)
+  if (!validation.passed) {
+    console.warn(
+      `[content-gen] Anti-slop flagged ${input.pageUrl}: ${validation.flagged.join(' | ')} — retrying`
+    )
+    result = await gen(validation.flagged)
+  }
+
+  const annotations = parseBlockAnnotations(result.content)
+  const headingCount = (result.content.match(/^##\s+/gm) || []).length
+  const blockValidation = validateBlockAnnotations(annotations, input.pageUrl, result.metadata.faq_block)
+
+  // Missing-annotation check: if the body has ## sections but few or no
+  // annotations, Claude ignored the block-annotation rules. Force a retry
+  // with explicit feedback. We tolerate up to (headingCount - 1) missing
+  // annotations as warning-only (e.g. final CTA section); zero annotations
+  // when sections exist is always a fatal regeneration trigger.
+  const missingAnnotations = headingCount > 0 && annotations.length === 0
+
+  if (missingAnnotations) {
+    console.warn(
+      `[content-gen] Missing block annotations on ${input.pageUrl} (${headingCount} ## sections, 0 annotations) — forcing retry`
+    )
+    const correctionNote =
+      `Your previous draft had ${headingCount} "##" sections but ZERO block annotations. ` +
+      `Every "##" section heading MUST be preceded on the line above by an HTML comment like ` +
+      `\`<!-- block: feature-grid | variant: 3-col -->\`. Re-emit the entire page with a block ` +
+      `annotation on every "##" heading, using the catalog from the system prompt. ` +
+      `Do NOT use hero, hero-split, page-header, or faq-accordion inline.`
+    result = await gen([correctionNote])
+    // Re-parse after retry; if still empty, log and store anyway.
+    const retryAnnotations = parseBlockAnnotations(result.content)
+    if (retryAnnotations.length === 0) {
+      console.warn(
+        `[content-gen] Annotations still missing after retry on ${input.pageUrl}; storing anyway (admin must manually annotate)`
+      )
+    }
+  } else if (!blockValidation.passed && blockValidation.errors.length > 0) {
+    console.warn(
+      `[content-gen] Block validation errors on ${input.pageUrl}:`,
+      blockValidation.errors.map(e => `[section ${e.position}] ${e.reason}`).join(' | ')
+    )
+
+    // Single retry: full-page regeneration with all errors listed.
+    // (The spec proposes per-section correction; we use full-page retry for
+    // simplicity. If the LLM can't fix issues in one retry, the errors are
+    // logged and content is stored as-is — admin can manually correct.)
+    const errorSummary = blockValidation.errors
+      .map(e =>
+        e.fix === 'add-image'
+          ? `Section ${e.position} ("${e.headingText}"): ${e.reason}. Keep the block — add image: + query: attributes to its annotation comment.`
+          : `Section ${e.position} ("${e.headingText}"): ${e.reason}. Suggested replacement: ${e.suggestion ?? 'content-prose'}`
+      )
+      .join('\n')
+    const correctionNote = `Your previous draft had these block annotation issues — fix all of them:\n${errorSummary}`
+
+    result = await gen([correctionNote])
+
+    const retryAnnotations = parseBlockAnnotations(result.content)
+    const retryValidation = validateBlockAnnotations(retryAnnotations, input.pageUrl, result.metadata.faq_block)
+    if (!retryValidation.passed) {
+      console.warn(
+        `[content-gen] Block validation still failing after retry on ${input.pageUrl}; storing anyway:`,
+        retryValidation.errors.map(e => e.reason).join(' | ')
+      )
+    }
+  }
+
+  // Apply variant coercions (invalid variant values like `default` get
+  // auto-fixed to the block's first valid variant). Done after any retry
+  // so we coerce on the latest result.content.
+  const finalAnnotations = parseBlockAnnotations(result.content)
+  const finalValidation = validateBlockAnnotations(
+    finalAnnotations,
+    input.pageUrl,
+    result.metadata.faq_block
+  )
+  if (finalValidation.coercions.length > 0) {
+    console.warn(
+      `[content-gen] Coerced ${finalValidation.coercions.length} variant(s) on ${input.pageUrl}:`,
+      finalValidation.coercions.map(c => `${c.blockId}: '${c.originalVariant}' → '${c.coercedVariant}'`).join(' | ')
+    )
+    result.content = applyCoercions(result.content, finalValidation.coercions)
+  }
+
+  if (finalValidation.warnings.length > 0) {
+    console.warn(
+      `[content-gen] Block warnings on ${input.pageUrl}:`,
+      finalValidation.warnings.join(' | ')
+    )
+  }
+
+  // Guaranteed image coverage: if the retry still left a structural image
+  // slot empty, inject a deterministic filename + heading-derived Pexels
+  // query so the package-time resolver always has something to fetch.
+  const ensured = ensureBlockMedia(
+    result.content,
+    input.pageUrl,
+    result.metadata.target_keyword ?? ''
+  )
+  if (ensured !== result.content) {
+    console.warn(`[content-gen] Injected placeholder image refs on ${input.pageUrl}`)
+    result.content = ensured
+  }
+
+  // Deterministic dash humanizer: strip em-dashes (and word en-dashes) the model
+  // leaves behind, on the body and the visible text metadata. Numeric ranges,
+  // code fences, and block annotations are preserved.
+  result.content = humanizeDashes(result.content)
+  result.metadata.meta_description = humanizeDashes(result.metadata.meta_description)
+  result.metadata.answer_block = humanizeDashes(result.metadata.answer_block)
+  result.metadata.faq_block = result.metadata.faq_block.map(f => ({
+    ...f,
+    answer: humanizeDashes(f.answer),
+  }))
+
+  return result
+}
+
 // Generate (or regenerate) a single page from its already-approved outline.
 // Used by both the bulk runContentGeneration loop and the per-page regenerate
 // endpoint. Resets admin_approved_content to false on success so the admin
@@ -445,177 +610,22 @@ export async function generateSinglePage(
   const existingContent = research?.existing_content ?? null
 
   try {
-    let result = await generatePageContent(
-      outline.page_title,
-      outline.page_url,
-      outline.sections,
+    const result = await generateAndFinalizePage({
+      pageTitle: outline.page_title,
+      pageUrl: outline.page_url,
+      outlineSections: outline.sections,
       targetKeyword,
       secondaryKeywords,
       existingContent,
       competitorRefs,
       schema,
       palette,
-      session.website_url,
+      websiteUrl: session.website_url,
       cta,
       contentJobId,
-      job.session_id,
-      sitemapUrls
-    )
-
-    const validation = validateContent(result.content)
-    if (!validation.passed) {
-      console.warn(
-        `[content-gen] Anti-slop flagged ${outline.page_url}: ${validation.flagged.join(' | ')} — retrying`
-      )
-      result = await generatePageContent(
-        outline.page_title,
-        outline.page_url,
-        outline.sections,
-        targetKeyword,
-        secondaryKeywords,
-        existingContent,
-        competitorRefs,
-        schema,
-        palette,
-        session.website_url,
-        cta,
-        contentJobId,
-        job.session_id,
-        sitemapUrls,
-        validation.flagged
-      )
-    }
-
-    const annotations = parseBlockAnnotations(result.content)
-    const headingCount = (result.content.match(/^##\s+/gm) || []).length
-    const blockValidation = validateBlockAnnotations(annotations, outline.page_url, result.metadata.faq_block)
-
-    // Missing-annotation check: if the body has ## sections but few or no
-    // annotations, Claude ignored the block-annotation rules. Force a retry
-    // with explicit feedback. We tolerate up to (headingCount - 1) missing
-    // annotations as warning-only (e.g. final CTA section); zero annotations
-    // when sections exist is always a fatal regeneration trigger.
-    const missingAnnotations = headingCount > 0 && annotations.length === 0
-
-    if (missingAnnotations) {
-      console.warn(
-        `[content-gen] Missing block annotations on ${outline.page_url} (${headingCount} ## sections, 0 annotations) — forcing retry`
-      )
-      const correctionNote =
-        `Your previous draft had ${headingCount} "##" sections but ZERO block annotations. ` +
-        `Every "##" section heading MUST be preceded on the line above by an HTML comment like ` +
-        `\`<!-- block: feature-grid | variant: 3-col -->\`. Re-emit the entire page with a block ` +
-        `annotation on every "##" heading, using the catalog from the system prompt. ` +
-        `Do NOT use hero, hero-split, page-header, or faq-accordion inline.`
-      result = await generatePageContent(
-        outline.page_title, outline.page_url, outline.sections,
-        targetKeyword, secondaryKeywords, existingContent, competitorRefs,
-        schema, palette, session.website_url, cta,
-        contentJobId, job.session_id,
-        sitemapUrls,
-        [correctionNote]
-      )
-      // Re-parse after retry; if still empty, log and store anyway.
-      const retryAnnotations = parseBlockAnnotations(result.content)
-      if (retryAnnotations.length === 0) {
-        console.warn(
-          `[content-gen] Annotations still missing after retry on ${outline.page_url}; storing anyway (admin must manually annotate)`
-        )
-      }
-    } else if (!blockValidation.passed && blockValidation.errors.length > 0) {
-      console.warn(
-        `[content-gen] Block validation errors on ${outline.page_url}:`,
-        blockValidation.errors.map(e => `[section ${e.position}] ${e.reason}`).join(' | ')
-      )
-
-      // Single retry: full-page regeneration with all errors listed.
-      // (The spec proposes per-section correction; we use full-page retry for
-      // simplicity. If the LLM can't fix issues in one retry, the errors are
-      // logged and content is stored as-is — admin can manually correct.)
-      const errorSummary = blockValidation.errors
-        .map(e =>
-          e.fix === 'add-image'
-            ? `Section ${e.position} ("${e.headingText}"): ${e.reason}. Keep the block — add image: + query: attributes to its annotation comment.`
-            : `Section ${e.position} ("${e.headingText}"): ${e.reason}. Suggested replacement: ${e.suggestion ?? 'content-prose'}`
-        )
-        .join('\n')
-      const correctionNote = `Your previous draft had these block annotation issues — fix all of them:\n${errorSummary}`
-
-      result = await generatePageContent(
-        outline.page_title,
-        outline.page_url,
-        outline.sections,
-        targetKeyword,
-        secondaryKeywords,
-        existingContent,
-        competitorRefs,
-        schema,
-        palette,
-        session.website_url,
-        cta,
-        contentJobId,
-        job.session_id,
-        sitemapUrls,
-        [correctionNote]  // reuse the flaggedPhrases mechanism to carry the correction note
-      )
-
-      const retryAnnotations = parseBlockAnnotations(result.content)
-      const retryValidation = validateBlockAnnotations(retryAnnotations, outline.page_url, result.metadata.faq_block)
-      if (!retryValidation.passed) {
-        console.warn(
-          `[content-gen] Block validation still failing after retry on ${outline.page_url}; storing anyway:`,
-          retryValidation.errors.map(e => e.reason).join(' | ')
-        )
-      }
-    }
-
-    // Apply variant coercions (invalid variant values like `default` get
-    // auto-fixed to the block's first valid variant). Done after any retry
-    // so we coerce on the latest result.content.
-    const finalAnnotations = parseBlockAnnotations(result.content)
-    const finalValidation = validateBlockAnnotations(
-      finalAnnotations,
-      outline.page_url,
-      result.metadata.faq_block
-    )
-    if (finalValidation.coercions.length > 0) {
-      console.warn(
-        `[content-gen] Coerced ${finalValidation.coercions.length} variant(s) on ${outline.page_url}:`,
-        finalValidation.coercions.map(c => `${c.blockId}: '${c.originalVariant}' → '${c.coercedVariant}'`).join(' | ')
-      )
-      result.content = applyCoercions(result.content, finalValidation.coercions)
-    }
-
-    if (finalValidation.warnings.length > 0) {
-      console.warn(
-        `[content-gen] Block warnings on ${outline.page_url}:`,
-        finalValidation.warnings.join(' | ')
-      )
-    }
-
-    // Guaranteed image coverage: if the retry still left a structural image
-    // slot empty, inject a deterministic filename + heading-derived Pexels
-    // query so the package-time resolver always has something to fetch.
-    const ensured = ensureBlockMedia(
-      result.content,
-      outline.page_url,
-      result.metadata.target_keyword ?? ''
-    )
-    if (ensured !== result.content) {
-      console.warn(`[content-gen] Injected placeholder image refs on ${outline.page_url}`)
-      result.content = ensured
-    }
-
-    // Deterministic dash humanizer: strip em-dashes (and word en-dashes) the model
-    // leaves behind, on the body and the visible text metadata. Numeric ranges,
-    // code fences, and block annotations are preserved.
-    result.content = humanizeDashes(result.content)
-    result.metadata.meta_description = humanizeDashes(result.metadata.meta_description)
-    result.metadata.answer_block = humanizeDashes(result.metadata.answer_block)
-    result.metadata.faq_block = result.metadata.faq_block.map(f => ({
-      ...f,
-      answer: humanizeDashes(f.answer),
-    }))
+      sessionId: job.session_id,
+      sitemapUrls,
+    })
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
     const wcTarget = targetWordCount(sections)

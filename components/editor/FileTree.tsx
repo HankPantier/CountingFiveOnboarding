@@ -124,12 +124,14 @@ export default function FileTree({
   dirtyPaths,
   changesCount,
   onSelect,
+  onNewPage,
 }: {
   entries: TreeFile[]
   selectedPath: string | null
   dirtyPaths: Set<string>
   changesCount: number
   onSelect: (path: string) => void
+  onNewPage: () => void
 }) {
   const pages = sortPages(entries.filter((e) => isPage(e.path)))
   const posts = entries.filter((e) => isPost(e.path))
@@ -238,12 +240,24 @@ export default function FileTree({
         )}
       </button>
 
-      <SectionHeader
-        label="Pages"
-        count={pages.length}
-        open={open.pages}
-        onToggle={() => toggle('pages')}
-      />
+      <div className="flex items-center justify-between gap-1 pr-1">
+        <div className="min-w-0 flex-1">
+          <SectionHeader
+            label="Pages"
+            count={pages.length}
+            open={open.pages}
+            onToggle={() => toggle('pages')}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onNewPage}
+          title="Create a new page"
+          className="mb-1 shrink-0 rounded-pill bg-brand-cyan px-2.5 py-1 font-heading text-[10px] font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+        >
+          + New page
+        </button>
+      </div>
       {open.pages && (
         <ul className="mb-4 pl-[18px]">
           {pages.length === 0 ? (
