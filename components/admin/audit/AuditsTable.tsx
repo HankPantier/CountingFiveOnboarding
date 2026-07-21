@@ -308,7 +308,7 @@ export default function AuditsTable({
                     </td>
                     <td className="px-4 py-3">
                       <Link href={`/admin/audits/${r.id}`} className="block">
-                        <span className="font-heading font-semibold text-brand-cyan hover:underline">
+                        <span className="font-heading font-semibold text-brand-navy transition-colors hover:text-brand-cyan">
                           {r.site_name || r.domain}
                         </span>
                         <span className="block text-xs text-text-muted">{r.domain}</span>
@@ -318,7 +318,7 @@ export default function AuditsTable({
                       {r.batchId ? (
                         <Link
                           href={`/admin/audits/batch/${r.batchId}`}
-                          className="font-heading text-xs font-semibold text-brand-cyan hover:underline"
+                          className="font-heading text-xs font-semibold text-brand-navy transition-colors hover:text-brand-cyan"
                         >
                           {r.batchLabel || 'Untitled batch'}
                         </Link>

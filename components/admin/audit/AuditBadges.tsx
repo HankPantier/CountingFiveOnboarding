@@ -25,9 +25,9 @@ export function GradeBadge({ score }: { score: number | null }) {
 }
 
 const FOLDER_META: Record<string, { label: string; cls: string }> = {
-  prospect: { label: 'Prospect', cls: 'bg-brand-cyan/10 text-brand-cyan-dark' },
-  working: { label: 'Working', cls: tokenClasses.warning },
-  client: { label: 'Client', cls: tokenClasses.success },
+  prospect: { label: 'Prospect', cls: tokenClasses.muted },
+  working: { label: 'Working', cls: tokenClasses.muted },
+  client: { label: 'Client', cls: tokenClasses.muted },
 }
 
 /** Lifecycle folder chip: Prospect / Working / Client. */
