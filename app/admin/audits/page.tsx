@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleAuditScope, hasCapability } from '@/lib/auth/access'
 import AuditsTable, { type AuditRow } from '@/components/admin/audit/AuditsTable'
 import AuditsOverviewCharts from '@/components/admin/audit/AuditsOverviewCharts'
+import StatCard from '@/components/admin/ui/StatCard'
 import { auditsOverview } from '@/lib/audit/report-aggregates'
 
 export const runtime = 'nodejs'
@@ -124,70 +125,53 @@ export default async function AuditsListPage({
   }))
   const deltas = computeDeltas(rows)
 
+  // KPI + chart metrics, derived from the rows already fetched — no new queries.
+  const overview = auditsOverview(rows)
+  const completedRows = rows.filter((r) => r.audit_status === 'complete' && r.overall_score !== null)
+  const avgScore = completedRows.length
+    ? Math.round(completedRows.reduce((sum, r) => sum + (r.overall_score ?? 0), 0) / completedRows.length)
+    : null
+  const inProgress = rows.filter((r) => r.audit_status !== 'complete' && r.audit_status !== 'error').length
+  const erroredCount = rows.filter((r) => r.audit_status === 'error').length
+
+  const FOLDER_TABS = [
+    ['all', 'All'],
+    ['prospect', 'Prospect'],
+    ['working', 'Working'],
+    ['client', 'Client'],
+  ] as const
+
   return (
-    <main className="mx-auto max-w-5xl p-8">
-      <div className="mb-8 flex items-center justify-between">
+    <main className="mx-auto max-w-[1260px] p-8 pb-14">
+      {/* Header */}
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-brand-navy">Site Audits</h1>
-          <p className="mt-1 font-body text-sm text-text-secondary">
-            {folderCounts.all} audit{folderCounts.all === 1 ? '' : 's'}
+          <h1 className="font-heading text-[27px] font-bold leading-tight text-brand-navy">Site Audits</h1>
+          <p className="mt-1.5 font-body text-sm text-text-secondary">
+            {folderCounts.all} audit{folderCounts.all === 1 ? '' : 's'} across prospect, working &amp; client
+            {runByName && <span> · run by {runByName}</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {user && hasCapability(user, 'auditor') && (
             <Link
               href="/admin/audits/batch/new"
-              className="rounded-pill border border-border-default px-3.5 py-1.5 font-heading text-xs font-semibold text-text-secondary transition-all hover:bg-surface-subtle"
+              className="rounded-pill border border-border-default px-4 py-2.5 font-heading text-[13px] font-semibold text-text-secondary transition-all hover:bg-surface-subtle"
             >
               Batch audit
             </Link>
           )}
           <Link
             href="/admin/audits/new"
-            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
+            className="inline-flex items-center gap-2 rounded-pill bg-brand-cyan px-4 py-2.5 font-heading text-[13px] font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
           >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
             New audit
           </Link>
         </div>
       </div>
-
-      {runByFilter && (
-        <div className="mb-4">
-          <span className="inline-flex items-center gap-2 rounded-badge bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan-dark">
-            Run by: {runByName}
-            <Link
-              href={auditsHref(folder, null)}
-              aria-label="Clear runner filter"
-              className="leading-none text-brand-cyan-dark transition-colors hover:text-brand-navy"
-            >
-              ✕
-            </Link>
-          </span>
-        </div>
-      )}
-
-      {folderCounts.all > 0 && (
-        <div className="mb-6 flex items-center gap-1">
-          {([
-            ['all', 'All'],
-            ['prospect', 'Prospect'],
-            ['working', 'Working'],
-            ['client', 'Client'],
-          ] as const).map(([key, label]) => (
-            <Link
-              key={key}
-              href={auditsHref(key, runByFilter)}
-              className={`rounded-pill px-3 py-1.5 font-heading text-xs font-semibold transition-colors ${
-                folder === key
-                  ? 'bg-brand-navy text-text-inverse'
-                  : 'text-text-secondary hover:bg-surface-subtle'
-              }`}
-            >
-              {label} <span className="opacity-70">{folderCounts[key]}</span>
-            </Link>
-          ))}
-        </div>
-      )}
 
       {folderCounts.all === 0 && !runByFilter ? (
         <div className="rounded-xl border border-border-default bg-surface-card p-12 text-center shadow-subtle">
@@ -198,19 +182,78 @@ export default async function AuditsListPage({
           </p>
           <Link
             href="/admin/audits/new"
-            className="mt-5 inline-block rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
+            className="mt-5 inline-block rounded-pill bg-brand-cyan px-4 py-2.5 font-heading text-[13px] font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
           >
             Run your first audit
           </Link>
         </div>
-      ) : rows.length === 0 ? (
-        <div className="rounded-xl border border-border-default bg-surface-card p-12 text-center shadow-subtle">
-          <p className="font-body text-sm text-text-secondary">No audits match this filter.</p>
-        </div>
       ) : (
         <>
-          <AuditsOverviewCharts overview={auditsOverview(rows)} />
-          <AuditsTable rows={rows} deltas={deltas} showRunBy={user?.isAdmin ?? false} />
+          {/* KPI cards — same at-a-glance band as the onboarding dashboard */}
+          <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard
+              label="Total audits"
+              value={folderCounts[folder]}
+              context={folder === 'all' ? 'across all folders' : `in ${folder}`}
+            />
+            <StatCard
+              label="Completed"
+              value={overview.completed}
+              context="scored reports"
+              tone={overview.completed > 0 ? 'good' : 'muted'}
+            />
+            <StatCard
+              label="Average score"
+              value={avgScore ?? '—'}
+              context={completedRows.length ? `${completedRows.length} scored` : 'no scores yet'}
+            />
+            <StatCard
+              label="In progress"
+              value={inProgress}
+              context={erroredCount > 0 ? `${erroredCount} errored` : 'running now'}
+            />
+          </div>
+
+          {/* Filters — segmented pill control + active runner chip */}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-pill border border-border-default bg-surface-card p-1">
+              {FOLDER_TABS.map(([key, label]) => (
+                <Link
+                  key={key}
+                  href={auditsHref(key, runByFilter)}
+                  className={`rounded-pill px-3.5 py-1.5 font-heading text-[12.5px] font-semibold transition-colors ${
+                    folder === key ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'
+                  }`}
+                >
+                  {label} <span className="opacity-70">{folderCounts[key]}</span>
+                </Link>
+              ))}
+            </div>
+            {runByFilter && (
+              <span className="inline-flex items-center gap-2 rounded-badge bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan-dark">
+                Run by: {runByName}
+                <Link
+                  href={auditsHref(folder, null)}
+                  aria-label="Clear runner filter"
+                  className="leading-none text-brand-cyan-dark transition-colors hover:text-brand-navy"
+                >
+                  ✕
+                </Link>
+              </span>
+            )}
+            <div className="flex-1" />
+          </div>
+
+          {rows.length === 0 ? (
+            <div className="rounded-xl border border-border-default bg-surface-card p-12 text-center shadow-subtle">
+              <p className="font-body text-sm text-text-secondary">No audits match this filter.</p>
+            </div>
+          ) : (
+            <>
+              <AuditsOverviewCharts overview={overview} />
+              <AuditsTable rows={rows} deltas={deltas} showRunBy={user?.isAdmin ?? false} />
+            </>
+          )}
         </>
       )}
     </main>
