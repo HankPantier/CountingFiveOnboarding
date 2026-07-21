@@ -749,3 +749,151 @@ export async function revertLastPublish(slug: string): Promise<RevertResult> {
   })
   return { reverted: true, revertedTo: parentSha }
 }
+
+export type ChangedFile = {
+  /** Path on the draft branch (the current name for a rename). */
+  path: string
+  /** Raw GitHub compare status: added | modified | removed | renamed | changed | copied. */
+  status: string
+  additions: number
+  deletions: number
+  /** Unified diff hunk text; null for binary blobs (images) or when GitHub omits it. */
+  patch: string | null
+  /** Blob sha of the file at the draft tip — the optimistic-lock token for revert. */
+  blobSha: string
+  /** True when no textual patch is available (image/asset). */
+  isBinary: boolean
+  /** Prior path when status is 'renamed'. */
+  previousPath: string | null
+  /** Author of the newest commit that touched this path on the draft branch. */
+  author: { name: string; email: string } | null
+  date: string | null
+  message: string | null
+}
+
+// List every file the draft branch changed relative to live (main) — the
+// unpublished changes. compareCommits gives the per-file status + diff; we
+// attribute each file to the newest draft commit that touched it (who last
+// edited it, and when) by walking the ahead-commits newest-first. Bounded to
+// `ahead_by` getCommit calls. Mirrors getStatus()'s compareCommits usage.
+export async function getDraftChanges(slug: string): Promise<{ files: ChangedFile[] }> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const cmp = await octokit.repos.compareCommits({
+    owner,
+    repo,
+    base: MAIN_BRANCH,
+    head: DRAFT_BRANCH,
+  })
+
+  // compareCommits.commits are oldest→newest; walk in reverse so the first
+  // commit we see touching a path is the most recent editor (first write wins).
+  const commits = cmp.data.commits ?? []
+  const attribution = new Map<string, { author: { name: string; email: string }; date: string | null; message: string }>()
+  for (let i = commits.length - 1; i >= 0; i--) {
+    const c = commits[i]
+    const detail = await octokit.repos.getCommit({ owner, repo, ref: c.sha })
+    const info = {
+      author: {
+        name: c.commit.author?.name ?? c.commit.committer?.name ?? '',
+        email: c.commit.author?.email ?? c.commit.committer?.email ?? '',
+      },
+      date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
+      message: c.commit.message,
+    }
+    for (const f of detail.data.files ?? []) {
+      if (!attribution.has(f.filename)) attribution.set(f.filename, info)
+    }
+  }
+
+  const files: ChangedFile[] = (cmp.data.files ?? []).map((f) => {
+    const attr = attribution.get(f.filename) ?? null
+    return {
+      path: f.filename,
+      status: f.status,
+      additions: f.additions,
+      deletions: f.deletions,
+      patch: f.patch ?? null,
+      blobSha: f.sha,
+      isBinary: f.patch == null,
+      previousPath: f.previous_filename ?? null,
+      author: attr?.author ?? null,
+      date: attr?.date ?? null,
+      message: attr?.message ?? null,
+    }
+  })
+
+  return { files }
+}
+
+export type RevertFileResult = {
+  reverted: true
+  commitSha: string
+  action: 'restored' | 'removed'
+}
+
+// Undo a single file's unpublished changes by making the draft copy match live
+// (main), before anything is published. Three cases, all optimistically locked
+// against the draft blob the caller last saw (expectedSha):
+//   - file exists on main + draft  → restore live content onto draft (modified)
+//   - file exists on main, not draft → re-create it on draft (was deleted)
+//   - file absent on main            → delete it from draft (was newly added,
+//                                       incl. the new-name side of a rename)
+// A concurrent edit (draft sha moved) surfaces as StaleShaError → 409.
+export async function revertFileToMain(
+  slug: string,
+  path: string,
+  expectedSha: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<RevertFileResult> {
+  const name = path.split('/').pop() ?? path
+  const attribution = options.authorEmail ? ` (${options.authorEmail})` : ''
+
+  let liveContent: string | null = null
+  try {
+    liveContent = (await readFile(slug, path, MAIN_BRANCH)).content
+  } catch (err) {
+    if (!(err instanceof FileNotFoundError)) throw err
+  }
+  const draftSha = await currentSha(slug, path, DRAFT_BRANCH)
+
+  if (liveContent === null) {
+    // Not on live → the draft added it → undo = remove it from draft.
+    if (draftSha === null) return { reverted: true, commitSha: '', action: 'removed' }
+    if (expectedSha && draftSha !== expectedSha) throw new StaleShaError(path, draftSha, '')
+    const res = await deleteFile(
+      slug,
+      path,
+      DRAFT_BRANCH,
+      draftSha,
+      `Revert (remove) ${name} via admin${attribution}`,
+      { authorName: options.authorName, authorEmail: options.authorEmail }
+    )
+    return { reverted: true, commitSha: res.commitSha, action: 'removed' }
+  }
+
+  // Live has the file → restore its content onto draft. Guard with the draft
+  // sha only when the file is still present there; if the draft deleted it,
+  // re-create without a guard (there is no draft blob to match).
+  if (draftSha === null) {
+    const res = await writeFile(
+      slug,
+      path,
+      liveContent,
+      DRAFT_BRANCH,
+      `Revert ${name} to live via admin${attribution}`,
+      { authorName: options.authorName, authorEmail: options.authorEmail }
+    )
+    return { reverted: true, commitSha: res.commitSha, action: 'restored' }
+  }
+  if (expectedSha && draftSha !== expectedSha) throw new StaleShaError(path, draftSha, '')
+  const res = await writeFile(
+    slug,
+    path,
+    liveContent,
+    DRAFT_BRANCH,
+    `Revert ${name} to live via admin${attribution}`,
+    { expectedSha: draftSha, authorName: options.authorName, authorEmail: options.authorEmail }
+  )
+  return { reverted: true, commitSha: res.commitSha, action: 'restored' }
+}

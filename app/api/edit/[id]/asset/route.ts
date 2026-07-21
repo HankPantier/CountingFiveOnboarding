@@ -176,7 +176,7 @@ export async function PUT(
       {
         mode,
         expectedSha: typeof expectedSha === 'string' ? expectedSha : undefined,
-        authorName: 'CountingFive Admin',
+        authorName: ctx.adminName ?? 'CountingFive Admin',
         authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
       }
     )
@@ -227,7 +227,7 @@ export async function DELETE(
       DRAFT_BRANCH,
       sha,
       `Delete ${path.split('/').pop()} via admin${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
-      { authorName: 'CountingFive Admin', authorEmail: ctx.adminEmail ?? 'admin@countingfive.com' }
+      { authorName: ctx.adminName ?? 'CountingFive Admin', authorEmail: ctx.adminEmail ?? 'admin@countingfive.com' }
     )
     return NextResponse.json(result)
   } catch (err) {

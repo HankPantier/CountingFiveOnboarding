@@ -23,7 +23,7 @@ type Move = { from: string; to: string }
 type Body = { contents?: string; moves?: Move[]; expectedSha?: string }
 
 const author = (ctx: EditContext) => ({
-  authorName: 'CountingFive Admin',
+  authorName: ctx.adminName ?? 'CountingFive Admin',
   authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
 })
 

@@ -22,7 +22,7 @@ const LIVE_ROOTS = ['content/pages/', 'content/posts/'] as const
 const DRAFT_ROOTS = ['content/drafts/pages/', 'content/drafts/posts/'] as const
 
 const author = (ctx: EditContext) => ({
-  authorName: 'CountingFive Admin',
+  authorName: ctx.adminName ?? 'CountingFive Admin',
   authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
 })
 

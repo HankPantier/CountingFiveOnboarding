@@ -53,7 +53,7 @@ export async function PATCH(
       `Edit ${path.split('/').pop()} via admin${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
       {
         expectedSha,
-        authorName: 'CountingFive Admin',
+        authorName: ctx.adminName ?? 'CountingFive Admin',
         authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
       }
     )

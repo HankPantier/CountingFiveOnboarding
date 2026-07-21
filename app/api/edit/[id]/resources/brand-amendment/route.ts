@@ -109,7 +109,7 @@ export async function POST(
       next,
       DRAFT_BRANCH,
       `Brand voice amendment via admin (${ctx.adminEmail ?? 'admin'})`,
-      { expectedSha: doc.sha, authorName: 'CountingFive Admin', authorEmail: ctx.adminEmail }
+      { expectedSha: doc.sha, authorName: ctx.adminName ?? 'CountingFive Admin', authorEmail: ctx.adminEmail }
     )
     repoUpdated = true
   } catch (err) {

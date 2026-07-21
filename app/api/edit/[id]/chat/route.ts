@@ -104,7 +104,7 @@ After writing, briefly tell the admin what you changed.`
               content,
               DRAFT_BRANCH,
               `Edit ${path.split('/').pop()} via AI${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
-              { authorName: 'CountingFive Admin', authorEmail: ctx.adminEmail ?? 'admin@countingfive.com' }
+              { authorName: ctx.adminName ?? 'CountingFive Admin', authorEmail: ctx.adminEmail ?? 'admin@countingfive.com' }
             )
             reviewContentEdit(ctx.sessionId, path, content)
             return { success: true }

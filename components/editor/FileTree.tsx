@@ -10,6 +10,8 @@ export const MEDIA_VIEW = '__media__'
 export const RESOURCES_VIEW = '__resources__'
 // Sentinel selectedPath that opens the one-off content generator.
 export const ONEOFF_VIEW = '__oneoff__'
+// Sentinel selectedPath that opens the unpublished-changes review panel.
+export const CHANGES_VIEW = '__changes__'
 
 const VIRTUAL_NAV = 'content/nav.json'
 
@@ -120,11 +122,13 @@ export default function FileTree({
   entries,
   selectedPath,
   dirtyPaths,
+  changesCount,
   onSelect,
 }: {
   entries: TreeFile[]
   selectedPath: string | null
   dirtyPaths: Set<string>
+  changesCount: number
   onSelect: (path: string) => void
 }) {
   const pages = sortPages(entries.filter((e) => isPage(e.path)))
@@ -218,6 +222,22 @@ export default function FileTree({
 
   return (
     <nav className="w-64 border-r border-border-default bg-surface-card overflow-y-auto p-3">
+      <button
+        onClick={() => onSelect(CHANGES_VIEW)}
+        className={`mb-4 w-full flex items-center justify-between gap-2 text-left text-xs font-heading font-semibold px-3 py-2 rounded-lg border transition-colors ${
+          selectedPath === CHANGES_VIEW
+            ? 'border-brand-navy bg-brand-navy/10 text-brand-navy'
+            : 'border-border-default bg-surface-default text-brand-navy hover:bg-surface-subtle'
+        }`}
+      >
+        <span>Review changes</span>
+        {changesCount > 0 && (
+          <span className="inline-flex items-center justify-center rounded-full bg-brand-navy px-1.5 py-0.5 text-[10px] font-semibold text-text-inverse">
+            {changesCount}
+          </span>
+        )}
+      </button>
+
       <SectionHeader
         label="Pages"
         count={pages.length}
