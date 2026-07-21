@@ -10,6 +10,7 @@ import MediaLibrary from './MediaLibrary'
 import ResourcesPanel from './ResourcesPanel'
 import OneOffPanel from './OneOffPanel'
 import ChangesPanel from './ChangesPanel'
+import NewPageDialog from './NewPageDialog'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import type { Move } from '@/lib/editor/nav-urls'
 
@@ -47,6 +48,7 @@ export default function EditorShell({
   const [publishResult, setPublishResult] = useState<string | null>(null)
   const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
   const [draftBusy, setDraftBusy] = useState(false)
+  const [newPageOpen, setNewPageOpen] = useState(false)
   // Set when a save hits a sha conflict (someone else saved the same file).
   // The admin chooses explicitly: overwrite with their version, or take the
   // server's — no silent last-writer-wins.
@@ -716,6 +718,7 @@ export default function EditorShell({
             dirtyPaths={new Set(dirty.keys())}
             changesCount={status?.draftAhead ?? 0}
             onSelect={(p) => void select(p)}
+            onNewPage={() => setNewPageOpen(true)}
           />
         )}
         {!selectedPath ? (
@@ -775,6 +778,26 @@ export default function EditorShell({
             ×
           </button>
         </div>
+      )}
+      {newPageOpen && (
+        <NewPageDialog
+          sessionId={sessionId}
+          onClose={() => setNewPageOpen(false)}
+          onCreated={(path) => {
+            // Starter file exists on the draft branch — surface it in the tree
+            // and open it so the admin can edit (or watch the AI draft land).
+            void (async () => {
+              await refreshTree()
+              await refreshStatus()
+              await select(path)
+            })()
+          }}
+          onGenerated={(path) => {
+            // AI draft replaced the starter — drop the cached blob and reopen.
+            void reloadFile(path)
+            void refreshStatus()
+          }}
+        />
       )}
       {conflictPrUrl && (
         <div

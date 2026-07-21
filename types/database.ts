@@ -709,6 +709,66 @@ export type Database = {
           },
         ]
       }
+      new_page_generations: {
+        Row: {
+          brief: string | null
+          content_job_id: string
+          created_at: string
+          error: string | null
+          id: string
+          page_url: string
+          session_id: string
+          starter_sha: string | null
+          status: string
+          target_path: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          brief?: string | null
+          content_job_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          page_url: string
+          session_id: string
+          starter_sha?: string | null
+          status?: string
+          target_path: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          brief?: string | null
+          content_job_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          page_url?: string
+          session_id?: string
+          starter_sha?: string | null
+          status?: string
+          target_path?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "new_page_generations_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "new_page_generations_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oneoff_generations: {
         Row: {
           content_job_id: string

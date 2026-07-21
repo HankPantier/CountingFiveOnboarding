@@ -2,6 +2,33 @@ import type { Database } from '@/types/database'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 
+// The exact subset of a generated_pages row that buildPageMarkdown reads. A
+// full row is structurally assignable to this, so buildAllPageFiles keeps
+// passing rows unchanged; callers that never persist a row (the post-publish
+// new-page generator) build just these fields instead of a 30-column literal.
+export type PageMarkdownInput = Pick<
+  GeneratedPage,
+  | 'page_title'
+  | 'page_url'
+  | 'meta_title'
+  | 'meta_description'
+  | 'target_keyword'
+  | 'secondary_keywords'
+  | 'canonical_url'
+  | 'schema_markup_type'
+  | 'hero_block'
+  | 'hero_variant'
+  | 'hero_image'
+  | 'hero_image_alt'
+  | 'hero_subhead'
+  | 'answer_block'
+  | 'eeat_signals'
+  | 'internal_links'
+  | 'faq_block'
+  | 'llm_citation_note'
+  | 'content_markdown'
+>
+
 export type CtaInfo = { text: string; url: string }
 
 // page_url may arrive root-relative (/services) or as a full origin URL —
@@ -86,7 +113,7 @@ function internalizeMarkdownLinks(md: string, host: string): string {
 // leads with real value-prop copy; the template de-dupes it from the lead
 // section. page-header heroes show the page title (correct for index pages),
 // so they get no headline.
-function deriveHeroHeadline(page: GeneratedPage): string | null {
+function deriveHeroHeadline(page: PageMarkdownInput): string | null {
   const heroBlock = page.hero_block ?? 'page-header'
   if (heroBlock !== 'hero' && heroBlock !== 'hero-split') return null
   const m = (page.content_markdown ?? '').match(/^##\s+(.+?)\s*$/m)
@@ -94,7 +121,7 @@ function deriveHeroHeadline(page: GeneratedPage): string | null {
 }
 
 export function buildPageMarkdown(
-  page: GeneratedPage,
+  page: PageMarkdownInput,
   firmName: string,
   options: {
     websiteUrl: string
