@@ -137,14 +137,14 @@ export default async function AuditsListPage({
           {user && hasCapability(user, 'auditor') && (
             <Link
               href="/admin/audits/batch/new"
-              className="rounded-pill border border-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-brand-cyan transition-all hover:bg-brand-cyan/10"
+              className="rounded-pill border border-border-default px-3.5 py-1.5 font-heading text-xs font-semibold text-text-secondary transition-all hover:bg-surface-subtle"
             >
               Batch audit
             </Link>
           )}
           <Link
             href="/admin/audits/new"
-            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
           >
             New audit
           </Link>
@@ -153,12 +153,12 @@ export default async function AuditsListPage({
 
       {runByFilter && (
         <div className="mb-4">
-          <span className="inline-flex items-center gap-2 rounded-full bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan">
+          <span className="inline-flex items-center gap-2 rounded-badge bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan-dark">
             Run by: {runByName}
             <Link
               href={auditsHref(folder, null)}
               aria-label="Clear runner filter"
-              className="leading-none text-brand-cyan transition-colors hover:text-brand-navy"
+              className="leading-none text-brand-cyan-dark transition-colors hover:text-brand-navy"
             >
               ✕
             </Link>
@@ -190,7 +190,7 @@ export default async function AuditsListPage({
       )}
 
       {folderCounts.all === 0 && !runByFilter ? (
-        <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
+        <div className="rounded-xl border border-border-default bg-surface-card p-12 text-center shadow-subtle">
           <h2 className="font-heading text-lg font-semibold text-brand-navy">No audits yet</h2>
           <p className="mx-auto mt-1 max-w-sm font-body text-sm text-text-secondary">
             Run a site audit to score any website across nine categories and generate a shareable
@@ -198,13 +198,13 @@ export default async function AuditsListPage({
           </p>
           <Link
             href="/admin/audits/new"
-            className="mt-5 inline-block rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+            className="mt-5 inline-block rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
           >
             Run your first audit
           </Link>
         </div>
       ) : rows.length === 0 ? (
-        <div className="rounded-lg border border-border-default bg-surface-card p-12 text-center shadow-subtle">
+        <div className="rounded-xl border border-border-default bg-surface-card p-12 text-center shadow-subtle">
           <p className="font-body text-sm text-text-secondary">No audits match this filter.</p>
         </div>
       ) : (

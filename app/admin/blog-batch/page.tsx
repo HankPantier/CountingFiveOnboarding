@@ -7,7 +7,7 @@ function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     complete: 'bg-success/10 text-success',
     error: 'bg-error/10 text-error',
-    generating: 'bg-info/10 text-info',
+    generating: 'bg-brand-cyan/10 text-brand-cyan-dark',
   }
   const label: Record<string, string> = {
     complete: 'Complete',
@@ -16,7 +16,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold ${
+      className={`inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${
         map[status] ?? 'bg-surface-subtle text-text-muted'
       }`}
     >
@@ -81,7 +81,7 @@ export default async function BlogBatchListPage() {
         </div>
         <Link
           href="/admin/blog-batch/new"
-          className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
+          className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
         >
           New batch
         </Link>
@@ -92,23 +92,23 @@ export default async function BlogBatchListPage() {
           No batches yet. Start one to fan a blog idea out to multiple clients.
         </div>
       ) : (
-        <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
+        <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
           <table className="w-full text-sm font-body">
             <thead>
-              <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Idea</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Keyword</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Clients</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Created</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Status</th>
+              <tr className="border-b border-border-default bg-[#FBFCFD]">
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Idea</th>
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Keyword</th>
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Clients</th>
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Created</th>
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {batches.map((b, i) => (
+              {batches.map((b) => (
                 <tr
                   key={b.id}
-                  className={`border-b border-border-default last:border-0 hover:bg-brand-cyan/10 transition-colors ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
+                  className="border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors"
                 >
                   <td className="px-4 py-3 font-body text-text-primary font-semibold max-w-md truncate">{b.title}</td>
                   <td className="px-4 py-3 text-text-secondary">{b.target_keyword ?? '—'}</td>
@@ -128,7 +128,7 @@ export default async function BlogBatchListPage() {
                   <td className="px-4 py-3 text-right">
                     <Link
                       href={`/admin/blog-batch/${b.id}`}
-                      className="inline-flex items-center border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+                      className="inline-flex items-center rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
                     >
                       View
                     </Link>

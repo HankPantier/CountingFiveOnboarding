@@ -105,7 +105,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
         <h1 className="text-2xl font-heading font-bold text-brand-navy">New Batch Content</h1>
         <Link
           href="/admin/blog-batch"
-          className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+          className="rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
         >
           Cancel
         </Link>
@@ -115,7 +115,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
 
       {step === 'ideate' && (
         <div className="space-y-5">
-          <div className="bg-surface-card border border-border-default rounded-lg p-5 shadow-subtle">
+          <div className="bg-surface-card border border-border-default rounded-xl p-5 shadow-subtle">
             <label className="block text-xs font-heading font-semibold text-brand-navy uppercase tracking-wide mb-2">
               1. Your topic
             </label>
@@ -132,7 +132,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                 type="button"
                 onClick={() => refine(false)}
                 disabled={refining || !seed.trim()}
-                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {refining ? 'Refining…' : idea ? 'Regenerate' : 'Refine with AI'}
               </button>
@@ -140,7 +140,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
           </div>
 
           {idea && (
-            <div className="bg-surface-card border border-border-default rounded-lg p-5 shadow-subtle space-y-4">
+            <div className="bg-surface-card border border-border-default rounded-xl p-5 shadow-subtle space-y-4">
               <label className="block text-xs font-heading font-semibold text-brand-navy uppercase tracking-wide">
                 2. Refined idea
               </label>
@@ -202,7 +202,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                     type="button"
                     onClick={() => refine(true)}
                     disabled={refining || !instruction.trim()}
-                    className="shrink-0 border border-border-default text-text-secondary font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="shrink-0 rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-4 py-2 transition-all hover:bg-surface-subtle disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {refining ? 'Refining…' : 'Refine again'}
                   </button>
@@ -214,7 +214,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                   type="button"
                   onClick={() => setStep('select')}
                   disabled={!idea.title.trim()}
-                  className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Lock idea &amp; choose clients &rarr;
                 </button>
@@ -225,7 +225,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
       )}
 
       {step === 'select' && (
-        <div className="bg-surface-card border border-border-default rounded-lg p-5 shadow-subtle">
+        <div className="bg-surface-card border border-border-default rounded-xl p-5 shadow-subtle">
           <div className="flex items-center justify-between mb-4">
             <label className="text-xs font-heading font-semibold text-brand-navy uppercase tracking-wide">
               3. Clients ({selected.size} selected)
@@ -269,7 +269,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
             <button
               type="button"
               onClick={() => setStep('ideate')}
-              className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+              className="rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-5 py-3 transition-all hover:bg-surface-subtle"
             >
               &larr; Back to idea
             </button>
@@ -277,7 +277,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
               type="button"
               onClick={generate}
               disabled={submitting || selected.size === 0}
-              className="flex-1 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs py-3 shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Starting…' : `Generate for ${selected.size} client${selected.size === 1 ? '' : 's'}`}
             </button>

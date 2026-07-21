@@ -3,11 +3,11 @@ import { gradeToken, gradeWithModifier, score10, tokenForScore } from '@/lib/aud
 export { gradeToken }
 
 const badgeBase =
-  'inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold'
+  'inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em]'
 
 const tokenClasses: Record<string, string> = {
   success: 'bg-success/10 text-success',
-  warning: 'bg-warning/15 text-warning-strong',
+  warning: 'bg-warning-strong/10 text-warning-strong',
   error: 'bg-error/10 text-error',
   muted: 'bg-surface-subtle text-text-muted',
 }
@@ -25,7 +25,7 @@ export function GradeBadge({ score }: { score: number | null }) {
 }
 
 const FOLDER_META: Record<string, { label: string; cls: string }> = {
-  prospect: { label: 'Prospect', cls: 'bg-info/10 text-info' },
+  prospect: { label: 'Prospect', cls: 'bg-brand-cyan/10 text-brand-cyan-dark' },
   working: { label: 'Working', cls: tokenClasses.warning },
   client: { label: 'Client', cls: tokenClasses.success },
 }
@@ -50,7 +50,7 @@ const RUNNING = ['crawling', 'analyzing', 'scoring', 'rendering']
 
 export function AuditStatusBadge({ status }: { status: string }) {
   const cls = RUNNING.includes(status)
-    ? 'bg-info/10 text-info'
+    ? 'bg-brand-cyan/10 text-brand-cyan-dark'
     : status === 'complete'
       ? tokenClasses.success
       : status === 'error'

@@ -19,8 +19,8 @@ import { BRAND, TOKEN_VAR, TOOLTIP_STYLE } from '@/components/admin/chart-theme'
 // Each 20-point score band mapped to the grade token it mostly represents.
 const SCORE_BUCKET_TOKENS: SemanticToken[] = ['error', 'error', 'error', 'warning', 'success']
 
-const panel = 'rounded-lg border border-border-default bg-surface-card p-4 shadow-subtle'
-const panelTitle = 'mb-2 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy'
+const panel = 'rounded-xl border border-border-default bg-surface-card p-4 shadow-subtle'
+const panelTitle = 'mb-2 font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary'
 
 export default function AuditsOverviewCharts({ overview }: { overview: AuditsOverview }) {
   if (!overview.completed) return null

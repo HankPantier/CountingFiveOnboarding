@@ -21,7 +21,7 @@ export default async function NewBatchAuditPage() {
         Paste up to 25 URLs. They&apos;re queued and audited one at a time, each producing its own
         shareable report.
       </p>
-      <div className="mt-8 rounded-lg border border-border-default bg-surface-card p-6 shadow-subtle">
+      <div className="mt-8 rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <NewBatchAuditForm />
       </div>
     </main>

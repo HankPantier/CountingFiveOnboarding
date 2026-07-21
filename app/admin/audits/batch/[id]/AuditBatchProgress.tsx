@@ -13,7 +13,7 @@ const HEALTH_META: Record<RunHealth, { icon: string; cls: string; label: string 
   done: { icon: '●', cls: 'text-success', label: 'Complete' },
   warning: { icon: '▲', cls: 'text-warning-strong', label: 'Completed with issue' },
   error: { icon: '✗', cls: 'text-error', label: 'Failed' },
-  running: { icon: '◌', cls: 'text-info animate-pulse', label: 'Running…' },
+  running: { icon: '◌', cls: 'text-brand-cyan-dark animate-pulse', label: 'Running…' },
   queued: { icon: '○', cls: 'text-text-muted', label: 'Queued' },
 }
 
@@ -53,7 +53,7 @@ const TROUBLESHOOTING: Record<Exclude<IssueKind, null>, string[]> = {
 
 function StatChip({ label, value, cls }: { label: string; value: number; cls: string }) {
   return (
-    <div className="rounded-lg border border-border-default bg-surface-card px-3 py-2 text-center shadow-subtle">
+    <div className="rounded-xl border border-border-default bg-surface-card px-3 py-2 text-center shadow-subtle">
       <div className={`font-heading text-lg font-bold ${cls}`}>{value}</div>
       <div className="font-body text-[11px] uppercase tracking-wide text-text-muted">{label}</div>
     </div>
@@ -149,29 +149,28 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
         <StatChip label="Complete" value={counts.done} cls="text-success" />
         <StatChip label="Issues" value={counts.warning} cls="text-warning-strong" />
         <StatChip label="Failed" value={counts.error} cls="text-error" />
-        <StatChip label="Running" value={counts.running} cls="text-info" />
+        <StatChip label="Running" value={counts.running} cls="text-brand-cyan-dark" />
         <StatChip label="To do" value={counts.queued} cls="text-text-muted" />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border-default bg-surface-card shadow-subtle">
+      <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
         <table className="w-full font-body text-sm">
           <thead>
-            <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
-              <th className="px-4 py-3 text-left font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
+            <tr className="border-b border-border-default bg-[#FBFCFD]">
+              <th className="px-4 py-3 text-left font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary">
                 Site
               </th>
-              <th className="px-4 py-3 text-left font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
+              <th className="px-4 py-3 text-left font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary">
                 Status
               </th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
-            {data.runs.map((run, i) => (
+            {data.runs.map((run) => (
               <RunRow
                 key={run.id}
                 run={run}
-                zebra={i % 2 === 1}
                 expanded={!!expanded[run.id]}
                 onToggle={() => setExpanded((m) => ({ ...m, [run.id]: !m[run.id] }))}
                 retrying={!!retrying[run.id]}
@@ -187,14 +186,12 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
 
 function RunRow({
   run,
-  zebra,
   expanded,
   onToggle,
   retrying,
   onRetry,
 }: {
   run: AuditBatchRunView
-  zebra: boolean
   expanded: boolean
   onToggle: () => void
   retrying: boolean
@@ -206,7 +203,7 @@ function RunRow({
 
   return (
     <>
-      <tr className={`border-b border-border-default ${!expanded ? 'last:border-0' : ''} ${zebra ? 'bg-brand-cyan/5' : ''}`}>
+      <tr className={`border-b border-border-default ${!expanded ? 'last:border-0' : ''} hover:bg-surface-subtle`}>
         <td className="px-4 py-3">
           <div className="truncate font-body font-semibold text-text-primary">{run.domain}</div>
           <div className="mt-0.5 truncate text-xs text-text-muted">{run.url}</div>
@@ -253,10 +250,10 @@ function RunRow({
         </td>
       </tr>
       {hasIssue && expanded && (
-        <tr className={`border-b border-border-default last:border-0 ${zebra ? 'bg-brand-cyan/5' : ''}`}>
+        <tr className="border-b border-border-default last:border-0">
           <td colSpan={3} className="px-4 pb-4 pt-0">
             <div
-              className={`rounded-lg border p-3 ${
+              className={`rounded-xl border p-3 ${
                 run.health === 'error'
                   ? 'border-error/30 bg-error/5'
                   : 'border-warning/40 bg-warning/5'

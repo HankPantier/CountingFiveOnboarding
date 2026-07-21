@@ -110,7 +110,7 @@ export function NewBatchAuditForm() {
       <button
         type="submit"
         disabled={submitting || lineCount === 0 || overLimit}
-        className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50"
+        className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow disabled:cursor-not-allowed disabled:opacity-50"
       >
         {submitting ? 'Queuing…' : `Queue ${lineCount || ''} audit${lineCount === 1 ? '' : 's'}`.trim()}
       </button>

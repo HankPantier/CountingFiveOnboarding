@@ -205,7 +205,7 @@ export default function AuditsTable({
   }
 
   const dangerButton =
-    'rounded-pill border border-error/50 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-error transition-colors hover:bg-error hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
+    'rounded-pill border border-error/50 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50'
 
   return (
     <div>
@@ -248,11 +248,11 @@ export default function AuditsTable({
         {error && <span className="font-body text-sm text-error">{error}</span>}
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border-default bg-surface-card shadow-subtle">
+      <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
         <div className="overflow-x-auto">
           <table className="w-full text-sm font-body">
             <thead>
-              <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10 text-left">
+              <tr className="border-b border-border-default bg-[#FBFCFD] text-left">
                 <th className="w-10 px-4 py-3">
                   <input
                     ref={headerRef}
@@ -266,7 +266,7 @@ export default function AuditsTable({
                 {columns.map(({ key, label }) => (
                   <th
                     key={label}
-                    className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy"
+                    className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary"
                   >
                     {key ? (
                       <button
@@ -289,13 +289,13 @@ export default function AuditsTable({
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((r, i) => {
+              {sortedRows.map((r) => {
                 const delta = deltas[r.id]
                 const isChecked = selected.has(r.id)
                 return (
                   <tr
                     key={r.id}
-                    className={`border-b border-border-default last:border-0 hover:bg-brand-cyan/10 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''} ${isChecked ? 'bg-brand-cyan/10' : ''}`}
+                    className={`border-b border-border-default last:border-0 hover:bg-surface-subtle ${isChecked ? 'bg-brand-cyan/10' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <input
@@ -335,7 +335,7 @@ export default function AuditsTable({
                           <Link
                             href={`/admin/audits?runBy=${r.runById}`}
                             title={`Show all audits by ${r.runBy}`}
-                            className="inline-flex items-center rounded-full bg-surface-subtle px-2.5 py-0.5 font-heading text-xs font-semibold text-text-secondary transition-colors hover:bg-brand-cyan/10 hover:text-brand-cyan"
+                            className="inline-flex items-center rounded-badge bg-surface-subtle px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] text-text-secondary transition-colors hover:bg-brand-cyan/10 hover:text-brand-cyan-dark"
                           >
                             {r.runBy}
                           </Link>

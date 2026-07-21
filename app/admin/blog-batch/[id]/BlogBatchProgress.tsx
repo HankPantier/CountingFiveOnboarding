@@ -9,7 +9,7 @@ import type {
 
 const STATUS_META: Record<BlogBatchTargetStatus, { icon: string; cls: string; label: string }> = {
   pending: { icon: '○', cls: 'text-text-muted', label: 'Queued' },
-  generating: { icon: '◌', cls: 'text-info animate-pulse', label: 'Writing…' },
+  generating: { icon: '◌', cls: 'text-brand-cyan-dark animate-pulse', label: 'Writing…' },
   complete: { icon: '●', cls: 'text-success', label: 'Drafted' },
   error: { icon: '✗', cls: 'text-error', label: 'Error' },
   skipped: { icon: '–', cls: 'text-text-muted', label: 'Skipped' },
@@ -105,28 +105,28 @@ export default function BlogBatchProgress({ batchId }: { batchId: string }) {
           type="button"
           onClick={retryFailed}
           disabled={retrying}
-          className="mb-6 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+          className="mb-6 rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {retrying ? 'Retrying…' : `Retry ${counts.error} failed`}
         </button>
       )}
 
-      <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
+      <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
         <table className="w-full text-sm font-body">
           <thead>
-            <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
-              <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Client</th>
-              <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Status</th>
+            <tr className="border-b border-border-default bg-[#FBFCFD]">
+              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Client</th>
+              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Status</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
-            {data.targets.map((t, i) => {
+            {data.targets.map((t) => {
               const meta = STATUS_META[t.status]
               return (
                 <tr
                   key={t.sessionId}
-                  className={`border-b border-border-default last:border-0 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
+                  className="border-b border-border-default last:border-0 hover:bg-surface-subtle"
                 >
                   <td className="px-4 py-3">
                     <div className="font-body text-text-primary font-semibold truncate">{t.firmName ?? t.websiteUrl}</div>

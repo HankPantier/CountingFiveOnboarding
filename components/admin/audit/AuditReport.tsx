@@ -52,7 +52,7 @@ import ScoreTrendChart, { type TrendCategory, type TrendPoint } from './ScoreTre
 import { keywordRankBars, pageInventoryStats, recommendationStats } from '@/lib/audit/report-aggregates'
 import type { ScoreHistoryPoint } from '@/lib/audit/report-data'
 
-const cardClass = 'bg-surface-card border border-border-default rounded-lg shadow-subtle'
+const cardClass = 'bg-surface-card border border-border-default rounded-xl shadow-subtle'
 const sectionTitle = 'text-lg font-heading font-semibold text-brand-navy'
 
 // Short axis labels for the category radar — the full CATEGORY_META labels are
@@ -168,7 +168,7 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
           </div>
         </div>
         <div className="text-right">
-          <span className="inline-flex items-center rounded-full bg-brand-cyan/20 px-3 py-1 text-xs font-heading font-semibold text-brand-cyan-dark">
+          <span className="inline-flex items-center rounded-badge bg-brand-cyan/10 px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] text-brand-cyan-dark">
             Snapshot Report
           </span>
           <p className="mt-1 text-xs font-body text-text-muted">{runDate}</p>
@@ -192,10 +192,10 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
                 {result.recommendations.length} total recommendations
               </p>
               <div className="mt-3.5 flex gap-2">
-                <span className="inline-flex items-center rounded-full bg-success/10 px-3.5 py-1 font-heading text-xs font-semibold text-success">
+                <span className="inline-flex items-center rounded-badge bg-success/10 px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] text-success">
                   {passing} Passing
                 </span>
-                <span className="inline-flex items-center rounded-full bg-error/10 px-3.5 py-1 font-heading text-xs font-semibold text-error">
+                <span className="inline-flex items-center rounded-badge bg-error/10 px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] text-error">
                   {needsWork} Need Work
                 </span>
               </div>
@@ -213,7 +213,7 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
       {/* 3. Collapsible sections — every section is an accordion, all closed */}
       <section className="space-y-3">
         <AuditAccordion label="Score Dashboard" tip={SECTION_HELP.dashboard} iconKey="dashboard">
-          <div className="rounded-lg border border-border-default bg-surface-page p-4">
+          <div className="rounded-xl border border-border-default bg-surface-page p-4">
             <p className="mb-1 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
               Category Profile
             </p>
@@ -291,14 +291,14 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
             {trend.length >= 2 && <ScoreTrendChart trend={trend} categories={trendCategories} />}
             {previous && (
               <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${trend.length >= 2 ? 'mt-5' : ''}`}>
-                <div className="flex items-center justify-between rounded-lg border border-border-strong bg-surface-page px-4 py-3">
+                <div className="flex items-center justify-between rounded-xl border border-border-strong bg-surface-page px-4 py-3">
                   <p className="font-heading text-sm font-semibold text-text-primary">Overall</p>
                   <Delta current={result.overall_score} previous={previous.overall_score} />
                 </div>
                 {CATEGORY_META.map(({ key, label }) => (
                   <div
                     key={key}
-                    className="flex items-center justify-between rounded-lg border border-border-default bg-surface-page px-4 py-3"
+                    className="flex items-center justify-between rounded-xl border border-border-default bg-surface-page px-4 py-3"
                   >
                     <p className="font-heading text-sm font-semibold text-text-primary">{label}</p>
                     <Delta
@@ -361,7 +361,7 @@ function TopRecommendations({
 function DashboardCard({ card }: { card: DashboardBucket }) {
   const token = tokenForScore(card.score)
   return (
-    <div className="rounded-lg border border-border-default bg-surface-page px-4 py-3">
+    <div className="rounded-xl border border-border-default bg-surface-page px-4 py-3">
       <div className="flex items-start justify-between gap-2">
         <p className="font-heading text-sm font-semibold text-text-primary">{card.label}</p>
         <GradeBadge score={card.score} />
@@ -553,7 +553,7 @@ function MetricRow({ label, value }: { label: string; value: string }) {
 
 function CtaBox() {
   return (
-    <section className="rounded-lg bg-brand-navy p-8 text-center shadow-elevated">
+    <section className="rounded-xl bg-brand-navy p-8 text-center shadow-elevated">
       <h2 className="font-heading text-xl font-bold text-text-inverse">
         Ready to turn these findings into results?
       </h2>
@@ -565,7 +565,7 @@ function CtaBox() {
         href="https://revaltus.com"
         target="_blank"
         rel="noreferrer"
-        className="mt-5 inline-flex items-center justify-center rounded-full bg-brand-cyan px-6 py-2.5 font-heading text-sm font-semibold text-text-inverse transition-colors hover:bg-brand-cyan/90"
+        className="mt-5 inline-flex items-center justify-center rounded-pill bg-brand-cyan px-6 py-2.5 font-heading text-sm font-semibold text-text-inverse transition-colors hover:bg-brand-cyan-dark"
       >
         Let&rsquo;s talk
       </a>
@@ -581,11 +581,11 @@ function PageInventoryBody({ pages }: { pages: PageSummary[] }) {
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm font-body">
           <thead>
-            <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10 text-left">
+            <tr className="border-b border-border-default bg-[#FBFCFD] text-left">
               {['URL', 'Title', 'Status', 'H1', 'Schema', 'Words', 'Issues'].map((h) => (
                 <th
                   key={h}
-                  className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy"
+                  className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary"
                 >
                   {h}
                 </th>
@@ -593,10 +593,10 @@ function PageInventoryBody({ pages }: { pages: PageSummary[] }) {
             </tr>
           </thead>
           <tbody>
-            {pages.map((p, i) => (
+            {pages.map((p) => (
               <tr
                 key={p.url}
-                className={`border-b border-border-default last:border-0 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
+                className="border-b border-border-default last:border-0 hover:bg-surface-subtle"
               >
                 <td className="max-w-[220px] truncate px-4 py-3 text-text-secondary" title={p.url}>
                   {p.url}
@@ -626,7 +626,7 @@ function PageInventoryBody({ pages }: { pages: PageSummary[] }) {
 
 const EFFORT_CLASS: Record<string, string> = {
   Low: 'bg-success/10 text-success',
-  Medium: 'bg-warning/15 text-warning-strong',
+  Medium: 'bg-warning-strong/10 text-warning-strong',
   High: 'bg-error/10 text-error',
 }
 
@@ -641,23 +641,23 @@ function RecommendationsBody({ recommendations }: { recommendations: Recommendat
         {recommendations.map((r, i) => (
           <li
             key={i}
-            className={`rounded-lg border border-border-default border-l-4 bg-surface-page p-4 ${
+            className={`rounded-xl border border-border-default border-l-4 bg-surface-page p-4 ${
               r.priority === 'critical' ? 'border-l-error' : 'border-l-warning'
             }`}
           >
             <div className="flex flex-wrap items-center gap-2">
               <span
-                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold ${
+                className={`inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${
                   r.priority === 'critical'
                     ? 'bg-error/10 text-error'
-                    : 'bg-warning/15 text-warning-strong'
+                    : 'bg-warning-strong/10 text-warning-strong'
                 }`}
               >
                 {r.priority === 'critical' ? 'Critical' : 'Warning'}
               </span>
               <span className="font-body text-xs text-text-muted">{r.category}</span>
               <span
-                className={`ml-auto inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold ${EFFORT_CLASS[r.effort]}`}
+                className={`ml-auto inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${EFFORT_CLASS[r.effort]}`}
               >
                 {r.effort} effort
               </span>
@@ -675,7 +675,7 @@ function RecommendationsBody({ recommendations }: { recommendations: Recommendat
 
 const intelSubHeading = 'mt-5 font-heading text-sm font-semibold text-brand-navy'
 const intelTableHead =
-  'px-4 py-2 font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy text-left'
+  'px-4 py-2 font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary text-left'
 const intelTd = 'px-4 py-2 align-top text-text-secondary'
 
 // The intelligence layer is an editable JSONB blob (Edit-with-AI can write a
@@ -708,7 +708,7 @@ function IntelTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
     <div className="mt-3 overflow-x-auto">
       <table className="w-full text-sm font-body">
         <thead>
-          <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
+          <tr className="border-b border-border-default bg-[#FBFCFD]">
             {headers.map((h) => (
               <th key={h} className={intelTableHead}>{h}</th>
             ))}
@@ -716,7 +716,7 @@ function IntelTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i} className={`border-b border-border-default last:border-0 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}>
+            <tr key={i} className="border-b border-border-default last:border-0 hover:bg-surface-subtle">
               {r.map((c, j) => (
                 <td key={j} className={intelTd}>{c}</td>
               ))}
@@ -911,7 +911,7 @@ function ContentLibraryBody({ data, commentary }: { data: ContentLibraryIntellig
 
 const NARRATIVE_PRIORITY_CLASS: Record<string, string> = {
   High: 'bg-error/10 text-error',
-  Medium: 'bg-warning/15 text-warning-strong',
+  Medium: 'bg-warning-strong/10 text-warning-strong',
   Low: 'bg-success/10 text-success',
 }
 
@@ -921,7 +921,7 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
     <div className="overflow-x-auto">
       <table className="w-full text-sm font-body">
         <thead>
-          <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
+          <tr className="border-b border-border-default bg-[#FBFCFD]">
             {['Priority', 'Issue & Impact', 'Section', 'Revaltus Service'].map((h) => (
               <th key={h} className={intelTableHead}>
                 {h}
@@ -933,12 +933,12 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
           {recommendations.map((r, i) => (
             <tr
               key={i}
-              className={`border-b border-border-default last:border-0 ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
+              className="border-b border-border-default last:border-0 hover:bg-surface-subtle"
             >
               <td className="px-4 py-2 align-top">
                 <span
-                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-heading font-semibold ${
-                    NARRATIVE_PRIORITY_CLASS[r.priority] ?? 'bg-warning/15 text-warning-strong'
+                  className={`inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${
+                    NARRATIVE_PRIORITY_CLASS[r.priority] ?? 'bg-warning-strong/10 text-warning-strong'
                   }`}
                 >
                   {r.priority}
@@ -964,9 +964,9 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
 
 const SOCIAL_STATUS_STYLE: Record<string, { label: string; cls: string }> = {
   active: { label: 'Active', cls: 'bg-success/10 text-success' },
-  dormant: { label: 'Dormant', cls: 'bg-warning/10 text-warning' },
+  dormant: { label: 'Dormant', cls: 'bg-warning-strong/10 text-warning-strong' },
   not_found: { label: 'Not found', cls: 'bg-error/10 text-error' },
-  unknown: { label: 'Unverified', cls: 'bg-info/10 text-info' },
+  unknown: { label: 'Unverified', cls: 'bg-brand-cyan/10 text-brand-cyan-dark' },
 }
 
 function SocialPresenceBody({ data, commentary }: { data: SocialPresenceReport; commentary?: string }) {
@@ -986,7 +986,7 @@ function SocialPresenceBody({ data, commentary }: { data: SocialPresenceReport; 
                 <span className="font-semibold text-text-primary">
                   {SOCIAL_PLATFORM_LABELS[p.platform] ?? p.platform}
                 </span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.cls}`}>{status.label}</span>
+                <span className={`inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${status.cls}`}>{status.label}</span>
                 <span className="text-xs text-text-muted">{p.usefulness} value</span>
               </div>
               {p.url && (

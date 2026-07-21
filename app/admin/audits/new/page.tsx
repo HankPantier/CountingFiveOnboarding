@@ -13,7 +13,7 @@ export default function NewAuditPage() {
       <p className="mt-1 font-body text-sm text-text-secondary">
         Crawls the site, scores it across nine categories, and saves a shareable report.
       </p>
-      <div className="mt-8 rounded-lg border border-border-default bg-surface-card p-6 shadow-subtle">
+      <div className="mt-8 rounded-xl border border-border-default bg-surface-card p-6 shadow-subtle">
         <NewAuditForm />
       </div>
     </main>

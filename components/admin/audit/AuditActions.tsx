@@ -7,11 +7,11 @@ import { ShareLinkButton } from './ShareLinkButton'
 import AuditChatModal from './AuditChatModal'
 
 const ghostButton =
-  'rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-brand-navy transition-colors hover:bg-brand-navy hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill border border-border-default px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-text-secondary transition-colors hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50'
 const dangerButton =
-  'rounded-pill border border-error/50 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-error transition-colors hover:bg-error hover:text-text-inverse disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill border border-error/50 px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50'
 const primaryButton =
-  'rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50'
+  'rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold whitespace-nowrap text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow disabled:cursor-not-allowed disabled:opacity-50'
 
 export function AuditActions({
   auditId,
