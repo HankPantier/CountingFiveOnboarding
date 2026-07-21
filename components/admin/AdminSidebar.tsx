@@ -71,7 +71,7 @@ export default function AdminSidebar({
     'group relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 font-heading text-[13.5px] font-medium transition-colors'
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col bg-brand-navy-deeper">
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col self-start bg-brand-navy-deeper">
       <div className="px-[22px] pb-4 pt-6">
         <Link href="/admin/home" className="inline-block">
           {/* White reversed wordmark — add public/logo-white.png (bundled here). */}
