@@ -57,7 +57,7 @@ export default async function ContentHubPage() {
   const { data: contentJobs } = sessionIds.length > 0
     ? await supabase
         .from('content_jobs')
-        .select('session_id, phase, status')
+        .select('session_id, phase, status, github_repo')
         .in('session_id', sessionIds)
     : { data: [] }
 
@@ -109,6 +109,7 @@ export default async function ContentHubPage() {
               {sessions.map((session) => {
                 const job = jobBySession.get(session.id)
                 const phase = job?.phase ?? null
+                const canEditContent = (job?.phase ?? 0) >= 6 && !!job?.github_repo
                 const firmName = (session.schema_data as Record<string, unknown>)?.business
                   ? ((session.schema_data as Record<string, Record<string, unknown>>).business?.name as string)
                   : null
@@ -134,20 +135,41 @@ export default async function ContentHubPage() {
                     <td className="px-4 py-3">
                       <ContentPhaseBadge phase={phase} />
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/admin/content/${session.id}`}
-                        className={`inline-flex items-center font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all ${
-                          phase === 6
-                            ? 'border border-success/50 text-success hover:bg-success/10'
-                            : phase !== null
-                              ? 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
-                              : 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
-                        }`}
-                      >
-                        {phase === 6 ? 'Download' : phase !== null ? 'Continue' : 'Start'}
-                        {phase !== null && phase !== 6 && <span className="ml-1">&rarr;</span>}
-                      </Link>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        {phase === 6 && (
+                          canEditContent ? (
+                            <Link
+                              href={`/admin/content/${session.id}/edit`}
+                              className="text-brand-navy hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
+                              title="Edit published content in the linked GitHub repo"
+                            >
+                              Edit content ↗
+                            </Link>
+                          ) : (
+                            <Link
+                              href={`/admin/content/${session.id}`}
+                              className="text-text-muted hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
+                              title="Open the content workflow to connect a GitHub repo"
+                            >
+                              Connect repo →
+                            </Link>
+                          )
+                        )}
+                        <Link
+                          href={`/admin/content/${session.id}`}
+                          className={`inline-flex items-center font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all ${
+                            phase === 6
+                              ? 'border border-success/50 text-success hover:bg-success/10'
+                              : phase !== null
+                                ? 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
+                                : 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
+                          }`}
+                        >
+                          {phase === 6 ? 'Download' : phase !== null ? 'Continue' : 'Start'}
+                          {phase !== null && phase !== 6 && <span className="ml-1">&rarr;</span>}
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 )

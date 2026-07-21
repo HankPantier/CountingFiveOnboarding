@@ -6,13 +6,9 @@ import Link from 'next/link'
 export default function SessionRowActions({
   sessionId,
   sessionStatus,
-  hasContentJob,
-  canEditContent,
 }: {
   sessionId: string
   sessionStatus?: string
-  hasContentJob?: boolean
-  canEditContent?: boolean
 }) {
   const [deleting, setDeleting] = useState(false)
   const [archiving, setArchiving] = useState(false)
@@ -44,7 +40,6 @@ export default function SessionRowActions({
     }
   }
 
-  const showContentLink = sessionStatus === 'approved'
   const showOnboarding = sessionStatus === 'pending' || sessionStatus === 'in_progress'
 
   return (
@@ -72,34 +67,6 @@ export default function SessionRowActions({
       >
         MBP
       </Link>
-      {showContentLink && (
-        <Link
-          href={`/admin/content/${sessionId}`}
-          className="text-brand-cyan hover:text-brand-navy font-heading font-semibold text-xs transition-colors"
-          title={hasContentJob ? 'Open the content generation workflow for this session' : 'Begin the content generation workflow for this session'}
-        >
-          {hasContentJob ? 'View content →' : 'Start content →'}
-        </Link>
-      )}
-      {showContentLink && hasContentJob && (
-        canEditContent ? (
-          <Link
-            href={`/admin/content/${sessionId}/edit`}
-            className="text-brand-navy hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
-            title="Edit published content in the linked GitHub repo"
-          >
-            Edit content ↗
-          </Link>
-        ) : (
-          <Link
-            href={`/admin/content/${sessionId}`}
-            className="text-text-muted hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
-            title="Open the content workflow to connect a GitHub repo"
-          >
-            Connect repo →
-          </Link>
-        )
-      )}
       <button
         onClick={handleArchiveToggle}
         disabled={archiving}

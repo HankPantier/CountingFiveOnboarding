@@ -131,21 +131,6 @@ export default async function DashboardPage({
     (rows ?? []).reduce((acc, r) => acc + estimateCostUsd(r.model, r.input_tokens, r.output_tokens), 0)
   const spend = { total: sumCost(totalUsage), recent: sumCost(recentUsage) }
 
-  // Pull each session's content_job state so the row can show:
-  //   - "Start content" if no job exists yet
-  //   - "View content"  if a job exists but isn't editable yet
-  //   - "Edit content"  if phase >= 6 and a github_repo is provisioned
-  const sessionIds = (sessions ?? []).map((s) => s.id)
-  const { data: contentJobs } = sessionIds.length
-    ? await supabase
-        .from('content_jobs')
-        .select('session_id, phase, github_repo')
-        .in('session_id', sessionIds)
-    : { data: [] as Array<{ session_id: string; phase: number; github_repo: string | null }> }
-  const contentJobBySession = new Map(
-    (contentJobs ?? []).map((j) => [j.session_id, { phase: j.phase, githubRepo: j.github_repo }]),
-  )
-
   // ── KPI row (derived from data already fetched — no new queries) ──────────
   const byStatus = Object.fromEntries(pipeline.statuses.map((s) => [s.status, s.count]))
   const inOnboarding = (byStatus['pending'] ?? 0) + (byStatus['in_progress'] ?? 0)
@@ -297,11 +282,6 @@ export default async function DashboardPage({
                     <SessionRowActions
                       sessionId={session.id}
                       sessionStatus={session.status}
-                      hasContentJob={contentJobBySession.has(session.id)}
-                      canEditContent={
-                        (contentJobBySession.get(session.id)?.phase ?? 0) >= 6 &&
-                        !!contentJobBySession.get(session.id)?.githubRepo
-                      }
                     />
                   </td>
                 </tr>
