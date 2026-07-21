@@ -95,7 +95,7 @@ function SectionCard({
   editable: boolean
 }) {
   return (
-    <details id={`mbp-${section.key}`} className="scroll-mt-6 border border-border-default rounded-lg overflow-hidden bg-surface-card">
+    <details id={`mbp-${section.key}`} className="scroll-mt-6 border border-border-default rounded-xl overflow-hidden bg-surface-card">
       <summary className="px-4 py-2.5 bg-surface-subtle cursor-pointer text-sm font-heading font-semibold text-text-primary marker:text-text-muted hover:bg-surface-card transition-colors">
         {section.title}
       </summary>

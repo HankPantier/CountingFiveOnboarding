@@ -90,7 +90,7 @@ export default async function OnboardingPage({
           Work through the remaining questions with the client on the call — the agent addresses you, not the client.
           Corrections you make in Review are already saved; the chat only asks about what&apos;s still missing.
         </p>
-        <div className="border border-border-default rounded-lg overflow-hidden h-[calc(100vh-16rem)]">
+        <div className="border border-border-default rounded-xl overflow-hidden h-[calc(100vh-16rem)]">
           <ChatInterface
             sessionId={id}
             initialSession={fullSession}
@@ -127,7 +127,7 @@ export default async function OnboardingPage({
     <main className="p-8 space-y-6">
       {header}
       {steps}
-      <div className="rounded-lg border border-brand-cyan/30 bg-brand-cyan/5 px-4 py-3">
+      <div className="rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 px-4 py-3">
         <p className="text-sm font-body text-text-primary">
           <span className="font-heading font-semibold">Notes analyzed.</span> Review what the agent captured
           below and correct anything that&apos;s off{isAdmin ? '' : ' (ask an admin to fix a field, or handle it in the chat)'}.
@@ -136,7 +136,7 @@ export default async function OnboardingPage({
         <div className="mt-3 flex items-center gap-3">
           <Link
             href={`/admin/sessions/${id}/onboarding?step=chat`}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill transition-all hover:bg-brand-cyan-dark"
+            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-5 py-2 rounded-pill shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
           >
             Start the Q&A chat →
           </Link>

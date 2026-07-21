@@ -20,7 +20,7 @@ function fmt(dateStr: string | null): string {
 
 export default function StatusBanner({ session }: { session: Session }) {
   return (
-    <div className="bg-surface-card border border-border-default rounded-lg p-4 mb-6">
+    <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle p-4 mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-heading font-semibold text-text-primary">Session Overview</h2>
         <span className="text-xs font-mono text-text-muted">{session.id}</span>

@@ -102,7 +102,7 @@ export default async function MbpPage({
           sessions have none). Read-only, for traceability — schema_data is the
           source of truth and may have diverged via edits since import. */}
       {session.mbp_content && (
-        <details className="border border-border-default rounded-lg overflow-hidden">
+        <details className="border border-border-default rounded-xl overflow-hidden">
           <summary className="px-4 py-2.5 bg-surface-subtle text-sm font-heading font-semibold text-text-primary cursor-pointer">
             View original analyst doc
           </summary>

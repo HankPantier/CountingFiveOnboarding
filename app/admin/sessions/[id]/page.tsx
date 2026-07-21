@@ -91,7 +91,7 @@ export default async function SessionDetailPage({
                   'max-w-[80%] rounded-2xl px-4 py-3 text-sm font-body',
                   m.role === 'user'
                     ? 'bg-brand-navy text-text-inverse'
-                    : 'bg-surface-card text-text-primary border border-border-default',
+                    : 'bg-surface-card text-text-primary border border-border-default shadow-subtle',
                 ].join(' ')}
               >
                 <p className="whitespace-pre-wrap">{m.content}</p>
@@ -110,7 +110,7 @@ export default async function SessionDetailPage({
         {showFillCta && (
           <Link
             href={`/admin/sessions/${id}/mbp#mbp-field-${firstMissingPath}`}
-            className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-2.5 transition-colors hover:bg-warning/15"
+            className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/10 px-4 py-2.5 transition-colors hover:bg-warning/15"
           >
             <span className="text-sm font-body text-text-primary">
               <span className="font-heading font-semibold">{tier1Open.length}</span> required field
@@ -133,7 +133,7 @@ export default async function SessionDetailPage({
         {['pending', 'in_progress'].includes(session.status) && (
           <Link
             href={`/admin/sessions/${id}/onboarding`}
-            className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 px-4 py-3 transition-colors hover:bg-brand-cyan/10"
+            className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-brand-cyan/40 bg-brand-cyan/5 px-4 py-3 transition-colors hover:bg-brand-cyan/10"
           >
             <span className="text-sm font-body text-text-primary">
               <span className="font-heading font-semibold">Run onboarding call</span>
@@ -201,7 +201,7 @@ export default async function SessionDetailPage({
           <div className="mt-4">
             <Link
               href={`/admin/content/${id}`}
-              className="inline-flex items-center gap-2 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
+              className="inline-flex items-center gap-2 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
             >
               Begin Content Generation &rarr;
             </Link>

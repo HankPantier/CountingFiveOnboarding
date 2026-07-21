@@ -29,7 +29,7 @@ export default function MbpCompleteness({
     .filter(t => t.items.length > 0)
 
   return (
-    <div className="border border-border-default rounded-lg overflow-hidden">
+    <div className="border border-border-default rounded-xl overflow-hidden">
       <div className="px-4 py-2.5 bg-surface-subtle flex items-center justify-between">
         <span className="text-sm font-heading font-semibold text-text-primary">Still needed</span>
         <span className="text-xs font-body text-text-muted">
