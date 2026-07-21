@@ -115,12 +115,12 @@ export default function UserRow({
 
   return (
     <>
-      <tr className="border-b border-border-default last:border-0 hover:bg-brand-cyan/10 transition-colors">
+      <tr className="border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors">
         <td className="px-4 py-3 font-body text-text-primary">{user.name}</td>
         <td className="px-4 py-3 text-text-secondary">{user.email}</td>
         <td className="px-4 py-3">
           {user.role === 'admin' ? (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-brand-navy/10 text-brand-navy">
+            <span className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-brand-navy/10 text-brand-navy">
               Admin
             </span>
           ) : (
@@ -128,7 +128,7 @@ export default function UserRow({
               {user.capabilities.map(cap => (
                 <span
                   key={cap}
-                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-info/10 text-info capitalize"
+                  className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-brand-cyan/10 text-brand-cyan-dark"
                 >
                   {cap}
                 </span>
@@ -188,7 +188,7 @@ export default function UserRow({
       {resetLink && (
         <tr>
           <td colSpan={5} className="px-4 py-3 bg-surface-page">
-            <div className="bg-surface-card border border-border-default rounded-lg px-4 py-3">
+            <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle px-4 py-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
                   Single-use reset link for {user.email}
@@ -225,7 +225,7 @@ export default function UserRow({
       {newPassword && (
         <tr>
           <td colSpan={5} className="px-4 py-3 bg-surface-page">
-            <div className="bg-surface-card border border-border-default rounded-lg px-4 py-3">
+            <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle px-4 py-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
                   New password for {user.email}

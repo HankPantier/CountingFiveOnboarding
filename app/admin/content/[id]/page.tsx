@@ -155,7 +155,7 @@ export default async function ContentWorkflowPage({
       </div>
 
       {hasPackage && (
-        <div className="mb-8 border border-border-default rounded-lg p-4 space-y-2">
+        <div className="mb-8 border border-border-default bg-surface-card shadow-subtle rounded-xl p-4 space-y-2">
           <h2 className="text-sm font-heading font-semibold text-brand-navy">Download deliverables</h2>
           <PackageDownloadBar contentJobId={contentJobId} showPlain={hasPlainFiles} />
           {!hasPlainFiles && (

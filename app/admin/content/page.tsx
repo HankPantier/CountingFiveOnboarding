@@ -15,20 +15,20 @@ const CONTENT_PHASE_LABELS: Record<number, string> = {
 function ContentPhaseBadge({ phase }: { phase: number | null }) {
   if (phase === null) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-surface-subtle text-text-muted">
+      <span className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-surface-subtle text-text-muted">
         Not Started
       </span>
     )
   }
   if (phase === 6) {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-success/10 text-success">
+      <span className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-success/10 text-success">
         Complete
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold bg-info/10 text-info">
+    <span className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-brand-cyan/10 text-brand-cyan-dark">
       {CONTENT_PHASE_LABELS[phase] ?? `Phase ${phase}`}
     </span>
   )
@@ -77,13 +77,13 @@ export default async function ContentHubPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/admin/blog-batch"
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
+            className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:bg-brand-cyan-dark hover:-translate-y-px hover:shadow-cyan-glow"
           >
             Batch Content
           </Link>
           <Link
             href="/admin/dashboard"
-            className="border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:border-brand-cyan hover:text-brand-navy"
+            className="rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
           >
             Back to Dashboard
           </Link>
@@ -95,18 +95,18 @@ export default async function ContentHubPage() {
           No approved sessions yet. Approve a completed session to begin content generation.
         </div>
       ) : (
-        <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
+        <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
           <table className="w-full text-sm font-body">
             <thead>
-              <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Firm / Website</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Approved</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Content Phase</th>
+              <tr className="border-b border-border-default bg-[#FBFCFD]">
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Firm / Website</th>
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Approved</th>
+                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Content Phase</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
-              {sessions.map((session, i) => {
+              {sessions.map((session) => {
                 const job = jobBySession.get(session.id)
                 const phase = job?.phase ?? null
                 const firmName = (session.schema_data as Record<string, unknown>)?.business
@@ -116,7 +116,7 @@ export default async function ContentHubPage() {
                 return (
                   <tr
                     key={session.id}
-                    className={`border-b border-border-default last:border-0 hover:bg-brand-cyan/10 transition-colors ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
+                    className="border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors"
                   >
                     <td className="px-4 py-3">
                       <div className="font-body text-text-primary font-semibold">
@@ -139,7 +139,7 @@ export default async function ContentHubPage() {
                         href={`/admin/content/${session.id}`}
                         className={`inline-flex items-center font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all ${
                           phase === 6
-                            ? 'border border-success/40 text-success hover:bg-success/10'
+                            ? 'border border-success/50 text-success hover:bg-success/10'
                             : phase !== null
                               ? 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'
                               : 'bg-brand-cyan text-text-inverse hover:bg-brand-cyan-dark'

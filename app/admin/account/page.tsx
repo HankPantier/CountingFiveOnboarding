@@ -41,7 +41,7 @@ export default function AccountPage() {
 
   return (
     <div className="max-w-sm mx-auto px-6 py-10">
-      <div className="bg-surface-card rounded-card p-8 shadow-subtle">
+      <div className="bg-surface-card border border-border-default rounded-xl p-8 shadow-subtle">
         <h1 className="text-2xl font-heading font-bold text-brand-navy mb-2">
           Change password
         </h1>
@@ -92,7 +92,7 @@ export default function AccountPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-cyan text-text-inverse font-heading font-semibold text-xs py-3 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+            className="w-full rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs py-3 shadow-cyan-base transition-all hover:bg-brand-cyan-dark hover:-translate-y-px hover:shadow-cyan-glow disabled:opacity-50 disabled:cursor-not-allowed mt-2"
           >
             {loading ? 'Saving…' : 'Update password'}
           </button>

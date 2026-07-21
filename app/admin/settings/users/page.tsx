@@ -57,14 +57,14 @@ export default async function UsersPage() {
         <AddUserDialog sessions={sessionOptions} />
       </div>
 
-      <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
+      <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
         <table className="w-full text-sm font-body">
           <thead>
-            <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
-              <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Name</th>
-              <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Email</th>
-              <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Role</th>
-              <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Clients</th>
+            <tr className="border-b border-border-default bg-[#FBFCFD]">
+              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Name</th>
+              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Email</th>
+              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Role</th>
+              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Clients</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>

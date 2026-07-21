@@ -89,7 +89,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     return (
       <button
         onClick={() => setOpen(true)}
-        className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
+        className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:bg-brand-cyan-dark hover:-translate-y-px hover:shadow-cyan-glow"
       >
         Add User
       </button>
@@ -131,7 +131,7 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
         aria-modal="true"
         aria-labelledby="add-user-title"
         tabIndex={-1}
-        className="w-full max-w-md bg-surface-card rounded-card p-6 shadow-subtle max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-md bg-surface-card border border-border-default rounded-xl p-6 shadow-subtle max-h-[90vh] overflow-y-auto"
       >
         <h2 id="add-user-title" className="text-lg font-heading font-bold text-brand-navy mb-4">Add User</h2>
 
