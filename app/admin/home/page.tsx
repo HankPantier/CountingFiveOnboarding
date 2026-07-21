@@ -6,6 +6,7 @@ import { getCommandIndex } from '@/lib/admin/command-index'
 import HomeGreeting from '@/components/admin/home/HomeGreeting'
 import CommandBox, { type CommandSection } from '@/components/admin/home/CommandBox'
 import StatCards from '@/components/admin/home/StatCards'
+import StatusPill from '@/components/admin/StatusPill'
 
 // Sections the caller can reach, in nav order — powers the command box's local
 // "go to page" matches. Mirrors the nav visibility rule in AdminSidebar.
@@ -35,24 +36,28 @@ export default async function AdminHomePage() {
   const [stats, index] = await Promise.all([getHomeStats(user), getCommandIndex(user)])
 
   const firstName = (user.name ?? '').trim().split(/\s+/)[0] ?? ''
-  const sections: CommandSection[] = ALL_SECTIONS.filter(s => canSee(user, s.requires)).map(
+  const sections: CommandSection[] = ALL_SECTIONS.filter((s) => canSee(user, s.requires)).map(
     ({ label, href, keywords }) => ({ label, href, keywords }),
   )
-  const quickActions = QUICK_ACTIONS.filter(a => canSee(user, a.requires))
-  const recentClients = index.clients.slice(0, 5)
+  const quickActions = QUICK_ACTIONS.filter((a) => canSee(user, a.requires))
+  const recentClients = index.clients.slice(0, 6)
 
   return (
-    <main className="p-8 max-w-5xl mx-auto">
-      <div className="pt-8 pb-6 flex flex-col items-center text-center gap-6">
+    <main className="mx-auto max-w-5xl p-8 pb-14">
+      <div className="flex flex-col items-center gap-6 pb-6 pt-8 text-center">
         <HomeGreeting firstName={firstName} />
         <CommandBox clients={index.clients} audits={index.audits} sections={sections} />
         {quickActions.length > 0 && (
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {quickActions.map(a => (
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {quickActions.map((a, i) => (
               <Link
                 key={a.href}
                 href={a.href}
-                className="bg-brand-navy text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:bg-brand-navy-dark"
+                className={
+                  i === 0
+                    ? 'rounded-pill bg-brand-navy px-5 py-2.5 font-heading text-[13px] font-semibold text-text-inverse transition-all hover:bg-brand-navy-dark'
+                    : 'rounded-pill border border-border-default bg-surface-card px-5 py-2.5 font-heading text-[13px] font-semibold text-brand-navy transition-all hover:bg-surface-subtle'
+                }
               >
                 {a.label}
               </Link>
@@ -61,8 +66,8 @@ export default async function AdminHomePage() {
         )}
       </div>
 
-      <section className="mt-6">
-        <h2 className="text-sm font-heading font-semibold uppercase tracking-wide text-text-secondary mb-3">
+      <section className="mt-8">
+        <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-[0.08em] text-text-secondary">
           Your workspace
         </h2>
         <StatCards stats={stats} />
@@ -70,20 +75,20 @@ export default async function AdminHomePage() {
 
       {recentClients.length > 0 && (
         <section className="mt-8">
-          <h2 className="text-sm font-heading font-semibold uppercase tracking-wide text-text-secondary mb-3">
+          <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-[0.08em] text-text-secondary">
             Jump back in
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {recentClients.map(c => (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {recentClients.map((c) => (
               <Link
                 key={c.id}
                 href={`/admin/sessions/${c.id}`}
-                className="bg-surface-card border border-border-default rounded-card shadow-subtle p-4 transition-all hover:border-brand-cyan hover:shadow-medium"
+                className="rounded-xl border border-border-default bg-surface-card p-4 shadow-subtle transition-all hover:-translate-y-0.5 hover:border-brand-cyan hover:shadow-medium"
               >
-                <div className="font-body text-sm text-text-primary font-semibold truncate">{c.name}</div>
-                <div className="text-xs text-text-muted font-body mt-0.5 truncate">{c.websiteUrl}</div>
-                <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded-badge text-xs font-heading font-semibold bg-surface-subtle text-text-secondary">
-                  {c.hasSite ? 'Site live' : 'In onboarding'}
+                <div className="truncate font-heading text-sm font-semibold text-brand-navy">{c.name}</div>
+                <div className="mt-0.5 truncate font-body text-xs text-text-muted">{c.websiteUrl}</div>
+                <div className="mt-3">
+                  <StatusPill status={c.hasSite ? 'approved' : 'in_progress'} />
                 </div>
               </Link>
             ))}
