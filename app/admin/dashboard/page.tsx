@@ -4,7 +4,11 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { estimateCostUsd } from '@/lib/content/token-usage'
 import SessionRowActions from '@/components/admin/SessionRowActions'
-import SessionsFunnelChart from '@/components/admin/SessionsFunnelChart'
+import PipelineChart from '@/components/admin/PipelineChart'
+import StatCard from '@/components/admin/ui/StatCard'
+import StatusPill from '@/components/admin/StatusPill'
+import HealthRing from '@/components/admin/ui/HealthRing'
+import PhaseStepper from '@/components/admin/ui/PhaseStepper'
 import { sessionsOverview } from '@/lib/audit/report-aggregates'
 import type { Database } from '@/types/database'
 
@@ -12,6 +16,13 @@ type Session = Pick<
   Database['public']['Tables']['sessions']['Row'],
   'id' | 'website_url' | 'status' | 'current_phase' | 'last_activity_at' | 'created_at' | 'reminder_count'
 >
+
+const STAGE = ['Not started', 'Contact', 'Processing', 'Review', 'Questions', 'Files', 'Generation', 'Approved']
+const AVATAR = [
+  'bg-brand-cyan/10 text-brand-cyan-dark',
+  'bg-brand-navy/10 text-brand-navy',
+  'bg-brand-purple/10 text-brand-purple',
+]
 
 function timeAgo(dateStr: string): string {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
@@ -26,25 +37,10 @@ function daysInactive(dateStr: string): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    pending:     'bg-surface-subtle text-text-muted',
-    in_progress: 'bg-info/10 text-info',
-    completed:   'bg-success/10 text-success',
-    approved:    'bg-brand-purple/10 text-brand-purple',
-  }
-  const labels: Record<string, string> = {
-    pending:     'Pending',
-    in_progress: 'In Progress',
-    completed:   'Completed',
-    approved:    'Approved',
-  }
-  const cls = styles[status] ?? 'bg-surface-subtle text-text-muted'
-  return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold ${cls}`}>
-      {labels[status] ?? status}
-    </span>
-  )
+function siteInitials(url: string): string {
+  const host = url.replace(/^https?:\/\//, '').replace(/^www\./, '')
+  const core = host.split('.')[0] ?? host
+  return core.slice(0, 2).toUpperCase()
 }
 
 const PAGE_SIZE = 25
@@ -139,7 +135,7 @@ export default async function DashboardPage({
   //   - "Start content" if no job exists yet
   //   - "View content"  if a job exists but isn't editable yet
   //   - "Edit content"  if phase >= 6 and a github_repo is provisioned
-  const sessionIds = (sessions ?? []).map(s => s.id)
+  const sessionIds = (sessions ?? []).map((s) => s.id)
   const { data: contentJobs } = sessionIds.length
     ? await supabase
         .from('content_jobs')
@@ -147,55 +143,74 @@ export default async function DashboardPage({
         .in('session_id', sessionIds)
     : { data: [] as Array<{ session_id: string; phase: number; github_repo: string | null }> }
   const contentJobBySession = new Map(
-    (contentJobs ?? []).map(j => [j.session_id, { phase: j.phase, githubRepo: j.github_repo }])
+    (contentJobs ?? []).map((j) => [j.session_id, { phase: j.phase, githubRepo: j.github_repo }]),
   )
 
-  return (
-    <main className="p-8">
+  // ── KPI row (derived from data already fetched — no new queries) ──────────
+  const byStatus = Object.fromEntries(pipeline.statuses.map((s) => [s.status, s.count]))
+  const inOnboarding = (byStatus['pending'] ?? 0) + (byStatus['in_progress'] ?? 0)
 
-      <div className="flex items-center justify-between mb-8">
+  return (
+    <main className="mx-auto max-w-[1260px] p-8 pb-14">
+      {/* Header */}
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
         <div>
-          <h1 className="text-2xl font-heading font-bold text-brand-navy">Sessions</h1>
-          <p className="text-text-secondary font-body text-sm mt-1">
-            {totalCount ?? 0} {statusFilter === 'all' ? 'active' : statusFilter}
-            {q && <span> matching “{q}”</span>}
-            {spend.total > 0 && (
-              <Link
-                href="/admin/token-usage"
-                className="ml-3 text-text-muted hover:text-brand-cyan transition-colors"
-              >
-                · AI spend: ${spend.total.toFixed(2)} total, ${spend.recent.toFixed(2)} last 30 days →
-              </Link>
-            )}
+          <h1 className="font-heading text-[27px] font-bold leading-tight text-brand-navy">Onboarding</h1>
+          <p className="mt-1.5 font-body text-sm text-text-secondary">
+            {totalCount ?? 0} {statusFilter === 'all' ? 'active' : statusFilter} clients moving through the 7-phase intake
+            {q && <span> · matching “{q}”</span>}
           </p>
-          {(approvedCount ?? 0) > 0 && (
-            <Link
-              href="/admin/content"
-              className="inline-flex items-center gap-2 mt-2 text-sm font-body text-brand-cyan hover:text-brand-navy transition-colors"
-            >
-              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-brand-cyan text-text-inverse text-xs font-heading font-bold">
-                {approvedCount}
-              </span>
-              ready for content generation
-            </Link>
-          )}
         </div>
         {user.role === 'admin' && (
-          <div className="flex items-center gap-3">
-            <Link
-              href="/admin/dashboard/new-session"
-              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark"
-            >
-              New Session
-            </Link>
-          </div>
+          <Link
+            href="/admin/dashboard/new-session"
+            className="inline-flex items-center gap-2 rounded-pill bg-brand-cyan px-4 py-2.5 font-heading text-[13px] font-semibold text-text-inverse shadow-cyan-base transition-all hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New session
+          </Link>
         )}
       </div>
 
-      <SessionsFunnelChart overview={pipeline} />
+      {/* KPI cards */}
+      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Active sessions" value={pipeline.total} context={`${inOnboarding} still in onboarding`} />
+        <StatCard label="In onboarding" value={inOnboarding} context="no live site yet" />
+        <StatCard
+          label="Ready for content"
+          value={approvedCount ?? 0}
+          context={(approvedCount ?? 0) > 0 ? 'awaiting generation' : 'all clear'}
+          tone={(approvedCount ?? 0) > 0 ? 'good' : 'muted'}
+          href="/admin/content"
+        />
+        {user.isAdmin && (
+          <StatCard label="AI spend · 30d" value={`$${spend.recent.toFixed(2)}`} context="last 30 days" href="/admin/token-usage" />
+        )}
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <form action="/admin/dashboard" className="flex items-center gap-2">
+      {/* Pipeline */}
+      <div className="mb-6">
+        <PipelineChart overview={pipeline} />
+      </div>
+
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-pill border border-border-default bg-surface-card p-1">
+          {STATUS_FILTERS.filter((s) => s !== 'archived').map((s) => (
+            <Link
+              key={s}
+              href={filterHref({ status: s })}
+              className={`rounded-pill px-3.5 py-1.5 font-heading text-[12.5px] font-semibold transition-colors ${
+                statusFilter === s ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'
+              }`}
+            >
+              {s === 'all' ? 'Active' : s.replace('_', ' ')}
+            </Link>
+          ))}
+        </div>
+        <form action="/admin/dashboard" className="flex items-center">
           {statusFilter !== 'all' && <input type="hidden" name="status" value={statusFilter} />}
           <input
             type="search"
@@ -203,70 +218,78 @@ export default async function DashboardPage({
             defaultValue={q}
             placeholder="Search by website…"
             aria-label="Search sessions by website"
-            className="text-xs font-body px-3 py-1.5 rounded-pill border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none w-56"
+            className="w-56 rounded-pill border border-border-default bg-surface-card px-4 py-2 font-body text-xs transition-colors focus:border-brand-cyan focus:outline-none"
           />
         </form>
-        <div className="flex items-center gap-1">
-          {STATUS_FILTERS.map((s) => (
-            <Link
-              key={s}
-              href={filterHref({ status: s })}
-              className={`text-xs font-heading font-semibold px-3 py-1.5 rounded-pill transition-colors ${
-                statusFilter === s
-                  ? 'bg-brand-navy text-text-inverse'
-                  : 'text-text-secondary hover:bg-surface-subtle'
-              }`}
-            >
-              {s === 'all' ? 'Active' : s.replace('_', ' ')}
-            </Link>
-          ))}
-        </div>
+        <div className="flex-1" />
       </div>
 
+      {/* Table */}
       {!sessions?.length ? (
-        <div className="text-center py-16 text-text-muted font-body">
-          {q || statusFilter !== 'all'
-            ? 'No sessions match this filter.'
-            : 'No sessions yet. Create one to get started.'}
+        <div className="py-16 text-center font-body text-text-muted">
+          {q || statusFilter !== 'all' ? 'No sessions match this filter.' : 'No sessions yet. Create one to get started.'}
         </div>
       ) : (
-        <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
-          <table className="w-full text-sm font-body">
+        <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
+          <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-brand-cyan/20 bg-brand-cyan/10">
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Website</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Status</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Phase</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Last Active</th>
-                <th className="text-left px-4 py-3 text-brand-navy font-heading font-semibold text-xs uppercase tracking-wide">Inactive</th>
-                <th className="px-4 py-3" />
+              <tr className="border-b border-border-default bg-[#FBFCFD]">
+                {['Client', 'Status', 'Phase', 'Health', 'Last active', 'Inactive', ''].map((h, i) => (
+                  <th
+                    key={i}
+                    className="px-4 py-3 text-left font-heading text-[11px] font-semibold uppercase tracking-[0.06em] text-text-secondary"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {sessions.map((session: Session, i) => (
-                <tr
-                  key={session.id}
-                  className={`border-b border-border-default last:border-0 hover:bg-brand-cyan/10 transition-colors ${i % 2 === 1 ? 'bg-brand-cyan/5' : ''}`}
-                >
+                <tr key={session.id} className="border-b border-border-default transition-colors last:border-0 hover:bg-surface-subtle">
                   <td className="px-4 py-3">
-                    <div className="font-body text-text-primary truncate max-w-[200px]">
-                      {session.website_url}
-                    </div>
-                    <div className="text-text-muted text-xs mt-0.5 font-mono">
-                      {session.id.slice(0, 8)}…
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-heading text-[13px] font-semibold ${AVATAR[i % 3]}`}>
+                        {siteInitials(session.website_url)}
+                      </div>
+                      <div className="min-w-0">
+                        <Link
+                          href={`/admin/sessions/${session.id}`}
+                          className="block max-w-[220px] truncate font-heading text-sm font-semibold text-brand-navy hover:text-brand-cyan"
+                        >
+                          {session.website_url}
+                        </Link>
+                        <div className="mt-0.5 font-mono text-xs text-text-muted">{session.id.slice(0, 8)}…</div>
+                      </div>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={session.status} />
+                    <StatusPill status={session.status} />
                   </td>
-                  <td className="px-4 py-3 text-text-secondary">
-                    Phase {session.current_phase} / 7
+                  <td className="px-4 py-3">
+                    <div className="mb-1.5 whitespace-nowrap font-body text-xs text-text-secondary">
+                      Phase {session.current_phase} · {STAGE[session.current_phase] ?? '—'}
+                    </div>
+                    <PhaseStepper phase={session.current_phase} />
                   </td>
-                  <td className="px-4 py-3 text-text-secondary">
+                  <td className="px-4 py-3">
+                    <HealthRing
+                      from={{
+                        current_phase: session.current_phase,
+                        last_activity_at: session.last_activity_at,
+                        reminder_count: session.reminder_count,
+                      }}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-body text-sm text-text-secondary">
                     {timeAgo(session.last_activity_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`text-sm ${daysInactive(session.last_activity_at) >= 3 ? 'text-warning-strong font-semibold' : 'text-text-muted'}`}>
+                    <span
+                      className={`font-body text-sm font-semibold ${
+                        daysInactive(session.last_activity_at) >= 3 ? 'text-warning-strong' : 'text-text-muted'
+                      }`}
+                    >
                       {daysInactive(session.last_activity_at)}d
                     </span>
                   </td>
@@ -289,11 +312,9 @@ export default async function DashboardPage({
       )}
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3 mt-4 text-sm font-body">
-          {/* Sort is stalest-first (sessions needing attention float up), so
-              direction labels would mislead — neutral Prev/Next instead. */}
+        <div className="mt-4 flex items-center justify-center gap-3 font-body text-sm">
           {page > 1 ? (
-            <Link href={filterHref({ page: page - 1 })} className="text-brand-cyan hover:text-brand-navy font-heading font-semibold">
+            <Link href={filterHref({ page: page - 1 })} className="font-heading font-semibold text-brand-cyan hover:text-brand-navy">
               ← Prev
             </Link>
           ) : (
@@ -303,7 +324,7 @@ export default async function DashboardPage({
             Page {page} of {totalPages}
           </span>
           {page < totalPages ? (
-            <Link href={filterHref({ page: page + 1 })} className="text-brand-cyan hover:text-brand-navy font-heading font-semibold">
+            <Link href={filterHref({ page: page + 1 })} className="font-heading font-semibold text-brand-cyan hover:text-brand-navy">
               Next →
             </Link>
           ) : (
