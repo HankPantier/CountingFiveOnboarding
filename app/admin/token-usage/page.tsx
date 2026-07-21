@@ -124,7 +124,7 @@ function fmtTokens(v: number): string {
 
 function StatTile({ label, totals }: { label: string; totals: Totals }) {
   return (
-    <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle p-5">
+    <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle p-5">
       <p className="text-xs font-heading font-semibold text-text-muted uppercase tracking-wide">{label}</p>
       <p className="text-2xl font-heading font-bold text-brand-navy mt-1 tabular-nums">{money(totals.cost)}</p>
       <p className="text-sm font-body text-text-secondary mt-1 tabular-nums">

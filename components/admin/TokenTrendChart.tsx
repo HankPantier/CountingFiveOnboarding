@@ -41,14 +41,14 @@ export default function TokenTrendChart({ series }: { series: Record<string, Dai
   const fmt = metric === 'cost' ? formatCost : formatTokens
 
   const pill = (active: boolean) =>
-    `px-3 py-1 rounded-full text-xs font-heading font-semibold transition-colors ${
+    `px-3 py-1 rounded-pill text-xs font-heading font-semibold transition-colors ${
       active
         ? 'bg-brand-cyan text-text-inverse'
         : 'bg-surface-subtle text-text-secondary hover:text-text-primary'
     }`
 
   return (
-    <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle p-5">
+    <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle p-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-heading font-bold text-brand-navy">Usage over time</h2>
         <div className="flex items-center gap-3">

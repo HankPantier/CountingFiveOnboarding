@@ -70,14 +70,14 @@ export default function ClientUsageTable({ clients }: { clients: ClientUsage[] }
   }
 
   return (
-    <div className="bg-surface-card border border-border-default rounded-lg shadow-subtle overflow-hidden">
+    <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
       <table className="w-full text-left">
-        <thead>
+        <thead className="bg-[#FBFCFD]">
           <tr className="border-b border-border-default">
-            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-muted uppercase tracking-wide">Client</th>
-            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-muted uppercase tracking-wide text-right">Cost</th>
-            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-muted uppercase tracking-wide text-right">Tokens</th>
-            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-muted uppercase tracking-wide text-right">Calls</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">Client</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Cost</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Tokens</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Calls</th>
           </tr>
         </thead>
         <tbody>
@@ -95,7 +95,7 @@ export default function ClientUsageTable({ clients }: { clients: ClientUsage[] }
                       <span className={`text-text-muted transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
                       <span className="truncate">{c.label}</span>
                       {c.kind === 'audit-site' && (
-                        <span className="text-xs font-heading font-semibold uppercase tracking-wide text-info bg-info/10 px-2 py-0.5 rounded-pill">
+                        <span className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-brand-cyan/10 text-brand-cyan-dark">
                           Audit only
                         </span>
                       )}

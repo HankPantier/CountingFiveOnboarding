@@ -18,7 +18,7 @@ export interface SpendSlice {
   cost: number
 }
 
-const card = 'bg-surface-card border border-border-default rounded-lg shadow-subtle p-5'
+const card = 'bg-surface-card border border-border-default rounded-xl shadow-subtle p-5'
 const title = 'text-sm font-heading font-semibold text-text-muted uppercase tracking-wide mb-3'
 const money = (v: number | string | ReadonlyArray<number | string> | undefined) =>
   `$${Number(Array.isArray(v) ? v[0] : (v ?? 0)).toFixed(2)}`
