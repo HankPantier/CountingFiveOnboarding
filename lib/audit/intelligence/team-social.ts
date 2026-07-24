@@ -47,10 +47,14 @@ export interface TeamSocialInput {
 // truncation — surfaced in the report).
 const MAX_MEMBERS = 8
 const MAX_TEAM_PAGES = 4
-// Per-page and total caps on scraped roster text, keeping the extraction prompt
-// bounded regardless of page weight.
-const PAGE_TEXT_CAP = 6_000
-const TOTAL_TEXT_CAP = 14_000
+// Individual bio/profile pages (e.g. /team/jane-doe) linked from a team listing
+// — where the richest per-person expertise usually lives.
+const MAX_BIO_PAGES = 12
+// Per-page and total caps on scraped roster text. Generous enough that a team
+// page's roster/bios aren't truncated (a footer roster can sit ~18k chars deep),
+// while still bounding the extraction prompt.
+const PAGE_TEXT_CAP = 20_000
+const TOTAL_TEXT_CAP = 60_000
 
 const asStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
 const asNum = (v: unknown): number | null => (typeof v === 'number' && isFinite(v) ? v : null)
@@ -96,6 +100,48 @@ export function extractTeamText(html: string, pageUrl: string): { text: string; 
     if (full && isSocialUrl(full)) socialLinks.push(full)
   })
   return { text, socialLinks }
+}
+
+// Paths that are children of a team page but are not a person's bio.
+const SKIP_BIO_PATH_RE =
+  /\.(pdf|jpe?g|png|gif|svg|webp|docx?|xlsx?)$|\/(contact|privacy|terms|search|category|categories|tag|tags|page|blog|news|events?|services?|resources?)(\/|$)/i
+
+/** Individual bio/profile pages linked from a team listing: same-domain links
+ * exactly one path segment deeper than the team page (e.g. /who-we-are →
+ * /who-we-are/jane-doe). Pure. */
+export function findBioPages(html: string, teamPageUrl: string): string[] {
+  let base: URL
+  try {
+    base = new URL(teamPageUrl)
+  } catch {
+    return []
+  }
+  const basePath = base.pathname.replace(/\/+$/, '')
+  if (!basePath) return [] // a homepage/root has no meaningful bio sub-tree
+
+  const $ = cheerio.load(html)
+  const out: string[] = []
+  const seen = new Set<string>()
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href')
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+    const full = normalizeUrl(href, teamPageUrl)
+    if (!full || !sameDomain(full, base.host)) return
+    let path: string
+    try {
+      path = new URL(full).pathname.replace(/\/+$/, '')
+    } catch {
+      return
+    }
+    if (!path.startsWith(`${basePath}/`)) return
+    const rest = path.slice(basePath.length + 1)
+    if (!rest || rest.includes('/')) return // exactly one segment deeper
+    if (SKIP_BIO_PATH_RE.test(path)) return
+    if (seen.has(full)) return
+    seen.add(full)
+    out.push(full)
+  })
+  return out
 }
 
 function isHtml200(res: Awaited<ReturnType<typeof safeGet>>): boolean {
@@ -146,7 +192,17 @@ async function scrapeTeamRoster(websiteUrl: string, knownUrls: string[] = []): P
   }
 
   const targets = [...candidates].filter((u) => !seenPage.has(u)).slice(0, MAX_TEAM_PAGES)
+  const bioCandidates = new Set<string>()
   for (const url of targets) {
+    const res = await safeGet(url)
+    if (!isHtml200(res)) continue
+    absorb(res!.finalUrl, res!.body)
+    for (const b of findBioPages(res!.body, res!.finalUrl)) bioCandidates.add(b)
+  }
+
+  // Follow individual bio pages — where per-person expertise usually lives.
+  const bioTargets = [...bioCandidates].filter((u) => !seenPage.has(u)).slice(0, MAX_BIO_PAGES)
+  for (const url of bioTargets) {
     const res = await safeGet(url)
     if (!isHtml200(res)) continue
     absorb(res!.finalUrl, res!.body)
@@ -195,23 +251,28 @@ async function extractRoster(
   ctx?: TokenContext,
 ): Promise<RosterMember[]> {
   if (!text) return []
-  const prompt = `You are extracting the team roster of "${input.siteName}" (${input.domain}) from its scraped team/about page text. Return ONLY people who work at the firm — skip clients, testimonial authors, and generic names. Use ONLY what the text supports; do not invent credentials.
+  const prompt = `You are extracting the team roster of "${input.siteName}" (${input.domain}) from its scraped team/about and individual bio pages. Return ONLY people who work at the firm — skip clients, testimonial authors, vendors, and generic names. Use ONLY what the text supports; never invent credentials or expertise.
+
+For EACH person, capture as much detail as the text provides — this feeds a niche-content analysis, so specializations and industries served matter most:
+- certifications: every professional credential/license shown (CPA, EA, CFP, CVA, ABV, PFS, MBA, JD, etc.)
+- specializations: ALL stated areas of expertise, practice areas, service specialties, AND industries/client types served (e.g. "construction accounting", "estate planning", "restaurant clients", "oil & gas", "business valuation") — be thorough and specific
+- bio: the person's full bio/summary as written (not just 1-2 sentences), including experience, education, and notable work if present
 
 Return JSON:
 { "members": [ {
   "name": string,
   "title": string,
-  "certifications": [string]  // e.g. "CPA", "EA", "CFP" — professional credentials/licenses,
-  "specializations": [string] // practice areas / areas of expertise,
-  "bio": string               // 1-2 sentences if present, else ""
+  "certifications": [string],
+  "specializations": [string],
+  "bio": string
 } ] }
 Omit fields you cannot support. Return only the JSON.
 
-TEAM PAGE TEXT:
+TEAM & BIO PAGE TEXT:
 ${text}`
 
   const members =
-    (await generateMbpJson<RosterMember[]>(prompt, validateRoster, 3000, ctx, {
+    (await generateMbpJson<RosterMember[]>(prompt, validateRoster, 6000, ctx, {
       model: PUBLISHED_CONTENT_MODEL,
       providerOptions: OUTLINE_PROVIDER_OPTIONS,
     })) ?? []

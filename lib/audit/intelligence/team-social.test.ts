@@ -13,7 +13,7 @@ vi.mock('../crawl', async (orig) => {
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { serperEnabled, serperSearch } from '../serper-search'
 import { safeGet } from '../crawl'
-import { buildTeamSocial, extractTeamText, type TeamSocialInput } from './team-social'
+import { buildTeamSocial, extractTeamText, findBioPages, type TeamSocialInput } from './team-social'
 import { generateTeamSocialRecommendations } from '../recommendations'
 import type { TeamSocialReport } from '../types'
 
@@ -57,6 +57,30 @@ describe('extractTeamText', () => {
     expect(text).toContain('Jane Doe, CPA')
     expect(text).not.toContain('secret')
     expect(socialLinks).toEqual(['https://www.linkedin.com/in/janedoe'])
+  })
+})
+
+describe('findBioPages', () => {
+  it('finds one-segment-deeper same-domain bio links under a team page', () => {
+    const html = `
+      <a href="/who-we-are/david-lattimore">David Lattimore</a>
+      <a href="/who-we-are/erik-angelle">Erik Angelle</a>
+      <a href="/who-we-are">Back to team</a>
+      <a href="/who-we-are/david/awards">Awards</a>
+      <a href="/contact">Contact</a>
+      <a href="/who-we-are/roster.pdf">PDF</a>
+    `
+    const urls = findBioPages(html, 'https://acme.example/who-we-are')
+    expect(urls).toContain('https://acme.example/who-we-are/david-lattimore')
+    expect(urls).toContain('https://acme.example/who-we-are/erik-angelle')
+    expect(urls).not.toContain('https://acme.example/who-we-are') // the page itself
+    expect(urls).not.toContain('https://acme.example/who-we-are/david/awards') // 2 segments deep
+    expect(urls).not.toContain('https://acme.example/contact') // not under base
+    expect(urls.some((u) => u.endsWith('.pdf'))).toBe(false) // asset, skipped
+  })
+
+  it('returns nothing for a homepage/root base', () => {
+    expect(findBioPages('<a href="/about/x">x</a>', 'https://acme.example/')).toEqual([])
   })
 })
 
