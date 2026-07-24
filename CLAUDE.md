@@ -167,6 +167,10 @@ If this flag is not cleared, the session is permanently locked for the client. T
 - `advancePhase: true` should only be set when phase goals are genuinely complete — the server validates this
 - Tool descriptions must stay concise (under 50 words per parameter description) to minimize token overhead
 
+### MBP Improvement Confirmation (interactive AI content agents)
+Any **interactive** AI agent that generates content (e.g. the Generate Content assistant in `lib/content/generate-content-prompt.ts` → `/api/content-assistant/[id]/chat`) MUST use **ask-then-file** when a durable MBP improvement surfaces: honor the rule/fact in the current reply, then **ask the operator to confirm** before calling any MBP-suggestion/update tool. Never silently mutate `schema_data` or auto-file an MBP suggestion from an interactive session. "Improvement" covers both facts (certs, services, titles, positioning) and brand-voice/writing rules (map avoid-rules like "no em-dashes/emojis" to `brand.toneToAvoid`). This applies to every current and future content-generating AI agent.
+This does NOT apply to the **background** impact reviews (`reviewContentForMbpImpact`, `content-edit-review`) that run via `after()` with no user present — those continue to file pending suggestions for admin approval. The explicit MBP editor chat (`/api/mbp/[id]/chat`) is exempt: the operator is directly editing the MBP, so confirmation is implicit.
+
 ### Content Generation Concurrency
 - `lib/content/content-generator.ts → generateSinglePage()` uses an atomic SQL guard: the `generation_status` is updated to `'running'` only if it's not already `'running'` (`.neq('generation_status', 'running')`). A second caller hitting the same outline-id while one is in flight gets `{ status: 'skipped' }`. Mirror this pattern for any future per-row pipeline worker.
 - Stuck rows (status `running` for >15 min) are reset to `error` automatically by `/api/cron/sweep-stuck-jobs` every 5 minutes. Don't write manual recovery scripts for orphaned rows — extend the cron.
