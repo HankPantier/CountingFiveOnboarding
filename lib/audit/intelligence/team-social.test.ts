@@ -133,6 +133,7 @@ describe('buildTeamSocial', () => {
       .mockResolvedValueOnce([
         { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: [], bio: '' },
       ]) // roster
+      .mockResolvedValueOnce(null) // external enrichment (no-op here)
       .mockResolvedValueOnce({ perMember: {}, team: ['Local business tax'] }) // niche
       .mockResolvedValueOnce(
         new Map([
@@ -153,6 +154,37 @@ describe('buildTeamSocial', () => {
     expect(report!.members[0].socialProfiles[0].platform).toBe('linkedin')
     expect(report!.members[0].footprint).toBe('moderate')
     expect(report!.members[0].source).toBe('ai')
+  })
+
+  it('enriches thin on-site roster with external credentials before niche mapping', async () => {
+    mockSerperEnabled.mockReturnValue(true)
+    mockSerperSearch.mockResolvedValue([
+      { position: 1, title: 'David Lattimore, CVA', link: 'https://directory.example/david', snippet: 'Certified Valuation Analyst, construction accounting' },
+    ])
+    mockSafeGet.mockResolvedValue(
+      htmlPage('https://acme.example', '<body><h2>David Lattimore, CPA</h2></body>'),
+    )
+    let nichePromptSawCVA = false
+    mockGen
+      .mockResolvedValueOnce([
+        { name: 'David Lattimore', title: 'Managing Partner', certifications: ['CPA'], specializations: [], bio: '' },
+      ]) // roster (name + title only, as on the site)
+      .mockResolvedValueOnce(
+        new Map([['David Lattimore', { certifications: ['CVA'], specializations: ['Construction accounting'], bioAddendum: '' }]]),
+      ) // external enrichment
+      .mockImplementationOnce(async (prompt: string) => {
+        nichePromptSawCVA = prompt.includes('CVA') && prompt.includes('Construction accounting')
+        return { perMember: { 'David Lattimore': ['Business valuation for M&A'] }, team: [] }
+      }) // niche mapping — should see the enriched credentials
+      .mockResolvedValueOnce(new Map()) // social
+
+    const report = await buildTeamSocial(input())
+    // External CVA + construction expertise merged into the roster member...
+    expect(report!.members[0].certifications).toContain('CVA')
+    expect(report!.members[0].specializations).toContain('Construction accounting')
+    // ...and the niche-mapping pass received them.
+    expect(nichePromptSawCVA).toBe(true)
+    expect(report!.members[0].nicheOpportunities).toContain('Business valuation for M&A')
   })
 
   it('scrapes a team page from the crawl inventory when the homepage does not link it', async () => {

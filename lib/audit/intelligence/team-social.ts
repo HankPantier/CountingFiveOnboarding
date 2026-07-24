@@ -523,6 +523,92 @@ ${memberBlocks}`
   return result ?? new Map()
 }
 
+// ── External enrichment: pull credentials/expertise the firm's own site omits ─
+// Reuses the Serper snippets already fetched for the social pass to extract each
+// member's professional certifications, specializations, and industries served
+// from the wider web (LinkedIn, directories, press), then merges them into the
+// roster BEFORE niche mapping. Strictly additive and match-gated — critical for
+// firms whose site lists only name + title.
+interface ExternalDetail {
+  certifications: string[]
+  specializations: string[]
+  bioAddendum: string
+}
+
+function validateExternalMap(parsed: unknown): Map<string, ExternalDetail> | null {
+  if (!parsed || typeof parsed !== 'object') return null
+  const arr = (parsed as { members?: unknown }).members
+  if (!Array.isArray(arr)) return null
+  const map = new Map<string, ExternalDetail>()
+  for (const raw of arr) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const name = asStr(r.name)
+    if (!name) continue
+    map.set(name, {
+      certifications: asStrArr(r.certifications),
+      specializations: asStrArr(r.specializations),
+      bioAddendum: asStr(r.bioAddendum),
+    })
+  }
+  return map.size ? map : null
+}
+
+// Mutates `roster` in place, merging match-gated external detail into each
+// member. No-op without search signal or on AI failure.
+async function enrichRosterExternal(
+  roster: RosterMember[],
+  snippets: Map<string, string>,
+  input: TeamSocialInput,
+  ctx?: TokenContext,
+): Promise<void> {
+  const withSignal = roster.filter((m) => snippets.has(m.name))
+  if (!withSignal.length) return
+
+  const memberBlocks = withSignal
+    .map((m) => {
+      const known = [
+        m.title && `Title: ${m.title}`,
+        m.certifications.length && `Known certifications: ${m.certifications.join(', ')}`,
+      ]
+        .filter(Boolean)
+        .join('; ')
+      return `## ${m.name}${known ? ` — ${known}` : ''}\nSEARCH RESULTS:\n${snippets.get(m.name)}`
+    })
+    .join('\n\n')
+
+  const prompt = `You are enriching the professional profiles of team members at "${input.siteName}" (${input.domain}${input.location ? `, ${input.location}` : ''}) using web-search results, because the firm's own site lists little detail. For EACH member, extract additional professional facts the results support.
+
+CRITICAL: attribute a fact ONLY when the result clearly refers to THIS person at THIS firm/location (name + firm or name + location + profession must match). If a result is about a different person with the same name, ignore it. Never invent credentials, specialties, or industries.
+
+Return JSON:
+{ "members": [ {
+  "name": string,
+  "certifications": [string],   // professional credentials NOT already listed (CPA, CVA, ABV, CFP, EA, etc.)
+  "specializations": [string],  // areas of expertise, service specialties, and industries/client types served
+  "bioAddendum": string         // one short sentence of external professional context, or ""
+} ] }
+Return members only where the results genuinely support new facts; omit the rest. Return only the JSON.
+
+TEAM MEMBERS:
+${memberBlocks}`
+
+  const result = await generateMbpJson<Map<string, ExternalDetail>>(prompt, validateExternalMap, 5000, ctx, {
+    model: PUBLISHED_CONTENT_MODEL,
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
+    attempts: 2,
+  })
+  if (!result) return
+
+  for (const m of roster) {
+    const ext = result.get(m.name)
+    if (!ext) continue
+    if (ext.certifications.length) m.certifications = dedup([...m.certifications, ...ext.certifications])
+    if (ext.specializations.length) m.specializations = dedup([...m.specializations, ...ext.specializations])
+    if (ext.bioAddendum) m.bio = m.bio ? `${m.bio} ${ext.bioAddendum}`.trim() : ext.bioAddendum
+  }
+}
+
 // Sensible per-member fallback when no social profile was surfaced — honest and
 // actionable, not a "the system failed" message.
 function noSignalRoom(hasSocialLink: boolean): string {
@@ -553,10 +639,13 @@ export async function buildTeamSocial(
   const assessed = roster.slice(0, MAX_MEMBERS)
   const hasSocialLink = scraped.siteSocialLinks.length > 0
 
-  // Pass A (core, always) and the Serper discovery run; Pass B assesses only the
-  // members with search signal. Niche mapping is never gated on social success.
-  const niche = await mapTeamNiches(assessed, input, ctx)
+  // Discover external signal once, reused for both enrichment and social. Enrich
+  // the roster from the wider web BEFORE niche mapping so a name+title-only site
+  // still yields real expertise to map. Then Pass A (niche, always) and Pass B
+  // (social, best-effort, only members with signal).
   const snippets = await searchMembers(assessed, input)
+  await enrichRosterExternal(assessed, snippets, input, ctx)
+  const niche = await mapTeamNiches(assessed, input, ctx)
   const social = await assessTeamSocial(assessed, snippets, input, ctx)
 
   const members: TeamMemberSocial[] = assessed.map((m) => {
