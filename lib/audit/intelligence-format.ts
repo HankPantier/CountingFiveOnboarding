@@ -22,6 +22,7 @@ export const SECTION_LABELS: Record<string, string> = {
   content_library: 'Ongoing Content — Resource Library',
   digital_intelligence: 'Digital Intelligence Brief',
   social_presence: 'Social & Local Presence',
+  team_social: 'Team Social Footprint',
 }
 
 /** One-line "what this measures" help text per section, shown in the accordion
@@ -50,6 +51,7 @@ export const SECTION_HELP: Record<string, string> = {
   content_library: 'Ongoing content footprint — articles, eBooks, resources, and publishing cadence.',
   digital_intelligence: 'Off-site research: people, reputation, affiliations, social presence (not scored).',
   social_presence: 'Google Business Profile, LinkedIn, and social channels — presence, quality, and gaps (not scored).',
+  team_social: 'Each team member’s social footprint and how their expertise could open untapped niche content (not scored).',
   narrative_recs: 'Highest-impact moves, framed by business outcome and how we would help execute.',
   recommendations: 'Full prioritized list of technical fixes, sorted by priority and effort.',
   change: 'How each score moved since the previous audit of this domain.',

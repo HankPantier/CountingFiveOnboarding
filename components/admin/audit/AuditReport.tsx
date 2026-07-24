@@ -14,6 +14,7 @@ import type {
   Recommendation,
   SocialPresenceReport,
   SocialProfileAssessment,
+  TeamSocialReport,
   TechStackIntelligence,
 } from '@/types/audit-result'
 import {
@@ -249,6 +250,19 @@ export function AuditReport({ result, createdAt, previous, scoreHistory }: Audit
             <SocialPresenceBody
               data={intel.social_presence}
               commentary={sectionCommentary.social_presence}
+            />
+          </AuditAccordion>
+        )}
+
+        {intel?.team_social && (
+          <AuditAccordion
+            label={SECTION_LABELS.team_social}
+            tip={SECTION_HELP.team_social}
+            iconKey="team_social"
+          >
+            <TeamSocialBody
+              data={intel.team_social}
+              commentary={sectionCommentary.team_social}
             />
           </AuditAccordion>
         )}
@@ -1007,6 +1021,95 @@ function SocialPresenceBody({ data, commentary }: { data: SocialPresenceReport; 
           )
         })}
       </div>
+      <Commentary text={commentary} />
+    </>
+  )
+}
+
+const FOOTPRINT_STYLE: Record<string, { label: string; cls: string }> = {
+  strong: { label: 'Strong footprint', cls: 'bg-success/10 text-success' },
+  moderate: { label: 'Moderate footprint', cls: 'bg-brand-cyan/10 text-brand-cyan-dark' },
+  minimal: { label: 'Minimal footprint', cls: 'bg-warning-strong/10 text-warning-strong' },
+}
+
+function TeamSocialBody({ data, commentary }: { data: TeamSocialReport; commentary?: string }) {
+  const members = asArray<TeamSocialReport['members'][number]>(data.members)
+  if (!members.length) return <Commentary text={commentary} />
+  const teamNiches = asArray<string>(data.teamNicheOpportunities)
+  return (
+    <>
+      <p className="font-body text-xs text-text-muted">Team footprint &amp; niche expertise — not scored</p>
+      {data.summary && <p className="mt-2 font-body text-sm text-text-secondary">{data.summary}</p>}
+
+      {teamNiches.length > 0 && (
+        <div className="mt-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 p-4">
+          <p className="font-heading text-xs font-semibold uppercase tracking-wide text-brand-navy">
+            Untapped Niche Content From Team Expertise
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 font-body text-sm text-text-secondary">
+            {teamNiches.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-3 divide-y divide-border-default">
+        {members.map((m, i) => {
+          const profiles = asArray<SocialProfileAssessment>(m.socialProfiles)
+          const certs = asArray<string>(m.certifications)
+          const niches = asArray<string>(m.nicheOpportunities)
+          const footprint = FOOTPRINT_STYLE[m.footprint] ?? FOOTPRINT_STYLE.minimal
+          return (
+            <div key={i} className="py-3 font-body text-sm">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-semibold text-text-primary">{m.name}</span>
+                {m.title && <span className="text-text-muted">· {m.title}</span>}
+                <span className={`inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${footprint.cls}`}>{footprint.label}</span>
+              </div>
+              {certs.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {certs.map((c, j) => (
+                    <span key={j} className="inline-flex items-center rounded-badge bg-surface-page px-2 py-0.5 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] text-brand-navy">{c}</span>
+                  ))}
+                </div>
+              )}
+              {profiles.length > 0 && (
+                <div className="mt-1.5 space-y-1">
+                  {profiles.map((p, j) => {
+                    const status = SOCIAL_STATUS_STYLE[p.status] ?? SOCIAL_STATUS_STYLE.unknown
+                    return (
+                      <div key={j} className="text-xs">
+                        <span className="font-semibold text-text-primary">{SOCIAL_PLATFORM_LABELS[p.platform] ?? p.platform}</span>{' '}
+                        <span className={`inline-flex items-center rounded-badge px-1.5 py-0.5 font-heading text-[9.5px] font-semibold uppercase tracking-[0.04em] ${status.cls}`}>{status.label}</span>
+                        {p.url && (
+                          <>
+                            {' '}
+                            <a href={safeHref(p.url)} target="_blank" rel="noopener noreferrer" className="break-all text-brand-cyan hover:underline">{p.url}</a>
+                          </>
+                        )}
+                        {p.roomForImprovement && <div className="text-text-secondary">{p.roomForImprovement}</div>}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {m.roomForImprovement && <div className="mt-1 text-text-secondary">{m.roomForImprovement}</div>}
+              {niches.length > 0 && (
+                <div className="mt-1 text-xs text-text-muted">
+                  <span className="font-semibold text-brand-navy">Untapped niches: </span>
+                  {niches.join(' · ')}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {data.membersDropped > 0 && (
+        <p className="mt-2 font-body text-xs text-text-muted">
+          {data.membersDropped} additional team member{data.membersDropped === 1 ? '' : 's'} found but not assessed.
+        </p>
+      )}
       <Commentary text={commentary} />
     </>
   )

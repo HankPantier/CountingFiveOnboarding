@@ -41,6 +41,7 @@ import type {
   Recommendation,
   ScoredSection,
   SocialPresenceReport,
+  TeamSocialReport,
   TechStackIntelligence,
 } from './types'
 
@@ -162,6 +163,8 @@ const ICON_PATHS: Record<string, string> = {
     '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
   social_presence:
     '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+  team_social:
+    '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   narrative_recs:
     '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/>',
   recommendations:
@@ -437,6 +440,67 @@ function socialPresenceBody(r: SocialPresenceReport, commentary?: string): strin
     ${commentaryHtml(commentary)}`
 }
 
+const FOOTPRINT_COLOR: Record<string, string> = {
+  strong: COLORS.success,
+  moderate: COLORS.cyan,
+  minimal: COLORS.warning,
+}
+
+function teamSocialBody(r: TeamSocialReport, commentary?: string): string {
+  const members = r.members ?? []
+  if (!members.length) return commentaryHtml(commentary)
+
+  const teamNiches = r.teamNicheOpportunities?.length
+    ? `<div class="wtm"><div class="wtm-label">Untapped Niche Content From Team Expertise</div><ul class="intel-list">${r.teamNicheOpportunities
+        .map((n) => `<li>${esc(n)}</li>`)
+        .join('')}</ul></div>`
+    : ''
+
+  const rows = members
+    .map((m) => {
+      const fpColor = FOOTPRINT_COLOR[m.footprint] ?? COLORS.warning
+      const certs = m.certifications.length
+        ? `<div class="small muted">Certifications: ${esc(m.certifications.join(', '))}</div>`
+        : ''
+      const profiles = m.socialProfiles.length
+        ? m.socialProfiles
+            .map((p) => {
+              const s = SOCIAL_STATUS[p.status] ?? SOCIAL_STATUS.unknown
+              const platform = SOCIAL_PLATFORM_LABELS[p.platform] ?? p.platform
+              const link = p.url
+                ? ` <a href="${esc(safeHref(p.url))}" target="_blank" rel="noopener noreferrer">${esc(p.url)}</a>`
+                : ''
+              const rfi = p.roomForImprovement ? `<div class="muted small">${esc(p.roomForImprovement)}</div>` : ''
+              return `<div class="small"><strong>${esc(platform)}</strong> <span style="color:${s.color}">· ${esc(s.label)}</span>${link}${rfi}</div>`
+            })
+            .join('')
+        : ''
+      const niches = m.nicheOpportunities.length
+        ? `<div class="small"><strong>Untapped niches:</strong> ${esc(m.nicheOpportunities.join(' · '))}</div>`
+        : ''
+      const rfi = m.roomForImprovement ? `<div class="muted small">${esc(m.roomForImprovement)}</div>` : ''
+      return `<div class="intel-person">
+        <div><strong>${esc(m.name)}</strong>${m.title ? ` · ${esc(m.title)}` : ''} <span class="small" style="color:${fpColor}">(${esc(m.footprint)} footprint)</span></div>
+        ${certs}
+        ${profiles}
+        ${rfi}
+        ${niches}
+      </div>`
+    })
+    .join('')
+
+  const dropped = r.membersDropped > 0
+    ? `<p class="muted small">${r.membersDropped} additional team member${r.membersDropped === 1 ? '' : 's'} found but not assessed.</p>`
+    : ''
+
+  return `<p class="muted small">Team footprint &amp; niche expertise — not scored</p>
+    ${r.summary ? `<p class="muted">${esc(r.summary)}</p>` : ''}
+    ${teamNiches}
+    ${rows}
+    ${dropped}
+    ${commentaryHtml(commentary)}`
+}
+
 const NARRATIVE_PRIORITY_COLOR: Record<string, string> = {
   High: COLORS.error,
   Medium: COLORS.warning,
@@ -622,6 +686,15 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
         socialPresenceBody(intel.social_presence, sectionCommentary.social_presence),
         SECTION_HELP.social_presence,
         'social_presence',
+      )
+    : ''
+  const teamSocialSection = intel?.team_social
+    ? accordion(
+        SECTION_LABELS.team_social,
+        '',
+        teamSocialBody(intel.team_social, sectionCommentary.team_social),
+        SECTION_HELP.team_social,
+        'team_social',
       )
     : ''
   const digitalIntelSection = intel?.digital_intelligence
@@ -850,6 +923,7 @@ export function buildAuditHtml({ result, createdAt, previous }: BuildAuditHtmlIn
   ${sectionDetails}
   ${contentLibrarySection}
   ${socialPresenceSection}
+  ${teamSocialSection}
   ${digitalIntelSection}
   ${narrativeRecsSection}
   ${recsSection}

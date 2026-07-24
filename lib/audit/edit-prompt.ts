@@ -11,6 +11,8 @@ const EDITABLE_SECTIONS: { id: string; path: string; label: string }[] = [
   { id: 'domain', path: 'intelligence.domain', label: 'Domain Intelligence' },
   { id: 'content_library', path: 'intelligence.content_library', label: 'Content Library' },
   { id: 'digital_intelligence', path: 'intelligence.digital_intelligence', label: 'Digital Intelligence Brief' },
+  { id: 'social_presence', path: 'intelligence.social_presence', label: 'Social & Local Presence (GBP, LinkedIn, and social channel quality)' },
+  { id: 'team_social', path: 'intelligence.team_social', label: 'Team Social Footprint (per-member profiles, footprint, niche opportunities)' },
 ]
 
 // System prompt for the admin "Edit report with AI" chat. The agent gets the

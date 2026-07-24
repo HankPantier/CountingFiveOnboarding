@@ -99,6 +99,21 @@ export type SessionSchema = {
     previousEmployers?: string[]
     education?: string
     externalFootprint?: 'minimal' | 'moderate' | 'high'
+    // Audit-derived per-member social footprint + niche-expertise mapping,
+    // seeded by enrich-from-intelligence from the audit's team_social pass.
+    socialProfiles?: Array<{
+      platform: string
+      url: string | null
+      status: string
+      metrics?: {
+        followerCount?: number | null
+        lastActivity?: string | null
+        pageType?: string
+      }
+      usefulness?: 'low' | 'medium' | 'high'
+      roomForImprovement?: string
+    }>
+    nicheOpportunities?: string[]
   }>
   services?: Array<{
     name: string

@@ -17,6 +17,7 @@ import type {
   RecommendationEffort,
   RecommendationPriority,
   SocialPresenceReport,
+  TeamSocialReport,
 } from './types'
 
 // Shared comparator: critical first, then warning, then by effort (Low → High).
@@ -415,6 +416,79 @@ export function generateSocialRecommendations(report: SocialPresenceReport): Rec
   }
 
   return sortRecommendations(recs)
+}
+
+// Team social footprint & niche-expertise recommendations, generated from the
+// intelligence layer's TeamSocialReport. Mirrors generateSocialRecommendations:
+// kept separate so the audit merges + re-sorts it into the main list.
+export function generateTeamSocialRecommendations(report: TeamSocialReport): Recommendation[] {
+  const recs: Recommendation[] = []
+  const add = (
+    priority: RecommendationPriority,
+    title: string,
+    detail: string,
+    effort: RecommendationEffort = 'Medium',
+  ) => recs.push({ priority, category: 'Team & Expertise', title, detail, effort })
+
+  const members = report.members ?? []
+  if (!members.length) return recs
+
+  // Members with no findable social footprint at all.
+  const noFootprint = members.filter(
+    (m) => !m.socialProfiles.some((p) => p.url && p.status !== 'not_found'),
+  )
+  if (noFootprint.length) {
+    const names = noFootprint.map((m) => m.name).slice(0, 5).join(', ')
+    add(
+      'warning',
+      'Build Out Your Team’s LinkedIn Presence',
+      `No professional social footprint was found for ${noFootprint.length} team member${noFootprint.length === 1 ? '' : 's'} (${names}${noFootprint.length > 5 ? ', …' : ''}). Individual LinkedIn profiles extend the firm’s reach and let each expert build authority.`,
+      'Medium',
+    )
+  }
+
+  // Dormant individual profiles — revive or the credibility signal goes stale.
+  const dormant = members.filter((m) => m.socialProfiles.some((p) => p.status === 'dormant'))
+  if (dormant.length) {
+    add(
+      'warning',
+      'Reactivate Dormant Team Profiles',
+      `${dormant.length} team member${dormant.length === 1 ? '' : 's'} ${dormant.length === 1 ? 'has' : 'have'} a dormant social profile. A light, consistent posting cadence keeps each expert visible to referral sources and prospects.`,
+      'Low',
+    )
+  }
+
+  // The centerpiece: certifications/expertise implying niche content the site
+  // does not yet cover.
+  const niches = dedupStrings([
+    ...report.teamNicheOpportunities,
+    ...members.flatMap((m) => m.nicheOpportunities),
+  ]).slice(0, 5)
+  if (niches.length) {
+    add(
+      'warning',
+      'Turn Team Expertise Into Niche Content',
+      `Your team’s certifications and specializations point to untapped niche content: ${niches.join('; ')}. Publishing here converts credentials you already hold into search visibility competitors lack.`,
+      'High',
+    )
+  }
+
+  return sortRecommendations(recs)
+}
+
+function dedupStrings(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of values) {
+    const t = v.trim()
+    if (!t) continue
+    const k = t.toLowerCase()
+    if (!seen.has(k)) {
+      seen.add(k)
+      out.push(t)
+    }
+  }
+  return out
 }
 
 /** audit.py _page_issues — short issue strings for one page. `ogComplete` is

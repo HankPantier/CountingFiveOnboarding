@@ -12,6 +12,7 @@ import { detectDomainAge } from './domain-age'
 import { analyzeNicheServices, hasNicheContent } from './niche-services'
 import { buildNarrative } from './narrative'
 import { buildSocialPresence } from './social-presence'
+import { buildTeamSocial } from './team-social'
 import { detectTechStack } from './tech-stack'
 import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditIntelligence, AuditResult, DetectedNiche } from '../types'
@@ -117,6 +118,20 @@ export async function buildIntelligence(
     }, tokenCtx),
   )
 
+  // Team social footprint — per-member off-site presence + niche-expertise
+  // mapping. Runs after digital-intelligence (whose personnel seed the roster)
+  // and before narrative so the prose/recs can reference the team's gaps.
+  intel.team_social = await safe('team-social', () =>
+    buildTeamSocial({
+      siteName,
+      domain: result.domain,
+      websiteUrl: result.url,
+      location,
+      onSiteNiches: detectedNiches.map((n) => n.name),
+      personnelHint: intel.digital_intelligence?.personnel,
+    }, tokenCtx),
+  )
+
   // ── Narrative (LAST — consumes everything above) ──────────────────────────
   intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
 
@@ -169,6 +184,19 @@ export async function refreshAuditIntelligence(
       socialLinks: result.business_signals?.socialLinks ?? [],
       addresses: result.business_signals?.addresses ?? [],
       onSiteNiches: detectedNiches.map((n) => n.name),
+    }, tokenCtx),
+  )
+
+  // Team social footprint — re-scraped fresh (refresh has no stored raw HTML),
+  // so it regenerates without a full re-crawl. Uses the carried-over personnel.
+  intel.team_social = await safe('team-social', () =>
+    buildTeamSocial({
+      siteName,
+      domain: result.domain,
+      websiteUrl: result.url,
+      location,
+      onSiteNiches: detectedNiches.map((n) => n.name),
+      personnelHint: intel.digital_intelligence?.personnel,
     }, tokenCtx),
   )
 
