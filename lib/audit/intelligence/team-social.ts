@@ -8,7 +8,7 @@
 // throws. Feeds the MBP team roster + content gaps; never scored.
 import * as cheerio from 'cheerio'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
-import { GENERATION_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from '@/lib/content/generation-tuning'
+import { OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from '@/lib/content/generation-tuning'
 import type { TokenContext } from '@/lib/content/token-usage'
 import { safeGet, normalizeUrl, sameDomain } from '../crawl'
 import { findTeamPages, looksLikeTeamPageUrl } from '@/lib/team-photos/scrape-headshots'
@@ -211,9 +211,9 @@ TEAM PAGE TEXT:
 ${text}`
 
   const members =
-    (await generateMbpJson<RosterMember[]>(prompt, validateRoster, 2500, ctx, {
+    (await generateMbpJson<RosterMember[]>(prompt, validateRoster, 3000, ctx, {
       model: PUBLISHED_CONTENT_MODEL,
-      providerOptions: GENERATION_PROVIDER_OPTIONS,
+      providerOptions: OUTLINE_PROVIDER_OPTIONS,
     })) ?? []
 
   return mergeHint(members, input.personnelHint)
@@ -238,25 +238,35 @@ function mergeHint(members: RosterMember[], hint?: PersonnelProfile[]): RosterMe
   return members
 }
 
-// ── Per-member external enrichment (Serper) + AI synthesis ──────────────────
+// ── Per-member external discovery (Serper) ──────────────────────────────────
+const cityFrom = (location: string): string => location.split(',')[0]?.trim() ?? ''
+
+// Up to two targeted queries per member: firm-scoped first (most precise), then
+// a broader location + credential + domain query only if the first is empty.
+// Bounded by MAX_MEMBERS, so ≤ 2·MAX_MEMBERS Serper calls.
 async function searchMembers(
   members: RosterMember[],
   input: TeamSocialInput,
 ): Promise<Map<string, string>> {
   const snippets = new Map<string, string>()
   if (!serperEnabled()) return snippets
+  const city = cityFrom(input.location)
   for (const m of members) {
-    const results = await serperSearch(`"${m.name}" "${input.siteName}" linkedin OR credentials`, {
-      location: input.location || undefined,
-    })
-    if (!results?.length) continue
-    snippets.set(
-      m.name,
-      results
-        .slice(0, 6)
-        .map((r) => `- ${r.title} — ${r.link}\n  ${r.snippet}`)
-        .join('\n'),
-    )
+    const cert = m.certifications[0] ?? ''
+    const queries = [
+      `"${m.name}" "${input.siteName}" (linkedin OR "linkedin.com/in")`,
+      `"${m.name}" ${[city, cert].filter(Boolean).join(' ')} (linkedin OR "${input.domain}")`.replace(/\s+/g, ' ').trim(),
+    ]
+    for (const q of queries) {
+      const results = await serperSearch(q, { location: input.location || undefined })
+      if (results?.length) {
+        snippets.set(
+          m.name,
+          results.slice(0, 6).map((r) => `- ${r.title} — ${r.link}\n  ${r.snippet}`).join('\n'),
+        )
+        break
+      }
+    }
   }
   return snippets
 }
@@ -306,124 +316,166 @@ function validateProfiles(v: unknown): SocialProfileAssessment[] {
   return out
 }
 
-interface Synthesis {
-  members: TeamMemberSocial[]
-  teamNicheOpportunities: string[]
+// ── Pass A: niche-expertise mapping (ALWAYS runs — the core deliverable) ─────
+// Derives untapped niche-content opportunities purely from each member's
+// certifications/expertise vs. the niches the site already markets. Independent
+// of social discovery, so it survives even when no profiles are found. Uses the
+// low-effort structural profile + a retry so it does not truncate/drop.
+interface NicheMapping {
+  perMember: Record<string, string[]>
+  team: string[]
 }
 
-function validateSynthesis(roster: RosterMember[]) {
-  const byName = new Map(roster.map((m) => [m.name.toLowerCase(), m]))
-  return (parsed: unknown): Synthesis | null => {
-    if (!parsed || typeof parsed !== 'object') return null
-    const p = parsed as Record<string, unknown>
-    const arr = Array.isArray(p.members) ? p.members : null
-    if (!arr) return null
-    const members: TeamMemberSocial[] = []
-    for (const raw of arr) {
-      if (!raw || typeof raw !== 'object') continue
-      const r = raw as Record<string, unknown>
-      const name = asStr(r.name)
-      if (!name) continue
-      const base = byName.get(name.toLowerCase())
-      members.push({
-        name,
-        title: asStr(r.title) || base?.title || undefined,
-        certifications: dedup([...(base?.certifications ?? []), ...asStrArr(r.certifications)]),
-        specializations: dedup([...(base?.specializations ?? []), ...asStrArr(r.specializations)]),
-        socialProfiles: validateProfiles(r.socialProfiles),
-        footprint: coerceFootprint(r.footprint),
-        roomForImprovement: asStr(r.roomForImprovement),
-        nicheOpportunities: asStrArr(r.nicheOpportunities),
-        source: 'ai',
-      })
-    }
-    if (!members.length) return null
-    return { members, teamNicheOpportunities: asStrArr(p.teamNicheOpportunities) }
+function validateNicheMapping(parsed: unknown): NicheMapping | null {
+  if (!parsed || typeof parsed !== 'object') return null
+  const p = parsed as Record<string, unknown>
+  const perMember: Record<string, string[]> = {}
+  for (const raw of Array.isArray(p.members) ? p.members : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const name = asStr(r.name)
+    const niches = asStrArr(r.nicheOpportunities)
+    if (name && niches.length) perMember[name] = niches
   }
+  const team = asStrArr(p.teamNicheOpportunities)
+  if (!Object.keys(perMember).length && !team.length) return null
+  return { perMember, team }
 }
 
-async function synthesize(
+const hasNicheContent = (m: NicheMapping): boolean =>
+  m.team.length > 0 || Object.keys(m.perMember).length > 0
+
+async function mapTeamNiches(
   roster: RosterMember[],
-  snippets: Map<string, string>,
-  siteSocialLinks: string[],
   input: TeamSocialInput,
   ctx?: TokenContext,
-): Promise<Synthesis | null> {
+): Promise<NicheMapping | null> {
   const memberBlocks = roster
     .map((m) => {
       const facts = [
         m.title && `Title: ${m.title}`,
         m.certifications.length && `Certifications: ${m.certifications.join(', ')}`,
-        m.specializations.length && `Specializations: ${m.specializations.join(', ')}`,
+        m.specializations.length && `Expertise: ${m.specializations.join(', ')}`,
         m.bio && `Bio: ${m.bio}`,
       ]
         .filter(Boolean)
-        .join('\n  ')
-      const search = snippets.get(m.name)
-      return `## ${m.name}\n  ${facts || '(no on-page details)'}\n  SEARCH RESULTS:\n${search ? search : '  (none)'}`
+        .join('; ')
+      return `- ${m.name}${facts ? ` — ${facts}` : ''}`
     })
+    .join('\n')
+
+  const prompt = `You are a niche-marketing strategist for "${input.siteName}", an accounting/advisory firm${input.location ? ` in ${input.location}` : ''}. Below is the firm's team with the certifications and expertise stated on their site.
+
+The website currently markets these niches: ${input.onSiteNiches.join(', ') || '(none stated)'}.
+
+Using each person's certifications and expertise, identify UNTAPPED niche-content opportunities — specific industries, client types, or service specializations the firm is credentialed to serve but does NOT currently surface on its site. Be concrete and tie each to the credentials shown (e.g. a CVA → business-valuation content for M&A/divorce; construction-accounting expertise → contractor WIP/percentage-of-completion tax content; a CFP → retirement/estate planning for a named client type). Do NOT restate niches already on the site, and do NOT invent credentials that are not listed. If a person's credential is generic (e.g. CPA with no stated specialty), you may leave their nicheOpportunities empty.
+
+Return JSON:
+{
+  "members": [ { "name": string, "nicheOpportunities": [ "specific untapped niche-content idea tied to this person's credentials" ] } ],
+  "teamNicheOpportunities": [ "3-6 highest-value niche themes the team's combined expertise unlocks that the site is missing" ]
+}
+Return only the JSON.
+
+TEAM:
+${memberBlocks}`
+
+  return generateMbpJson<NicheMapping>(prompt, validateNicheMapping, 4000, ctx, {
+    model: PUBLISHED_CONTENT_MODEL,
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
+    attempts: 2,
+    accept: hasNicheContent,
+  })
+}
+
+// ── Pass B: social-footprint assessment (best-effort, only members with signal)
+interface SocialAssessment {
+  socialProfiles: SocialProfileAssessment[]
+  footprint: FootprintStrength
+  roomForImprovement: string
+}
+
+function validateSocialMap(parsed: unknown): Map<string, SocialAssessment> | null {
+  if (!parsed || typeof parsed !== 'object') return null
+  const arr = (parsed as { members?: unknown }).members
+  if (!Array.isArray(arr)) return null
+  const map = new Map<string, SocialAssessment>()
+  for (const raw of arr) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const name = asStr(r.name)
+    if (!name) continue
+    map.set(name, {
+      socialProfiles: validateProfiles(r.socialProfiles),
+      footprint: coerceFootprint(r.footprint),
+      roomForImprovement: asStr(r.roomForImprovement),
+    })
+  }
+  return map.size ? map : null
+}
+
+async function assessTeamSocial(
+  roster: RosterMember[],
+  snippets: Map<string, string>,
+  input: TeamSocialInput,
+  ctx?: TokenContext,
+): Promise<Map<string, SocialAssessment>> {
+  // Only assess members Serper actually surfaced something for — members with no
+  // signal are honestly "minimal" and don't need an AI round-trip.
+  const withSignal = roster.filter((m) => snippets.has(m.name))
+  if (!withSignal.length) return new Map()
+
+  const memberBlocks = withSignal
+    .map((m) => `## ${m.name}${m.title ? ` (${m.title})` : ''}\nSEARCH RESULTS:\n${snippets.get(m.name)}`)
     .join('\n\n')
 
-  const prompt = `You are assessing the individual team members of "${input.siteName}" (${input.domain}${input.location ? `, ${input.location}` : ''}). For EACH member below, assess their off-site professional social footprint and map their certifications/expertise to untapped niche-content opportunities for the firm. Use ONLY what the details and search results support — do not invent profiles, follower counts, or credentials.
-
-The firm's website currently names these niches: ${input.onSiteNiches.join(', ') || '(none)'}.
-Social links found anywhere on the site: ${siteSocialLinks.join(', ') || '(none)'}.
+  const prompt = `You are assessing the off-site professional social footprint of team members at "${input.siteName}" (${input.domain}${input.location ? `, ${input.location}` : ''}) from web-search results. Use ONLY what the results support — do not invent profiles, URLs, or follower counts. A result is only THIS person if the name AND firm/location plausibly match; otherwise treat as not found.
 
 Return JSON:
 {
   "members": [ {
     "name": string,
-    "title": string,
-    "certifications": [string],
-    "specializations": [string],
     "socialProfiles": [ {
       "platform": "linkedin|instagram|facebook|x|other",
-      "url": string,                         // the profile URL if identifiable, else ""
+      "url": string,
       "status": "active|dormant|not_found|unknown",
-      "followerCount": number,               // omit if unknown
-      "lastActivity": string,                // e.g. "posted last week" — omit if unknown
-      "pageType": "personal|company",        // omit if unknown
+      "followerCount": number,        // omit if unknown
+      "lastActivity": string,         // omit if unknown
+      "pageType": "personal|company", // omit if unknown
       "usefulness": "low|medium|high",
       "roomForImprovement": "1 short, specific, actionable sentence"
     } ],
-    "footprint": "minimal|moderate|strong", // overall strength of THIS person's external presence
-    "roomForImprovement": "1 sentence on how this person could strengthen their footprint",
-    "nicheOpportunities": [ "untapped niche-content the firm could publish given this person's certs/expertise" ]
-  } ],
-  "teamNicheOpportunities": [ "highest-value niche-content themes the whole team's combined expertise unlocks that the site does not yet cover" ]
+    "footprint": "minimal|moderate|strong",
+    "roomForImprovement": "1 sentence on strengthening this person's footprint"
+  } ]
 }
-Rules: use "not_found" only when no profile exists at all; "dormant" when a profile exists but shows no recent activity. Omit fields you cannot support. Return only the JSON.
+Omit fields you cannot support. Return only the JSON.
 
 TEAM MEMBERS:
 ${memberBlocks}`
 
-  return generateMbpJson<Synthesis>(prompt, validateSynthesis(roster), 5000, ctx, {
+  const result = await generateMbpJson<Map<string, SocialAssessment>>(prompt, validateSocialMap, 6000, ctx, {
     model: PUBLISHED_CONTENT_MODEL,
-    providerOptions: GENERATION_PROVIDER_OPTIONS,
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
+    attempts: 2,
   })
+  return result ?? new Map()
 }
 
-// Deterministic fallback when the synthesis fails entirely: still surface the
-// roster with any on-site social links classified, so the section is never empty
-// when a roster was found.
-function baselineMembers(roster: RosterMember[]): TeamMemberSocial[] {
-  return roster.map((m) => ({
-    name: m.name,
-    title: m.title || undefined,
-    certifications: m.certifications,
-    specializations: m.specializations,
-    socialProfiles: [],
-    footprint: 'minimal' as FootprintStrength,
-    roomForImprovement:
-      'Footprint could not be assessed automatically — review this person’s LinkedIn and other profiles manually.',
-    nicheOpportunities: [],
-    source: 'onpage' as const,
-  }))
+// Sensible per-member fallback when no social profile was surfaced — honest and
+// actionable, not a "the system failed" message.
+function noSignalRoom(hasSocialLink: boolean): string {
+  return hasSocialLink
+    ? 'A social profile is linked on the site but its activity could not be verified — review it and keep it active.'
+    : 'No public professional profile surfaced in search — a complete, active LinkedIn profile would build authority and referral reach.'
 }
 
-function buildSummary(members: TeamMemberSocial[], dropped: number): string {
-  const withProfiles = members.filter((m) => m.socialProfiles.some((p) => p.status !== 'not_found')).length
-  const parts = [`${members.length} team member${members.length === 1 ? '' : 's'} assessed; ${withProfiles} with a findable social footprint.`]
+function buildSummary(members: TeamMemberSocial[], dropped: number, nicheCount: number): string {
+  const withProfiles = members.filter((m) => m.socialProfiles.some((p) => p.url && p.status !== 'not_found')).length
+  const parts = [
+    `${members.length} team member${members.length === 1 ? '' : 's'} assessed; ${withProfiles} with a findable social footprint.`,
+  ]
+  if (nicheCount > 0) parts.push(`${nicheCount} untapped niche opportunit${nicheCount === 1 ? 'y' : 'ies'} surfaced from team credentials.`)
   if (dropped > 0) parts.push(`${dropped} more found but not assessed (roster cap ${MAX_MEMBERS}).`)
   return parts.join(' ')
 }
@@ -438,16 +490,36 @@ export async function buildTeamSocial(
 
   const dropped = Math.max(0, roster.length - MAX_MEMBERS)
   const assessed = roster.slice(0, MAX_MEMBERS)
+  const hasSocialLink = scraped.siteSocialLinks.length > 0
 
+  // Pass A (core, always) and the Serper discovery run; Pass B assesses only the
+  // members with search signal. Niche mapping is never gated on social success.
+  const niche = await mapTeamNiches(assessed, input, ctx)
   const snippets = await searchMembers(assessed, input)
-  const synthesis = await synthesize(assessed, snippets, scraped.siteSocialLinks, input, ctx)
+  const social = await assessTeamSocial(assessed, snippets, input, ctx)
 
-  const members = synthesis?.members?.length ? synthesis.members : baselineMembers(assessed)
+  const members: TeamMemberSocial[] = assessed.map((m) => {
+    const s = social.get(m.name)
+    return {
+      name: m.name,
+      title: m.title || undefined,
+      certifications: m.certifications,
+      specializations: m.specializations,
+      socialProfiles: s?.socialProfiles ?? [],
+      footprint: s?.footprint ?? 'minimal',
+      roomForImprovement: s?.roomForImprovement || noSignalRoom(hasSocialLink),
+      nicheOpportunities: dedup(niche?.perMember[m.name] ?? []),
+      source: s ? 'ai' : 'onpage',
+    }
+  })
+
+  const teamNicheOpportunities = dedup(niche?.team ?? [])
+  const nicheCount = teamNicheOpportunities.length + members.reduce((n, m) => n + m.nicheOpportunities.length, 0)
 
   return {
     members,
-    teamNicheOpportunities: dedup(synthesis?.teamNicheOpportunities ?? []),
-    summary: buildSummary(members, dropped),
+    teamNicheOpportunities,
+    summary: buildSummary(members, dropped, nicheCount),
     membersAssessed: members.length,
     membersDropped: dropped,
   }

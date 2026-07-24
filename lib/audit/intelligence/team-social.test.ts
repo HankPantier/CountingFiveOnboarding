@@ -72,47 +72,63 @@ describe('buildTeamSocial', () => {
     expect(await buildTeamSocial(input())).toBeNull()
   })
 
-  it('assembles a report from roster + synthesis', async () => {
+  it('maps niche opportunities from credentials even with no social footprint', async () => {
+    mockSafeGet.mockResolvedValue(
+      htmlPage('https://acme.example', '<body><h2>Jane Doe, CPA</h2></body>'),
+    )
+    mockGen
+      // 1) roster extraction
+      .mockResolvedValueOnce([
+        { name: 'Jane Doe', title: 'Partner', certifications: ['CVA'], specializations: ['Valuation'], bio: '' },
+      ])
+      // 2) niche mapping (Pass A) — Serper disabled so Pass B does not run
+      .mockResolvedValueOnce({
+        perMember: { 'Jane Doe': ['Business valuation for divorce settlements'] },
+        team: ['M&A advisory content'],
+      })
+
+    const report = await buildTeamSocial(input())
+    expect(report).not.toBeNull()
+    expect(report!.members[0].nicheOpportunities).toContain('Business valuation for divorce settlements')
+    expect(report!.teamNicheOpportunities).toContain('M&A advisory content')
+    // No social signal → minimal footprint, honest (not "system failed") message.
+    expect(report!.members[0].footprint).toBe('minimal')
+    expect(report!.members[0].source).toBe('onpage')
+    expect(report!.members[0].roomForImprovement).toMatch(/LinkedIn/)
+  })
+
+  it('assesses the social footprint of members Serper surfaces', async () => {
+    mockSerperEnabled.mockReturnValue(true)
+    mockSerperSearch.mockResolvedValue([
+      { position: 1, title: 'Jane Doe | LinkedIn', link: 'https://www.linkedin.com/in/janedoe', snippet: 'Partner at Acme CPA' },
+    ])
     mockSafeGet.mockResolvedValue(
       htmlPage('https://acme.example', '<body><h2>Jane Doe, CPA</h2></body>'),
     )
     mockGen
       .mockResolvedValueOnce([
-        { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: ['Tax'], bio: '' },
-      ])
-      .mockResolvedValueOnce({
-        members: [
-          {
-            name: 'Jane Doe',
-            title: 'Partner',
-            certifications: ['CPA'],
-            specializations: ['Tax'],
-            socialProfiles: [
-              {
-                platform: 'linkedin',
-                url: 'https://www.linkedin.com/in/janedoe',
-                status: 'active',
-                metrics: {},
-                usefulness: 'high',
-                roomForImprovement: 'Post weekly',
-                source: 'ai',
-              },
-            ],
-            footprint: 'moderate',
-            roomForImprovement: 'Grow following',
-            nicheOpportunities: ['Restaurant tax credits'],
-            source: 'ai',
-          },
-        ],
-        teamNicheOpportunities: ['Restaurant accounting'],
-      })
+        { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: [], bio: '' },
+      ]) // roster
+      .mockResolvedValueOnce({ perMember: {}, team: ['Local business tax'] }) // niche
+      .mockResolvedValueOnce(
+        new Map([
+          [
+            'Jane Doe',
+            {
+              socialProfiles: [
+                { platform: 'linkedin', url: 'https://www.linkedin.com/in/janedoe', status: 'active', metrics: {}, usefulness: 'high', roomForImprovement: 'Post weekly', source: 'ai' },
+              ],
+              footprint: 'moderate',
+              roomForImprovement: 'Grow following',
+            },
+          ],
+        ]),
+      ) // social assessment (Pass B)
 
     const report = await buildTeamSocial(input())
-    expect(report).not.toBeNull()
-    expect(report!.members).toHaveLength(1)
     expect(report!.members[0].socialProfiles[0].platform).toBe('linkedin')
-    expect(report!.teamNicheOpportunities).toContain('Restaurant accounting')
-    expect(report!.membersDropped).toBe(0)
+    expect(report!.members[0].footprint).toBe('moderate')
+    expect(report!.members[0].source).toBe('ai')
   })
 
   it('scrapes a team page from the crawl inventory when the homepage does not link it', async () => {
@@ -127,19 +143,14 @@ describe('buildTeamSocial', () => {
       .mockResolvedValueOnce([
         { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: [], bio: '' },
       ])
-      .mockResolvedValueOnce({
-        members: [
-          { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: [], socialProfiles: [], footprint: 'moderate', roomForImprovement: '', nicheOpportunities: [], source: 'ai' },
-        ],
-        teamNicheOpportunities: [],
-      })
+      .mockResolvedValueOnce({ perMember: {}, team: [] })
 
     const report = await buildTeamSocial(input({ knownUrls: ['https://acme.example/who-we-are'] }))
     expect(mockSafeGet).toHaveBeenCalledWith('https://acme.example/who-we-are')
     expect(report!.members[0].name).toBe('Jane Doe')
   })
 
-  it('falls back to a baseline roster when synthesis fails', async () => {
+  it('still lists the roster when niche mapping fails', async () => {
     mockSafeGet.mockResolvedValue(
       htmlPage('https://acme.example', '<body><h2>Jane Doe</h2></body>'),
     )
@@ -147,11 +158,12 @@ describe('buildTeamSocial', () => {
       .mockResolvedValueOnce([
         { name: 'Jane Doe', title: 'Partner', certifications: [], specializations: [], bio: '' },
       ])
-      .mockResolvedValueOnce(null) // synthesis failed
+      .mockResolvedValueOnce(null) // niche mapping failed
 
     const report = await buildTeamSocial(input())
     expect(report!.members[0].source).toBe('onpage')
     expect(report!.members[0].footprint).toBe('minimal')
+    expect(report!.members[0].nicheOpportunities).toEqual([])
   })
 })
 
