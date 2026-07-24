@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import GenerateContentModal from '@/components/admin/content/GenerateContentModal'
 
 const CONTENT_PHASE_LABELS: Record<number, string> = {
   1: 'Palette',
@@ -137,6 +138,7 @@ export default async function ContentHubPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
+                        <GenerateContentModal sessionId={session.id} />
                         {phase === 6 && (
                           canEditContent ? (
                             <Link

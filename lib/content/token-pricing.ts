@@ -24,6 +24,7 @@ export type TokenStage =
   | 'seo_fields'
   | 'brand'
   | 'new_page'
+  | 'content_assistant'
 
 // Attribution context threaded into shared AI helpers (e.g. generateMbpJson)
 // so each call records who/what it was for. Omitted fields record as null.
