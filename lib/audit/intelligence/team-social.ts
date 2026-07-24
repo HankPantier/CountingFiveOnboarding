@@ -312,22 +312,28 @@ async function searchMembers(
   const snippets = new Map<string, string>()
   if (!serperEnabled()) return snippets
   const city = cityFrom(input.location)
+  // Platform-agnostic discovery so LinkedIn, X/Twitter, Instagram, and Facebook
+  // profiles all surface (not just LinkedIn). Firm-scoped first, then broaden to
+  // location + credential only if the first is empty. Collect BOTH queries'
+  // results so a person's professional (firm) and other (location) profiles are
+  // both available to the assessment. ≤ 2·MAX_MEMBERS Serper calls.
+  const socials = 'linkedin OR twitter OR instagram OR facebook'
   for (const m of members) {
     const cert = m.certifications[0] ?? ''
     const queries = [
-      `"${m.name}" "${input.siteName}" (linkedin OR "linkedin.com/in")`,
-      `"${m.name}" ${[city, cert].filter(Boolean).join(' ')} (linkedin OR "${input.domain}")`.replace(/\s+/g, ' ').trim(),
+      `"${m.name}" "${input.siteName}" (${socials})`,
+      `"${m.name}" ${[city, cert].filter(Boolean).join(' ')} (${socials})`.replace(/\s+/g, ' ').trim(),
     ]
+    const lines: string[] = []
     for (const q of queries) {
       const results = await serperSearch(q, { location: input.location || undefined })
       if (results?.length) {
-        snippets.set(
-          m.name,
-          results.slice(0, 6).map((r) => `- ${r.title} — ${r.link}\n  ${r.snippet}`).join('\n'),
-        )
-        break
+        lines.push(...results.slice(0, 6).map((r) => `- ${r.title} — ${r.link}\n  ${r.snippet}`))
+        // The firm-scoped query is the most precise; only broaden when it is empty.
+        if (lines.length) break
       }
     }
+    if (lines.length) snippets.set(m.name, lines.join('\n'))
   }
   return snippets
 }
@@ -490,14 +496,16 @@ async function assessTeamSocial(
     .map((m) => `## ${m.name}${m.title ? ` (${m.title})` : ''}\nSEARCH RESULTS:\n${snippets.get(m.name)}`)
     .join('\n\n')
 
-  const prompt = `You are assessing the off-site professional social footprint of team members at "${input.siteName}" (${input.domain}${input.location ? `, ${input.location}` : ''}) from web-search results. Use ONLY what the results support — do not invent profiles, URLs, or follower counts. A result is only THIS person if the name AND firm/location plausibly match; otherwise treat as not found.
+  const prompt = `You are assessing the off-site social footprint of team members at "${input.siteName}" (${input.domain}${input.location ? `, ${input.location}` : ''}) from web-search results. Use ONLY what the results support — do not invent profiles, URLs, or follower counts. A result is only THIS person if the name AND firm/location plausibly match; otherwise treat as not found.
+
+For EACH member, check ALL FOUR platforms — LinkedIn, X/Twitter, Instagram, and Facebook — and return a SEPARATE socialProfiles entry for every platform where a matching profile appears in the results (a person may have several). Do not limit yourself to LinkedIn. Prefer professional/business profiles; include a personal profile only when it clearly belongs to this person.
 
 Return JSON:
 {
   "members": [ {
     "name": string,
     "socialProfiles": [ {
-      "platform": "linkedin|instagram|facebook|x|other",
+      "platform": "linkedin|x|instagram|facebook|other",
       "url": string,
       "status": "active|dormant|not_found|unknown",
       "followerCount": number,        // omit if unknown
@@ -506,8 +514,8 @@ Return JSON:
       "usefulness": "low|medium|high",
       "roomForImprovement": "1 short, specific, actionable sentence"
     } ],
-    "footprint": "minimal|moderate|strong",
-    "roomForImprovement": "1 sentence on strengthening this person's footprint"
+    "footprint": "minimal|moderate|strong", // overall across all platforms
+    "roomForImprovement": "1 sentence on strengthening this person's overall footprint"
   } ]
 }
 Omit fields you cannot support. Return only the JSON.

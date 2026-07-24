@@ -142,18 +142,24 @@ describe('buildTeamSocial', () => {
             {
               socialProfiles: [
                 { platform: 'linkedin', url: 'https://www.linkedin.com/in/janedoe', status: 'active', metrics: {}, usefulness: 'high', roomForImprovement: 'Post weekly', source: 'ai' },
+                { platform: 'x', url: 'https://x.com/janedoe', status: 'dormant', metrics: {}, usefulness: 'low', roomForImprovement: 'Revive or drop it', source: 'ai' },
               ],
               footprint: 'moderate',
               roomForImprovement: 'Grow following',
             },
           ],
         ]),
-      ) // social assessment (Pass B)
+      ) // social assessment (Pass B) — multiple platforms per person
 
     const report = await buildTeamSocial(input())
-    expect(report!.members[0].socialProfiles[0].platform).toBe('linkedin')
+    const platforms = report!.members[0].socialProfiles.map((p) => p.platform)
+    expect(platforms).toContain('linkedin')
+    expect(platforms).toContain('x')
     expect(report!.members[0].footprint).toBe('moderate')
     expect(report!.members[0].source).toBe('ai')
+    // Discovery is platform-agnostic, not LinkedIn-only.
+    expect(mockSerperSearch.mock.calls[0][0]).toMatch(/instagram/)
+    expect(mockSerperSearch.mock.calls[0][0]).toMatch(/facebook/)
   })
 
   it('enriches thin on-site roster with external credentials before niche mapping', async () => {
