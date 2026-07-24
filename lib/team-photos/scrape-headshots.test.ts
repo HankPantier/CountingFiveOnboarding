@@ -33,6 +33,21 @@ describe('findTeamPages', () => {
     expect(urls.some((u) => u.startsWith('mailto:'))).toBe(false)
     expect(urls).not.toContain('https://example.com/services')
   })
+
+  it('recognizes common About synonyms like "who-we-are" and "our-firm"', () => {
+    const synonyms = `
+      <a href="/who-we-are">Who We Are</a>
+      <a href="/our-firm">Our Firm</a>
+      <a href="/professionals">Professionals</a>
+      <a href="/what-we-do">What We Do</a>
+    `
+    const urls = findTeamPages(synonyms, 'https://example.com/')
+    expect(urls).toContain('https://example.com/who-we-are')
+    expect(urls).toContain('https://example.com/our-firm')
+    expect(urls).toContain('https://example.com/professionals')
+    // Services/offerings pages are not team pages.
+    expect(urls).not.toContain('https://example.com/what-we-do')
+  })
 })
 
 describe('extractHeadshotCandidates', () => {

@@ -24,8 +24,10 @@ export type ScrapeResult = {
   warnings: string[]
 }
 
-// Anchor href/text that hints at a team/about page.
-const TEAM_LINK_RE = /team|about|our-people|our-team|staff|leadership|\bmeet\b|people|attorneys|advisors|partners/i
+// Anchor href/text that hints at a team/about page. Covers the common "About"
+// synonyms firms actually use for their roster page — "who we are", "our firm",
+// "professionals", "principals/shareholders" — not just literal team/about.
+const TEAM_LINK_RE = /team|about|our-people|our-team|staff|leadership|\bmeet\b|people|attorneys|advisors|partners|principals|shareholders|founders|professionals|who[- ]?we[- ]?are|our[- ]?firm|the[- ]?firm|\bbios?\b/i
 // Image filenames/paths that are almost never a person's headshot.
 const SKIP_IMG_RE = /logo|icon|favicon|sprite|badge|banner|placeholder|spacer|pixel|1x1|loading/i
 const MAX_TEAM_PAGES = 4
