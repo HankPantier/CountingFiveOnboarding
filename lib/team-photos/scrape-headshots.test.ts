@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   findTeamPages,
+  looksLikeTeamPageUrl,
   extractHeadshotCandidates,
   suggestCandidatesByName,
 } from './scrape-headshots'
@@ -47,6 +48,17 @@ describe('findTeamPages', () => {
     expect(urls).toContain('https://example.com/professionals')
     // Services/offerings pages are not team pages.
     expect(urls).not.toContain('https://example.com/what-we-do')
+  })
+})
+
+describe('looksLikeTeamPageUrl', () => {
+  it('matches team/about-page URL paths and rejects unrelated ones', () => {
+    expect(looksLikeTeamPageUrl('https://x.com/who-we-are')).toBe(true)
+    expect(looksLikeTeamPageUrl('https://x.com/about/team')).toBe(true)
+    expect(looksLikeTeamPageUrl('https://x.com/our-firm')).toBe(true)
+    expect(looksLikeTeamPageUrl('https://x.com/professionals')).toBe(true)
+    expect(looksLikeTeamPageUrl('https://x.com/what-we-do')).toBe(false)
+    expect(looksLikeTeamPageUrl('https://x.com/resources/quick-reads')).toBe(false)
   })
 })
 

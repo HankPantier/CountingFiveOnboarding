@@ -50,6 +50,17 @@ function basename(url: string): string {
   }
 }
 
+/** True when a URL's path looks like a team/about page — used to pick team-like
+ * pages out of an already-crawled inventory (belt-and-suspenders to homepage
+ * link discovery). Shares TEAM_LINK_RE so the two never drift. */
+export function looksLikeTeamPageUrl(url: string): boolean {
+  try {
+    return TEAM_LINK_RE.test(new URL(url).pathname)
+  } catch {
+    return TEAM_LINK_RE.test(url)
+  }
+}
+
 /** Same-domain URLs on the page whose href or link text looks like a team/about
  * page. Pure — operates on already-fetched HTML. */
 export function findTeamPages(html: string, pageUrl: string): string[] {

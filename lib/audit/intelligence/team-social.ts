@@ -10,8 +10,8 @@ import * as cheerio from 'cheerio'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { GENERATION_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from '@/lib/content/generation-tuning'
 import type { TokenContext } from '@/lib/content/token-usage'
-import { safeGet, normalizeUrl } from '../crawl'
-import { findTeamPages } from '@/lib/team-photos/scrape-headshots'
+import { safeGet, normalizeUrl, sameDomain } from '../crawl'
+import { findTeamPages, looksLikeTeamPageUrl } from '@/lib/team-photos/scrape-headshots'
 import { classifyPlatform, isSocialUrl } from '../social-hosts'
 import { serperEnabled, serperSearch } from '../serper-search'
 import type {
@@ -36,6 +36,10 @@ export interface TeamSocialInput {
   /** Names already surfaced by the digital-intelligence brief, merged into the
    * scraped roster so a member the site buries is still assessed. */
   personnelHint?: PersonnelProfile[]
+  /** URLs the audit already crawled (page_analysis_summary). Team-like ones are
+   * scraped even when the homepage doesn't link them with a recognizable
+   * anchor — the robust discovery path that survives odd site navigation. */
+  knownUrls?: string[]
 }
 
 // Assessing every member of a large firm would multiply Serper cost without
@@ -98,9 +102,10 @@ function isHtml200(res: Awaited<ReturnType<typeof safeGet>>): boolean {
   return !!res && res.status === 200 && res.contentType.includes('text/html')
 }
 
-/** Fetch the homepage, discover team/about pages, and collect their text +
- * social links. SSRF-guarded via safeGet on every request. */
-async function scrapeTeamRoster(websiteUrl: string): Promise<ScrapedRoster> {
+/** Fetch the homepage, discover team/about pages (from homepage links AND the
+ * audit's already-crawled inventory), and collect their text + social links.
+ * SSRF-guarded via safeGet on every request. */
+async function scrapeTeamRoster(websiteUrl: string, knownUrls: string[] = []): Promise<ScrapedRoster> {
   const scannedPages: string[] = []
   const parts: string[] = []
   const socialLinks: string[] = []
@@ -115,15 +120,33 @@ async function scrapeTeamRoster(websiteUrl: string): Promise<ScrapedRoster> {
     socialLinks.push(...links)
   }
 
+  let baseHost = ''
+  try {
+    baseHost = new URL(websiteUrl).host
+  } catch {
+    // websiteUrl unparsable — same-domain filtering below just won't apply.
+  }
+
+  // Homepage-linked team pages take priority (Set preserves insertion order),
+  // then same-domain team-like URLs from the crawl inventory as a fallback for
+  // sites whose nav doesn't surface the roster with a recognizable anchor.
+  const candidates = new Set<string>()
   const home = await safeGet(websiteUrl)
-  if (!isHtml200(home)) return { text: '', siteSocialLinks: [], scannedPages }
-  absorb(home!.finalUrl, home!.body)
+  if (isHtml200(home)) {
+    absorb(home!.finalUrl, home!.body)
+    try {
+      baseHost = new URL(home!.finalUrl).host
+    } catch {
+      // keep the input-derived host
+    }
+    for (const u of findTeamPages(home!.body, home!.finalUrl)) candidates.add(u)
+  }
+  for (const u of knownUrls) {
+    if (looksLikeTeamPageUrl(u) && (!baseHost || sameDomain(u, baseHost))) candidates.add(u)
+  }
 
-  const teamPages = findTeamPages(home!.body, home!.finalUrl)
-    .filter((u) => u !== home!.finalUrl)
-    .slice(0, MAX_TEAM_PAGES)
-
-  for (const url of teamPages) {
+  const targets = [...candidates].filter((u) => !seenPage.has(u)).slice(0, MAX_TEAM_PAGES)
+  for (const url of targets) {
     const res = await safeGet(url)
     if (!isHtml200(res)) continue
     absorb(res!.finalUrl, res!.body)
@@ -409,7 +432,7 @@ export async function buildTeamSocial(
   input: TeamSocialInput,
   ctx?: TokenContext,
 ): Promise<TeamSocialReport | null> {
-  const scraped = await scrapeTeamRoster(input.websiteUrl)
+  const scraped = await scrapeTeamRoster(input.websiteUrl, input.knownUrls ?? [])
   const roster = await extractRoster(scraped.text, input, ctx)
   if (!roster.length) return null
 

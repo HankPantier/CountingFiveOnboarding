@@ -129,6 +129,7 @@ export async function buildIntelligence(
       location,
       onSiteNiches: detectedNiches.map((n) => n.name),
       personnelHint: intel.digital_intelligence?.personnel,
+      knownUrls: result.page_analysis_summary?.map((p) => p.url) ?? [],
     }, tokenCtx),
   )
 
@@ -203,6 +204,7 @@ export async function refreshAuditIntelligence(
         location,
         onSiteNiches: detectedNiches.map((n) => n.name),
         personnelHint: intel.digital_intelligence?.personnel,
+        knownUrls: result.page_analysis_summary?.map((p) => p.url) ?? [],
       }, tokenCtx),
     )) ?? intel.team_social
 

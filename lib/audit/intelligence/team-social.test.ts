@@ -115,6 +115,30 @@ describe('buildTeamSocial', () => {
     expect(report!.membersDropped).toBe(0)
   })
 
+  it('scrapes a team page from the crawl inventory when the homepage does not link it', async () => {
+    // Homepage has no recognizable team link; the roster lives at /who-we-are,
+    // which the audit already crawled (knownUrls).
+    mockSafeGet.mockImplementation(async (url: string) => {
+      if (url === 'https://acme.example') return htmlPage('https://acme.example', '<body>Welcome</body>')
+      if (url === 'https://acme.example/who-we-are') return htmlPage(url, '<body><h2>Jane Doe, CPA</h2></body>')
+      return null
+    })
+    mockGen
+      .mockResolvedValueOnce([
+        { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: [], bio: '' },
+      ])
+      .mockResolvedValueOnce({
+        members: [
+          { name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], specializations: [], socialProfiles: [], footprint: 'moderate', roomForImprovement: '', nicheOpportunities: [], source: 'ai' },
+        ],
+        teamNicheOpportunities: [],
+      })
+
+    const report = await buildTeamSocial(input({ knownUrls: ['https://acme.example/who-we-are'] }))
+    expect(mockSafeGet).toHaveBeenCalledWith('https://acme.example/who-we-are')
+    expect(report!.members[0].name).toBe('Jane Doe')
+  })
+
   it('falls back to a baseline roster when synthesis fails', async () => {
     mockSafeGet.mockResolvedValue(
       htmlPage('https://acme.example', '<body><h2>Jane Doe</h2></body>'),
