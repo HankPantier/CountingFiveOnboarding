@@ -24,7 +24,8 @@ export interface CommandIndex {
 
 // Best display name for a client: the documented business name, falling back to
 // the website's hostname so the palette always has something searchable.
-function clientName(schema: SessionSchema | null, websiteUrl: string): string {
+// Exported so the home assistant tools resolve clients with the same label.
+export function clientName(schema: SessionSchema | null, websiteUrl: string): string {
   const business = schema?.business?.name?.trim()
   if (business) return business
   try {

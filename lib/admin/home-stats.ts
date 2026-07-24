@@ -17,7 +17,8 @@ export interface HomeStats {
 // Audit statuses that count as "active" — every state except the two terminal
 // ones. Expressed as terminal-exclusion so new intermediate statuses (e.g.
 // 'researching' from migration 036) are counted without touching this file.
-const TERMINAL_AUDIT_STATUSES = ['complete', 'error']
+// Exported so the home assistant's count_audits tool uses the same definition.
+export const TERMINAL_AUDIT_STATUSES = ['complete', 'error']
 
 // Three funnel counts for the admin home page, scoped to what the caller may
 // see: admins → everything; managers → their assigned sessions; auditors →
