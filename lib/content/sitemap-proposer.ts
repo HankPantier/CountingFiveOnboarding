@@ -205,6 +205,8 @@ function buildPrompt(schema: SessionSchema, skeleton: ProposedSitemap): string {
   const cg = schema.content_gaps
   const gaps = cg
     ? [
+        cg.nicheGaps?.length ? `Untapped niches (deserve their own pages): ${cg.nicheGaps.slice(0, 8).join('; ')}` : '',
+        cg.teamExpertiseGaps?.length ? `Team expertise to leverage: ${cg.teamExpertiseGaps.slice(0, 8).join('; ')}` : '',
         cg.conversionGaps?.length ? `Conversion: ${cg.conversionGaps.slice(0, 6).join('; ')}` : '',
         cg.authorityGaps?.length ? `Authority: ${cg.authorityGaps.slice(0, 6).join('; ')}` : '',
       ].filter(Boolean).join('\n')
@@ -237,7 +239,7 @@ OUTPUT FORMAT — JSON array only, no prose:
 RULES:
 - status: "update" for pages that already exist on the live site (keep their exact URL); "new" for pages to create.
 - Build a real hierarchy via "parent" (a parent page's url, or "/" for top-level). Group service pages under a /services hub and industry/niche pages under an /industries hub.
-- Propose a dedicated NEW page for each meaningful niche and core service, plus pages that fill the conversion/authority gaps above.
+- Propose a dedicated NEW page for each meaningful niche and core service, INCLUDING the untapped niches and team-expertise areas listed above, plus pages that fill the conversion/authority gaps.
 - LOCAL SEO: when service areas exist, KEEP the per-city location hubs (url "/locations/<city-slug>", parent "/locations") and the service×geo pages (url "/services/<service-slug>-<city-slug>", parent "/services/<service-slug>") from the skeleton. Do NOT invent extra geo pages beyond the skeleton's — thin/duplicate city pages are penalized as doorway pages. Never emit a service×geo page for a city that has no location hub.
 - Every "new" page gets a one-line "notes" explaining why it differentiates the firm.
 - URLs are lowercase slugs starting with "/". Titles are specific, benefit-driven, sentence case. No colons/parentheses/dashes in titles. No "Ultimate Guide", "Everything you need to know", "A Deep Dive", listicle titles.
