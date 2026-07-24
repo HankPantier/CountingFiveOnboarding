@@ -9,7 +9,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
-import { reviewContentEdit } from '@/lib/content/content-edit-review'
+import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
@@ -63,7 +63,8 @@ export async function POST(
     .select('schema_data')
     .eq('id', ctx.sessionId)
     .single()
-  const schema = (session?.schema_data ?? {}) as SessionSchema
+  const rawSchema = (session?.schema_data ?? {}) as Record<string, unknown>
+  const schema = rawSchema as SessionSchema
   const firmName = schema.business?.name ?? 'the firm'
 
   // This admin tool does NOT take the client `processing` lock (that belongs to
@@ -84,7 +85,13 @@ The admin will describe a change. Make ONLY what they ask for and return the COM
 - Preserve the YAML frontmatter block (between --- fences) and every \`<!-- block: ... -->\` annotation comment EXACTLY, unless the admin explicitly asks to change them.
 - Keep markdown structure, headings, and image references intact.
 - Write clean, on-brand copy grounded in the firm profile above. NEVER invent facts (credentials, numbers, named people, dates) not supported by the profile or the existing file.
-After writing, briefly tell the admin what you changed.`
+After writing, briefly tell the admin what you changed.
+
+IMPROVING THE MBP:
+Watch for anything durable the admin states that should apply to ALL of this firm's content going forward — not just this file. Two kinds count:
+1. Facts about the firm or team not already in the profile: a new certification, a new service, a corrected title, a real client win, a shift in positioning.
+2. Brand voice / writing rules and content constraints: a required or forbidden tone, words or formatting to avoid (e.g. "never use em-dashes or emojis"). Map avoid-rules to brand.toneToAvoid with op "append" (one concise entry per rule, e.g. "em-dashes", "emojis"); map tone shifts to the relevant brand.* field; map facts to their field.
+When such a durable rule or fact surfaces (and isn't already in the profile), FIRST honor it in the file edit, then ASK the admin whether to add it to the firm's MBP so all future content follows it — e.g. "Want me to add 'no em-dashes, no emojis' to their MBP so every future piece avoids them?". Only after the admin confirms, call the suggest_mbp_update tool. Propose only what the admin stated or confirmed — never guesses. suggest_mbp_update files a PENDING suggestion for admin review; it does NOT change the profile, so never say the MBP was updated — say you've flagged it for review.`
 
   const result = streamText({
       model: anthropic('claude-sonnet-4-6'),
@@ -106,9 +113,43 @@ After writing, briefly tell the admin what you changed.`
               `Edit ${path.split('/').pop()} via AI${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
               { authorName: ctx.adminName ?? 'CountingFive Admin', authorEmail: ctx.adminEmail ?? 'admin@countingfive.com' }
             )
-            reviewContentEdit(ctx.sessionId, path, content)
+            // No background MBP auto-file here: the agent surfaces durable MBP
+            // improvements interactively (ask-then-file via suggest_mbp_update)
+            // per the interactive-agent rule in CLAUDE.md. Manual saves
+            // (files/route.ts) still run the background review.
             return { success: true }
           },
+        },
+        suggest_mbp_update: {
+          description:
+            'Queue a pending MBP suggestion (for admin review) when the conversation surfaces a durable, verifiable fact or brand-voice/writing rule not already in the profile. Only call after the admin confirms. Does NOT change the profile.',
+          inputSchema: z.object({
+            summary: z.string().describe('One-line summary of what should change'),
+            changes: z
+              .array(
+                z.object({
+                  fieldPath: z
+                    .string()
+                    .describe('Dotted MBP field path, e.g. brand.toneToAvoid or business.tagline'),
+                  op: z
+                    .enum(['set', 'append'])
+                    .optional()
+                    .describe("'set' replaces the field; 'append' adds a new array entry"),
+                  proposedValue: z.unknown().describe('The new value (or array item for append)'),
+                  rationale: z.string().describe('Why this change is warranted'),
+                })
+              )
+              .min(1),
+          }),
+          execute: async ({ summary, changes }) =>
+            insertMbpSuggestion(supabase, {
+              sessionId: ctx.sessionId,
+              origin: 'content_edit',
+              sourceRef: path,
+              summary,
+              changes,
+              schema: rawSchema,
+            }),
         },
       },
       stopWhen: stepCountIs(5),
