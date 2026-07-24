@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./social-presence', () => ({ buildSocialPresence: vi.fn() }))
 vi.mock('./narrative', () => ({ buildNarrative: vi.fn() }))
+vi.mock('./team-social', () => ({ buildTeamSocial: vi.fn() }))
 
 import { buildSocialPresence } from './social-presence'
 import { buildNarrative } from './narrative'
+import { buildTeamSocial } from './team-social'
 import { refreshAuditIntelligence } from './index'
-import type { AuditIntelligence, AuditResult, SocialPresenceReport } from '../types'
+import type { AuditIntelligence, AuditResult, SocialPresenceReport, TeamSocialReport } from '../types'
 
 const mockSocial = vi.mocked(buildSocialPresence)
 const mockNarr = vi.mocked(buildNarrative)
+const mockTeam = vi.mocked(buildTeamSocial)
 
 function report(): SocialPresenceReport {
   return {
@@ -41,6 +44,8 @@ function result(): AuditResult {
 beforeEach(() => {
   mockSocial.mockReset()
   mockNarr.mockReset()
+  mockTeam.mockReset()
+  mockTeam.mockResolvedValue(null)
 })
 
 describe('refreshAuditIntelligence', () => {
@@ -71,5 +76,31 @@ describe('refreshAuditIntelligence', () => {
     const intel = await refreshAuditIntelligence(result())
     expect(intel?.social_presence).toBeUndefined()
     expect(intel?.tech_stack).toBeDefined()
+  })
+
+  it('preserves a previously-stored section when its regeneration fails on refresh', async () => {
+    const priorSocial = report()
+    const priorTeam: TeamSocialReport = {
+      members: [
+        { name: 'Jane Doe', certifications: ['CPA'], specializations: [], socialProfiles: [], footprint: 'moderate', roomForImprovement: '', nicheOpportunities: [], source: 'ai' },
+      ],
+      teamNicheOpportunities: [],
+      summary: '',
+      membersAssessed: 1,
+      membersDropped: 0,
+    }
+    const withPrior = result()
+    withPrior.intelligence!.social_presence = priorSocial
+    withPrior.intelligence!.team_social = priorTeam
+
+    // Both regeneration passes fail this run (transient scrape/AI failure).
+    mockSocial.mockRejectedValue(new Error('serper down'))
+    mockTeam.mockRejectedValue(new Error('site unreachable'))
+    mockNarr.mockResolvedValue({ executive_summary: 'n', section_commentary: {}, recommendations: [] })
+
+    const intel = await refreshAuditIntelligence(withPrior)
+    // The prior values survive instead of vanishing from the report.
+    expect(intel?.social_presence).toBe(priorSocial)
+    expect(intel?.team_social).toBe(priorTeam)
   })
 })
