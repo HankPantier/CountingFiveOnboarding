@@ -98,21 +98,28 @@ export function enrichSchemaFromIntelligence(
 
   // ── Content gaps: fill the reserved niche / team-expertise buckets ──────────
   if (schema.content_gaps) {
+    const ts = intel.team_social
     const nicheGaps = [
       ...schema.content_gaps.nicheGaps,
       ...(niche?.invisible_niches.map((n) => n.name) ?? []),
       ...(di?.niche_gap.external ?? []),
+      ...(ts?.teamNicheOpportunities ?? []),
     ]
     schema.content_gaps.nicheGaps = dedup(nicheGaps)
     schema.content_gaps.teamExpertiseGaps = dedup([
       ...schema.content_gaps.teamExpertiseGaps,
       ...(di?.niche_gap.unleveraged ?? []),
+      ...(ts?.members.flatMap((m) => m.nicheOpportunities) ?? []),
     ])
   }
 
   // ── Social & local presence: the dedicated component + non-destructive
   //    enrichment of the shared typed homes (AI-draft / MBP values win). ──────
   enrichSocialPresence(schema, intel)
+
+  // ── Team social footprint: attach each member's per-profile footprint +
+  //    niche opportunities onto the roster (non-destructive). ─────────────────
+  enrichTeamSocial(schema, intel)
 
   if (!di) return
 
@@ -225,6 +232,71 @@ function enrichSocialPresence(schema: SessionSchema, intel: AuditIntelligence): 
 
   if (gbp?.url && schema.locations?.length && !schema.locations[0].gbpUrl) {
     schema.locations[0].gbpUrl = gbp.url
+  }
+}
+
+// Audit team_social footprint → schema.audit externalFootprint scale.
+const FOOTPRINT_TO_SCHEMA: Record<string, 'minimal' | 'moderate' | 'high'> = {
+  minimal: 'minimal',
+  moderate: 'moderate',
+  strong: 'high',
+}
+
+type TeamMember = NonNullable<SessionSchema['team']>[number]
+
+// Maps the audit's per-member social footprint + niche-expertise onto the roster.
+// Members already on the roster are enriched non-destructively (existing/MBP
+// values win); externally-found members are appended. Runs before the
+// digital-intelligence personnel merge, which then adds associations on top.
+function enrichTeamSocial(schema: SessionSchema, intel: AuditIntelligence): void {
+  const ts = intel.team_social
+  if (!ts?.members.length) return
+
+  schema.team ??= []
+  const byName = new Map(schema.team.map((t) => [t.name.toLowerCase(), t]))
+
+  for (const m of ts.members) {
+    if (!m.name) continue
+    const profiles = m.socialProfiles.map((p) => ({
+      platform: p.platform,
+      url: p.url,
+      status: p.status,
+      ...(p.metrics.followerCount != null || p.metrics.lastActivity || p.metrics.pageType
+        ? {
+            metrics: {
+              ...(p.metrics.followerCount != null ? { followerCount: p.metrics.followerCount } : {}),
+              ...(p.metrics.lastActivity ? { lastActivity: p.metrics.lastActivity } : {}),
+              ...(p.metrics.pageType && p.metrics.pageType !== 'unknown' ? { pageType: p.metrics.pageType } : {}),
+            },
+          }
+        : {}),
+      usefulness: p.usefulness,
+      ...(p.roomForImprovement ? { roomForImprovement: p.roomForImprovement } : {}),
+    }))
+
+    const existing = byName.get(m.name.toLowerCase())
+    if (existing) {
+      if (m.certifications.length) existing.certifications = dedup([...existing.certifications, ...m.certifications])
+      if (m.specializations.length) existing.specializations = dedup([...existing.specializations, ...m.specializations])
+      if (profiles.length && !existing.socialProfiles?.length) existing.socialProfiles = profiles
+      if (!existing.externalFootprint) existing.externalFootprint = FOOTPRINT_TO_SCHEMA[m.footprint]
+      if (m.nicheOpportunities.length && !existing.nicheOpportunities?.length) {
+        existing.nicheOpportunities = dedup(m.nicheOpportunities)
+      }
+    } else {
+      const member: TeamMember = {
+        name: m.name,
+        title: m.title ?? '',
+        certifications: dedup(m.certifications),
+        bio: '',
+        specializations: dedup(m.specializations),
+        externalFootprint: FOOTPRINT_TO_SCHEMA[m.footprint],
+        ...(profiles.length ? { socialProfiles: profiles } : {}),
+        ...(m.nicheOpportunities.length ? { nicheOpportunities: dedup(m.nicheOpportunities) } : {}),
+      }
+      schema.team.push(member)
+      byName.set(m.name.toLowerCase(), member)
+    }
   }
 }
 

@@ -12,6 +12,7 @@ import { detectDomainAge } from './domain-age'
 import { analyzeNicheServices, hasNicheContent } from './niche-services'
 import { buildNarrative } from './narrative'
 import { buildSocialPresence } from './social-presence'
+import { buildTeamSocial } from './team-social'
 import { detectTechStack } from './tech-stack'
 import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditIntelligence, AuditResult, DetectedNiche } from '../types'
@@ -117,6 +118,20 @@ export async function buildIntelligence(
     }, tokenCtx),
   )
 
+  // Team social footprint — per-member off-site presence + niche-expertise
+  // mapping. Runs after digital-intelligence (whose personnel seed the roster)
+  // and before narrative so the prose/recs can reference the team's gaps.
+  intel.team_social = await safe('team-social', () =>
+    buildTeamSocial({
+      siteName,
+      domain: result.domain,
+      websiteUrl: result.url,
+      location,
+      onSiteNiches: detectedNiches.map((n) => n.name),
+      personnelHint: intel.digital_intelligence?.personnel,
+    }, tokenCtx),
+  )
+
   // ── Narrative (LAST — consumes everything above) ──────────────────────────
   intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
 
@@ -161,20 +176,39 @@ export async function refreshAuditIntelligence(
   }
   const detectedNiches = intel.niche_services?.detected_niches ?? []
 
-  intel.social_presence = await safe('social-presence', () =>
-    buildSocialPresence({
-      siteName,
-      domain: result.domain,
-      location,
-      socialLinks: result.business_signals?.socialLinks ?? [],
-      addresses: result.business_signals?.addresses ?? [],
-      onSiteNiches: detectedNiches.map((n) => n.name),
-    }, tokenCtx),
-  )
+  // Each regenerated section falls back to its previously-stored value (`??
+  // intel.<section>`) so a transient failure — a scrape that can't reach the
+  // site this run, an AI hiccup — never silently WIPES a section that was
+  // present before the refresh. A successful regeneration always replaces it.
+  intel.social_presence =
+    (await safe('social-presence', () =>
+      buildSocialPresence({
+        siteName,
+        domain: result.domain,
+        location,
+        socialLinks: result.business_signals?.socialLinks ?? [],
+        addresses: result.business_signals?.addresses ?? [],
+        onSiteNiches: detectedNiches.map((n) => n.name),
+      }, tokenCtx),
+    )) ?? intel.social_presence
+
+  // Team social footprint — re-scraped fresh (refresh has no stored raw HTML),
+  // so it regenerates without a full re-crawl. Uses the carried-over personnel.
+  intel.team_social =
+    (await safe('team-social', () =>
+      buildTeamSocial({
+        siteName,
+        domain: result.domain,
+        websiteUrl: result.url,
+        location,
+        onSiteNiches: detectedNiches.map((n) => n.name),
+        personnelHint: intel.digital_intelligence?.personnel,
+      }, tokenCtx),
+    )) ?? intel.team_social
 
   // Re-run the narrative so the report's "Recommendations & Next Steps" reflects
   // the refreshed social/local gaps (consumes the whole bundle; needs no HTML).
-  intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
+  intel.narrative = (await safe('narrative', () => buildNarrative(result, intel, tokenCtx))) ?? intel.narrative
 
   const cleaned: AuditIntelligence = {}
   for (const [k, v] of Object.entries(intel)) {

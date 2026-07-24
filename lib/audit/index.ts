@@ -13,6 +13,7 @@ import {
   buildPageSummary,
   generateRecommendations,
   generateSocialRecommendations,
+  generateTeamSocialRecommendations,
   sortRecommendations,
 } from './recommendations'
 import { computeOverall, computeScores, getGrade } from './scoring'
@@ -177,6 +178,15 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
     const socialRecs = generateSocialRecommendations(socialPresence)
     if (socialRecs.length) {
       result.recommendations = sortRecommendations([...result.recommendations, ...socialRecs])
+    }
+  }
+
+  // Team social footprint / niche-expertise recs — same merge, display/recs only.
+  const teamSocial = result.intelligence?.team_social
+  if (teamSocial) {
+    const teamRecs = generateTeamSocialRecommendations(teamSocial)
+    if (teamRecs.length) {
+      result.recommendations = sortRecommendations([...result.recommendations, ...teamRecs])
     }
   }
 

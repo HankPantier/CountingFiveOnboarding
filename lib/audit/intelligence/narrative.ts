@@ -80,6 +80,15 @@ function buildContext(result: AuditResult, intel: AuditIntelligence): string {
       `Missing required: ${sp.missingRequired.join(', ') || 'none'}`,
     )
   }
+  if (intel.team_social) {
+    const ts = intel.team_social
+    lines.push(
+      '',
+      `Team social footprint: ${ts.summary}`,
+      `Members: ${ts.members.map((m) => `${m.name} (${m.footprint})`).join(', ') || 'none'}`,
+      `Untapped team niches: ${ts.teamNicheOpportunities.join('; ') || 'none'}`,
+    )
+  }
   return lines.join('\n')
 }
 
@@ -92,6 +101,7 @@ function sectionIds(intel: AuditIntelligence): string[] {
   if (intel.content_library) ids.push('content_library')
   if (intel.digital_intelligence) ids.push('digital_intelligence')
   if (intel.social_presence) ids.push('social_presence')
+  if (intel.team_social) ids.push('team_social')
   return ids
 }
 

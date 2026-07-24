@@ -6,7 +6,11 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAudit } from './index'
 import { nicheContentCaptured, refreshAuditIntelligence } from './intelligence'
-import { generateSocialRecommendations, sortRecommendations } from './recommendations'
+import {
+  generateSocialRecommendations,
+  generateTeamSocialRecommendations,
+  sortRecommendations,
+} from './recommendations'
 import type { AuditResult, AuditStage } from './types'
 
 const PROGRESS_WRITE_INTERVAL_MS = 1500
@@ -167,14 +171,19 @@ export async function refreshAuditJob(auditRunId: string): Promise<void> {
       sessionId: row.session_id,
     })
 
-    // Re-merge social recs idempotently: drop any prior 'Local & Social' entries
-    // (a previous refresh), then re-add from the fresh report and re-sort. The
-    // findings-based recs are left exactly as scored.
+    // Re-merge social + team recs idempotently: drop any prior 'Local & Social'
+    // and 'Team & Expertise' entries (a previous refresh), then re-add from the
+    // fresh reports and re-sort. The findings-based recs are left as scored.
     const sp = result.intelligence?.social_presence
-    const base = result.recommendations.filter((r) => r.category !== 'Local & Social')
-    result.recommendations = sp
-      ? sortRecommendations([...base, ...generateSocialRecommendations(sp)])
-      : base
+    const ts = result.intelligence?.team_social
+    const base = result.recommendations.filter(
+      (r) => r.category !== 'Local & Social' && r.category !== 'Team & Expertise',
+    )
+    result.recommendations = sortRecommendations([
+      ...base,
+      ...(sp ? generateSocialRecommendations(sp) : []),
+      ...(ts ? generateTeamSocialRecommendations(ts) : []),
+    ])
 
     await supabase
       .from('audit_runs')

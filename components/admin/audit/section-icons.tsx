@@ -16,6 +16,7 @@ import {
   Sparkles,
   Target,
   TrendingUp,
+  Users,
 } from 'lucide-react'
 
 // One representative icon per report section, keyed by the stable section keys
@@ -36,6 +37,7 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   content_library: Library,
   digital_intelligence: Globe,
   social_presence: MapPin,
+  team_social: Users,
   narrative_recs: Sparkles,
   recommendations: ListChecks,
   change: Activity,

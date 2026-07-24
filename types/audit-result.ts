@@ -611,6 +611,38 @@ export interface SocialPresenceReport {
   summary: string
 }
 
+// ── Team Social Footprint & Niche-Expertise ─────────────────────────────────
+// A per-person parallel to SocialPresenceReport: for each team member found on
+// the site, the quality of their off-site social footprint plus the untapped
+// niche-content opportunities their certifications/expertise imply. Feeds the
+// MBP team roster and content gaps; best-effort and never scored.
+
+export interface TeamMemberSocial {
+  name: string
+  title?: string
+  certifications: string[]
+  specializations: string[]
+  /** Per-profile assessment, reusing the business social-presence shape. */
+  socialProfiles: SocialProfileAssessment[]
+  footprint: FootprintStrength
+  /** One actionable sentence on strengthening this person's footprint. */
+  roomForImprovement: string
+  /** Untapped niches implied by this person's certs/expertise. */
+  nicheOpportunities: string[]
+  /** Provenance: on-page roster only vs. AI-synthesized from external search. */
+  source: 'onpage' | 'ai'
+}
+
+export interface TeamSocialReport {
+  members: TeamMemberSocial[]
+  /** Aggregate niche-content ideas across the whole team. */
+  teamNicheOpportunities: string[]
+  summary: string
+  membersAssessed: number
+  /** Members found but not assessed due to the cap — no silent truncation. */
+  membersDropped: number
+}
+
 /** Authoritative Google Business Profile data from the Places API Text Search. */
 export interface PlaceDetails {
   name: string | null
@@ -635,6 +667,7 @@ export interface AuditIntelligence {
   content_library?: ContentLibraryIntelligence
   digital_intelligence?: DigitalIntelligence
   social_presence?: SocialPresenceReport
+  team_social?: TeamSocialReport
 }
 
 // ── Top-level result ───────────────────────────────────────────────────────
