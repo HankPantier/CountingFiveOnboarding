@@ -88,7 +88,13 @@ export default async function AuditReportPage({ params }: { params: Promise<{ id
           scoreHistory={scoreHistory}
         />
       ) : (
-        <AuditProgress auditId={id} initialStatus={run.audit_status} />
+        <AuditProgress
+          auditId={id}
+          initialStatus={run.audit_status}
+          initialStatusDetail={run.status_detail}
+          initialErrorMessage={run.error_message}
+          initialPagesCrawled={run.pages_crawled}
+        />
       )}
     </>
   )

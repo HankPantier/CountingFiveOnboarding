@@ -35,16 +35,26 @@ function stepState(phaseKey: string, current: string): StepState {
 export function AuditProgress({
   auditId,
   initialStatus,
+  initialStatusDetail = null,
+  initialErrorMessage = null,
+  initialPagesCrawled = null,
 }: {
   auditId: string
   initialStatus: string
+  initialStatusDetail?: string | null
+  initialErrorMessage?: string | null
+  initialPagesCrawled?: number | null
 }) {
   const router = useRouter()
+  // Seed from the server-rendered row so a fresh load of an ALREADY-terminal
+  // audit shows its real status_detail / error_message — polling is skipped for
+  // terminal states, so without this seed the card would fall back to generic
+  // placeholder text and hide the actual failure reason.
   const [status, setStatus] = useState<StatusResponse>({
     audit_status: initialStatus,
-    status_detail: null,
-    pages_crawled: null,
-    error_message: null,
+    status_detail: initialStatusDetail,
+    pages_crawled: initialPagesCrawled,
+    error_message: initialErrorMessage,
   })
   const refreshed = useRef(false)
 
