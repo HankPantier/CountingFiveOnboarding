@@ -4,6 +4,15 @@ import { recordTokenUsage, type TokenContext } from '@/lib/content/token-usage'
 
 const MBP_JSON_MODEL = 'claude-sonnet-5'
 
+// Hard ceiling on a single generation. Without it an AI SDK call has no timeout
+// and can hang indefinitely — which, in the audit intelligence stage (many
+// sequential Sonnet passes), is enough to run the whole function past its
+// maxDuration and get the row swept to 'error'. 110s stays under the tightest
+// caller route (the 120s draft-session) while bounding every call. Overridable
+// per-call via `opts.timeoutMs`. On abort, generateText throws → we return null,
+// which every caller already treats as "no result".
+const GENERATION_TIMEOUT_MS = 110_000
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // JSON-mode generation matching the codebase convention (generateText +
@@ -36,14 +45,16 @@ export async function generateMbpJson<T>(
     providerOptions?: Parameters<typeof generateText>[0]['providerOptions']
     attempts?: number
     accept?: (result: T) => boolean
+    timeoutMs?: number
   }
 ): Promise<T | null> {
   const model = opts?.model ?? MBP_JSON_MODEL
   const attempts = Math.max(1, opts?.attempts ?? 1)
+  const timeoutMs = opts?.timeoutMs ?? GENERATION_TIMEOUT_MS
   let fallback: T | null = null
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const result = await generateOnce<T>(model, prompt, validate, maxOutputTokens, ctx, opts?.providerOptions)
+    const result = await generateOnce<T>(model, prompt, validate, maxOutputTokens, ctx, opts?.providerOptions, timeoutMs)
     if (result !== null) {
       if (!opts?.accept || opts.accept(result)) return result
       // Validated but not complete enough — keep as fallback and try again.
@@ -63,6 +74,7 @@ async function generateOnce<T>(
   maxOutputTokens: number,
   ctx: TokenContext | undefined,
   providerOptions: Parameters<typeof generateText>[0]['providerOptions'] | undefined,
+  timeoutMs: number,
 ): Promise<T | null> {
   try {
     const { text, usage } = await generateText({
@@ -70,6 +82,7 @@ async function generateOnce<T>(
       system: 'You are a precise assistant for a CPA-firm marketing system. Return ONLY valid JSON — no prose, no markdown code fences.',
       prompt,
       maxOutputTokens,
+      abortSignal: AbortSignal.timeout(timeoutMs),
       ...(providerOptions ? { providerOptions } : {}),
     })
     if (ctx) {
