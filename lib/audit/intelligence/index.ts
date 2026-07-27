@@ -34,6 +34,40 @@ async function safe<T>(
   }
 }
 
+// Overall wall-clock budget for the whole intelligence stage. The pre-stage work
+// (crawl + PageSpeed) has already consumed part of the route's 300s maxDuration,
+// so intelligence is capped and DEGRADES to a partial bundle rather than letting
+// a slow site run the function past its limit and get swept to 'error' by cron.
+const INTELLIGENCE_BUDGET_MS = 180_000
+
+// safe() plus an overall-deadline race. If the budget is already spent the
+// section is skipped without starting; otherwise it runs but can't push past the
+// deadline — a timed-out section resolves to undefined and its background work is
+// abandoned when the function returns. This is what lets the audit COMPLETE with
+// partial intel instead of overrunning maxDuration. Sections are otherwise run in
+// dependency-ordered PARALLEL stages (below), so per-section timeouts rarely bite.
+async function budgeted<T>(
+  label: string,
+  deadline: number,
+  fn: () => Promise<T> | T,
+): Promise<NonNullable<T> | undefined> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) {
+    console.warn(`[audit-intelligence] ${label} skipped — intelligence budget exhausted`)
+    return undefined
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[audit-intelligence] ${label} exceeded remaining budget (~${Math.round(remaining / 1000)}s) — using partial`)
+      resolve(undefined)
+    }, remaining)
+  })
+  const value = await Promise.race([safe(label, fn), timeout])
+  if (timer) clearTimeout(timer)
+  return value
+}
+
 /** Best-effort "City, ST" from a free-text address, for Serper geo-biasing. */
 function deriveLocation(result: AuditResult): string {
   for (const addr of result.business_signals?.addresses ?? []) {
@@ -60,68 +94,78 @@ export async function buildIntelligence(
     auditId: attribution?.auditId ?? null,
   }
 
-  // ── Deterministic collectors ──────────────────────────────────────────────
-  intel.tech_stack = await safe('tech-stack', () => detectTechStack(result.raw?.pages ?? []))
-  intel.domain = await safe('domain-age', () => detectDomainAge(result.domain, result.sitemap))
+  // The stage is budget-bounded (see budgeted()/INTELLIGENCE_BUDGET_MS) and runs
+  // in four dependency-ordered PARALLEL waves — previously all ~10 passes ran
+  // strictly sequentially, whose summed wall-time overran the route's 300s limit
+  // once Serper off-site discovery went live.
+  const deadline = Date.now() + INTELLIGENCE_BUDGET_MS
 
-  // ── On-site AI analysis ───────────────────────────────────────────────────
-  const niche = await safe('niche-services', () => analyzeNicheServices(pages, siteName, tokenCtx))
+  // ── Stage A: deterministic collectors + on-site niche (feeds later stages) ──
+  const [techStack, domainAge, contentLibrary, niche] = await Promise.all([
+    budgeted('tech-stack', deadline, () => detectTechStack(result.raw?.pages ?? [])),
+    budgeted('domain-age', deadline, () => detectDomainAge(result.domain, result.sitemap)),
+    budgeted('content-library', deadline, () => analyzeContentLibrary(result, tokenCtx)),
+    budgeted('niche-services', deadline, () => analyzeNicheServices(pages, siteName, tokenCtx)),
+  ])
+  intel.tech_stack = techStack
+  intel.domain = domainAge
+  intel.content_library = contentLibrary
   if (niche) {
     intel.target_market = niche.target_market
     intel.niche_services = niche.niche_services
   }
   const detectedNiches: DetectedNiche[] = intel.niche_services?.detected_niches ?? []
 
-  // ── Competitive + content library ─────────────────────────────────────────
-  intel.competitive = await safe('competitive', () =>
-    analyzeCompetitive({
-      siteName,
-      domain: result.domain,
-      niches: detectedNiches,
-      location,
-      signals: {
-        hasFaqSchema: result.findings.schema.has_faq,
-        hasLlmsTxt: result.findings.ai_llm.llms_txt_present,
-        hasLocalBusiness: result.findings.schema.has_local_business,
-        aiCrawlersBlocked: result.findings.ai_llm.ai_crawlers_blocked,
-      },
-    }, tokenCtx),
-  )
-  intel.content_library = await safe('content-library', () => analyzeContentLibrary(result, tokenCtx))
+  // ── Stage B: niche-dependent research (independent of one another) ──────────
+  const [competitive, competitors, digitalIntelligence, socialPresence] = await Promise.all([
+    budgeted('competitive', deadline, () =>
+      analyzeCompetitive({
+        siteName,
+        domain: result.domain,
+        niches: detectedNiches,
+        location,
+        signals: {
+          hasFaqSchema: result.findings.schema.has_faq,
+          hasLlmsTxt: result.findings.ai_llm.llms_txt_present,
+          hasLocalBusiness: result.findings.schema.has_local_business,
+          aiCrawlersBlocked: result.findings.ai_llm.ai_crawlers_blocked,
+        },
+      }, tokenCtx),
+    ),
+    // Competitor firms (off-site discovery via Serper + LLM extraction) — fills
+    // business.competitors, which audit-seeded sessions otherwise never get.
+    budgeted('competitors', deadline, () =>
+      analyzeCompetitors({ siteName, domain: result.domain, niches: detectedNiches, location }, tokenCtx),
+    ),
+    budgeted('digital-intelligence', deadline, () =>
+      buildDigitalIntelligence({
+        siteName,
+        domain: result.domain,
+        location,
+        onSiteNiches: detectedNiches.map((n) => n.name),
+      }, tokenCtx),
+    ),
+    // Social & local presence — GBP + LinkedIn (required) + bonus channels, with
+    // quality assessment. Feeds the narrative's prose in Stage D.
+    budgeted('social-presence', deadline, () =>
+      buildSocialPresence({
+        siteName,
+        domain: result.domain,
+        location,
+        socialLinks: result.business_signals?.socialLinks ?? [],
+        addresses: result.business_signals?.addresses ?? [],
+        onSiteNiches: detectedNiches.map((n) => n.name),
+      }, tokenCtx),
+    ),
+  ])
+  intel.competitive = competitive
+  intel.competitors = competitors
+  intel.digital_intelligence = digitalIntelligence
+  intel.social_presence = socialPresence
 
-  // Competitor firms (off-site discovery via Serper + LLM extraction) — fills
-  // business.competitors, which audit-seeded sessions otherwise never get.
-  intel.competitors = await safe('competitors', () =>
-    analyzeCompetitors({ siteName, domain: result.domain, niches: detectedNiches, location }, tokenCtx),
-  )
-
-  // ── Off-site research ─────────────────────────────────────────────────────
-  intel.digital_intelligence = await safe('digital-intelligence', () =>
-    buildDigitalIntelligence({
-      siteName,
-      domain: result.domain,
-      location,
-      onSiteNiches: detectedNiches.map((n) => n.name),
-    }, tokenCtx),
-  )
-
-  // Social & local presence — GBP + LinkedIn (required) + bonus channels, with
-  // quality assessment. Runs before narrative so its gaps feed the AI prose.
-  intel.social_presence = await safe('social-presence', () =>
-    buildSocialPresence({
-      siteName,
-      domain: result.domain,
-      location,
-      socialLinks: result.business_signals?.socialLinks ?? [],
-      addresses: result.business_signals?.addresses ?? [],
-      onSiteNiches: detectedNiches.map((n) => n.name),
-    }, tokenCtx),
-  )
-
-  // Team social footprint — per-member off-site presence + niche-expertise
-  // mapping. Runs after digital-intelligence (whose personnel seed the roster)
-  // and before narrative so the prose/recs can reference the team's gaps.
-  intel.team_social = await safe('team-social', () =>
+  // ── Stage C: team social footprint — needs digital-intel's personnel seed ───
+  // per-member off-site presence + niche-expertise mapping.
+  intel.team_social = await budgeted('team-social', deadline, () =>
     buildTeamSocial({
       siteName,
       domain: result.domain,
@@ -133,8 +177,8 @@ export async function buildIntelligence(
     }, tokenCtx),
   )
 
-  // ── Narrative (LAST — consumes everything above) ──────────────────────────
-  intel.narrative = await safe('narrative', () => buildNarrative(result, intel, tokenCtx))
+  // ── Stage D: narrative (LAST — consumes everything above) ──────────────────
+  intel.narrative = await budgeted('narrative', deadline, () => buildNarrative(result, intel, tokenCtx))
 
   if (!nicheContentCaptured(intel)) {
     console.warn('[audit-intelligence] niche content NOT captured — the report will be missing its centerpiece section')
