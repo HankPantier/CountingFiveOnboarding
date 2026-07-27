@@ -84,9 +84,18 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
   )
   if (!pages.length) {
     const first = errors[0]
+    const status = first?.status
+    // A 401/403/429/503 on the homepage is almost always bot protection (e.g.
+    // Cloudflare) refusing our server's IP — not a bad URL. Say so plainly so the
+    // operator knows re-running won't help and it isn't a bug in the audit.
+    if (status && [401, 403, 429, 503].includes(status)) {
+      throw new Error(
+        `The site's bot protection blocked our audit crawler (HTTP ${status}). Sites behind Cloudflare/WAF can deny requests from cloud servers even though they load fine in a browser — re-running won't change this.`,
+      )
+    }
     const detail = first
-      ? first.status
-        ? `homepage returned HTTP ${first.status}`
+      ? status
+        ? `homepage returned HTTP ${status}`
         : (first.error ?? 'request failed')
       : 'no reachable HTML pages'
     throw new Error(`Could not crawl any pages (${detail}). Check the URL and try again.`)
