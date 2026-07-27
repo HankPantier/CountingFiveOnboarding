@@ -7,7 +7,14 @@ import * as cheerio from 'cheerio'
 import { isUrlPubliclyFetchable } from './ssrf-guard'
 import type { CrawledPage, CrawlError, RedirectHop } from './types'
 
-const USER_AGENT = 'Mozilla/5.0 (compatible; RevaltusAudit/1.0; +https://revaltus.com)'
+// A mainstream desktop-Chrome UA. The prior self-identifying "RevaltusAudit"
+// token was hard-blocked (403) by common nginx/WAF bot rules, which made the
+// crawler return zero pages on otherwise-fetchable sites. Presenting as a real
+// browser is what site-audit tools need to see what the site actually serves.
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+  'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+  'Chrome/126.0.0.0 Safari/537.36'
 const TIMEOUT_MS = 10_000
 const MAX_REDIRECTS = 5
 const CRAWL_DELAY_MS = 150
@@ -25,6 +32,7 @@ export interface CrawlResult {
 
 const REQUEST_HEADERS: Record<string, string> = {
   'User-Agent': USER_AGENT,
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
 }
 
