@@ -4,6 +4,7 @@
 // chains followed manually (max 5) so redirect_count is captured, per-page
 // errors collected and never thrown.
 import * as cheerio from 'cheerio'
+import { fetchViaScrapingBee, scrapingBeeEnabled } from './scrapingbee'
 import { isUrlPubliclyFetchable } from './ssrf-guard'
 import type { CrawledPage, CrawlError, RedirectHop } from './types'
 
@@ -28,6 +29,12 @@ const CRAWL_BUDGET_MS = 240_000
 // BEFORE it, reserving time for PageSpeed + the intelligence stage + persistence
 // so a slow crawl can't consume the whole function budget and starve them.
 const CRAWL_TAIL_RESERVE_MS = 180_000
+// Homepage statuses that indicate bot protection (Cloudflare/WAF) refusing our
+// server IP rather than a genuine error — the trigger for the stealth-proxy fallback.
+const BLOCK_STATUSES = new Set([401, 403, 429, 503])
+// Once a crawl switches to the (paid, slower) stealth proxy, cap its pages to
+// bound credit spend — a blocked site still gets a representative sample.
+const PROXY_MAX_PAGES = 20
 
 export interface CrawlResult {
   pages: CrawledPage[]
@@ -291,12 +298,35 @@ export async function crawlSite(
     ? Math.min(ownDeadline, sharedDeadline - CRAWL_TAIL_RESERVE_MS)
     : ownDeadline
 
-  while (queue.length && pages.length < maxPages && Date.now() < deadline) {
+  // Flipped on once a direct fetch is bot-blocked and the stealth proxy recovers
+  // the page; from then on the crawl fetches every page through the proxy (all
+  // pages are blocked the same way) and honors the tighter PROXY_MAX_PAGES cap.
+  let useProxy = false
+  let effectiveMaxPages = maxPages
+
+  while (queue.length && pages.length < effectiveMaxPages && Date.now() < deadline) {
     const url = queue.shift() as string
     if (visited.has(url)) continue
     visited.add(url)
 
-    const res = await safeGet(url)
+    let res: FetchResult | null
+    if (useProxy) {
+      res = await fetchViaScrapingBee(url)
+    } else {
+      res = await safeGet(url)
+      // Bot-protection block (or hard failure) on a direct fetch → try the stealth
+      // proxy. If it recovers the page, stay in proxy mode for the rest of the crawl.
+      if ((res === null || BLOCK_STATUSES.has(res.status)) && scrapingBeeEnabled()) {
+        const proxied = await fetchViaScrapingBee(url)
+        if (proxied) {
+          res = proxied
+          useProxy = true
+          effectiveMaxPages = Math.min(maxPages, PROXY_MAX_PAGES)
+          console.warn(`[audit-crawl] bot-block on ${url} — switched to stealth proxy`)
+        }
+      }
+    }
+
     if (res === null) {
       errors.push({ url, error: 'Request failed' })
       continue
