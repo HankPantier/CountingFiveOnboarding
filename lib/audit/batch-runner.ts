@@ -6,11 +6,12 @@ import { runAuditJob } from './worker'
 // own terminal state, exactly as the single-audit /run route drives it.
 //
 // Structurally mirrors runBlogBatch (soft-deadline + authenticated self-chain to
-// stay under the 300s route cap) with one critical difference: a single audit
-// can itself consume nearly the whole 300s cap (the crawler alone budgets 240s),
-// so we must not START an audit we can't finish. We therefore only begin a new
-// audit while still very early in the invocation; anything past that chains a
-// fresh invocation. Fast sites still pack several per run; heavy sites get one.
+// stay under the route cap) with one critical difference: a single audit can
+// itself consume nearly the whole cap (the worker gives each run a ~560s shared
+// deadline within the 600s route), so we must not START an audit we can't finish.
+// We therefore only begin a new audit while still very early in the invocation
+// (≤30s, leaving ≥570s ≥ the per-run deadline); anything past that chains a fresh
+// invocation. Fast sites still pack several per run; heavy sites get one.
 const START_CUTOFF_MS = 30_000
 
 // Statuses a run passes through while executing — mirrors RUNNING_STATES in

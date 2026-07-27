@@ -15,6 +15,13 @@ import type { AuditResult, AuditStage } from './types'
 
 const PROGRESS_WRITE_INTERVAL_MS = 1500
 
+// Shared wall-clock budget for a whole audit job, threaded into the crawl and the
+// intelligence stage so they split ONE deadline instead of each assuming it owns
+// the full route maxDuration (600s). 560s leaves ~40s for the final trim + DB
+// persist before the hard kill. The batch runner only STARTS a run within the
+// first 30s of its invocation, so a per-job 560s deadline also fits its 600s cap.
+const AUDIT_DEADLINE_MS = 560_000
+
 /** Persisted result drops per-page HTML + response headers — they are large and
  * not needed to re-score (scoring consumes `analyzed`, not raw HTML). */
 function trimForStorage(result: AuditResult): AuditResult {
@@ -92,6 +99,7 @@ export async function runAuditJob(auditRunId: string): Promise<void> {
       onProgress,
       auditId: auditRunId,
       sessionId: row.session_id,
+      deadline: Date.now() + AUDIT_DEADLINE_MS,
     })
 
     terminated = true

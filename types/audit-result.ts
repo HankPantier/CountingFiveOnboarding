@@ -711,4 +711,8 @@ export interface RunAuditInput {
   // audit_runs row; sessionId is set only when the audit is linked to a client.
   auditId?: string
   sessionId?: string | null
+  // Absolute wall-clock deadline (epoch ms) shared across the whole audit so the
+  // crawl and the intelligence stage split the function's budget instead of each
+  // assuming it owns the full maxDuration. Set by the worker at job entry.
+  deadline?: number
 }
