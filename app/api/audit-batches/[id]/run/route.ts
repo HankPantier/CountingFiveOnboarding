@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { runAuditBatch } from '@/lib/audit/batch-runner'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 600
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

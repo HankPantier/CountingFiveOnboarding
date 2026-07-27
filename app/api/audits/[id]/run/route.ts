@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { runAuditJob } from '@/lib/audit/worker'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 600
 
 // Running states the atomic guard must not start a second run over. Keep in
 // sync with RUNNING_AUDIT_STATES in app/api/cron/sweep-stuck-jobs/route.ts.

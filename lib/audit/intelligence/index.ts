@@ -34,11 +34,14 @@ async function safe<T>(
   }
 }
 
-// Overall wall-clock budget for the whole intelligence stage. The pre-stage work
-// (crawl + PageSpeed) has already consumed part of the route's 300s maxDuration,
-// so intelligence is capped and DEGRADES to a partial bundle rather than letting
-// a slow site run the function past its limit and get swept to 'error' by cron.
+// Fallback wall-clock cap for the whole intelligence stage, used only when the
+// caller supplies no shared audit deadline (e.g. a standalone/refresh call). The
+// normal audit path passes an absolute deadline so intelligence uses whatever
+// time is left after the crawl + PageSpeed, degrading to a PARTIAL bundle rather
+// than overrunning the function limit and getting swept to 'error' by cron.
 const INTELLIGENCE_BUDGET_MS = 180_000
+// Reserve before the shared audit deadline for the worker's final trim + persist.
+const COMPLETION_RESERVE_MS = 20_000
 
 // safe() plus an overall-deadline race. If the budget is already spent the
 // section is skipped without starting; otherwise it runs but can't push past the
@@ -80,6 +83,7 @@ function deriveLocation(result: AuditResult): string {
 export async function buildIntelligence(
   result: AuditResult,
   attribution?: { sessionId?: string | null; auditId?: string | null },
+  sharedDeadline?: number,
 ): Promise<AuditIntelligence | undefined> {
   const intel: AuditIntelligence = {}
   const { pages } = buildCorpus(result)
@@ -94,11 +98,15 @@ export async function buildIntelligence(
     auditId: attribution?.auditId ?? null,
   }
 
-  // The stage is budget-bounded (see budgeted()/INTELLIGENCE_BUDGET_MS) and runs
-  // in four dependency-ordered PARALLEL waves — previously all ~10 passes ran
-  // strictly sequentially, whose summed wall-time overran the route's 300s limit
-  // once Serper off-site discovery went live.
-  const deadline = Date.now() + INTELLIGENCE_BUDGET_MS
+  // The stage is budget-bounded (see budgeted()) and runs in four dependency-
+  // ordered PARALLEL waves — previously all ~10 passes ran strictly sequentially,
+  // whose summed wall-time overran the route limit once Serper off-site discovery
+  // went live. When a shared audit deadline is supplied, intelligence gets all the
+  // time left after the crawl + PageSpeed (minus a persist reserve); otherwise it
+  // falls back to a fixed cap.
+  const deadline = sharedDeadline
+    ? sharedDeadline - COMPLETION_RESERVE_MS
+    : Date.now() + INTELLIGENCE_BUDGET_MS
 
   // ── Stage A: deterministic collectors + on-site niche (feeds later stages) ──
   const [techStack, domainAge, contentLibrary, niche] = await Promise.all([

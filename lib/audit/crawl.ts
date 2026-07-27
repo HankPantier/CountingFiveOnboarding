@@ -21,9 +21,13 @@ const CRAWL_DELAY_MS = 150
 // Cap each response body so a malicious/oversized page can't exhaust memory.
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 // Soft wall-clock budget for the whole crawl; on a large/slow site we stop and
-// score what we have rather than overrun the function's maxDuration (300s) and
-// get the row stuck in a running state. Leaves ~60s for PSI/analysis/scoring.
+// score what we have rather than overrun the function's maxDuration and get the
+// row stuck in a running state.
 const CRAWL_BUDGET_MS = 240_000
+// When a shared audit deadline is supplied, the crawl also stops this many ms
+// BEFORE it, reserving time for PageSpeed + the intelligence stage + persistence
+// so a slow crawl can't consume the whole function budget and starve them.
+const CRAWL_TAIL_RESERVE_MS = 180_000
 
 export interface CrawlResult {
   pages: CrawledPage[]
@@ -267,6 +271,7 @@ export async function crawlSite(
   startUrl: string,
   maxPages = 50,
   onProgress?: (pagesCrawled: number) => void | Promise<void>,
+  sharedDeadline?: number,
 ): Promise<CrawlResult> {
   const baseDomain = (() => {
     try {
@@ -281,7 +286,10 @@ export async function crawlSite(
   const queue: string[] = [startUrl]
   const pages: CrawledPage[] = []
   const errors: CrawlError[] = []
-  const deadline = Date.now() + CRAWL_BUDGET_MS
+  const ownDeadline = Date.now() + CRAWL_BUDGET_MS
+  const deadline = sharedDeadline
+    ? Math.min(ownDeadline, sharedDeadline - CRAWL_TAIL_RESERVE_MS)
+    : ownDeadline
 
   while (queue.length && pages.length < maxPages && Date.now() < deadline) {
     const url = queue.shift() as string

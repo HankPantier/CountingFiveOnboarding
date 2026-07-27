@@ -8,7 +8,7 @@ import { parseBatchUrls, MAX_BATCH_URLS } from '@/lib/audit/parse-batch-urls'
 import { resolveInheritedGroup } from '@/lib/audit/audit-group'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 600
 
 const RUNNING_STATES = ['crawling', 'analyzing', 'researching', 'scoring', 'rendering']
 

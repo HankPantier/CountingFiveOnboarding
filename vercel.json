@@ -14,9 +14,9 @@
     "app/api/content-jobs/[id]/package/route.ts": { "maxDuration": 300 },
     "app/api/content-jobs/[id]/seed-repo/route.ts": { "maxDuration": 300 },
     "app/api/content-jobs/[id]/outlines/generate/route.ts": { "maxDuration": 120 },
-    "app/api/audits/[id]/run/route.ts": { "maxDuration": 300 },
+    "app/api/audits/[id]/run/route.ts": { "maxDuration": 600 },
     "app/api/audits/[id]/draft-session/route.ts": { "maxDuration": 120 },
-    "app/api/audit-batches/route.ts": { "maxDuration": 300 },
-    "app/api/audit-batches/[id]/run/route.ts": { "maxDuration": 300 }
+    "app/api/audit-batches/route.ts": { "maxDuration": 600 },
+    "app/api/audit-batches/[id]/run/route.ts": { "maxDuration": 600 }
   }
 }

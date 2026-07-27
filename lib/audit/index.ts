@@ -74,9 +74,14 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
 
   // ── Crawl ────────────────────────────────────────────────────────────────
   await report('crawling', `Crawling ${domain}…`, 0)
-  const { pages, errors } = await crawlSite(url, maxPages, async (count) => {
-    await report('crawling', `Crawled ${count} page${count === 1 ? '' : 's'}…`, count)
-  })
+  const { pages, errors } = await crawlSite(
+    url,
+    maxPages,
+    async (count) => {
+      await report('crawling', `Crawled ${count} page${count === 1 ? '' : 's'}…`, count)
+    },
+    input.deadline,
+  )
   if (!pages.length) {
     const first = errors[0]
     const detail = first
@@ -169,10 +174,14 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
   // them only at persist time).
   await report('researching', 'Researching niches, competitors & reputation…', pages.length)
   try {
-    result.intelligence = await buildIntelligence(result, {
-      sessionId: input.sessionId,
-      auditId: input.auditId,
-    })
+    result.intelligence = await buildIntelligence(
+      result,
+      {
+        sessionId: input.sessionId,
+        auditId: input.auditId,
+      },
+      input.deadline,
+    )
   } catch (err) {
     console.warn('[audit] intelligence stage failed (non-fatal):', err)
   }
