@@ -78,7 +78,13 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
     await report('crawling', `Crawled ${count} page${count === 1 ? '' : 's'}…`, count)
   })
   if (!pages.length) {
-    throw new Error('Could not crawl any pages. Check the URL and try again.')
+    const first = errors[0]
+    const detail = first
+      ? first.status
+        ? `homepage returned HTTP ${first.status}`
+        : (first.error ?? 'request failed')
+      : 'no reachable HTML pages'
+    throw new Error(`Could not crawl any pages (${detail}). Check the URL and try again.`)
   }
 
   // ── Supporting fetchers (independent → parallel) ───────────────────────────
