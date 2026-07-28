@@ -8,6 +8,9 @@ import { BubbleMenu } from '@tiptap/react/menus'
 import { buildProseExtensions } from '@/lib/editor/prose-extensions'
 import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
 import { ASSET_ROOT, localImageFilename } from '@/lib/editor/page-images'
+import { extractImageBlocks } from '@/lib/editor/block-images'
+import { extractTeamMembers } from '@/lib/editor/team-photos'
+import AssetThumb from './AssetThumb'
 import {
   scanBodySegments,
   serializeBodySegments,
@@ -54,6 +57,54 @@ function structuralDisplay(text: string): string {
     .filter((l) => !/^\s*<!--/.test(l) && !/^icon:/.test(l) && !/^photo:/.test(l))
     .join('\n')
     .trim()
+}
+
+function initials(name: string): string {
+  const w = name.trim().split(/\s+/).filter(Boolean)
+  return ((w[0]?.[0] ?? '') + (w[1]?.[0] ?? '')).toUpperCase()
+}
+
+// A read-only image shown in the right rail beside the section it belongs to.
+// Section images ride inside block annotations and team photos inside `photo:`
+// lines — both stripped by structuralDisplay — so we surface them here instead.
+type RailContent =
+  | { kind: 'image'; image: string; alt: string }
+  | { kind: 'team'; members: { name: string; photo: string | null }[] }
+
+// The rail image (if any) an anchor structural segment introduces: an
+// image-capable block with an `image:` set, or a team-grid with members.
+function segmentRail(seg: BodySegment): RailContent | null {
+  if (seg.kind !== 'structural') return null
+  const withImage = extractImageBlocks(seg.text).find((b) => b.image)
+  if (withImage && withImage.image) {
+    return { kind: 'image', image: withImage.image, alt: withImage.alt ?? '' }
+  }
+  if (/^<!-- block: team-grid\b/m.test(seg.text)) {
+    const members = extractTeamMembers(seg.text).map((m) => ({ name: m.name, photo: m.photo }))
+    if (members.length > 0) return { kind: 'team', members }
+  }
+  return null
+}
+
+type EditorRow = { rail: RailContent | null; items: { seg: BodySegment; index: number }[] }
+
+// Group the flat segment list into rows anchored on rail images. Each segment
+// keeps its ORIGINAL index so prose editing (updateProse keys off it) is
+// unchanged. Segments before the first anchor form a leading, rail-less row.
+function groupRows(segments: BodySegment[]): EditorRow[] {
+  const rows: EditorRow[] = []
+  let current: EditorRow = { rail: null, items: [] }
+  segments.forEach((seg, index) => {
+    const rail = segmentRail(seg)
+    if (rail) {
+      if (current.items.length > 0) rows.push(current)
+      current = { rail, items: [{ seg, index }] }
+    } else {
+      current.items.push({ seg, index })
+    }
+  })
+  if (current.items.length > 0) rows.push(current)
+  return rows
 }
 
 function LinkControl({ editor }: { editor: Editor }) {
@@ -243,6 +294,76 @@ export default function RichBodyEditor({
   )
   const hasProse = cores.some((c) => c)
   const firstProseIndex = segments.findIndex((s) => s.kind === 'prose')
+  const rows = groupRows(segments)
+  const hasRail = rows.some((r) => r.rail)
+
+  const renderSegment = (seg: BodySegment, i: number) => {
+    if (seg.kind === 'structural') {
+      const display = structuralDisplay(seg.text)
+      if (!display) return null
+      return (
+        <div key={`s-${i}`} className="opacity-90">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+            {display}
+          </ReactMarkdown>
+        </div>
+      )
+    }
+    const core = cores[i] ?? ''
+    const showEditor = core !== '' || (!hasProse && i === firstProseIndex)
+    if (!showEditor) return null
+    return (
+      <ProseSegment
+        key={`p-${resetKey}-${i}`}
+        core={core}
+        onCoreChange={(next) => updateProse(i, next)}
+      />
+    )
+  }
+
+  // Read-only rail preview so an editor can see the image anchored to a section.
+  // Replacing/uploading stays in the Media tab — no controls here.
+  const renderRail = (rail: RailContent) => {
+    if (rail.kind === 'image') {
+      return (
+        <figure className="m-0">
+          <AssetThumb
+            sessionId={sessionId}
+            assetPath={ASSET_ROOT + rail.image}
+            alt={rail.alt}
+            className="w-full rounded-card border border-border-default"
+          />
+          <figcaption className="mt-1 text-[11px] font-body text-text-muted break-words">
+            {rail.alt || rail.image}
+          </figcaption>
+        </figure>
+      )
+    }
+    return (
+      <div className="flex flex-wrap gap-2">
+        {rail.members.map((m, i) => (
+          <div
+            key={`${m.name}-${i}`}
+            title={m.name}
+            className="w-12 h-12 rounded-full bg-surface-subtle overflow-hidden flex items-center justify-center flex-shrink-0"
+          >
+            {m.photo ? (
+              <AssetThumb
+                sessionId={sessionId}
+                assetPath={ASSET_ROOT + m.photo}
+                alt={m.name}
+                className="w-full h-full rounded-full"
+              />
+            ) : (
+              <span className="text-[11px] font-heading font-semibold text-brand-navy">
+                {initials(m.name)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <section className="bg-surface-card border border-border-default rounded-lg">
@@ -286,29 +407,18 @@ export default function RichBodyEditor({
           )}
           {title && <h1 className="font-heading font-bold text-2xl text-brand-navy mb-5">{title}</h1>}
 
-          {segments.map((seg, i) => {
-            if (seg.kind === 'structural') {
-              const display = structuralDisplay(seg.text)
-              if (!display) return null
-              return (
-                <div key={`s-${i}`} className="opacity-90">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                    {display}
-                  </ReactMarkdown>
+          {hasRail
+            ? rows.map((row, r) => (
+                <div key={`row-${r}`} className="flex flex-col md:flex-row gap-3 md:gap-6">
+                  <div className="flex-1 min-w-0">
+                    {row.items.map(({ seg, index }) => renderSegment(seg, index))}
+                  </div>
+                  <div className="md:w-48 shrink-0 self-start md:sticky md:top-4">
+                    {row.rail && renderRail(row.rail)}
+                  </div>
                 </div>
-              )
-            }
-            const core = cores[i] ?? ''
-            const showEditor = core !== '' || (!hasProse && i === firstProseIndex)
-            if (!showEditor) return null
-            return (
-              <ProseSegment
-                key={`p-${resetKey}-${i}`}
-                core={core}
-                onCoreChange={(next) => updateProse(i, next)}
-              />
-            )
-          })}
+              ))
+            : segments.map((seg, i) => renderSegment(seg, i))}
         </article>
       )}
     </section>
