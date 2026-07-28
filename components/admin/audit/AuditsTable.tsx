@@ -266,7 +266,7 @@ export default function AuditsTable({
                 {columns.map(({ key, label }) => (
                   <th
                     key={label}
-                    className="px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary"
+                    className="whitespace-nowrap px-4 py-3 font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary"
                   >
                     {key ? (
                       <button
@@ -326,11 +326,11 @@ export default function AuditsTable({
                         <span className="text-xs text-text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <FolderBadge group={r.group} />
                     </td>
                     {showRunBy && (
-                      <td className="px-4 py-3">
+                      <td className="whitespace-nowrap px-4 py-3">
                         {r.runById && r.runBy ? (
                           <Link
                             href={`/admin/audits?runBy=${r.runById}`}
@@ -344,21 +344,21 @@ export default function AuditsTable({
                         )}
                       </td>
                     )}
-                    <td className="px-4 py-3 text-text-secondary">
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-text-secondary">
                       {new Date(r.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
                         year: 'numeric',
                       })}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <AuditStatusBadge status={r.audit_status} />
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{r.pages_crawled ?? '—'}</td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3 text-text-secondary">{r.pages_crawled ?? '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
                       <GradeBadge score={r.overall_score} />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       {delta === null || delta === undefined ? (
                         <span className="text-xs text-text-muted" title="First audit for this site">
                           —
