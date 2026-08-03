@@ -228,6 +228,11 @@ export default function PricingCalculatorEditor({
             <div className="col-span-4">
               <label className={labelCls}>Label</label>
               <input value={line.label} onChange={e => updateLine(i, { label: e.target.value })} className={inputCls} />
+              {line.options && line.options.length > 0 && (
+                <p className="mt-1 text-[11px] font-body text-text-muted">
+                  {line.options.length} advanced option group{line.options.length === 1 ? '' : 's'} configured (preserved on save; edit in JSON)
+                </p>
+              )}
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Base $/mo</label>

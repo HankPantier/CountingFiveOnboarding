@@ -18,7 +18,14 @@ Template mirror: `src/lib/content/pricing-calculator-types.ts`.
   "billingPeriod": "month",
   "intro": "…",
   "implementationFee": { "amount": 2499, "label": "One-time setup", "weeks": "4-6" }, // or null
-  "serviceLines": [ { "id": "bookkeeping", "label": "…", "baseRate": 199, "enabledByDefault": false, "description": "…" } ],
+  "serviceLines": [ {
+    "id": "bookkeeping", "label": "…", "baseRate": 199, "enabledByDefault": false, "description": "…",
+    // Optional per-service options — the site shows these when the service is
+    // toggled on (accordion). Each selected choice adds `addMonthly` to that
+    // service. kind: 'select' (radios, ≤1 chosen) | 'multi' (checkboxes).
+    "options": [ { "id": "frequency", "label": "Frequency", "kind": "select",
+      "choices": [ { "id": "monthly", "label": "Monthly", "addMonthly": 0 }, { "id": "weekly", "label": "Weekly", "addMonthly": 80 } ] } ]
+  } ],
   "sizeTiers":        [ { "id": "solo", "label": "…", "multiplier": 1.0 } ],
   "complexityLevels": [ { "id": "basic", "label": "…", "multiplier": 1.0 } ],
   "addOns": [
@@ -34,7 +41,8 @@ Template mirror: `src/lib/content/pricing-calculator-types.ts`.
 ## Formula (computed client-side in the template)
 
 ```
-monthly = Σ(selected serviceLine.baseRate) × sizeTier.multiplier × complexity.multiplier
+serviceMonthly(line) = line.baseRate + Σ(selected option choice.addMonthly)   // options only when the service is on
+monthly = Σ(serviceMonthly for selected services) × sizeTier.multiplier × complexity.multiplier
         + Σ(flat addOns) + Σ(per-unit addOn.unitRate × qty)
 oneTime = implementationFee.amount   (if implementationFee !== null)
 display = monthly shown as a ±estimateBandPct band → "~$X–$Y / month"

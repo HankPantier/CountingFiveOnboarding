@@ -9,6 +9,20 @@
 // (see docs/pricing-calculator-contract.md).
 // ---------------------------------------------------------------------------
 
+// A per-service option revealed when the service is expanded on the site
+// (accordion). Each selected choice adds its `addMonthly` to that service's
+// monthly total. The admin editor preserves these even though it does not yet
+// expose an editing UI for them (they are hand-authored or AI-seeded).
+export interface ServiceOptionChoice {
+  id: string
+  label: string
+  addMonthly: number
+}
+
+export type ServiceOptionGroup =
+  | { id: string; label: string; kind: 'select'; choices: ServiceOptionChoice[] }
+  | { id: string; label: string; kind: 'multi'; choices: ServiceOptionChoice[] }
+
 export interface PricingServiceLine {
   id: string
   label: string
@@ -16,6 +30,8 @@ export interface PricingServiceLine {
   baseRate: number
   enabledByDefault: boolean
   description?: string
+  // Optional per-service options shown when the service is toggled on.
+  options?: ServiceOptionGroup[]
 }
 
 // A driver rendered as a single-choice control (business size, complexity).

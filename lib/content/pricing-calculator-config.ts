@@ -21,12 +21,22 @@ const label = z.string().trim().min(1).max(200)
 const rate = z.number().finite().min(0).max(1_000_000)
 const multiplier = z.number().finite().min(0).max(100)
 
+const optionChoice = z.object({ id: idSchema, label, addMonthly: rate })
+const optionGroup = z.object({
+  id: idSchema,
+  label,
+  kind: z.enum(['select', 'multi']),
+  choices: z.array(optionChoice).max(12),
+})
+
 const serviceLine = z.object({
   id: idSchema,
   label,
   baseRate: rate,
   enabledByDefault: z.boolean(),
   description: z.string().trim().max(400).optional(),
+  // Preserved through save/emit even though the editor UI can't edit them yet.
+  options: z.array(optionGroup).max(8).optional(),
 })
 
 const multiplierOption = z.object({
