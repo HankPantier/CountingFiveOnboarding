@@ -25,5 +25,9 @@ export async function GET(
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  return NextResponse.json({ ideas: ideas ?? [] })
+  // Polled live for draft/social status — never let a proxy serve a stale list.
+  return NextResponse.json(
+    { ideas: ideas ?? [] },
+    { headers: { 'Cache-Control': 'private, no-store' } }
+  )
 }

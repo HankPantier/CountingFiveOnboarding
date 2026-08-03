@@ -94,7 +94,9 @@ export default function ResourcesPanel({
   const [settling, setSettling] = useState(false)
 
   const refresh = useCallback(async (): Promise<ResourceIdea[]> => {
-    const res = await fetch(`/api/edit/${sessionId}/resources/ideas`)
+    // no-store: this is a live-status poll — a cached response would leave the
+    // draft/social spinners running forever after the row actually completes.
+    const res = await fetch(`/api/edit/${sessionId}/resources/ideas`, { cache: 'no-store' })
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       throw new Error(data.error ?? `Failed to load ideas: ${res.status}`)

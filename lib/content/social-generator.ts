@@ -15,11 +15,7 @@ const SOCIAL_MODEL = 'claude-sonnet-5'
 export type SocialJson = {
   linkedin: string
   twitter: string
-  instagram: {
-    caption: string
-    hashtags: string[]
-    image_concept: string
-  }
+  facebook: string
 }
 
 type SocialInput = {
@@ -55,17 +51,13 @@ Core answer: ${input.answerBlock}
 POST BODY (for specifics — pull real numbers and claims from here):
 ${truncateToTokenBudget(input.body, 2000)}
 
-Write three platform-native promotions. Each must lead with a specific claim, number, or scenario from the post — never a generic teaser.
+Write three platform-native promotions. Each must lead with a specific claim, number, or scenario from the post — never a generic teaser — and each must include the post URL so a reader can click through.
 
 Return ONLY a JSON object:
 {
   "linkedin": "120-200 words. Hook line, one concrete insight from the post, why it matters to the target client, CTA line with the URL. 3-5 hashtags on the final line.",
   "twitter": "A single post of 260 characters or less INCLUDING the URL. One punchy claim or stat. No hashtag stuffing — at most 2.",
-  "instagram": {
-    "caption": "2-4 short paragraphs, conversational but on-brand, ends with a CTA mentioning the link in bio",
-    "hashtags": ["up to 10, niche + local, no # prefix"],
-    "image_concept": "one line describing the visual to post (may reference the post's header image)"
-  }
+  "facebook": "2-4 short sentences, warm and conversational but on-brand. Lead with a concrete hook from the post, end with a clear CTA and the post URL."
 }
 
 ${ANTI_SLOP_RULES}`
@@ -97,24 +89,19 @@ ${ANTI_SLOP_RULES}`
       const parsed = extractJson(text) as {
         linkedin?: unknown
         twitter?: unknown
-        instagram?: { caption?: unknown; hashtags?: unknown; image_concept?: unknown }
+        facebook?: unknown
       }
       if (
         typeof parsed?.linkedin !== 'string' ||
         typeof parsed?.twitter !== 'string' ||
-        typeof parsed?.instagram?.caption !== 'string'
+        typeof parsed?.facebook !== 'string'
       ) {
         throw new Error('missing required fields')
       }
       return {
         linkedin: parsed.linkedin,
         twitter: parsed.twitter,
-        instagram: {
-          caption: parsed.instagram.caption,
-          hashtags: Array.isArray(parsed.instagram.hashtags) ? parsed.instagram.hashtags : [],
-          image_concept:
-            typeof parsed.instagram.image_concept === 'string' ? parsed.instagram.image_concept : '',
-        },
+        facebook: parsed.facebook,
       }
     } catch {
       return { failed: true, text, finishReason }
@@ -143,7 +130,6 @@ export function buildSocialMarkdown(args: {
   social: SocialJson
 }): string {
   const { social } = args
-  const hashtags = social.instagram.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ')
   return `---
 title: Social suggestions — ${args.title.replace(/\n/g, ' ')}
 post: /resources/${args.slug}
@@ -156,13 +142,9 @@ ${social.linkedin.trim()}
 
 ${social.twitter.trim()}
 
-## Instagram
+## Facebook
 
-${social.instagram.caption.trim()}
-
-${hashtags}
-
-*Image concept: ${social.instagram.image_concept.trim() || 'use the post header image'}*
+${social.facebook.trim()}
 `
 }
 
