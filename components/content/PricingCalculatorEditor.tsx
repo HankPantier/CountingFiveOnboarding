@@ -58,10 +58,12 @@ export default function PricingCalculatorEditor({
   sessionId,
   initialConfig,
   initialEnabled,
+  published = false,
 }: {
   sessionId: string
   initialConfig: PricingCalculatorConfig
   initialEnabled: boolean
+  published?: boolean
 }) {
   const [config, setConfig] = useState<PricingCalculatorConfig>(initialConfig)
   const [enabled, setEnabled] = useState(initialEnabled)
@@ -191,7 +193,13 @@ export default function PricingCalculatorEditor({
       const data = await res.json()
       if (!res.ok) throw new Error(data?.error ?? 'Save failed')
       setConfig(data.config as PricingCalculatorConfig)
-      setMessage({ kind: 'ok', text: 'Saved.' })
+      if (data.published && data.synced) {
+        setMessage({ kind: 'ok', text: 'Saved & pushed to draft — click "Publish to live" in the content editor to deploy.' })
+      } else if (data.published && data.syncError) {
+        setMessage({ kind: 'err', text: `Saved, but pushing to the site failed: ${data.syncError}` })
+      } else {
+        setMessage({ kind: 'ok', text: 'Saved.' })
+      }
     } catch (err) {
       setMessage({ kind: 'err', text: err instanceof Error ? err.message : 'Save failed' })
     } finally {
@@ -219,6 +227,12 @@ export default function PricingCalculatorEditor({
 
   return (
     <div className="space-y-6">
+      {published && (
+        <div className="rounded-xl border border-info/30 bg-info/5 px-4 py-3 text-xs font-body text-text-secondary">
+          This client is live. Saving pushes the calculator to the site&rsquo;s <span className="font-semibold">draft</span> branch —
+          then open the content editor and click <span className="font-semibold">Publish to live</span> to deploy it.
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-4 border border-border-default bg-surface-card rounded-xl p-4">
         <label className="flex items-center gap-2 text-sm font-body text-text-primary">

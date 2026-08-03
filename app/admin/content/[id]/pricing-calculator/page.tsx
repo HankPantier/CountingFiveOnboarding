@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
-import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
+import { loadPricingCalculatorForSession } from '@/lib/content/pricing-calculator-repo-sync'
 import PricingCalculatorEditor from '@/components/content/PricingCalculatorEditor'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -29,17 +29,17 @@ export default async function PricingCalculatorPage({
     .single()
   if (!session) notFound()
 
-  const record = await getPricingCalculator(id)
+  const record = await loadPricingCalculatorForSession(id)
   const firmName = (session.schema_data as SessionSchema | null)?.business?.name
 
   return (
     <main className="p-8 max-w-[1000px] mx-auto">
       <div className="mb-8">
         <Link
-          href={`/admin/content/${id}`}
+          href={record.published ? `/admin/content/${id}/edit` : `/admin/content/${id}`}
           className="text-sm font-body text-text-muted hover:text-brand-cyan transition-colors"
         >
-          &larr; Back to content workflow
+          &larr; Back to {record.published ? 'content editor' : 'content workflow'}
         </Link>
         <div className="mt-4">
           <h1 className="text-2xl font-heading font-bold text-brand-navy">Pricing calculator</h1>
@@ -53,6 +53,7 @@ export default async function PricingCalculatorPage({
         sessionId={id}
         initialConfig={record.config}
         initialEnabled={record.enabled}
+        published={record.published}
       />
     </main>
   )

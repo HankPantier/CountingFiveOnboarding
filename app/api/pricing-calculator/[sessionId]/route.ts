@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
+import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
+import { savePricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
-  getPricingCalculator,
-  savePricingCalculator,
-} from '@/lib/content/pricing-calculator-config'
+  loadPricingCalculatorForSession,
+  syncPricingCalculatorToRepo,
+} from '@/lib/content/pricing-calculator-repo-sync'
+import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
+export const maxDuration = 60
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -14,7 +18,7 @@ interface PutBody {
   enabled?: boolean
 }
 
-// Load the session's pricing calculator (or the default when none exists yet).
+// Load the session's pricing calculator (DB row → repo file → default).
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ sessionId: string }> }
@@ -26,11 +30,17 @@ export async function GET(
   const auth = await requireSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
 
-  const record = await getPricingCalculator(sessionId)
-  return NextResponse.json(record)
+  const record = await loadPricingCalculatorForSession(sessionId)
+  return NextResponse.json({
+    config: record.config,
+    enabled: record.enabled,
+    exists: record.exists,
+    published: record.published,
+  })
 }
 
-// Upsert the session's pricing calculator config + enabled flag.
+// Upsert the config + enabled flag. For published clients, also push the
+// calculator to the repo draft branch so it reaches the live site on publish.
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ sessionId: string }> }
@@ -50,16 +60,42 @@ export async function PUT(
   }
 
   const enabled = body.enabled !== false // default true
+  let config
   try {
-    const config = await savePricingCalculator(
-      sessionId,
-      body.config,
-      enabled,
-      auth.user.id
-    )
-    return NextResponse.json({ config, enabled, exists: true })
+    config = await savePricingCalculator(sessionId, body.config, enabled, auth.user.id)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to save'
     return NextResponse.json({ error: message }, { status: 500 })
   }
+
+  // Push to the repo for published clients so the change reaches the site.
+  const supabase = createServerClient()
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('github_repo, phase')
+    .eq('session_id', sessionId)
+    .maybeSingle()
+  const published = !!job?.github_repo && (job?.phase ?? 0) >= 6
+
+  let synced = false
+  let syncError: string | undefined
+  if (published && job?.github_repo) {
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('schema_data')
+      .eq('id', sessionId)
+      .single()
+    const firmName = ((session?.schema_data ?? {}) as SessionSchema).business?.name ?? 'the firm'
+    const result = await syncPricingCalculatorToRepo({
+      githubRepo: job.github_repo,
+      config,
+      enabled,
+      firmName,
+      actor: { name: auth.user.name, email: auth.user.email },
+    })
+    synced = result.ok
+    syncError = result.error
+  }
+
+  return NextResponse.json({ config, enabled, exists: true, published, synced, syncError })
 }
