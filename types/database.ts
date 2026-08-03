@@ -876,6 +876,51 @@ export type Database = {
           },
         ]
       }
+      pricing_calculators: {
+        Row: {
+          config: Json
+          created_at: string
+          enabled: boolean
+          id: string
+          session_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          session_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          session_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pricing_calculators_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pricing_calculators_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rate_limit_events: {
         Row: {
           created_at: string

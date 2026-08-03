@@ -31,6 +31,13 @@ import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
 import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
+import {
+  buildPricingCalculatorPageMd,
+  pricingCalculatorJsonEntry,
+  PRICING_CALCULATOR_URL,
+  PRICING_CALCULATOR_NAV_LABEL,
+} from '@/lib/content/pricing-calculator-json-builder'
 import { siteHost } from '@/lib/content/deliverable-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
@@ -340,6 +347,15 @@ export async function assembleContentPackage(
     siteHost(session.website_url)
   )
 
+  // Pricing calculator — emitted only when the session has an enabled row (the
+  // operator opted in via the admin editor). Appends a nav entry so the
+  // /pricing-calculator page is reachable.
+  const pricingCalc = await getPricingCalculator(job.session_id)
+  const shipPricingCalculator = pricingCalc.exists && pricingCalc.enabled
+  if (shipPricingCalculator && !navJson.primary.some(item => item.url === PRICING_CALCULATOR_URL)) {
+    navJson.primary.push({ label: PRICING_CALCULATOR_NAV_LABEL, url: PRICING_CALCULATOR_URL })
+  }
+
   if (!palette) console.warn(`[package] brand.json — palette not locked, using neutral fallback`)
   if (!designTokens) console.warn(`[package] design.json — design tokens not locked, using neutral fallback`)
 
@@ -463,6 +479,15 @@ export async function assembleContentPackage(
     { path: 'content/brand.json', content: JSON.stringify(brandJson, null, 2) },
     { path: 'content/design.json', content: JSON.stringify(designJson, null, 2) },
     { path: 'content/nav.json', content: JSON.stringify(navJson, null, 2) },
+    ...(shipPricingCalculator
+      ? [
+          pricingCalculatorJsonEntry(pricingCalc.config),
+          {
+            path: 'content/pages/pricing-calculator.md',
+            content: buildPricingCalculatorPageMd(firmName, pricingCalc.config),
+          },
+        ]
+      : []),
     { path: 'content/redirects.csv', content: redirectsCsv },
 
     // public/ — served at canonical URLs by Next.js. No static sitemap.xml:
