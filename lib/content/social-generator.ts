@@ -5,6 +5,7 @@ import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-vo
 import { ANTI_SLOP_RULES } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { extractJson } from './extract-json'
 import { DRAFT_BRANCH, readFile, writeFile, FileNotFoundError } from '@/lib/github/repo-files'
 import { splitFile } from '@/lib/editor/frontmatter'
 import type { SessionSchema } from '@/types/session-schema'
@@ -69,47 +70,71 @@ Return ONLY a JSON object:
 
 ${ANTI_SLOP_RULES}`
 
-  const { text, usage } = await generateText({
-    model: anthropic(SOCIAL_MODEL),
-    prompt,
-    maxOutputTokens: 1500,
-  })
-
-  checkTokenBudget('social', input.slug, usage?.inputTokens, 5000)
-  await recordTokenUsage({
-    task: 'content',
-    contentJobId: input.contentJobId,
-    sessionId: input.sessionId,
-    stage: 'social',
-    pageUrl: input.slug,
-    model: SOCIAL_MODEL,
-    inputTokens: usage?.inputTokens,
-    outputTokens: usage?.outputTokens,
-  })
-
-  try {
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
-    if (
-      typeof parsed?.linkedin !== 'string' ||
-      typeof parsed?.twitter !== 'string' ||
-      typeof parsed?.instagram?.caption !== 'string'
-    ) {
-      return null
+  // One model call + parse. Returns the validated SocialJson, or the raw text +
+  // finishReason so the caller can retry with a larger budget. The three
+  // platform blocks together can overrun a tight budget and truncate the JSON
+  // mid-object (a `length` finish confirms it) — hence the factored retry.
+  const attempt = async (
+    maxOutputTokens: number
+  ): Promise<SocialJson | { failed: true; text: string; finishReason: string }> => {
+    const { text, usage, finishReason } = await generateText({
+      model: anthropic(SOCIAL_MODEL),
+      prompt,
+      maxOutputTokens,
+    })
+    checkTokenBudget('social', input.slug, usage?.inputTokens, 5000)
+    await recordTokenUsage({
+      task: 'content',
+      contentJobId: input.contentJobId,
+      sessionId: input.sessionId,
+      stage: 'social',
+      pageUrl: input.slug,
+      model: SOCIAL_MODEL,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    })
+    try {
+      const parsed = extractJson(text) as {
+        linkedin?: unknown
+        twitter?: unknown
+        instagram?: { caption?: unknown; hashtags?: unknown; image_concept?: unknown }
+      }
+      if (
+        typeof parsed?.linkedin !== 'string' ||
+        typeof parsed?.twitter !== 'string' ||
+        typeof parsed?.instagram?.caption !== 'string'
+      ) {
+        throw new Error('missing required fields')
+      }
+      return {
+        linkedin: parsed.linkedin,
+        twitter: parsed.twitter,
+        instagram: {
+          caption: parsed.instagram.caption,
+          hashtags: Array.isArray(parsed.instagram.hashtags) ? parsed.instagram.hashtags : [],
+          image_concept:
+            typeof parsed.instagram.image_concept === 'string' ? parsed.instagram.image_concept : '',
+        },
+      }
+    } catch {
+      return { failed: true, text, finishReason }
     }
-    return {
-      linkedin: parsed.linkedin,
-      twitter: parsed.twitter,
-      instagram: {
-        caption: parsed.instagram.caption,
-        hashtags: Array.isArray(parsed.instagram.hashtags) ? parsed.instagram.hashtags : [],
-        image_concept: parsed.instagram.image_concept ?? '',
-      },
-    }
-  } catch {
-    console.error(`[social-gen] Failed to parse JSON for "${input.title}"`)
+  }
+
+  let res = await attempt(4000)
+  if ('failed' in res) {
+    console.warn(
+      `[social-gen] Parse failed for "${input.title}" (finish=${res.finishReason}) — retrying with larger budget. Raw: ${res.text.slice(0, 200)}`
+    )
+    res = await attempt(8000)
+  }
+  if ('failed' in res) {
+    console.error(
+      `[social-gen] Parse failed for "${input.title}" after retry (finish=${res.finishReason}). Raw: ${res.text.slice(0, 500)}`
+    )
     return null
   }
+  return res
 }
 
 export function buildSocialMarkdown(args: {

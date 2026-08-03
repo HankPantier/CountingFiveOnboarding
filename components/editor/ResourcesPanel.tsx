@@ -31,6 +31,7 @@ export type ResourceIdea = {
   draft_path: string | null
   draft_error: string | null
   social_path: string | null
+  social_status: 'idle' | 'running' | 'complete' | 'error'
   reverse_links: ReverseLink[]
 }
 
@@ -146,16 +147,25 @@ export default function ResourcesPanel({
             setBrainstorming(false)
             brainstormBaseline.current = null
           }
-          // Clear social spinners once the path lands.
+          // Clear social spinners once the path lands (success) or the row
+          // reports an error — otherwise a failed backfill spins forever.
+          let socialFailed = false
           setSocialBusy((prev) => {
             if (prev.size === 0) return prev
             const stillBusy = new Set<string>()
             for (const id of prev) {
               const idea = next.find((i) => i.id === id)
-              if (idea && !idea.social_path) stillBusy.add(id)
+              if (!idea) continue
+              if (idea.social_path) continue
+              if (idea.social_status === 'error') {
+                socialFailed = true
+                continue
+              }
+              stillBusy.add(id)
             }
             return stillBusy.size === prev.size ? prev : stillBusy
           })
+          if (socialFailed) setError('Social generation failed — try again')
         })
         .catch(() => {})
     }, POLL_MS)
