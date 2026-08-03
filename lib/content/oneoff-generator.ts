@@ -7,6 +7,7 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { DRAFT_BRANCH, listTree, readFile } from '@/lib/github/repo-files'
+import { extractJson } from './extract-json'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -180,33 +181,57 @@ Return ONLY a JSON array:
 
 ${ANTI_SLOP_RULES}`
 
-    const { text, usage } = await generateText({
-      model: anthropic(ONEOFF_MODEL),
-      prompt: genPrompt,
-      maxOutputTokens: 1500,
-    })
-    checkTokenBudget('oneoff', generationId, usage?.inputTokens, 5000)
-    await recordTokenUsage({
-      task: 'content',
-      contentJobId: row.content_job_id,
-      sessionId: row.session_id,
-      stage: 'oneoff',
-      model: ONEOFF_MODEL,
-      inputTokens: usage?.inputTokens,
-      outputTokens: usage?.outputTokens,
-    })
+    // One model call + parse. Returns the validated options, or the raw text +
+    // finishReason so the caller can retry with a larger budget. 3 full copy
+    // options can overrun a tight budget and truncate the JSON mid-array (a
+    // `length` finish confirms it) — hence the factored retry below.
+    const attempt = async (
+      maxOutputTokens: number
+    ): Promise<
+      { ok: true; options: OneOffOption[] } | { ok: false; text: string; finishReason: string }
+    > => {
+      const { text, usage, finishReason } = await generateText({
+        model: anthropic(ONEOFF_MODEL),
+        prompt: genPrompt,
+        maxOutputTokens,
+      })
+      checkTokenBudget('oneoff', generationId, usage?.inputTokens, 5000)
+      await recordTokenUsage({
+        task: 'content',
+        contentJobId: row.content_job_id,
+        sessionId: row.session_id,
+        stage: 'oneoff',
+        model: ONEOFF_MODEL,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      })
+      try {
+        const parsed = extractJson(text)
+        if (!Array.isArray(parsed)) throw new Error('not an array')
+        const options = parsed
+          .filter((o) => o && typeof o.text === 'string' && o.text.trim())
+          .map((o) => ({ label: typeof o.label === 'string' ? o.label : 'Option', text: o.text.trim() }))
+        if (options.length === 0) throw new Error('no options')
+        return { ok: true, options }
+      } catch {
+        return { ok: false, text, finishReason }
+      }
+    }
 
-    let options: OneOffOption[]
-    try {
-      const parsed = JSON.parse(text.replace(/```json?\n?/g, '').replace(/```/g, '').trim())
-      if (!Array.isArray(parsed)) throw new Error('not an array')
-      options = parsed
-        .filter((o) => o && typeof o.text === 'string' && o.text.trim())
-        .map((o) => ({ label: typeof o.label === 'string' ? o.label : 'Option', text: o.text.trim() }))
-      if (options.length === 0) throw new Error('no options')
-    } catch {
+    let res = await attempt(4000)
+    if (!res.ok) {
+      console.warn(
+        `[oneoff] Parse failed (finish=${res.finishReason}) — retrying with larger budget. Raw: ${res.text.slice(0, 200)}`
+      )
+      res = await attempt(8000)
+    }
+    if (!res.ok) {
+      console.error(
+        `[oneoff] Parse failed after retry (finish=${res.finishReason}). Raw: ${res.text.slice(0, 500)}`
+      )
       return await fail('Generation returned unparseable output — try again')
     }
+    const options = res.options
 
     await supabase
       .from('oneoff_generations')
