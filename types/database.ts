@@ -921,6 +921,51 @@ export type Database = {
           },
         ]
       }
+      site_settings: {
+        Row: {
+          booking_provider: string
+          booking_url: string
+          created_at: string
+          id: string
+          session_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          booking_provider?: string
+          booking_url?: string
+          created_at?: string
+          id?: string
+          session_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          booking_provider?: string
+          booking_url?: string
+          created_at?: string
+          id?: string
+          session_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_settings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rate_limit_events: {
         Row: {
           created_at: string

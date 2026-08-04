@@ -529,6 +529,100 @@ export async function patchSiteConfigSiteUrl(
   return true
 }
 
+// Read the current booking config out of the repo's site.config.ts by regex.
+// Returns null when the file/booking block is absent. Used to seed the admin
+// editor for an already-published client (site.config is the source of truth).
+const CALENDLY_ORIGIN = 'https://*.calendly.com'
+const SAFE_BOOKING_URL_RE = /^https:\/\/[^\s'"]+$/
+
+export async function readSiteConfigBooking(
+  slug: string,
+  branch: string
+): Promise<{ provider: 'none' | 'calendly' | 'iframe'; url: string } | null> {
+  let blob: FileBlob
+  try {
+    blob = await readFile(slug, 'site.config.ts', branch)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return null
+    throw err
+  }
+  const block = blob.content.match(/booking\s*:\s*\{([\s\S]*?)\n\s*\}/)
+  if (!block) return null
+  // Anchor to line start so the block's comments (which mention
+  // "provider: 'calendly'") are not read as the real config.
+  const providerM = block[1].match(/^\s*provider\s*:\s*['"](none|calendly|iframe)['"]/m)
+  const urlM = block[1].match(/^\s*url\s*:\s*['"]([^'"]*)['"]/m)
+  return {
+    provider: (providerM?.[1] as 'none' | 'calendly' | 'iframe') ?? 'none',
+    url: urlM?.[1] ?? '',
+  }
+}
+
+// Patch the booking provider/url inside the site.config.ts `booking: { … }`
+// block, and (for calendly) ensure the CSP origin is present. Mirrors
+// patchSiteConfigSiteUrl's regex-replace approach. Returns true when a write
+// happened. A non-https url with a non-'none' provider is refused.
+export async function patchSiteConfigBooking(
+  slug: string,
+  branch: string,
+  booking: { provider: 'none' | 'calendly' | 'iframe'; url: string },
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<boolean> {
+  const provider = booking.provider
+  const url = provider === 'none' ? '' : booking.url.trim()
+  if (provider !== 'none' && !SAFE_BOOKING_URL_RE.test(url)) {
+    console.warn(`[repo-files] Refusing unsafe booking url, not patching site.config.ts: ${url}`)
+    return false
+  }
+
+  let blob: FileBlob
+  try {
+    blob = await readFile(slug, 'site.config.ts', branch)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return false
+    throw err
+  }
+
+  // Anchor key matches to the start of a line (multiline) so the booking
+  // block's own explanatory comments — which literally contain
+  // "provider: 'calendly'" and a calendly URL — are never mistaken for the
+  // real config lines.
+  let next = blob.content.replace(/(booking\s*:\s*\{)([\s\S]*?)(\n\s*\})/, (whole, open: string, body: string, close: string) => {
+    let b = body
+    b = /^\s*provider\s*:/m.test(b)
+      ? b.replace(/^(\s*provider\s*:\s*)(['"])[^'"]*\2/m, `$1'${provider}'`)
+      : `${b.trimEnd()}\n    provider: '${provider}',`
+    b = /^\s*url\s*:/m.test(b)
+      ? b.replace(/^(\s*url\s*:\s*)(['"])[^'"]*\2/m, `$1'${url}'`)
+      : `${b.trimEnd()}\n    url: '${url}',`
+    return `${open}${b}${close}`
+  })
+
+  // Keep the Calendly CSP origin in sync with the provider choice.
+  next = next.replace(/(extraOrigins\s*:\s*)\[([\s\S]*?)\]/, (whole, prefix: string, inner: string) => {
+    const has = inner.includes(CALENDLY_ORIGIN)
+    if (provider === 'calendly' && !has) {
+      const sep = inner.trim() ? `${inner.replace(/\s*$/, '')} ` : ''
+      return `${prefix}[${sep}'${CALENDLY_ORIGIN}']`
+    }
+    if (provider !== 'calendly' && has) {
+      const cleaned = inner
+        .replace(new RegExp(`['"]${CALENDLY_ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]\\s*,?`), '')
+        .replace(/,\s*\]/, ']')
+        .trim()
+      return `${prefix}[${cleaned}]`
+    }
+    return whole
+  })
+
+  if (next === blob.content) return false
+  await writeFile(slug, 'site.config.ts', next, branch, `Set booking to ${provider}`, {
+    expectedSha: blob.sha,
+    ...options,
+  })
+  return true
+}
+
 // Returns { merged: true } on fast-forward / clean merge,
 // or { merged: false, prUrl } if a PR had to be opened due to conflict.
 export type MergeResult =

@@ -181,6 +181,21 @@ export default async function ContentWorkflowPage({
         </Link>
       </div>
 
+      <div className="mb-8 flex items-center justify-between border border-border-default bg-surface-card shadow-subtle rounded-xl p-4">
+        <div>
+          <h2 className="text-sm font-heading font-semibold text-brand-navy">Contact &amp; scheduling</h2>
+          <p className="text-xs font-body text-text-muted mt-0.5">
+            Set the booking link behind the site&rsquo;s contact drawer (&ldquo;Book a call&rdquo;).
+          </p>
+        </div>
+        <Link
+          href={`/admin/content/${session.id}/contact-settings`}
+          className="border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-colors hover:bg-brand-cyan/10"
+        >
+          Edit contact settings
+        </Link>
+      </div>
+
       <GithubRepoConnector
         contentJobId={contentJobId}
         initialRepo={contentJob?.github_repo ?? null}

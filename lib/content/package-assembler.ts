@@ -24,8 +24,10 @@ import {
   ensureDraftBranch,
   pushEntriesToBranch,
   patchSiteConfigSiteUrl,
+  patchSiteConfigBooking,
   removeStaleStaticSitemap,
 } from '@/lib/github/repo-files'
+import { getSiteSettings } from '@/lib/content/site-settings'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
@@ -75,6 +77,7 @@ export type DeployContext = {
   githubRepo: string
   entries: { path: string; content: string | Buffer }[]
   siteUrl: string
+  booking: { provider: 'none' | 'calendly' | 'iframe'; url: string }
   author: { authorName: string; authorEmail: string }
 }
 
@@ -600,12 +603,14 @@ export async function assembleContentPackage(
   // ERRORS.md review artifacts stay out.
   let deploy: DeployContext | null = null
   if (job.github_repo) {
+    const siteSettings = await getSiteSettings(job.session_id)
     deploy = {
       githubRepo: job.github_repo,
       entries: entries.filter(
         (e) => e.path.startsWith('content/') || e.path.startsWith('public/')
       ),
       siteUrl: session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://'),
+      booking: { provider: siteSettings.bookingProvider, url: siteSettings.bookingUrl },
       author: { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' },
     }
   }
@@ -638,7 +643,7 @@ export async function assembleContentPackage(
 // PushOutcome rather than throwing, since a GitHub hiccup must never surface as
 // an assembly failure.
 export async function pushAssembledDeliverable(deploy: DeployContext): Promise<PushOutcome> {
-  const { githubRepo, entries, siteUrl, author } = deploy
+  const { githubRepo, entries, siteUrl, booking, author } = deploy
   try {
     await ensureDraftBranch(githubRepo)
     const pushed = await pushEntriesToBranch(
@@ -658,6 +663,11 @@ export async function pushAssembledDeliverable(deploy: DeployContext): Promise<P
       await patchSiteConfigSiteUrl(githubRepo, DRAFT_BRANCH, siteUrl, author)
     } catch (err) {
       console.warn(`[content-job] site.config siteUrl patch failed for ${githubRepo}:`, err)
+    }
+    try {
+      await patchSiteConfigBooking(githubRepo, DRAFT_BRANCH, booking, author)
+    } catch (err) {
+      console.warn(`[content-job] site.config booking patch failed for ${githubRepo}:`, err)
     }
     try {
       await removeStaleStaticSitemap(githubRepo, DRAFT_BRANCH, author)
