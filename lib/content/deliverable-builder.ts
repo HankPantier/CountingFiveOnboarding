@@ -27,7 +27,11 @@ export type PageMarkdownInput = Pick<
   | 'faq_block'
   | 'llm_citation_note'
   | 'content_markdown'
->
+> & {
+  /** Transient (not a DB column) — set by the package assembler's Ink & Clay
+   * pass to render the small-caps kicker above a statement-variant hero. */
+  hero_eyebrow?: string
+}
 
 export type CtaInfo = { text: string; url: string }
 
@@ -149,7 +153,7 @@ secondary_keywords: ${JSON.stringify(secondaryKw)}
 canonical_url: ${yv(page.canonical_url ?? '')}
 schema_markup: ${yv(page.schema_markup_type ?? 'WebPage')}
 ${cta ? `cta_text: ${yv(cta.text)}\ncta_url: ${yv(cta.url)}\n` : ''}hero: ${yv(page.hero_block ?? 'page-header')}
-${page.hero_variant ? `hero_variant: ${yv(page.hero_variant)}\n` : ''}${page.hero_image ? `hero_image: ${yv(page.hero_image)}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${yv(page.hero_image_alt.replace(/\n/g, ' '))}\n` : ''}${page.hero_subhead ? `hero_subhead: ${yv(page.hero_subhead.replace(/\n/g, ' '))}\n` : ''}${heroHeadline ? `hero_headline: ${yv(heroHeadline)}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
+${page.hero_variant ? `hero_variant: ${yv(page.hero_variant)}\n` : ''}${page.hero_eyebrow ? `hero_eyebrow: ${yv(page.hero_eyebrow)}\n` : ''}${page.hero_image ? `hero_image: ${yv(page.hero_image)}\n` : ''}${page.hero_image && page.hero_image_alt ? `hero_image_alt: ${yv(page.hero_image_alt.replace(/\n/g, ' '))}\n` : ''}${page.hero_subhead ? `hero_subhead: ${yv(page.hero_subhead.replace(/\n/g, ' '))}\n` : ''}${heroHeadline ? `hero_headline: ${yv(heroHeadline)}\n` : ''}answer_block: ${JSON.stringify(page.answer_block ?? '')}
 eeat_signals: ${JSON.stringify(eeatSignals)}
 internal_links: ${JSON.stringify(internalLinks)}
 faq_block: ${JSON.stringify(faqBlock)}

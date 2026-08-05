@@ -9,6 +9,7 @@ export type DesignJson = {
     headingFont: string
     bodyFont: string
     googleFontsUrl: string  // ready-to-embed <link> href
+    accentFont: string      // italic-serif accent role (Ink & Clay); Fraunces default
   }
   roundness: Roundness
   density: Density

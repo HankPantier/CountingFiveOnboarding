@@ -57,3 +57,6 @@ raw-docs/screenshots/
 # (not part of the app)
 /build_revaltus_report.py
 /_prev_*.png
+
+# Brainstorm visual-companion artifacts
+.superpowers/

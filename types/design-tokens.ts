@@ -8,6 +8,7 @@ export type DesignTokens = {
     headingFont: string
     bodyFont: string
     label: string
+    accentFont?: string
   }
   roundness: Roundness
   density: Density

@@ -89,6 +89,7 @@ export function suggestDesignTokens(
       headingFont: pairing.headingFont,
       bodyFont: pairing.bodyFont,
       label: pairing.label,
+      accentFont: pairing.accentFont,
     },
     roundness: pickRoundness(feel, hasWarmSignal),
     density: pickDensity(hasWarmSignal),

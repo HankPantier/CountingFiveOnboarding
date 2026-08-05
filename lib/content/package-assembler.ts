@@ -30,6 +30,7 @@ import {
 import { getSiteSettings } from '@/lib/content/site-settings'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
+import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/design-variant-injector'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
 import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
@@ -436,16 +437,30 @@ export async function assembleContentPackage(
     }
   }
 
-  const pagesWithFaq = pages.map(p => ({
-    ...p,
-    content_markdown: injectTeamPhotos(
-      standardizeContactPage({
-        ...p,
-        content_markdown: appendFaqBlock(p),
-      }),
-      photoMap
-    ),
-  }))
+  // Ink & Clay auto-selection: home hero → statement (with a small-caps
+  // eyebrow), and industry-cards → the deep "ink" index band, so the deliverable
+  // ships in the template's design language rather than a flat default.
+  const heroEyebrow = deriveHeroEyebrow({
+    city: schema.locations?.[0]?.city,
+    state: schema.locations?.[0]?.state,
+    foundingYear: schema.business?.foundingYear,
+  })
+  const pagesWithFaq = pages.map(p => {
+    const transformed = {
+      ...p,
+      content_markdown: injectTeamPhotos(
+        standardizeContactPage({
+          ...p,
+          content_markdown: applyInkBands(appendFaqBlock(p)),
+        }),
+        photoMap
+      ),
+    }
+    if (isHomePage(p.page_url)) {
+      return { ...transformed, hero_block: 'hero', hero_variant: 'statement', hero_eyebrow: heroEyebrow }
+    }
+    return transformed
+  })
 
   const pageFiles = buildAllPageFiles(pagesWithFaq, firmName, {
     websiteUrl: session.website_url,

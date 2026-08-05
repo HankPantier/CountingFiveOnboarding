@@ -8,6 +8,9 @@ export type TypePairing = {
   bodyFont: string
   description: string
   googleFontsUrl: string
+  /** Italic-serif accent role (Ink & Clay) for emphasis words + numerals.
+   * Omitted → the template's universal default (Fraunces) applies. */
+  accentFont?: string
 }
 
 function gfUrl(families: string[]): string {

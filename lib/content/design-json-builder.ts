@@ -19,6 +19,9 @@ export function buildDesignJson(tokens: DesignTokens): DesignJson {
   const headingFont = pairing?.headingFont ?? tokens.typePairing.headingFont
   const bodyFont = pairing?.bodyFont ?? tokens.typePairing.bodyFont
   const googleFontsUrl = pairing?.googleFontsUrl ?? ''
+  // Ink & Clay accent role. The template currently loads Fraunces universally,
+  // so that's the honest default until per-client accent fonts are wired.
+  const accentFont = pairing?.accentFont ?? tokens.typePairing.accentFont ?? 'Fraunces'
 
   // Derive spacing from density
   const densitySpacingValues = densitySpacing(tokens.density)
@@ -31,6 +34,7 @@ export function buildDesignJson(tokens: DesignTokens): DesignJson {
       headingFont,
       bodyFont,
       googleFontsUrl,
+      accentFont,
     },
     roundness: tokens.roundness,
     density: tokens.density,
