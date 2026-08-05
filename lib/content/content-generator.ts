@@ -729,8 +729,11 @@ export async function runContentGeneration(
     await Promise.all(batch.map(async (outline) => {
       if (doneUrls.has(outline.page_url)) return
 
-      await generateSinglePage(contentJobId, outline.id)
-      completedThisRun += 1
+      // Only a genuine completion counts as progress for the anti-cascade
+      // guard below — an 'error'/'skipped' outcome must NOT let an all-failing
+      // job re-chain forever or send a spurious "in progress" email.
+      const res = await generateSinglePage(contentJobId, outline.id)
+      if (res.status === 'complete') completedThisRun += 1
     }))
   }
 

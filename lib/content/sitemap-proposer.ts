@@ -16,7 +16,9 @@ type ProposedSitemap = NonNullable<SessionSchema['proposed_sitemap']>
 type ProposedPage = ProposedSitemap[number]
 
 const MAX_PAGES = 60
-const normUrl = (u: string) => u.trim().replace(/\/+$/, '').toLowerCase()
+// Canonical key for deduping sitemap URLs (shared with the confirm endpoint):
+// trims, drops trailing slashes, lowercases. "/" and "" collapse to the same key.
+export const normUrl = (u: string) => u.trim().replace(/\/+$/, '').toLowerCase()
 
 // Local-SEO caps. Geo landing pages help local intent but thin/duplicate geo
 // pages are penalized as doorway pages, so we cap deterministically: at most

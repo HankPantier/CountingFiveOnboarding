@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
+import { normUrl } from '@/lib/content/sitemap-proposer'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -53,17 +54,29 @@ export async function POST(
   const authCheck = await requireContentJobAccess(_jobId)
   if (authCheck instanceof NextResponse) return authCheck
   const { id } = await params
-  const { pages }: { pages: SitemapPage[] } = await req.json()
+  const { pages: rawPages }: { pages: SitemapPage[] } = await req.json()
 
   // Validate
-  if (!pages || pages.length === 0) {
+  if (!rawPages || rawPages.length === 0) {
     return NextResponse.json({ error: 'At least one page is required' }, { status: 400 })
   }
-  for (const page of pages) {
+  for (const page of rawPages) {
     if (!page.title?.trim() || !page.url?.trim()) {
       return NextResponse.json({ error: 'All pages must have a title and URL' }, { status: 400 })
     }
   }
+
+  // Dedup by canonical URL before seeding. page_outlines has no unique
+  // constraint on (content_job_id, page_url), so a duplicate URL (easy to
+  // introduce when hand-editing the sitemap) would create duplicate outline
+  // rows and make generateOutlineForPage's .single() research lookup throw.
+  const seen = new Set<string>()
+  const pages = rawPages.filter((p) => {
+    const key = normUrl(p.url)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 
   const supabase = createServerClient()
 

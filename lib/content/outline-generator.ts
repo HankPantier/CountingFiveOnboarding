@@ -44,7 +44,8 @@ export async function generateOutlineForPage(
     .select('target_keyword, secondary_keywords, competitor_references, existing_content')
     .eq('content_job_id', contentJobId)
     .eq('page_url', pageUrl)
-    .single()
+    .limit(1)
+    .maybeSingle()
 
   const targetKeyword = research?.target_keyword ?? pageTitle.toLowerCase()
   const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
@@ -64,13 +65,13 @@ export async function generateOutlineForPage(
   // Site-wide content gaps from the audit (if the session came from one).
   const cg = schema.content_gaps
   const gapsBlock =
-    cg && (cg.authorityGaps.length || cg.conversionGaps.length || cg.nicheGaps.length || cg.teamExpertiseGaps.length)
+    cg && (cg.authorityGaps?.length || cg.conversionGaps?.length || cg.nicheGaps?.length || cg.teamExpertiseGaps?.length)
       ? [
           'SITE AUDIT — CONTENT GAPS (address where relevant to this page):',
-          cg.conversionGaps.length ? `Conversion: ${cg.conversionGaps.slice(0, 5).join('; ')}` : '',
-          cg.authorityGaps.length ? `Depth/authority: ${cg.authorityGaps.slice(0, 5).join('; ')}` : '',
-          cg.nicheGaps.length ? `Coverage: ${cg.nicheGaps.slice(0, 5).join('; ')}` : '',
-          cg.teamExpertiseGaps.length ? `Team expertise to leverage: ${cg.teamExpertiseGaps.slice(0, 5).join('; ')}` : '',
+          cg.conversionGaps?.length ? `Conversion: ${cg.conversionGaps.slice(0, 5).join('; ')}` : '',
+          cg.authorityGaps?.length ? `Depth/authority: ${cg.authorityGaps.slice(0, 5).join('; ')}` : '',
+          cg.nicheGaps?.length ? `Coverage: ${cg.nicheGaps.slice(0, 5).join('; ')}` : '',
+          cg.teamExpertiseGaps?.length ? `Team expertise to leverage: ${cg.teamExpertiseGaps.slice(0, 5).join('; ')}` : '',
         ]
           .filter(Boolean)
           .join('\n')

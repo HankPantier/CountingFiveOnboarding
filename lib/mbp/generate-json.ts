@@ -25,7 +25,8 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 // generation (task 'onboarding') and the audit intelligence layer (task
 // 'audit'), so the category is supplied per-call by the caller.
 // `opts.model` overrides the default Sonnet tier (e.g. the audit→session draft
-// runs on Opus); `opts.providerOptions` threads adaptive thinking / effort.
+// runs on the sonnet-5 published-content model); `opts.providerOptions` threads
+// adaptive thinking / effort.
 // Both default to the Sonnet, no-thinking behavior used by every other caller.
 //
 // `opts.attempts` (default 1) re-runs the call when it produces no usable result

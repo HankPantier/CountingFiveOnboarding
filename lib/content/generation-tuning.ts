@@ -25,13 +25,9 @@ export const GENERATION_PROVIDER_OPTIONS = {
 // best writing quality on the published deliverable. The earlier truncation
 // (effort:'high' starving an 8000-token budget) is solved by the generous
 // maxOutputTokens at the call site (24000) plus a low-effort retry safety net,
-// NOT by lowering effort.
-export const CONTENT_PROVIDER_OPTIONS = {
-  anthropic: {
-    thinking: { type: 'adaptive', display: 'omitted' },
-    effort: 'high',
-  } satisfies AnthropicProviderOptions,
-}
+// NOT by lowering effort. Identical to GENERATION_PROVIDER_OPTIONS — aliased
+// rather than duplicated so the two can't silently drift apart.
+export const CONTENT_PROVIDER_OPTIONS = GENERATION_PROVIDER_OPTIONS
 
 // Outline generation is a small, structural JSON task — it does not need the
 // high-effort reasoning the page-body generator uses. High effort against a

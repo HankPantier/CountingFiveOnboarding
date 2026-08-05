@@ -35,56 +35,78 @@ export async function GET(req: Request) {
   // 'researching' is the AI-intelligence stage — the longest one and the most
   // likely place for a worker to die; omitting it stranded audits forever.
   const RUNNING_AUDIT_STATES = ['crawling', 'analyzing', 'researching', 'scoring', 'rendering']
-  const [research, pages, ideas, socials, oneoffs, audits, batchTargets] = await Promise.all([
-    supabase
-      .from('research_results')
-      .update({ research_status: 'error' })
-      .eq('research_status', 'running')
-      .lt('created_at', cutoff)
-      .select('id'),
-    supabase
-      .from('generated_pages')
-      .update({ generation_status: 'error', generation_error: 'Generation timed out (swept by cron after >15 min running)' })
-      .eq('generation_status', 'running')
-      .lt('generation_started_at', cutoff)
-      .select('id'),
-    supabase
-      .from('resource_ideas')
-      .update({ draft_status: 'error', draft_error: 'Draft timed out (swept by cron)' })
-      .eq('draft_status', 'running')
-      .lt('updated_at', cutoff)
-      .select('id'),
-    supabase
-      .from('resource_ideas')
-      .update({ social_status: 'error' })
-      .eq('social_status', 'running')
-      .lt('updated_at', cutoff)
-      .select('id'),
-    // 'pending' rows are swept too: a row stuck in pending means the
-    // after() worker never ran (deploy restart, crash before claim).
-    supabase
-      .from('oneoff_generations')
-      .update({ status: 'error', error: 'Generation timed out (swept by cron)' })
-      .in('status', ['pending', 'running'])
-      .lt('updated_at', cutoff)
-      .select('id'),
-    supabase
-      .from('audit_runs')
-      .update({ audit_status: 'error', error_message: 'Audit timed out (swept by cron)' })
-      .in('audit_status', RUNNING_AUDIT_STATES)
-      .lt('started_at', cutoff)
-      .select('id'),
-    // blog_batch_targets stuck at 'generating' (worker died between claim and
-    // terminal write) are invisible to future chained runs, which only select
-    // 'pending' — so the parent batch never completes. Reset them to 'pending'
-    // for the next chain to re-attempt.
-    supabase
-      .from('blog_batch_targets')
-      .update({ status: 'pending' })
-      .eq('status', 'generating')
-      .lt('updated_at', cutoff)
-      .select('id'),
-  ])
+  // Supabase queries resolve {data,error} rather than rejecting, so this only
+  // rejects on a network-level throw — but if it does, we must still reach the
+  // WHOIS retry + content/batch/audit auto-resume below (the important self-
+  // heal). Swallow to null and default every swept count to 0.
+  const sweep = await (async () => {
+    try {
+      return await Promise.all([
+        supabase
+          .from('research_results')
+          .update({ research_status: 'error' })
+          .eq('research_status', 'running')
+          .lt('created_at', cutoff)
+          .select('id'),
+        supabase
+          .from('generated_pages')
+          .update({ generation_status: 'error', generation_error: 'Generation timed out (swept by cron after >15 min running)' })
+          .eq('generation_status', 'running')
+          .lt('generation_started_at', cutoff)
+          .select('id'),
+        supabase
+          .from('resource_ideas')
+          .update({ draft_status: 'error', draft_error: 'Draft timed out (swept by cron)' })
+          .eq('draft_status', 'running')
+          .lt('updated_at', cutoff)
+          .select('id'),
+        supabase
+          .from('resource_ideas')
+          .update({ social_status: 'error' })
+          .eq('social_status', 'running')
+          .lt('updated_at', cutoff)
+          .select('id'),
+        // 'pending' rows are swept too: a row stuck in pending means the
+        // after() worker never ran (deploy restart, crash before claim).
+        supabase
+          .from('oneoff_generations')
+          .update({ status: 'error', error: 'Generation timed out (swept by cron)' })
+          .in('status', ['pending', 'running'])
+          .lt('updated_at', cutoff)
+          .select('id'),
+        supabase
+          .from('audit_runs')
+          .update({ audit_status: 'error', error_message: 'Audit timed out (swept by cron)' })
+          .in('audit_status', RUNNING_AUDIT_STATES)
+          .lt('started_at', cutoff)
+          .select('id'),
+        // blog_batch_targets stuck at 'generating' (worker died between claim and
+        // terminal write) are invisible to future chained runs, which only select
+        // 'pending' — so the parent batch never completes. Reset them to 'pending'
+        // for the next chain to re-attempt.
+        supabase
+          .from('blog_batch_targets')
+          .update({ status: 'pending' })
+          .eq('status', 'generating')
+          .lt('updated_at', cutoff)
+          .select('id'),
+        // new_page_generations: same 'pending'-never-claimed risk as oneoffs.
+        // generateNewPage writes a terminal 'error' on any throw, so the only
+        // way a row stays non-terminal is the after() worker never firing.
+        supabase
+          .from('new_page_generations')
+          .update({ status: 'error', error: 'Generation timed out (swept by cron)' })
+          .in('status', ['pending', 'running'])
+          .lt('updated_at', cutoff)
+          .select('id'),
+      ])
+    } catch (err) {
+      console.error('[sweep-stuck-jobs] sweep queries failed:', err)
+      return null
+    }
+  })()
+  const [research, pages, ideas, socials, oneoffs, audits, batchTargets, newPages] =
+    sweep ?? [null, null, null, null, null, null, null, null]
 
   // Prune rate-limiter events older than 24h (largest window is 1h; 24h keeps
   // the table tiny without racing any active window).
@@ -246,13 +268,14 @@ export async function GET(req: Request) {
     }
   }
 
-  const researchSwept = research.data?.length ?? 0
-  const pagesSwept = pages.data?.length ?? 0
-  const ideasSwept = ideas.data?.length ?? 0
-  const socialsSwept = socials.data?.length ?? 0
-  const oneoffsSwept = oneoffs.data?.length ?? 0
-  const auditsSwept = audits.data?.length ?? 0
-  const batchTargetsSwept = batchTargets.data?.length ?? 0
+  const researchSwept = research?.data?.length ?? 0
+  const pagesSwept = pages?.data?.length ?? 0
+  const ideasSwept = ideas?.data?.length ?? 0
+  const socialsSwept = socials?.data?.length ?? 0
+  const oneoffsSwept = oneoffs?.data?.length ?? 0
+  const auditsSwept = audits?.data?.length ?? 0
+  const batchTargetsSwept = batchTargets?.data?.length ?? 0
+  const newPagesSwept = newPages?.data?.length ?? 0
   if (batchTargetsSwept) {
     console.warn(`[sweep-stuck-jobs] blog-batch-targets reset to pending=${batchTargetsSwept}`)
   }
@@ -261,9 +284,9 @@ export async function GET(req: Request) {
     console.warn(`[sweep-stuck-jobs] whois-retried=${whoisRetried} cutoff=${cutoff}`)
   }
 
-  if (researchSwept || pagesSwept || ideasSwept || socialsSwept || oneoffsSwept || auditsSwept) {
+  if (researchSwept || pagesSwept || ideasSwept || socialsSwept || oneoffsSwept || auditsSwept || newPagesSwept) {
     console.warn(
-      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} socials=${socialsSwept} oneoffs=${oneoffsSwept} audits=${auditsSwept} cutoff=${cutoff}`
+      `[sweep-stuck-jobs] research=${researchSwept} pages=${pagesSwept} ideas=${ideasSwept} socials=${socialsSwept} oneoffs=${oneoffsSwept} audits=${auditsSwept} newPages=${newPagesSwept} cutoff=${cutoff}`
     )
 
     // Stuck rows mean a pipeline run died mid-flight — tell the admin instead
@@ -279,6 +302,7 @@ export async function GET(req: Request) {
           socialsSwept && `${socialsSwept} social generation(s)`,
           oneoffsSwept && `${oneoffsSwept} one-off generation(s)`,
           auditsSwept && `${auditsSwept} site audit(s)`,
+          newPagesSwept && `${newPagesSwept} new-page draft(s)`,
         ].filter(Boolean)
         const resend = new Resend(process.env.RESEND_API_KEY)
         await resend.emails.send({
@@ -298,5 +322,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, cutoff })
 }
