@@ -160,6 +160,31 @@ ${firmName}${locPart}${foundedPart} ${aspirational}.${personality}
 ${feelLine[tokens.visualFeel]}`
 }
 
+function buildVoiceSection(input: BuilderInput): string {
+  const { brand } = input
+  if (!brand) return ''
+  const lines: string[] = []
+
+  const adjectives = (brand.toneAdjectives ?? [])
+    .map(a => (typeof a === 'string' ? a.trim() : ''))
+    .filter(a => a.length > 0)
+  if (adjectives.length) lines.push(`**Tone:** ${adjectives.join(', ')}.`)
+
+  const current = brand.currentTone?.trim()
+  const aspirational = brand.aspirationalTone?.trim()
+  if (current && aspirational) {
+    lines.push(`**Shift:** reads today as ${current}; the rebuild should move toward ${aspirational}.`)
+  } else if (current) {
+    lines.push(`**Current voice:** ${current}.`)
+  }
+
+  const example = brand.voiceExample?.trim()
+  if (example) lines.push(`**In their words:** "${example.replace(/"/g, '\\"')}"`)
+
+  if (!lines.length) return ''
+  return `## Voice & Tone\n\n${lines.join('\n\n')}`
+}
+
 function buildColorsSection(input: BuilderInput): string {
   const { palette } = input
   return `## Colors
@@ -246,10 +271,13 @@ export function buildDesignMd(input: BuilderInput): string {
   const fontsUrl = pairing?.googleFontsUrl ?? ''
   const front = buildYamlFrontMatter(input, fontsUrl)
 
+  const voice = buildVoiceSection(input)
+
   const sections = [
     front,
     '',
     buildOverview(input),
+    ...(voice ? ['', voice] : []),
     '',
     buildColorsSection(input),
     '',
