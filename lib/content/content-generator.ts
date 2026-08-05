@@ -595,21 +595,26 @@ export async function generateSinglePage(
     return { status: 'skipped', pageUrl: outline.page_url, error: 'Another worker is already generating this page' }
   }
 
-  const { data: research } = await supabase
-    .from('research_results')
-    .select('target_keyword, secondary_keywords, competitor_references, existing_content')
-    .eq('content_job_id', contentJobId)
-    .eq('page_url', outline.page_url)
-    .single()
-
-  const targetKeyword =
-    outline.target_keyword ?? research?.target_keyword ?? outline.page_title.toLowerCase()
-  const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
-  const competitorRefs =
-    (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? []
-  const existingContent = research?.existing_content ?? null
-
   try {
+    // Fetch inside the try (after the atomic lock) so any failure sets the row
+    // to 'error' rather than stranding it 'running' until the sweep. maybeSingle
+    // + limit(1) tolerates a duplicate research row (research_results has no
+    // unique constraint) instead of throwing the way .single() does on >1 rows.
+    const { data: research } = await supabase
+      .from('research_results')
+      .select('target_keyword, secondary_keywords, competitor_references, existing_content')
+      .eq('content_job_id', contentJobId)
+      .eq('page_url', outline.page_url)
+      .limit(1)
+      .maybeSingle()
+
+    const targetKeyword =
+      outline.target_keyword ?? research?.target_keyword ?? outline.page_title.toLowerCase()
+    const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
+    const competitorRefs =
+      (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? []
+    const existingContent = research?.existing_content ?? null
+
     const result = await generateAndFinalizePage({
       pageTitle: outline.page_title,
       pageUrl: outline.page_url,

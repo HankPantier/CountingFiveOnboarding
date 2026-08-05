@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { generateSinglePage } from '@/lib/content/content-generator'
@@ -40,10 +40,17 @@ export async function POST(
     return NextResponse.json({ error: 'Outline must be approved before regenerating' }, { status: 400 })
   }
 
-  // Fire-and-forget; client polls for the resulting status change.
-  generateSinglePage(id, outline.id).catch(err =>
-    console.error('[content-gen] Per-page regenerate failed:', err)
-  )
+  // after() gives Vercel's guarantee the work completes within maxDuration.
+  // A bare fire-and-forget promise gets terminated once the response leaves the
+  // function, which could strand the page 'running' until the sweep. The client
+  // polls for the resulting status change.
+  after(async () => {
+    try {
+      await generateSinglePage(id, outline.id)
+    } catch (err) {
+      console.error('[content-gen] Per-page regenerate failed:', err)
+    }
+  })
 
   return NextResponse.json({ success: true })
 }
