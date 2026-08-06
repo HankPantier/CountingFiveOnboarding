@@ -1,6 +1,7 @@
 import { RequestError } from '@octokit/request-error'
 import { getOctokit, resolveRepo } from './app-client'
 import { withRateLimitRetry } from './rate-limit'
+import type { BrandJson } from '@/types/brand-json'
 
 // How many blobs to upload at once when pushing a deliverable. Kept low so a
 // ~300-file content push doesn't trip GitHub's secondary rate limit; each call
@@ -621,6 +622,47 @@ export async function patchSiteConfigBooking(
     ...options,
   })
   return true
+}
+
+// Firm contact (NAP) lives once in content/brand.json — every page, the footer,
+// the contact drawer, and the on-page schema read it. Patch just the changed
+// contact fields there (on draft) so "Publish to live" propagates the change
+// everywhere at once. Shallow-merges the provided fields into `contact`,
+// preserving all others. No-op (patched:false) when the file is absent (client
+// not yet assembled) or the JSON can't be parsed — the caller then relies on
+// the pending MBP suggestion, which propagates at the next package rebuild.
+export async function patchBrandJsonContact(
+  slug: string,
+  branch: string,
+  contact: Partial<BrandJson['contact']>,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<{ patched: boolean }> {
+  const CONTACT_PATH = 'content/brand.json'
+  let blob: FileBlob
+  try {
+    blob = await readFile(slug, CONTACT_PATH, branch)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return { patched: false }
+    throw err
+  }
+
+  let parsed: BrandJson
+  try {
+    parsed = JSON.parse(blob.content) as BrandJson
+  } catch {
+    console.warn(`[repo-files] content/brand.json is not valid JSON on ${slug}@${branch}; skipping contact patch`)
+    return { patched: false }
+  }
+
+  const next: BrandJson = { ...parsed, contact: { ...parsed.contact, ...contact } }
+  const serialized = JSON.stringify(next, null, 2) + '\n'
+  if (serialized === blob.content) return { patched: false }
+
+  await writeFile(slug, CONTACT_PATH, serialized, branch, 'Update firm contact info', {
+    expectedSha: blob.sha,
+    ...options,
+  })
+  return { patched: true }
 }
 
 // Returns { merged: true } on fast-forward / clean merge,

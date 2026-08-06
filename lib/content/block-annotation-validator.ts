@@ -478,6 +478,36 @@ export function parseBlockAnnotations(body: string): BlockAnnotation[] {
 }
 
 // ---------------------------------------------------------------------------
+// validateAnnotationSyntax
+// Lightweight, edit-time check: are every block's id and variant valid against
+// the catalog? Unlike validateBlockAnnotations (which also runs content
+// heuristics like "stats-bar needs a number" and positional rules), this only
+// flags the two things an interactive layout edit can break — an unknown block
+// id or a variant that isn't allowed for its block. It never rejects a page for
+// pre-existing content-shape issues the edit didn't introduce. Pass the page
+// body with frontmatter already stripped. Returns [] when the annotations parse
+// cleanly.
+// ---------------------------------------------------------------------------
+export function validateAnnotationSyntax(body: string): string[] {
+  const errors: string[] = []
+  for (const ann of parseBlockAnnotations(body)) {
+    const entry = BLOCK_CATALOG[ann.blockId]
+    if (!entry) {
+      errors.push(
+        `Unknown block id "${ann.blockId}" on section "${ann.headingText}". Valid ids: ${Object.keys(BLOCK_CATALOG).join(', ')}.`
+      )
+      continue
+    }
+    if (ann.variant !== undefined && entry.variants.length > 0 && !entry.variants.includes(ann.variant)) {
+      errors.push(
+        `Invalid variant "${ann.variant}" for block "${ann.blockId}" on section "${ann.headingText}". Valid variants: ${entry.variants.join(', ')}.`
+      )
+    }
+  }
+  return errors
+}
+
+// ---------------------------------------------------------------------------
 // buildCorrectionPrompt
 // ---------------------------------------------------------------------------
 

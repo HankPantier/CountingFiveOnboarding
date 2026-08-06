@@ -27,8 +27,26 @@ export default function ContentChat({
   const { messages, sendMessage, status, error } = useChat({ transport })
   const isLoading = status === 'submitted' || status === 'streaming'
 
+  // Did the most recent assistant turn actually commit a file change? Scan its
+  // tool parts for a successful commit-tool output so we can confirm the save
+  // (rather than implying one when the agent only asked a question or a tool
+  // errored). Tolerant of the SDK exposing the result as `output` or `result`.
+  const committed = useMemo(() => {
+    const last = [...messages].reverse().find(m => m.role === 'assistant')
+    if (!last) return false
+    const COMMIT_TOOLS = ['tool-apply_edit', 'tool-set_faq', 'tool-update_firm_contact']
+    return last.parts.some(p => {
+      const tp = p as { type?: string; output?: unknown; result?: unknown }
+      if (!tp.type || !COMMIT_TOOLS.includes(tp.type)) return false
+      const out = (tp.output ?? tp.result) as { success?: boolean; error?: string } | undefined
+      return !!out && !out.error && out.success !== false
+    })
+  }, [messages])
+
   // After each completed exchange the agent may have committed a new version of
-  // the file — reload it in the editor so the cached content + sha are fresh.
+  // the file — reload it in the editor so the cached content + sha are fresh,
+  // and refresh publish status (a firm-wide contact change edits brand.json,
+  // not the open page).
   useEffect(() => {
     if (status === 'ready' && messages.length > 0) onEdited()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,7 +74,7 @@ export default function ContentChat({
       <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[300px]">
         {messages.length === 0 && (
           <p className="text-text-muted font-body text-sm italic">
-            Try: &ldquo;Tighten the intro&rdquo;, &ldquo;Add a FAQ about audit representation&rdquo;, or &ldquo;Make the tone warmer.&rdquo;
+            Try: &ldquo;Tighten the intro&rdquo;, &ldquo;Move the image to the other side&rdquo;, &ldquo;Add an FAQ about audit representation&rdquo;, or &ldquo;Update the phone number.&rdquo;
           </p>
         )}
         {messages.map(m => {
@@ -85,6 +103,12 @@ export default function ContentChat({
       </div>
 
       {error && <p className="px-4 py-2 text-sm text-error bg-error/10 font-body">{error.message}</p>}
+
+      {status === 'ready' && committed && (
+        <p className="px-4 py-2 text-xs text-success font-body bg-success/10 border-t border-success/30">
+          ✓ Saved to draft — Publish when you&rsquo;re ready to push it live.
+        </p>
+      )}
 
       {isDirty && (
         <div className="px-4 py-2 text-xs text-warning-strong bg-warning/10 font-body border-t border-warning/30 flex items-center justify-between gap-2">
