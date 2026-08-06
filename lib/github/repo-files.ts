@@ -604,6 +604,26 @@ export async function patchSiteConfigSiteUrl(
   return true
 }
 
+// Read the canonical siteUrl out of the repo's site.config.ts (the deployed
+// host). Returns null when the file/field is absent. Used by the Theme Studio
+// preview to fetch and re-skin the real live site. Mirrors the booking reader's
+// anchored-regex approach.
+export async function readSiteConfigSiteUrl(
+  slug: string,
+  branch: string
+): Promise<string | null> {
+  let blob: FileBlob
+  try {
+    blob = await readFile(slug, 'site.config.ts', branch)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return null
+    throw err
+  }
+  const m = blob.content.match(/^\s*siteUrl\s*:\s*['"]([^'"]+)['"]/m)
+  const url = m?.[1]?.trim()
+  return url && SAFE_SITE_URL_RE.test(url) ? url : null
+}
+
 // Read the current booking config out of the repo's site.config.ts by regex.
 // Returns null when the file/booking block is absent. Used to seed the admin
 // editor for an already-published client (site.config is the source of truth).

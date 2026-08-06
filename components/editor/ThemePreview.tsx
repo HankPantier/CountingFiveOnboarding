@@ -1,17 +1,28 @@
 'use client'
 
 import { useMemo } from 'react'
-import { buildPreviewSrcDoc } from '@/lib/theme-preview/build-srcdoc'
+import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
 import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
 
-// Read-only live preview of the client's theme, rendered in an isolated iframe.
-// Rebuilds whenever `sources` changes (i.e. after the AI commits an edit), giving
-// the prompt → see-it-change loop.
-export default function ThemePreview({ sources }: { sources: ThemeSources }) {
+// Live 1:1 preview: the client's REAL deployed homepage (shellHtml) re-skinned
+// with the pending draft theme.css + design-overrides.css. Recomposes whenever
+// the sources change (after an AI commit), giving the prompt → see-it-change loop.
+export default function ThemePreview({
+  shellHtml,
+  sources,
+}: {
+  shellHtml: string
+  sources: ThemeSources
+}) {
   const srcDoc = useMemo(
-    () => buildPreviewSrcDoc({ themeCss: sources.themeCss, overridesCss: sources.overridesCss }),
-    [sources.themeCss, sources.overridesCss]
+    () =>
+      composePreviewSrcDoc({
+        shellHtml,
+        themeCss: sources.themeCss,
+        overridesCss: sources.overridesCss,
+      }),
+    [shellHtml, sources.themeCss, sources.overridesCss]
   )
 
   return (
@@ -35,9 +46,8 @@ export default function ThemePreview({ sources }: { sources: ThemeSources }) {
         title="Theme preview"
         srcDoc={srcDoc}
         className="min-h-0 w-full flex-1 bg-white"
-        // The preview is our own generated markup (no client input in an
-        // executable position); allow-same-origin is omitted so the frame is
-        // fully sandboxed. No scripts run inside it.
+        // Fully sandboxed: the real-site HTML can neither run scripts nor reach
+        // the parent/app. External CSS, images, and fonts still load.
         sandbox=""
       />
     </div>
