@@ -754,7 +754,16 @@ export default function EditorShell({
             onDiscardAll={resetDraft}
           />
         ) : selectedPath === THEME_VIEW ? (
-          <ThemeStudio sessionId={sessionId} />
+          <ThemeStudio
+            sessionId={sessionId}
+            pendingCount={status?.draftAhead ?? 0}
+            publishing={publishing}
+            canPublish={!publishing && (status?.draftAhead ?? 0) > 0 && dirty.size === 0}
+            onPublish={() => void publish()}
+            // Theme edits commit straight to draft; refresh status so the
+            // Publish button + Review changes count reflect them.
+            onCommitted={() => void refreshStatus()}
+          />
         ) : selectedPath === MEDIA_VIEW ? (
           <MediaLibrary sessionId={sessionId} onChanged={() => void refreshStatus()} />
         ) : selectedPath === ONEOFF_VIEW ? (

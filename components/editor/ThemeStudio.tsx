@@ -10,7 +10,24 @@ import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_th
 // operator's override (e.g. a Vercel preview deploy before DNS cutover) or the
 // canonical site.config.ts siteUrl — and re-skins it with the pending draft
 // theme. Changes publish through the editor's existing Review changes → Publish.
-export default function ThemeStudio({ sessionId }: { sessionId: string }) {
+export default function ThemeStudio({
+  sessionId,
+  pendingCount,
+  publishing,
+  canPublish,
+  onPublish,
+  onCommitted,
+}: {
+  sessionId: string
+  // Draft commits ahead of live — how many changes are waiting to publish.
+  pendingCount: number
+  publishing: boolean
+  canPublish: boolean
+  onPublish: () => void
+  // Called after the assistant commits a theme change, so the parent editor can
+  // refresh its publish status / Review changes count.
+  onCommitted: () => void
+}) {
   const [info, setInfo] = useState<PreviewUrlInfo | null>(null)
   const [urlInput, setUrlInput] = useState('')
   const [sources, setSources] = useState<ThemeSources | null>(null)
@@ -102,11 +119,26 @@ export default function ThemeStudio({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b border-border-default bg-surface-default px-6 py-2.5">
-          <h1 className="font-heading text-sm font-semibold text-brand-navy">Theme &amp; styling</h1>
-          <p className="font-body text-xs text-text-muted">
-            A live preview of the site. Ask the assistant to change colours, roundness, spacing, or a block&rsquo;s look — then Publish.
-          </p>
+        <div className="flex items-center justify-between gap-3 border-b border-border-default bg-surface-default px-6 py-2.5">
+          <div className="min-w-0">
+            <h1 className="font-heading text-sm font-semibold text-brand-navy">Theme &amp; styling</h1>
+            <p className="font-body text-xs text-text-muted">
+              A live preview of the site. Ask the assistant to change colours, roundness, spacing, or a block&rsquo;s look — then Publish.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onPublish}
+            disabled={!canPublish}
+            title={
+              pendingCount === 0
+                ? 'Nothing new to publish'
+                : 'Deploy your draft theme changes to the live site'
+            }
+            className="shrink-0 whitespace-nowrap rounded-pill bg-brand-navy px-4 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed disabled:bg-surface-subtle disabled:text-text-muted"
+          >
+            {publishing ? 'Publishing…' : pendingCount > 0 ? `Publish to live (${pendingCount})` : 'Published'}
+          </button>
         </div>
 
         {/* Preview URL bar — the deployed site to preview (a staging/Vercel URL
@@ -169,7 +201,14 @@ export default function ThemeStudio({ sessionId }: { sessionId: string }) {
         ) : null}
       </div>
       <div className="w-[360px] shrink-0">
-        <ThemeChat sessionId={sessionId} onEdited={() => void loadSources().catch(() => {})} />
+        <ThemeChat
+          sessionId={sessionId}
+          onEdited={() => {
+            // Refresh the preview AND the parent editor's publish status.
+            void loadSources().catch(() => {})
+            onCommitted()
+          }}
+        />
       </div>
     </div>
   )
