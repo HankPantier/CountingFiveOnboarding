@@ -96,12 +96,19 @@ export default function AuditChat({
         <p className="px-4 py-2 text-sm text-error bg-error/10 font-body">{error.message}</p>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3 border-t border-border-default">
-        <input
+      <form onSubmit={handleSubmit} className="flex items-start gap-2 p-3 border-t border-border-default">
+        <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              e.currentTarget.form?.requestSubmit()
+            }
+          }}
+          rows={2}
           placeholder="Edit the report…"
-          className="flex-1 border border-border-default rounded-pill px-3.5 py-1.5 text-xs font-body bg-surface-card focus:outline-none focus:border-brand-cyan"
+          className="flex-1 resize-y border border-border-default rounded-2xl px-3.5 py-1.5 text-xs font-body bg-surface-card focus:outline-none focus:border-brand-cyan"
         />
         <button
           type="submit"

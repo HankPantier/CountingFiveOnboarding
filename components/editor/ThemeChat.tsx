@@ -105,12 +105,19 @@ export default function ThemeChat({
         </p>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-border-default p-3">
-        <input
+      <form onSubmit={handleSubmit} className="flex items-start gap-2 border-t border-border-default p-3">
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              e.currentTarget.form?.requestSubmit()
+            }
+          }}
+          rows={2}
           placeholder="Describe the theme change…"
-          className="flex-1 rounded-pill border border-border-default bg-surface-card px-3.5 py-1.5 font-body text-xs focus:border-brand-cyan focus:outline-none"
+          className="flex-1 resize-y rounded-2xl border border-border-default bg-surface-card px-3.5 py-1.5 font-body text-xs focus:border-brand-cyan focus:outline-none"
         />
         <button
           type="submit"

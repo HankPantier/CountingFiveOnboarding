@@ -122,13 +122,20 @@ export default function ContentChat({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3 border-t border-border-default">
-        <input
+      <form onSubmit={handleSubmit} className="flex items-start gap-2 p-3 border-t border-border-default">
+        <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              e.currentTarget.form?.requestSubmit()
+            }
+          }}
+          rows={2}
           placeholder="Describe the change…"
           disabled={isDirty}
-          className="flex-1 border border-border-default rounded-pill px-3.5 py-1.5 text-xs font-body bg-surface-card focus:outline-none focus:border-brand-cyan disabled:opacity-50"
+          className="flex-1 resize-y border border-border-default rounded-2xl px-3.5 py-1.5 text-xs font-body bg-surface-card focus:outline-none focus:border-brand-cyan disabled:opacity-50"
         />
         <button
           type="submit"
