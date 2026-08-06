@@ -12,6 +12,8 @@ export const RESOURCES_VIEW = '__resources__'
 export const ONEOFF_VIEW = '__oneoff__'
 // Sentinel selectedPath that opens the unpublished-changes review panel.
 export const CHANGES_VIEW = '__changes__'
+// Sentinel selectedPath that opens the AI theme/CSS studio (admin-only).
+export const THEME_VIEW = '__theme__'
 
 const VIRTUAL_NAV = 'content/nav.json'
 
@@ -123,6 +125,7 @@ export default function FileTree({
   selectedPath,
   dirtyPaths,
   changesCount,
+  showTheme,
   onSelect,
   onNewPage,
 }: {
@@ -130,6 +133,8 @@ export default function FileTree({
   selectedPath: string | null
   dirtyPaths: Set<string>
   changesCount: number
+  // Admin-only Theme Studio entry — hidden for managers (route also 403s them).
+  showTheme: boolean
   onSelect: (path: string) => void
   onNewPage: () => void
 }) {
@@ -239,6 +244,22 @@ export default function FileTree({
           </span>
         )}
       </button>
+
+      {showTheme && (
+        <button
+          onClick={() => onSelect(THEME_VIEW)}
+          className={`mb-4 w-full flex items-center gap-2 text-left text-xs font-heading font-semibold px-3 py-2 rounded-lg border transition-colors ${
+            selectedPath === THEME_VIEW
+              ? 'border-brand-cyan bg-brand-cyan/10 text-brand-navy'
+              : 'border-brand-cyan/40 bg-brand-cyan/5 text-brand-navy hover:bg-brand-cyan/10'
+          }`}
+        >
+          <span className="text-brand-cyan" aria-hidden>
+            ✦
+          </span>
+          Theme &amp; styling
+        </button>
+      )}
 
       <div className="flex items-center justify-between gap-1 pr-1">
         <div className="min-w-0 flex-1">

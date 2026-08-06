@@ -161,6 +161,80 @@ export async function pushEntriesToBranch(
   return { commitSha: commit.data.sha, fileCount: tree.length }
 }
 
+// Commit several text files to a branch in ONE atomic commit, with optional
+// per-file optimistic locking. Used by the theme editor, where a single change
+// touches 2–3 coupled files (brand.json + regenerated theme.css, or design.json
+// + theme.css) that must never land half-applied. Each file may carry an
+// expectedSha; if the current blob sha differs (a concurrent edit), we throw
+// StaleShaError before committing anything. Returns the new commit sha plus each
+// written path's new blob sha so a caller can advance its working shas.
+export async function writeFiles(
+  slug: string,
+  files: { path: string; content: string; expectedSha?: string }[],
+  branch: string,
+  message: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<{ commitSha: string; blobs: Record<string, string> }> {
+  if (files.length === 0) throw new Error('writeFiles called with no files')
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+
+  // Optimistic-lock pass: verify every guarded file still matches the sha the
+  // caller last saw. Do this before creating any blob so a stale file aborts
+  // the whole commit (all-or-nothing).
+  for (const f of files) {
+    if (f.expectedSha === undefined) continue
+    try {
+      const existing = await readFile(slug, f.path, branch)
+      if (existing.sha !== f.expectedSha) {
+        throw new StaleShaError(f.path, existing.sha, existing.content)
+      }
+    } catch (err) {
+      if (err instanceof FileNotFoundError) throw new StaleShaError(f.path, '', '')
+      throw err
+    }
+  }
+
+  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+  const baseCommitSha = ref.data.object.sha
+  const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
+
+  const tree: { path: string; mode: '100644'; type: 'blob'; sha: string }[] = []
+  const blobs: Record<string, string> = {}
+  for (const f of files) {
+    const blob = await withRateLimitRetry(() =>
+      octokit.git.createBlob({
+        owner,
+        repo,
+        content: Buffer.from(f.content, 'utf-8').toString('base64'),
+        encoding: 'base64',
+      })
+    )
+    blobs[f.path] = blob.data.sha
+    tree.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.data.sha })
+  }
+
+  const newTree = await withRateLimitRetry(() =>
+    octokit.git.createTree({ owner, repo, base_tree: baseCommit.data.tree.sha, tree })
+  )
+  const commit = await withRateLimitRetry(() =>
+    octokit.git.createCommit({
+      owner,
+      repo,
+      message,
+      tree: newTree.data.sha,
+      parents: [baseCommitSha],
+      ...(options.authorName && options.authorEmail
+        ? { author: { name: options.authorName, email: options.authorEmail } }
+        : {}),
+    })
+  )
+  await withRateLimitRetry(() =>
+    octokit.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha })
+  )
+  return { commitSha: commit.data.sha, blobs }
+}
+
 export async function listTree(
   slug: string,
   branch: string,

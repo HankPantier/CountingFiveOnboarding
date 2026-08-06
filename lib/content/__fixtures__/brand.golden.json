@@ -1,0 +1,24 @@
+{
+  "firm": {
+    "name": "Korbey Lague PLLP",
+    "shortName": "Korbey Lague",
+    "tagline": "CPAs you can talk to",
+    "foundingYear": "1972"
+  },
+  "contact": {
+    "address": { "street": "123 Main St", "city": "Tyngsborough", "state": "MA", "zip": "01879" },
+    "phone": "978-555-0100",
+    "email": "info@korbeylague.com"
+  },
+  "palette": {
+    "primary": "#003B71",
+    "secondary": "#6C7278",
+    "complementary": "#B8422E",
+    "action": "#00C1DE",
+    "nearBlack": "#1A1C1E",
+    "nearWhite": "#F7F5F2"
+  },
+  "social": [],
+  "certifications": [],
+  "logo": { "primary": "", "alt": "Korbey Lague PLLP logo" }
+}

@@ -21,6 +21,7 @@ export type TokenStage =
   | 'audit'
   | 'audit_edit'
   | 'content_edit'
+  | 'theme_edit'
   | 'seo_fields'
   | 'brand'
   | 'new_page'

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import EditorTopBar, { type EditorStatus } from './EditorTopBar'
-import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, type TreeFile } from './FileTree'
+import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, THEME_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
 import NavEditor from './NavEditor'
 import ContentChatModal from './ContentChatModal'
@@ -10,6 +10,7 @@ import MediaLibrary from './MediaLibrary'
 import ResourcesPanel from './ResourcesPanel'
 import OneOffPanel from './OneOffPanel'
 import ChangesPanel from './ChangesPanel'
+import ThemeStudio from './ThemeStudio'
 import NewPageDialog from './NewPageDialog'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import type { Move } from '@/lib/editor/nav-urls'
@@ -33,6 +34,8 @@ export default function EditorShell({
 }) {
   const [tree, setTree] = useState<TreeFile[]>([])
   const [status, setStatus] = useState<EditorStatus | null>(null)
+  // Theme Studio is admin-only; managers never see the entry (route also 403s).
+  const [isAdmin, setIsAdmin] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Map<string, LoadedFile>>(new Map())
   const [dirty, setDirty] = useState<Map<string, string>>(new Map())
@@ -90,6 +93,22 @@ export default function EditorShell({
     void refreshStatus()
   }, [refreshTree, refreshStatus])
 
+  // Resolve admin status to gate the Theme Studio entry (mirrors ContentChatModal).
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((d: { role?: string }) => {
+        if (!cancelled && d.role === 'admin') setIsAdmin(true)
+      })
+      .catch(() => {
+        /* ignore — entry stays hidden */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Warn admin when navigating away with unsaved edits.
   useEffect(() => {
     if (dirty.size === 0) return
@@ -117,7 +136,8 @@ export default function EditorShell({
         path === MEDIA_VIEW ||
         path === RESOURCES_VIEW ||
         path === ONEOFF_VIEW ||
-        path === CHANGES_VIEW
+        path === CHANGES_VIEW ||
+        path === THEME_VIEW
       )
         return // virtual view, nothing to fetch
       if (loaded.has(path)) return
@@ -717,6 +737,7 @@ export default function EditorShell({
             selectedPath={selectedPath}
             dirtyPaths={new Set(dirty.keys())}
             changesCount={status?.draftAhead ?? 0}
+            showTheme={isAdmin}
             onSelect={(p) => void select(p)}
             onNewPage={() => setNewPageOpen(true)}
           />
@@ -732,6 +753,8 @@ export default function EditorShell({
             onReverted={handleReverted}
             onDiscardAll={resetDraft}
           />
+        ) : selectedPath === THEME_VIEW ? (
+          <ThemeStudio sessionId={sessionId} />
         ) : selectedPath === MEDIA_VIEW ? (
           <MediaLibrary sessionId={sessionId} onChanged={() => void refreshStatus()} />
         ) : selectedPath === ONEOFF_VIEW ? (
