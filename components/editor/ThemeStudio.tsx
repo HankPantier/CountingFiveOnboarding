@@ -3,21 +3,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import ThemePreview from './ThemePreview'
 import ThemeChat from './ThemeChat'
-import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
+import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
 
-// Admin-only Theme Studio: a live 1:1 preview of the client's REAL deployed site
-// (left) beside the AI theme assistant (right). The site "shell" (real markup +
-// real compiled CSS) is fetched once; the assistant commits palette / token /
-// per-block-CSS changes to the draft branch and we refetch the theme sources so
-// the preview re-skins instantly. Changes publish through the editor's existing
-// Review changes → Publish flow.
+// Admin-only Theme Studio: a live 1:1 preview of the client's site (left) beside
+// the AI theme assistant (right). The preview fetches a real deployed URL — the
+// operator's override (e.g. a Vercel preview deploy before DNS cutover) or the
+// canonical site.config.ts siteUrl — and re-skins it with the pending draft
+// theme. Changes publish through the editor's existing Review changes → Publish.
 export default function ThemeStudio({ sessionId }: { sessionId: string }) {
+  const [info, setInfo] = useState<PreviewUrlInfo | null>(null)
+  const [urlInput, setUrlInput] = useState('')
   const [sources, setSources] = useState<ThemeSources | null>(null)
   const [shellHtml, setShellHtml] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [busyUrl, setBusyUrl] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Re-skin data — cheap, refetched after every AI edit.
   const loadSources = useCallback(async () => {
     const res = await fetch(`/api/edit/${sessionId}/theme`)
     if (!res.ok) {
@@ -27,30 +28,76 @@ export default function ThemeStudio({ sessionId }: { sessionId: string }) {
     setSources((await res.json()) as ThemeSources)
   }, [sessionId])
 
-  // Real-site shell — fetched once (expensive external fetch).
-  const loadAll = useCallback(async () => {
+  // Fetch the real-site shell (expensive external fetch) + theme sources. No-op
+  // with a clear message when no preview URL is set yet.
+  const loadPreview = useCallback(async () => {
+    setError(null)
+    setShellHtml(null)
+    const shellRes = await fetch(`/api/edit/${sessionId}/theme/shell`)
+    if (!shellRes.ok) {
+      const data = (await shellRes.json().catch(() => ({}))) as { error?: string }
+      throw new Error(data.error ?? `Failed to load the preview (${shellRes.status})`)
+    }
+    const shell = (await shellRes.json()) as { shellHtml: string }
+    setShellHtml(shell.shellHtml)
+    await loadSources()
+  }, [sessionId, loadSources])
+
+  // Initial load: resolve the preview URL, then load the preview if one exists.
+  const init = useCallback(async () => {
     setLoading(true)
     try {
-      const shellRes = await fetch(`/api/edit/${sessionId}/theme/shell`)
-      if (!shellRes.ok) {
-        const data = (await shellRes.json().catch(() => ({}))) as { error?: string }
-        throw new Error(data.error ?? `Failed to load the live site (${shellRes.status})`)
-      }
-      const shell = (await shellRes.json()) as { shellHtml: string }
-      setShellHtml(shell.shellHtml)
-      await loadSources()
-      setError(null)
+      const res = await fetch(`/api/edit/${sessionId}/theme/preview-url`)
+      if (!res.ok) throw new Error(`Failed to load preview settings (${res.status})`)
+      const pi = (await res.json()) as PreviewUrlInfo
+      setInfo(pi)
+      setUrlInput(pi.effectiveUrl ?? '')
+      if (pi.effectiveUrl) await loadPreview()
+      else setError('No preview URL set. Enter the site URL above (e.g. https://acme.vercel.app) and load it.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load preview')
+      setError(err instanceof Error ? err.message : 'Failed to load')
     } finally {
       setLoading(false)
     }
-  }, [sessionId, loadSources])
+  }, [sessionId, loadPreview])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadAll()
-  }, [loadAll])
+    void init()
+  }, [init])
+
+  // Save the preview-URL override (empty clears it → falls back to site.config),
+  // then reload the preview against the new URL.
+  const saveUrl = useCallback(
+    async (value: string | null) => {
+      setBusyUrl(true)
+      setError(null)
+      try {
+        const res = await fetch(`/api/edit/${sessionId}/theme/preview-url`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ previewUrl: value }),
+        })
+        const data = (await res.json().catch(() => ({}))) as PreviewUrlInfo & { error?: string }
+        if (!res.ok) throw new Error(data.error ?? `Failed to save (${res.status})`)
+        setInfo(data)
+        setUrlInput(data.effectiveUrl ?? '')
+        if (data.effectiveUrl) await loadPreview()
+        else {
+          setShellHtml(null)
+          setError('No preview URL set. Enter the site URL above and load it.')
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to save the preview URL')
+      } finally {
+        setBusyUrl(false)
+      }
+    },
+    [sessionId, loadPreview]
+  )
+
+  const overrideSet = !!info?.previewUrl
+  const canResetToDefault = overrideSet && !!info?.configUrl && info.configUrl !== info.previewUrl
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -61,9 +108,57 @@ export default function ThemeStudio({ sessionId }: { sessionId: string }) {
             A live preview of the site. Ask the assistant to change colours, roundness, spacing, or a block&rsquo;s look — then Publish.
           </p>
         </div>
+
+        {/* Preview URL bar — the deployed site to preview (a staging/Vercel URL
+            before DNS cutover, or the canonical site.config siteUrl). */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void saveUrl(urlInput.trim() === '' ? null : urlInput.trim())
+          }}
+          className="flex flex-wrap items-center gap-2 border-b border-border-default bg-surface-subtle px-6 py-2"
+        >
+          <label htmlFor="preview-url" className="font-heading text-xs font-semibold text-text-secondary">
+            Preview URL
+          </label>
+          <input
+            id="preview-url"
+            type="url"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            placeholder="https://acme.vercel.app"
+            className="min-w-0 flex-1 rounded-pill border border-border-default bg-surface-card px-3.5 py-1.5 font-body text-xs focus:border-brand-cyan focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={busyUrl}
+            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:opacity-50"
+          >
+            {busyUrl ? 'Loading…' : 'Load preview'}
+          </button>
+          {canResetToDefault && (
+            <button
+              type="button"
+              onClick={() => void saveUrl(null)}
+              disabled={busyUrl}
+              title={`Use the site's configured URL (${info?.configUrl})`}
+              className="rounded-pill border border-border-default px-3 py-1.5 font-heading text-xs font-semibold text-text-secondary transition-colors hover:text-brand-navy disabled:opacity-50"
+            >
+              Reset to default
+            </button>
+          )}
+          <span className="w-full font-body text-[11px] text-text-muted">
+            {overrideSet
+              ? `Using a custom preview URL${info?.configUrl ? ` · site default: ${info.configUrl}` : ''}`
+              : info?.configUrl
+                ? `Using the site's configured URL. Enter a staging URL above to override it while you build.`
+                : 'Set the deployed site URL to preview (e.g. a Vercel preview deploy).'}
+          </span>
+        </form>
+
         {loading ? (
           <div className="flex flex-1 items-center justify-center font-body text-sm text-text-muted">
-            Loading the live site…
+            Loading the site…
           </div>
         ) : error ? (
           <div className="flex flex-1 items-center justify-center px-6 text-center font-body text-sm text-error">

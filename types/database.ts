@@ -433,6 +433,7 @@ export type Database = {
           nav_config: Json | null
           palette: Json | null
           phase: number
+          preview_url: string | null
           session_id: string
           status: string
           updated_at: string
@@ -447,6 +448,7 @@ export type Database = {
           nav_config?: Json | null
           palette?: Json | null
           phase?: number
+          preview_url?: string | null
           session_id: string
           status?: string
           updated_at?: string
@@ -461,6 +463,7 @@ export type Database = {
           nav_config?: Json | null
           palette?: Json | null
           phase?: number
+          preview_url?: string | null
           session_id?: string
           status?: string
           updated_at?: string

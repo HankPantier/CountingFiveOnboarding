@@ -22,3 +22,12 @@ export type ThemeSources = {
   /** Per-client design-overrides.css on draft. */
   overridesCss: string
 }
+
+export type PreviewUrlInfo = {
+  /** Operator override stored on content_jobs (what the preview fetches when set). */
+  previewUrl: string | null
+  /** Canonical site.config.ts siteUrl on main — the fallback when no override. */
+  configUrl: string | null
+  /** What the preview will actually fetch: previewUrl ?? configUrl. */
+  effectiveUrl: string | null
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
 import { getCurrentUser } from '@/lib/auth/access'
+import { createServerClient } from '@/lib/supabase/server'
 import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
 
@@ -22,10 +23,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const siteUrl = await readSiteConfigSiteUrl(githubRepo, MAIN_BRANCH)
+  // Prefer the operator's preview-URL override (e.g. a Vercel preview deploy
+  // before DNS cutover); fall back to the canonical site.config.ts siteUrl.
+  const supabase = createServerClient()
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('preview_url')
+    .eq('id', ctx.jobId)
+    .single()
+  const siteUrl = job?.preview_url ?? (await readSiteConfigSiteUrl(githubRepo, MAIN_BRANCH))
   if (!siteUrl) {
     return NextResponse.json(
-      { error: 'No published site URL is set for this client, so the live preview is unavailable.' },
+      { error: 'No preview URL is set for this client. Add one above to preview the site.' },
       { status: 409 }
     )
   }
