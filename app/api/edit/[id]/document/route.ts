@@ -111,10 +111,19 @@ function titleFromPath(path: string): string {
   return last.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
+// Page titles arrive as "Page Name | Firm Name" (sometimes with the firm name
+// repeated). The firm name is already on the cover and reads as clutter in the
+// TOC and headings, so keep just the leading page-name segment before the first
+// pipe. The verbatim meta_title is still shown in the SEO appendix.
+function cleanTitle(raw: string): string {
+  const first = raw.split('|')[0].trim()
+  return first || raw.trim()
+}
+
 function toSiteDocPage(path: string, content: string, isPost: boolean): SiteDocPage {
   const { frontmatter, body } = splitFile(content)
   const url = scalar(frontmatter, 'url') || deriveUrl(path)
-  const title = scalar(frontmatter, 'title') || titleFromPath(path)
+  const title = cleanTitle(scalar(frontmatter, 'title') || titleFromPath(path))
   return {
     path,
     url,
