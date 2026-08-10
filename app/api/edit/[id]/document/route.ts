@@ -120,6 +120,25 @@ function cleanTitle(raw: string): string {
   return first || raw.trim()
 }
 
+// Page files (from deliverable-builder → buildPageMarkdown) append an inline
+// "## SEO & AIO Metadata" block to the body — answer block, E-E-A-T, internal
+// links, FAQ — which the document already presents in its dedicated SEO
+// Appendix. Drop that block from the rendered page content to avoid printing it
+// twice, but KEEP any trailing "## Structured Data" section (the JSON-LD schema
+// code) so the schema still ships with the page.
+const SEO_SECTION_MARKER = '## SEO & AIO Metadata'
+const STRUCTURED_DATA_MARKER = '## Structured Data'
+
+function stripInlineSeoSection(body: string): string {
+  const seoIdx = body.indexOf(SEO_SECTION_MARKER)
+  if (seoIdx === -1) return body
+  // Cut the `---` rule that precedes the section along with it.
+  const before = body.slice(0, seoIdx).replace(/\n*-{3,}\s*\n*$/, '\n').trimEnd()
+  const structIdx = body.indexOf(STRUCTURED_DATA_MARKER, seoIdx)
+  if (structIdx !== -1) return `${before}\n\n${body.slice(structIdx)}`
+  return `${before}\n`
+}
+
 function toSiteDocPage(path: string, content: string, isPost: boolean): SiteDocPage {
   const { frontmatter, body } = splitFile(content)
   const url = scalar(frontmatter, 'url') || deriveUrl(path)
@@ -129,7 +148,7 @@ function toSiteDocPage(path: string, content: string, isPost: boolean): SiteDocP
     url,
     title,
     isPost,
-    body,
+    body: stripInlineSeoSection(body),
     metaTitle: scalar(frontmatter, 'meta_title'),
     metaDescription: scalar(frontmatter, 'meta_description'),
     targetKeyword: scalar(frontmatter, 'target_keyword'),

@@ -9,9 +9,28 @@ import { Paragraph, HeadingLevel, TextRun } from 'docx'
 export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
   const paragraphs: Paragraph[] = []
   const lines = markdown.split('\n')
+  let inFence = false
 
   for (const line of lines) {
     const trimmed = line.trim()
+
+    // Fenced code blocks (``` / ```lang … ```): render the inner lines as
+    // compact monospace so embedded code — e.g. JSON-LD structured data — reads
+    // as code and stays tight instead of sprawling as full-size body text. The
+    // fence marker lines themselves are dropped.
+    if (trimmed.startsWith('```')) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence) {
+      if (trimmed === '') continue
+      paragraphs.push(new Paragraph({
+        children: [new TextRun({ text: line, font: 'Courier New', size: 16 })],
+        spacing: { after: 0 },
+      }))
+      continue
+    }
+
     if (!trimmed) continue
 
     if (trimmed.startsWith('## ')) {

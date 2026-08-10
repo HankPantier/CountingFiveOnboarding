@@ -10,6 +10,7 @@ import {
   Footer,
   PageNumber,
   AlignmentType,
+  BorderStyle,
 } from 'docx'
 import type { NavJson, NavItem } from '@/types/nav-json'
 import { markdownToDocxParagraphs } from './markdown-to-docx'
@@ -56,6 +57,14 @@ const MUTED = '888888'
 // slashes/dots are replaced with a bookmark-safe separator.
 function anchorFor(page: SiteDocPage): string {
   return `page-${page.path.replace(/[^a-zA-Z0-9]/g, '-')}`
+}
+
+// Thin rule between consecutive pages now that page content flows continuously.
+function divider(): Paragraph {
+  return new Paragraph({
+    spacing: { before: 240, after: 0 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'E5E5E5' } },
+  })
 }
 
 function heading(text: string, opts: { pageBreakBefore?: boolean } = {}): Paragraph {
@@ -219,12 +228,15 @@ export async function buildSiteDocx(input: SiteDocInput): Promise<Buffer> {
   sections.push(new Paragraph({ children: [new PageBreak()] }))
 
   // ── Page content ────────────────────────────────────────────────────────
+  // Pages flow continuously — a forced page break per page left short/empty
+  // pages (e.g. hub pages) mostly blank. Generous top spacing + a divider rule
+  // separates pages instead.
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i]
+    if (i > 0) sections.push(divider())
     sections.push(new Paragraph({
       heading: HeadingLevel.HEADING_1,
-      pageBreakBefore: i > 0,
-      spacing: { before: 240, after: 120 },
+      spacing: { before: i > 0 ? 360 : 120, after: 120 },
       children: [
         new Bookmark({
           id: anchorFor(page),
