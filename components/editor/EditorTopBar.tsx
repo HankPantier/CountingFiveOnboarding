@@ -41,6 +41,7 @@ function statusPill(
 }
 
 function OverflowMenu({
+  sessionId,
   websiteUrl,
   status,
   publishing,
@@ -50,6 +51,7 @@ function OverflowMenu({
   onSyncDraft,
   onResetDraft,
 }: {
+  sessionId: string
   websiteUrl: string
   status: EditorStatus
   publishing: boolean
@@ -125,6 +127,17 @@ function OverflowMenu({
             onClick={() => setOpen(false)}
           >
             Open on GitHub ↗
+          </a>
+          <div className="border-t border-border-default my-1" />
+          <a
+            href={`/api/edit/${sessionId}/document`}
+            download
+            role="menuitem"
+            className={`${itemClass} text-text-secondary hover:text-brand-cyan`}
+            title="Download the whole site (content, structure, SEO) as a .docx — opens in Word, Pages, or Google Docs"
+            onClick={() => setOpen(false)}
+          >
+            Download doc ↓
           </a>
           <div className="border-t border-border-default my-1" />
           {status.draftBehind > 0 && (
@@ -237,14 +250,6 @@ export default function EditorTopBar({
         </span>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
-        <a
-          href={`/api/edit/${sessionId}/document`}
-          download
-          className="rounded-pill border border-border-default text-text-secondary hover:bg-surface-subtle hover:text-brand-navy font-heading font-semibold text-xs px-3.5 py-1.5 transition-colors whitespace-nowrap"
-          title="Download the whole site (content, structure, SEO) as a .docx — opens in Word, Pages, or Google Docs"
-        >
-          Download doc
-        </a>
         {behind > 0 && (
           <button
             onClick={onSyncDraft}
@@ -283,6 +288,7 @@ export default function EditorTopBar({
         </button>
         {status && (
           <OverflowMenu
+            sessionId={sessionId}
             websiteUrl={websiteUrl}
             status={status}
             publishing={publishing}
