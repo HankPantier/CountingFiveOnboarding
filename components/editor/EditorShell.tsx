@@ -791,7 +791,7 @@ export default function EditorShell({
         ) : selectedPath === RESOURCES_VIEW ? (
           <ResourcesPanel
             sessionId={sessionId}
-            onPublish={() => void publish()}
+            onPublish={() => publish()}
             publishing={publishing}
             canPublish={canPublish}
             onOpenPost={(path) => {

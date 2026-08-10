@@ -71,8 +71,9 @@ export default function ResourcesPanel({
   onOpenPost: (path: string) => void
   // Publishing is whole-branch (see EditorShell.publish) — the same action the
   // top-bar "Publish to live" runs. canPublish reflects that gate: something is
-  // staged and there are no unsaved edits.
-  onPublish: () => void
+  // staged and there are no unsaved edits. Returns once the publish settles so
+  // we can re-check which posts are now live.
+  onPublish: () => Promise<void>
   publishing: boolean
   canPublish: boolean
 }) {
@@ -101,6 +102,20 @@ export default function ResourcesPanel({
   const reverseLinkWatch = useRef<Map<string, number>>(new Map())
   // Mirrors reverseLinkWatch.size into render state so the poll effect re-runs.
   const [settling, setSettling] = useState(false)
+  // content/posts/*.md paths that are live on main. A drafted idea whose
+  // draft_path is here has already been published, so it drops off the list.
+  const [livePaths, setLivePaths] = useState<Set<string>>(new Set())
+
+  const refreshLivePosts = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/resources/live-posts`, { cache: 'no-store' })
+      if (!res.ok) return
+      const data = (await res.json()) as { paths: string[] }
+      setLivePaths(new Set(data.paths))
+    } catch {
+      // Non-fatal — the list just keeps showing a published idea until next check.
+    }
+  }, [sessionId])
 
   const refresh = useCallback(async (): Promise<ResourceIdea[]> => {
     // no-store: this is a live-status poll — a cached response would leave the
@@ -140,7 +155,17 @@ export default function ResourcesPanel({
     refresh()
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load ideas'))
       .finally(() => setLoading(false))
-  }, [refresh])
+    // Self-heal: on open, drop any idea already published to live (incl. posts
+    // published earlier via the top bar).
+    void refreshLivePosts()
+  }, [refresh, refreshLivePosts])
+
+  // Run the whole-branch publish, then re-check which posts are now live so the
+  // just-published idea drops off the list.
+  const handlePublish = async () => {
+    await onPublish()
+    await refreshLivePosts()
+  }
 
   // Poll while a brainstorm, draft, or social backfill is in flight.
   const anyDrafting = ideas.some((i) => i.draft_status === 'running')
@@ -322,7 +347,11 @@ export default function ResourcesPanel({
     }
   }
 
-  const visible = sortIdeas(ideas.filter((i) => i.status !== 'dismissed'))
+  const visible = sortIdeas(
+    ideas.filter(
+      (i) => i.status !== 'dismissed' && !(i.draft_path && livePaths.has(i.draft_path))
+    )
+  )
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -506,7 +535,7 @@ export default function ResourcesPanel({
                       Open draft
                     </button>
                     <button
-                      onClick={() => onPublish()}
+                      onClick={() => void handlePublish()}
                       disabled={!canPublish}
                       title={
                         canPublish
