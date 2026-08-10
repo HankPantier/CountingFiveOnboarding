@@ -63,9 +63,18 @@ const SCORE_LABELS: Array<{ key: keyof ScoreBreakdown; label: string }> = [
 export default function ResourcesPanel({
   sessionId,
   onOpenPost,
+  onPublish,
+  publishing,
+  canPublish,
 }: {
   sessionId: string
   onOpenPost: (path: string) => void
+  // Publishing is whole-branch (see EditorShell.publish) — the same action the
+  // top-bar "Publish to live" runs. canPublish reflects that gate: something is
+  // staged and there are no unsaved edits.
+  onPublish: () => void
+  publishing: boolean
+  canPublish: boolean
 }) {
   const [ideas, setIdeas] = useState<ResourceIdea[]>([])
   const [loading, setLoading] = useState(true)
@@ -328,9 +337,11 @@ export default function ResourcesPanel({
         </button>
       </div>
       <p className="text-xs font-body text-text-muted mb-4">
-        Researches sticky, sharable angles for this firm, drafts on-brand posts to the draft branch
-        under <code>content/posts/</code>, then you edit and publish like any page. Brainstorming
-        adds to the list without touching kept ideas; removed ideas won&apos;t be suggested again.
+        Researches sticky, sharable angles for this firm and drafts on-brand posts under{' '}
+        <code>content/posts/</code>, staged on your draft branch. Open a draft to review or edit,
+        then <strong className="font-semibold text-text-secondary">Publish to live</strong> to put
+        it on the site. Brainstorming adds to the list without touching kept ideas; removed ideas
+        won&apos;t be suggested again.
       </p>
 
       <form
@@ -490,9 +501,21 @@ export default function ResourcesPanel({
                   <>
                     <button
                       onClick={() => onOpenPost(idea.draft_path!)}
-                      className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 transition-colors"
+                      className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                     >
                       Open draft
+                    </button>
+                    <button
+                      onClick={() => onPublish()}
+                      disabled={!canPublish}
+                      title={
+                        canPublish
+                          ? 'Publish all pending draft changes to the live site (including this post)'
+                          : 'Nothing new to publish — or save/undo your unsaved edits first'
+                      }
+                      className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:bg-brand-navy-dark disabled:bg-surface-subtle disabled:text-text-muted disabled:cursor-not-allowed transition-colors"
+                    >
+                      {publishing ? 'Publishing…' : 'Publish to live'}
                     </button>
                     {socialBusy.has(idea.id) && !idea.social_path ? (
                       <span className="text-xs font-body text-info">Generating social…</span>

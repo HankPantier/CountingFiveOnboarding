@@ -627,6 +627,10 @@ export default function EditorShell({
     (selectedPath.startsWith('content/pages/') || selectedPath.startsWith('content/posts/'))
   const isDraftPage =
     !!selectedPath && selectedPath.startsWith('content/drafts/') && selectedPath.endsWith('.md')
+  // Blog posts (incl. those drafted from the Resources panel) get an inline
+  // "Publish to live" so publishing is reachable right where the post is opened.
+  const isPostPage = !!selectedPath && selectedPath.startsWith('content/posts/')
+  const canPublish = (status?.draftAhead ?? 0) > 0 && dirty.size === 0 && !publishing
   const canPageAct = !!selectedPath && loaded.has(selectedPath) && !pageActioning
 
   return (
@@ -650,6 +654,21 @@ export default function EditorShell({
       />
       {(isLivePage || isDraftPage) && selectedPath && (
         <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end gap-2">
+          {isPostPage && (
+            <button
+              type="button"
+              onClick={() => void publish()}
+              disabled={!canPublish}
+              title={
+                canPublish
+                  ? 'Publish all pending draft changes to the live site (including this post)'
+                  : 'Nothing new to publish — or save your unsaved edits first'
+              }
+              className="rounded-pill bg-brand-navy px-3.5 py-1.5 font-heading font-semibold text-xs text-white hover:bg-brand-navy-dark transition-colors disabled:bg-surface-subtle disabled:text-text-muted disabled:cursor-not-allowed"
+            >
+              {publishing ? 'Publishing…' : 'Publish to live'}
+            </button>
+          )}
           {isLivePage && (
             <ContentChatModal
               sessionId={sessionId}
@@ -772,6 +791,9 @@ export default function EditorShell({
         ) : selectedPath === RESOURCES_VIEW ? (
           <ResourcesPanel
             sessionId={sessionId}
+            onPublish={() => void publish()}
+            publishing={publishing}
+            canPublish={canPublish}
             onOpenPost={(path) => {
               // A freshly drafted post is a new commit on draft: refresh the
               // tree + status so it appears, then open it in the editor.
