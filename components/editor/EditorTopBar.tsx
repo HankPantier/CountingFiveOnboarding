@@ -184,6 +184,7 @@ function OverflowMenu({
 }
 
 export default function EditorTopBar({
+  sessionId,
   firmName,
   websiteUrl,
   status,
@@ -199,6 +200,7 @@ export default function EditorTopBar({
   onSyncDraft,
   onResetDraft,
 }: {
+  sessionId: string
   firmName: string
   websiteUrl: string
   status: EditorStatus | null
@@ -235,6 +237,14 @@ export default function EditorTopBar({
         </span>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
+        <a
+          href={`/api/edit/${sessionId}/document`}
+          download
+          className="rounded-pill border border-border-default text-text-secondary hover:bg-surface-subtle hover:text-brand-navy font-heading font-semibold text-xs px-3.5 py-1.5 transition-colors whitespace-nowrap"
+          title="Download the whole site (content, structure, SEO) as a .docx — opens in Word, Pages, or Google Docs"
+        >
+          Download doc
+        </a>
         {behind > 0 && (
           <button
             onClick={onSyncDraft}

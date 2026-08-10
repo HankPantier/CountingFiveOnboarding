@@ -632,6 +632,7 @@ export default function EditorShell({
   return (
     <div className="flex flex-col h-screen bg-surface-default">
       <EditorTopBar
+        sessionId={sessionId}
         firmName={firmName}
         websiteUrl={websiteUrl}
         status={status}
