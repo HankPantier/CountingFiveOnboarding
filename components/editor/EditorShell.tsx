@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import EditorTopBar, { type EditorStatus } from './EditorTopBar'
-import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, THEME_VIEW, type TreeFile } from './FileTree'
+import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, THEME_VIEW, CLIENT_CENTER_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
 import NavEditor from './NavEditor'
 import ContentChatModal from './ContentChatModal'
@@ -11,6 +11,7 @@ import ResourcesPanel from './ResourcesPanel'
 import OneOffPanel from './OneOffPanel'
 import ChangesPanel from './ChangesPanel'
 import ThemeStudio from './ThemeStudio'
+import ClientCenterEditor from './ClientCenterEditor'
 import NewPageDialog from './NewPageDialog'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import type { Move } from '@/lib/editor/nav-urls'
@@ -137,7 +138,8 @@ export default function EditorShell({
         path === RESOURCES_VIEW ||
         path === ONEOFF_VIEW ||
         path === CHANGES_VIEW ||
-        path === THEME_VIEW
+        path === THEME_VIEW ||
+        path === CLIENT_CENTER_VIEW
       )
         return // virtual view, nothing to fetch
       if (loaded.has(path)) return
@@ -784,6 +786,8 @@ export default function EditorShell({
             // Publish button + Review changes count reflect them.
             onCommitted={() => void refreshStatus()}
           />
+        ) : selectedPath === CLIENT_CENTER_VIEW ? (
+          <ClientCenterEditor sessionId={sessionId} onSaved={() => void refreshStatus()} />
         ) : selectedPath === MEDIA_VIEW ? (
           <MediaLibrary sessionId={sessionId} onChanged={() => void refreshStatus()} />
         ) : selectedPath === ONEOFF_VIEW ? (

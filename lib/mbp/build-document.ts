@@ -94,6 +94,7 @@ export function buildMbpDocument(
     arraySection('team', 'Team', schema.team, t => t.name || ''),
     arraySection('services', 'Services', schema.services, s => s.name || ''),
     arraySection('niches', 'Niches', schema.niches, n => n.name || ''),
+    arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || ''),
     objectSection('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined),
     objectSection('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined),
     objectSection('assets', 'Assets', schema.assets as Record<string, unknown> | undefined),

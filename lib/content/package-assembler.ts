@@ -30,6 +30,7 @@ import {
 import { getSiteSettings } from '@/lib/content/site-settings'
 import { buildDesignMd } from '@/lib/content/design-md-builder'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
+import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/design-variant-injector'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
@@ -351,6 +352,11 @@ export async function assembleContentPackage(
     siteHost(session.website_url)
   )
 
+  // Client Center — emitted only when the firm has at least one client portal
+  // link. The nav button lives inside the modal component (config-driven), not
+  // in nav.json, so there's nothing to append here.
+  const clientCenterJson = buildClientCenterJson(schema)
+
   // Pricing calculator — emitted only when the session has an enabled row (the
   // operator opted in via the admin editor). Appends a nav entry so the
   // /pricing-calculator page is reachable.
@@ -497,6 +503,9 @@ export async function assembleContentPackage(
     { path: 'content/brand.json', content: JSON.stringify(brandJson, null, 2) },
     { path: 'content/design.json', content: JSON.stringify(designJson, null, 2) },
     { path: 'content/nav.json', content: JSON.stringify(navJson, null, 2) },
+    ...(clientCenterJson.enabled
+      ? [{ path: 'content/client-center.json', content: JSON.stringify(clientCenterJson, null, 2) }]
+      : []),
     ...(shipPricingCalculator
       ? [
           pricingCalculatorJsonEntry(pricingCalc.config),

@@ -401,12 +401,17 @@ Group remaining gaps into 2–3 per exchange by topic:
 - Client questions (age ranges, how they find the firm, client needs)
 - Differentiators and growth goals
 - Culture (mission/values, team description)
+- Client portals (see below)
 - Brand & Tone (see below — always last before the close)
 
 - Tier 1: Always ask
 - Tier 2: Ask unless clearly irrelevant to this firm
 - Tier 3: Ask if it's relevant; otherwise add to "_meta.phase4_flagged_for_followup" for later follow-up
 One natural follow-up per thin answer, then move on.
+
+CLIENT PORTALS BLOCK — ask once, before Brand & Tone:
+Ask: "Do your clients log into any outside tools or portals — QuickBooks Online, a secure file/document upload, payroll, online bill-pay, remote support? If so, what are they and where's the login link?"
+For each one captured, write an entry to clientPortals[] with label, url, a short description, and a category (e.g. Documents, Payments, Support). These become the site's "Client Center" button. NEVER ask for or store portal passwords or credentials — links only; if a password comes up, decline and note it's handled through a secure channel.
 
 BRAND & TONE BLOCK — ask this as the last topic, after differentiators and culture:
 Ask in one exchange: "Before we wrap up, I want to capture a sense of your brand voice. How would clients describe your firm today — and how would you like them to feel after reading your new site?"

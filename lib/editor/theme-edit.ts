@@ -152,6 +152,7 @@ export const OVERRIDE_BLOCKS = [
   'faq-accordion',
   'form',
   'content-table',
+  'client-center',
 ] as const
 
 // A design-overrides.css guardrail: refuse @import (external CSS / data

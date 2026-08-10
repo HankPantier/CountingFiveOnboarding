@@ -122,6 +122,17 @@ export type SessionSchema = {
     rewriteDirection?: string
     keywords?: string[]
   }>
+  // Client-facing external portals (QuickBooks, ShareFile, payroll, bill-pay,
+  // remote support). Rendered on the site as the "Client Center" modal. Flat and
+  // agent-fillable via update_session_data dotted paths; grouped by `category`
+  // into content/client-center.json at package-assembly time. Links only —
+  // portal passwords are never collected or stored (CLAUDE.md security rule 5).
+  clientPortals?: Array<{
+    label: string
+    url: string
+    description?: string
+    category?: string
+  }>
   niches?: Array<{
     name: string
     description: string

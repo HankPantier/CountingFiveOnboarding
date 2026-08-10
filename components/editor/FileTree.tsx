@@ -14,6 +14,8 @@ export const ONEOFF_VIEW = '__oneoff__'
 export const CHANGES_VIEW = '__changes__'
 // Sentinel selectedPath that opens the AI theme/CSS studio (admin-only).
 export const THEME_VIEW = '__theme__'
+// Sentinel selectedPath that opens the Client Center portal-links editor.
+export const CLIENT_CENTER_VIEW = '__client_center__'
 
 const VIRTUAL_NAV = 'content/nav.json'
 
@@ -203,7 +205,7 @@ export default function FileTree({
           ? 'pages'
           : isPost(selectedPath) || isSocial(selectedPath)
             ? 'resources'
-            : isNav(selectedPath)
+            : isNav(selectedPath) || selectedPath === CLIENT_CENTER_VIEW
               ? 'configuration'
               : selectedPath === MEDIA_VIEW
                 ? 'media'
@@ -445,6 +447,14 @@ export default function FileTree({
           ) : (
             <li className="text-xs text-text-muted px-2 py-1">nav.json missing</li>
           )}
+          <li>
+            <button
+              onClick={() => onSelect(CLIENT_CENTER_VIEW)}
+              className={fileButtonClass(selectedPath === CLIENT_CENTER_VIEW)}
+            >
+              Client Center
+            </button>
+          </li>
         </ul>
       )}
 

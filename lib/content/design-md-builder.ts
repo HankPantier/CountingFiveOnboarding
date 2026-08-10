@@ -236,7 +236,7 @@ ${r[input.tokens.roundness]} Badges always use the smallest scale (4px) for typo
 function buildComponentsSection(): string {
   return `## Components
 
-Button-primary is the action color with on-action text and pill (or roundness-scaled) corners. On hover it shifts to the primary color. Button-secondary inverts: white surface, primary text, same shape. Cards sit on near-white with a soft navy-tinted shadow. Links use the action color and are always underlined within body copy. Badge uses the complementary accent at the smallest radius. Hero blocks fill with the primary color and use the largest spacing scale.`
+Button-primary is the action color with on-action text and pill (or roundness-scaled) corners. On hover it shifts to the primary color. Button-secondary inverts: white surface, primary text, same shape. Cards sit on near-white with a soft navy-tinted shadow. Links use the action color and are always underlined within body copy. Badge uses the complementary accent at the smallest radius. Hero blocks fill with the primary color and use the largest spacing scale. The Client Center (\`data-block="client-center"\`) is a header-triggered modal of grouped external-portal link tiles on card surfaces — style it to match cards and the primary accent.`
 }
 
 function buildDosDontsSection(input: BuilderInput): string {

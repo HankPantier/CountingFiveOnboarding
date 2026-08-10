@@ -28,6 +28,7 @@ export interface NotesModel {
   niches?: Array<{ name?: string; description?: string; revenueBand?: string; businessStage?: string; decisionMaker?: string }>
   locations?: Array<{ name?: string; street?: string; city?: string; state?: string; zip?: string; phone?: string; email?: string }>
   team?: Array<{ name?: string; title?: string; bio?: string }>
+  clientPortals?: Array<{ label?: string; url?: string; description?: string; category?: string }>
   culture?: { missionVisionValues?: string; teamDescription?: string; socialMediaChannels?: string[] }
   brand?: {
     currentTone?: string; aspirationalTone?: string; toneAdjectives?: string[]; toneToAvoid?: string[]
@@ -59,6 +60,7 @@ export function validateNotesModel(parsed: unknown): NotesModel | null {
       zip: asStr(l.zip), phone: asStr(l.phone), email: asStr(l.email),
     })),
     team: asObjArr(p.team).map((t) => ({ name: asStr(t.name), title: asStr(t.title), bio: asStr(t.bio) })),
+    clientPortals: asObjArr(p.clientPortals).map((cp) => ({ label: asStr(cp.label), url: asStr(cp.url), description: asStr(cp.description), category: asStr(cp.category) })),
     culture: {
       missionVisionValues: asStr(cu.missionVisionValues), teamDescription: asStr(cu.teamDescription),
       socialMediaChannels: asStrArr(cu.socialMediaChannels),
@@ -150,6 +152,13 @@ function candidates(model: NotesModel): Candidate[] {
   if (team.length) out.push({ path: 'team', label: `Team (${team.length})`, value: team.map((t) => ({ name: t.name!, title: t.title ?? '', certifications: [], bio: t.bio ?? '', specializations: [] })) })
   const locations = (model.locations ?? []).filter((l) => l.name || l.street || l.city)
   if (locations.length) out.push({ path: 'locations', label: `Locations (${locations.length})`, value: locations.map((l) => ({ name: l.name ?? '', street: l.street ?? '', line2: '', city: l.city ?? '', state: l.state ?? '', zip: l.zip ?? '', phone: l.phone ?? '', fax: '', email: l.email ?? '', hours: {} })) })
+  const clientPortals = (model.clientPortals ?? []).filter((p) => p.label && p.url)
+  if (clientPortals.length) out.push({ path: 'clientPortals', label: `Client portals (${clientPortals.length})`, value: clientPortals.map((p) => {
+    const base: Record<string, unknown> = { label: p.label!, url: p.url! }
+    if (p.description) base.description = p.description
+    if (p.category) base.category = p.category
+    return base
+  }) })
 
   return out
 }
@@ -192,6 +201,7 @@ function knownSummary(schema: SessionSchema): string {
   check('business.name', 'business name'); check('business.tagline', 'tagline')
   check('business.differentiators', 'differentiators'); check('business.foundingYear', 'founding year')
   check('services', 'services'); check('niches', 'niches'); check('team', 'team'); check('locations', 'locations')
+  check('clientPortals', 'client portals')
   check('brand.currentTone', 'brand tone'); check('culture.missionVisionValues', 'mission/values')
   check('contact.email', 'contact email')
   return filled.length ? filled.join(', ') : '(nothing yet)'
@@ -213,11 +223,13 @@ Return a JSON object with this exact shape (omit any field/array you can't fill 
   "niches": [ { "name": string, "description": string, "revenueBand": string, "businessStage": string, "decisionMaker": string } ],
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
   "team": [ { "name": string, "title": string, "bio": string } ],
+  "clientPortals": [ { "label": string, "url": string, "description": string, "category": string } ],
   "culture": { "missionVisionValues": string, "teamDescription": string, "socialMediaChannels": string[] },
   "brand": { "currentTone": string, "aspirationalTone": string, "toneAdjectives": string[], "toneToAvoid": string[], "primaryColors": string, "voiceExample": string, "brandPersonality": string }
 }
 - "niches" = the industries / client types the firm serves. Per niche, "revenueBand"/"businessStage"/"decisionMaker" describe the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder") — only when the notes state it.
 - "serviceAreas" = the specific cities/counties the firm serves or targets (local-SEO geography); "targetKeywords" = search terms the firm wants to rank for, if mentioned.
+- "clientPortals" = external tools/portals the firm's CLIENTS log into (e.g. QuickBooks Online, ShareFile/secure file upload, payroll, online bill-pay, remote support). Give each a short "category" (e.g. Documents, Payments, Support) when clear. NEVER capture passwords or credentials — links only.
 - Keep descriptions concise (1–2 sentences).
 
 CALL NOTES:
