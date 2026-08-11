@@ -73,8 +73,10 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
 
 export default function GenerationPhase({
   contentJobId,
+  jobPhase,
 }: {
   contentJobId: string
+  jobPhase: number
 }) {
   const [status, setStatus] = useState<GenStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -190,9 +192,12 @@ export default function GenerationPhase({
   }
 
   const regenerate = async (page: PageStatus) => {
-    const warning = page.approved
-      ? `Regenerate "${page.title}"? The current approved content will be replaced and approval reset.`
-      : `Regenerate "${page.title}"? The current draft will be replaced.`
+    const warning =
+      jobPhase === 6
+        ? `This client's content is already COMPLETE. Regenerating "${page.title}" will replace the finished content and reset approval — you'll need to re-publish. Continue?`
+        : page.approved
+          ? `Regenerate "${page.title}"? The current approved content will be replaced and approval reset.`
+          : `Regenerate "${page.title}"? The current draft will be replaced.`
     if (!window.confirm(warning)) return
     setAction(`regen:${page.id}`, true)
     try {

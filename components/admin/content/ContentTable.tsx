@@ -108,7 +108,7 @@ export default function ContentTable({ rows }: { rows: ContentRow[] }) {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-3">
-                    <GenerateContentModal sessionId={row.id} />
+                    <GenerateContentModal sessionId={row.id} contentComplete={row.phase === 6} />
                     {row.phase === 6 && (
                       row.canEditContent ? (
                         <Link
