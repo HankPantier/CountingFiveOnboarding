@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AuditStatusBadge, GradeBadge, FolderBadge } from '@/components/admin/audit/AuditBadges'
+import ListSearchInput from '@/components/admin/ListSearchInput'
 
 export type AuditRow = {
   id: string
@@ -121,11 +122,20 @@ export default function AuditsTable({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
   const headerRef = useRef<HTMLInputElement>(null)
   // Default order matches the server query (newest first).
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
 
-  const sortedRows = useMemo(() => sortRows(rows, sort.key, sort.dir), [rows, sort])
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter((r) =>
+      [r.site_name, r.domain, r.url].some((v) => v?.toLowerCase().includes(q)),
+    )
+  }, [rows, query])
+
+  const sortedRows = useMemo(() => sortRows(filteredRows, sort.key, sort.dir), [filteredRows, sort])
 
   const onSort = (key: SortKey) => {
     setSort((prev) =>
@@ -133,7 +143,7 @@ export default function AuditsTable({
     )
   }
 
-  const allSelected = rows.length > 0 && selected.size === rows.length
+  const allSelected = filteredRows.length > 0 && filteredRows.every((r) => selected.has(r.id))
   useEffect(() => {
     if (headerRef.current) {
       headerRef.current.indeterminate = selected.size > 0 && !allSelected
@@ -150,7 +160,17 @@ export default function AuditsTable({
   }
 
   const toggleAll = () => {
-    setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))))
+    setSelected((prev) => {
+      const allVisibleSelected = filteredRows.length > 0 && filteredRows.every((r) => prev.has(r.id))
+      if (allVisibleSelected) {
+        const next = new Set(prev)
+        filteredRows.forEach((r) => next.delete(r.id))
+        return next
+      }
+      const next = new Set(prev)
+      filteredRows.forEach((r) => next.add(r.id))
+      return next
+    })
   }
 
   const deleteIds = async (ids: string[], confirmMsg: string) => {
@@ -210,6 +230,13 @@ export default function AuditsTable({
   return (
     <div>
       <div className="mb-3 flex min-h-[2rem] items-center gap-4">
+        <ListSearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search by site or domain…"
+          ariaLabel="Search audits by site or domain"
+        />
+        <div className="flex-1" />
         {selected.size > 0 ? (
           <>
             <span className="font-body text-sm text-text-secondary">{selected.size} selected</span>
@@ -289,6 +316,13 @@ export default function AuditsTable({
               </tr>
             </thead>
             <tbody>
+              {sortedRows.length === 0 && (
+                <tr>
+                  <td colSpan={columns.length + 2} className="px-4 py-12 text-center font-body text-text-muted">
+                    No audits match “{query.trim()}”.
+                  </td>
+                </tr>
+              )}
               {sortedRows.map((r) => {
                 const delta = deltas[r.id]
                 const isChecked = selected.has(r.id)

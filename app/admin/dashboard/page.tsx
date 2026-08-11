@@ -71,7 +71,12 @@ export default async function DashboardPage({
     .select('id, website_url, status, current_phase, last_activity_at, created_at, reminder_count', { count: 'exact' })
   if (statusFilter === 'all') query = query.neq('status', 'archived')
   else query = query.eq('status', statusFilter)
-  if (q) query = query.ilike('website_url', `%${q}%`)
+  if (q) {
+    // In a PostgREST or() string, ilike uses * wildcards; strip chars that would
+    // break the comma/paren-delimited filter grammar.
+    const esc = q.replace(/[%,()]/g, ' ')
+    query = query.or(`website_url.ilike.*${esc}*,schema_data->business->>name.ilike.*${esc}*`)
+  }
   if (allowed !== null) query = query.in('id', allowed)
 
   let approvedQuery = supabase
@@ -201,8 +206,8 @@ export default async function DashboardPage({
             type="search"
             name="q"
             defaultValue={q}
-            placeholder="Search by website…"
-            aria-label="Search sessions by website"
+            placeholder="Search by client or website…"
+            aria-label="Search sessions by client or website"
             className="w-56 rounded-pill border border-border-default bg-surface-card px-4 py-2 font-body text-xs transition-colors focus:border-brand-cyan focus:outline-none"
           />
         </form>
