@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import EditorTopBar, { type EditorStatus } from './EditorTopBar'
 import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, THEME_VIEW, CLIENT_CENTER_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
@@ -492,6 +492,30 @@ export default function EditorShell({
     }
   }
 
+  // Self-heal a stale draft. When the draft is strictly behind live (every draft
+  // commit already landed on main — e.g. after an operator hand-merged a publish
+  // conflict PR on GitHub) and there is no local work to lose, fast-forward the
+  // draft to live automatically so the "update from live"/conflict state clears
+  // without a manual click. syncMainIntoDraft is a clean fast-forward here (draft
+  // is an ancestor of main), so it never conflicts. Attempt at most once per
+  // distinct behind-status so a transient failure can't spin.
+  // Latest-ref so the heal effect can call syncDraft without re-subscribing to it
+  // (syncDraft is re-created each render — depending on it would churn the effect).
+  const syncDraftRef = useRef(syncDraft)
+  useEffect(() => {
+    syncDraftRef.current = syncDraft
+  })
+  const healSigRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!status) return
+    if (!(status.draftAhead === 0 && status.draftBehind > 0)) return
+    if (dirty.size > 0 || draftBusy) return
+    const sig = `${status.lastCommitSha ?? ''}:${status.draftBehind}`
+    if (healSigRef.current === sig) return
+    healSigRef.current = sig
+    void syncDraftRef.current()
+  }, [status, dirty.size, draftBusy])
+
   // "Reset draft to live": discard the draft entirely and start from what's live.
   // Destructive — unpublished draft edits are lost.
   const resetDraft = async () => {
@@ -876,6 +900,10 @@ export default function EditorShell({
                 pull request on GitHub
               </a>{' '}
               to deploy.
+            </p>
+            <p className="mt-1 text-text-muted">
+              Once you merge it, return here — the draft updates from live
+              automatically.
             </p>
           </div>
           <button
