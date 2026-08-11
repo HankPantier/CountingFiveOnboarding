@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
+import DeleteBatchButton from './DeleteBatchButton'
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -126,12 +127,15 @@ export default async function BlogBatchListPage() {
                     <StatusBadge status={b.status} />
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/admin/blog-batch/${b.id}`}
-                      className="inline-flex items-center rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
-                    >
-                      View
-                    </Link>
+                    <div className="inline-flex items-center gap-2">
+                      <Link
+                        href={`/admin/blog-batch/${b.id}`}
+                        className="inline-flex items-center rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
+                      >
+                        View
+                      </Link>
+                      {user.isAdmin && <DeleteBatchButton batchId={b.id} />}
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -4,6 +4,7 @@ import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/au
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
 import { headCheckUrls, type ExternalLink } from '@/lib/content/link-checker'
 import { asJson } from '@/lib/supabase/json-typed'
+import { resolveEligibility, insertBatchTargets } from '@/lib/content/blog-batch-targets'
 import type { RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
 
 export const runtime = 'nodejs'
@@ -63,23 +64,7 @@ export async function POST(req: Request) {
   const supabase = createServerClient()
 
   // Resolve each client's content job. Eligible = repo provisioned + phase >= 6.
-  const { data: jobs } = await supabase
-    .from('content_jobs')
-    .select('id, session_id, github_repo, phase')
-    .in('session_id', sessionIds)
-
-  const jobBySession = new Map((jobs ?? []).map((j) => [j.session_id, j]))
-  const eligible: Array<{ sessionId: string; contentJobId: string }> = []
-  const ineligible: Array<{ sessionId: string; contentJobId: string }> = []
-  for (const sessionId of sessionIds) {
-    const job = jobBySession.get(sessionId)
-    if (!job) continue // No content job at all — nothing to attach a draft to.
-    if (job.github_repo && job.phase >= 6) {
-      eligible.push({ sessionId, contentJobId: job.id })
-    } else {
-      ineligible.push({ sessionId, contentJobId: job.id })
-    }
-  }
+  const { eligible, ineligible } = await resolveEligibility(supabase, sessionIds)
 
   if (eligible.length === 0) {
     return NextResponse.json(
@@ -127,55 +112,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to create batch' }, { status: 500 })
   }
 
-  // One real per-client idea row per eligible client — the existing pipeline
-  // drafts these against each client's MBP.
-  const { data: ideas, error: ideasErr } = await supabase
-    .from('resource_ideas')
-    .insert(
-      eligible.map((e) => ({
-        content_job_id: e.contentJobId,
-        session_id: e.sessionId,
-        title,
-        angle,
-        target_keyword: targetKeyword,
-        secondary_keywords: asJson(secondaryKeywords),
-        rationale,
-        external_links: asJson(verifiedLinks),
-        status: 'approved',
-        draft_status: 'idle',
-      }))
-    )
-    .select('id, session_id')
-
-  if (ideasErr || !ideas) {
-    console.error('[blog-batch] Failed to create per-client ideas:', ideasErr?.message)
-    return NextResponse.json({ error: 'Failed to create per-client ideas' }, { status: 500 })
-  }
-
-  const ideaBySession = new Map(ideas.map((i) => [i.session_id, i.id]))
-
-  const targetRows = [
-    ...eligible.map((e) => ({
-      batch_id: batch.id,
-      session_id: e.sessionId,
-      content_job_id: e.contentJobId,
-      resource_idea_id: ideaBySession.get(e.sessionId) ?? null,
-      status: 'pending',
-    })),
-    ...ineligible.map((e) => ({
-      batch_id: batch.id,
-      session_id: e.sessionId,
-      content_job_id: e.contentJobId,
-      resource_idea_id: null,
-      status: 'skipped',
-      error: 'Site is not published / repo not provisioned',
-    })),
-  ]
-
-  const { error: targetsErr } = await supabase.from('blog_batch_targets').insert(targetRows)
-  if (targetsErr) {
-    console.error('[blog-batch] Failed to create targets:', targetsErr.message)
-    return NextResponse.json({ error: 'Failed to create batch targets' }, { status: 500 })
+  const { error: targetsError } = await insertBatchTargets(
+    supabase,
+    batch.id,
+    { title, angle, targetKeyword, secondaryKeywords, rationale },
+    verifiedLinks,
+    eligible,
+    ineligible
+  )
+  if (targetsError) {
+    return NextResponse.json({ error: targetsError }, { status: 500 })
   }
 
   after(async () => {

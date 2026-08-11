@@ -8,15 +8,29 @@ export const maxDuration = 300
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Re-run only the clients that errored. Resets each errored target back to
-// 'pending' and its idea's draft_status back to 'idle' (so generateResourceDraft
-// can re-claim the lock), then re-triggers the runner.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+interface RetryBody {
+  sessionId?: string
+}
+
+// Re-run the clients that errored. Resets each errored target back to 'pending'
+// and its idea's draft_status back to 'idle' (so generateResourceDraft can
+// re-claim the lock), then re-triggers the runner. With a `sessionId` in the
+// body, only that one client is retried; otherwise every errored client is.
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Invalid batch id' }, { status: 400 })
+
+  let body: RetryBody = {}
+  try {
+    body = (await req.json()) as RetryBody
+  } catch {
+    // No body — retry all errored clients.
+  }
+  const singleSessionId =
+    typeof body.sessionId === 'string' && UUID_RE.test(body.sessionId) ? body.sessionId : null
 
   const supabase = createServerClient()
 
@@ -31,6 +45,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .select('id, resource_idea_id, session_id')
     .eq('batch_id', id)
     .eq('status', 'error')
+  if (singleSessionId) query = query.eq('session_id', singleSessionId)
   if (allowed !== null) {
     if (allowed.length === 0) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     query = query.in('session_id', allowed)
