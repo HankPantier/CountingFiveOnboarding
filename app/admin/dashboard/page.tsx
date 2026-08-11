@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { estimateCostUsd } from '@/lib/content/token-usage'
 import SessionRowActions from '@/components/admin/SessionRowActions'
+import DashboardSearch from '@/components/admin/DashboardSearch'
 import PipelineChart from '@/components/admin/PipelineChart'
 import StatCard from '@/components/admin/ui/StatCard'
 import StatusPill from '@/components/admin/StatusPill'
@@ -200,17 +201,7 @@ export default async function DashboardPage({
             </Link>
           ))}
         </div>
-        <form action="/admin/dashboard" className="flex items-center">
-          {statusFilter !== 'all' && <input type="hidden" name="status" value={statusFilter} />}
-          <input
-            type="search"
-            name="q"
-            defaultValue={q}
-            placeholder="Search by client or website…"
-            aria-label="Search sessions by client or website"
-            className="w-56 rounded-pill border border-border-default bg-surface-card px-4 py-2 font-body text-xs transition-colors focus:border-brand-cyan focus:outline-none"
-          />
-        </form>
+        <DashboardSearch initialQuery={q} status={statusFilter} />
         <div className="flex-1" />
       </div>
 
