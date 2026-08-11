@@ -21,6 +21,24 @@ export type SessionSchema = {
       keep_pages?: string[]
       notes?: string
     }
+    // Snapshot of the last team-headshot scan of the client's live site. Written
+    // by the audit → session-start auto-pull so the admin UI can show per-member
+    // suggestions for the photos it did not auto-pull, without re-scraping.
+    teamPhotoDiscovery?: {
+      scannedPages: string[]
+      suggestions: Array<{ name: string; imageUrl: string | null; confidence: 'high' | 'low' | 'none' }>
+      candidates: Array<{
+        imageUrl: string
+        altText: string | null
+        nearbyName: string | null
+        filename: string
+        width: number | null
+        height: number | null
+        sourcePageUrl: string
+      }>
+      /** ISO timestamp of the scan. */
+      at: string
+    }
     // Audit intelligence that has no typed schema home. Seeded by the
     // audit→session draft so the chat can confirm it and the MBP can render it,
     // instead of discarding it. Everything optional — sub-sections appear only

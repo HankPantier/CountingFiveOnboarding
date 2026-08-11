@@ -12,11 +12,29 @@ type TeamMember = {
   credentials?: string[]
 }
 
+type MatchConfidence = 'high' | 'low' | 'none'
+
+type MemberMatch = {
+  name: string
+  imageUrl: string | null
+  confidence: MatchConfidence
+}
+
+// Snapshot the audit → session-start auto-pull leaves in _meta.teamPhotoDiscovery
+// so this UI can suggest the not-yet-pulled photos without re-scraping.
+type TeamPhotoDiscovery = {
+  scannedPages: string[]
+  suggestions: MemberMatch[]
+  candidates: Candidate[]
+  at: string
+}
+
 type Props = {
   sessionId: string
   team: TeamMember[]
   assets: Asset[]
   signedUrls: Record<string, string>
+  discovery?: TeamPhotoDiscovery | null
 }
 
 // Candidate headshot discovered on the client's live site (shape mirrors
@@ -28,11 +46,13 @@ type Candidate = {
   filename: string
   width: number | null
   height: number | null
+  sourcePageUrl: string
 }
 
 type DiscoverResponse = {
   candidates: Candidate[]
   suggestions: Record<string, string | null>
+  matches: MemberMatch[]
   scannedPages: string[]
   warnings: string[]
   error?: string
@@ -41,19 +61,30 @@ type DiscoverResponse = {
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.gif', '.png', '.webp']
 const MAX_BYTES = 25 * 1024 * 1024  // 25MB per team photo is plenty
 
-export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }: Props) {
+export default function TeamPhotoManager({ sessionId, team, assets, signedUrls, discovery }: Props) {
   const router = useRouter()
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [busyMember, setBusyMember] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Live-site pull state.
-  const [candidates, setCandidates] = useState<Candidate[] | null>(null)
-  const [selected, setSelected] = useState<Record<string, string>>({})
+  // Live-site pull state — seeded from the auto-pull discovery snapshot so
+  // per-member suggestions show without the rep re-scanning.
+  const [candidates, setCandidates] = useState<Candidate[] | null>(discovery?.candidates ?? null)
+  const [selected, setSelected] = useState<Record<string, string>>(() => {
+    const pre: Record<string, string> = {}
+    for (const m of discovery?.suggestions ?? []) if (m.imageUrl) pre[m.name] = m.imageUrl
+    return pre
+  })
+  const [matches, setMatches] = useState<MemberMatch[]>(discovery?.suggestions ?? [])
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
-  const [scanInfo, setScanInfo] = useState<{ scannedPages: string[]; warnings: string[] } | null>(null)
+  const [scanInfo, setScanInfo] = useState<{ scannedPages: string[]; warnings: string[] } | null>(
+    discovery ? { scannedPages: discovery.scannedPages, warnings: [] } : null,
+  )
   const [assigning, setAssigning] = useState<string | null>(null)
+
+  const confidenceByMember = new Map<string, MatchConfidence>()
+  for (const m of matches) confidenceByMember.set(m.name, m.confidence)
 
   // Build a map: memberName → asset (the most recent team-photo upload for them)
   const photoByMember = new Map<string, Asset>()
@@ -145,6 +176,7 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }
       const data = await res.json() as DiscoverResponse
       if (!res.ok) throw new Error(data.error ?? 'Scan failed')
       setCandidates(data.candidates)
+      setMatches(data.matches ?? [])
       setScanInfo({ scannedPages: data.scannedPages, warnings: data.warnings })
       const pre: Record<string, string> = {}
       for (const [name, url] of Object.entries(data.suggestions)) {
@@ -204,6 +236,17 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }
         </p>
       )}
 
+      {discovery && (
+        <div className="mb-3 rounded-md border border-info/40 bg-info/10 px-3 py-2 text-xs font-body text-text-primary">
+          Pulled <span className="font-heading font-semibold">{photoByMember.size}</span> of{' '}
+          <span className="font-heading font-semibold">{team.length}</span> headshots automatically from
+          the current site.
+          {team.length - photoByMember.size > 0
+            ? ` Confirm the suggestions below or upload the ${team.length - photoByMember.size} remaining.`
+            : ''}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         {team.map(member => {
           const asset = photoByMember.get(member.name)
@@ -212,6 +255,7 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }
           const err = errors[member.name]
           const memberCandidates = candidates ?? []
           const sel = selected[member.name]
+          const conf = confidenceByMember.get(member.name)
           return (
             <div key={member.name} className="flex flex-col gap-2 p-2 border border-border-default rounded-md">
               <div className="flex items-center gap-3">
@@ -230,6 +274,16 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls }
                   <p className="text-xs text-text-muted font-body truncate">
                     {asset ? asset.file_name : 'No photo — will use initials avatar'}
                   </p>
+                  {!asset && conf === 'high' && (
+                    <span className="inline-block mt-0.5 text-[10px] font-heading font-semibold text-brand-cyan">
+                      Suggested match from site
+                    </span>
+                  )}
+                  {!asset && conf === 'low' && (
+                    <span className="inline-block mt-0.5 text-[10px] font-heading font-semibold text-warning">
+                      Possible match — confirm
+                    </span>
+                  )}
                   {err && <p className="text-xs text-error font-body mt-0.5">{err}</p>}
                 </div>
                 <input

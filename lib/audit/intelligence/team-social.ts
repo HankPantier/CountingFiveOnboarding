@@ -11,7 +11,11 @@ import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from '@/lib/content/generation-tuning'
 import type { TokenContext } from '@/lib/content/token-usage'
 import { safeGet, normalizeUrl, sameDomain } from '../crawl'
-import { findTeamPages, looksLikeTeamPageUrl } from '@/lib/team-photos/scrape-headshots'
+import { findTeamPages, findBioPages, looksLikeTeamPageUrl } from '@/lib/team-photos/scrape-headshots'
+
+// Re-exported from scrape-headshots (its natural home, shared to avoid a
+// circular import); kept as a named export here for existing importers/tests.
+export { findBioPages }
 import { classifyPlatform, isSocialUrl } from '../social-hosts'
 import { serperEnabled, serperSearch } from '../serper-search'
 import type {
@@ -100,48 +104,6 @@ export function extractTeamText(html: string, pageUrl: string): { text: string; 
     if (full && isSocialUrl(full)) socialLinks.push(full)
   })
   return { text, socialLinks }
-}
-
-// Paths that are children of a team page but are not a person's bio.
-const SKIP_BIO_PATH_RE =
-  /\.(pdf|jpe?g|png|gif|svg|webp|docx?|xlsx?)$|\/(contact|privacy|terms|search|category|categories|tag|tags|page|blog|news|events?|services?|resources?)(\/|$)/i
-
-/** Individual bio/profile pages linked from a team listing: same-domain links
- * exactly one path segment deeper than the team page (e.g. /who-we-are →
- * /who-we-are/jane-doe). Pure. */
-export function findBioPages(html: string, teamPageUrl: string): string[] {
-  let base: URL
-  try {
-    base = new URL(teamPageUrl)
-  } catch {
-    return []
-  }
-  const basePath = base.pathname.replace(/\/+$/, '')
-  if (!basePath) return [] // a homepage/root has no meaningful bio sub-tree
-
-  const $ = cheerio.load(html)
-  const out: string[] = []
-  const seen = new Set<string>()
-  $('a[href]').each((_, el) => {
-    const href = $(el).attr('href')
-    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
-    const full = normalizeUrl(href, teamPageUrl)
-    if (!full || !sameDomain(full, base.host)) return
-    let path: string
-    try {
-      path = new URL(full).pathname.replace(/\/+$/, '')
-    } catch {
-      return
-    }
-    if (!path.startsWith(`${basePath}/`)) return
-    const rest = path.slice(basePath.length + 1)
-    if (!rest || rest.includes('/')) return // exactly one segment deeper
-    if (SKIP_BIO_PATH_RE.test(path)) return
-    if (seen.has(full)) return
-    seen.add(full)
-    out.push(full)
-  })
-  return out
 }
 
 function isHtml200(res: Awaited<ReturnType<typeof safeGet>>): boolean {

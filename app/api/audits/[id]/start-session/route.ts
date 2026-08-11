@@ -1,14 +1,18 @@
-import { NextResponse } from 'next/server'
+import { after, NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { normalizeDomain } from '@/lib/audit'
 import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { withStaffMode } from '@/lib/session/seed-mode'
+import { autoPullTeamHeadshots } from '@/lib/team-photos/auto-pull'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
+// The response returns immediately; the after() headshot scan crawls the team +
+// bio pages and downloads images, so give the background work room to finish.
+export const maxDuration = 300
 
 // POST /api/audits/[id]/start-session — create an onboarding session from the
 // admin-reviewed AI draft and link it back to the audit. The websiteUrl is
@@ -129,6 +133,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     createdBy: run.created_by,
     to: 'working',
   })
+
+  // Pull the client's team headshots off their current site in the background so
+  // the new site has real faces from the start. Non-fatal and self-contained
+  // (never throws); the rep can still discover/pull manually in the session UI.
+  after(() =>
+    autoPullTeamHeadshots(session.id, run.url).catch((err) =>
+      console.error('[audits] start-session team headshot auto-pull failed:', err),
+    ),
+  )
 
   return NextResponse.json({ sessionId: session.id })
 }

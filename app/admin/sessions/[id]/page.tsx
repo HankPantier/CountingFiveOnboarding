@@ -162,6 +162,7 @@ export default async function SessionDetailPage({
             }
             assets={assets ?? []}
             signedUrls={signedUrls}
+            discovery={(session.schema_data as SessionSchema | null)?._meta?.teamPhotoDiscovery ?? null}
           />
           <StockPhotoManager sessionId={id} assets={assets ?? []} signedUrls={signedUrls} />
           <AssetsViewer assets={assets ?? []} signedUrls={signedUrls} />

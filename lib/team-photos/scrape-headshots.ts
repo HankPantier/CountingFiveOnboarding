@@ -16,6 +16,19 @@ export type HeadshotCandidate = {
   filename: string
   width: number | null
   height: number | null
+  /** The page the image was found on. A candidate on an individual bio page
+   * (slug matching a member's name) is a high-confidence headshot for them. */
+  sourcePageUrl: string
+}
+
+/** How sure we are that a candidate is a given member's headshot. `high` is
+ * safe to auto-pull; `low` is surfaced for the rep to confirm. */
+export type MatchConfidence = 'high' | 'low' | 'none'
+
+export type MemberMatch = {
+  name: string
+  imageUrl: string | null
+  confidence: MatchConfidence
 }
 
 export type ScrapeResult = {
@@ -31,9 +44,15 @@ const TEAM_LINK_RE = /team|about|our-people|our-team|staff|leadership|\bmeet\b|p
 // Image filenames/paths that are almost never a person's headshot.
 const SKIP_IMG_RE = /logo|icon|favicon|sprite|badge|banner|placeholder|spacer|pixel|1x1|loading/i
 const MAX_TEAM_PAGES = 4
+// Individual bio/profile pages (e.g. /team/jane-doe) linked from a team listing
+// — a bio page holds one person, so its headshot matches with high confidence.
+const MAX_BIO_PAGES = 12
 const MAX_CANDIDATES = 40
 // Declared dimensions below this are icons/pixels, not headshots.
 const MIN_DIMENSION = 60
+// Paths that are children of a team page but are not a person's bio.
+const SKIP_BIO_PATH_RE =
+  /\.(pdf|jpe?g|png|gif|svg|webp|docx?|xlsx?)$|\/(contact|privacy|terms|search|category|categories|tag|tags|page|blog|news|events?|services?|resources?)(\/|$)/i
 
 function parseIntOrNull(v: string | undefined): number | null {
   if (!v) return null
@@ -84,6 +103,45 @@ export function findTeamPages(html: string, pageUrl: string): string[] {
     urls.push(full)
   })
   return urls
+}
+
+/** Individual bio/profile pages linked from a team listing: same-domain links
+ * exactly one path segment deeper than the team page (e.g. /who-we-are →
+ * /who-we-are/jane-doe). Pure. Lives here (the lowest-level page-analysis
+ * module) so team-social can reuse it without a circular import. */
+export function findBioPages(html: string, teamPageUrl: string): string[] {
+  let base: URL
+  try {
+    base = new URL(teamPageUrl)
+  } catch {
+    return []
+  }
+  const basePath = base.pathname.replace(/\/+$/, '')
+  if (!basePath) return [] // a homepage/root has no meaningful bio sub-tree
+
+  const $ = cheerio.load(html)
+  const out: string[] = []
+  const seen = new Set<string>()
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href')
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+    const full = normalizeUrl(href, teamPageUrl)
+    if (!full || !sameDomain(full, base.host)) return
+    let path: string
+    try {
+      path = new URL(full).pathname.replace(/\/+$/, '')
+    } catch {
+      return
+    }
+    if (!path.startsWith(`${basePath}/`)) return
+    const rest = path.slice(basePath.length + 1)
+    if (!rest || rest.includes('/')) return // exactly one segment deeper
+    if (SKIP_BIO_PATH_RE.test(path)) return
+    if (seen.has(full)) return
+    seen.add(full)
+    out.push(full)
+  })
+  return out
 }
 
 /** Candidate headshot images on a single page, with naming context. Pure. */
@@ -144,9 +202,33 @@ export function extractHeadshotCandidates(html: string, pageUrl: string): Headsh
       filename,
       width,
       height,
+      sourcePageUrl: pageUrl,
     })
   })
   return out
+}
+
+/** Name tokens present in a URL's last path segment (the slug). A bio page at
+ * /team/jane-doe yields ["jane", "doe"]. Pure. */
+function slugTokens(url: string): string[] {
+  let slug = ''
+  try {
+    const parts = new URL(url).pathname.replace(/\/+$/, '').split('/')
+    slug = parts[parts.length - 1] || ''
+  } catch {
+    slug = url
+  }
+  return slug
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 2)
+}
+
+/** How many of a member's name tokens appear in a set of haystack tokens. */
+function overlapCount(nameTokens: string[], haystack: Set<string>): number {
+  let n = 0
+  for (const t of nameTokens) if (haystack.has(t)) n++
+  return n
 }
 
 // Name tokens for matching: drop credentials after the first comma, lowercase,
@@ -167,24 +249,65 @@ function tokenOverlap(tokens: string[], haystack: string): number {
   return score
 }
 
-/** Best-guess candidate imageUrl per member by name/alt/filename overlap. Never
- * auto-commits — the rep confirms. Pure. */
+/** Best-guess candidate per member, tagged with a confidence tier. Never
+ * auto-commits — only the auto-pull orchestrator acts, and only on `high`. Pure.
+ *
+ * - `high`: the candidate sits on an individual bio page whose slug matches the
+ *   member's name (one person per bio page), OR its surrounding text matches
+ *   both name tokens (first + last). Safe to pull automatically.
+ * - `low`: a single name token matched — surfaced for the rep to confirm.
+ * - `none`: nothing matched. */
+export function matchHeadshotsToMembers(
+  members: { name: string }[],
+  candidates: HeadshotCandidate[]
+): MemberMatch[] {
+  return members.map((member) => {
+    const tokens = nameTokens(member.name)
+    if (tokens.length === 0) return { name: member.name, imageUrl: null, confidence: 'none' as const }
+
+    // A bio page carries one person: if its slug matches the member's name, the
+    // best image on that page is almost certainly them. Two name tokens must
+    // match (or the member's only token, for single-name people) so a generic
+    // slug like /about doesn't false-positive.
+    const slugNeeded = tokens.length === 1 ? 1 : 2
+    const bioMatches = candidates.filter((c) => {
+      const slug = new Set(slugTokens(c.sourcePageUrl))
+      return overlapCount(tokens, slug) >= slugNeeded
+    })
+    if (bioMatches.length > 0) {
+      // Among a bio page's images, prefer the one whose own text also names the
+      // member; else the first (usually the primary portrait).
+      let best = bioMatches[0]
+      let bestScore = -1
+      for (const c of bioMatches) {
+        const score = tokenOverlap(tokens, `${c.nearbyName ?? ''} ${c.altText ?? ''} ${c.filename}`)
+        if (score > bestScore) {
+          bestScore = score
+          best = c
+        }
+      }
+      return { name: member.name, imageUrl: best.imageUrl, confidence: 'high' as const }
+    }
+
+    // Fall back to name overlap in the image's own surrounding text.
+    let best: { url: string; score: number } | null = null
+    for (const c of candidates) {
+      const score = tokenOverlap(tokens, `${c.nearbyName ?? ''} ${c.altText ?? ''} ${c.filename}`)
+      if (score > 0 && (!best || score > best.score)) best = { url: c.imageUrl, score }
+    }
+    if (!best) return { name: member.name, imageUrl: null, confidence: 'none' as const }
+    return { name: member.name, imageUrl: best.url, confidence: best.score >= 2 ? 'high' : 'low' }
+  })
+}
+
+/** Best-guess candidate imageUrl per member. Thin wrapper over
+ * {@link matchHeadshotsToMembers} kept for the discover route/UI. Pure. */
 export function suggestCandidatesByName(
   members: { name: string }[],
   candidates: HeadshotCandidate[]
 ): Record<string, string | null> {
   const result: Record<string, string | null> = {}
-  for (const member of members) {
-    const tokens = nameTokens(member.name)
-    let best: { url: string; score: number } | null = null
-    if (tokens.length > 0) {
-      for (const c of candidates) {
-        const score = tokenOverlap(tokens, `${c.nearbyName ?? ''} ${c.altText ?? ''} ${c.filename}`)
-        if (score > 0 && (!best || score > best.score)) best = { url: c.imageUrl, score }
-      }
-    }
-    result[member.name] = best?.url ?? null
-  }
+  for (const m of matchHeadshotsToMembers(members, candidates)) result[m.name] = m.imageUrl
   return result
 }
 
@@ -220,6 +343,10 @@ export async function scrapeTeamHeadshots(websiteUrl: string): Promise<ScrapeRes
     .filter((u) => u !== home!.finalUrl)
     .slice(0, MAX_TEAM_PAGES)
 
+  // Individual bio pages linked from a team listing — where a single portrait
+  // maps unambiguously to one person. Collected while scanning team pages, then
+  // followed for high-confidence matches.
+  const bioCandidates = new Set<string>()
   for (const url of teamPages) {
     if (candidates.length >= MAX_CANDIDATES) break
     const res = await safeGet(url)
@@ -227,6 +354,18 @@ export async function scrapeTeamHeadshots(websiteUrl: string): Promise<ScrapeRes
       warnings.push(`Couldn't read ${url}`)
       continue
     }
+    scannedPages.push(res!.finalUrl)
+    collect(extractHeadshotCandidates(res!.body, res!.finalUrl))
+    for (const b of findBioPages(res!.body, res!.finalUrl)) bioCandidates.add(b)
+  }
+
+  const bioTargets = [...bioCandidates]
+    .filter((u) => !scannedPages.includes(u))
+    .slice(0, MAX_BIO_PAGES)
+  for (const url of bioTargets) {
+    if (candidates.length >= MAX_CANDIDATES) break
+    const res = await safeGet(url)
+    if (!isHtml200(res)) continue
     scannedPages.push(res!.finalUrl)
     collect(extractHeadshotCandidates(res!.body, res!.finalUrl))
   }

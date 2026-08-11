@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
-import { scrapeTeamHeadshots, suggestCandidatesByName } from '@/lib/team-photos/scrape-headshots'
+import { scrapeTeamHeadshots, matchHeadshotsToMembers } from '@/lib/team-photos/scrape-headshots'
 import type { SessionSchema } from '@/types/session-schema'
 
 // Uses node:dns (via the SSRF guard) and a network crawl — Node runtime only.
@@ -52,11 +52,15 @@ export async function GET(
   }
 
   const team = Array.isArray(schema.team) ? schema.team : []
-  const suggestions = suggestCandidatesByName(team, result.candidates)
+  const matches = matchHeadshotsToMembers(team, result.candidates)
+  // Back-compat map (name → imageUrl) plus the richer confidence-tagged list.
+  const suggestions: Record<string, string | null> = {}
+  for (const m of matches) suggestions[m.name] = m.imageUrl
 
   return NextResponse.json({
     candidates: result.candidates,
     suggestions,
+    matches,
     scannedPages: result.scannedPages,
     warnings: result.warnings,
   })
