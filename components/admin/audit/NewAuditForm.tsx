@@ -11,7 +11,7 @@ export function NewAuditForm() {
   const router = useRouter()
   const [url, setUrl] = useState('')
   const [siteName, setSiteName] = useState('')
-  const [maxPages, setMaxPages] = useState(50)
+  const [maxPages, setMaxPages] = useState(80)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

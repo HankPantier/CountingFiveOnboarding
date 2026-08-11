@@ -68,7 +68,7 @@ export async function runAudit(input: RunAuditInput): Promise<AuditResult> {
   const url = normalizeInputUrl(input.url)
   const domain = normalizeDomain(url)
   const siteName = input.siteName || domain
-  const maxPages = input.maxPages ?? 50
+  const maxPages = input.maxPages ?? 80
   const auditDate = new Date().toISOString().slice(0, 10)
   const report = input.onProgress ?? (async () => {})
 

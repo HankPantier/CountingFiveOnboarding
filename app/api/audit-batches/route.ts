@@ -58,7 +58,7 @@ export async function POST(req: Request) {
   }
 
   const supabase = createServerClient()
-  const maxPages = parsed.data.maxPages ?? 50
+  const maxPages = parsed.data.maxPages ?? 80
   const label = parsed.data.label?.trim() || null
 
   const { data: batch, error: batchErr } = await supabase

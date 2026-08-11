@@ -65,7 +65,7 @@ export async function POST(req: Request) {
       url,
       domain,
       site_name: parsed.data.siteName ?? null,
-      max_pages: parsed.data.maxPages ?? 50,
+      max_pages: parsed.data.maxPages ?? 80,
       audit_status: 'queued',
       audit_group: auditGroup,
     })

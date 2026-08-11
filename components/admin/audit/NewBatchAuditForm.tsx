@@ -19,7 +19,7 @@ export function NewBatchAuditForm() {
   const router = useRouter()
   const [urls, setUrls] = useState('')
   const [label, setLabel] = useState('')
-  const [maxPages, setMaxPages] = useState(50)
+  const [maxPages, setMaxPages] = useState(80)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
