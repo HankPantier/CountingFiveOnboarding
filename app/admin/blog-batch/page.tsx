@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import DeleteBatchButton from './DeleteBatchButton'
 
 function StatusBadge({ status }: { status: string }) {
@@ -27,9 +27,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default async function BlogBatchListPage() {
+  // Capability enforcement (manager/admin, else 403) lives in the section layout.
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-  if (!hasCapability(user, 'manager')) redirect('/admin/dashboard')
 
   const supabase = createServerClient()
   const allowed = await getAccessibleSessionIds(user)

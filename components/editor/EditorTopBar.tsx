@@ -47,6 +47,7 @@ function OverflowMenu({
   publishing,
   draftBusy,
   dirtyCount,
+  canPublishLive,
   onRollback,
   onSyncDraft,
   onResetDraft,
@@ -57,6 +58,7 @@ function OverflowMenu({
   publishing: boolean
   draftBusy: boolean
   dirtyCount: number
+  canPublishLive: boolean
   onRollback: () => void
   onSyncDraft: () => void
   onResetDraft: () => void
@@ -172,7 +174,7 @@ function OverflowMenu({
           >
             Reset draft to live
           </button>
-          {status.canRevertPublish && (
+          {status.canRevertPublish && canPublishLive && (
             <>
               <div className="border-t border-border-default my-1" />
               <button
@@ -204,6 +206,7 @@ export default function EditorTopBar({
   dirtyCount,
   selectedPath,
   canSave,
+  canPublishLive,
   saving,
   publishing,
   draftBusy,
@@ -220,6 +223,7 @@ export default function EditorTopBar({
   dirtyCount: number
   selectedPath: string | null
   canSave: boolean
+  canPublishLive: boolean
   saving: boolean
   publishing: boolean
   draftBusy: boolean
@@ -236,10 +240,10 @@ export default function EditorTopBar({
     <header className="flex items-center justify-between gap-4 px-6 py-3 border-b border-border-default bg-surface-card">
       <div className="flex items-center gap-3 min-w-0">
         <Link
-          href="/admin/dashboard"
+          href={canPublishLive ? '/admin/dashboard' : '/admin/content'}
           className="text-text-muted hover:text-brand-cyan font-heading text-xs whitespace-nowrap"
         >
-          ← Dashboard
+          ← {canPublishLive ? 'Dashboard' : 'Content'}
         </Link>
         <h1 className="font-heading font-semibold text-sm text-brand-navy truncate max-w-[18rem]">
           {firmName}
@@ -272,20 +276,31 @@ export default function EditorTopBar({
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
-        <button
-          onClick={onPublish}
-          disabled={publishing || (status?.draftAhead ?? 0) === 0 || dirtyCount > 0}
-          className="bg-brand-navy disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed whitespace-nowrap"
-          title={
-            dirtyCount > 0
-              ? 'Save your unsaved changes first'
-              : (status?.draftAhead ?? 0) === 0
-                ? 'Nothing new to publish'
-                : 'Deploy your saved draft changes to the live site'
-          }
-        >
-          {publishing ? 'Publishing…' : 'Publish to live'}
-        </button>
+        {canPublishLive ? (
+          <button
+            onClick={onPublish}
+            disabled={publishing || (status?.draftAhead ?? 0) === 0 || dirtyCount > 0}
+            className="bg-brand-navy disabled:bg-surface-subtle disabled:text-text-muted text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-navy-dark disabled:cursor-not-allowed whitespace-nowrap"
+            title={
+              dirtyCount > 0
+                ? 'Save your unsaved changes first'
+                : (status?.draftAhead ?? 0) === 0
+                  ? 'Nothing new to publish'
+                  : 'Deploy your saved draft changes to the live site'
+            }
+          >
+            {publishing ? 'Publishing…' : 'Publish to live'}
+          </button>
+        ) : (
+          (status?.draftAhead ?? 0) > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-pill border border-border-default bg-surface-subtle px-3.5 py-1.5 font-heading font-semibold text-xs text-text-secondary whitespace-nowrap"
+              title="Your changes are staged on the draft. An admin or manager publishes them to the live site."
+            >
+              {status?.draftAhead} staged for review
+            </span>
+          )
+        )}
         {status && (
           <OverflowMenu
             sessionId={sessionId}
@@ -294,6 +309,7 @@ export default function EditorTopBar({
             publishing={publishing}
             draftBusy={draftBusy}
             dirtyCount={dirtyCount}
+            canPublishLive={canPublishLive}
             onRollback={onRollback}
             onSyncDraft={onSyncDraft}
             onResetDraft={onResetDraft}

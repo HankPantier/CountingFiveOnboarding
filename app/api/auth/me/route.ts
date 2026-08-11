@@ -15,13 +15,16 @@ export async function GET() {
 
     const { data: admin } = await supabase
       .from('admins')
-      .select('id, role')
+      .select('id, role, capabilities')
       .eq('id', user.id)
       .maybeSingle()
+
+    const capabilities = Array.isArray(admin?.capabilities) ? admin.capabilities : []
 
     return NextResponse.json({
       isAdmin: !!admin,
       role: admin?.role ?? null,
+      capabilities,
     })
   } catch {
     return NextResponse.json({ isAdmin: false })

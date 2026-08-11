@@ -11,9 +11,15 @@ type Props = {
 
 // Human-readable role description for the invite copy, derived from the account
 // tier and the member's capability set (e.g. "a manager & auditor").
+const CAPABILITY_LABELS: Record<Capability, string> = {
+  manager: 'manager',
+  editor: 'editor',
+  auditor: 'auditor',
+}
+
 export function roleLabel(role: Role, capabilities: Capability[]): string {
   if (role === 'admin') return 'an administrator'
-  const names = capabilities.map(c => (c === 'manager' ? 'manager' : 'auditor'))
+  const names = capabilities.map(c => CAPABILITY_LABELS[c])
   if (names.length === 0) return 'a team member'
   return `a ${names.join(' & ')}`
 }

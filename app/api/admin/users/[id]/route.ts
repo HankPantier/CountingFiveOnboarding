@@ -5,7 +5,7 @@ import type { UpdateUserRequest } from '@/types/users'
 
 export const runtime = 'nodejs'
 
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
 
 function isRole(v: unknown): v is Role {
   return v === 'admin' || v === 'member'
@@ -76,6 +76,9 @@ export async function PATCH(
     if (caps.length === 0) {
       return NextResponse.json({ error: 'A member needs at least one capability' }, { status: 400 })
     }
+    if (caps.includes('manager') && caps.includes('editor')) {
+      return NextResponse.json({ error: 'A member cannot be both manager and editor' }, { status: 400 })
+    }
     update.capabilities = caps
   }
 
@@ -86,10 +89,12 @@ export async function PATCH(
   const { error } = await supabase.from('admins').update(update).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Per-client assignments only mean something for a member holding the manager
-  // capability — clear them once the user is an admin or loses that capability.
-  const keepsManager = finalRole !== 'admin' && (update.capabilities ?? normalizeCapabilities(target.capabilities)).includes('manager')
-  if (!keepsManager) {
+  // Per-client assignments only mean something for a member holding a content
+  // capability (manager or editor) — clear them once the user is an admin or
+  // holds neither.
+  const finalCaps = update.capabilities ?? normalizeCapabilities(target.capabilities)
+  const keepsContentAccess = finalRole !== 'admin' && (finalCaps.includes('manager') || finalCaps.includes('editor'))
+  if (!keepsContentAccess) {
     await supabase.from('manager_clients').delete().eq('manager_id', id)
   }
 

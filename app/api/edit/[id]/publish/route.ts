@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
+import { canPublish, getCurrentUser } from '@/lib/auth/access'
 import {
   ensureDraftBranch,
   mergeDraftToMain,
@@ -15,6 +16,13 @@ export async function POST(
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+
+  // Pushing to live is denied to editors (content users who can stage but not
+  // publish). resolveEditContext already admitted them for draft editing.
+  const user = await getCurrentUser()
+  if (!user || !canPublish(user)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   try {
     await ensureDraftBranch(ctx.githubRepo)

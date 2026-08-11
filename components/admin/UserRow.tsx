@@ -21,6 +21,11 @@ export default function UserRow({
   const [copiedPw, setCopiedPw] = useState(false)
   const router = useRouter()
 
+  // manager and editor are both content roles that get per-client assignments.
+  const isContentUser =
+    user.role !== 'admin' &&
+    (user.capabilities.includes('manager') || user.capabilities.includes('editor'))
+
   async function resend() {
     if (!confirm(`Send a new invite email to ${user.email}?`)) return
     setBusy('resend')
@@ -139,14 +144,14 @@ export default function UserRow({
         <td className="px-4 py-3 text-text-secondary">
           {user.role === 'admin'
             ? 'All'
-            : user.capabilities.includes('manager')
+            : isContentUser
               ? `${user.assignedCount} assigned`
               : '—'}
         </td>
         <td className="px-4 py-3">
           <div className="flex items-center justify-end gap-3">
             {note && <span className="text-xs font-body text-text-muted">{note}</span>}
-            {user.role !== 'admin' && user.capabilities.includes('manager') && (
+            {isContentUser && (
               <button
                 onClick={() => setEditing(true)}
                 className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy transition-colors"

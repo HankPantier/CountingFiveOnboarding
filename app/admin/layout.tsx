@@ -1,4 +1,4 @@
-import { getCurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, hasOnboardingAccess } from '@/lib/auth/access'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import AdminTopBar from '@/components/admin/AdminTopBar'
 
@@ -14,7 +14,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="flex min-h-screen bg-surface-page">
       <AdminSidebar isAdmin={user.isAdmin} capabilities={user.capabilities} userName={user.name ?? undefined} />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <AdminTopBar userName={user.name ?? undefined} />
+        <AdminTopBar userName={user.name ?? undefined} searchAction={hasOnboardingAccess(user) ? '/admin/dashboard' : '/admin/content'} />
         {children}
       </div>
     </div>

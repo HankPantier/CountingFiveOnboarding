@@ -1,12 +1,12 @@
 import { requirePageAccess } from '@/lib/auth/page-guards'
 
-// Content is reachable by admins, managers, and editors (content roles).
+// Batch content is reachable by admins and managers; editors/auditors get 403.
 // The sidebar shell lives in app/admin/layout.tsx.
-export default async function ContentLayout({
+export default async function BlogBatchLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  await requirePageAccess(['manager', 'editor'])
+  await requirePageAccess('manager')
   return <>{children}</>
 }

@@ -37,6 +37,9 @@ export default function EditorShell({
   const [status, setStatus] = useState<EditorStatus | null>(null)
   // Theme Studio is admin-only; managers never see the entry (route also 403s).
   const [isAdmin, setIsAdmin] = useState(false)
+  // Publishing to live is denied to editors — the publish/rollback routes 403
+  // them, so hide those affordances. Admins and managers may publish.
+  const [publishAllowed, setPublishAllowed] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Map<string, LoadedFile>>(new Map())
   const [dirty, setDirty] = useState<Map<string, string>>(new Map())
@@ -94,16 +97,20 @@ export default function EditorShell({
     void refreshStatus()
   }, [refreshTree, refreshStatus])
 
-  // Resolve admin status to gate the Theme Studio entry (mirrors ContentChatModal).
+  // Resolve the caller's role + capabilities: gate the Theme Studio entry
+  // (admin-only) and the publish/rollback affordances (admin or manager).
   useEffect(() => {
     let cancelled = false
     fetch('/api/auth/me')
       .then((r) => r.json())
-      .then((d: { role?: string }) => {
-        if (!cancelled && d.role === 'admin') setIsAdmin(true)
+      .then((d: { role?: string; capabilities?: string[] }) => {
+        if (cancelled) return
+        const admin = d.role === 'admin'
+        if (admin) setIsAdmin(true)
+        if (admin || (d.capabilities ?? []).includes('manager')) setPublishAllowed(true)
       })
       .catch(() => {
-        /* ignore — entry stays hidden */
+        /* ignore — entries stay hidden */
       })
     return () => {
       cancelled = true
@@ -669,6 +676,7 @@ export default function EditorShell({
         dirtyCount={dirty.size}
         selectedPath={selectedPath}
         canSave={!!selectedPath && dirty.has(selectedPath)}
+        canPublishLive={publishAllowed}
         saving={saving}
         publishing={publishing}
         draftBusy={draftBusy}
@@ -680,7 +688,7 @@ export default function EditorShell({
       />
       {(isLivePage || isDraftPage) && selectedPath && (
         <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end gap-2">
-          {isPostPage && (
+          {isPostPage && publishAllowed && (
             <button
               type="button"
               onClick={() => void publish()}
@@ -822,6 +830,7 @@ export default function EditorShell({
             onPublish={() => publish()}
             publishing={publishing}
             canPublish={canPublish}
+            canPublishLive={publishAllowed}
             onOpenPost={(path) => {
               // A freshly drafted post is a new commit on draft: refresh the
               // tree + status so it appears, then open it in the editor.

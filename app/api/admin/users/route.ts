@@ -13,7 +13,13 @@ import type {
 export const runtime = 'nodejs'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
+
+// manager and editor are two tiers of the same content role (editor = manager
+// minus publish) — a member holds at most one. Both grant client assignment.
+function isContentCapability(caps: Capability[]): boolean {
+  return caps.includes('manager') || caps.includes('editor')
+}
 
 function isRole(v: unknown): v is Role {
   return v === 'admin' || v === 'member'
@@ -81,7 +87,10 @@ export async function POST(req: Request) {
   if (role === 'member' && capabilities.length === 0) {
     return NextResponse.json({ error: 'A member needs at least one capability' }, { status: 400 })
   }
-  const isManager = capabilities.includes('manager')
+  if (capabilities.includes('manager') && capabilities.includes('editor')) {
+    return NextResponse.json({ error: 'A member cannot be both manager and editor' }, { status: 400 })
+  }
+  const isContentUser = isContentCapability(capabilities)
 
   const supabase = createServerClient()
 
@@ -112,7 +121,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 })
   }
 
-  if (isManager && sessionIds.length > 0) {
+  if (isContentUser && sessionIds.length > 0) {
     const rows = sessionIds.map(session_id => ({ manager_id: userId, session_id }))
     const { error: linkInsertErr } = await supabase.from('manager_clients').insert(rows)
     if (linkInsertErr) {

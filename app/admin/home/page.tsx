@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getCurrentUser, hasCapability, type CurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, hasCapability, hasOnboardingAccess, type Capability, type CurrentUser } from '@/lib/auth/access'
 import { getHomeStats } from '@/lib/admin/home-stats'
 import { getCommandIndex } from '@/lib/admin/command-index'
 import HomeGreeting from '@/components/admin/home/HomeGreeting'
@@ -9,24 +9,28 @@ import StatCards from '@/components/admin/home/StatCards'
 import StatusPill from '@/components/admin/StatusPill'
 
 // Sections the caller can reach, in nav order — powers the command box's local
-// "go to page" matches. Mirrors the nav visibility rule in AdminSidebar.
-const ALL_SECTIONS: Array<CommandSection & { requires: 'manager' | 'auditor' | 'admin' }> = [
+// "go to page" matches. Mirrors the nav visibility rule in AdminSidebar
+// (a Capability[] means "any of these"; editors reach Content only).
+type SectionRequires = Capability | Capability[] | 'admin'
+const ALL_SECTIONS: Array<CommandSection & { requires: SectionRequires }> = [
   { label: 'Onboarding', href: '/admin/dashboard', keywords: 'clients sessions onboarding calls', requires: 'manager' },
-  { label: 'Content', href: '/admin/content', keywords: 'content generation pages website', requires: 'manager' },
+  { label: 'Content', href: '/admin/content', keywords: 'content generation pages website', requires: ['manager', 'editor'] },
   { label: 'Batch Content', href: '/admin/blog-batch', keywords: 'batch blog resources', requires: 'manager' },
   { label: 'Audits', href: '/admin/audits', keywords: 'audits site audit seo score', requires: 'auditor' },
   { label: 'Token Usage', href: '/admin/token-usage', keywords: 'tokens ai spend billing cost', requires: 'admin' },
   { label: 'Users', href: '/admin/settings/users', keywords: 'users team members admins', requires: 'admin' },
 ]
 
-const QUICK_ACTIONS: Array<{ label: string; href: string; requires: 'manager' | 'auditor' | 'admin' }> = [
+const QUICK_ACTIONS: Array<{ label: string; href: string; requires: SectionRequires }> = [
   { label: 'New Session', href: '/admin/dashboard/new-session', requires: 'admin' },
   { label: 'New Audit', href: '/admin/audits/new', requires: 'auditor' },
   { label: 'New Batch', href: '/admin/blog-batch/new', requires: 'manager' },
 ]
 
-function canSee(user: CurrentUser, requires: 'manager' | 'auditor' | 'admin'): boolean {
-  return requires === 'admin' ? user.isAdmin : hasCapability(user, requires)
+function canSee(user: CurrentUser, requires: SectionRequires): boolean {
+  if (requires === 'admin') return user.isAdmin
+  if (Array.isArray(requires)) return requires.some((c) => hasCapability(user, c))
+  return hasCapability(user, requires)
 }
 
 export default async function AdminHomePage() {
@@ -41,12 +45,18 @@ export default async function AdminHomePage() {
   )
   const quickActions = QUICK_ACTIONS.filter((a) => canSee(user, a.requires))
   const recentClients = index.clients.slice(0, 6)
+  // Editors have Content-only access: their client links go to the editor, not
+  // the onboarding session detail (which would 403). Managers/admins keep the
+  // session-detail destination.
+  const canOnboard = hasOnboardingAccess(user)
+  const clientHref = (id: string) =>
+    canOnboard ? `/admin/sessions/${id}` : `/admin/content/${id}/edit`
 
   return (
     <main className="mx-auto max-w-5xl p-8 pb-14">
       <div className="flex flex-col items-center gap-6 pb-6 pt-8 text-center">
         <HomeGreeting firstName={firstName} />
-        <CommandBox clients={index.clients} audits={index.audits} sections={sections} />
+        <CommandBox clients={index.clients} audits={index.audits} sections={sections} clientLinkMode={canOnboard ? 'onboarding' : 'content'} />
         {quickActions.length > 0 && (
           <div className="flex flex-wrap items-center justify-center gap-2.5">
             {quickActions.map((a, i) => (
@@ -82,7 +92,7 @@ export default async function AdminHomePage() {
             {recentClients.map((c) => (
               <Link
                 key={c.id}
-                href={`/admin/sessions/${c.id}`}
+                href={clientHref(c.id)}
                 className="rounded-xl border border-border-default bg-surface-card p-4 shadow-subtle transition-all hover:-translate-y-0.5 hover:border-brand-cyan hover:shadow-medium"
               >
                 <div className="truncate font-heading text-sm font-semibold text-brand-navy">{c.name}</div>

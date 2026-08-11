@@ -4,7 +4,7 @@ import UserRow from '@/components/admin/UserRow'
 import type { UserSummary } from '@/types/users'
 import type { Capability } from '@/lib/auth/access'
 
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
 
 export interface SessionOption {
   id: string

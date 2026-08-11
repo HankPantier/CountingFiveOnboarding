@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Enables forbidden()/unauthorized() so section layouts can return a real
+  // HTTP 403 for authenticated-but-unauthorized users (see lib/auth/page-guards).
+  experimental: { authInterrupts: true },
   async headers() {
     return [
       {

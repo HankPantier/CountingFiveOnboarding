@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
+import { canPublish, getCurrentUser } from '@/lib/auth/access'
 import { revertLastPublish } from '@/lib/github/repo-files'
 
 export const runtime = 'nodejs'
@@ -13,6 +14,12 @@ export async function POST(
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+
+  // Rollback mutates the live site — denied to editors (same gate as publish).
+  const user = await getCurrentUser()
+  if (!user || !canPublish(user)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   try {
     const result = await revertLastPublish(ctx.githubRepo)

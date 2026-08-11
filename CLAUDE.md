@@ -49,17 +49,17 @@ The schema field `technical.registrarPasswordNote` is a static reminder string. 
 ### 6. Authorization uses the `admins` table — account tier + capabilities
 The `admins` table is the user table. As of migration 040 it uses a **capabilities model**:
 - `role` is the account tier: `'admin'` (superuser — implicitly holds every capability) or `'member'` (default for non-admins). The legacy `'manager'` value was migrated to `'member'`.
-- `capabilities text[]` (CHECK ⊆ `{'manager','auditor'}`) is the source of truth for a member's non-admin powers — a member may hold both. `manager` = site-scoped content access (via `manager_clients`); `auditor` = access only to audits they created (`audit_runs.created_by`). Admins ignore this column.
+- `capabilities text[]` (CHECK ⊆ `{'manager','auditor','editor'}`, widened by migration 053) is the source of truth for a member's non-admin powers. `manager` = site-scoped content access **incl. publishing** (via `manager_clients`); `editor` = the same site-scoped content access **but denied Publish/Rollback** — a proof/edit/stage-only content role, also assigned via `manager_clients`; `auditor` = access only to audits they created (`audit_runs.created_by`). Admins ignore this column. `manager` and `editor` are two tiers of the same content role — a member holds **at most one** of them (the user-management routes reject both together); `auditor` may combine with either.
 
 Authorization must verify the caller's `auth.uid()` exists in `admins` — a valid Supabase session means "logged in," not "authorized." RLS policies on every table also require admin-table membership; bypassing the app-level gate does not bypass RLS.
 
 Use the gates in `lib/auth/access.ts` (all return `{ ... } | NextResponse`, same convention as `requireAdmin()`):
 - `requireAdminUser()` — admin-only (403s members). Use for user management, session creation (incl. audit `approve`/`draft-session`/`start-session`), and destructive/global routes.
-- `requireSessionAccess(sessionId)` — admins pass; otherwise requires the `manager` capability AND a `manager_clients` link to that session.
-- `requireContentJobAccess(jobId)` — resolves the job's `session_id`, then applies the same check.
+- `requireSessionAccess(sessionId)` — admins pass; otherwise requires a **content capability** (`manager` **or** `editor`, via `hasContentAccess()`) AND a `manager_clients` link to that session. Gates the whole draft editor (`/api/edit/*` via `resolveEditContext`) and all session-scoped content routes. The two live-mutating editor routes (`/api/edit/[id]/publish`, `/rollback`) additionally call `canPublish(user)` (admin or `manager` only) to keep editors from pushing to live.
+- `requireContentJobAccess(jobId)` — resolves the job's `session_id`, then requires the `manager` capability (content-job (re)generation can overwrite live content, so `editor` is intentionally NOT admitted here).
 - `requireAuditorCapability()` — admins pass; otherwise requires the `auditor` capability (gate for audit list/create, before a specific audit exists).
 - `requireAuditAccess(auditId)` — admins pass; otherwise requires the `auditor` capability AND ownership (`audit_runs.created_by === user.id`).
-- `getCurrentUser()` → `{ id, email, role, isAdmin, capabilities }`. Branch on `isAdmin` / `hasCapability(user, cap)`, not on `role` strings. `getAccessibleSessionIds(user)` (admins → `null` = all; manager-cap → assigned ids; else `[]`) and `getAccessibleAuditScope(user)` (admins → `null`; else `{ createdBy }`) scope list/detail server components.
+- `getCurrentUser()` → `{ id, email, role, isAdmin, capabilities }`. Branch on `isAdmin` / `hasCapability(user, cap)` / `hasContentAccess(user)` / `canPublish(user)`, not on `role` strings. `getAccessibleSessionIds(user)` (admins → `null` = all; content-capable member (manager or editor) → assigned ids; else `[]`) and `getAccessibleAuditScope(user)` (admins → `null`; else `{ createdBy }`) scope list/detail server components.
 
 `requireAdmin()` in `lib/auth/require-admin.ts` is the legacy authenticate-and-check-membership gate (no role distinction); prefer the `access.ts` gates above for new code.
 
@@ -87,7 +87,7 @@ Any route that accepts a file path in a query param or JSON body MUST decode-the
 
 ### API Route Patterns
 - All routes that touch Supabase session data use the service role client (`lib/supabase/server.ts`)
-- Admin API routes must gate as the first step with the helpers in `lib/auth/access.ts`: `requireAdminUser()` for admin-only routes, `requireSessionAccess(sessionId)` / `requireContentJobAccess(jobId)` for routes a manager-capable member may also use, `requireAuditorCapability()` / `requireAuditAccess(auditId)` for audit routes an auditor may use (all return 401 unauthenticated, 403 unauthorized). See security rule 6.
+- Admin API routes must gate as the first step with the helpers in `lib/auth/access.ts`: `requireAdminUser()` for admin-only routes, `requireSessionAccess(sessionId)` for routes a content-capable member (manager or editor) may also use (add a `canPublish(user)` check for any route that pushes to live), `requireContentJobAccess(jobId)` for manager-only content-job routes, `requireAuditorCapability()` / `requireAuditAccess(auditId)` for audit routes an auditor may use (all return 401 unauthenticated, 403 unauthorized). See security rule 6.
 - Client-facing routes (e.g., `/api/chat`, `/api/upload/*`) validate the session ID but do not require admin auth
 - Always return typed error responses: `{ error: string }` with appropriate HTTP status codes
 

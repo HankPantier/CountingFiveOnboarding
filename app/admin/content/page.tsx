@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, hasOnboardingAccess } from '@/lib/auth/access'
 import ContentTable, { type ContentRow } from '@/components/admin/content/ContentTable'
 
 export default async function ContentHubPage() {
@@ -10,6 +10,8 @@ export default async function ContentHubPage() {
   // Managers see only their assigned clients; admins see all (allowed === null).
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
+  // Editors reach Content but not the Onboarding surface (Batch, Dashboard).
+  const canOnboard = hasOnboardingAccess(user)
   const allowed = await getAccessibleSessionIds(user)
 
   let sessionsQuery = supabase
@@ -60,17 +62,19 @@ export default async function ContentHubPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {canOnboard && (
+            <Link
+              href="/admin/blog-batch"
+              className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:bg-brand-cyan-dark hover:-translate-y-px hover:shadow-cyan-glow"
+            >
+              Batch Content
+            </Link>
+          )}
           <Link
-            href="/admin/blog-batch"
-            className="rounded-pill bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 shadow-cyan-base transition-all hover:bg-brand-cyan-dark hover:-translate-y-px hover:shadow-cyan-glow"
-          >
-            Batch Content
-          </Link>
-          <Link
-            href="/admin/dashboard"
+            href={canOnboard ? '/admin/dashboard' : '/admin/home'}
             className="rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
           >
-            Back to Dashboard
+            {canOnboard ? 'Back to Dashboard' : 'Back to Home'}
           </Link>
         </div>
       </div>

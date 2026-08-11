@@ -6,6 +6,7 @@ function capabilitySummary(user: CurrentUser): string {
   if (user.isAdmin) return 'a full admin — you can see all clients, audits, content, spend and users'
   const parts: string[] = []
   if (user.capabilities.includes('manager')) parts.push('a manager (only their assigned clients)')
+  if (user.capabilities.includes('editor')) parts.push('an editor (only their assigned clients; can stage content but not publish to live)')
   if (user.capabilities.includes('auditor')) parts.push('an auditor (only audits they created)')
   return parts.length
     ? `a member acting as ${parts.join(' and ')}`

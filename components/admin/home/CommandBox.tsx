@@ -75,10 +75,14 @@ export default function CommandBox({
   clients,
   audits,
   sections,
+  clientLinkMode = 'onboarding',
 }: {
   clients: ClientEntry[]
   audits: AuditEntry[]
   sections: CommandSection[]
+  // Where a client result navigates: 'onboarding' → session detail (managers/
+  // admins); 'content' → the content editor (editors, who can't reach onboarding).
+  clientLinkMode?: 'onboarding' | 'content'
 }) {
   const router = useRouter()
   const [query, setQuery] = useState('')
@@ -106,7 +110,7 @@ export default function CommandBox({
         key: `client-${c.id}`,
         label: c.name,
         sublabel: c.hasSite ? 'Client · site live' : 'Client · in onboarding',
-        href: `/admin/sessions/${c.id}`,
+        href: clientLinkMode === 'content' ? `/admin/content/${c.id}/edit` : `/admin/sessions/${c.id}`,
         client: c,
       })
     }
@@ -119,7 +123,7 @@ export default function CommandBox({
     // Free-form assistant is always offered last so any phrase has a path.
     out.push({ kind: 'ai', key: 'ai', label: `Ask AI: “${q}”`, sublabel: 'Answer this or take me there', href: null })
     return out
-  }, [query, clients, audits, sections])
+  }, [query, clients, audits, sections, clientLinkMode])
 
   const clampedActive = Math.min(active, Math.max(0, rows.length - 1))
 

@@ -57,9 +57,11 @@ export async function PUT(
     .eq('id', id)
     .maybeSingle()
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  const isManager = target.role !== 'admin' && Array.isArray(target.capabilities) && target.capabilities.includes('manager')
-  if (!isManager) {
-    return NextResponse.json({ error: 'Only managers can be assigned clients' }, { status: 400 })
+  // Client assignment applies to content-role members — manager or editor.
+  const caps = Array.isArray(target.capabilities) ? target.capabilities : []
+  const isContentUser = target.role !== 'admin' && (caps.includes('manager') || caps.includes('editor'))
+  if (!isContentUser) {
+    return NextResponse.json({ error: 'Only managers or editors can be assigned clients' }, { status: 400 })
   }
 
   const { data: existingRows } = await supabase

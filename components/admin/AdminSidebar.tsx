@@ -7,10 +7,11 @@ import type { Capability } from '@/lib/auth/access'
 import { signOut } from '@/app/admin/dashboard/actions'
 
 // Visibility predicate for a nav item:
-//   'any'                 — every authenticated admin-table user
-//   'manager' / 'auditor' — admins plus members holding that capability
-//   'admin'               — admins only
-type NavRequires = 'any' | 'manager' | 'auditor' | 'admin'
+//   'any'          — every authenticated admin-table user
+//   'admin'        — admins only
+//   a Capability   — admins plus members holding that capability
+//   a Capability[] — admins plus members holding ANY of those capabilities
+type NavRequires = 'any' | 'admin' | Capability | Capability[]
 type NavItem = { href: string; label: string; d: string; requires: NavRequires }
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -34,7 +35,7 @@ const GROUPS: NavGroup[] = [
   {
     label: 'Operations',
     items: [
-      { href: '/admin/content', label: 'Content', d: 'M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01', requires: 'manager' },
+      { href: '/admin/content', label: 'Content', d: 'M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01', requires: ['manager', 'editor'] },
       { href: '/admin/blog-batch', label: 'Batch content', d: 'M4 4h16v4H4zM4 12h10M4 16h10M16 12l4 4-4 4', requires: 'manager' },
       { href: '/admin/audits', label: 'Audits', d: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35', requires: 'auditor' },
     ],
@@ -65,7 +66,13 @@ export default function AdminSidebar({
   const pathname = usePathname()
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
   const canSee = (r: NavRequires) =>
-    r === 'any' ? true : r === 'admin' ? isAdmin : isAdmin || capabilities.includes(r)
+    r === 'any'
+      ? true
+      : r === 'admin'
+        ? isAdmin
+        : Array.isArray(r)
+          ? isAdmin || r.some((c) => capabilities.includes(c))
+          : isAdmin || capabilities.includes(r)
 
   const rowBase =
     'group relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 font-heading text-[13.5px] font-medium transition-colors'

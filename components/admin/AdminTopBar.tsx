@@ -23,10 +23,17 @@ function initials(name?: string): string {
   return ((w[0]?.[0] ?? '') + (w[1]?.[0] ?? '')).toUpperCase() || 'R'
 }
 
-// Sticky top bar for every /admin/* route: breadcrumb, global client search
-// (GET → /admin/dashboard?q=…, matching the dashboard's existing search param),
-// notifications, and the operator avatar.
-export default function AdminTopBar({ userName }: { userName?: string }) {
+// Sticky top bar for every /admin/* route: breadcrumb, global client search,
+// notifications, and the operator avatar. searchAction is the page the client
+// search submits to — /admin/dashboard for onboarding users, /admin/content for
+// editors (who can't reach the dashboard).
+export default function AdminTopBar({
+  userName,
+  searchAction = '/admin/dashboard',
+}: {
+  userName?: string
+  searchAction?: string
+}) {
   const pathname = usePathname()
   const title = TITLES.find(([re]) => re.test(pathname))?.[1] ?? 'Console'
 
@@ -43,7 +50,7 @@ export default function AdminTopBar({ userName }: { userName?: string }) {
       <div className="flex-1" />
 
       <form
-        action="/admin/dashboard"
+        action={searchAction}
         className="hidden items-center gap-2.5 rounded-pill border border-transparent bg-surface-subtle px-4 py-2 transition-colors focus-within:border-brand-cyan focus-within:bg-surface-card md:flex md:w-80"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-text-muted" aria-hidden="true">

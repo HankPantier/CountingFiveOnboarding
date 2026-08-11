@@ -45,7 +45,7 @@ export async function POST(
       role: isAdmin ? 'admin' : 'member',
       capabilities: isAdmin
         ? []
-        : (['manager', 'auditor'] as const).filter(c => Array.isArray(target.capabilities) && target.capabilities.includes(c)),
+        : (['manager', 'auditor', 'editor'] as const).filter(c => Array.isArray(target.capabilities) && target.capabilities.includes(c)),
       inviteUrl,
     })
   } catch (err) {

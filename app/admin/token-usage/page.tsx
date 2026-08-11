@@ -28,9 +28,9 @@ const TASK_LABEL: Record<TokenTask, string> = {
 // Token usage is a global operator/billing view — admins only (mirrors the
 // admin-only spend metric on the dashboard and the audits subtree).
 export default async function TokenUsagePage() {
+  // Admin-only enforcement (else 403) lives in the section layout.
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-  if (user.role !== 'admin') redirect('/admin/dashboard')
 
   const supabase = createServerClient()
 

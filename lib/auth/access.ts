@@ -7,11 +7,19 @@ import { createAuthClient, createServerClient } from '@/lib/supabase/server'
 export type Role = 'admin' | 'member'
 
 // Non-admin powers a member can hold, in any combination:
-//   manager — site-scoped content access (via manager_clients)
+//   manager — site-scoped content access (via manager_clients), incl. publishing
+//   editor  — site-scoped content access like manager, but CANNOT push to live
+//             (Publish/Rollback denied — see canPublish); assigned via manager_clients
 //   auditor — own-audit access (scoped by audit_runs.created_by)
-export type Capability = 'manager' | 'auditor'
+// manager and editor are two tiers of the same content role: a member holds at
+// most one of them (enforced by the user-management routes).
+export type Capability = 'manager' | 'auditor' | 'editor'
 
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
+
+// Capabilities that grant site-scoped content access (the draft editor + all
+// session-scoped content routes). manager can also publish; editor cannot.
+const CONTENT_CAPABILITIES: Capability[] = ['manager', 'editor']
 
 export interface CurrentUser {
   id: string
@@ -62,6 +70,26 @@ export function hasCapability(user: CurrentUser, capability: Capability): boolea
   return user.isAdmin || user.capabilities.includes(capability)
 }
 
+// True when the user has site-scoped content access — the draft editor and all
+// session-scoped content routes. Both manager and editor qualify (admins always).
+export function hasContentAccess(user: CurrentUser): boolean {
+  return user.isAdmin || CONTENT_CAPABILITIES.some(c => user.capabilities.includes(c))
+}
+
+// True when the user may push content to the live site (Publish / Rollback).
+// Editors are content users who are denied this — only admins and managers pass.
+export function canPublish(user: CurrentUser): boolean {
+  return user.isAdmin || user.capabilities.includes('manager')
+}
+
+// True when the user may reach the Onboarding surface (dashboard, sessions,
+// batch content) — the `manager` capability (or admin). Editors are content
+// users WITHOUT onboarding access, so this is what separates their "Content
+// only" navigation from a manager's.
+export function hasOnboardingAccess(user: CurrentUser): boolean {
+  return user.isAdmin || user.capabilities.includes('manager')
+}
+
 // Admin-only gate. Mirrors requireAdmin()'s `{ user } | NextResponse`
 // convention but also returns role and 403s non-admins. Use for user
 // management and destructive/global routes.
@@ -72,16 +100,19 @@ export async function requireAdminUser(): Promise<{ user: CurrentUser } | NextRe
   return { user }
 }
 
-// Session-scoped gate. Admins always pass; otherwise the user must hold the
-// `manager` capability AND a manager_clients row linking them to sessionId.
-// Uses the service-role client for the membership lookup so RLS can't interfere.
+// Session-scoped gate. Admins always pass; otherwise the user must hold a
+// content capability (`manager` or `editor`) AND a manager_clients row linking
+// them to sessionId. Editors reach every session-scoped content route this
+// gates; the two live-mutating routes (publish/rollback) additionally require
+// canPublish(). Uses the service-role client for the membership lookup so RLS
+// can't interfere.
 export async function requireSessionAccess(
   sessionId: string
 ): Promise<{ user: CurrentUser } | NextResponse> {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (user.isAdmin) return { user }
-  if (!user.capabilities.includes('manager')) {
+  if (!hasContentAccess(user)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -196,13 +227,13 @@ export async function requireAuditBatchAccess(
 }
 
 // Session IDs a user may act on. Admins → null ("all", callers skip the
-// filter). Members → explicit array of manager-assigned ids (empty when they
-// hold no manager capability or have no assignments).
+// filter). Members → explicit array of assigned ids (empty when they hold no
+// content capability — manager or editor — or have no assignments).
 export async function getAccessibleSessionIds(
   user: CurrentUser
 ): Promise<string[] | null> {
   if (user.isAdmin) return null
-  if (!user.capabilities.includes('manager')) return []
+  if (!hasContentAccess(user)) return []
   const supabase = createServerClient()
   const { data } = await supabase
     .from('manager_clients')

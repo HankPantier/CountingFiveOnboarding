@@ -18,7 +18,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
-  const isManager = role === 'member' && capabilities.has('manager')
+  const isContentUser = role === 'member' && (capabilities.has('manager') || capabilities.has('editor'))
 
   function reset() {
     setName('')
@@ -42,7 +42,12 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     setCapabilities(prev => {
       const next = new Set(prev)
       if (next.has(cap)) next.delete(cap)
-      else next.add(cap)
+      else {
+        next.add(cap)
+        // manager and editor are mutually exclusive tiers of the content role.
+        if (cap === 'manager') next.delete('editor')
+        if (cap === 'editor') next.delete('manager')
+      }
       return next
     })
   }
@@ -66,7 +71,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
           email,
           role,
           capabilities: role === 'member' ? [...capabilities] : [],
-          sessionIds: isManager ? [...selected] : [],
+          sessionIds: isContentUser ? [...selected] : [],
         }),
       })
       const data = (await res.json()) as { error?: string }
@@ -96,7 +101,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     )
   }
 
-  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isManager }} />
+  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isContentUser }} />
 }
 
 interface PanelProps {
@@ -115,12 +120,12 @@ interface PanelProps {
   error: string
   saving: boolean
   handleSubmit: (e: React.FormEvent) => void
-  isManager: boolean
+  isContentUser: boolean
 }
 
 // Separate component so useDialog mounts/unmounts with the panel itself —
 // focus is captured on open and restored to the trigger on close.
-function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isManager }: PanelProps) {
+function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isContentUser }: PanelProps) {
   const dialogRef = useDialog(onClose)
 
   return (
@@ -191,7 +196,7 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
             <div className="space-y-1">
               <label className="text-sm font-semibold text-text-secondary font-body">Capabilities</label>
               <div className="flex flex-col gap-2">
-                {([['manager', 'Manager — view & edit content for assigned clients'], ['auditor', 'Auditor — run & manage their own site audits']] as const).map(([cap, desc]) => (
+                {([['manager', 'Manager — view, edit & publish content for assigned clients'], ['editor', 'Editor — proof, edit & stage content for assigned clients, but cannot publish'], ['auditor', 'Auditor — run & manage their own site audits']] as const).map(([cap, desc]) => (
                   <label
                     key={cap}
                     className="flex items-start gap-2 cursor-pointer rounded-card border border-border-default px-3 py-2 hover:bg-surface-subtle"
@@ -209,7 +214,7 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
             </div>
           )}
 
-          {isManager && (
+          {isContentUser && (
             <div className="space-y-1">
               <label className="text-sm font-semibold text-text-secondary font-body">
                 Client access ({selected.size} selected)

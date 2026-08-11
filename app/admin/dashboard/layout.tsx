@@ -1,13 +1,12 @@
-import { redirect } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/access'
+import { requirePageAccess } from '@/lib/auth/page-guards'
 
-// Auth gate only — the sidebar shell lives in app/admin/layout.tsx.
+// Onboarding is reachable by admins and managers; editors/auditors get 403.
+// The sidebar shell lives in app/admin/layout.tsx.
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const user = await getCurrentUser()
-  if (!user) redirect('/admin/login')
+  await requirePageAccess('manager')
   return <>{children}</>
 }

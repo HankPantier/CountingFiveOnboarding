@@ -1,13 +1,13 @@
-import { redirect } from 'next/navigation'
-import { getCurrentUser } from '@/lib/auth/access'
+import { requirePageAccess } from '@/lib/auth/page-guards'
 
-// Auth gate only — the sidebar shell lives in app/admin/layout.tsx.
+// Session (onboarding) detail is part of the Onboarding surface — admins and
+// managers only; editors/auditors get 403. The sidebar shell lives in
+// app/admin/layout.tsx.
 export default async function SessionsLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const user = await getCurrentUser()
-  if (!user) redirect('/admin/login')
+  await requirePageAccess('manager')
   return <>{children}</>
 }

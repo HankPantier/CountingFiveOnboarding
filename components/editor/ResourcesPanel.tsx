@@ -66,6 +66,7 @@ export default function ResourcesPanel({
   onPublish,
   publishing,
   canPublish,
+  canPublishLive,
 }: {
   sessionId: string
   onOpenPost: (path: string) => void
@@ -76,6 +77,9 @@ export default function ResourcesPanel({
   onPublish: () => Promise<void>
   publishing: boolean
   canPublish: boolean
+  // Whether the caller may push to live at all — editors cannot, so the publish
+  // button is hidden for them (the route also 403s).
+  canPublishLive: boolean
 }) {
   const [ideas, setIdeas] = useState<ResourceIdea[]>([])
   const [loading, setLoading] = useState(true)
@@ -534,18 +538,20 @@ export default function ResourcesPanel({
                     >
                       Open draft
                     </button>
-                    <button
-                      onClick={() => void handlePublish()}
-                      disabled={!canPublish}
-                      title={
-                        canPublish
-                          ? 'Publish all pending draft changes to the live site (including this post)'
-                          : 'Nothing new to publish — or save/undo your unsaved edits first'
-                      }
-                      className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:bg-brand-navy-dark disabled:bg-surface-subtle disabled:text-text-muted disabled:cursor-not-allowed transition-colors"
-                    >
-                      {publishing ? 'Publishing…' : 'Publish to live'}
-                    </button>
+                    {canPublishLive && (
+                      <button
+                        onClick={() => void handlePublish()}
+                        disabled={!canPublish}
+                        title={
+                          canPublish
+                            ? 'Publish all pending draft changes to the live site (including this post)'
+                            : 'Nothing new to publish — or save/undo your unsaved edits first'
+                        }
+                        className="rounded-pill bg-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:bg-brand-navy-dark disabled:bg-surface-subtle disabled:text-text-muted disabled:cursor-not-allowed transition-colors"
+                      >
+                        {publishing ? 'Publishing…' : 'Publish to live'}
+                      </button>
+                    )}
                     {socialBusy.has(idea.id) && !idea.social_path ? (
                       <span className="text-xs font-body text-info">Generating social…</span>
                     ) : idea.social_path ? (
