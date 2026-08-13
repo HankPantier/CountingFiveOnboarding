@@ -7,6 +7,7 @@ import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from 
 import { ensureBlockMedia } from './ensure-block-media'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { countWords, targetWordCount } from './word-count-validator'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
@@ -76,6 +77,7 @@ export async function generatePageContent(
     ? `${schema.locations[0].city}, ${schema.locations[0].state}`
     : ''
   const paletteTone = derivePaletteToneSignal(palette)
+  const host = websiteUrl.replace(/^https?:\/\//, '')
 
   const competitorExcerpts = truncateToTokenBudget(
     competitorRefs
@@ -89,30 +91,18 @@ export async function generatePageContent(
     ? `\n\nIMPORTANT: A previous draft was flagged for these issues — fix all of them: ${flaggedPhrases.join(' | ')}`
     : ''
 
-  const prompt = `You are writing website copy for ${firmName}, a CPA firm in ${location}.
+  // Static, job-constant prefix (brand voice, firm context, output + block
+  // rules, anti-slop). Marked as the Anthropic cache breakpoint by
+  // buildCachedMessages so every page in a job reuses it as a cache read rather
+  // than re-sending ~8-10k tokens. The per-page task lives in dynamicSuffix
+  // below — keep every per-call value OUT of this string.
+  const staticPrefix = `You are writing website copy for ${firmName}, a CPA firm in ${location}.
 
 ${buildBrandVoiceBlock(schema)}
 
 ${buildFirmContext(schema)}
 
 PALETTE TONE: ${paletteTone}
-
-PAGE TO WRITE:
-Title: ${pageTitle}
-URL: ${pageUrl}
-Approved outline: ${JSON.stringify(outlineSections)}
-
-KEYWORD TARGET:
-Primary: ${targetKeyword}
-Secondary: ${secondaryKeywords.join(', ')}
-
-PAGE CTA — close every page with a clear call-to-action that points to this. Weave it into the closing paragraph or render it as a final standalone block:
-Text: "${cta.text}"
-URL: ${cta.url}
-
-${existingContent ? `EXISTING CONTENT ON THIS TOPIC (rewrite and improve — do not copy):\n${truncateToTokenBudget(existingContent, 800)}` : ''}
-
-${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do not imitate):\n${competitorExcerpts}` : ''}
 
 OUTPUT: Return a JSON object with two keys:
 1. "content" — the full page copy in markdown. Use ## for H2s matching the approved outline. Write naturally, as if for a human reader first, search engine second.
@@ -122,7 +112,7 @@ OUTPUT: Return a JSON object with two keys:
    - target_keyword
    - secondary_keywords (array)
    - url_slug (final recommended slug)
-   - canonical_url (full URL: https://${websiteUrl.replace(/^https?:\/\//, '')}${pageUrl})
+   - canonical_url (full URL for THIS page — combine the host https://${host} with the page's URL path shown under "PAGE TO WRITE" below, e.g. https://${host}/services)
    - answer_block (2-3 sentences answering the likely search query directly)
    - schema_markup_type (e.g. "LocalBusiness", "Service", "FAQPage")
    - eeat_signals (array of specific credential/experience claims)
@@ -244,7 +234,27 @@ Choose ONE hero block for the page opener:
 
 Default to "page-header" if uncertain. Use "hero" only on the homepage and high-value landing pages.
 
-${ANTI_SLOP_RULES}${retryNote}`
+${ANTI_SLOP_RULES}`
+
+  // Per-page dynamic suffix — everything that varies per call. retryNote is kept
+  // here (not in the prefix) so the first attempt and the anti-slop retry send an
+  // identical cached prefix and the retry lands as a cache read.
+  const dynamicSuffix = `PAGE TO WRITE:
+Title: ${pageTitle}
+URL: ${pageUrl}
+Approved outline: ${JSON.stringify(outlineSections)}
+
+KEYWORD TARGET:
+Primary: ${targetKeyword}
+Secondary: ${secondaryKeywords.join(', ')}
+
+PAGE CTA — close every page with a clear call-to-action that points to this. Weave it into the closing paragraph or render it as a final standalone block:
+Text: "${cta.text}"
+URL: ${cta.url}
+
+${existingContent ? `EXISTING CONTENT ON THIS TOPIC (rewrite and improve — do not copy):\n${truncateToTokenBudget(existingContent, 800)}` : ''}
+
+${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do not imitate):\n${competitorExcerpts}` : ''}${retryNote}`
 
   // One generation attempt: call the model, record usage, and try to parse the
   // JSON answer. Returns the parsed result, or { ok:false } carrying the raw text
@@ -256,7 +266,7 @@ ${ANTI_SLOP_RULES}${retryNote}`
   ): Promise<{ ok: true; result: GeneratedResult } | { ok: false; text: string; finishReason: string }> => {
     const { text, usage, finishReason } = await generateText({
       model: anthropic(CONTENT_MODEL),
-      prompt,
+      messages: buildCachedMessages(staticPrefix, dynamicSuffix),
       maxOutputTokens,
       providerOptions,
       // Ride out transient overload/rate-limit (529/429) on big batched jobs
@@ -264,8 +274,9 @@ ${ANTI_SLOP_RULES}${retryNote}`
       maxRetries: 4,
     })
 
+    const cache = extractCacheUsage(usage)
     console.warn(
-      `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} finish=${finishReason}`
+      `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
     )
     checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
     await recordTokenUsage({
@@ -277,6 +288,8 @@ ${ANTI_SLOP_RULES}${retryNote}`
       model: CONTENT_MODEL,
       inputTokens: usage?.inputTokens,
       outputTokens: usage?.outputTokens,
+      cacheReadInputTokens: cache.cacheReadInputTokens,
+      cacheCreationInputTokens: cache.cacheCreationInputTokens,
     })
 
     try {

@@ -40,10 +40,11 @@ export type TokenContext = {
 
 // USD per 1,000,000 tokens, keyed by model id. Verify against current
 // Anthropic pricing before relying on cost_usd for actual billing — these
-// are the published Opus/Sonnet/Haiku tier rates and may drift over time.
+// are the published Sonnet/Haiku tier rates and may drift over time.
 // A model id missing from this map silently prices at $0, so every model used
 // anywhere in the app must have an entry here.
 const PRICING: Record<string, { input: number; output: number }> = {
+  // Retired writing tier (kept so historical token_usage rows still price).
   'claude-opus-4-8': { input: 5, output: 25 },
   // Sonnet 5 standard rate. Introductory pricing of $2/$10 applies through
   // 2026-08-31 — kept at standard $3/$15 so spend never silently under-records
@@ -53,7 +54,27 @@ const PRICING: Record<string, { input: number; output: number }> = {
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
 }
 
-export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+// Anthropic prompt-cache multipliers on the input rate: writing (creating) a
+// cache entry costs 1.25x, reading one costs 0.10x. `inputTokens` is the TOTAL
+// input the AI SDK reports (uncached + read + write), so subtract the cache
+// portions before pricing the uncached remainder. Both cache args default 0, so
+// existing 3-arg callers price exactly as before.
+const CACHE_WRITE_MULTIPLIER = 1.25
+const CACHE_READ_MULTIPLIER = 0.1
+
+export function estimateCostUsd(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens = 0,
+  cacheCreationTokens = 0
+): number {
   const rate = PRICING[model] ?? { input: 0, output: 0 }
-  return (inputTokens / 1_000_000) * rate.input + (outputTokens / 1_000_000) * rate.output
+  const uncachedInput = Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens)
+  return (
+    (uncachedInput / 1_000_000) * rate.input +
+    (cacheCreationTokens / 1_000_000) * rate.input * CACHE_WRITE_MULTIPLIER +
+    (cacheReadTokens / 1_000_000) * rate.input * CACHE_READ_MULTIPLIER +
+    (outputTokens / 1_000_000) * rate.output
+  )
 }

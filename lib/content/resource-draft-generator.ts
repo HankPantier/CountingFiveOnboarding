@@ -5,6 +5,7 @@ import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-vo
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { resolveStockPhotos, type ImageRef } from './stock-photo-resolver'
@@ -92,33 +93,16 @@ async function generateDraftContent(args: {
     ? `APPROVED EXTERNAL SOURCES — you may cite ONLY these URLs, verbatim, as markdown links. Do not invent, modify, or cite any other external URL. If none fit a claim, cite none:\n${args.externalLinks.map((l) => `- ${l.url}${l.title ? ` — ${l.title}` : ''}`).join('\n')}`
     : 'EXTERNAL SOURCES: none approved — do NOT include any external URL in the body.'
 
-  const prompt = `You are writing a blog post for the Resources section of ${firmName}, a CPA firm in ${location}.
+  // Static, client-constant prefix (brand voice, firm context, format + output
+  // rules, anti-slop). Cache breakpoint via buildCachedMessages so every post in
+  // a client's batch — and the anti-slop retry of a single post — reuses it as a
+  // cache read. The per-post task lives in dynamicSuffix below; keep every
+  // per-idea value OUT of this string.
+  const staticPrefix = `You are writing a blog post for the Resources section of ${firmName}, a CPA firm in ${location}.
 
 ${buildBrandVoiceBlock(schema)}
 
 ${buildFirmContext(schema)}
-
-POST TO WRITE:
-Title: ${idea.title}
-Angle: ${idea.angle ?? ''}
-Why it fits: ${idea.rationale ?? ''}
-
-${args.notes ? buildNotesBlock(args.notes) : ''}
-
-KEYWORD TARGET:
-Primary: ${idea.target_keyword ?? idea.title.toLowerCase()}
-Secondary: ${args.secondaryKeywords.join(', ')}
-
-${externalBlock}
-
-INTERNAL LINK TARGETS — link to these site pages and existing posts where genuinely relevant (site-relative markdown links, natural anchor text drawn from the topic, 2-4 links total, never force one). Pick targets whose subject actually overlaps what you're writing:
-${args.internalTargets
-  .map((t) => {
-    const kw = t.keyword ? ` — keyword: ${t.keyword}` : ''
-    const about = t.about ? ` — about: ${t.about}` : ''
-    return `- ${t.url} — "${t.title}"${kw}${about}`
-  })
-  .join('\n') || '- (none yet)'}
 
 FORMAT RULES:
 - 1,200–1,800 words of plain markdown prose. Start with a paragraph, not a heading. Use ## for section headings (the page title renders separately — no H1).
@@ -147,18 +131,44 @@ OUTPUT: Return a JSON object:
   }
 }
 
-${ANTI_SLOP_RULES}${retryNote}`
+${ANTI_SLOP_RULES}`
+
+  // Per-post dynamic suffix — everything that varies per idea. retryNote stays
+  // here (not in the prefix) so the first attempt and the anti-slop retry share
+  // an identical cached prefix and the retry lands as a cache read.
+  const dynamicSuffix = `POST TO WRITE:
+Title: ${idea.title}
+Angle: ${idea.angle ?? ''}
+Why it fits: ${idea.rationale ?? ''}
+
+${args.notes ? buildNotesBlock(args.notes) : ''}
+
+KEYWORD TARGET:
+Primary: ${idea.target_keyword ?? idea.title.toLowerCase()}
+Secondary: ${args.secondaryKeywords.join(', ')}
+
+${externalBlock}
+
+INTERNAL LINK TARGETS — link to these site pages and existing posts where genuinely relevant (site-relative markdown links, natural anchor text drawn from the topic, 2-4 links total, never force one). Pick targets whose subject actually overlaps what you're writing:
+${args.internalTargets
+  .map((t) => {
+    const kw = t.keyword ? ` — keyword: ${t.keyword}` : ''
+    const about = t.about ? ` — about: ${t.about}` : ''
+    return `- ${t.url} — "${t.title}"${kw}${about}`
+  })
+  .join('\n') || '- (none yet)'}${retryNote}`
 
   const { text, usage } = await generateText({
     model: anthropic(DRAFT_MODEL),
-    prompt,
+    messages: buildCachedMessages(staticPrefix, dynamicSuffix),
     // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
     maxOutputTokens: 8000,
     providerOptions: GENERATION_PROVIDER_OPTIONS,
   })
 
+  const cache = extractCacheUsage(usage)
   console.warn(
-    `[resource-draft] idea="${idea.title}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'}`
+    `[resource-draft] idea="${idea.title}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens}`
   )
   checkTokenBudget('resource-draft', idea.title, usage?.inputTokens, 5000)
   await recordTokenUsage({
@@ -170,6 +180,8 @@ ${ANTI_SLOP_RULES}${retryNote}`
     model: DRAFT_MODEL,
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
+    cacheReadInputTokens: cache.cacheReadInputTokens,
+    cacheCreationInputTokens: cache.cacheCreationInputTokens,
   })
 
   try {

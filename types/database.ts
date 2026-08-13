@@ -1255,6 +1255,8 @@ export type Database = {
       token_usage: {
         Row: {
           audit_id: string | null
+          cache_creation_input_tokens: number
+          cache_read_input_tokens: number
           content_job_id: string | null
           cost_usd: number
           created_at: string
@@ -1269,6 +1271,8 @@ export type Database = {
         }
         Insert: {
           audit_id?: string | null
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
           content_job_id?: string | null
           cost_usd?: number
           created_at?: string
@@ -1283,6 +1287,8 @@ export type Database = {
         }
         Update: {
           audit_id?: string | null
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
           content_job_id?: string | null
           cost_usd?: number
           created_at?: string

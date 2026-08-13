@@ -20,10 +20,14 @@ export async function recordTokenUsage(args: {
   model: string
   inputTokens?: number
   outputTokens?: number
+  cacheReadInputTokens?: number
+  cacheCreationInputTokens?: number
 }): Promise<void> {
   const inputTokens = args.inputTokens ?? 0
   const outputTokens = args.outputTokens ?? 0
-  const costUsd = estimateCostUsd(args.model, inputTokens, outputTokens)
+  const cacheReadTokens = args.cacheReadInputTokens ?? 0
+  const cacheCreationTokens = args.cacheCreationInputTokens ?? 0
+  const costUsd = estimateCostUsd(args.model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
 
   try {
     const supabase = createServerClient()
@@ -37,6 +41,8 @@ export async function recordTokenUsage(args: {
       model: args.model,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
+      cache_read_input_tokens: cacheReadTokens,
+      cache_creation_input_tokens: cacheCreationTokens,
       cost_usd: costUsd,
     })
     if (error) console.warn('[token-usage] Failed to record usage:', error.message)

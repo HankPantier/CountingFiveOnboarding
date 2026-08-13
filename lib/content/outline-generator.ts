@@ -6,6 +6,7 @@ import { buildFirmContext } from './brand-voice'
 import { cleanHeading } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -93,7 +94,11 @@ export async function generateOutlineForPage(
         .join('\n')
     : ''
 
-  const prompt = `You are a website content strategist for a CPA firm. Generate a structured page outline — not copy, just structure.
+  // Static, job-constant prefix (firm context + site-wide content gaps + the
+  // output/rules spec). Cache breakpoint via buildCachedMessages so every page
+  // outline in a job reuses it as a cache read. Per-page inputs live in
+  // dynamicSuffix below — keep every per-page value OUT of this string.
+  const staticPrefix = `You are a website content strategist for a CPA firm. Generate a structured page outline — not copy, just structure.
 
 FIRM CONTEXT:
 Brand voice: ${schema.brand?.currentTone ?? 'professional and approachable'}
@@ -104,17 +109,7 @@ ${paletteTone ? `Palette tone: ${paletteTone}` : ''}
 
 ${buildFirmContext(schema)}
 
-PAGE: ${pageTitle} (${pageUrl})
-TARGET KEYWORD: ${targetKeyword}
-SECONDARY KEYWORDS: ${secondaryKeywords.join(', ')}
-
-${existingContent ? `EXISTING CONTENT (current site — improve on this):\n${existingContent.slice(0, 800)}` : ''}
-
-${competitorExcerpts ? `COMPETITOR REFERENCES (SERP top results — differentiate from these):\n${competitorExcerpts}` : ''}
-
 ${gapsBlock}
-
-${auditHintsBlock}
 
 OUTPUT FORMAT (JSON only, no prose):
 {
@@ -140,17 +135,30 @@ HEADING RULES (h1 and every h2):
 - Never "What X Actually Means", "Beyond the …", "The Importance of …", "A Closer Look", "Demystifying/Decoding/Unpacking", or listicle titles ("5 Reasons …")
 - No dashes (— or –) in any heading`
 
+  // Per-page dynamic suffix — everything that varies per page, kept out of the
+  // cached prefix.
+  const dynamicSuffix = `PAGE: ${pageTitle} (${pageUrl})
+TARGET KEYWORD: ${targetKeyword}
+SECONDARY KEYWORDS: ${secondaryKeywords.join(', ')}
+
+${existingContent ? `EXISTING CONTENT (current site — improve on this):\n${existingContent.slice(0, 800)}` : ''}
+
+${competitorExcerpts ? `COMPETITOR REFERENCES (SERP top results — differentiate from these):\n${competitorExcerpts}` : ''}
+
+${auditHintsBlock}`
+
   const { text, usage, finishReason } = await generateText({
     model: anthropic(OUTLINE_MODEL),
-    prompt,
+    messages: buildCachedMessages(staticPrefix, dynamicSuffix),
     // Ample headroom for adaptive-thinking tokens ahead of the JSON answer. 3000
     // truncated the answer once thinking ran, collapsing pages into the fallback.
     maxOutputTokens: 8000,
     providerOptions: OUTLINE_PROVIDER_OPTIONS,
   })
 
+  const cache = extractCacheUsage(usage)
   console.warn(
-    `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} finish=${finishReason}`
+    `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
   )
   checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
   await recordTokenUsage({
@@ -162,6 +170,8 @@ HEADING RULES (h1 and every h2):
     model: OUTLINE_MODEL,
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
+    cacheReadInputTokens: cache.cacheReadInputTokens,
+    cacheCreationInputTokens: cache.cacheCreationInputTokens,
   })
 
   let outline: OutlineResult
