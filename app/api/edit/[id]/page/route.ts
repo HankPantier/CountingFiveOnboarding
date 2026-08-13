@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
-import { contentPathToUrl, stripNavUrl } from '@/lib/editor/content-paths'
-import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
+import { stripNavReference } from '@/lib/editor/nav-mutations'
 import {
   AssetExistsError,
   DRAFT_BRANCH,
@@ -11,13 +10,10 @@ import {
   deleteFile,
   ensureDraftBranch,
   moveFile,
-  readFile,
-  writeFile,
 } from '@/lib/github/repo-files'
 
 export const runtime = 'nodejs'
 
-const NAV_PATH = 'content/nav.json'
 const LIVE_ROOTS = ['content/pages/', 'content/posts/'] as const
 const DRAFT_ROOTS = ['content/drafts/pages/', 'content/drafts/posts/'] as const
 
@@ -33,30 +29,6 @@ function validContentPath(raw: string, roots: readonly string[]): string | null 
   if (!path || !path.endsWith('.md')) return null
   if (!roots.some((r) => path.startsWith(r))) return null
   return path
-}
-
-// Remove the page's nav.json link in a follow-up draft commit so the live nav
-// never points at a missing page. Non-fatal: nav may be absent or unparseable.
-async function stripNavReference(ctx: EditContext, contentPath: string): Promise<void> {
-  const url = contentPathToUrl(contentPath)
-  if (!url) return
-  try {
-    const nav = await readFile(ctx.githubRepo, NAV_PATH, DRAFT_BRANCH)
-    const parsed = parseNavJson(nav.content)
-    const { nav: next, changed } = stripNavUrl(parsed, url)
-    if (!changed) return
-    await writeFile(
-      ctx.githubRepo,
-      NAV_PATH,
-      serializeNavJson(next),
-      DRAFT_BRANCH,
-      `Remove ${url} from navigation`,
-      { expectedSha: nav.sha, ...author(ctx) }
-    )
-  } catch (err) {
-    if (err instanceof FileNotFoundError) return
-    console.warn(`[edit/page] nav strip skipped for ${contentPath}:`, err)
-  }
 }
 
 type StateBody = {

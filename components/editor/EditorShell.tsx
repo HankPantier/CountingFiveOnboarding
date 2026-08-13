@@ -13,6 +13,7 @@ import ChangesPanel from './ChangesPanel'
 import ThemeStudio from './ThemeStudio'
 import ClientCenterEditor from './ClientCenterEditor'
 import NewPageDialog from './NewPageDialog'
+import SiteAssistantChat from './SiteAssistantChat'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import type { Move } from '@/lib/editor/nav-urls'
 
@@ -56,6 +57,9 @@ export default function EditorShell({
   const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
   const [draftBusy, setDraftBusy] = useState(false)
   const [newPageOpen, setNewPageOpen] = useState(false)
+  // Site-structure assistant drawer — admin-only, page-independent (available
+  // over any open file, like Theme Studio but as a slide-in panel).
+  const [assistantOpen, setAssistantOpen] = useState(false)
   // Set when a save hits a sha conflict (someone else saved the same file).
   // The admin chooses explicitly: overwrite with their version, or take the
   // server's — no silent last-writer-wins.
@@ -924,6 +928,45 @@ export default function EditorShell({
             ×
           </button>
         </div>
+      )}
+      {isAdmin && !assistantOpen && (
+        <button
+          type="button"
+          onClick={() => setAssistantOpen(true)}
+          className="fixed bottom-6 right-6 z-40 rounded-pill bg-brand-cyan px-4 py-2 font-heading text-xs font-semibold text-text-inverse shadow-elevated transition-all hover:bg-brand-cyan-dark"
+          title="Make site-wide changes — add/remove pages, edit navigation"
+        >
+          ✨ Site Assistant
+        </button>
+      )}
+      {isAdmin && assistantOpen && (
+        <aside className="fixed inset-y-0 right-0 z-40 flex w-[400px] max-w-[92vw] flex-col border-l border-border-default bg-surface-card shadow-elevated">
+          <div className="flex items-start justify-between border-b border-border-default bg-surface-subtle px-4 py-3">
+            <div>
+              <h2 className="font-heading text-sm font-semibold text-text-primary">Site Assistant</h2>
+              <p className="mt-0.5 font-body text-xs text-text-muted">
+                Pages &amp; navigation — site-wide changes
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAssistantOpen(false)}
+              aria-label="Close Site Assistant"
+              className="text-lg leading-none text-text-muted hover:text-brand-navy"
+            >
+              ×
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <SiteAssistantChat
+              sessionId={sessionId}
+              onEdited={() => {
+                void refreshTree()
+                void refreshStatus()
+              }}
+            />
+          </div>
+        </aside>
       )}
     </div>
   )

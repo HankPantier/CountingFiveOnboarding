@@ -1,5 +1,5 @@
 export type MbpSuggestionStatus = 'pending' | 'approved' | 'dismissed' | 'superseded'
-export type MbpSuggestionOrigin = 'page_edit' | 'outline_edit' | 'sitemap_confirm' | 'resource' | 'backfill' | 'content_edit' | 'generate_content'
+export type MbpSuggestionOrigin = 'page_edit' | 'outline_edit' | 'sitemap_confirm' | 'resource' | 'backfill' | 'content_edit' | 'generate_content' | 'site_structure'
 
 // 'set' replaces the field with proposedValue; 'append' adds proposedValue
 // (a parsed object) as a new entry to an array field (services, locations…).

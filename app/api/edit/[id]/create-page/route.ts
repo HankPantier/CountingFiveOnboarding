@@ -3,7 +3,7 @@ import { resolveEditContext, type EditContext } from '../_helpers'
 import { normalizeSlug } from './_slug'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildStarterPage, generateNewPage } from '@/lib/content/new-page-generator'
-import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
+import { appendNavItem } from '@/lib/editor/nav-mutations'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -20,7 +20,6 @@ export const runtime = 'nodejs'
 // generation isn't truncated by the function timeout.
 export const maxDuration = 300
 
-const NAV_PATH = 'content/nav.json'
 const MAX_TITLE = 120
 const MAX_BRIEF = 500
 
@@ -36,39 +35,6 @@ const author = (ctx: EditContext) => ({
   authorName: ctx.adminName ?? 'CountingFive Admin',
   authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
 })
-
-// Append a top-level primary nav item for the new page. Best-effort: a missing
-// or unparseable nav.json is non-fatal (the page still exists; the admin can
-// add it in the Navigation editor). A stale sha is retried once.
-async function appendNavItem(ctx: EditContext, label: string, url: string): Promise<void> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let nav
-    try {
-      nav = await readFile(ctx.githubRepo, NAV_PATH, DRAFT_BRANCH)
-    } catch (err) {
-      if (err instanceof FileNotFoundError) return
-      throw err
-    }
-    try {
-      const parsed = parseNavJson(nav.content)
-      if (parsed.primary.some((i) => i.url === url)) return
-      parsed.primary.push({ label, url })
-      await writeFile(
-        ctx.githubRepo,
-        NAV_PATH,
-        serializeNavJson(parsed),
-        DRAFT_BRANCH,
-        `Add ${url} to navigation`,
-        { expectedSha: nav.sha, ...author(ctx) }
-      )
-      return
-    } catch (err) {
-      if (err instanceof StaleShaError && attempt === 0) continue
-      console.warn(`[create-page] nav append skipped for ${url}:`, err)
-      return
-    }
-  }
-}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
