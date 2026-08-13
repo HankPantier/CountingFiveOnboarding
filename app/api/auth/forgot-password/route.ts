@@ -52,7 +52,14 @@ export async function POST(req: Request) {
         console.error('[forgot-password] failed to generate recovery link:', linkErr?.message)
       } else {
         const resetUrl = buildConfirmLink(linkData.properties.hashed_token, 'recovery')
-        await sendPasswordResetEmail({ to: admin.email, resetUrl })
+        try {
+          await sendPasswordResetEmail({ to: admin.email, resetUrl })
+        } catch (sendErr) {
+          // Keep the enumeration-safe {success:true} contract below, but log the
+          // Resend failure distinctly so a broken send domain / API key is
+          // visible in the logs instead of masked by the generic outer catch.
+          console.error('[forgot-password] EMAIL SEND FAILED', sendErr)
+        }
       }
     }
   } catch (err) {

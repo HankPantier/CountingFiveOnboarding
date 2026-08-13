@@ -42,6 +42,7 @@ Everything in `.env.example` must be set for Production. Highlights:
 - [ ] `GET /api/cron/sweep-stuck-jobs` without auth header → 401
 - [ ] Log in, create a test session, open `/session/<id>`, send one chat message (Haiku phase — cheap), confirm a reply streams
 - [ ] `GET /api/sessions/<id>/phase` returns `{ current_phase }`
+- [ ] `node scripts/check-email-health.mjs` exits 0 (RESEND_FROM_EMAIL domain is verified — invite & reset emails 403-fail silently if it isn't)
 - [ ] Trigger forgot-password with your admin email → reset email arrives from the verified domain
 - [ ] Dashboard spend cards render non-zero after some usage (proves the 044 RPC exists)
 

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useDialog } from '@/components/ui/use-dialog'
 import type { Role, Capability } from '@/lib/auth/access'
+import type { CreateUserResponse } from '@/types/users'
 import type { SessionOption } from '@/app/admin/settings/users/page'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -15,6 +16,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
   const [capabilities, setCapabilities] = useState<Set<Capability>>(new Set(['manager']))
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  const [warning, setWarning] = useState('')
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
@@ -27,6 +29,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     setCapabilities(new Set(['manager']))
     setSelected(new Set())
     setError('')
+    setWarning('')
   }
 
   function toggle(id: string) {
@@ -55,6 +58,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setWarning('')
     if (!name.trim()) { setError('Name is required'); return }
     if (!EMAIL_RE.test(email.trim())) { setError('Please enter a valid email address'); return }
     if (role === 'member' && capabilities.size === 0) {
@@ -74,15 +78,23 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
           sessionIds: isContentUser ? [...selected] : [],
         }),
       })
-      const data = (await res.json()) as { error?: string }
+      const data = (await res.json()) as Partial<CreateUserResponse> & { error?: string }
       if (!res.ok || data.error) {
         setError(data.error ?? 'Failed to create user')
         setSaving(false)
         return
       }
+      // The account exists now; make it visible behind the dialog either way.
+      router.refresh()
+      if (data.emailSent === false) {
+        // Fail-soft: user was created but the invite email didn't send. Keep the
+        // dialog open with a warning so the operator resends it from the row.
+        setWarning(`${email.trim()} was created, but the invite email failed to send. Close this and use “Resend invite” on their row.`)
+        setSaving(false)
+        return
+      }
       reset()
       setOpen(false)
-      router.refresh()
     } catch {
       setError('Failed to create user. Please try again.')
     } finally {
@@ -101,7 +113,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     )
   }
 
-  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isContentUser }} />
+  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, warning, saving, handleSubmit, isContentUser }} />
 }
 
 interface PanelProps {
@@ -118,6 +130,7 @@ interface PanelProps {
   selected: Set<string>
   toggle: (id: string) => void
   error: string
+  warning: string
   saving: boolean
   handleSubmit: (e: React.FormEvent) => void
   isContentUser: boolean
@@ -125,7 +138,7 @@ interface PanelProps {
 
 // Separate component so useDialog mounts/unmounts with the panel itself —
 // focus is captured on open and restored to the trigger on close.
-function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, saving, handleSubmit, isContentUser }: PanelProps) {
+function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, warning, saving, handleSubmit, isContentUser }: PanelProps) {
   const dialogRef = useDialog(onClose)
 
   return (
@@ -143,6 +156,10 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <p className="text-sm text-error bg-error/10 px-3 py-2 rounded-card">{error}</p>
+          )}
+
+          {warning && (
+            <p className="text-sm text-warning bg-warning/10 px-3 py-2 rounded-card">{warning}</p>
           )}
 
           <div className="space-y-1">
