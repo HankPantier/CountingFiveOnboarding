@@ -30,9 +30,9 @@ export function getPhaseInstructions(
     case 2:  return phase2Instructions(mode)
     case 3:  return phase3Instructions(session, mode)
     case 4:  return phase4Instructions(session, mode)
-    case 5:  return phase5Instructions()
-    case 6:  return phase6Instructions()
-    case 7:  return phase7Instructions()
+    case 5:  return phase5Instructions(mode)
+    case 6:  return phase6Instructions(mode)
+    case 7:  return phase7Instructions(mode)
     default: return ''
   }
 }
@@ -157,15 +157,10 @@ This phase is server-side only. Do not respond to the user.`
 function phase1Instructions(mode: AgentMode): string {
   if (mode === 'staff') {
     return `PHASE 1 — CONTACT INFO (staff mode)
-Open with a single compact message asking the staff member to provide the client's:
-- First name
-- Last name
-- Email
-- Phone
-- Website URL (confirm or correct)
+Check COLLECTED DATA above first — notes extraction and the audit usually seed some of these. Only ask for the fields that are genuinely missing (first name, last name, email, phone, website URL). If all are already present, don't ask — call update_session_data with advancePhase: true immediately and move on.
 
-One message, bulleted list, no introduction, no echo-back. Accept answers in any order/format.
-As soon as all five land, call update_session_data with contact.firstName, contact.lastName, contact.email, contact.phone, websiteUrl, and advancePhase: true. Do not ask the staff member to confirm — they typed it, they know.`
+If any are missing, ask for just those in ONE compact bulleted message — no introduction, no echo-back, accept answers in any order/format.
+As soon as the required fields (contact.firstName, contact.lastName, contact.email, contact.phone, websiteUrl) are all populated, call update_session_data with them and advancePhase: true. Do not ask the staff member to confirm what they already typed.`
   }
   return `PHASE 1 — CONTACT INFO
 Introduce yourself briefly: you're here to walk through a few details for their new Revaltus website. We've already researched their firm and will confirm what we found as we go — mostly confirming what we already have.
@@ -194,7 +189,6 @@ function phase3Instructions(session: Session, mode: AgentMode): string {
   const legacyChunk2Done = completedChunks.includes('chunk2')
   const chunk2aDone = legacyChunk2Done || completedChunks.includes('chunk2a')
   const chunk2bDone = legacyChunk2Done || completedChunks.includes('chunk2b')
-  const chunk3Done = completedChunks.includes('chunk3')
 
   const typedMeta = readMeta(session)
   const niches = readNiches(session)
@@ -244,7 +238,7 @@ When part 1 is done, call update_session_data with the structured fields populat
   if (!chunk2aDone) {
     const bridgeNext = chunk2bHasContent
       ? "a few quick decisions the analyst flagged"
-      : "team photos"
+      : "the remaining questions"
     if (mode === 'staff') {
       return `PHASE 3 — MBP REVIEW, PART 2a (Content) — staff mode
 Present known data as compact tables / lists in ONE message:
@@ -270,9 +264,9 @@ Then present the 3 positioning options. Format them as a markdown list, one per 
 - **Option C** — [summary]
 Ask which direction resonates most, or if they'd like to blend elements.
 Once positioning is captured, briefly close with a single sentence bridging to the next step: "${chunk2bHasContent
-        ? "Next I'll walk through a few quick decisions the analyst flagged before we get to team photos."
-        : "Last for this section — I'll walk through your team and ask about a headshot for each. Ready?"}"
-Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase yet — ${chunk2bHasContent ? "Part 2b (decisions) runs next, then team photos." : "Part 3 (team photos) runs on the next exchange."}`
+        ? "Next I'll walk through a few quick decisions the analyst flagged before we wrap up."
+        : "That's the review done — next I'll fill in a few remaining details."}"
+Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase yet — ${chunk2bHasContent ? "Part 2b (decisions) runs next." : "we advance to Phase 4 (the remaining questions) next."}`
   }
 
   if (!chunk2bDone) {
@@ -281,91 +275,28 @@ Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "
     if (!chunk2bHasContent) {
       return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — NOTHING TO DECIDE
 
-The MBP didn't surface any decisions for the client to confirm. Immediately call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. No message to the user is necessary; the next agent turn will move into team photos (chunk3).`
+The MBP didn't surface any decisions for the client to confirm. Phase 3 is complete — immediately call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] } and advancePhase: true to move to Phase 4 (gap-filling). No message to the user is necessary. Do NOT ask about team photos — those are pulled automatically from the client's site.`
     }
 
     if (mode === 'staff') {
       return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — staff mode
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Staff can answer in any layout (line-prefixed, key-value, comma list). Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed.
 
-When the staff member's answer lands, call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up) and "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. DO NOT advance phase — chunk3 (team photos) runs next.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
+When the staff member's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Do NOT ask about team photos — those are pulled automatically.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
     }
     return `PHASE 3 — MBP REVIEW, PART 2b (Decisions)
-Open with a short bridge: "Before team photos, a few quick decisions our analyst flagged. Defaults are noted next to each — just call out exceptions."
+Open with a short bridge: "Before we wrap up this section, a few quick decisions our analyst flagged. Defaults are noted next to each — just call out exceptions."
 
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Keep each ask compact. Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed. If the client agrees with the defaults wholesale, accept that and move on.
 
-When the client's answer lands, call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions) and "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }. DO NOT advance phase yet — Part 3 (team photos) runs on the next exchange.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
+When the client's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling).${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
   }
 
-  // Chunk 3 — team photo capture. Per-member invariant is mode-agnostic; the
-  // upload UI depends on `_meta.current_team_member_name` being set before each
-  // ask, so the loop structure stays identical for staff. Only the wording of
-  // the per-member prompt is lightly trimmed below.
-  const team = (schema?.team as Array<{ name?: string }> | undefined) ?? []
-  const teamMembersList = team
-    .map(m => m?.name)
-    .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
-
-  if (!chunk3Done) {
-    if (teamMembersList.length === 0) {
-      return `PHASE 3 — MBP REVIEW, PART 3 (Team photos) — NO TEAM CAPTURED
-
-The team[] array is empty so there's nothing to photograph. Immediately call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"]. No message needed; the next agent turn will be Phase 4.`
-    }
-
-    const captured = (meta?.team_photos_captured as string[]) ?? []
-    const remaining = teamMembersList.filter(n => !captured.includes(n))
-    const current = (meta?.current_team_member_name as string | undefined) ?? remaining[0] ?? null
-
-    const askLine = mode === 'staff'
-      ? `Ask: "Headshot for <Name>? Upload or 'skip'."`
-      : `Ask the client in plain prose: "Do you have a headshot for <Name>? Upload it now, or skip if you don't have one — we'll generate a styled initials avatar as a placeholder."`
-
-    const ackLine = mode === 'staff'
-      ? `Acknowledge briefly: "Captured <Name>." or "Skipped <Name>." then ask about the next member.`
-      : `Acknowledge briefly: "Got <Name>'s headshot — moving on" or "Skipped <Name> — moving on", then ask about the NEXT member.`
-
-    const wrapLine = mode === 'staff'
-      ? `ON THE LAST MEMBER, after step 4: call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"] and a null current_team_member_name. One line: "Team photos done." Stop.`
-      : `ON THE LAST MEMBER, after step 4: call update_session_data with advancePhase: true and "_meta.phase3_completed_chunks": ["chunk1", "chunk2", "chunk3"] and a null current_team_member_name. Acknowledge: "Team photos done — let's wrap a few last details" and stop.`
-
-    return `PHASE 3 — MBP REVIEW, PART 3 (Team photos)
-
-Walk through uploading one headshot per team member, in order.
-
-Team roster: ${teamMembersList.map(n => `"${n}"`).join(', ')}
-Already captured (skipped or uploaded): ${captured.length ? captured.map(n => `"${n}"`).join(', ') : 'none yet'}
-Still to ask about: ${remaining.length ? remaining.map(n => `"${n}"`).join(', ') : 'none — all done, advance now'}
-Current focus: ${current ? `"${current}"` : 'n/a'}
-
-PROCEDURE for each remaining member (one at a time, not all in one message):
-
-1. Set the upload context by calling update_session_data with:
-   _meta.current_team_member_name = "<exact member name>"
-
-   This is REQUIRED before asking — the upload UI reads this field and tags any uploaded file with the right member name. If you don't set it first, the upload is unmapped.
-
-2. ${askLine}
-
-3. Wait for an upload OR a skip cue.
-
-4. Once handled (upload landed OR skip stated), call update_session_data with:
-   _meta.team_photos_captured = [<existing list>, "<this member name>"]
-   _meta.current_team_member_name = "<NEXT member name, or null if last>"
-
-   Do NOT remove names from team_photos_captured. Always append.
-
-5. ${ackLine}
-
-${wrapLine}
-
-DO NOT ask about members already in team_photos_captured. Use the "Still to ask about" list above.
-
-If multiple photos arrive in one message for one member, accept all of them; only the first is canonical but the others stay archived.`
-  }
-
-  return `PHASE 3 is complete. Call update_session_data with advancePhase: true if you haven't already.`
+  // Team photos are NOT collected in the chat. High-confidence headshots are
+  // auto-pulled from the client's live site at session start (lib/team-photos/
+  // auto-pull.ts) and the rep fills any gaps via the session page's
+  // TeamPhotoManager. Once the review chunks are done, Phase 3 is complete.
+  return `PHASE 3 is complete — nothing else to collect here. Do NOT ask about team photos; they are pulled automatically from the client's site and managed on the session page. Immediately call update_session_data with advancePhase: true if you haven't already, then move into Phase 4.`
 }
 
 function phase4Instructions(session: Session, mode: AgentMode): string {
@@ -423,7 +354,15 @@ Close Phase 4 with: "Is there anything else about the firm that's important for 
 When all Tier 1 gaps are resolved and that question has been asked, call update_session_data with advancePhase: true.${checklist}`
 }
 
-function phase5Instructions(): string {
+function phase5Instructions(mode: AgentMode): string {
+  if (mode === 'staff') {
+    return `PHASE 5 — ASSETS (staff mode)
+Final step before the profile is done. In ONE compact message, ask the rep:
+"Any files to add — logo, brand guide, or color palette? Upload them here, or add them later on the session page. (No need for team photos — those are pulled automatically from the client's site.)"
+
+Use the upload button below; confirm each file by name as it lands. Don't push — a missing logo is fine (a styled wordmark is generated automatically at assembly).
+As soon as files land OR the rep says there's nothing to add, call update_session_data with advancePhase: true and move straight to the close — don't ask whether they're ready.`
+  }
   return `PHASE 5 — ASSETS
 
 LOGO IS THE PRIORITY ASK — push for it specifically before moving to other assets:
@@ -433,16 +372,21 @@ If they say they don't have one, or don't have one handy: "Totally fine — we'l
 
 If they say they have one but don't have it on hand right now: encourage them to grab it ("if it's quick to find, now is the moment — otherwise we can swap it in later"). Don't block the session waiting for it.
 
-After the logo conversation, move to other brand assets and photography:
+After the logo conversation, move to other brand assets:
 "What about a brand guide, color palette PDF, or any other style reference? Those help us match an existing visual identity if you have one."
-Then: "Last on assets — team headshots or office photos you'd like us to use? Headshots are the most impactful since they appear on every team-grid page. If you don't have them yet, we'll use styled placeholders."
+(Don't ask for team headshots — those are pulled automatically from the client's site.)
 
 Prompt for uploads via the button below. Confirm receipt of each file by name. If a client uploads a logo, acknowledge it by name explicitly so they know it landed ("Got it — drinks-logo.png saved as your primary logo.").
 
 When done (or client confirms they have nothing more to upload), call update_session_data with advancePhase: true, then move straight into wrapping up — don't ask whether they're ready to continue.`
 }
 
-function phase6Instructions(): string {
+function phase6Instructions(mode: AgentMode): string {
+  if (mode === 'staff') {
+    return `PHASE 6 — WRAP UP (staff mode)
+Do NOT print a summary — the rep reviews the full profile on the session page, not in chat.
+Immediately call update_session_data with advancePhase: true to finish. No message is necessary.`
+  }
   return `PHASE 6 — WRAP UP
 Present a concise summary of all collected data, organized by section.
 Check the schema for any required fields still empty — ask about them before summarizing.
@@ -450,7 +394,11 @@ Ask: "Does everything look right? Anything to change before I submit?"
 When confirmed, call update_session_data with advancePhase: true. After the advance, give the closing thank-you directly — do not ask the client to confirm they're ready to finish.`
 }
 
-function phase7Instructions(): string {
+function phase7Instructions(mode: AgentMode): string {
+  if (mode === 'staff') {
+    return `PHASE 7 — COMPLETE (staff mode)
+The onboarding profile is complete and the session is now marked ready. In one short message, tell the rep the profile is captured and point them to the session page to review it, upload any remaining files, and approve it for content generation. Do not collect any more information. Do not call update_session_data.`
+  }
   return `PHASE 7 — COMPLETE
 The onboarding is complete. Thank the client warmly and let them know the Revaltus team will be in touch shortly to begin the project.
 Do not collect any more information. Do not call update_session_data.`

@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import Image from 'next/image'
+import Link from 'next/link'
 import MessageBubble from './MessageBubble'
 import FileUploadButton from './FileUploadButton'
 import type { Database } from '@/types/database'
@@ -298,14 +299,33 @@ export default function ChatInterface({
 
       <div className="border-t border-border-default bg-surface-card px-4 py-4 flex-shrink-0">
         {isComplete ? (
-          <div className="max-w-2xl mx-auto text-center py-2">
-            <p className="text-base font-heading font-semibold text-brand-navy">
-              You&apos;re all set — onboarding complete.
-            </p>
-            <p className="text-text-secondary text-sm font-body mt-1">
-              Thanks for walking through this. Our team will be in touch shortly to begin your project.
-            </p>
-          </div>
+          isStaffMode ? (
+            <div className="max-w-2xl mx-auto text-center py-2 flex flex-col items-center gap-3">
+              <div>
+                <p className="text-base font-heading font-semibold text-brand-navy">
+                  Onboarding complete — the profile is captured and the session is marked ready.
+                </p>
+                <p className="text-text-secondary text-sm font-body mt-1">
+                  Review it, add any remaining files, and approve it for content generation on the session page.
+                </p>
+              </div>
+              <Link
+                href={`/admin/sessions/${sessionId}`}
+                className="bg-brand-cyan text-text-inverse font-heading font-semibold text-sm px-6 py-3 rounded-pill shadow-cyan-base transition-all duration-150 hover:-translate-y-px hover:bg-brand-cyan-dark hover:shadow-cyan-glow active:scale-95"
+              >
+                Open session →
+              </Link>
+            </div>
+          ) : (
+            <div className="max-w-2xl mx-auto text-center py-2">
+              <p className="text-base font-heading font-semibold text-brand-navy">
+                You&apos;re all set — onboarding complete.
+              </p>
+              <p className="text-text-secondary text-sm font-body mt-1">
+                Thanks for walking through this. Our team will be in touch shortly to begin your project.
+              </p>
+            </div>
+          )
         ) : (
         <div className="max-w-2xl mx-auto flex flex-col gap-2">
           {currentPhase >= 5 && (

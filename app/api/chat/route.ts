@@ -287,6 +287,13 @@ async function updateSessionSchema(
     }
   }
 
+  // Staff onboarding has no separate wrap-up/thank-you phase — the rep reviews
+  // and approves on the session page, and the chat surfaces a completion card.
+  // Collapse Phase 6 so finishing assets (Phase 5) completes the session in one
+  // step instead of stranding it at 6 waiting for turns that never come.
+  const isStaffMode = (mergedSchema._meta as { mode?: string } | undefined)?.mode === 'staff'
+  if (isStaffMode && newPhase === 6) newPhase = 7
+
   await supabase
     .from('sessions')
     .update({
@@ -356,13 +363,8 @@ function validatePhaseAdvance(
       if (!legacyChunk2 && !chunks.includes('chunk2a')) return 'Phase 3 chunk2a not complete'
       if (!legacyChunk2 && !chunks.includes('chunk2b')) return 'Phase 3 chunk2b not complete'
 
-      // chunk3 — team photos. Required when team[] is non-empty so the agent
-      // can't skip past the per-member upload step. Empty team → no photos to
-      // collect → chunk3 is vacuous and the agent marks it complete inline.
-      const team = (schema.team as Array<unknown> | undefined) ?? []
-      if (team.length > 0 && !chunks.includes('chunk3')) {
-        return 'Phase 3 chunk3 (team photos) not complete'
-      }
+      // Team photos are auto-pulled at session start and managed on the session
+      // page — the chat no longer collects them, so there is no chunk3 gate.
 
       const culture = schema.culture as Record<string, unknown> | undefined
       const business = schema.business as Record<string, unknown> | undefined
