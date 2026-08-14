@@ -51,6 +51,27 @@ describe('mandatory image rules', () => {
     expect(standalone.errors.some((e) => e.fix === 'add-image')).toBe(false)
   })
 
+  it('treats with-image-left/right checklist as image-bearing (add-image without a photo)', () => {
+    for (const variant of ['with-image-left', 'with-image-right']) {
+      const res = validateBlockAnnotations(
+        [ann({ blockId: 'checklist-section', variant })],
+        '/x',
+        []
+      )
+      expect(res.errors.some((e) => e.fix === 'add-image')).toBe(true)
+    }
+  })
+
+  it('accepts a with-image-left checklist as a valid variant (no coercion)', () => {
+    const res = validateBlockAnnotations(
+      [ann({ blockId: 'checklist-section', variant: 'with-image-left', image: 'x.jpg' })],
+      '/x',
+      []
+    )
+    expect(res.coercions).toHaveLength(0)
+    expect(res.errors.filter((e) => e.blockId === 'checklist-section')).toHaveLength(0)
+  })
+
   it('errors on image-bg cta-banner without image; color-bg is exempt', () => {
     const imageBg = validateBlockAnnotations(
       [ann({ blockId: 'cta-banner', variant: 'image-bg' })],

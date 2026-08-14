@@ -219,7 +219,7 @@ VARIANT RULES — every variant value must come from the block's catalog above. 
 - form: contact variant unless quote or newsletter clearly fits
 - pricing: match tier count to packages described (2-tier / 3-tier / 4-tier)
 - intro-text: centered by default; left-aligned only when feeding into left-aligned content
-- checklist-section: with-image by default (carries the mandatory image: + query:); standalone only for a short inline qualifying list with no room for a supporting photo
+- checklist-section: with-image by default (image on the right, carries the mandatory image: + query:); use with-image-left to place the photo on the left, or with-image-right to be explicit; standalone (no image) only for a short inline qualifying list with no room for a supporting photo
 - process-steps: vertical by default; horizontal only for short 3–5-step flows
 - testimonials: grid by default; carousel only when 4+ testimonials
 - stats-bar: 3-up by default; 4-up if you have exactly 4 numbers

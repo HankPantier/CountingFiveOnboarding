@@ -61,7 +61,7 @@ const BLOCK_CATALOG: Readonly<Record<string, BlockMeta>> = {
   'intro-text': { variants: ['centered', 'left-aligned'] },
   'content-split': { variants: ['image-right', 'image-left'] },
   'content-prose': { variants: [] },
-  'checklist-section': { variants: ['with-image', 'standalone'] },
+  'checklist-section': { variants: ['with-image', 'with-image-right', 'with-image-left', 'standalone'] },
   'process-steps': { variants: ['horizontal', 'vertical'] },
 
   // Card grids
@@ -85,6 +85,19 @@ const BLOCK_CATALOG: Readonly<Record<string, BlockMeta>> = {
   // Utility
   'content-table': { variants: [] },
 } as const
+
+/**
+ * The inline-selectable block catalog as a compact `id (v1|v2), id, …` string,
+ * derived from BLOCK_CATALOG so prompt hints can't drift from the validator.
+ * Excludes frontmatter-only heroes and the auto-appended faq-accordion — the
+ * model never selects those inline.
+ */
+export function blockCatalogHint(): string {
+  return Object.entries(BLOCK_CATALOG)
+    .filter(([, meta]) => !meta.frontmatterOnly && !meta.autoAppended)
+    .map(([id, meta]) => (meta.variants.length ? `${id} (${meta.variants.join('|')})` : id))
+    .join(', ')
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -336,7 +349,10 @@ export function validateBlockAnnotations(
     if (
       blockId === 'checklist-section' &&
       !ann.image &&
-      (ann.variant === 'with-image' || ann.variant === undefined)
+      // Every image-bearing checklist variant (legacy with-image, explicit
+      // with-image-right/left, or the no-variant default) needs a photo;
+      // only standalone is exempt.
+      ann.variant !== 'standalone'
     ) {
       errors.push({
         position,

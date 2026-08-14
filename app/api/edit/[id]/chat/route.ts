@@ -11,6 +11,7 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-edit'
+import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
 import { splitTrailers, setFaqAccordionBody } from '@/lib/editor/page-body'
@@ -30,11 +31,10 @@ export const maxDuration = 120
 // The agent only edits markdown content files (not nav.json/config/social).
 const EDITABLE = ['content/pages/', 'content/posts/']
 
-// The block catalog the layout tools may produce — kept in sync with
-// lib/content/block-annotation-validator.ts BLOCK_CATALOG. Inlined here (id →
-// variants) so the model picks valid ids/variants; validateAnnotationSyntax is
-// the hard gate on write.
-const BLOCK_CATALOG_HINT = `intro-text (centered|left-aligned), content-split (image-right|image-left), content-prose, checklist-section (with-image|standalone), process-steps (horizontal|vertical), feature-grid (3-col|4-col), service-cards (2-col|3-col), content-cards (3-col|2-col), team-grid (2-col|3-col|4-col), industry-cards (3-col|4-col), testimonials (carousel|grid), stats-bar (3-up|4-up), logo-bar, cta-banner (color-bg|image-bg), pricing (2-tier|3-tier|4-tier), form (contact|quote|newsletter), content-table`
+// The block catalog the layout tools may produce (id → variants), derived from
+// BLOCK_CATALOG so it can't drift from the validator. The model picks valid
+// ids/variants from this; validateAnnotationSyntax is the hard gate on write.
+const BLOCK_CATALOG_HINT = blockCatalogHint()
 
 export async function POST(
   req: Request,
@@ -122,11 +122,14 @@ You do NOT rewrite the whole file. You make small, targeted changes with these t
 - update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.
 
 LAYOUT CHANGES (via apply_edit on the annotation comment)
-Blocks are declared by an HTML comment before each \`##\` heading, e.g.
+Every section's layout is set by an HTML comment before its \`##\` heading, e.g.
 \`<!-- block: content-split | variant: image-right | image: x.jpg | alt: "..." | query: "..." -->\`
-- Move a content-split image to the other side: flip \`variant: image-right\` ↔ \`variant: image-left\`.
-- Add a section: insert a new \`<!-- block: ... -->\` comment + \`## Heading\` + body at a sensible anchor.
-- Reorder/remove: move or delete a whole block (its comment + heading + body).
+Almost any layout request is just editing that comment's \`variant\` (or moving/adding/removing the whole block). Do it — don't tell the admin a layout isn't possible without first checking the variants below. What you can change:
+- Image side (left/right) on \`content-split\` AND \`checklist-section\`: flip between \`image-right\`/\`image-left\` (content-split) or \`with-image-right\`/\`with-image-left\` (checklist-section). A legacy \`with-image\` checklist means image-on-right — rewrite it to \`with-image-left\` to move the photo left.
+- Column count on card grids: \`feature-grid\`/\`industry-cards\` (3-col|4-col), \`service-cards\`/\`content-cards\` (2-col|3-col), \`team-grid\` (2-col|3-col|4-col), \`stats-bar\` (3-up|4-up).
+- Text alignment: \`intro-text\` (centered|left-aligned). Steps orientation: \`process-steps\` (horizontal|vertical). Testimonials: \`testimonials\` (carousel|grid). CTA background: \`cta-banner\` (color-bg|image-bg). Pricing tiers / form type likewise via their variants.
+- Add a section: insert a new \`<!-- block: ... -->\` comment + \`## Heading\` + body at a sensible anchor. Reorder/remove: move or delete a whole block (its comment + heading + body).
+- Convert a block type (e.g. \`checklist-section\` → \`content-split\`) when the admin wants a layout the current block can't do: change the \`block:\` id to a valid one and adjust the body to fit (e.g. bullet list → prose). Confirm the intent first if it would drop content.
 Only use these block ids and variants: ${BLOCK_CATALOG_HINT}. An edit that produces an unknown block id or an invalid variant is rejected — the tool tells you why, so fix it and retry.
 
 FIRM-WIDE CONTACT (phone, fax, email, hours, address)

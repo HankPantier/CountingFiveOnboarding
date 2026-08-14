@@ -36,7 +36,7 @@ Blocks should be built to consume these tokens via a single client theme configu
 | 4 | `intro-text` | Content | `centered`, `left-aligned` |
 | 5 | `content-split` | Content | `image-right`, `image-left` |
 | 6 | `content-prose` | Content | — |
-| 7 | `checklist-section` | Content | `with-image`, `standalone` |
+| 7 | `checklist-section` | Content | `with-image`, `with-image-right`, `with-image-left`, `standalone` |
 | 8 | `process-steps` | Content | `horizontal`, `vertical` |
 | 9 | `feature-grid` | Cards | `3-col`, `4-col` |
 | 10 | `service-cards` | Cards | `2-col`, `3-col` |
@@ -212,7 +212,9 @@ Blocks should be built to consume these tokens via a single client theme configu
 **Purpose:** A branded list of benefits, inclusions, or qualifications — each item marked with a checkmark icon. Highly effective for "what's included," eligibility criteria, or service feature lists.
 
 **Variants:**
-- `with-image` — checklist items on one side, supporting image on the other
+- `with-image` — checklist items with a supporting image on the right (legacy default)
+- `with-image-right` — explicit: checklist on the left, image on the right
+- `with-image-left` — checklist on the right, image on the left
 - `standalone` — full-width checklist, centered or 2-column layout
 
 **Content Slots:**

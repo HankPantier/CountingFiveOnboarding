@@ -592,7 +592,7 @@ interface ContentProseProps { headline?: string; body: string }
 
 // checklist-section
 interface ChecklistSectionProps {
-  variant: 'with-image' | 'standalone'
+  variant: 'with-image' | 'with-image-right' | 'with-image-left' | 'standalone'
   headline: string; intro?: string
   items: string[]
   image?: string; imageAlt?: string
