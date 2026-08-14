@@ -56,4 +56,22 @@ describe('buildFirmContext — enriched MBP fields', () => {
   it('returns empty string when nothing is populated', () => {
     expect(buildFirmContext({})).toBe('')
   })
+
+  it('renders a CONTENT SCOPE block with emphasis and a hard exclusion rule', () => {
+    const out = buildFirmContext(base({
+      contentEmphasis: ['nonprofits', 'dental practices'],
+      contentExclusions: ['real estate', 'cryptocurrency'],
+    }))
+    expect(out).toContain('CONTENT SCOPE')
+    expect(out).toContain('Emphasize / prioritize: nonprofits, dental practices')
+    expect(out).toContain('DO NOT create any page, section, or copy about')
+    expect(out).toContain('real estate, cryptocurrency')
+  })
+
+  it('emits the scope block even when no firm profile fields are set', () => {
+    const out = buildFirmContext({ business: { contentExclusions: ['real estate'] } as SessionSchema['business'] })
+    expect(out).toContain('CONTENT SCOPE')
+    expect(out).toContain('real estate')
+    expect(out).not.toContain('FIRM PROFILE')
+  })
 })

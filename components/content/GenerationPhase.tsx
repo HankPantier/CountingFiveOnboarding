@@ -9,6 +9,7 @@ type PageStatus = {
   title: string
   status: string
   errorMessage?: string | null
+  startedAt?: string | null
   parent?: string
   approved?: boolean
   needsClientReview?: boolean
@@ -45,6 +46,11 @@ const STATUS_ICONS: Record<string, { icon: string; cls: string; title: string }>
   complete: { icon: '●', cls: 'text-success', title: 'Complete — content has been generated' },
   error:    { icon: '✗', cls: 'text-error', title: 'Error — generation failed; check server logs and re-run' },
 }
+
+// A page still 'running' past this is almost certainly orphaned (a worker died
+// mid-call). The cron sweep only clears it at 15 min; surface it far sooner so
+// the operator can unstick it instead of staring at a spinner.
+const STALE_RUNNING_MS = 4 * 60 * 1000
 
 function wordCountBadge(actual: number | null | undefined, target: number | null | undefined): { label: string; cls: string; title: string } | null {
   if (actual == null) return null
@@ -87,6 +93,9 @@ export default function GenerationPhase({
   const [restartError, setRestartError] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
+  // Count of pages stuck 'running' past the stale threshold. Computed in the
+  // poll (reading the clock is a side effect, not allowed during render).
+  const [staleCount, setStaleCount] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -98,6 +107,15 @@ export default function GenerationPhase({
         const data = await res.json()
         setStatus(data)
         setLoading(false)
+        const nowTs = Date.now()
+        setStaleCount(
+          (data.pages ?? []).filter(
+            (p: PageStatus) =>
+              p.status === 'running' &&
+              p.startedAt != null &&
+              nowTs - new Date(p.startedAt).getTime() > STALE_RUNNING_MS,
+          ).length,
+        )
         if (data.total > 0 && data.complete + data.error >= data.total && data.running === 0) {
           clearInterval(intervalId)
         }
@@ -232,6 +250,8 @@ export default function GenerationPhase({
   const allClientApproved = status.needsClientReview === 0 || status.clientApproved === status.needsClientReview
   const allApproved = allAdminApproved && allClientApproved
 
+  const runningPages = status.pages.filter(p => p.status === 'running')
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -283,7 +303,22 @@ export default function GenerationPhase({
             style={{ width: `${pct}%` }}
           />
         </div>
+        {runningPages.length > 0 && (
+          <p className="mt-1.5 text-xs font-body text-text-muted truncate" title={runningPages.map(p => p.title).join(', ')}>
+            <span className="text-info animate-pulse">◌</span>{' '}
+            Generating now: {runningPages.slice(0, 4).map(p => p.title).join(', ')}
+            {runningPages.length > 4 ? ` +${runningPages.length - 4} more` : ''}
+          </p>
+        )}
       </div>
+
+      {staleCount > 0 && (
+        <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2">
+          {staleCount} page{staleCount !== 1 ? 's have' : ' has'} been generating for over 4 minutes and
+          may be stuck (a worker likely stopped mid-run). Click <span className="font-semibold">Restart generation
+          (unstick)</span> below — finished pages are skipped, so it&apos;s safe to re-run.
+        </div>
+      )}
 
       {showErrors && status.error > 0 && (
         <div className="border border-error/30 bg-error/5 rounded-lg p-3 space-y-2">
@@ -401,7 +436,11 @@ export default function GenerationPhase({
                         Client review
                       </label>
                       <label
-                        className="flex items-center gap-1 text-xs font-body text-text-secondary cursor-pointer"
+                        className={`flex items-center gap-1 text-xs font-heading cursor-pointer px-1.5 py-0.5 rounded transition-colors ${
+                          page.approved
+                            ? 'font-semibold text-success bg-success/10'
+                            : 'font-semibold text-text-secondary hover:bg-surface-subtle'
+                        }`}
                         title="Admin approval. Required before the deliverable package can be assembled. Resets to false whenever content or the outline is edited."
                       >
                         <input
@@ -409,9 +448,9 @@ export default function GenerationPhase({
                           checked={page.approved ?? false}
                           disabled={approveBusy}
                           onChange={e => toggleApprove(page, e.target.checked)}
-                          className="accent-brand-cyan"
+                          className="accent-success"
                         />
-                        Approved
+                        {page.approved ? 'Approved ✓' : 'Approve'}
                       </label>
                       <button
                         type="button"

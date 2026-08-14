@@ -27,7 +27,8 @@ export async function GET(
 }
 
 // Per-page admin updates. Accepts approval flags and content fields.
-// If any content field is edited, both approvals are atomically reset to false.
+// If any content field is edited, ADMIN approval is reset to false; client
+// approval is preserved (the operator re-flags client review deliberately).
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; pageId: string }> }
@@ -90,10 +91,12 @@ export async function PATCH(
     }
   }
 
-  // If any content field was edited, reset both approvals atomically
+  // If any content field was edited, the operator must re-sign off (reset admin
+  // approval). Client approval is deliberately PRESERVED — the operator re-flags
+  // for client review on purpose, so an edit shouldn't silently blow away a
+  // client's prior sign-off and force a fresh review round.
   if (contentEdited) {
     updates.admin_approved_content = false
-    updates.client_approved_content = false
   }
 
   if (Object.keys(updates).length === 0) {

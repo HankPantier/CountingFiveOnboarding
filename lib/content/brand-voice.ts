@@ -100,9 +100,32 @@ export function buildFirmContext(schema: SessionSchema): string {
     lines.push(`Local competitors (differentiate against these — do NOT name them in published copy): ${competitors.join('; ')}`)
   }
 
-  return lines.length
+  const profile = lines.length
     ? `FIRM PROFILE (ground all copy in these specifics — never contradict or generalize away from them):\n${lines.join('\n')}`
     : ''
+
+  const scope = buildContentScopeBlock(schema)
+  return [profile, scope].filter(Boolean).join('\n\n')
+}
+
+// Hard client-set scope directives captured from the onboarding call. Emphasis
+// steers what to prioritize; exclusions are an absolute prohibition — the client
+// explicitly told us to leave these out, so no page, section, or sentence may
+// mention them. Rendered as its own block so it survives prompt truncation and
+// reads as a rule, not a suggestion.
+export function buildContentScopeBlock(schema: SessionSchema): string {
+  const emphasis = (schema.business?.contentEmphasis ?? []).filter(Boolean)
+  const exclusions = (schema.business?.contentExclusions ?? []).filter(Boolean)
+  if (!emphasis.length && !exclusions.length) return ''
+  const lines: string[] = ['CONTENT SCOPE (client directives — obey exactly):']
+  if (emphasis.length) lines.push(`Emphasize / prioritize: ${emphasis.join(', ')}.`)
+  if (exclusions.length) {
+    lines.push(
+      `DO NOT create any page, section, or copy about, and never mention: ${exclusions.join(', ')}. ` +
+        `The client explicitly excluded these — treat them as off-limits.`,
+    )
+  }
+  return lines.join('\n')
 }
 
 export function buildBrandVoiceBlock(schema: SessionSchema): string {

@@ -88,6 +88,27 @@ describe('mergeNotesExtraction — non-destructive fill', () => {
     expect(n).toMatchObject({ name: 'Dentists', revenueBand: '$1–5M', decisionMaker: 'owner' })
   })
 
+  it('captures content emphasis and exclusion directives from the notes', () => {
+    const model = validateNotesModel({
+      business: {
+        name: 'Firm',
+        contentEmphasis: ['nonprofits', 7, 'dental'],
+        contentExclusions: ['real estate', '', 'crypto'],
+      },
+    })
+    expect(model!.business!.contentEmphasis).toEqual(['nonprofits', 'dental'])
+    expect(model!.business!.contentExclusions).toEqual(['real estate', 'crypto'])
+
+    const empty: SessionSchema = { business: { name: 'Firm' } } as SessionSchema
+    const { schema: merged, applied } = mergeNotesExtraction(empty, [], model!)
+    const b = merged.business as Record<string, unknown>
+    expect(b.contentExclusions).toEqual(['real estate', 'crypto'])
+    expect(b.contentEmphasis).toEqual(['nonprofits', 'dental'])
+    expect(applied.map((a) => a.path)).toEqual(
+      expect.arrayContaining(['business.contentEmphasis', 'business.contentExclusions'])
+    )
+  })
+
   it('resolves a gap once its field is filled from the notes', () => {
     const schema: SessionSchema = { business: { foundingYear: '' } } as SessionSchema
     const gaps: GapItem[] = [

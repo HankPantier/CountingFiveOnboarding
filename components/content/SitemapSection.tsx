@@ -4,6 +4,7 @@ import { useState } from 'react'
 import SitemapPageRow from './SitemapPageRow'
 
 type SitemapPage = {
+  _key: string
   url: string
   title: string
   status: 'new' | 'update' | 'existing'
@@ -38,7 +39,7 @@ export default function SitemapSection({
     const baseSlug = sectionUrl === '/' ? '' : sectionUrl
     onUpdate([
       ...pages,
-      { url: `${baseSlug}/new-page`, title: '', status: 'new' as const, parent: sectionUrl },
+      { _key: crypto.randomUUID(), url: `${baseSlug}/new-page`, title: '', status: 'new' as const, parent: sectionUrl },
     ])
   }
 
@@ -74,7 +75,7 @@ export default function SitemapSection({
         <div className="px-2 py-1">
           {pages.map((page, i) => (
             <SitemapPageRow
-              key={`${page.url}-${i}`}
+              key={page._key}
               page={page}
               onChange={updated => handleChange(i, updated)}
               onRemove={() => handleRemove(i)}

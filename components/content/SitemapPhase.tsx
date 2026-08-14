@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback } from 'react'
 import SitemapSection from './SitemapSection'
 
 type SitemapPage = {
+  // Stable client-only identity so rows keep focus across edits. React remounts
+  // an input when its key changes; keying by url/index churned on every
+  // keystroke. `_key` is assigned on load and stripped before persisting.
+  _key: string
   url: string
   title: string
   status: 'new' | 'update' | 'existing'
@@ -76,7 +80,7 @@ export default function SitemapPhase({
       const res = await fetch(`/api/content-jobs/${contentJobId}/sitemap`)
       if (!res.ok) throw new Error('Failed to load sitemap')
       const data = await res.json()
-      setPages(data.pages ?? [])
+      setPages((data.pages ?? []).map((p: Omit<SitemapPage, '_key'>) => ({ ...p, _key: crypto.randomUUID() })))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
     } finally {
@@ -96,12 +100,20 @@ export default function SitemapPhase({
 
   const handleSectionUpdate = (sectionUrl: string, updatedPages: SitemapPage[]) => {
     setPages(prev => {
-      // Remove old pages from this section, add updated ones
+      // Replace this section's pages BY STABLE KEY, in place — never reorder the
+      // flat array (that churned row indices and dropped input focus per
+      // keystroke). Edits keep position; removed pages drop; newly added pages
+      // (keys not seen in prev) append at the end.
       const group = groupBySections(prev).find(g => g.url === sectionUrl)
-      if (!group) return prev
-      const oldUrls = new Set(group.pages.map(p => p.url))
-      const otherPages = prev.filter(p => !oldUrls.has(p.url))
-      return [...otherPages, ...updatedPages]
+      const oldKeys = new Set((group?.pages ?? []).map(p => p._key))
+      const updatedByKey = new Map(updatedPages.map(p => [p._key, p]))
+      const prevKeys = new Set(prev.map(p => p._key))
+
+      const kept = prev
+        .filter(p => !oldKeys.has(p._key) || updatedByKey.has(p._key))
+        .map(p => updatedByKey.get(p._key) ?? p)
+      const added = updatedPages.filter(p => !prevKeys.has(p._key))
+      return [...kept, ...added]
     })
   }
 
@@ -138,10 +150,15 @@ export default function SitemapPhase({
     setSaving(true)
     setError(null)
     try {
+      const payload = pages.map((p) => {
+        const { _key, ...rest } = p // _key is client-only identity; never persist it
+        void _key
+        return rest
+      })
       const res = await fetch(`/api/content-jobs/${contentJobId}/sitemap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages }),
+        body: JSON.stringify({ pages: payload }),
       })
       if (!res.ok) {
         const data = await res.json()

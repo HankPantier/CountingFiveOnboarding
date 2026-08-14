@@ -239,6 +239,7 @@ OUTPUT FORMAT — JSON array only, no prose:
 ]
 
 RULES:
+- CONTENT SCOPE is absolute: NEVER propose a page (or nest one) for any industry, service, or topic listed under CONTENT SCOPE exclusions above — not even as an "update" to an existing page. If the live site already has such a page, drop it from the sitemap entirely.
 - status: "update" for pages that already exist on the live site (keep their exact URL); "new" for pages to create.
 - Build a real hierarchy via "parent" (a parent page's url, or "/" for top-level). Group service pages under a /services hub and industry/niche pages under an /industries hub.
 - Propose a dedicated NEW page for each meaningful niche and core service, INCLUDING the untapped niches and team-expertise areas listed above, plus pages that fill the conversion/authority gaps.

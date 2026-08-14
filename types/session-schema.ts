@@ -194,6 +194,12 @@ export type SessionSchema = {
     // schema.org areaServed; targetKeywords drives on-page + content targeting.
     serviceAreas?: Array<{ city: string; county?: string; state?: string; radiusMiles?: number; primary?: boolean }>
     targetKeywords?: string[]
+    // Content-scope directives the rep captures on the call (free-form notes →
+    // extracted here). contentEmphasis = industries/topics/services to FEATURE;
+    // contentExclusions = anything the client said to NEVER include. Enforced in
+    // every generator via buildFirmContext().
+    contentEmphasis?: string[]
+    contentExclusions?: string[]
     // schema.org priceRange hint (e.g. "$$"), distinct from the free-text `pricing`.
     priceRange?: string
     formerName?: string

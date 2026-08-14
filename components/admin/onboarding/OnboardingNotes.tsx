@@ -8,6 +8,7 @@ const GUIDING_PROMPTS: { heading: string; hint: string }[] = [
   { heading: 'Contact', hint: 'Name, email, phone of the person we work with' },
   { heading: 'Firm background', hint: 'Founding year, history/origin, growth goals' },
   { heading: 'Services & niches', hint: 'What they offer; which industries/client types they serve' },
+  { heading: 'Content scope', hint: "Industries/services to feature or avoid — e.g. 'lean into nonprofits; don't cover real estate or crypto'" },
   { heading: 'Ideal clients', hint: 'Who they want more of; typical revenue/stage; who decides; how clients find them' },
   { heading: 'Local & search', hint: 'Cities/counties they serve or want to; office hours; any terms they want to rank for' },
   { heading: 'Differentiators', hint: 'What sets them apart, in their own words' },

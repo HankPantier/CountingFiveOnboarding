@@ -118,6 +118,7 @@ export default function OutlineCard({
       if (res.ok) {
         const data = await res.json()
         onUpdate(data.outline)
+        setExpanded(false) // collapse the approved outline to declutter the list
       }
     } finally {
       setSaving(false)

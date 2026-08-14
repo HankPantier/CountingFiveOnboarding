@@ -1,6 +1,7 @@
 'use client'
 
 type SitemapPage = {
+  _key: string
   url: string
   title: string
   status: 'new' | 'update' | 'existing'

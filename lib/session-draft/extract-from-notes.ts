@@ -23,6 +23,7 @@ export interface NotesModel {
     foundingYear?: string; firmHistory?: string; idealClients?: string[]; geographicScope?: string
     customerNeeds?: string; howClientsFind?: string; pricing?: string; growthGoals?: string
     serviceAreas?: Array<{ city?: string; county?: string; state?: string }>; targetKeywords?: string[]
+    contentEmphasis?: string[]; contentExclusions?: string[]
   }
   services?: Array<{ name?: string; description?: string; offerings?: string[] }>
   niches?: Array<{ name?: string; description?: string; revenueBand?: string; businessStage?: string; decisionMaker?: string }>
@@ -52,6 +53,8 @@ export function validateNotesModel(parsed: unknown): NotesModel | null {
       howClientsFind: asStr(b.howClientsFind), pricing: asStr(b.pricing), growthGoals: asStr(b.growthGoals),
       serviceAreas: asObjArr(b.serviceAreas).map((a) => ({ city: asStr(a.city), county: asStr(a.county), state: asStr(a.state) })),
       targetKeywords: asStrArr(b.targetKeywords),
+      contentEmphasis: asStrArr(b.contentEmphasis),
+      contentExclusions: asStrArr(b.contentExclusions),
     },
     services: asObjArr(p.services).map((s) => ({ name: asStr(s.name), description: asStr(s.description), offerings: asStrArr(s.offerings) })),
     niches: asObjArr(p.niches).map((n) => ({ name: asStr(n.name), description: asStr(n.description), revenueBand: asStr(n.revenueBand), businessStage: asStr(n.businessStage), decisionMaker: asStr(n.decisionMaker) })),
@@ -109,6 +112,8 @@ function candidates(model: NotesModel): Candidate[] {
   scalar('business.growthGoals', 'Growth goals', b.growthGoals)
   arr('business.idealClients', 'Ideal clients', b.idealClients)
   arr('business.targetKeywords', 'Target keywords', b.targetKeywords)
+  arr('business.contentEmphasis', 'Content to emphasize', b.contentEmphasis)
+  arr('business.contentExclusions', 'Content to exclude', b.contentExclusions)
 
   const serviceAreas = (b.serviceAreas ?? []).filter((a) => a.city || a.county)
   if (serviceAreas.length) {
@@ -218,7 +223,7 @@ QUESTIONS THIS CALL WAS MEANT TO ANSWER (fill these where the notes cover them):
 Return a JSON object with this exact shape (omit any field/array you can't fill from the notes):
 {
   "contact": { "firstName": string, "lastName": string, "email": string, "phone": string },
-  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string, "serviceAreas": [ { "city": string, "county": string, "state": string } ], "targetKeywords": string[] },
+  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string, "serviceAreas": [ { "city": string, "county": string, "state": string } ], "targetKeywords": string[], "contentEmphasis": string[], "contentExclusions": string[] },
   "services": [ { "name": string, "description": string, "offerings": string[] } ],
   "niches": [ { "name": string, "description": string, "revenueBand": string, "businessStage": string, "decisionMaker": string } ],
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
@@ -229,6 +234,7 @@ Return a JSON object with this exact shape (omit any field/array you can't fill 
 }
 - "niches" = the industries / client types the firm serves. Per niche, "revenueBand"/"businessStage"/"decisionMaker" describe the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder") — only when the notes state it.
 - "serviceAreas" = the specific cities/counties the firm serves or targets (local-SEO geography); "targetKeywords" = search terms the firm wants to rank for, if mentioned.
+- "contentEmphasis" = industries, services, or topics the notes say to FEATURE, prioritize, or lean into on the new site. "contentExclusions" = anything the notes say to AVOID, NOT include, drop, de-emphasize, or "don't cover" (industries, services, or topics). Capture each as a short phrase (e.g. "real estate", "cryptocurrency", "audit services"). Only include what the notes explicitly direct — do not infer exclusions from mere absence.
 - "clientPortals" = external tools/portals the firm's CLIENTS log into (e.g. QuickBooks Online, ShareFile/secure file upload, payroll, online bill-pay, remote support). Give each a short "category" (e.g. Documents, Payments, Support) when clear. NEVER capture passwords or credentials — links only.
 - Keep descriptions concise (1–2 sentences).
 
