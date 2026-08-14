@@ -17,13 +17,29 @@ type ApprovalSnapshot = {
 
 type Unapproved = { id?: string; page_title?: string; page_url?: string }
 
+// The four sequential steps of the one-click "Publish site live" orchestrator.
+// Each maps to an existing route; the client sequences them so every call stays
+// within its own maxDuration (no single-invocation timeout risk).
+const DEPLOY_STEPS = [
+  { key: 'seeding', label: 'Seed template' },
+  { key: 'assembling', label: 'Assemble & push to draft' },
+  { key: 'confirming', label: 'Confirm draft push' },
+  { key: 'publishing', label: 'Publish to live' },
+] as const
+
+type DeployStep = 'idle' | 'seeding' | 'assembling' | 'confirming' | 'publishing' | 'live'
+
 export default function DeliverablesPhase({
+  sessionId,
   contentJobId,
+  githubRepo,
   pageCount,
   initialNavConfig,
   confirmedSitemap,
 }: {
+  sessionId: string
   contentJobId: string
+  githubRepo: string | null
   pageCount: number
   initialNavConfig: NavJson | null
   confirmedSitemap: SitemapEntry[]
@@ -37,6 +53,13 @@ export default function DeliverablesPhase({
   const [linkWarnings, setLinkWarnings] = useState<string[]>([])
   const [redirectIssues, setRedirectIssues] = useState<Array<{ severity: string; oldUrl: string; reason: string }>>([])
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
+  // One-click "Publish site live" orchestration state. deployStep holds the
+  // step currently running (or 'live' when finished); deployErr is set on the
+  // step that failed (deployStep stays put so the stepper can mark it). prUrl is
+  // populated only on the not-expected first-deploy merge-conflict path.
+  const [deployStep, setDeployStep] = useState<DeployStep>('idle')
+  const [deployErr, setDeployErr] = useState<string | null>(null)
+  const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -76,7 +99,7 @@ export default function DeliverablesPhase({
   // commit appears (the background push landed) or we give up. `baselineSha` is
   // the pre-push HEAD captured before assembly, so a fresh deploy commit is a
   // sha change — no clock comparison needed.
-  const trackDeploy = async (baselineSha: string | null) => {
+  const trackDeploy = async (baselineSha: string | null): Promise<boolean> => {
     setDeployState('deploying')
     const MAX_POLLS = 40 // ~3.3 min at 5s
     for (let i = 0; i < MAX_POLLS; i++) {
@@ -85,16 +108,17 @@ export default function DeliverablesPhase({
         const res = await fetch(`/api/content-jobs/${contentJobId}/deploy-status`)
         if (!res.ok) continue
         const data = await res.json()
-        if (data.repo == null) { setDeployState('idle'); return }
+        if (data.repo == null) { setDeployState('idle'); return false }
         if (data.reachable && data.isDeployCommit && data.lastCommitSha && data.lastCommitSha !== baselineSha) {
           setDeployState('deployed')
-          return
+          return true
         }
       } catch {
         // keep polling
       }
     }
     setDeployState('unknown')
+    return false
   }
 
   const assemblePackage = async () => {
@@ -129,6 +153,91 @@ export default function DeliverablesPhase({
       setPackaging(false)
     }
   }
+
+  // One-click deploy: seed (idempotent) → assemble + push to draft → confirm the
+  // push landed → publish draft→main (Vercel deploys main). Reuses the same
+  // building blocks as the standalone assemble/track path; only publish is new.
+  const runFullDeploy = async () => {
+    setError(null)
+    setDeployErr(null)
+    setConflictPrUrl(null)
+    setUnapprovedFromGate(null)
+    try {
+      // Step 1 — seed the repo from the template (skips if already seeded).
+      setDeployStep('seeding')
+      const seedRes = await fetch(`/api/content-jobs/${contentJobId}/seed-repo`, { method: 'POST' })
+      const seedData = await seedRes.json().catch(() => ({}))
+      if (!seedRes.ok) throw new Error(seedData?.error ?? 'Repo seeding failed')
+
+      // Step 2 — assemble the package and background-push it to the draft branch.
+      setDeployStep('assembling')
+      let baselineSha: string | null = null
+      try {
+        const b = await fetch(`/api/content-jobs/${contentJobId}/deploy-status`)
+        if (b.ok) baselineSha = (await b.json()).lastCommitSha ?? null
+      } catch {
+        // baseline is best-effort
+      }
+      const pkgRes = await fetch(`/api/content-jobs/${contentJobId}/package`, { method: 'POST' })
+      const pkgData = await pkgRes.json().catch(() => ({}))
+      if (!pkgRes.ok) {
+        if (Array.isArray(pkgData?.unapproved)) setUnapprovedFromGate(pkgData.unapproved)
+        throw new Error(pkgData?.error ?? 'Failed to assemble package')
+      }
+      setPackageInfo({ pageCount: pkgData.pageCount, sizeKB: pkgData.sizeKB })
+      setLinkWarnings(Array.isArray(pkgData.linkWarnings) ? pkgData.linkWarnings : [])
+      setRedirectIssues(Array.isArray(pkgData.redirectIssues) ? pkgData.redirectIssues : [])
+      setPackaged(true)
+      if (!pkgData.pushScheduled) {
+        throw new Error('No repo push was scheduled — confirm a GitHub repo is linked above.')
+      }
+
+      // Step 3 — wait for the background push to land on draft.
+      setDeployStep('confirming')
+      const confirmed = await trackDeploy(baselineSha)
+      if (!confirmed) {
+        throw new Error('Timed out confirming the draft push. The package still shipped — publish from the content editor once the draft commit appears.')
+      }
+
+      // Step 4 — publish draft→main. First deploy is a clean fast-forward; a
+      // conflict (not expected here) opens a PR instead of merging.
+      setDeployStep('publishing')
+      const pubRes = await fetch(`/api/edit/${sessionId}/publish`, { method: 'POST' })
+      const pubData = await pubRes.json().catch(() => ({}))
+      if (!pubRes.ok) throw new Error(pubData?.error ?? 'Publish to live failed')
+      if (pubData?.merged === false && pubData?.prUrl) {
+        setConflictPrUrl(pubData.prUrl)
+        setDeployErr('Publish needs a manual merge — a pull request was opened to resolve it.')
+        return
+      }
+      setDeployStep('live')
+    } catch (err) {
+      setDeployErr(err instanceof Error ? err.message : 'Deploy failed')
+    }
+  }
+
+  // Active while any of the four steps is running and no error has surfaced.
+  const deploying =
+    deployStep !== 'idle' && deployStep !== 'live' && deployErr === null && conflictPrUrl === null
+  const deployStepIndex =
+    deployStep === 'live' ? DEPLOY_STEPS.length : DEPLOY_STEPS.findIndex((s) => s.key === deployStep)
+
+  // Only a fully-qualified owner/name slug yields a usable GitHub URL; a bare
+  // slug's org is only known server-side, so we skip the link for those.
+  const repoHref = githubRepo && githubRepo.includes('/') ? `https://github.com/${githubRepo}` : null
+
+  const deployButtonLabel =
+    deployStep === 'seeding'
+      ? 'Seeding repo…'
+      : deployStep === 'assembling'
+        ? 'Assembling package…'
+        : deployStep === 'confirming'
+          ? 'Pushing to draft…'
+          : deployStep === 'publishing'
+            ? 'Publishing to live…'
+            : deployErr || conflictPrUrl
+              ? 'Retry publish site live'
+              : 'Publish site live'
 
   const allApproved = approval ? approval.complete > 0 && approval.complete === approval.approved : false
   const hasUnapproved = approval ? approval.complete - approval.approved > 0 : false
@@ -169,6 +278,85 @@ export default function DeliverablesPhase({
         </div>
       )}
 
+      {/* One-click deploy — the primary path once a GitHub repo is linked. */}
+      {githubRepo ? (
+        <div className="space-y-3 border border-brand-cyan/30 bg-brand-cyan/5 rounded-lg p-4">
+          <div>
+            <h3 className="text-sm font-heading font-semibold text-brand-navy">Publish site live</h3>
+            <p className="text-xs font-body text-text-muted mt-0.5">
+              One click: seeds <span className="font-mono">{githubRepo}</span> from the template, pushes this package to the <span className="font-mono">draft</span> branch, then publishes to <span className="font-mono">main</span> — Vercel deploys the live site automatically.
+            </p>
+          </div>
+
+          {deployStep !== 'idle' && (
+            <ol className="space-y-1.5">
+              {DEPLOY_STEPS.map((step, i) => {
+                const done = deployStep === 'live' || i < deployStepIndex
+                const failed = (deployErr !== null || conflictPrUrl !== null) && i === deployStepIndex
+                const active = !failed && i === deployStepIndex && deployStep !== 'live'
+                return (
+                  <li key={step.key} className="flex items-center gap-2 text-xs font-body">
+                    <span className={done ? 'text-success' : failed ? 'text-error' : active ? 'text-brand-cyan' : 'text-text-muted'}>
+                      {done ? '✓' : failed ? '✗' : active ? '●' : '○'}
+                    </span>
+                    <span className={done ? 'text-text-primary' : failed ? 'text-error' : active ? 'text-brand-navy font-semibold' : 'text-text-muted'}>
+                      {step.label}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+
+          {deployStep === 'live' && (
+            <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-2">
+              Published to <span className="font-mono">main</span>. Vercel will deploy the live site automatically.
+              {repoHref && (
+                <>
+                  {' '}
+                  <a href={repoHref} target="_blank" rel="noreferrer" className="font-heading font-semibold underline hover:text-success">
+                    Open repo ↗
+                  </a>
+                </>
+              )}
+            </div>
+          )}
+
+          {conflictPrUrl && (
+            <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2">
+              {deployErr}{' '}
+              <a href={conflictPrUrl} target="_blank" rel="noreferrer" className="font-heading font-semibold underline">
+                Review PR ↗
+              </a>
+            </div>
+          )}
+
+          {deployErr && !conflictPrUrl && (
+            <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
+              {deployErr}
+            </div>
+          )}
+
+          {deployStep !== 'live' && (
+            <button
+              onClick={runFullDeploy}
+              disabled={deploying || hasUnapproved || !generationDone}
+              className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {!generationDone
+                ? 'Publish site live (waiting on generation)'
+                : hasUnapproved
+                  ? 'Publish site live (pending approvals)'
+                  : deployButtonLabel}
+            </button>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs font-body text-text-muted">
+          Link a GitHub repo above to publish this site live in one click. You can still assemble and download the package below.
+        </p>
+      )}
+
       {!packaged ? (
         <div className="space-y-3">
           <p className="text-sm font-body text-text-secondary">
@@ -188,16 +376,22 @@ export default function DeliverablesPhase({
 
           <button
             onClick={assemblePackage}
-            disabled={packaging || hasUnapproved || !generationDone}
-            className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={packaging || deploying || hasUnapproved || !generationDone}
+            className={
+              githubRepo
+                ? 'border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed'
+                : 'bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed'
+            }
           >
             {packaging
               ? 'Assembling Package...'
               : !generationDone
                 ? 'Assemble Package (waiting on generation)'
-                : allApproved
-                  ? 'Assemble & Download Package'
-                  : 'Assemble Package (pending approvals)'}
+                : githubRepo
+                  ? 'Assemble & download only (skip publish)'
+                  : allApproved
+                    ? 'Assemble & Download Package'
+                    : 'Assemble Package (pending approvals)'}
           </button>
         </div>
       ) : (

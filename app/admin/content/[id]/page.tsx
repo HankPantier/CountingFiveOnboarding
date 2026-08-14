@@ -206,6 +206,7 @@ export default async function ContentWorkflowPage({
         currentPhase={currentPhase}
         sessionId={session.id}
         contentJobId={contentJobId}
+        githubRepo={contentJob?.github_repo ?? null}
         existingPalette={existingPalette}
         existingTokens={existingTokens}
         brand={brand}

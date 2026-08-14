@@ -32,6 +32,7 @@ export default function PhaseStepper({
   confirmedPageCount,
   navConfig,
   confirmedSitemap,
+  githubRepo,
 }: {
   currentPhase: number
   sessionId: string
@@ -43,6 +44,7 @@ export default function PhaseStepper({
   confirmedPageCount: number
   navConfig: NavJson | null
   confirmedSitemap: SitemapEntry[]
+  githubRepo: string | null
 }) {
   return (
     <div className="space-y-4">
@@ -94,7 +96,9 @@ export default function PhaseStepper({
         } else if (phase === 6) {
           content = (
             <DeliverablesPhase
+              sessionId={sessionId}
               contentJobId={contentJobId}
+              githubRepo={githubRepo}
               pageCount={confirmedPageCount}
               initialNavConfig={navConfig}
               confirmedSitemap={confirmedSitemap}
