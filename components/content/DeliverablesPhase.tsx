@@ -226,17 +226,19 @@ export default function DeliverablesPhase({
   // slug's org is only known server-side, so we skip the link for those.
   const repoHref = githubRepo && githubRepo.includes('/') ? `https://github.com/${githubRepo}` : null
 
+  // Error takes precedence: on a failed step deployStep stays put, so the
+  // retry label must win over the still-set running label for that step.
   const deployButtonLabel =
-    deployStep === 'seeding'
-      ? 'Seeding repo…'
-      : deployStep === 'assembling'
-        ? 'Assembling package…'
-        : deployStep === 'confirming'
-          ? 'Pushing to draft…'
-          : deployStep === 'publishing'
-            ? 'Publishing to live…'
-            : deployErr || conflictPrUrl
-              ? 'Retry publish site live'
+    deployErr || conflictPrUrl
+      ? 'Retry publish site live'
+      : deployStep === 'seeding'
+        ? 'Seeding repo…'
+        : deployStep === 'assembling'
+          ? 'Assembling package…'
+          : deployStep === 'confirming'
+            ? 'Pushing to draft…'
+            : deployStep === 'publishing'
+              ? 'Publishing to live…'
               : 'Publish site live'
 
   const allApproved = approval ? approval.complete > 0 && approval.complete === approval.approved : false
