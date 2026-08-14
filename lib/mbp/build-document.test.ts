@@ -45,6 +45,30 @@ describe('buildMbpDocument', () => {
     expect(bio!.empty).toBe(true)
   })
 
+  it('always surfaces editable content-scope fields, even when absent from the schema', () => {
+    const business = doc.sections.find(s => s.key === 'business')
+    const emphasis = business!.fields!.find(f => f.fieldPath === 'business.contentEmphasis')
+    const exclusions = business!.fields!.find(f => f.fieldPath === 'business.contentExclusions')
+    // Present with an array default (so the inline editor treats them as a
+    // comma list and saves back an array), flagged empty, and clearly labeled.
+    expect(emphasis).toBeTruthy()
+    expect(Array.isArray(emphasis!.value)).toBe(true)
+    expect(emphasis!.empty).toBe(true)
+    expect(emphasis!.label).toBe('Content to emphasize')
+    expect(exclusions!.label).toBe('Content to exclude')
+  })
+
+  it('preserves existing content-scope values', () => {
+    const withScope = buildMbpDocument({
+      business: { name: 'X', contentExclusions: ['real estate'] },
+    } as unknown as SessionSchema)
+    const f = withScope.sections
+      .find(s => s.key === 'business')!
+      .fields!.find(f => f.fieldPath === 'business.contentExclusions')
+    expect(f!.value).toEqual(['real estate'])
+    expect(f!.empty).toBe(false)
+  })
+
   it('omits the Site Map section when no confirmed sitemap is given', () => {
     expect(doc.sections.find(s => s.key === 'site_map')).toBeUndefined()
   })

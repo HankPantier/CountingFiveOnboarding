@@ -13,6 +13,13 @@ import type {
 // the deep niche/team/service subfields. Empty fields are KEPT and flagged so
 // the completeness panel can surface them.
 
+// Clearer labels than humanize() would produce for a few fields where the raw
+// key name doesn't read well in the Review UI / export.
+const LABEL_OVERRIDES: Record<string, string> = {
+  contentEmphasis: 'Content to emphasize',
+  contentExclusions: 'Content to exclude',
+}
+
 function humanize(key: string): string {
   return key
     .replace(/([A-Z])/g, ' $1')
@@ -47,11 +54,25 @@ function fieldsFromObject(
 ): MbpDocumentField[] {
   if (!obj) return []
   return Object.entries(obj).map(([key, value]) => ({
-    label: humanize(key),
+    label: LABEL_OVERRIDES[key] ?? humanize(key),
     fieldPath: `${basePath}.${key}`,
     value,
     empty: isEmpty(value),
   }))
+}
+
+// The content-scope directives are optional and often absent from the raw
+// schema, but the Review UI needs them ALWAYS editable — so an operator can add
+// "don't cover real estate" even when the call notes never mentioned scope.
+// Defaulting to [] (a primitive array) makes MbpEditableField edit them as a
+// comma list that saves back as an array. Existing values are preserved.
+function withContentScopeDefaults(
+  business: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  const out = { ...(business ?? {}) }
+  if (!('contentEmphasis' in out)) out.contentEmphasis = []
+  if (!('contentExclusions' in out)) out.contentExclusions = []
+  return out
 }
 
 function objectSection(
@@ -86,7 +107,7 @@ export function buildMbpDocument(
 ): MbpDocument {
   const sections: MbpDocumentSection[] = [
     objectSection('contact', 'Contact', schema.contact as Record<string, unknown> | undefined),
-    objectSection('business', 'Business', schema.business as Record<string, unknown> | undefined),
+    objectSection('business', 'Business', withContentScopeDefaults(schema.business as Record<string, unknown> | undefined)),
     objectSection('brand', 'Brand & Tone', schema.brand as Record<string, unknown> | undefined),
     objectSection('culture', 'Culture', schema.culture as Record<string, unknown> | undefined),
     objectSection('technical', 'Technical', schema.technical as Record<string, unknown> | undefined),
