@@ -51,6 +51,9 @@ export default function ChatInterface({
   const [staffNote, setStaffNote] = useState('')
   const [staffSubmitting, setStaffSubmitting] = useState(false)
   const [staffError, setStaffError] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
+  // Last text the rep sent, so Retry / Reset can resend without re-typing.
+  const [lastSent, setLastSent] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const transport = useMemo(
@@ -75,6 +78,32 @@ export default function ChatInterface({
   // one the user dismissed.
   const [dismissedError, setDismissedError] = useState<typeof error>(undefined)
   const showError = !!error && error !== dismissedError
+
+  // A stranded processing lock surfaces as a 429 "Already processing" with an
+  // empty message — show a calmer "still finishing" note for that, and never a
+  // bare dash for anything else.
+  const rawErrorMsg = error?.message ?? ''
+  const isBusyError = /already processing|processing/i.test(rawErrorMsg)
+  const errorText = isBusyError
+    ? 'The assistant is still finishing the last reply — give it a moment, then Retry.'
+    : `${rawErrorMsg || 'Something interrupted the last reply.'} — please try again.`
+
+  const resend = () => {
+    const text = lastSent
+    if (!text || isLoading) return
+    setDismissedError(error)
+    sendMessage({ text })
+  }
+
+  const resetAndRetry = async () => {
+    if (resetting || isLoading) return
+    setResetting(true)
+    try {
+      await fetch(`/api/sessions/${sessionId}/unstick`, { method: 'POST' })
+    } catch { /* best effort — resend still self-heals via the 3-min reclaim */ }
+    setResetting(false)
+    resend()
+  }
 
   // Admin detection runs on mount. Non-admin visitors quietly get { isAdmin: false }
   // (no console errors), so the staff toggle simply never renders for them.
@@ -119,6 +148,7 @@ export default function ChatInterface({
     const text = input.trim()
     if (!text || isLoading) return
     setInput('')
+    setLastSent(text)
     sendMessage({ text })
   }
 
@@ -255,16 +285,36 @@ export default function ChatInterface({
       {showError && (
         <div
           role="alert"
-          className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error flex-shrink-0 flex items-center justify-center gap-4"
+          className="bg-error/10 border-b border-error/20 px-4 py-2 text-sm font-body text-error flex-shrink-0 flex flex-wrap items-center justify-center gap-x-4 gap-y-1"
         >
-          <span>{error.message} — please try again.</span>
-          <button
-            type="button"
-            onClick={() => setDismissedError(error)}
-            className="text-xs font-heading font-semibold underline underline-offset-2 hover:no-underline shrink-0"
-          >
-            Dismiss
-          </button>
+          <span>{errorText}</span>
+          <div className="flex items-center gap-4 shrink-0">
+            {lastSent && (
+              <button
+                type="button"
+                onClick={resend}
+                disabled={isLoading || resetting}
+                className="text-xs font-heading font-semibold underline underline-offset-2 hover:no-underline disabled:opacity-50 disabled:no-underline"
+              >
+                Retry
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={resetAndRetry}
+              disabled={isLoading || resetting}
+              className="text-xs font-heading font-semibold underline underline-offset-2 hover:no-underline disabled:opacity-50 disabled:no-underline"
+            >
+              {resetting ? 'Resetting…' : 'Reset & retry'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDismissedError(error)}
+              className="text-xs font-heading font-semibold underline underline-offset-2 hover:no-underline"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 

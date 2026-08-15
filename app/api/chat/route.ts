@@ -186,6 +186,17 @@ export async function POST(req: Request) {
           console.error('[chat] onAbort unlock failed:', err)
         }
       },
+      // A mid-stream failure (Anthropic error, tool throw, timeout) fires neither
+      // onFinish nor onAbort — without this the lock strands for up to 3 minutes
+      // and every retry gets a 429 "Already processing". Release it here too.
+      onError: async ({ error: streamError }) => {
+        console.error('[chat] stream error:', streamError)
+        try {
+          await supabase.from('sessions').update({ processing: false }).eq('id', sessionId)
+        } catch (err) {
+          console.error('[chat] onError unlock failed:', err)
+        }
+      },
       onFinish: async ({ text, totalUsage }) => {
         try {
           console.warn(
@@ -225,7 +236,12 @@ export async function POST(req: Request) {
       },
     })
 
-    return result.toUIMessageStreamResponse()
+    // Surface a real, safe message to the client instead of the SDK default
+    // (which masks stream errors as an empty string → a bare "— please try
+    // again." banner with no explanation).
+    return result.toUIMessageStreamResponse({
+      onError: () => 'The assistant hit an error mid-reply.',
+    })
   } catch (err) {
     await supabase.from('sessions').update({ processing: false }).eq('id', sessionId)
     throw err
@@ -294,7 +310,7 @@ async function updateSessionSchema(
   const isStaffMode = (mergedSchema._meta as { mode?: string } | undefined)?.mode === 'staff'
   if (isStaffMode && newPhase === 6) newPhase = 7
 
-  await supabase
+  const { error: writeErr } = await supabase
     .from('sessions')
     .update({
       schema_data: asJson(mergedSchema),
@@ -304,6 +320,14 @@ async function updateSessionSchema(
       completed_at: newPhase === 7 ? new Date().toISOString() : undefined,
     })
     .eq('id', sessionId)
+
+  // A failed write must not throw out of the tool's execute (that crashes the
+  // stream). Report it back as a blocked result so the model tells the rep to
+  // resend rather than the session silently losing the answer.
+  if (writeErr) {
+    console.error('[chat] session update failed:', writeErr)
+    return { success: false, phaseAdvanced: false, blocked: 'Could not save — please resend.' }
+  }
 
   // Trigger WHOIS automatically when ADVANCING to Phase 2. Guarding on the
   // transition (not just newPhase === 2) prevents re-dispatching a lookup every
@@ -326,10 +350,11 @@ async function updateSessionSchema(
       )
     } else {
       // No domain — skip WHOIS and advance directly to Phase 3
-      await supabase
+      const { error: skipErr } = await supabase
         .from('sessions')
         .update({ current_phase: 3, status: 'in_progress' })
         .eq('id', sessionId)
+      if (skipErr) console.error('[chat] phase-2→3 skip update failed:', skipErr)
     }
   }
 
