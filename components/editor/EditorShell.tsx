@@ -52,6 +52,8 @@ export default function EditorShell({
   const [navMoves, setNavMoves] = useState<Move[]>([])
   const [publishing, setPublishing] = useState(false)
   const [pageActioning, setPageActioning] = useState(false)
+  // Live progress line during a bulk move ("Moving 3 of 14…").
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<string | null>(null)
   const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
@@ -661,9 +663,9 @@ export default function EditorShell({
   }
 
   // Bulk-relocate several pages at once (from the Pages multi-select). Each move
-  // is an independent draft commit; a per-file failure is collected, not fatal.
-  // Returns true only when every file moved. Fetches a missing sha on demand so
-  // unopened files can be moved too.
+  // is an independent draft commit; a per-file failure is collected (with its
+  // reason), not fatal. Reports live progress and returns true only when every
+  // file moved. Fetches a missing sha on demand so unopened files can be moved.
   const bulkMove = async (
     paths: string[],
     dest: { type: 'resources' } | { type: 'under'; parentUrl: string }
@@ -672,8 +674,11 @@ export default function EditorShell({
     setPageActioning(true)
     setError(null)
     setPublishResult(null)
-    const failed: string[] = []
+    setBulkStatus(`Moving 0 of ${paths.length}…`)
+    const failures: { name: string; reason: string }[] = []
+    let done = 0
     for (const p of paths) {
+      const name = p.split('/').pop() ?? p
       let sha = loaded.get(p)?.sha
       if (!sha) {
         try {
@@ -684,10 +689,11 @@ export default function EditorShell({
         }
       }
       if (!sha) {
-        failed.push(p)
+        failures.push({ name, reason: 'could not load the file' })
+        setBulkStatus(`Moving ${++done} of ${paths.length}…`)
         continue
       }
-      const lastSlug = (p.split('/').pop() ?? '').replace(/\.md$/, '').split('--').pop() ?? ''
+      const lastSlug = name.replace(/\.md$/, '').split('--').pop() ?? ''
       const toUrl = dest.type === 'resources' ? `/resources/${lastSlug}` : `${dest.parentUrl}/${lastSlug}`
       const navAction = dest.type === 'resources' ? 'remove' : 'retarget'
       try {
@@ -696,25 +702,34 @@ export default function EditorShell({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fromPath: p, toUrl, expectedSha: sha, navAction }),
         })
-        if (!res.ok) failed.push(p)
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
+          const reason =
+            data.error === 'stale_sha'
+              ? (data.message ?? 'changed on the server')
+              : (data.error ?? `HTTP ${res.status}`)
+          failures.push({ name, reason })
+        }
       } catch {
-        failed.push(p)
+        failures.push({ name, reason: 'network error' })
       }
       setLoaded((prev) => {
         const m = new Map(prev)
         m.delete(p)
         return m
       })
+      setBulkStatus(`Moving ${++done} of ${paths.length}…`)
     }
     if (selectedPath && paths.includes(selectedPath)) setSelectedPath(null)
     await refreshTree()
     await refreshStatus()
+    setBulkStatus(null)
     setPageActioning(false)
-    if (failed.length > 0) {
+    if (failures.length > 0) {
       setError(
-        `Moved ${paths.length - failed.length} of ${paths.length}. Failed: ${failed
-          .map((f) => f.split('/').pop())
-          .join(', ')}`
+        `Moved ${paths.length - failures.length} of ${paths.length}. Failed: ${failures
+          .map((f) => `${f.name} (${f.reason})`)
+          .join('; ')}`
       )
       return false
     }
@@ -939,6 +954,14 @@ export default function EditorShell({
           >
             {pageActioning ? 'Working…' : 'Delete'}
           </button>
+        </div>
+      )}
+      {bulkStatus && (
+        <div
+          role="status"
+          className="px-6 py-2 bg-brand-cyan/10 border-b border-brand-cyan/30 text-brand-navy font-body text-xs"
+        >
+          {bulkStatus}
         </div>
       )}
       {error && (

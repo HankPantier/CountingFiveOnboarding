@@ -34,10 +34,13 @@ export function urlToContentPath(url: string): string | null {
   const slug = url.replace(/^\/+|\/+$/g, '')
   if (!slug) return null // home page — not a movable content file
   const segments = slug.split('/')
-  // Every segment must be a clean slug ([a-z0-9-], matching normalizeSlug) and
-  // free of the '--' separator. This also rejects '.', '..', and percent-encoded
-  // traversal (e.g. '%2F', '%2e'), so the derived filename can never escape root.
-  if (segments.some((s) => !/^[a-z0-9-]+$/.test(s) || s.includes('--'))) {
+  // Every segment must be a clean slug ([A-Za-z0-9-]) and free of the '--'
+  // separator. Uppercase is allowed because real page filenames carry it (e.g.
+  // "the-new-KPIs-of-business"); this must stay a faithful inverse of
+  // contentPathToUrl, which preserves case. Rejecting everything else also blocks
+  // '.', '..', and percent-encoded traversal ('%2F', '%2e'), so the derived
+  // filename can never escape the content root.
+  if (segments.some((s) => !/^[A-Za-z0-9-]+$/.test(s) || s.includes('--'))) {
     return null
   }
   if (segments[0] === 'resources') {

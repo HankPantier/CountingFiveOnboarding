@@ -63,6 +63,12 @@ describe('urlToContentPath', () => {
     expect(urlToContentPath('/services/tax/')).toBe('content/pages/services--tax.md')
   })
 
+  it('preserves uppercase in slugs (real filenames carry it)', () => {
+    expect(urlToContentPath('/resources/the-new-KPIs-of-business')).toBe(
+      'content/posts/the-new-KPIs-of-business.md'
+    )
+  })
+
   it('returns null for the home page', () => {
     expect(urlToContentPath('/')).toBeNull()
   })
