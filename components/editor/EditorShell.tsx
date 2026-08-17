@@ -612,6 +612,118 @@ export default function EditorShell({
     }
   }
 
+  // Relocate the selected content file (page ↔ resource, or reparent). Staged on
+  // the draft branch — goes live on the next Publish. Mirrors setPageState's
+  // cache-eviction + reselect flow.
+  const moveSelected = async (toUrl: string, navAction: 'retarget' | 'remove' | 'none') => {
+    if (!selectedPath) return
+    const sha = loaded.get(selectedPath)?.sha
+    if (!sha) return
+    setPageActioning(true)
+    setError(null)
+    setPublishResult(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromPath: selectedPath, toUrl, expectedSha: sha, navAction }),
+      })
+      if (res.status === 422) {
+        const data = (await res.json()) as { error?: string; collision?: { to: string } }
+        setError(data.error ?? `A page already exists at ${data.collision?.to ?? 'the destination'}.`)
+        return
+      }
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string; message?: string }
+        throw new Error(data.error === 'stale_sha' ? (data.message ?? 'File changed on the server.') : (data.error ?? `Move failed: ${res.status}`))
+      }
+      const data = (await res.json()) as { toPath: string }
+      const oldPath = selectedPath
+      setLoaded((prev) => {
+        const m = new Map(prev)
+        m.delete(oldPath)
+        return m
+      })
+      setDirty((prev) => {
+        const m = new Map(prev)
+        m.delete(oldPath)
+        return m
+      })
+      await refreshTree()
+      await refreshStatus()
+      await select(data.toPath)
+      setPublishResult('Moved — Publish to update the live site.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Move failed')
+    } finally {
+      setPageActioning(false)
+    }
+  }
+
+  // Bulk-relocate several pages at once (from the Pages multi-select). Each move
+  // is an independent draft commit; a per-file failure is collected, not fatal.
+  // Returns true only when every file moved. Fetches a missing sha on demand so
+  // unopened files can be moved too.
+  const bulkMove = async (
+    paths: string[],
+    dest: { type: 'resources' } | { type: 'under'; parentUrl: string }
+  ): Promise<boolean> => {
+    if (paths.length === 0) return false
+    setPageActioning(true)
+    setError(null)
+    setPublishResult(null)
+    const failed: string[] = []
+    for (const p of paths) {
+      let sha = loaded.get(p)?.sha
+      if (!sha) {
+        try {
+          const r = await fetch(`/api/edit/${sessionId}/file?path=${encodeURIComponent(p)}`)
+          if (r.ok) sha = ((await r.json()) as { sha: string }).sha
+        } catch {
+          /* fall through to failure */
+        }
+      }
+      if (!sha) {
+        failed.push(p)
+        continue
+      }
+      const lastSlug = (p.split('/').pop() ?? '').replace(/\.md$/, '').split('--').pop() ?? ''
+      const toUrl = dest.type === 'resources' ? `/resources/${lastSlug}` : `${dest.parentUrl}/${lastSlug}`
+      const navAction = dest.type === 'resources' ? 'remove' : 'retarget'
+      try {
+        const res = await fetch(`/api/edit/${sessionId}/move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromPath: p, toUrl, expectedSha: sha, navAction }),
+        })
+        if (!res.ok) failed.push(p)
+      } catch {
+        failed.push(p)
+      }
+      setLoaded((prev) => {
+        const m = new Map(prev)
+        m.delete(p)
+        return m
+      })
+    }
+    if (selectedPath && paths.includes(selectedPath)) setSelectedPath(null)
+    await refreshTree()
+    await refreshStatus()
+    setPageActioning(false)
+    if (failed.length > 0) {
+      setError(
+        `Moved ${paths.length - failed.length} of ${paths.length}. Failed: ${failed
+          .map((f) => f.split('/').pop())
+          .join(', ')}`
+      )
+      return false
+    }
+    setPublishResult(
+      `Moved ${paths.length} ${dest.type === 'resources' ? 'to Resources' : 'under ' + dest.parentUrl} — Publish to update the live site.`
+    )
+    return true
+  }
+
   const deletePage = async () => {
     if (!selectedPath) return
     const sha = loaded.get(selectedPath)?.sha
@@ -670,6 +782,38 @@ export default function EditorShell({
   const canPublish = (status?.draftAhead ?? 0) > 0 && dirty.size === 0 && !publishing
   const canPageAct = !!selectedPath && loaded.has(selectedPath) && !pageActioning
 
+  // Move affordances for the selected content file. selName is the encoded
+  // filename (e.g. "careers--foo"); selLastSlug its final segment ("foo").
+  const selName = selectedPath?.split('/').pop()?.replace(/\.md$/, '') ?? ''
+  const selLastSlug = selName.split('--').pop() ?? selName
+  const selParentName = selName.split('--').slice(0, -1).join('--')
+  const selPageIsFile = !!selectedPath?.startsWith('content/pages/')
+  // A page with nested sub-pages can't be reclassified/reparented (it would
+  // orphan them); the server refuses it too.
+  const selHasChildren =
+    selPageIsFile &&
+    tree.some(
+      (e) =>
+        e.path.startsWith('content/pages/') &&
+        e.path.endsWith('.md') &&
+        e.path !== selectedPath &&
+        e.path.slice('content/pages/'.length, -3).startsWith(selName + '--')
+    )
+  // Candidate parents for "Move under…": every other page except home, the
+  // current parent (a no-op), and any descendant of the selected page.
+  const moveUnderCandidates = selPageIsFile
+    ? tree
+        .filter(
+          (e) =>
+            e.path.startsWith('content/pages/') && e.path.endsWith('.md') && e.path !== selectedPath
+        )
+        .map((e) => e.path.slice('content/pages/'.length, -3))
+        .filter(
+          (name) => name !== 'home' && name !== selParentName && !name.startsWith(selName + '--')
+        )
+        .map((name) => ({ name, url: '/' + name.replace(/--/g, '/') }))
+    : []
+
   return (
     <div className="flex flex-col h-screen bg-surface-default">
       <EditorTopBar
@@ -718,6 +862,51 @@ export default function EditorShell({
                 void refreshStatus()
               }}
             />
+          )}
+          {isLivePage && selPageIsFile && (
+            <button
+              type="button"
+              onClick={() => void moveSelected(`/resources/${selLastSlug}`, 'remove')}
+              disabled={!canPageAct || selHasChildren}
+              title={
+                selHasChildren
+                  ? 'Move its sub-pages first'
+                  : 'Reclassify this page as a blog post under Resources'
+              }
+              className="rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading font-semibold text-xs text-brand-navy hover:bg-brand-navy/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Move to Resources
+            </button>
+          )}
+          {isLivePage && isPostPage && (
+            <button
+              type="button"
+              onClick={() => void moveSelected(`/${selLastSlug}`, 'none')}
+              disabled={!canPageAct}
+              title="Reclassify this blog post as a standalone page"
+              className="rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading font-semibold text-xs text-brand-navy hover:bg-brand-navy/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Move to Pages
+            </button>
+          )}
+          {isLivePage && selPageIsFile && moveUnderCandidates.length > 0 && (
+            <select
+              aria-label="Move under another page"
+              value=""
+              disabled={!canPageAct || selHasChildren}
+              onChange={(e) => {
+                const url = e.target.value
+                if (url) void moveSelected(`${url}/${selLastSlug}`, 'retarget')
+              }}
+              className="rounded-pill border border-brand-navy bg-surface-default px-3 py-1.5 font-heading font-semibold text-xs text-brand-navy disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="">Move under…</option>
+              {moveUnderCandidates.map((c) => (
+                <option key={c.name} value={c.url}>
+                  {c.url}
+                </option>
+              ))}
+            </select>
           )}
           {isLivePage && (
             <button
@@ -798,6 +987,7 @@ export default function EditorShell({
             showTheme={isAdmin}
             onSelect={(p) => void select(p)}
             onNewPage={() => setNewPageOpen(true)}
+            onBulkMove={bulkMove}
           />
         )}
         {!selectedPath ? (

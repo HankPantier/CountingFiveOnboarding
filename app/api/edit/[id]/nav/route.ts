@@ -4,6 +4,11 @@ import { safePath } from '../_path'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import { orderMoves, toPathname } from '@/lib/editor/nav-urls'
 import {
+  appendRedirects,
+  frontmatterUrl,
+  swapFrontmatterUrl,
+} from '@/lib/editor/relocate'
+import {
   AssetExistsError,
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -17,7 +22,6 @@ import {
 export const runtime = 'nodejs'
 
 const NAV_PATH = 'content/nav.json'
-const REDIRECTS_PATH = 'content/redirects.csv'
 
 type Move = { from: string; to: string }
 type Body = { contents?: string; moves?: Move[]; expectedSha?: string }
@@ -33,56 +37,6 @@ function pagePath(url: string): string | null {
   const slug = url.replace(/^\/+|\/+$/g, '')
   if (!slug) return null
   return safePath('content/pages/' + slug.replace(/\//g, '--') + '.md')
-}
-
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-// Swap the trailing `from` path with `to` in the page's `url:`/`canonical_url:`
-// frontmatter lines, preserving any host prefix. Keeps the canonical correct
-// after the page moves.
-function swapFrontmatterUrl(content: string, from: string, to: string): string {
-  return content.replace(
-    new RegExp('^((?:url|canonical_url):.*?)' + escapeRe(from) + '\\s*$', 'gm'),
-    `$1${to}`
-  )
-}
-
-// The page's own url from its frontmatter (`url:` preferred, else `canonical_url:`).
-// Used to recognise a destination file that is already the page we're moving —
-// e.g. relocated by an earlier save — so we skip it instead of flagging a collision.
-function frontmatterUrl(content: string): string | null {
-  const m = /^(?:url|canonical_url):\s*(.+?)\s*$/m.exec(content)
-  return m ? m[1] : null
-}
-
-async function appendRedirects(
-  ctx: EditContext,
-  pairs: Move[]
-): Promise<void> {
-  let content = ''
-  let sha: string | undefined
-  try {
-    const f = await readFile(ctx.githubRepo, REDIRECTS_PATH, DRAFT_BRANCH)
-    content = f.content
-    sha = f.sha
-  } catch (err) {
-    if (!(err instanceof FileNotFoundError)) throw err
-    content = 'old_url,new_url,status_code,reason\n'
-  }
-  if (!content.endsWith('\n')) content += '\n'
-  const existing = new Set(content.split('\n').map((l) => l.split(',')[0]))
-  let added = false
-  for (const { from, to } of pairs) {
-    if (existing.has(from)) continue
-    content += `${from},${to},301,Nested via nav editor\n`
-    added = true
-  }
-  if (added) {
-    await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
-      ...(sha ? { expectedSha: sha } : {}),
-      ...author(ctx),
-    })
-  }
 }
 
 // POST { contents, moves, expectedSha } — save nav.json AND relocate any page
@@ -207,7 +161,7 @@ export async function POST(
     }
 
     if (toRelocate.length > 0) {
-      await appendRedirects(ctx, toRelocate.map((p) => ({ from: p.from, to: p.to })))
+      await appendRedirects(ctx, toRelocate.map((p) => ({ from: p.from, to: p.to })), 'Nested via nav editor')
     }
 
     const result = await writeFile(

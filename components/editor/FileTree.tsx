@@ -130,6 +130,7 @@ export default function FileTree({
   showTheme,
   onSelect,
   onNewPage,
+  onBulkMove,
 }: {
   entries: TreeFile[]
   selectedPath: string | null
@@ -139,6 +140,11 @@ export default function FileTree({
   showTheme: boolean
   onSelect: (path: string) => void
   onNewPage: () => void
+  // Bulk-relocate selected pages (multi-select). Resolves true when all moved.
+  onBulkMove?: (
+    paths: string[],
+    dest: { type: 'resources' } | { type: 'under'; parentUrl: string }
+  ) => Promise<boolean>
 }) {
   const pages = sortPages(entries.filter((e) => isPage(e.path)))
   const posts = entries.filter((e) => isPost(e.path))
@@ -172,6 +178,39 @@ export default function FileTree({
     media: true,
   })
   const toggle = (key: string) => setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
+
+  // Multi-select for bulk moves (view state only — no localStorage per CLAUDE.md).
+  // Only leaf pages (no descendants) are selectable; a parent move would orphan
+  // its children. Checked holds selected page paths.
+  const [selectMode, setSelectMode] = useState(false)
+  const [checked, setChecked] = useState<Set<string>>(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const toggleChecked = (path: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  const exitSelect = () => {
+    setSelectMode(false)
+    setChecked(new Set())
+  }
+  const runBulk = async (dest: { type: 'resources' } | { type: 'under'; parentUrl: string }) => {
+    if (!onBulkMove || checked.size === 0) return
+    setBulkBusy(true)
+    const ok = await onBulkMove(Array.from(checked), dest)
+    setBulkBusy(false)
+    if (ok) exitSelect()
+  }
+  // Candidate parents for a bulk "Move under…" — every page except home and any
+  // page currently checked (can't nest a page under itself).
+  const bulkParents = pages
+    .map((p) => {
+      const segs = pageSegments(p.path)
+      return { path: p.path, url: '/' + segs.join('/') }
+    })
+    .filter((c) => c.url !== '/home' && !checked.has(c.path))
 
   // Which page rows are expanded. Empty = all collapsed → only top-level pages
   // show; each parent opens to reveal its sub-pages. View state only (no
@@ -272,6 +311,23 @@ export default function FileTree({
             onToggle={() => toggle('pages')}
           />
         </div>
+        {onBulkMove && pages.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (selectMode) {
+                exitSelect()
+              } else {
+                setSelectMode(true)
+                if (!open.pages) setOpen({ ...open, pages: true })
+              }
+            }}
+            title="Select pages to move in bulk"
+            className="mb-1 shrink-0 rounded-pill border border-border-default px-2.5 py-1 font-heading text-[10px] font-semibold text-text-secondary transition-colors hover:bg-surface-subtle"
+          >
+            {selectMode ? 'Cancel' : 'Select'}
+          </button>
+        )}
         <button
           type="button"
           onClick={onNewPage}
@@ -300,6 +356,18 @@ export default function FileTree({
                     className="flex items-center"
                     style={depth > 0 ? { paddingLeft: `${depth * 14}px` } : undefined}
                   >
+                    {selectMode &&
+                      (!hasChildren ? (
+                        <input
+                          type="checkbox"
+                          checked={checked.has(p.path)}
+                          onChange={() => toggleChecked(p.path)}
+                          aria-label={`Select ${label}`}
+                          className="shrink-0 mr-1 h-3.5 w-3.5 accent-brand-cyan"
+                        />
+                      ) : (
+                        <span className="shrink-0 w-[18px]" aria-hidden />
+                      ))}
                     {hasChildren ? (
                       <button
                         type="button"
@@ -326,6 +394,43 @@ export default function FileTree({
             })
           )}
         </ul>
+      )}
+
+      {selectMode && checked.size > 0 && (
+        <div className="mb-4 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 p-2">
+          <p className="mb-1.5 px-1 font-body text-[11px] text-text-secondary">
+            {checked.size} selected
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={() => void runBulk({ type: 'resources' })}
+              className="w-full rounded-pill bg-brand-cyan px-3 py-1.5 font-heading text-[11px] font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {bulkBusy ? 'Moving…' : 'Move to Resources'}
+            </button>
+            {bulkParents.length > 0 && (
+              <select
+                aria-label="Move selected pages under another page"
+                value=""
+                disabled={bulkBusy}
+                onChange={(e) => {
+                  const url = e.target.value
+                  if (url) void runBulk({ type: 'under', parentUrl: url })
+                }}
+                className="w-full rounded-pill border border-brand-navy bg-surface-default px-3 py-1.5 font-heading text-[11px] font-semibold text-brand-navy disabled:opacity-50"
+              >
+                <option value="">Move under…</option>
+                {bulkParents.map((c) => (
+                  <option key={c.path} value={c.url}>
+                    {c.url}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        </div>
       )}
 
       <SectionHeader

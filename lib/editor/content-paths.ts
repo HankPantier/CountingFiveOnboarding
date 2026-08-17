@@ -21,6 +21,33 @@ export function contentPathToUrl(path: string): string | null {
   return null
 }
 
+// Inverse of contentPathToUrl: map a root-relative URL to the LIVE content
+// markdown path it renders from. Drafts are off-site and untargetable here.
+//   /resources/foo -> content/posts/foo.md   (blog posts are flat)
+//   /services/tax  -> content/pages/services--tax.md
+//   /services      -> content/pages/services.md
+// Returns null for the home page ('/'), external / non-root-relative urls, a
+// nested /resources/* (posts don't nest), and any segment containing '.', '..',
+// or '--' (which would corrupt the filename encoding or escape the root).
+export function urlToContentPath(url: string): string | null {
+  if (typeof url !== 'string' || !url.startsWith('/')) return null
+  const slug = url.replace(/^\/+|\/+$/g, '')
+  if (!slug) return null // home page — not a movable content file
+  const segments = slug.split('/')
+  // Every segment must be a clean slug ([a-z0-9-], matching normalizeSlug) and
+  // free of the '--' separator. This also rejects '.', '..', and percent-encoded
+  // traversal (e.g. '%2F', '%2e'), so the derived filename can never escape root.
+  if (segments.some((s) => !/^[a-z0-9-]+$/.test(s) || s.includes('--'))) {
+    return null
+  }
+  if (segments[0] === 'resources') {
+    // Posts live flat under content/posts/; only /resources/<one-slug> resolves.
+    if (segments.length !== 2) return null
+    return `content/posts/${segments[1]}.md`
+  }
+  return `content/pages/${segments.join('--')}.md`
+}
+
 // Trailing-slash-insensitive comparison; treats '/' as itself.
 function normalizeUrl(url: string): string {
   if (url === '/') return '/'

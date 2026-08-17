@@ -78,6 +78,47 @@ export async function appendNavItem(
   }
 }
 
+// Point an existing nav item at a new url (in place), preserving its label and
+// its position/nesting — used when a page is relocated so its menu link follows
+// it. No-op when no item currently targets fromUrl. Best-effort with a single
+// stale-sha retry, mirroring appendNavItem: a missing/unparseable nav.json is
+// non-fatal (the file moved regardless; the operator can fix the link by hand).
+export async function retargetNavUrl(
+  ctx: NavMutationCtx,
+  fromUrl: string,
+  toUrl: string
+): Promise<void> {
+  if (fromUrl === toUrl) return
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let nav
+    try {
+      nav = await readFile(ctx.githubRepo, NAV_PATH, DRAFT_BRANCH)
+    } catch (err) {
+      if (err instanceof FileNotFoundError) return
+      throw err
+    }
+    try {
+      const parsed = parseNavJson(nav.content)
+      const item = findNavItem(parsed.primary, fromUrl)
+      if (!item) return
+      item.url = toUrl
+      await writeFile(
+        ctx.githubRepo,
+        NAV_PATH,
+        serializeNavJson(parsed),
+        DRAFT_BRANCH,
+        `Retarget ${fromUrl} → ${toUrl} in navigation`,
+        { expectedSha: nav.sha, ...author(ctx) }
+      )
+      return
+    } catch (err) {
+      if (err instanceof StaleShaError && attempt === 0) continue
+      console.warn(`[nav-mutations] nav retarget skipped for ${fromUrl}:`, err)
+      return
+    }
+  }
+}
+
 // Locate a nav item by url at any depth (returns a live reference into the tree).
 function findNavItem(items: NavItem[], url: string): NavItem | null {
   for (const item of items) {

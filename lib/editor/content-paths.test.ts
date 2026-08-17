@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contentPathToUrl, stripNavUrl } from './content-paths'
+import { contentPathToUrl, stripNavUrl, urlToContentPath } from './content-paths'
 import type { NavJson } from '@/types/nav-json'
 
 describe('contentPathToUrl', () => {
@@ -29,6 +29,54 @@ describe('contentPathToUrl', () => {
   it('returns null for non-content paths', () => {
     expect(contentPathToUrl('content/nav.json')).toBeNull()
     expect(contentPathToUrl('public/content-assets/a.png')).toBeNull()
+  })
+})
+
+describe('urlToContentPath', () => {
+  it('maps a top-level page url', () => {
+    expect(urlToContentPath('/services')).toBe('content/pages/services.md')
+  })
+
+  it('encodes nested page urls with --', () => {
+    expect(urlToContentPath('/services/tax/business')).toBe(
+      'content/pages/services--tax--business.md'
+    )
+  })
+
+  it('maps a /resources/<slug> url to a flat post', () => {
+    expect(urlToContentPath('/resources/s-corp-vs-llc')).toBe('content/posts/s-corp-vs-llc.md')
+  })
+
+  it('round-trips with contentPathToUrl for pages and posts', () => {
+    for (const p of [
+      'content/pages/services--tax.md',
+      'content/pages/about.md',
+      'content/posts/foo.md',
+    ]) {
+      const url = contentPathToUrl(p)
+      expect(url).not.toBeNull()
+      expect(urlToContentPath(url as string)).toBe(p)
+    }
+  })
+
+  it('tolerates a trailing slash', () => {
+    expect(urlToContentPath('/services/tax/')).toBe('content/pages/services--tax.md')
+  })
+
+  it('returns null for the home page', () => {
+    expect(urlToContentPath('/')).toBeNull()
+  })
+
+  it('returns null for the resources index and deep resource urls', () => {
+    expect(urlToContentPath('/resources')).toBeNull()
+    expect(urlToContentPath('/resources/a/b')).toBeNull()
+  })
+
+  it('returns null for external, relative, or traversal urls', () => {
+    expect(urlToContentPath('https://example.com/x')).toBeNull()
+    expect(urlToContentPath('services/tax')).toBeNull()
+    expect(urlToContentPath('/a/../b')).toBeNull()
+    expect(urlToContentPath('/already--nested')).toBeNull()
   })
 })
 

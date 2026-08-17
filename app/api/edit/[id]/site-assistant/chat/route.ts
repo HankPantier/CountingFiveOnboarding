@@ -11,9 +11,10 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
 import { normalizeSlug } from '../../create-page/_slug'
 import { buildStarterPage, generateNewPage } from '@/lib/content/new-page-generator'
-import { appendNavItem, stripNavReference } from '@/lib/editor/nav-mutations'
+import { appendNavItem, retargetNavUrl, stripNavReference } from '@/lib/editor/nav-mutations'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
-import { contentPathToUrl } from '@/lib/editor/content-paths'
+import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
+import { DestinationOccupiedError, relocateFile } from '@/lib/editor/relocate'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import {
   DRAFT_BRANCH,
@@ -100,11 +101,13 @@ STEP-BY-STEP CONFIRMATION (required)
 - Before ANY create, delete, or content-generation call, state exactly what you will do and WAIT for the operator's explicit confirmation ("yes"/"go ahead").
 - Perform ONE such operation per confirmation. Never delete or create multiple pages in a single turn. For a bulk request (e.g. "remove these four, add these four"), first lay out the full plan, then work through it one confirmed operation at a time.
 - list_site_pages is read-only and needs no confirmation — use it freely to ground yourself.
+- EXCEPTION — bulk reclassify: "move these N pages to Resources" (or a similar batch of moves) counts as ONE plan. State the full list, get a single "yes", then loop move_page over each item without re-asking per file. Report a short pass/fail summary at the end.
 
 YOUR TOOLS
-- list_site_pages() — list current pages (path + url + whether each is in the nav) and the current navigation tree. Call this first.
+- list_site_pages() — list current pages (path + url + kind ("page"|"post") + whether each is in the nav) and the current navigation tree. Call this first.
 - create_page({ title, slug?, brief?, addToNav?, parentUrl? }) — create a page and kick off an AI-written first draft grounded in the business profile. slug may nest with "/" (e.g. "industries/veterinarians"). parentUrl nests the nav link under an existing item (e.g. "/industries"). Returns a generationId; the draft lands shortly after.
 - delete_page({ path }) — permanently remove a page (content/pages or content/posts) from the draft and strip its nav link. Pass the exact path from list_site_pages.
+- move_page({ fromPath, toUrl, navAction? }) — relocate a page: reclassify a page ↔ blog post (Resources) or reparent it under another page. A blog post that was created as a page (e.g. content/pages/careers--foo.md at /careers/foo) becomes a Resource by moving it to /resources/foo with navAction "remove" (posts show on the Resources index, not the top nav). Reparent a page by moving it to a new parent URL with navAction "retarget" (default — its nav link follows). Adds a 301 redirect automatically.
 - set_nav({ contents }) — replace the whole nav.json (a JSON string with { "primary": [ { "label", "url", "children"? } ], "cta"? }). Use only for explicit reordering/nesting beyond what create/delete already handle.
 - file_mbp_suggestion({ summary, removedNiches?, addedNiches? }) — after the operator confirms an audience change, file a PENDING Master Business Profile suggestion to update the firm's target niches for admin approval. NEVER present this as done — it only queues a suggestion.
 
@@ -139,7 +142,12 @@ RULES
               .filter((e) => e.type === 'blob' && e.path.endsWith('.md'))
               .map((e) => {
                 const url = contentPathToUrl(e.path)
-                return { path: e.path, url, inNav: url ? navContainsUrl(nav?.primary ?? [], url) : false }
+                return {
+                  path: e.path,
+                  url,
+                  kind: e.path.startsWith('content/posts/') ? 'post' : 'page',
+                  inNav: url ? navContainsUrl(nav?.primary ?? [], url) : false,
+                }
               })
             return { pages: entries, nav: nav ?? { primary: [] } }
           } catch (err) {
@@ -251,6 +259,83 @@ RULES
           }
         },
       },
+      move_page: {
+        description:
+          'Relocate a page on the draft site: reclassify a page ↔ blog post (Resources), or reparent a page under another. Moves the file, fixes its canonical, adds a 301 redirect, and syncs its nav link. Use navAction "remove" when moving something INTO Resources (posts show on the Resources index, not the top nav); "retarget" (default) keeps its nav link and points it at the new URL.',
+        inputSchema: z.object({
+          fromPath: z
+            .string()
+            .describe('Current repo path, e.g. content/pages/careers--foo.md'),
+          toUrl: z
+            .string()
+            .describe('Destination root-relative URL, e.g. /resources/foo or /services/foo'),
+          navAction: z
+            .enum(['retarget', 'remove', 'none'])
+            .optional()
+            .describe('Nav link handling; default retarget.'),
+        }),
+        execute: async ({ fromPath: rawFrom, toUrl, navAction }) => {
+          const fromPath = safePath(rawFrom)
+          if (
+            !fromPath ||
+            !fromPath.endsWith('.md') ||
+            !(fromPath.startsWith('content/pages/') || fromPath.startsWith('content/posts/'))
+          ) {
+            return { error: 'fromPath must be a .md under content/pages or content/posts.' }
+          }
+          const fromUrl = contentPathToUrl(fromPath)
+          if (!fromUrl) return { error: 'Could not resolve the current page URL.' }
+          const toPath = urlToContentPath(toUrl)
+          if (!toPath) {
+            return { error: 'Invalid destination — the home page and external URLs cannot be targeted.' }
+          }
+          const destUrl = contentPathToUrl(toPath) as string
+          if (fromPath === toPath) return { error: 'Source and destination are the same.' }
+
+          // Refuse moving a page that has nested sub-pages (would orphan them).
+          const pm = /^content\/pages\/(.+)\.md$/.exec(fromPath)
+          if (pm) {
+            const prefix = pm[1] + '--'
+            const kids = await listTree(githubRepo, DRAFT_BRANCH, 'content/pages/')
+            if (
+              kids.some(
+                (e) =>
+                  e.type === 'blob' &&
+                  e.path.endsWith('.md') &&
+                  e.path !== fromPath &&
+                  e.path.slice('content/pages/'.length).startsWith(prefix)
+              )
+            ) {
+              return { error: 'That page has sub-pages nested under it — move or delete those first.' }
+            }
+          }
+
+          try {
+            const src = await readFile(githubRepo, fromPath, DRAFT_BRANCH)
+            const res = await relocateFile(ctx, {
+              fromPath,
+              toPath,
+              fromUrl,
+              toUrl: destUrl,
+              expectedSha: src.sha,
+              reason: 'Relocated via AI',
+            })
+            const action = navAction ?? 'retarget'
+            if (action === 'retarget') await retargetNavUrl(ctx, fromUrl, destUrl)
+            else if (action === 'remove') await stripNavReference(ctx, fromPath)
+            return { success: true, fromUrl, toUrl: destUrl, moved: res.moved }
+          } catch (err) {
+            if (err instanceof DestinationOccupiedError) {
+              return { error: `A page already exists at ${destUrl}.` }
+            }
+            if (err instanceof FileNotFoundError) return { error: `No page found at ${fromPath}.` }
+            if (err instanceof StaleShaError) {
+              return { error: 'That page changed on the server mid-edit. Reload and try again.' }
+            }
+            return { error: err instanceof Error ? err.message : 'Failed to move the page.' }
+          }
+        },
+      },
       set_nav: {
         description:
           'Replace the whole navigation (nav.json). contents is a JSON string: { "primary": [ { "label", "url", "children"? } ], "cta"? }. Use for explicit reordering/nesting only.',
@@ -348,7 +433,7 @@ RULES
         },
       },
     },
-    stopWhen: stepCountIs(8),
+    stopWhen: stepCountIs(16),
     onFinish: async ({ totalUsage }) => {
       await recordTokenUsage({
         task: 'content',
