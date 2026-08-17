@@ -1,5 +1,15 @@
 import { Paragraph, HeadingLevel, TextRun } from 'docx'
 
+// Strip the inline markdown marks our runs render as plain text: **bold**,
+// *italic*, and [label](url) (kept as the label). Shared so the page-body
+// converter and the site document's hero/heading copy clean identically.
+export function stripInlineMarks(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+}
+
 // Convert the light markdown our page bodies use (## / # headings, - / * bullets,
 // --- rules, **bold**/*italic*/[link](url) inline marks) into docx Paragraphs.
 // Shared by the content-package builder (lib/content/docx-builder.ts) and the
@@ -58,10 +68,7 @@ export function markdownToDocxParagraphs(markdown: string): Paragraph[] {
       // Horizontal rules are decorative in markdown; treat as visual spacer.
       paragraphs.push(new Paragraph({ spacing: { after: 120 } }))
     } else {
-      const clean = trimmed
-        .replace(/\*\*([^*]+)\*\*/g, '$1')
-        .replace(/\*([^*]+)\*/g, '$1')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      const clean = stripInlineMarks(trimmed)
 
       paragraphs.push(new Paragraph({
         children: [new TextRun(clean)],

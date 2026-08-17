@@ -149,6 +149,9 @@ function toSiteDocPage(path: string, content: string, isPost: boolean): SiteDocP
     title,
     isPost,
     body: stripInlineSeoSection(body),
+    heroEyebrow: scalar(frontmatter, 'hero_eyebrow'),
+    heroHeadline: scalar(frontmatter, 'hero_headline'),
+    heroSubhead: scalar(frontmatter, 'hero_subhead'),
     metaTitle: scalar(frontmatter, 'meta_title'),
     metaDescription: scalar(frontmatter, 'meta_description'),
     targetKeyword: scalar(frontmatter, 'target_keyword'),
@@ -209,6 +212,18 @@ async function readInBatches(
   return out
 }
 
+type SchemaLocation = NonNullable<SessionSchema['locations']>[number]
+
+// Single-line address from a location's parts, skipping empties.
+// e.g. "12 Main St, Suite 3, Tyngsborough, MA 01879".
+export function formatAddress(loc: SchemaLocation | undefined): string {
+  if (!loc) return ''
+  const cityStateZip = [loc.city, [loc.state, loc.zip].filter((s) => s?.trim()).join(' ')]
+    .filter((s) => s?.trim())
+    .join(', ')
+  return [loc.street, loc.line2, cityStateZip].filter((s) => s?.trim()).join(', ')
+}
+
 function slugify(name: string): string {
   return (
     name
@@ -237,6 +252,13 @@ export async function GET(
   const schema = (session?.schema_data ?? null) as SessionSchema | null
   const firmName = schema?.business?.name?.trim() || session?.website_url || 'Untitled client'
   const websiteUrl = session?.website_url ?? ''
+
+  const primaryLocation = schema?.locations?.[0]
+  const contact = {
+    phone: (schema?.contact?.phone || primaryLocation?.phone || '').trim(),
+    email: (schema?.contact?.email || primaryLocation?.email || '').trim(),
+    address: formatAddress(primaryLocation),
+  }
 
   try {
     await ensureDraftBranch(ctx.githubRepo)
@@ -285,6 +307,7 @@ export async function GET(
       websiteUrl,
       pages: orderPages(pages, nav),
       nav,
+      contact,
       generatedOn,
     })
 

@@ -13,7 +13,7 @@ import {
   BorderStyle,
 } from 'docx'
 import type { NavJson, NavItem } from '@/types/nav-json'
-import { markdownToDocxParagraphs } from './markdown-to-docx'
+import { markdownToDocxParagraphs, stripInlineMarks } from './markdown-to-docx'
 
 // A single content page (or blog post) resolved from the live draft branch and
 // ready to render. The route parses each file's frontmatter into this shape; the
@@ -27,6 +27,11 @@ export type SiteDocPage = {
   title: string
   isPost: boolean
   body: string          // markdown body (frontmatter stripped)
+  // Hero copy lives only in frontmatter, so the markdown body omits it. Carried
+  // here so the document renders each page's headline instead of dropping it.
+  heroEyebrow: string
+  heroHeadline: string
+  heroSubhead: string
   metaTitle: string
   metaDescription: string
   targetKeyword: string
@@ -39,11 +44,15 @@ export type SiteDocPage = {
   faqBlock: SiteDocFaq[]
 }
 
+export type SiteDocContact = { phone: string; email: string; address: string }
+
 export type SiteDocInput = {
   firmName: string
   websiteUrl: string
   pages: SiteDocPage[]
   nav: NavJson | null
+  // Compact client contact for the cover page (website comes from websiteUrl).
+  contact?: SiteDocContact
   // Passed in rather than read from Date so the caller controls the stamp
   // (keeps the builder deterministic/testable).
   generatedOn: string
@@ -106,7 +115,36 @@ function navParagraphs(nav: NavJson): Paragraph[] {
   return out
 }
 
-// One labeled "Field: value" line for the SEO appendix, skipped when empty.
+// The hero copy (eyebrow / headline / subhead) lives in frontmatter, so it never
+// reaches the markdown body. Render it at the top of the page's content when
+// present — otherwise the home page (the most hero-dominant page) reads as empty.
+function heroParagraphs(page: SiteDocPage): Paragraph[] {
+  const out: Paragraph[] = []
+  if (page.heroEyebrow.trim()) {
+    out.push(new Paragraph({
+      spacing: { after: 40 },
+      children: [new TextRun({
+        text: stripInlineMarks(page.heroEyebrow).toUpperCase(),
+        bold: true, size: 18, color: MUTED,
+      })],
+    }))
+  }
+  if (page.heroHeadline.trim()) {
+    out.push(new Paragraph({
+      spacing: { after: page.heroSubhead.trim() ? 80 : 200 },
+      children: [new TextRun({ text: stripInlineMarks(page.heroHeadline), bold: true, size: 40, color: INK })],
+    }))
+  }
+  if (page.heroSubhead.trim()) {
+    out.push(new Paragraph({
+      spacing: { after: 200 },
+      children: [new TextRun({ text: stripInlineMarks(page.heroSubhead), size: 26, color: INK })],
+    }))
+  }
+  return out
+}
+
+// One labeled "Field: value" line for the SEO block, skipped when empty.
 function fieldLine(label: string, value: string): Paragraph | null {
   if (!value.trim()) return null
   return new Paragraph({
@@ -118,18 +156,11 @@ function fieldLine(label: string, value: string): Paragraph | null {
   })
 }
 
+// Each page's SEO/AIO metadata, rendered inline directly beneath the page's
+// content (not in a separate back-of-document appendix) and clearly labeled as
+// the SEO for that page. Returns [] when the page carries no SEO data so pages
+// without metadata don't print an empty label.
 function seoBlock(page: SiteDocPage): Paragraph[] {
-  const out: Paragraph[] = []
-  out.push(new Paragraph({
-    heading: HeadingLevel.HEADING_2,
-    spacing: { before: 200, after: 80 },
-    children: [new TextRun({ text: page.title, bold: true, size: 22, color: INK })],
-  }))
-  out.push(new Paragraph({
-    spacing: { after: 100 },
-    children: [new TextRun({ text: page.url, italics: true, color: MUTED, size: 18 })],
-  }))
-
   const lines = [
     fieldLine('Meta title', page.metaTitle),
     fieldLine('Meta description', page.metaDescription),
@@ -140,6 +171,18 @@ function seoBlock(page: SiteDocPage): Paragraph[] {
     fieldLine('Answer block', page.answerBlock),
     fieldLine('E-E-A-T signals', page.eeatSignals.join('; ')),
   ].filter((p): p is Paragraph => p !== null)
+
+  if (!lines.length && !page.internalLinks.length && !page.faqBlock.length) return []
+
+  const out: Paragraph[] = []
+  // Top border + muted label mark this as an editorial SEO note for the page
+  // above, visually distinct from the page's own body content.
+  out.push(new Paragraph({
+    heading: HeadingLevel.HEADING_2,
+    spacing: { before: 240, after: 80 },
+    border: { top: { style: BorderStyle.SINGLE, size: 6, color: 'E5E5E5' } },
+    children: [new TextRun({ text: 'Page SEO & Metadata', bold: true, size: 20, color: MUTED })],
+  }))
   out.push(...lines)
 
   if (page.internalLinks.length) {
@@ -177,6 +220,27 @@ function seoBlock(page: SiteDocPage): Paragraph[] {
   return out
 }
 
+// Compact centered contact lines for the cover page — website, phone, email,
+// address — each omitted when empty.
+function coverContactLines(input: SiteDocInput): Paragraph[] {
+  const entries: [string, string][] = [
+    ['Website', input.websiteUrl],
+    ['Phone', input.contact?.phone ?? ''],
+    ['Email', input.contact?.email ?? ''],
+    ['Address', input.contact?.address ?? ''],
+  ]
+  return entries
+    .filter(([, value]) => value.trim())
+    .map(([label, value]) => new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 40 },
+      children: [
+        new TextRun({ text: `${label}: `, bold: true, size: 20, color: INK }),
+        new TextRun({ text: value, size: 20, color: '666666' }),
+      ],
+    }))
+}
+
 export async function buildSiteDocx(input: SiteDocInput): Promise<Buffer> {
   const { firmName, pages, nav, generatedOn } = input
   const sections: Paragraph[] = []
@@ -197,8 +261,9 @@ export async function buildSiteDocx(input: SiteDocInput): Promise<Buffer> {
     new Paragraph({
       alignment: AlignmentType.CENTER,
       children: [new TextRun({ text: `Prepared by Revaltus — ${generatedOn}`, size: 24, color: '666666' })],
-      spacing: { after: 480 },
+      spacing: { after: 360 },
     }),
+    ...coverContactLines(input),
     new Paragraph({ children: [new PageBreak()] }),
   )
 
@@ -248,12 +313,9 @@ export async function buildSiteDocx(input: SiteDocInput): Promise<Buffer> {
       children: [new TextRun({ text: page.url, italics: true, color: MUTED, size: 20 })],
       spacing: { after: 240 },
     }))
+    sections.push(...heroParagraphs(page))
     sections.push(...markdownToDocxParagraphs(page.body))
-  }
-
-  // ── SEO appendix ─────────────────────────────────────────────────────────
-  sections.push(heading('SEO Appendix', { pageBreakBefore: true }))
-  for (const page of pages) {
+    // Each page's SEO renders inline, directly under its content.
     sections.push(...seoBlock(page))
   }
 
