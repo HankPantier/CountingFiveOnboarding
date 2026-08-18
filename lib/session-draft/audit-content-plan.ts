@@ -4,6 +4,7 @@
 // them makes an audit-seeded session arrive at the content Sitemap phase with
 // the real page list, rewrite candidates, and redirects already in place.
 // Pure / no AI / no DB.
+import { toSitePath } from '@/lib/content/url-path'
 import type { AuditResult } from '@/types/audit-result'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -45,12 +46,18 @@ export function mapAuditToContentPlan(result: AuditResult): AuditContentPlan {
   const seenUrls = new Set<string>()
 
   for (const p of pages) {
-    const key = normUrl(p.url)
+    // Crawled pages carry absolute URLs (scheme+host). Routing and content
+    // filenames are path-based, and feeding an absolute URL into the AI sitemap
+    // proposer downstream makes it hallucinate a mangled pseudo-path
+    // (/https-//host.../page) that breaks the client site's static build.
+    // Collapse to a clean root-relative path at the source.
+    const url = toSitePath(p.url) ?? p.url
+    const key = normUrl(url)
     if (seenUrls.has(key)) continue
     seenUrls.add(key)
     current.push({
-      url: p.url,
-      title: p.title || p.url,
+      url,
+      title: p.title || url,
       action: 'keep',
       live: p.status_code === 200,
     })
@@ -78,10 +85,11 @@ export function mapAuditToContentPlan(result: AuditResult): AuditContentPlan {
   const seenProposed = new Set<string>()
   for (const p of pages) {
     if (p.status_code !== 200) continue
-    const key = normUrl(p.url)
+    const url = toSitePath(p.url) ?? p.url
+    const key = normUrl(url)
     if (seenProposed.has(key)) continue
     seenProposed.add(key)
-    proposed.push({ url: p.url, title: p.title || p.url, status: 'update' })
+    proposed.push({ url, title: p.title || url, status: 'update' })
   }
 
   // ── content_gaps ──────────────────────────────────────────────────────────

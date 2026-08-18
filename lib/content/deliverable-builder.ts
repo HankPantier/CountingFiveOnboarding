@@ -55,7 +55,22 @@ export function toPagePath(rawUrl: string): string {
 
 function pageFilename(url: string): string {
   // /services/virtual-cfo-advisory → services--virtual-cfo-advisory.md; / → home.md
-  const slug = toPagePath(url).replace(/^\//, '').replace(/\//g, '--') || 'home'
+  const path = toPagePath(url)
+  const slug = path.replace(/^\//, '').replace(/\//g, '--')
+  if (!slug) return 'home.md'
+  // Fail loud on a URL that never got normalized to a real path — an absolute
+  // URL the AI proposer mangled into a pseudo-path (/https-//host.../page), or
+  // any URL with an empty interior segment (//). The client template turns the
+  // filename back into a route by splitting on '--'; an empty or scheme-like
+  // first segment yields a degenerate route that breaks `next build` on Vercel.
+  // Better to fail the onboarding assembler here, named, than silently ship it.
+  const segments = slug.split('--')
+  if (segments.some(s => s === '') || /^https?$/i.test(segments[0] ?? '')) {
+    throw new Error(
+      `Malformed page URL "${url}" → path "${path}": not a clean root-relative ` +
+        `path (scheme/host or empty segment). Normalize with toSitePath before assembly.`
+    )
+  }
   return `${slug}.md`
 }
 

@@ -138,6 +138,19 @@ describe('buildAllPageFiles — filenames are clean slugs (Issue #1/#2)', () => 
     const deep = files.find((f) => f.filename === 'what-we-do--tax.md')!
     expect(JSON.parse(frontmatterField(deep.content, 'url'))).toBe('/what-we-do/tax')
   })
+
+  it('fails loud on a mangled pseudo-path URL instead of shipping a build-breaking filename', () => {
+    // The AI proposer once turned https://host/who-we-are/amy into this form; the
+    // template splits filenames on "--", so the empty/scheme segments produced a
+    // degenerate route that broke `next build`. Assembly must throw, not emit it.
+    expect(() =>
+      buildAllPageFiles(
+        [makePage({ id: 'p-bad', page_url: '/https-//www-slachtacpa-com/who-we-are/amy-slachta' })],
+        'Slachta',
+        { websiteUrl: 'https://www.slachtacpa.com', ctaByUrl: new Map(), jsonLdByUrl: new Map() }
+      )
+    ).toThrow(/Malformed page URL/)
+  })
 })
 
 describe('buildPageMarkdown — colon-safe scalar frontmatter (Issue #3)', () => {

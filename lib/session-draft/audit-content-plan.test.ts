@@ -58,10 +58,40 @@ describe('mapAuditToContentPlan', () => {
     })
     const plan = mapAuditToContentPlan(r)
     expect(plan.current_sitemap).toHaveLength(2)
-    expect(plan.current_sitemap[0]).toMatchObject({ url: 'https://acme.example/', action: 'keep', live: true })
+    // Absolute crawl URLs are normalized to clean root-relative paths.
+    expect(plan.current_sitemap[0]).toMatchObject({ url: '/', action: 'keep', live: true })
+    expect(plan.current_sitemap[1]).toMatchObject({ url: '/services', action: 'keep' })
     expect(plan.proposed_sitemap).toHaveLength(2)
-    expect(plan.proposed_sitemap[0]).toMatchObject({ status: 'update', title: 'Home' })
+    expect(plan.proposed_sitemap[0]).toMatchObject({ status: 'update', title: 'Home', url: '/' })
     expect(plan.summary.pagesFound).toBe(2)
+  })
+
+  it('normalizes absolute nested page URLs to root-relative paths (build-safe)', () => {
+    // Regression: a team-bio page kept its full absolute URL, which the AI
+    // sitemap proposer later mangled into /https-//host.../page — that filename
+    // broke `next build` on the generated client site.
+    const r = result({
+      page_analysis_summary: [
+        summary({ url: 'https://www.slachtacpa.com/who-we-are/amy-slachta', title: 'Amy Slachta' }),
+      ],
+    })
+    const plan = mapAuditToContentPlan(r)
+    expect(plan.current_sitemap[0].url).toBe('/who-we-are/amy-slachta')
+    expect(plan.proposed_sitemap[0].url).toBe('/who-we-are/amy-slachta')
+    // No stored URL retains a scheme/host.
+    expect([...plan.current_sitemap, ...plan.proposed_sitemap].some(p => /https?:/i.test(p.url))).toBe(false)
+  })
+
+  it('dedupes an absolute URL against its already-relative twin after normalization', () => {
+    const r = result({
+      page_analysis_summary: [
+        summary({ url: 'https://acme.example/contact', title: 'Contact' }),
+        summary({ url: 'https://acme.example/contact/', title: 'Contact slash' }),
+      ],
+    })
+    const plan = mapAuditToContentPlan(r)
+    expect(plan.current_sitemap.filter(c => c.action === 'keep')).toHaveLength(1)
+    expect(plan.current_sitemap[0].url).toBe('/contact')
   })
 
   it('does NOT auto-consolidate distinct pages that merely share a title', () => {

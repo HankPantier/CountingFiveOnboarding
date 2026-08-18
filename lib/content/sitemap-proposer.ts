@@ -8,6 +8,7 @@ import { buildFirmContext } from './brand-voice'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { slugify } from './sitemap-utils'
+import { toSitePath } from './url-path'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult } from '@/types/audit-result'
 import type { TokenContext } from './token-pricing'
@@ -61,11 +62,19 @@ export function buildSkeletonProposal(
 
   // Existing live pages → updates. Prefer the planned current_sitemap; fall back
   // to the raw audit crawl when a session wasn't seeded from current_sitemap.
+  // Normalize existing-page URLs to clean root-relative paths before they reach
+  // the AI enrichment pass. Absolute URLs (from the crawl) make the model emit a
+  // mangled pseudo-path (/https-//host.../page) that breaks the client build.
   const kept = (schema.current_sitemap ?? []).filter(c => c.action === 'keep' && c.live)
-  for (const c of kept) push({ url: c.url, title: c.title || c.url, status: 'update' })
+  for (const c of kept) {
+    const url = toSitePath(c.url) ?? c.url
+    push({ url, title: c.title || url, status: 'update' })
+  }
   if (!kept.length && auditResult?.page_analysis_summary) {
     for (const p of auditResult.page_analysis_summary) {
-      if (p.status_code === 200) push({ url: p.url, title: p.title || p.url, status: 'update' })
+      if (p.status_code !== 200) continue
+      const url = toSitePath(p.url) ?? p.url
+      push({ url, title: p.title || url, status: 'update' })
     }
   }
 

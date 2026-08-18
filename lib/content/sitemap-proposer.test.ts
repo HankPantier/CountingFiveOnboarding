@@ -26,10 +26,12 @@ describe('buildSkeletonProposal', () => {
 
     const byUrl = Object.fromEntries(out.map(p => [p.url, p]))
 
-    // existing live pages → updates (redirect/non-live excluded)
-    expect(byUrl['https://acme.example/'].status).toBe('update')
-    expect(byUrl['https://acme.example/about'].status).toBe('update')
-    expect(byUrl['https://acme.example/gone']).toBeUndefined()
+    // existing live pages → updates (redirect/non-live excluded), URLs
+    // normalized to clean root-relative paths before the AI enrichment pass
+    expect(byUrl['/'].status).toBe('update')
+    expect(byUrl['/about'].status).toBe('update')
+    expect(byUrl['https://acme.example/about']).toBeUndefined()
+    expect(byUrl['/gone']).toBeUndefined()
 
     // niche hub + children with parent links
     expect(byUrl['/industries'].status).toBe('new')
@@ -50,7 +52,9 @@ describe('buildSkeletonProposal', () => {
     } as unknown as AuditResult
 
     const out = buildSkeletonProposal(schema({}), audit)
-    expect(out.map(p => p.url)).toContain('https://x.example/')
+    // Crawl URLs normalized to root-relative paths (build-safe, not mangled).
+    expect(out.map(p => p.url)).toContain('/')
+    expect(out.map(p => p.url)).not.toContain('https://x.example/')
     expect(out.map(p => p.url)).not.toContain('https://x.example/404')
     expect(out.every(p => p.status === 'update')).toBe(true)
   })

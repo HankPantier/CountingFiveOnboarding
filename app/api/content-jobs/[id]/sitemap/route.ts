@@ -4,6 +4,7 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
 import { normUrl } from '@/lib/content/sitemap-proposer'
+import { toSitePath } from '@/lib/content/url-path'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -66,12 +67,22 @@ export async function POST(
     }
   }
 
+  // Normalize every URL to a clean root-relative path FIRST, then dedup on the
+  // normalized key. An absolute URL (/https://host/x) and its path (/x) hash to
+  // different normUrl keys, so normalizing before dedup also collapses those.
+  // This is the last chokepoint all confirmed-sitemap pages pass through, so it
+  // guards the page-content filenames regardless of how a bad URL was entered.
+  const normalizePage = (p: SitemapPage): SitemapPage => ({
+    ...p,
+    url: toSitePath(p.url) ?? p.url,
+    ...(p.parent ? { parent: toSitePath(p.parent) ?? p.parent } : {}),
+  })
   // Dedup by canonical URL before seeding. page_outlines has no unique
   // constraint on (content_job_id, page_url), so a duplicate URL (easy to
   // introduce when hand-editing the sitemap) would create duplicate outline
   // rows and make generateOutlineForPage's .single() research lookup throw.
   const seen = new Set<string>()
-  const pages = rawPages.filter((p) => {
+  const pages = rawPages.map(normalizePage).filter((p) => {
     const key = normUrl(p.url)
     if (seen.has(key)) return false
     seen.add(key)
