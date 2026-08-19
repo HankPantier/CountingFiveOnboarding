@@ -263,7 +263,7 @@ types/              # database.ts (generated), session-schema.ts, gap-item.ts
 4. Before every commit, run:
    - `grep -r "SUPABASE_SERVICE_ROLE_KEY" ./app` (expect zero matches)
    - `grep -r "GITHUB_APP_PRIVATE_KEY" ./app` (expect zero matches)
-   - `grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx"` (expect zero matches outside `scripts/`)
+   - `grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx" --exclude="*.test.ts" --exclude="*.test.tsx"` (expect zero matches outside `scripts/`; test fixtures may carry the literal string as data)
 5. Test against the Korbey Lague MBP fixture for any changes to the parser or agent logic
 6. Use the Supabase SQL Editor to verify DB state after any session-modifying operation
 

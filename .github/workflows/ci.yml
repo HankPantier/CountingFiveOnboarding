@@ -28,7 +28,10 @@ jobs:
           if grep -r "GITHUB_APP_PRIVATE_KEY" ./app --include="*.ts" --include="*.tsx"; then
             echo "::error::GitHub App private key referenced under app/"; exit 1
           fi
-          if grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx"; then
+          # Exclude test files: fixtures legitimately contain the literal
+          # "console.log" as data (e.g. HTML strings), which is not a real log.
+          if grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx" \
+               --exclude="*.test.ts" --exclude="*.test.tsx"; then
             echo "::error::console.log in production paths (use console.warn/error)"; exit 1
           fi
 
