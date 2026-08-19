@@ -5,7 +5,7 @@ import { requireSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { trimMessages } from '@/lib/agent/trim-messages'
-import { deepMerge, isPathFilled } from '@/lib/mbp/schema-write'
+import { deepMerge, isPathFilled, preserveAppendOnlyMarkers } from '@/lib/mbp/schema-write'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { asJson } from '@/lib/supabase/json-typed'
@@ -264,7 +264,12 @@ async function updateSessionSchema(
     .single()
 
   const currentSchema = (current?.schema_data as Record<string, unknown>) ?? {}
-  const mergedSchema = deepMerge(currentSchema, updates)
+  // deepMerge replaces arrays wholesale; preserveAppendOnlyMarkers re-unions the
+  // Phase 3 step markers so the model can never silently re-open a cleared gate.
+  const mergedSchema = preserveAppendOnlyMarkers(
+    currentSchema,
+    deepMerge(currentSchema, updates)
+  )
 
   // The authoritative website URL lives in the `website_url` column, not in
   // schema_data. The phase-1 client agent collects contact info but never sets
@@ -296,8 +301,10 @@ async function updateSessionSchema(
     if (validationError) {
       console.warn(`[phase-advance] Blocked phase ${currentPhase}→${currentPhase + 1}: ${validationError}`)
       // Don't advance — return the reason so the model knows it did NOT advance
-      // and what's still missing (internal tool result; never surfaced to the client).
-      blocked = validationError
+      // and what to do next. This is an INTERNAL diagnostic: the framing tells
+      // the model to act on it silently, never to echo the wording (or the step
+      // marker tokens inside it) back to the user.
+      blocked = `[INTERNAL diagnostic — do NOT repeat or paraphrase to the user] The phase did NOT advance: ${validationError}. Resolve it silently, then retry.`
     } else {
       newPhase = Math.min(currentPhase + 1, 7)
     }
@@ -381,12 +388,18 @@ function validatePhaseAdvance(
     case 3: {
       const meta = schema._meta as Record<string, unknown> | undefined
       const chunks = (meta?.phase3_completed_chunks as string[]) ?? []
-      if (!chunks.includes('chunk1')) return 'Phase 3 chunk1 not complete'
+      if (!chunks.includes('chunk1')) {
+        return 'the Part 1 (practical info) step is not marked complete yet — finish it and add "chunk1" to _meta.phase3_completed_chunks'
+      }
       // Legacy sessions wrote a single "chunk2" marker before the chunk2a/2b
       // split. Either form is accepted.
       const legacyChunk2 = chunks.includes('chunk2')
-      if (!legacyChunk2 && !chunks.includes('chunk2a')) return 'Phase 3 chunk2a not complete'
-      if (!legacyChunk2 && !chunks.includes('chunk2b')) return 'Phase 3 chunk2b not complete'
+      if (!legacyChunk2 && !chunks.includes('chunk2a')) {
+        return 'the Part 2a (content & positioning) step is not marked complete yet — capture the positioning pick and add "chunk2a" to _meta.phase3_completed_chunks'
+      }
+      if (!legacyChunk2 && !chunks.includes('chunk2b')) {
+        return 'the Part 2b (analyst decisions) step is not marked complete — present the decision blocks from your instructions, confirm the defaults with the user in plain language, then resend update_session_data adding "chunk2b" to _meta.phase3_completed_chunks with advancePhase:true'
+      }
 
       // Team photos are auto-pulled at session start and managed on the session
       // page — the chat no longer collects them, so there is no chunk3 gate.

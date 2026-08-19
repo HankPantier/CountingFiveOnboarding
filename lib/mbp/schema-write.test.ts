@@ -1,5 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { deepSetPath, deepMerge, getByPath, isPathFilled } from './schema-write'
+import {
+  deepSetPath,
+  deepMerge,
+  getByPath,
+  isPathFilled,
+  preserveAppendOnlyMarkers,
+} from './schema-write'
+
+describe('preserveAppendOnlyMarkers — Phase 3 gate cannot silently re-open', () => {
+  const before = { _meta: { phase3_completed_chunks: ['chunk1', 'chunk2a'] } }
+
+  it('unions dropped prior markers back in when the model resends a partial array', () => {
+    // Model sent only ["chunk2b"] — deepMerge would replace and drop chunk1/2a.
+    const merged = deepMerge(before, { _meta: { phase3_completed_chunks: ['chunk2b'] } })
+    preserveAppendOnlyMarkers(before, merged)
+    expect((merged._meta as { phase3_completed_chunks: string[] }).phase3_completed_chunks).toEqual(
+      ['chunk1', 'chunk2a', 'chunk2b']
+    )
+  })
+
+  it('keeps prior markers when the update forgets to include the array at all', () => {
+    const merged = deepMerge(before, { _meta: { opportunities_confirmed: true } })
+    preserveAppendOnlyMarkers(before, merged)
+    expect((merged._meta as { phase3_completed_chunks: string[] }).phase3_completed_chunks).toEqual(
+      ['chunk1', 'chunk2a']
+    )
+  })
+
+  it('dedupes and is a no-op when nothing new is added', () => {
+    const merged = deepMerge(before, { _meta: { phase3_completed_chunks: ['chunk1', 'chunk2a'] } })
+    preserveAppendOnlyMarkers(before, merged)
+    expect((merged._meta as { phase3_completed_chunks: string[] }).phase3_completed_chunks).toEqual(
+      ['chunk1', 'chunk2a']
+    )
+  })
+})
 
 describe('isPathFilled', () => {
   const obj = {

@@ -88,3 +88,27 @@ export function deepMerge(
   }
   return result
 }
+
+// deepMerge REPLACES arrays wholesale, but `_meta.phase3_completed_chunks` is an
+// append-only set of step markers that gate Phase 3 advancement. A model update
+// that resends the array missing an earlier marker (the prompt only shows
+// `[..., "chunkX"]`) would otherwise silently re-open a cleared gate and strand
+// the session. Re-union the pre-merge markers into the merged schema so a marker
+// can only ever be added, never dropped. Mutates and returns `merged`.
+export function preserveAppendOnlyMarkers(
+  before: Record<string, unknown>,
+  merged: Record<string, unknown>
+): Record<string, unknown> {
+  const prev = (before._meta as { phase3_completed_chunks?: unknown } | undefined)
+    ?.phase3_completed_chunks
+  const mergedMeta = merged._meta as { phase3_completed_chunks?: unknown } | undefined
+  if (mergedMeta && Array.isArray(prev)) {
+    const next = Array.isArray(mergedMeta.phase3_completed_chunks)
+      ? mergedMeta.phase3_completed_chunks
+      : []
+    mergedMeta.phase3_completed_chunks = Array.from(
+      new Set([...(prev as unknown[]), ...(next as unknown[])])
+    )
+  }
+  return merged
+}
