@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { searchPexelsTop, downloadPexelsImage, type PexelsPhoto } from './pexels-fetcher'
 import type { Database } from '@/types/database'
 import { asJson } from '@/lib/supabase/json-typed'
+import type { ProgressTick } from './task-progress'
 
 type AssetRow = Database['public']['Tables']['assets']['Row']
 
@@ -75,6 +76,8 @@ export type StockResolverInput = {
   /** Existing session assets — used to short-circuit when an asset for this filename already exists */
   existingAssets: AssetRow[]
   imageRefs: ImageRef[]
+  /** Optional progress callback — fired per photo searched, then per batch downloaded. Best-effort. */
+  onProgress?: (p: ProgressTick) => void | Promise<void>
 }
 
 export async function resolveStockPhotos(
@@ -120,6 +123,11 @@ export async function resolveStockPhotos(
     source?: string
   }
   const tasks: FetchTask[] = []
+
+  // Split refs into reuse-existing (instant) vs. must-search. Only the latter
+  // costs Pexels round-trips, so its count is the determinate "Finding photos"
+  // total reported to the progress bar.
+  const refsToSearch: Array<{ ref: ImageRef; filename: string; subjectQuery: string }> = []
   for (const ref of input.imageRefs) {
     const filename = ref.filename?.trim()
     const subjectQuery = ref.subjectQuery?.trim()
@@ -137,7 +145,12 @@ export async function resolveStockPhotos(
       }
       continue
     }
+    refsToSearch.push({ ref, filename, subjectQuery })
+  }
 
+  const searchTotal = refsToSearch.length
+  let searched = 0
+  for (const { ref, filename, subjectQuery } of refsToSearch) {
     const finalQuery = input.styleSuffix
       ? `${subjectQuery}, ${input.styleSuffix}`
       : subjectQuery
@@ -145,6 +158,8 @@ export async function resolveStockPhotos(
     // Pull the top 10 results so we can skip any that are already used
     // elsewhere in this session. Pexels' rate cost is the same as per_page=1.
     const candidates = await searchPexelsTop(finalQuery, input.apiKey, 10)
+    searched++
+    await input.onProgress?.({ phase: 'Finding photos', current: searched, total: searchTotal })
     if (candidates.length === 0) {
       console.warn(`[stock-photo] No Pexels result for ${filename} (query="${finalQuery}", source=${ref.source ?? 'hero'})`)
       continue
@@ -165,6 +180,7 @@ export async function resolveStockPhotos(
   // cut wall-time on image-heavy packages. Concurrency mirrors the package
   // route's asset-download batching to stay within the storage connection pool.
   const FETCH_CONCURRENCY = 8
+  let downloaded = 0
   for (let i = 0; i < tasks.length; i += FETCH_CONCURRENCY) {
     const batch = tasks.slice(i, i + FETCH_CONCURRENCY)
     const batchResolved = await Promise.all(
@@ -225,6 +241,8 @@ export async function resolveStockPhotos(
       })
     )
     for (const r of batchResolved) if (r) resolved.push(r)
+    downloaded += batch.length
+    await input.onProgress?.({ phase: 'Downloading photos', current: downloaded, total: tasks.length })
   }
 
   return resolved

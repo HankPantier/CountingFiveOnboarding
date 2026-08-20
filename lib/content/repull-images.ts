@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { collectPageImageRefs } from './image-coverage'
 import { resolveStockPhotos } from './stock-photo-resolver'
+import { makeProgressWriter, type ProgressWriter } from './task-progress'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
@@ -36,8 +37,8 @@ export type RepullResult =
 
 export async function repullJobImages(
   contentJobId: string,
-  actor: { name: string; email: string | null },
-  opts: { force?: boolean } = {}
+  actor: { name: string; email: string | null; id?: string | null },
+  opts: { force?: boolean; taskId?: string } = {}
 ): Promise<RepullResult> {
   const supabase = createServerClient()
 
@@ -58,6 +59,19 @@ export async function repullJobImages(
     .single()
   if (!session) return { ok: false, status: 404, error: 'Session not found' }
 
+  // Progress row (optional) — keyed by the client-generated taskId so a polling
+  // client sees ticks while this request runs. Only created once we have a
+  // session to scope it to; best-effort throughout.
+  const progress: ProgressWriter | null = opts.taskId
+    ? makeProgressWriter(supabase, opts.taskId, {
+        kind: 'repull-images',
+        sessionId: job.session_id,
+        contentJobId,
+        createdBy: actor.id ?? null,
+      })
+    : null
+  await progress?.start('Scanning pages')
+
   const schema = (session.schema_data ?? {}) as SessionSchema
   const palette = (job.palette ?? null) as PaletteData | null
 
@@ -75,6 +89,7 @@ export async function repullJobImages(
   const imageRefs = collectPageImageRefs(completed)
   const referenced = new Set(imageRefs.map(r => r.filename))
   if (referenced.size === 0) {
+    await progress?.finish('No images referenced on any page.')
     return { ok: true, expected: 0, resolved: 0, pushed: 0, stillMissing: [] }
   }
 
@@ -109,55 +124,70 @@ export async function repullJobImages(
     .select('*')
     .eq('session_id', job.session_id)
 
-  const resolved = await resolveStockPhotos(
-    {
-      sessionId: job.session_id,
-      apiKey: process.env.PEXELS_API_KEY ?? '',
-      styleSuffix: deriveImageStyleSuffix(palette, schema.brand),
-      existingAssets: existingAssets ?? [],
-      imageRefs,
-    },
-    supabase
-  )
-
-  // Re-query so newly-inserted stock-photo rows are visible, then push the
-  // referenced files that aren't already committed to the repo.
-  const { data: assetRows } = await supabase
-    .from('assets')
-    .select('file_name, storage_path')
-    .eq('session_id', job.session_id)
-
-  const toPush = (assetRows ?? []).filter(a => referenced.has(a.file_name) && !repoAssets.has(a.file_name))
-  const entries: { path: string; content: Buffer }[] = []
-  for (const asset of toPush) {
-    const { data, error } = await supabase.storage.from('session-assets').download(asset.storage_path)
-    if (error || !data) {
-      console.warn(`[repull] Failed to download asset ${asset.storage_path}: ${error?.message}`)
-      continue
-    }
-    entries.push({ path: `public/content-assets/${asset.file_name}`, content: Buffer.from(await data.arrayBuffer()) })
-  }
-
-  if (entries.length > 0) {
-    const author = { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' }
-    await ensureDraftBranch(job.github_repo)
-    await pushEntriesToBranch(
-      job.github_repo,
-      DRAFT_BRANCH,
-      entries,
-      `Re-pull ${entries.length} image(s) via admin`,
-      author
+  try {
+    const resolved = await resolveStockPhotos(
+      {
+        sessionId: job.session_id,
+        apiKey: process.env.PEXELS_API_KEY ?? '',
+        styleSuffix: deriveImageStyleSuffix(palette, schema.brand),
+        existingAssets: existingAssets ?? [],
+        imageRefs,
+        onProgress: progress ? (p) => progress.tick(p) : undefined,
+      },
+      supabase
     )
-  }
 
-  const committedNow = new Set<string>([
-    ...repoAssets,
-    ...entries.map(e => e.path.split('/').pop() ?? ''),
-  ])
-  const stillMissing = Array.from(referenced).filter(f => !committedNow.has(f))
-  if (stillMissing.length > 0) {
-    console.error(`[repull] ${stillMissing.length} image(s) still unresolved after re-pull: ${stillMissing.join(', ')}`)
-  }
+    // Re-query so newly-inserted stock-photo rows are visible, then push the
+    // referenced files that aren't already committed to the repo.
+    const { data: assetRows } = await supabase
+      .from('assets')
+      .select('file_name, storage_path')
+      .eq('session_id', job.session_id)
 
-  return { ok: true, expected: referenced.size, resolved: resolved.length, pushed: entries.length, stillMissing }
+    const toPush = (assetRows ?? []).filter(a => referenced.has(a.file_name) && !repoAssets.has(a.file_name))
+    const entries: { path: string; content: Buffer }[] = []
+    for (const asset of toPush) {
+      const { data, error } = await supabase.storage.from('session-assets').download(asset.storage_path)
+      if (error || !data) {
+        console.warn(`[repull] Failed to download asset ${asset.storage_path}: ${error?.message}`)
+        continue
+      }
+      entries.push({ path: `public/content-assets/${asset.file_name}`, content: Buffer.from(await data.arrayBuffer()) })
+    }
+
+    if (entries.length > 0) {
+      await progress?.tick({ phase: 'Committing to draft', current: 0, total: 0 })
+      const author = { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' }
+      await ensureDraftBranch(job.github_repo)
+      await pushEntriesToBranch(
+        job.github_repo,
+        DRAFT_BRANCH,
+        entries,
+        `Re-pull ${entries.length} image(s) via admin`,
+        author
+      )
+    }
+
+    const committedNow = new Set<string>([
+      ...repoAssets,
+      ...entries.map(e => e.path.split('/').pop() ?? ''),
+    ])
+    const stillMissing = Array.from(referenced).filter(f => !committedNow.has(f))
+    if (stillMissing.length > 0) {
+      console.error(`[repull] ${stillMissing.length} image(s) still unresolved after re-pull: ${stillMissing.join(', ')}`)
+    }
+
+    await progress?.finish(
+      entries.length > 0
+        ? `Pushed ${entries.length} image(s) to draft${stillMissing.length ? ` · ${stillMissing.length} still missing` : ''}.`
+        : stillMissing.length
+          ? `No images resolved · ${stillMissing.length} still missing.`
+          : 'All images already present.'
+    )
+
+    return { ok: true, expected: referenced.size, resolved: resolved.length, pushed: entries.length, stillMissing }
+  } catch (err) {
+    await progress?.error(err instanceof Error ? err.message : 'Image re-pull failed')
+    throw err
+  }
 }

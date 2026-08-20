@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import ProgressBar from '@/components/ui/ProgressBar'
+import { useTaskProgress } from '@/components/ui/use-task-progress'
 
 export type EditorStatus = {
   draftAhead: number
@@ -76,10 +78,21 @@ function OverflowMenu({
     state: 'idle',
     msg: '',
   })
+  const [repullTaskId, setRepullTaskId] = useState<string | null>(null)
+  const [repullStartedAt, setRepullStartedAt] = useState<number | null>(null)
+  const repullProgress = useTaskProgress(repullTaskId, repull.state === 'working')
+
   const repullImages = async () => {
+    const taskId = crypto.randomUUID()
+    setRepullTaskId(taskId)
+    setRepullStartedAt(Date.now())
     setRepull({ state: 'working', msg: '' })
     try {
-      const res = await fetch(`/api/edit/${sessionId}/repull-images`, { method: 'POST' })
+      const res = await fetch(`/api/edit/${sessionId}/repull-images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error ?? 'Image re-pull failed')
       const pushed: number = data.pushed ?? 0
@@ -96,6 +109,8 @@ function OverflowMenu({
       onRepullDone?.()
     } catch (err) {
       setRepull({ state: 'error', msg: err instanceof Error ? err.message : 'Image re-pull failed' })
+    } finally {
+      setRepullTaskId(null)
     }
   }
 
@@ -183,7 +198,17 @@ function OverflowMenu({
           >
             {repull.state === 'working' ? 'Re-pulling images…' : 'Re-pull all images ⟳'}
           </button>
-          {repull.msg && (
+          {repull.state === 'working' && (
+            <div className="px-3 py-1.5">
+              <ProgressBar
+                phase={repullProgress?.phase ?? 'Starting…'}
+                current={repullProgress?.current ?? 0}
+                total={repullProgress?.total ?? 0}
+                startedAt={repullStartedAt}
+              />
+            </div>
+          )}
+          {repull.state !== 'working' && repull.msg && (
             <p
               className={`px-3 py-1.5 text-[11px] font-body ${repull.state === 'error' ? 'text-error' : 'text-text-secondary'}`}
             >

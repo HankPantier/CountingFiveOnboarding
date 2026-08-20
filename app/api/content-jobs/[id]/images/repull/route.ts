@@ -17,19 +17,21 @@ export async function POST(
   if (auth instanceof NextResponse) return auth
 
   let force = false
+  let taskId: string | undefined
   try {
     const body = await req.json()
     force = body?.force === true
+    if (typeof body?.taskId === 'string') taskId = body.taskId
   } catch {
-    // no body — default force=false
+    // no body — defaults
   }
 
   let result
   try {
     result = await repullJobImages(
       id,
-      { name: auth.user.name ?? 'CountingFive Admin', email: auth.user.email ?? null },
-      { force }
+      { name: auth.user.name ?? 'CountingFive Admin', email: auth.user.email ?? null, id: auth.user.id },
+      { force, taskId }
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Image re-pull failed'

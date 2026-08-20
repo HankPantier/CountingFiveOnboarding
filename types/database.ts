@@ -1255,6 +1255,66 @@ export type Database = {
           },
         ]
       }
+      task_progress: {
+        Row: {
+          content_job_id: string | null
+          created_at: string
+          created_by: string | null
+          current: number
+          id: string
+          kind: string
+          message: string | null
+          phase: string | null
+          session_id: string | null
+          state: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          content_job_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          current?: number
+          id: string
+          kind: string
+          message?: string | null
+          phase?: string | null
+          session_id?: string | null
+          state?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          content_job_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          current?: number
+          id?: string
+          kind?: string
+          message?: string | null
+          phase?: string | null
+          session_id?: string | null
+          state?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_progress_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_progress_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       token_usage: {
         Row: {
           audit_id: string | null

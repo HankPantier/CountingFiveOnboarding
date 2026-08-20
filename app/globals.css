@@ -207,7 +207,14 @@ h1, h2, h3, h4, h5, h6 {
   30%           { transform: translateY(-5px); opacity: 1;   }
 }
 
+/* Indeterminate progress bar: a short fill sliding across the track. */
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%);  }
+}
+
 @theme {
-  --animate-msg-in:     msg-in 220ms ease-out both;
-  --animate-dot-bounce: dot-bounce 1.2s ease-in-out infinite;
+  --animate-msg-in:         msg-in 220ms ease-out both;
+  --animate-dot-bounce:     dot-bounce 1.2s ease-in-out infinite;
+  --animate-progress-slide: progress-slide 1.1s ease-in-out infinite;
 }

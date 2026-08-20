@@ -7,6 +7,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export type EditContext = {
   adminEmail: string | undefined
   adminName: string | undefined
+  adminId: string
   jobId: string
   sessionId: string
   githubRepo: string
@@ -51,6 +52,7 @@ export async function resolveEditContext(
   return {
     adminEmail: auth.user.email,
     adminName: auth.user.name,
+    adminId: auth.user.id,
     jobId: job.id,
     sessionId: job.session_id,
     githubRepo: job.github_repo,

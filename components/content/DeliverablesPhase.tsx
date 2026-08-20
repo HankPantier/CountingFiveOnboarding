@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import NavCurationPhase from './NavCurationPhase'
 import PackageDownloadBar from './PackageDownloadBar'
+import ProgressBar from '@/components/ui/ProgressBar'
+import { useTaskProgress } from '@/components/ui/use-task-progress'
 import type { NavJson } from '@/types/nav-json'
 
 type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
@@ -65,6 +67,9 @@ export default function DeliverablesPhase({
   const [imageMissing, setImageMissing] = useState<string[]>([])
   const [repullState, setRepullState] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
   const [repullMsg, setRepullMsg] = useState<string | null>(null)
+  const [repullTaskId, setRepullTaskId] = useState<string | null>(null)
+  const [repullStartedAt, setRepullStartedAt] = useState<number | null>(null)
+  const repullProgress = useTaskProgress(repullTaskId, repullState === 'working')
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -228,10 +233,17 @@ export default function DeliverablesPhase({
   // assembly (missing PEXELS_API_KEY, Pexels outage) so its live pages render
   // "Image not found". Pushes to draft only — Publish afterwards to go live.
   const repullImages = async () => {
+    const taskId = crypto.randomUUID()
+    setRepullTaskId(taskId)
+    setRepullStartedAt(Date.now())
     setRepullState('working')
     setRepullMsg(null)
     try {
-      const res = await fetch(`/api/content-jobs/${contentJobId}/images/repull`, { method: 'POST' })
+      const res = await fetch(`/api/content-jobs/${contentJobId}/images/repull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error ?? 'Image re-pull failed')
       const pushed: number = data.pushed ?? 0
@@ -248,6 +260,8 @@ export default function DeliverablesPhase({
     } catch (err) {
       setRepullState('error')
       setRepullMsg(err instanceof Error ? err.message : 'Image re-pull failed')
+    } finally {
+      setRepullTaskId(null)
     }
   }
 
@@ -399,7 +413,16 @@ export default function DeliverablesPhase({
             >
               {repullState === 'working' ? 'Re-pulling images…' : 'Re-pull all images'}
             </button>
-            {repullMsg && (
+            {repullState === 'working' && (
+              <ProgressBar
+                phase={repullProgress?.phase ?? 'Starting…'}
+                current={repullProgress?.current ?? 0}
+                total={repullProgress?.total ?? 0}
+                startedAt={repullStartedAt}
+                className="max-w-sm"
+              />
+            )}
+            {repullState !== 'working' && repullMsg && (
               <p className={`text-xs font-body ${repullState === 'error' ? 'text-error' : 'text-text-secondary'}`}>
                 {repullMsg}
               </p>
