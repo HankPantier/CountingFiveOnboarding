@@ -2,15 +2,17 @@ import { NextResponse } from 'next/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStatus, DRAFT_BRANCH } from '@/lib/github/repo-files'
+import { containsDeployCommit } from '@/lib/github/deploy-commit'
 
 export const runtime = 'nodejs'
 
 // Lightweight read-only status for the decoupled deploy. The package route
 // pushes in the background, so the UI polls this to confirm the deploy commit
-// landed on the draft branch (the push commit message starts with
-// "Deploy packaged content"). Never throws — a GitHub hiccup returns
-// { repo, reachable: false } so the UI can keep polling or show a soft error.
-const PUSH_COMMIT_PREFIX = 'Deploy packaged content'
+// landed on the draft branch. isDeployCommit checks the whole ahead-of-main
+// commit set — not just HEAD — because the pipeline stacks follow-up commits
+// (site-settings sync, editor moves) on top of the deploy within ~1s, so the
+// deploy commit is rarely at HEAD after a successful publish. Never throws — a
+// GitHub hiccup returns { repo, reachable: false } so the UI can keep polling.
 
 export async function GET(
   _req: Request,
@@ -40,7 +42,7 @@ export async function GET(
       lastCommitSha: status.lastCommitSha,
       lastCommitMessage: status.lastCommitMessage,
       lastCommitAt: status.lastCommitAt,
-      isDeployCommit: (status.lastCommitMessage ?? '').startsWith(PUSH_COMMIT_PREFIX),
+      isDeployCommit: containsDeployCommit(status.aheadCommitMessages),
       draftAhead: status.draftAhead,
     })
   } catch {

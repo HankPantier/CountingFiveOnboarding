@@ -908,6 +908,10 @@ export type RepoStatus = {
   lastCommitSha: string | null
   lastCommitMessage: string | null
   lastCommitAt: string | null
+  /** Messages of every commit draft is ahead of main by (oldest → newest). Lets
+   *  the deploy-status check find the deploy commit even when the publish
+   *  pipeline has stacked follow-up commits on top of it. */
+  aheadCommitMessages: string[]
   /** True when main's HEAD is a publish merge that revertLastPublish can undo. */
   canRevertPublish: boolean
 }
@@ -949,6 +953,7 @@ export async function getStatus(slug: string): Promise<RepoStatus> {
     lastCommitSha: head?.sha ?? null,
     lastCommitMessage: head?.commit.message ?? null,
     lastCommitAt: head?.commit.author?.date ?? null,
+    aheadCommitMessages: cmp.data.commits.map((c) => c.commit.message),
     canRevertPublish,
   }
 }
