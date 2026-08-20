@@ -77,8 +77,10 @@ export async function collectTemplatePayload(manifest: Manifest): Promise<Templa
     return { path, content: blob.content as string }
   })
 
+  // Blobs only — a git tree also carries directory ("tree") objects whose sha
+  // changes whenever any child does; counting them would inflate the plan diff.
   const shaByPath = new Map<string, string>()
-  for (const n of tree) if (isManaged(n.path, manifest)) shaByPath.set(n.path, n.sha)
+  for (const n of tree) if (n.type === 'blob' && isManaged(n.path, manifest)) shaByPath.set(n.path, n.sha)
 
   const flaggedShaByPath = new Map<string, string>()
   for (const n of tree) if (n.type === 'blob' && isFlagged(n.path, manifest)) flaggedShaByPath.set(n.path, n.sha)
