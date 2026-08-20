@@ -2,7 +2,7 @@
   "_note": "Fleet registry — the canonical roster of client site repos for `scripts/fleet-rollout.ts`. NOT all of these share the theme. A repo is only touched by group/--all rollouts when `managed: true` AND `themeGroup` is set. `paused: true` skips it temporarily. `slug` is owner/repo. The template source is HankPantier/CountingFiveTemplate (resolveTemplateSlug) and is NOT listed here. Keep this file in sync with the fleet-rollout memory.",
   "clients": [
     { "slug": "HankPantier/bblcpa", "displayName": "BBL CPA", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
-    { "slug": "HankPantier/korbey-lague-site", "displayName": "Korbey Lague", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
+    { "slug": "HankPantier/korbey-lague-site", "displayName": "Korbey Lague", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
     { "slug": "HankPantier/Accord-Advisors", "displayName": "Accord Advisors", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
     { "slug": "HankPantier/Abramson-Company-LLC", "displayName": "Abramson Company LLC", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
 
