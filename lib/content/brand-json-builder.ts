@@ -12,14 +12,21 @@ function nonEmpty(value: unknown): value is string {
 
 type SocialPlatform = SocialLink['platform']
 
-function detectPlatform(url: string): SocialPlatform {
+export function detectPlatform(url: string): SocialPlatform {
   try {
-    const { hostname } = new URL(url)
+    const { hostname, pathname } = new URL(url)
     if (hostname.includes('linkedin.com')) return 'linkedin'
     if (hostname.includes('facebook.com')) return 'facebook'
     if (hostname.includes('twitter.com') || hostname.includes('x.com')) return 'twitter'
     if (hostname.includes('instagram.com')) return 'instagram'
     if (hostname.includes('youtube.com') || hostname.includes('youtu.be')) return 'youtube'
+    if (hostname.includes('maps.apple.com') || (hostname.endsWith('apple.com') && pathname.startsWith('/maps'))) return 'appleMaps'
+    if (
+      hostname === 'maps.google.com' ||
+      hostname === 'maps.app.goo.gl' ||
+      (hostname.includes('google.') && pathname.includes('/maps')) ||
+      (hostname.includes('goo.gl') && pathname.includes('/maps'))
+    ) return 'googleMaps'
     return 'other'
   } catch {
     return 'other'

@@ -4,7 +4,7 @@
 // LLM crawlers via llms-full.txt).
 
 export type SocialLink = {
-  platform: 'linkedin' | 'facebook' | 'twitter' | 'instagram' | 'youtube' | 'other'
+  platform: 'linkedin' | 'facebook' | 'twitter' | 'instagram' | 'youtube' | 'appleMaps' | 'googleMaps' | 'other'
   url: string
 }
 
