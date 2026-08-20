@@ -9,6 +9,7 @@ export async function GET(
   const { id: _jobId } = await params
   const auth = await requireContentJobAccess(_jobId)
   if (auth instanceof NextResponse) return auth
+  const isAdmin = auth.user.isAdmin
 
   const { id } = await params
   const supabase = createServerClient()
@@ -47,7 +48,13 @@ export async function GET(
       url: p.page_url,
       title: p.page_title,
       status: p.generation_status,
-      errorMessage: p.generation_error,
+      // Full failure detail (may carry upstream API/infra strings) is admin-only;
+      // members get a generic message and can still retry.
+      errorMessage: p.generation_error
+        ? isAdmin
+          ? p.generation_error
+          : 'Generation failed — retry this page or check server logs.'
+        : null,
       startedAt: p.generation_started_at,
       parent: parentByUrl.get(p.page_url),
       approved: p.admin_approved_content,

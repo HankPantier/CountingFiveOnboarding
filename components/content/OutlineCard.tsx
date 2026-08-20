@@ -17,6 +17,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import OutlineSectionRow from './OutlineSectionRow'
+import { isFallbackOutline } from '@/lib/content/outline-fallback'
 import type { Json } from '@/types/database'
 
 type Section = { h2: string; description: string; word_count: number }
@@ -74,11 +75,15 @@ export default function OutlineCard({
     onUpdate({ ...outline, sections: newSections as unknown as Json })
   }
 
+  const needsReview = !outline.admin_approved && isFallbackOutline(outline.admin_notes)
+
   const statusBadge = outline.admin_approved
     ? { label: 'Approved', cls: 'bg-success/10 text-success' }
-    : outline.h1
-      ? { label: 'Pending', cls: 'bg-warning/10 text-warning-strong' }
-      : { label: 'Generating...', cls: 'bg-info/10 text-info' }
+    : needsReview
+      ? { label: 'Needs review', cls: 'bg-warning/10 text-warning-strong' }
+      : outline.h1
+        ? { label: 'Pending', cls: 'bg-warning/10 text-warning-strong' }
+        : { label: 'Generating...', cls: 'bg-info/10 text-info' }
 
   const saveEdits = async () => {
     setSaving(true)
@@ -184,6 +189,11 @@ export default function OutlineCard({
 
       {expanded && outline.h1 && (
         <div className="px-4 pb-4 pt-2 border-t border-border-default space-y-3">
+          {needsReview && (
+            <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs font-body text-warning-strong">
+              This outline is an auto-generated placeholder because generation failed. Edit the sections, then clear this note before approving.
+            </div>
+          )}
           {/* H1 */}
           <div>
             <label className="text-xs font-heading font-semibold text-text-secondary">H1</label>

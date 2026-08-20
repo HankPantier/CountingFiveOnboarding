@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateInternalLinks } from './link-validator'
+import { validateInternalLinks, filterKnownInternalLinks } from './link-validator'
 
 const SITEMAP = ['/services', '/services/tax', '/about', '/contact']
 
@@ -52,5 +52,38 @@ describe('validateInternalLinks', () => {
     const sitemap = ['https://www.acme.com/contact', 'https://www.acme.com/services']
     const md = '[c](/contact)\n[s](/services)'
     expect(validateInternalLinks([page({ content_markdown: md })], sitemap)).toHaveLength(0)
+  })
+})
+
+describe('filterKnownInternalLinks', () => {
+  const links = (...urls: unknown[]) => urls.map(url => ({ url, anchor_text: 'a', reason: 'r' }))
+
+  it('keeps real sitemap links and drops hallucinated/typo paths', () => {
+    const out = filterKnownInternalLinks(
+      links('/about', '/services/tax', '/services/made-up'),
+      SITEMAP
+    )
+    expect(out.map(l => l.url)).toEqual(['/about', '/services/tax'])
+  })
+
+  it('keeps home and blog-post/asset targets (not sitemap-constrained)', () => {
+    const out = filterKnownInternalLinks(
+      links('/', '/resources/tax-tips-2026', '/files/brochure.pdf'),
+      SITEMAP
+    )
+    expect(out.map(l => l.url)).toEqual(['/', '/resources/tax-tips-2026', '/files/brochure.pdf'])
+  })
+
+  it('drops malformed or non-root-relative entries', () => {
+    const out = filterKnownInternalLinks(
+      links('https://example.com/x', '#anchor', 'mailto:a@b.com', 42, null),
+      SITEMAP
+    )
+    expect(out).toHaveLength(0)
+  })
+
+  it('matches paths against absolute-URL sitemap entries', () => {
+    const out = filterKnownInternalLinks(links('/contact'), ['https://www.acme.com/contact'])
+    expect(out.map(l => l.url)).toEqual(['/contact'])
   })
 })

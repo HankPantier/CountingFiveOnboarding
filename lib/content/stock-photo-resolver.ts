@@ -108,6 +108,18 @@ export async function resolveStockPhotos(
   // fetch once. Same image just gets reused.
   const seenFilenames = new Set<string>()
 
+  // Phase 1 (SEQUENTIAL — do not parallelize): search Pexels and pick a photo.
+  // Selection mutates usedPexelsIds to guarantee no two pages claim the same
+  // photo and rebuilds stay deterministic, so it must run in order.
+  type FetchTask = {
+    filename: string
+    pageUrl: string
+    subjectQuery: string
+    finalQuery: string
+    photo: PexelsPhoto
+    source?: string
+  }
+  const tasks: FetchTask[] = []
   for (const ref of input.imageRefs) {
     const filename = ref.filename?.trim()
     const subjectQuery = ref.subjectQuery?.trim()
@@ -145,60 +157,74 @@ export async function resolveStockPhotos(
       photo = candidates[0]
     }
     usedPexelsIds.add(photo.id)
+    tasks.push({ filename, pageUrl: ref.pageUrl, subjectQuery, finalQuery, photo, source: ref.source })
+  }
 
-    const bytes = await downloadPexelsImage(photo.src_large)
-    if (!bytes) {
-      console.warn(`[stock-photo] Failed to download Pexels photo ${photo.id} for ${filename}`)
-      continue
-    }
+  // Phase 2 (bounded parallel): download + upload + insert are independent per
+  // photo (distinct filenames, no shared state), so run them concurrently to
+  // cut wall-time on image-heavy packages. Concurrency mirrors the package
+  // route's asset-download batching to stay within the storage connection pool.
+  const FETCH_CONCURRENCY = 8
+  for (let i = 0; i < tasks.length; i += FETCH_CONCURRENCY) {
+    const batch = tasks.slice(i, i + FETCH_CONCURRENCY)
+    const batchResolved = await Promise.all(
+      batch.map(async (t): Promise<ResolvedStockPhoto | null> => {
+        const bytes = await downloadPexelsImage(t.photo.src_large)
+        if (!bytes) {
+          console.warn(`[stock-photo] Failed to download Pexels photo ${t.photo.id} for ${t.filename}`)
+          return null
+        }
 
-    // Upload to Supabase Storage under the same path scheme as user uploads
-    const storagePath = `sessions/${input.sessionId}/${filename}`
-    const { error: uploadErr } = await supabase.storage
-      .from('session-assets')
-      .upload(storagePath, bytes, {
-        contentType: 'image/jpeg',
-        upsert: true,  // Idempotent — if storage already has the file but the DB row was missing, just overwrite
+        // Upload to Supabase Storage under the same path scheme as user uploads
+        const storagePath = `sessions/${input.sessionId}/${t.filename}`
+        const { error: uploadErr } = await supabase.storage
+          .from('session-assets')
+          .upload(storagePath, bytes, {
+            contentType: 'image/jpeg',
+            upsert: true,  // Idempotent — if storage already has the file but the DB row was missing, just overwrite
+          })
+        if (uploadErr) {
+          console.warn(`[stock-photo] Storage upload failed for ${t.filename}: ${uploadErr.message}`)
+          return null
+        }
+
+        // session-assets bucket is private; never store a public URL.
+        // Admin viewers sign URLs on demand via Supabase storage createSignedUrl().
+
+        const metadata: StockPhotoMetadata = {
+          source: 'pexels',
+          pexels_id: t.photo.id,
+          photographer: t.photo.photographer,
+          photographer_url: t.photo.photographer_url,
+          pexels_url: t.photo.pexels_url,
+          original_query: t.subjectQuery,
+          final_query: t.finalQuery,
+          avg_color: t.photo.avg_color,
+        }
+
+        const { error: insertErr } = await supabase
+          .from('assets')
+          .insert({
+            session_id: input.sessionId,
+            file_name: t.filename,
+            storage_path: storagePath,
+            public_url: null,
+            mime_type: 'image/jpeg',
+            file_size_bytes: bytes.length,
+            asset_category: 'stock-photo',
+            metadata: asJson(metadata),
+          })
+        if (insertErr) {
+          console.warn(`[stock-photo] Assets row insert failed for ${t.filename}: ${insertErr.message}`)
+          // Storage already wrote — leave it; the next rebuild will retry insertion.
+          return null
+        }
+
+        console.warn(`[stock-photo] Resolved ${t.filename} ← Pexels #${t.photo.id} by ${t.photo.photographer} (source=${t.source ?? 'hero'})`)
+        return { filename: t.filename, pageUrl: t.pageUrl, metadata }
       })
-    if (uploadErr) {
-      console.warn(`[stock-photo] Storage upload failed for ${filename}: ${uploadErr.message}`)
-      continue
-    }
-
-    // session-assets bucket is private; never store a public URL.
-    // Admin viewers sign URLs on demand via Supabase storage createSignedUrl().
-
-    const metadata: StockPhotoMetadata = {
-      source: 'pexels',
-      pexels_id: photo.id,
-      photographer: photo.photographer,
-      photographer_url: photo.photographer_url,
-      pexels_url: photo.pexels_url,
-      original_query: subjectQuery,
-      final_query: finalQuery,
-      avg_color: photo.avg_color,
-    }
-
-    const { error: insertErr } = await supabase
-      .from('assets')
-      .insert({
-        session_id: input.sessionId,
-        file_name: filename,
-        storage_path: storagePath,
-        public_url: null,
-        mime_type: 'image/jpeg',
-        file_size_bytes: bytes.length,
-        asset_category: 'stock-photo',
-        metadata: asJson(metadata),
-      })
-    if (insertErr) {
-      console.warn(`[stock-photo] Assets row insert failed for ${filename}: ${insertErr.message}`)
-      // Storage already wrote — leave it; the next rebuild will retry insertion.
-      continue
-    }
-
-    resolved.push({ filename, pageUrl: ref.pageUrl, metadata })
-    console.warn(`[stock-photo] Resolved ${filename} ← Pexels #${photo.id} by ${photo.photographer} (source=${ref.source ?? 'hero'})`)
+    )
+    for (const r of batchResolved) if (r) resolved.push(r)
   }
 
   return resolved

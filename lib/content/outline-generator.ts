@@ -8,6 +8,7 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { OUTLINE_FALLBACK_NOTE } from './outline-fallback'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
@@ -19,6 +20,18 @@ const OUTLINE_MODEL = 'claude-sonnet-5'
 // crawler's final https:// URL for the same page.
 const normUrl = (u: string) =>
   u.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase()
+
+type AuditPageSummary = NonNullable<AuditResult['page_analysis_summary']>[number]
+
+// Build a normalized-URL → per-page audit summary lookup once per job so the
+// batch loop doesn't linear-scan page_analysis_summary for every page (O(n²)).
+export function buildAuditPageIndex(auditResult: AuditResult | null): Map<string, AuditPageSummary> {
+  const index = new Map<string, AuditPageSummary>()
+  for (const p of auditResult?.page_analysis_summary ?? []) {
+    if (!index.has(normUrl(p.url))) index.set(normUrl(p.url), p)
+  }
+  return index
+}
 
 type OutlineResult = {
   h1: string
@@ -35,7 +48,8 @@ export async function generateOutlineForPage(
   sessionId: string,
   schema: SessionSchema,
   palette: PaletteData | null,
-  auditResult: AuditResult | null = null
+  auditResult: AuditResult | null = null,
+  auditPageByUrl?: Map<string, AuditPageSummary>
 ): Promise<void> {
   const supabase = createServerClient()
 
@@ -78,10 +92,11 @@ export async function generateOutlineForPage(
           .join('\n')
       : ''
 
-  // Per-page audit findings — what's wrong with this exact page today.
-  const auditedPage = auditResult?.page_analysis_summary?.find(
-    p => normUrl(p.url) === normUrl(pageUrl)
-  )
+  // Per-page audit findings — what's wrong with this exact page today. Prefer
+  // the prebuilt index (O(1)); fall back to a scan for standalone callers.
+  const auditedPage = auditPageByUrl
+    ? auditPageByUrl.get(normUrl(pageUrl))
+    : auditResult?.page_analysis_summary?.find(p => normUrl(p.url) === normUrl(pageUrl))
   const auditHintsBlock = auditedPage
     ? [
         'SITE AUDIT — THIS PAGE TODAY (the rewrite must fix these):',
@@ -184,6 +199,7 @@ ${auditHintsBlock}`
     if (!Array.isArray(outline.sections)) {
       console.warn(`[outline-gen] Non-array sections for ${pageUrl} — using fallback`)
       outline.sections = [{ h2: 'Overview', description: 'Add content here', word_count: 300 }]
+      outline.notes = OUTLINE_FALLBACK_NOTE
     }
   } catch (err) {
     // A 'length' finishReason means the model hit maxOutputTokens before closing
@@ -196,7 +212,7 @@ ${auditHintsBlock}`
       h1: pageTitle,
       sections: [{ h2: 'Overview', description: 'Add content here', word_count: 300 }],
       target_keyword: targetKeyword,
-      notes: 'Auto-generated fallback — admin must edit before approving.',
+      notes: OUTLINE_FALLBACK_NOTE,
     }
   }
 
@@ -268,6 +284,7 @@ export async function runOutlineGeneration(
   const startedAt = Date.now()
   let completedThisRun = 0
 
+  const auditPageByUrl = buildAuditPageIndex(auditResult)
   const pending = outlines.filter(o => !o.h1)
   for (let i = 0; i < pending.length; i += BATCH_SIZE) {
     if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
@@ -285,7 +302,8 @@ export async function runOutlineGeneration(
           sessionId,
           schema,
           palette,
-          auditResult
+          auditResult,
+          auditPageByUrl
         )
       } catch (err) {
         console.error(`[outline-gen] Error generating outline for ${outline.page_url}:`, err)

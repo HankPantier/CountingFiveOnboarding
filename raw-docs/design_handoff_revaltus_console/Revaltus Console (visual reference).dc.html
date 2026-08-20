@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Open+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_ds/revaltus-design-system-e17e0953-274f-443b-8dbb-d04b4874ccf7/tokens/colors.css">
+<link rel="stylesheet" href="_ds/revaltus-design-system-e17e0953-274f-443b-8dbb-d04b4874ccf7/tokens/radius.css">
+<link rel="stylesheet" href="_ds/revaltus-design-system-e17e0953-274f-443b-8dbb-d04b4874ccf7/tokens/shadows.css">
+<link rel="stylesheet" href="_ds/revaltus-design-system-e17e0953-274f-443b-8dbb-d04b4874ccf7/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/revaltus-design-system-e17e0953-274f-443b-8dbb-d04b4874ccf7/tokens/motion.css">
+<script src="_ds/revaltus-design-system-e17e0953-274f-443b-8dbb-d04b4874ccf7/_ds_bundle.js"></script>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--surface-page,#F8FAFC);color:var(--text-primary,#1E293B);font-family:'Open Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  h1,h2,h3,h4,h5,h6{font-family:'Inter',system-ui,sans-serif;margin:0;color:var(--brand-navy,#231f20)}
+  a{color:var(--brand-cyan,#098195);text-decoration:none}
+  a:hover{color:var(--brand-navy,#231f20)}
+  button{font-family:'Inter',system-ui,sans-serif}
+  ::selection{background:rgba(9,129,149,.16)}
+  .rv-sc::-webkit-scrollbar{width:11px;height:11px}
+  .rv-sc::-webkit-scrollbar-thumb{background:rgba(35,31,32,.16);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
+  .rv-sc::-webkit-scrollbar-thumb:hover{background:rgba(35,31,32,.28);background-clip:padding-box}
+  @keyframes msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes dot-bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+</style>
+</helmet>
+
+<div style="display:flex; height:100vh; overflow:hidden; background:var(--surface-page,#F8FAFC);">
+
+  <aside style="width:248px; flex:none; background:#1A1718; display:flex; flex-direction:column; height:100vh;">
+    <div style="padding:24px 22px 16px;">
+      <img src="assets/revaltus-logo-white.png" alt="Revaltus" style="height:29px; width:auto; display:block;">
+    </div>
+    <nav class="rv-sc" style="flex:1; overflow-y:auto; padding:6px 12px 12px; display:flex; flex-direction:column; gap:16px;">
+      <sc-for list="{{ nav }}" as="g" hint-placeholder-count="3">
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <div style="font:600 10px/1 'Inter',sans-serif; letter-spacing:.11em; text-transform:uppercase; color:rgba(255,255,255,.32); padding:9px 12px 7px;">{{ g.label }}</div>
+          <sc-for list="{{ g.items }}" as="item" hint-placeholder-count="3">
+            <button type="button" onClick="{{ item.onClick }}" style="position:relative; display:flex; align-items:center; gap:12px; width:100%; border:none; cursor:pointer; padding:9px 12px; border-radius:10px; font:500 13.5px/1 'Inter',sans-serif; background:{{ item.bg }}; color:{{ item.color }}; transition:background .15s, color .15s;" style-hover="background:rgba(255,255,255,.07);">
+              <span style="position:absolute; left:-12px; top:8px; bottom:8px; width:3px; border-radius:0 3px 3px 0; background:{{ item.barColor }};"></span>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="{{ item.iconPath }}"></path></svg>
+              <span style="flex:1; text-align:left;">{{ item.label }}</span>
+              <sc-if value="{{ item.badge }}" hint-placeholder-val="{{ true }}"><span style="background:rgba(255,255,255,.13); color:#fff; font:600 10px 'Inter',sans-serif; padding:2px 7px; border-radius:99px;">{{ item.badge }}</span></sc-if>
+            </button>
+          </sc-for>
+        </div>
+      </sc-for>
+    </nav>
+    <div style="padding:12px; border-top:1px solid rgba(255,255,255,.08);">
+      <div style="display:flex; align-items:center; gap:11px; padding:8px 10px; border-radius:12px; cursor:pointer;" style-hover="background:rgba(255,255,255,.06);">
+        <div style="width:34px; height:34px; flex:none; border-radius:50%; background:var(--brand-cyan,#098195); color:#fff; display:flex; align-items:center; justify-content:center; font:600 12px 'Inter',sans-serif;">HP</div>
+        <div style="min-width:0; flex:1;">
+          <div style="font:600 13px 'Inter',sans-serif; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Hank Pantier</div>
+          <div style="font:400 11px 'Open Sans',sans-serif; color:rgba(255,255,255,.45);">Admin</div>
+        </div>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path></svg>
+      </div>
+    </div>
+  </aside>
+
+  <main style="flex:1; min-width:0; display:flex; flex-direction:column; height:100vh;">
+    <header style="height:64px; flex:none; background:#fff; border-bottom:1px solid var(--border-default,#E2E8F0); display:flex; align-items:center; gap:16px; padding:0 32px; z-index:5;">
+      <div style="display:flex; align-items:center; gap:9px;">
+        <span style="font:500 13px 'Inter',sans-serif; color:var(--text-muted,#94A3B8);">Console</span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted,#94A3B8)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>
+        <span style="font:600 14px 'Inter',sans-serif; color:var(--brand-navy,#231f20);">{{ navLabel }}</span>
+      </div>
+      <div style="flex:1;"></div>
+      <div style="display:flex; align-items:center; gap:9px; width:340px; max-width:38vw; background:var(--surface-subtle,#F1F5F9); border:1px solid transparent; border-radius:40px; padding:8px 15px; transition:border-color .15s, background .15s;" style-focus-within="border-color:var(--brand-cyan,#098195); background:#fff;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted,#94A3B8)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35"></path></svg>
+        <input value="{{ query }}" onChange="{{ setQuery }}" placeholder="Search clients, audits…" style="flex:1; min-width:0; border:none; outline:none; background:transparent; font:400 13.5px 'Open Sans',sans-serif; color:var(--text-primary,#1E293B);">
+        <span style="font:600 10.5px 'Inter',sans-serif; color:var(--text-muted,#94A3B8); border:1px solid var(--border-default,#E2E8F0); border-radius:6px; padding:2px 6px;">⌘K</span>
+      </div>
+      <button type="button" style="width:38px; height:38px; flex:none; display:flex; align-items:center; justify-content:center; border:1px solid var(--border-default,#E2E8F0); background:#fff; border-radius:50%; cursor:pointer; position:relative; color:var(--text-secondary,#64748B);" style-hover="background:var(--surface-subtle,#F1F5F9);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        <span style="position:absolute; top:8px; right:9px; width:7px; height:7px; border-radius:50%; background:var(--brand-cyan,#098195); border:1.5px solid #fff;"></span>
+      </button>
+      <div style="width:38px; height:38px; flex:none; border-radius:50%; background:var(--brand-cyan,#098195); color:#fff; display:flex; align-items:center; justify-content:center; font:600 12px 'Inter',sans-serif;">HP</div>
+    </header>
+
+    <div class="rv-sc" style="flex:1; overflow-y:auto;">
+
+      <sc-if value="{{ isSessions }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:32px 40px 56px; max-width:1260px; margin:0 auto; display:flex; flex-direction:column; gap:22px;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap;">
+          <div>
+            <h1 style="font:700 27px/1.1 'Inter',sans-serif;">Onboarding</h1>
+            <p style="margin:7px 0 0; font:400 14px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B);">18 active clients moving through the 7-phase intake · <a href="#" style="color:var(--text-secondary,#64748B); border-bottom:1px solid var(--border-strong,#CBD5E1);">AI spend $184.20 this month</a></p>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <button type="button" style="display:inline-flex; align-items:center; gap:8px; background:#fff; color:var(--brand-navy,#231f20); border:1px solid var(--border-default,#E2E8F0); cursor:pointer; font:600 13px 'Inter',sans-serif; padding:9px 16px; border-radius:40px; transition:background .15s;" style-hover="background:var(--surface-subtle,#F1F5F9);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path></svg>
+              Export
+            </button>
+            <button type="button" onClick="{{ goNewChat }}" style="display:inline-flex; align-items:center; gap:8px; background:var(--brand-cyan,#098195); color:#fff; border:none; cursor:pointer; font:600 13px 'Inter',sans-serif; padding:10px 18px; border-radius:40px; box-shadow:var(--shadow-cyan-base,0 4px 12px rgba(9,129,149,.3)); transition:all .15s;" style-hover="background:var(--brand-cyan-dark,#076B7C); transform:translateY(-1px); box-shadow:var(--shadow-cyan-glow,0 6px 16px rgba(9,129,149,.4));">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+              New session
+            </button>
+          </div>
+        </div>
+
+        <sc-if value="{{ showStats }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px;">
+          <sc-for list="{{ stats }}" as="c" hint-placeholder-count="4">
+            <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:14px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:17px 19px; display:flex; flex-direction:column; gap:9px;">
+              <span style="font:600 12px 'Inter',sans-serif; color:var(--text-secondary,#64748B);">{{ c.label }}</span>
+              <div style="font:700 27px/1 'Inter',sans-serif; color:var(--brand-navy,#231f20);">{{ c.value }}</div>
+              <div style="font:600 12px 'Open Sans',sans-serif; color:{{ c.deltaColor }};">{{ c.delta }}</div>
+              <svg viewBox="0 0 100 40" preserveAspectRatio="none" width="100%" height="36" style="display:block; margin-top:2px;">
+                <polygon points="{{ c.area }}" fill="rgba(9,129,149,.08)"></polygon>
+                <polyline points="{{ c.line }}" fill="none" stroke="var(--brand-cyan,#098195)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"></polyline>
+              </svg>
+            </div>
+          </sc-for>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ showPipeline }}" hint-placeholder-val="{{ true }}">
+        <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:14px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:22px 26px;">
+          <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px;">
+            <h2 style="font:600 15px 'Inter',sans-serif;">Onboarding pipeline</h2>
+            <span style="font:400 12.5px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8);">18 active · updated just now</span>
+          </div>
+          <div style="display:flex; gap:16px; align-items:flex-end; margin-top:22px;">
+            <sc-for list="{{ funnel }}" as="st" hint-placeholder-count="6">
+              <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:11px;">
+                <div style="font:700 20px 'Inter',sans-serif; color:var(--brand-navy,#231f20);">{{ st.count }}</div>
+                <div style="width:100%; height:118px; display:flex; align-items:flex-end; justify-content:center;">
+                  <div style="width:60%; max-width:64px; height:{{ st.pct }}%; background:{{ st.color }}; border-radius:8px 8px 3px 3px;"></div>
+                </div>
+                <div style="font:600 11.5px 'Inter',sans-serif; color:var(--text-secondary,#64748B); text-align:center;">{{ st.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div style="display:inline-flex; background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:40px; padding:4px;">
+            <sc-for list="{{ filters }}" as="f" hint-placeholder-count="5">
+              <button type="button" onClick="{{ f.onClick }}" style="display:inline-flex; align-items:center; gap:6px; border:none; cursor:pointer; font:600 12.5px 'Inter',sans-serif; padding:7px 14px; border-radius:40px; background:{{ f.bg }}; color:{{ f.fg }}; transition:background .15s, color .15s;">
+                {{ f.label }}<span style="font:600 11px 'Inter',sans-serif; color:{{ f.countColor }};">{{ f.count }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="flex:1;"></div>
+          <span style="font:400 13px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B);">{{ subtitle }}</span>
+        </div>
+
+        <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:14px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); overflow:hidden;">
+          <table style="width:100%; border-collapse:collapse;">
+            <thead>
+              <tr style="background:#FBFCFD; border-bottom:1px solid var(--border-default,#E2E8F0);">
+                <th style="text-align:left; padding:13px 18px; font:600 11px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-secondary,#64748B);">Client</th>
+                <th style="text-align:left; padding:13px 16px; font:600 11px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-secondary,#64748B);">Status</th>
+                <th style="text-align:left; padding:13px 16px; font:600 11px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-secondary,#64748B);">Phase</th>
+                <th style="text-align:left; padding:13px 16px; font:600 11px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-secondary,#64748B);">Health</th>
+                <th style="text-align:left; padding:13px 16px; font:600 11px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-secondary,#64748B);">Last active</th>
+                <th style="text-align:left; padding:13px 16px; font:600 11px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--text-secondary,#64748B);">Inactive</th>
+                <th style="padding:13px 18px; width:44px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ sessionsView }}" as="s" hint-placeholder-count="8">
+                <tr onClick="{{ s.onOpen }}" style="border-bottom:1px solid var(--border-default,#E2E8F0); cursor:pointer; transition:background .12s;" style-hover="background:var(--surface-subtle,#F1F5F9);">
+                  <td style="padding:13px 18px;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                      <div style="width:38px; height:38px; flex:none; border-radius:50%; background:{{ s.avBg }}; color:{{ s.avFg }}; display:flex; align-items:center; justify-content:center; font:600 13px 'Inter',sans-serif;">{{ s.initials }}</div>
+                      <div style="min-width:0;">
+                        <div style="font:600 14px 'Inter',sans-serif; color:var(--brand-navy,#231f20); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;">{{ s.firm }}</div>
+                        <div style="font:400 12px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8); margin-top:1px;">{{ s.url }}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style="padding:13px 16px;">
+                    <span style="display:inline-flex; align-items:center; font:600 10.5px 'Inter',sans-serif; letter-spacing:.04em; text-transform:uppercase; padding:4px 11px; border-radius:99px; background:{{ s.stBg }}; color:{{ s.stFg }};">{{ s.stLabel }}</span>
+                  </td>
+                  <td style="padding:13px 16px;">
+                    <div style="font:400 12px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B); margin-bottom:6px; white-space:nowrap;">{{ s.stageLabel }}</div>
+                    <div style="display:flex; gap:3px;">
+                      <sc-for list="{{ s.seg }}" as="g" hint-placeholder-count="7">
+                        <div style="width:15px; height:5px; border-radius:2px; background:{{ g.color }};"></div>
+                      </sc-for>
+                    </div>
+                  </td>
+                  <td style="padding:13px 16px;">
+                    <div style="position:relative; width:36px; height:36px;">
+                      <svg width="36" height="36" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="15" fill="none" stroke="var(--surface-subtle,#F1F5F9)" stroke-width="3.5"></circle>
+                        <circle cx="18" cy="18" r="15" fill="none" stroke="{{ s.ringColor }}" stroke-width="3.5" stroke-linecap="round" pathLength="100" stroke-dasharray="{{ s.health }} 100" transform="rotate(-90 18 18)"></circle>
+                      </svg>
+                      <span style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:600 11px 'Inter',sans-serif; color:{{ s.healthFg }};">{{ s.health }}</span>
+                    </div>
+                  </td>
+                  <td style="padding:13px 16px; font:400 13px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B); white-space:nowrap;">{{ s.lastActive }}</td>
+                  <td style="padding:13px 16px;"><span style="font:600 13px 'Open Sans',sans-serif; color:{{ s.inactiveColor }};">{{ s.inactiveText }}</span></td>
+                  <td style="padding:13px 18px; text-align:right;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted,#94A3B8)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg>
+                  </td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-top:1px solid var(--border-default,#E2E8F0);">
+            <span style="font:400 12.5px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8);">Showing 1–12 of 18</span>
+            <div style="display:flex; gap:8px;">
+              <button type="button" style="font:600 12.5px 'Inter',sans-serif; color:var(--text-muted,#94A3B8); background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:40px; padding:6px 14px; cursor:default;">Prev</button>
+              <button type="button" style="font:600 12.5px 'Inter',sans-serif; color:var(--brand-navy,#231f20); background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:40px; padding:6px 14px; cursor:pointer;" style-hover="background:var(--surface-subtle,#F1F5F9);">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:44px 40px 56px; max-width:1040px; margin:0 auto; display:flex; flex-direction:column; gap:14px;">
+        <div style="display:flex; flex-direction:column; align-items:center; text-align:center; gap:20px; padding:16px 0 8px;">
+          <div>
+            <h1 style="font:700 28px/1.15 'Inter',sans-serif;">Good afternoon, Hank</h1>
+            <p style="margin:9px 0 0; font:400 15px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B);">3 sessions need a nudge and 4 clients are ready for content generation.</p>
+          </div>
+          <div style="display:flex; align-items:center; gap:11px; width:100%; max-width:560px; background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:40px; padding:14px 22px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12));">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted,#94A3B8)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35"></path></svg>
+            <span style="flex:1; text-align:left; font:400 14.5px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8);">Search clients, audits, or jump to a section…</span>
+            <span style="font:600 11px 'Inter',sans-serif; color:var(--text-muted,#94A3B8); border:1px solid var(--border-default,#E2E8F0); border-radius:6px; padding:3px 7px;">⌘K</span>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:10px;">
+            <button type="button" onClick="{{ goNewChat }}" style="display:inline-flex; align-items:center; gap:8px; background:var(--brand-navy,#231f20); color:#fff; border:none; cursor:pointer; font:600 13px 'Inter',sans-serif; padding:10px 18px; border-radius:40px; transition:background .15s;" style-hover="background:var(--brand-navy-dark,#3A3436);">New session</button>
+            <button type="button" style="background:#fff; color:var(--brand-navy,#231f20); border:1px solid var(--border-default,#E2E8F0); cursor:pointer; font:600 13px 'Inter',sans-serif; padding:10px 18px; border-radius:40px; transition:background .15s;" style-hover="background:var(--surface-subtle,#F1F5F9);">New audit</button>
+            <button type="button" style="background:#fff; color:var(--brand-navy,#231f20); border:1px solid var(--border-default,#E2E8F0); cursor:pointer; font:600 13px 'Inter',sans-serif; padding:10px 18px; border-radius:40px; transition:background .15s;" style-hover="background:var(--surface-subtle,#F1F5F9);">New batch</button>
+          </div>
+        </div>
+
+        <section style="margin-top:22px;">
+          <h2 style="font:600 12px 'Inter',sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary,#64748B); margin-bottom:12px;">Your workspace</h2>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px;">
+            <sc-for list="{{ homeStats }}" as="c" hint-placeholder-count="3">
+              <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:14px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:18px 20px; display:flex; flex-direction:column; gap:9px;">
+                <span style="font:600 12px 'Inter',sans-serif; color:var(--text-secondary,#64748B);">{{ c.label }}</span>
+                <div style="font:700 28px/1 'Inter',sans-serif; color:var(--brand-navy,#231f20);">{{ c.value }}</div>
+                <div style="font:600 12px 'Open Sans',sans-serif; color:{{ c.deltaColor }};">{{ c.delta }}</div>
+                <svg viewBox="0 0 100 40" preserveAspectRatio="none" width="100%" height="36" style="display:block; margin-top:2px;">
+                  <polygon points="{{ c.area }}" fill="rgba(9,129,149,.08)"></polygon>
+                  <polyline points="{{ c.line }}" fill="none" stroke="var(--brand-cyan,#098195)" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                </svg>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+
+        <section style="margin-top:14px;">
+          <h2 style="font:600 12px 'Inter',sans-serif; letter-spacing:.08em; text-transform:uppercase; color:var(--text-secondary,#64748B); margin-bottom:12px;">Jump back in</h2>
+          <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:14px;">
+            <sc-for list="{{ recent }}" as="s" hint-placeholder-count="6">
+              <button type="button" onClick="{{ s.onOpen }}" style="text-align:left; background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:14px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:16px; cursor:pointer; display:flex; flex-direction:column; gap:12px; transition:border-color .15s, box-shadow .15s, transform .15s;" style-hover="border-color:var(--brand-cyan,#098195); box-shadow:var(--shadow-medium,0 8px 20px rgba(35,31,32,.15)); transform:translateY(-2px);">
+                <div style="display:flex; align-items:center; gap:11px;">
+                  <div style="width:36px; height:36px; flex:none; border-radius:50%; background:{{ s.avBg }}; color:{{ s.avFg }}; display:flex; align-items:center; justify-content:center; font:600 12px 'Inter',sans-serif;">{{ s.initials }}</div>
+                  <div style="min-width:0;">
+                    <div style="font:600 14px 'Inter',sans-serif; color:var(--brand-navy,#231f20); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ s.firm }}</div>
+                    <div style="font:400 12px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8);">{{ s.url }}</div>
+                  </div>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                  <span style="display:inline-flex; font:600 10px 'Inter',sans-serif; letter-spacing:.04em; text-transform:uppercase; padding:3px 10px; border-radius:99px; background:{{ s.stBg }}; color:{{ s.stFg }};">{{ s.stLabel }}</span>
+                  <span style="font:400 12px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8);">{{ s.stageLabel }}</span>
+                </div>
+              </button>
+            </sc-for>
+          </div>
+        </section>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:28px 40px 56px; max-width:1160px; margin:0 auto; display:flex; flex-direction:column; gap:20px;">
+        <button type="button" onClick="{{ backToSessions }}" style="align-self:flex-start; display:inline-flex; align-items:center; gap:7px; background:none; border:none; cursor:pointer; font:600 13px 'Inter',sans-serif; color:var(--text-secondary,#64748B);" style-hover="color:var(--brand-cyan,#098195);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg>
+          Back to onboarding
+        </button>
+
+        <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:16px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:26px 28px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:24px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:16px; min-width:0;">
+              <div style="width:56px; height:56px; flex:none; border-radius:50%; background:{{ sel.avBg }}; color:{{ sel.avFg }}; display:flex; align-items:center; justify-content:center; font:600 19px 'Inter',sans-serif;">{{ sel.initials }}</div>
+              <div style="min-width:0;">
+                <h1 style="font:700 23px/1.1 'Inter',sans-serif;">{{ sel.firm }}</h1>
+                <div style="display:flex; align-items:center; gap:12px; margin-top:8px; flex-wrap:wrap;">
+                  <a href="#" style="font:400 13.5px 'Open Sans',sans-serif; color:var(--brand-cyan,#098195);">{{ sel.url }}</a>
+                  <span style="display:inline-flex; font:600 10.5px 'Inter',sans-serif; letter-spacing:.04em; text-transform:uppercase; padding:4px 11px; border-radius:99px; background:{{ sel.stBg }}; color:{{ sel.stFg }};">{{ sel.stLabel }}</span>
+                  <span style="font:400 13px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B);">{{ sel.stageLabel }}</span>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:18px;">
+              <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div style="position:relative; width:52px; height:52px;">
+                  <svg width="52" height="52" viewBox="0 0 52 52">
+                    <circle cx="26" cy="26" r="22" fill="none" stroke="var(--surface-subtle,#F1F5F9)" stroke-width="4.5"></circle>
+                    <circle cx="26" cy="26" r="22" fill="none" stroke="{{ sel.ringColor }}" stroke-width="4.5" stroke-linecap="round" pathLength="100" stroke-dasharray="{{ sel.health }} 100" transform="rotate(-90 26 26)"></circle>
+                  </svg>
+                  <span style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:700 15px 'Inter',sans-serif; color:{{ sel.healthFg }};">{{ sel.health }}</span>
+                </div>
+                <span style="font:600 10px 'Inter',sans-serif; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted,#94A3B8);">Health</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:9px;">
+                <button type="button" onClick="{{ goNewChat }}" style="display:inline-flex; align-items:center; justify-content:center; gap:8px; background:var(--brand-cyan,#098195); color:#fff; border:none; cursor:pointer; font:600 13px 'Inter',sans-serif; padding:10px 18px; border-radius:40px; box-shadow:var(--shadow-cyan-base,0 4px 12px rgba(9,129,149,.3)); transition:all .15s;" style-hover="background:var(--brand-cyan-dark,#076B7C); transform:translateY(-1px); box-shadow:var(--shadow-cyan-glow,0 6px 16px rgba(9,129,149,.4));">Open content</button>
+                <div style="display:flex; gap:8px;">
+                  <button type="button" style="flex:1; background:#fff; color:var(--brand-navy,#231f20); border:1px solid var(--border-default,#E2E8F0); cursor:pointer; font:600 12.5px 'Inter',sans-serif; padding:8px 14px; border-radius:40px; transition:background .15s;" style-hover="background:var(--surface-subtle,#F1F5F9);">Send reminder</button>
+                  <button type="button" style="width:38px; display:flex; align-items:center; justify-content:center; background:#fff; color:var(--text-secondary,#64748B); border:1px solid var(--border-default,#E2E8F0); cursor:pointer; border-radius:50%; transition:background .15s;" style-hover="background:var(--surface-subtle,#F1F5F9);">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"></circle><circle cx="12" cy="12" r="1.6"></circle><circle cx="19" cy="12" r="1.6"></circle></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:24px; padding-top:22px; border-top:1px solid var(--border-default,#E2E8F0);">
+            <sc-for list="{{ detailStats }}" as="d" hint-placeholder-count="4">
+              <div>
+                <div style="font:600 10.5px 'Inter',sans-serif; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted,#94A3B8);">{{ d.k }}</div>
+                <div style="font:600 16px 'Inter',sans-serif; color:var(--brand-navy,#231f20); margin-top:4px;">{{ d.v }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:20px; align-items:start;">
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:16px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:22px 24px;">
+              <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                <h2 style="font:600 15px 'Inter',sans-serif;">Master Business Profile</h2>
+                <a href="#" style="font:600 12.5px 'Inter',sans-serif;">View full MBP →</a>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px 24px; margin-top:18px;">
+                <sc-for list="{{ mbp }}" as="row" hint-placeholder-count="6">
+                  <div>
+                    <div style="font:600 10.5px 'Inter',sans-serif; letter-spacing:.05em; text-transform:uppercase; color:var(--text-muted,#94A3B8);">{{ row.0 }}</div>
+                    <div style="font:400 14px 'Open Sans',sans-serif; color:var(--text-primary,#1E293B); margin-top:4px;">{{ row.1 }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:16px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:22px 24px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+                <h2 style="font:600 15px 'Inter',sans-serif;">Audit summary</h2>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span style="font:400 12.5px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B);">Overall score</span>
+                  <div style="position:relative; width:44px; height:44px;">
+                    <svg width="44" height="44" viewBox="0 0 44 44">
+                      <circle cx="22" cy="22" r="18" fill="none" stroke="var(--surface-subtle,#F1F5F9)" stroke-width="4"></circle>
+                      <circle cx="22" cy="22" r="18" fill="none" stroke="var(--warning-strong,#92400E)" stroke-width="4" stroke-linecap="round" pathLength="100" stroke-dasharray="{{ auditScore }} 100" transform="rotate(-90 22 22)"></circle>
+                    </svg>
+                    <span style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font:700 13px 'Inter',sans-serif; color:var(--warning-strong,#92400E);">{{ auditScore }}</span>
+                  </div>
+                </div>
+              </div>
+              <div style="margin-top:16px; display:flex; flex-direction:column;">
+                <sc-for list="{{ opps }}" as="o" hint-placeholder-count="6">
+                  <div style="display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid var(--border-default,#E2E8F0);">
+                    <span style="width:8px; height:8px; flex:none; border-radius:50%; background:{{ o.c }};"></span>
+                    <span style="flex:1; font:400 14px 'Open Sans',sans-serif; color:var(--text-primary,#1E293B);">{{ o.label }}</span>
+                    <span style="font:600 10.5px 'Inter',sans-serif; letter-spacing:.04em; text-transform:uppercase; color:{{ o.c }};">{{ o.sev }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:20px;">
+            <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:16px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:22px 24px;">
+              <h2 style="font:600 15px 'Inter',sans-serif; margin-bottom:16px;">Activity</h2>
+              <div style="display:flex; flex-direction:column;">
+                <sc-for list="{{ timeline }}" as="t" hint-placeholder-count="5">
+                  <div style="display:flex; gap:13px;">
+                    <div style="display:flex; flex-direction:column; align-items:center;">
+                      <span style="width:9px; height:9px; border-radius:50%; background:var(--brand-cyan,#098195); margin-top:5px;"></span>
+                      <span style="flex:1; width:1.5px; background:var(--border-default,#E2E8F0);"></span>
+                    </div>
+                    <div style="padding-bottom:18px;">
+                      <div style="font:600 11px 'Inter',sans-serif; color:var(--text-muted,#94A3B8);">{{ t.t }}</div>
+                      <div style="font:400 13.5px/1.5 'Open Sans',sans-serif; color:var(--text-primary,#1E293B); margin-top:2px;">{{ t.d }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:16px; box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); padding:22px 24px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+                <h2 style="font:600 15px 'Inter',sans-serif;">Files</h2>
+                <button type="button" style="font:600 12px 'Inter',sans-serif; color:var(--brand-navy,#231f20); background:#fff; border:1px solid var(--border-default,#E2E8F0); border-radius:40px; padding:6px 13px; cursor:pointer;" style-hover="background:var(--surface-subtle,#F1F5F9);">Upload</button>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <sc-for list="{{ files }}" as="f" hint-placeholder-count="3">
+                  <div style="display:flex; align-items:center; gap:12px; padding:9px 8px; border-radius:10px;" style-hover="background:var(--surface-subtle,#F1F5F9);">
+                    <span style="width:34px; height:34px; flex:none; border-radius:9px; background:var(--tint-cyan,rgba(9,129,149,.12)); color:var(--brand-cyan-dark,#076B7C); display:flex; align-items:center; justify-content:center;">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"></path></svg>
+                    </span>
+                    <div style="flex:1; min-width:0;">
+                      <div style="font:600 13.5px 'Inter',sans-serif; color:var(--brand-navy,#231f20); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ f.name }}</div>
+                      <div style="font:400 11.5px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8);">{{ f.size }}</div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:26px 40px; display:flex; justify-content:center;">
+        <div style="width:100%; max-width:760px; height:calc(100vh - 64px - 52px); background:var(--surface-page,#F8FAFC); border:1px solid var(--border-default,#E2E8F0); border-radius:18px; box-shadow:var(--shadow-medium,0 8px 20px rgba(35,31,32,.15)); overflow:hidden; display:flex; flex-direction:column;">
+          <div style="background:#fff; border-bottom:1px solid var(--border-default,#E2E8F0); flex:none;">
+            <div style="height:60px; display:flex; align-items:center; justify-content:space-between; padding:0 22px;">
+              <img src="assets/revaltus-logo.png" alt="Revaltus" style="height:34px; width:auto;">
+              <span style="font:400 12.5px 'Open Sans',sans-serif; color:var(--text-secondary,#64748B);">Step 4 of 7 · A few questions</span>
+            </div>
+            <div style="height:3px; background:var(--border-default,#E2E8F0);"><div style="height:100%; width:57%; background:var(--brand-cyan,#098195); transition:width .7s;"></div></div>
+          </div>
+          <div class="rv-sc" style="flex:1; overflow-y:auto; padding:24px 22px;">
+            <div style="max-width:560px; margin:0 auto; display:flex; flex-direction:column; gap:14px;">
+              <sc-for list="{{ chat }}" as="m" hint-placeholder-count="6">
+                <div style="display:flex; justify-content:{{ m.justify }};">
+                  <div style="max-width:80%; padding:13px 17px; font:400 15px/1.65 'Open Sans',sans-serif; border-radius:{{ m.radius }}; background:{{ m.bg }}; color:{{ m.fg }}; border:{{ m.border }}; box-shadow:{{ m.shadow }};">{{ m.text }}</div>
+                </div>
+              </sc-for>
+              <div style="display:flex; justify-content:flex-start;">
+                <div style="display:flex; align-items:center; gap:9px; background:#fff; border:1px solid var(--border-default,#E2E8F0); box-shadow:var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12)); border-radius:16px; padding:13px 17px;">
+                  <span style="width:6px; height:6px; border-radius:50%; background:var(--brand-cyan,#098195); animation:dot-bounce 1.2s ease-in-out infinite;"></span>
+                  <span style="width:6px; height:6px; border-radius:50%; background:var(--brand-cyan,#098195); animation:dot-bounce 1.2s ease-in-out infinite; animation-delay:.16s;"></span>
+                  <span style="width:6px; height:6px; border-radius:50%; background:var(--brand-cyan,#098195); animation:dot-bounce 1.2s ease-in-out infinite; animation-delay:.32s;"></span>
+                  <span style="font:400 12.5px 'Open Sans',sans-serif; color:var(--text-muted,#94A3B8); margin-left:3px;">Thinking…</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#fff; border-top:1px solid var(--border-default,#E2E8F0); flex:none; padding:16px 22px;">
+            <div style="max-width:560px; margin:0 auto; display:flex; gap:12px;">
+              <input placeholder="Type your reply…" style="flex:1; border:1px solid var(--border-default,#E2E8F0); border-radius:40px; padding:12px 18px; font:400 14px 'Open Sans',sans-serif; background:var(--surface-page,#F8FAFC); color:var(--text-primary,#1E293B); outline:none; transition:border-color .15s, box-shadow .15s;" style-focus="border-color:var(--brand-cyan,#098195); background:#fff; box-shadow:0 0 0 3px rgba(9,129,149,.15);">
+              <button type="button" style="background:var(--brand-cyan,#098195); color:#fff; border:none; cursor:pointer; font:600 14px 'Inter',sans-serif; padding:12px 24px; border-radius:40px; box-shadow:var(--shadow-cyan-base,0 4px 12px rgba(9,129,149,.3)); transition:all .15s;" style-hover="background:var(--brand-cyan-dark,#076B7C); transform:translateY(-1px); box-shadow:var(--shadow-cyan-glow,0 6px 16px rgba(9,129,149,.4));">Send</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ isPlaceholder }}" hint-placeholder-val="{{ true }}">
+      <div style="min-height:70vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:16px; padding:40px;">
+        <div style="width:64px; height:64px; border-radius:18px; background:var(--tint-cyan,rgba(9,129,149,.12)); color:var(--brand-cyan-dark,#076B7C); display:flex; align-items:center; justify-content:center;">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l9 4.5v11L12 22l-9-4.5v-11zM12 22V12M3 6.5l9 5 9-5"></path></svg>
+        </div>
+        <div>
+          <h1 style="font:700 22px 'Inter',sans-serif;">{{ navLabel }}</h1>
+          <p style="margin:8px 0 0; font:400 14px/1.6 'Open Sans',sans-serif; color:var(--text-secondary,#64748B); max-width:420px;">This pass focuses on Home, Onboarding, the client detail view, and the onboarding preview. Wire the rest to the live product routes.</p>
+        </div>
+        <button type="button" onClick="{{ backToSessions }}" style="background:var(--brand-navy,#231f20); color:#fff; border:none; cursor:pointer; font:600 13px 'Inter',sans-serif; padding:10px 20px; border-radius:40px; transition:background .15s;" style-hover="background:var(--brand-navy-dark,#3A3436);">Back to onboarding</button>
+      </div>
+      </sc-if>
+
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:880},&quot;showStats&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Onboarding dashboard&quot;},&quot;showPipeline&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Onboarding dashboard&quot;},&quot;sortStale&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Onboarding dashboard&quot;}}">
+class Component extends DCLogic {
+  state = { screen: 'sessions', query: '', status: 'all', selectedId: 'korbey' };
+
+  RAW = [
+    { id:'korbey', firm:'Korbey Lague CPA', url:'korbeylague.com', status:'approved', phase:7, lastActive:'2h ago', inactive:0, health:96, started:'14d ago', reminders:0, files:4 },
+    { id:'barwick', firm:'Barwick & Associates', url:'barwickcpa.com', status:'in_progress', phase:4, lastActive:'5h ago', inactive:0, health:78, started:'12d ago', reminders:1, files:3 },
+    { id:'bbl', firm:'Bloom Bortz & Lentine', url:'bblcpa.com', status:'completed', phase:6, lastActive:'1d ago', inactive:1, health:88, started:'20d ago', reminders:1, files:6 },
+    { id:'gidfar', firm:'Ali Gidfar CPA', url:'aligidfarcpa.com', status:'in_progress', phase:3, lastActive:'4d ago', inactive:4, health:54, started:'11d ago', reminders:2, files:1 },
+    { id:'kay', firm:'Kay Twelve Advisory', url:'kaytwelve.com', status:'pending', phase:1, lastActive:'6d ago', inactive:6, health:40, started:'8d ago', reminders:2, files:0 },
+    { id:'right', firm:'Rightworks Tax Group', url:'rightworkstax.com', status:'in_progress', phase:5, lastActive:'3h ago', inactive:0, health:82, started:'9d ago', reminders:0, files:5 },
+    { id:'meridian', firm:'Meridian Ledger CPAs', url:'meridianledger.com', status:'completed', phase:6, lastActive:'2d ago', inactive:2, health:85, started:'22d ago', reminders:1, files:4 },
+    { id:'northoak', firm:'Northoak Accounting', url:'northoakcpa.com', status:'in_progress', phase:2, lastActive:'8h ago', inactive:0, health:66, started:'6d ago', reminders:0, files:2 },
+    { id:'sable', firm:'Sable & Finch CPA', url:'sablefinch.com', status:'pending', phase:0, lastActive:'9d ago', inactive:9, health:32, started:'10d ago', reminders:3, files:0 },
+    { id:'cedar', firm:'Cedarview Tax Partners', url:'cedarviewtax.com', status:'approved', phase:7, lastActive:'1d ago', inactive:1, health:91, started:'25d ago', reminders:0, files:5 },
+    { id:'harbor', firm:'Harbor Point CPA', url:'harborpointcpa.com', status:'in_progress', phase:4, lastActive:'6h ago', inactive:0, health:74, started:'7d ago', reminders:0, files:3 },
+    { id:'wexford', firm:'Wexford & Kline', url:'wexfordkline.com', status:'pending', phase:1, lastActive:'5d ago', inactive:5, health:45, started:'9d ago', reminders:2, files:1 },
+  ];
+
+  STAGE = ['Not started','Contact','Processing','Review','Questions','Files','Generation','Approved'];
+  AV = [
+    { bg:'rgba(9,129,149,.13)', fg:'#076B7C' },
+    { bg:'rgba(35,31,32,.08)', fg:'#231f20' },
+    { bg:'rgba(107,41,86,.12)', fg:'#6B2956' },
+  ];
+
+  statusMeta(k) {
+    const m = {
+      pending:     { label:'Pending',     bg:'var(--surface-subtle,#F1F5F9)', fg:'var(--text-secondary,#64748B)' },
+      in_progress: { label:'In progress', bg:'rgba(9,129,149,.12)',           fg:'#076B7C' },
+      completed:   { label:'Completed',   bg:'rgba(35,31,32,.08)',            fg:'#231f20' },
+      approved:    { label:'Approved',    bg:'#231f20',                       fg:'#ffffff' },
+    };
+    return m[k] || m.pending;
+  }
+  healthMeta(h) {
+    if (h >= 80) return { fg:'#076B7C', bg:'rgba(9,129,149,.12)' };
+    if (h >= 60) return { fg:'#92400E', bg:'rgba(245,158,11,.16)' };
+    return { fg:'#6B2956', bg:'rgba(107,41,86,.12)' };
+  }
+  initials(f) {
+    const w = f.replace(/&/g, ' ').split(/\s+/).filter(Boolean);
+    return ((w[0] && w[0][0] || '') + (w[1] && w[1][0] || '')).toUpperCase();
+  }
+  seg(phase) {
+    return Array.from({ length: 7 }, (_, i) => ({ color: i < phase ? 'var(--brand-cyan,#098195)' : '#E2E8F0' }));
+  }
+  spark(arr) {
+    const mn = Math.min.apply(null, arr), mx = Math.max.apply(null, arr), r = (mx - mn) || 1, n = arr.length;
+    const pts = arr.map((v, i) => {
+      const x = (i / (n - 1)) * 100;
+      const y = 38 - ((v - mn) / r) * 32 - 3;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    });
+    return { line: pts.join(' '), area: pts.join(' ') + ' 100,40 0,40' };
+  }
+  decorate(s, i) {
+    const sm = this.statusMeta(s.status), hm = this.healthMeta(s.health), av = this.AV[i % 3];
+    return Object.assign({}, s, {
+      initials: this.initials(s.firm), avBg: av.bg, avFg: av.fg,
+      stLabel: sm.label, stBg: sm.bg, stFg: sm.fg,
+      stageLabel: 'Phase ' + s.phase + ' · ' + this.STAGE[s.phase],
+      seg: this.seg(s.phase),
+      ringColor: hm.fg, healthFg: hm.fg, healthBg: hm.bg,
+      inactiveText: s.inactive + 'd',
+      inactiveColor: s.inactive >= 3 ? '#92400E' : 'var(--text-muted,#94A3B8)',
+      onOpen: () => this.setState({ selectedId: s.id, screen: 'detail' }),
+    });
+  }
+  go(k) { return () => this.setState({ screen: k }); }
+
+  renderVals() {
+    const p = this.props || {};
+    const showStats = p.showStats ?? true;
+    const showPipeline = p.showPipeline ?? true;
+    const sortStale = p.sortStale ?? false;
+    const { screen, query, status, selectedId } = this.state;
+
+    const nav = [
+      { label:'Workspace', items:[
+        { key:'home', label:'Home', iconPath:'M3 11l9-8 9 8M5 9v11h5v-6h4v6h5V9' },
+        { key:'sessions', label:'Onboarding', iconPath:'M3 12h18M3 6h18M3 18h18', badge:'18' },
+        { key:'chat', label:'Onboarding preview', iconPath:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+      ]},
+      { label:'Operations', items:[
+        { key:'content', label:'Content', iconPath:'M8 6h10M8 12h10M8 18h7M4 6h.01M4 12h.01M4 18h.01' },
+        { key:'batch', label:'Batch content', iconPath:'M4 4h16v4H4zM4 12h10M4 16h10M16 12l4 4-4 4' },
+        { key:'audits', label:'Audits', iconPath:'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.35-4.35', badge:'3' },
+      ]},
+      { label:'Admin', items:[
+        { key:'tokens', label:'Token usage', iconPath:'M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V11' },
+        { key:'users', label:'Users', iconPath:'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11' },
+      ]},
+    ];
+    const activeKey = screen === 'detail' ? 'sessions' : screen;
+    nav.forEach(g => g.items.forEach(it => {
+      it.active = it.key === activeKey;
+      it.color = it.active ? '#ffffff' : 'rgba(255,255,255,.66)';
+      it.bg = it.active ? 'rgba(9,129,149,.18)' : 'transparent';
+      it.barColor = it.active ? '#26b4c9' : 'transparent';
+      it.onClick = this.go(it.key);
+    }));
+
+    const counts = { all: this.RAW.length, pending:0, in_progress:0, completed:0, approved:0 };
+    this.RAW.forEach(s => { if (counts[s.status] !== undefined) counts[s.status]++; });
+    const filters = [['all','Active'],['pending','Pending'],['in_progress','In progress'],['completed','Completed'],['approved','Approved']]
+      .map(([k, l]) => ({
+        key: k, label: l, count: counts[k], onClick: () => this.setState({ status: k }),
+        bg: status === k ? 'var(--brand-navy,#231f20)' : 'transparent',
+        fg: status === k ? '#ffffff' : 'var(--text-secondary,#64748B)',
+        countColor: status === k ? 'rgba(255,255,255,.6)' : 'var(--text-muted,#94A3B8)',
+      }));
+
+    let list = this.RAW.filter(s => {
+      if (status !== 'all' && s.status !== status) return false;
+      if (query) { const q = query.toLowerCase(); if (!(s.firm.toLowerCase().includes(q) || s.url.toLowerCase().includes(q))) return false; }
+      return true;
+    });
+    if (sortStale) list = list.slice().sort((a, b) => b.inactive - a.inactive);
+    const sessionsView = list.map((s, i) => this.decorate(s, i));
+    const noun = status === 'all' ? 'active' : this.statusMeta(status).label.toLowerCase();
+    const subtitle = sessionsView.length + ' ' + noun + ' client' + (sessionsView.length === 1 ? '' : 's') + (query ? (' matching “' + query + '”') : '');
+
+    const mk = (o) => Object.assign({}, o, this.spark(o.spark), { deltaColor: o.tone === 'good' ? '#076B7C' : 'var(--text-muted,#94A3B8)' });
+    const stats = [
+      mk({ label:'Active sessions', value:'18', delta:'▲ +3 this week', tone:'good', spark:[6,7,7,9,8,11,13,18] }),
+      mk({ label:'In onboarding', value:'11', delta:'avg phase 3.8', tone:'muted', spark:[9,10,8,11,10,12,11,11] }),
+      mk({ label:'Ready for content', value:'4', delta:'▲ +2 this week', tone:'good', spark:[1,1,2,2,3,2,3,4] }),
+      mk({ label:'AI spend · 30d', value:'$184.20', delta:'+12% vs prev', tone:'muted', spark:[120,130,128,150,145,165,172,184] }),
+    ];
+    const homeStats = [
+      mk({ label:'Active audits', value:'3', delta:'2 finishing today', tone:'muted', spark:[1,2,2,3,2,4,3,3] }),
+      mk({ label:'In onboarding', value:'11', delta:'▲ +2 this week', tone:'good', spark:[7,8,8,9,10,10,11,11] }),
+      mk({ label:'Live client sites', value:'24', delta:'▲ +1 this week', tone:'good', spark:[19,20,21,21,22,23,23,24] }),
+    ];
+
+    const fmax = 18;
+    const funnel = [['Contact',18],['Review',14],['Questions',11],['Files',8],['Generation',6],['Approved',4]]
+      .map(([label, count], i, a) => ({ label, count, pct: Math.round(count / fmax * 100), color: i === a.length - 1 ? 'var(--brand-navy,#231f20)' : 'var(--brand-cyan,#098195)' }));
+
+    const recent = this.RAW.slice(0, 6).map((s, i) => this.decorate(s, i));
+
+    const rawSel = this.RAW.find(s => s.id === selectedId) || this.RAW[0];
+    const sel = this.decorate(rawSel, this.RAW.indexOf(rawSel));
+    const mbp = [
+      ['Firm name', sel.firm], ['Website', sel.url], ['Primary service', 'Tax planning & advisory'],
+      ['Locations', 'Austin, TX · Round Rock, TX'], ['Team size', '12 people'], ['Founded', '2009'],
+    ];
+    const opps = [
+      { label:'Thin services pages', sev:'High', c:'#6B2956' },
+      { label:'No clear above-the-fold CTA', sev:'High', c:'#6B2956' },
+      { label:'Tax-planning content not indexed', sev:'Med', c:'#92400E' },
+      { label:'Missing local schema markup', sev:'Med', c:'#92400E' },
+      { label:'Slow largest-contentful-paint', sev:'Med', c:'#92400E' },
+      { label:'No testimonials section', sev:'Low', c:'#076B7C' },
+    ];
+    const timeline = [
+      ['5h ago','Client answered phase 4 questions'],
+      ['1d ago','Reminder email sent'],
+      ['3d ago','Master Business Profile drafted'],
+      ['5d ago','Site audit completed · score 72'],
+      ['12d ago','Session created'],
+    ].map(([t, d]) => ({ t, d }));
+    const files = [
+      { name:'brand-guidelines.pdf', size:'2.4 MB' },
+      { name:'team-photos.zip', size:'48 MB' },
+      { name:'logo-vector.svg', size:'18 KB' },
+    ];
+    const detailStats = [['Started', sel.started],['Last active', sel.lastActive],['Reminders', String(sel.reminders)],['Files', String(sel.files)]].map(([k, v]) => ({ k, v }));
+
+    const AGENT = { justify:'flex-start', bg:'#ffffff', fg:'var(--text-primary,#1E293B)', radius:'4px 16px 16px 16px', border:'1px solid var(--border-default,#E2E8F0)', shadow:'var(--shadow-subtle,0 5px 22px -6px rgba(35,31,32,.12))' };
+    const USER = { justify:'flex-end', bg:'var(--brand-navy,#231f20)', fg:'#ffffff', radius:'16px 16px 4px 16px', border:'none', shadow:'none' };
+    const chat = [
+      ['agent','Hi — I’m here to help set up your new site for Korbey Lague CPA. This takes about 10 minutes. Ready to start?'],
+      ['user','Ready.'],
+      ['agent','Great. What’s the best email to reach your team?'],
+      ['user','hello@korbeylague.com'],
+      ['agent','Perfect. I pulled up your current site and found 6 opportunities to help you rank higher and convert more visitors. Want a quick summary?'],
+      ['user','Yes, please.'],
+      ['agent','The short version: your services pages are thin, there’s no clear call-to-action above the fold, and your tax-planning content isn’t indexed. We’ll fix all of it. A few quick questions next…'],
+    ].map(([role, text]) => Object.assign({ text }, role === 'user' ? USER : AGENT));
+
+    const labelMap = { home:'Home', sessions:'Onboarding', detail:'Client', chat:'Onboarding preview', content:'Content', batch:'Batch content', audits:'Audits', tokens:'Token usage', users:'Users' };
+    const known = ['home','sessions','detail','chat'];
+
+    return {
+      nav, filters, sessionsView, subtitle, stats, funnel, homeStats, recent,
+      sel, mbp, opps, timeline, files, auditScore: 72, detailStats, chat,
+      navLabel: labelMap[screen] || 'Console',
+      query, setQuery: (e) => this.setState({ query: e.target.value }),
+      showStats, showPipeline, sortStale,
+      isHome: screen === 'home', isSessions: screen === 'sessions', isDetail: screen === 'detail',
+      isChat: screen === 'chat', isPlaceholder: !known.includes(screen),
+      goNewChat: this.go('chat'), backToSessions: this.go('sessions'),
+    };
+  }
+}
+</script>
+</body>
+</html>

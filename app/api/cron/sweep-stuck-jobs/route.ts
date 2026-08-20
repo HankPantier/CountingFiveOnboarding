@@ -52,7 +52,10 @@ export async function GET(req: Request) {
           .from('generated_pages')
           .update({ generation_status: 'error', generation_error: 'Generation timed out (swept by cron after >15 min running)' })
           .eq('generation_status', 'running')
-          .lt('generation_started_at', cutoff)
+          // Primary key is generation_started_at (stamped on claim). Also catch
+          // rows with a NULL start (never stamped) that are old by created_at —
+          // `.lt` alone never matches NULL, so those would otherwise orphan.
+          .or(`generation_started_at.lt.${cutoff},and(generation_started_at.is.null,created_at.lt.${cutoff})`)
           .select('id'),
         supabase
           .from('resource_ideas')

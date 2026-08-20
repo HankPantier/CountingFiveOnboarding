@@ -489,6 +489,7 @@ export type Database = {
           created_at: string
           eeat_signals: Json | null
           faq_block: Json | null
+          generation_attempts: number
           generation_error: string | null
           generation_started_at: string | null
           generation_status: string
@@ -523,6 +524,7 @@ export type Database = {
           created_at?: string
           eeat_signals?: Json | null
           faq_block?: Json | null
+          generation_attempts?: number
           generation_error?: string | null
           generation_started_at?: string | null
           generation_status?: string
@@ -557,6 +559,7 @@ export type Database = {
           created_at?: string
           eeat_signals?: Json | null
           faq_block?: Json | null
+          generation_attempts?: number
           generation_error?: string | null
           generation_started_at?: string | null
           generation_status?: string

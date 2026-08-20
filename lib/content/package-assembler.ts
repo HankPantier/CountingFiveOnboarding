@@ -146,6 +146,18 @@ export async function assembleContentPackage(
     return { ok: false, status: 404, error: 'No generated pages found' }
   }
 
+  // Nothing-to-ship gate: if not a single page generated successfully (all
+  // errored), the package would contain only ERRORS.md and metadata — an empty
+  // deliverable that reads as "done". Block it so the operator retries instead.
+  const completedPages = pages.filter(p => p.generation_status === 'complete' && p.content_markdown)
+  if (completedPages.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'No pages generated successfully — nothing to package. Retry generation before downloading.',
+    }
+  }
+
   // Approval gate: every successfully-generated page must be admin-approved
   // before we ship the package. Errored pages are exempt — they end up in
   // ERRORS.md regardless.

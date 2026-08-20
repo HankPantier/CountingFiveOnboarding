@@ -70,12 +70,18 @@ export function estimateCostUsd(
   cacheReadTokens = 0,
   cacheCreationTokens = 0
 ): number {
-  const rate = PRICING[model] ?? { input: 0, output: 0 }
+  const rate = PRICING[model]
+  if (!rate) {
+    // A missing entry prices this call at $0 and silently under-reports spend on
+    // the Token Usage dashboard. Surface it so a newly-added model id can't hide.
+    console.error(`[token-pricing] unknown model "${model}" — recording $0; add it to PRICING`)
+  }
+  const { input, output } = rate ?? { input: 0, output: 0 }
   const uncachedInput = Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens)
   return (
-    (uncachedInput / 1_000_000) * rate.input +
-    (cacheCreationTokens / 1_000_000) * rate.input * CACHE_WRITE_MULTIPLIER +
-    (cacheReadTokens / 1_000_000) * rate.input * CACHE_READ_MULTIPLIER +
-    (outputTokens / 1_000_000) * rate.output
+    (uncachedInput / 1_000_000) * input +
+    (cacheCreationTokens / 1_000_000) * input * CACHE_WRITE_MULTIPLIER +
+    (cacheReadTokens / 1_000_000) * input * CACHE_READ_MULTIPLIER +
+    (outputTokens / 1_000_000) * output
   )
 }

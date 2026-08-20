@@ -23,16 +23,40 @@ function isCheckable(path: string): boolean {
   return true
 }
 
-export function validateInternalLinks(
-  pages: PageForLinkCheck[],
-  sitemapUrls: Iterable<string>
-): string[] {
+// Set of known site paths for the confirmed sitemap (home is always real).
+function buildKnownPaths(sitemapUrls: Iterable<string>): Set<string> {
   const known = new Set<string>()
   for (const url of sitemapUrls) {
     const p = toSitePath(url)
     if (p) known.add(p)
   }
-  known.add('/') // home is always a real page
+  known.add('/')
+  return known
+}
+
+// Keep only internal_links that resolve to a real, checkable sitemap path —
+// dropping hallucinated/typo paths at generation time so they never ship in the
+// deliverable. Non-sitemap-constrained targets (/resources/* blog posts, asset
+// files) are kept; malformed or non-root-relative entries are dropped.
+export function filterKnownInternalLinks<T extends { url?: unknown }>(
+  links: T[],
+  sitemapUrls: Iterable<string>
+): T[] {
+  const known = buildKnownPaths(sitemapUrls)
+  return links.filter((link) => {
+    if (typeof link?.url !== 'string' || !link.url.startsWith('/')) return false
+    const target = toSitePath(link.url)
+    if (!target) return false
+    if (!isCheckable(target)) return true
+    return known.has(target)
+  })
+}
+
+export function validateInternalLinks(
+  pages: PageForLinkCheck[],
+  sitemapUrls: Iterable<string>
+): string[] {
+  const known = buildKnownPaths(sitemapUrls)
 
   const warnings: string[] = []
   const seen = new Set<string>()

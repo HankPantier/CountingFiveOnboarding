@@ -16,6 +16,7 @@ function makePage(overrides: Partial<GeneratedPage>): GeneratedPage {
     created_at: '2026-01-01T00:00:00Z',
     eeat_signals: null,
     faq_block: null,
+    generation_attempts: 0,
     generation_error: null,
     generation_started_at: null,
     generation_status: 'complete',
