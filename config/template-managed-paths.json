@@ -1,0 +1,46 @@
+{
+  "_note": "Allowlist of template-OWNED paths that a fleet rollout may overwrite in a client repo. A path is synced iff it matches an `include` prefix/exact AND no `exclude` prefix/exact (exclude wins). Client-owned content (content/**, public/**, site.config.ts, generated theme.css) is never touched. `flagIfChanged` paths are NOT synced but the `plan` step warns when the template's copy differs from the client's (e.g. a new dependency in package.json that a rollout would need before the build passes). Entries ending in '/' are prefix matches; others are exact.",
+  "include": [
+    "src/components/",
+    "src/lib/",
+    "src/app/",
+    "src/proxy.ts",
+    "src/proxy.test.ts",
+    "src/instrumentation-client.ts",
+    "src/instrumentation.ts",
+    "scripts/",
+    "e2e/",
+    "next.config.ts",
+    "postcss.config.mjs",
+    "eslint.config.mjs",
+    "components.json",
+    "tsconfig.json",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "lighthouserc.json"
+  ],
+  "exclude": [
+    "src/styles/theme.css",
+    "content/",
+    "public/",
+    "site.config.ts",
+    "package.json",
+    "package-lock.json",
+    "vercel.json",
+    "next-env.d.ts",
+    "tsconfig.tsbuildinfo",
+    ".github/",
+    "docs/",
+    "samples/",
+    "test-results/",
+    "node_modules/",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "flagIfChanged": [
+    "package.json",
+    "package-lock.json"
+  ]
+}
