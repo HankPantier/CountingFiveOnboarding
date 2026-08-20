@@ -60,6 +60,11 @@ export default function DeliverablesPhase({
   const [deployStep, setDeployStep] = useState<DeployStep>('idle')
   const [deployErr, setDeployErr] = useState<string | null>(null)
   const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
+  // Referenced images that didn't ship (assembler coverage guard) and the
+  // Re-pull-all-images recovery action state.
+  const [imageMissing, setImageMissing] = useState<string[]>([])
+  const [repullState, setRepullState] = useState<'idle' | 'working' | 'done' | 'error'>('idle')
+  const [repullMsg, setRepullMsg] = useState<string | null>(null)
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -145,6 +150,7 @@ export default function DeliverablesPhase({
       setPackageInfo({ pageCount: data.pageCount, sizeKB: data.sizeKB })
       setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
       setRedirectIssues(Array.isArray(data.redirectIssues) ? data.redirectIssues : [])
+      setImageMissing(Array.isArray(data.imageCoverage?.missing) ? data.imageCoverage.missing : [])
       setPackaged(true)
       if (data.pushScheduled) void trackDeploy(baselineSha)
     } catch (err) {
@@ -187,6 +193,7 @@ export default function DeliverablesPhase({
       setPackageInfo({ pageCount: pkgData.pageCount, sizeKB: pkgData.sizeKB })
       setLinkWarnings(Array.isArray(pkgData.linkWarnings) ? pkgData.linkWarnings : [])
       setRedirectIssues(Array.isArray(pkgData.redirectIssues) ? pkgData.redirectIssues : [])
+      setImageMissing(Array.isArray(pkgData.imageCoverage?.missing) ? pkgData.imageCoverage.missing : [])
       setPackaged(true)
       if (!pkgData.pushScheduled) {
         throw new Error('No repo push was scheduled — confirm a GitHub repo is linked above.')
@@ -213,6 +220,34 @@ export default function DeliverablesPhase({
       setDeployStep('live')
     } catch (err) {
       setDeployErr(err instanceof Error ? err.message : 'Deploy failed')
+    }
+  }
+
+  // Re-pull all stock/hero images for this job and commit any missing ones to
+  // the draft branch. Recovery for a site whose images failed to resolve at
+  // assembly (missing PEXELS_API_KEY, Pexels outage) so its live pages render
+  // "Image not found". Pushes to draft only — Publish afterwards to go live.
+  const repullImages = async () => {
+    setRepullState('working')
+    setRepullMsg(null)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/images/repull`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? 'Image re-pull failed')
+      const pushed: number = data.pushed ?? 0
+      const stillMissing: string[] = Array.isArray(data.stillMissing) ? data.stillMissing : []
+      setImageMissing(stillMissing)
+      setRepullState('done')
+      setRepullMsg(
+        pushed > 0
+          ? `Pushed ${pushed} image(s) to the draft branch${stillMissing.length ? ` — ${stillMissing.length} still unresolved` : ''}. Publish to push them live.`
+          : stillMissing.length
+            ? `No images could be resolved — ${stillMissing.length} still missing. Confirm PEXELS_API_KEY is set in production.`
+            : 'All images already present — nothing to re-pull.'
+      )
+    } catch (err) {
+      setRepullState('error')
+      setRepullMsg(err instanceof Error ? err.message : 'Image re-pull failed')
     }
   }
 
@@ -352,6 +387,24 @@ export default function DeliverablesPhase({
                   : deployButtonLabel}
             </button>
           )}
+
+          <div className="border-t border-brand-cyan/20 pt-3 space-y-1.5">
+            <p className="text-xs font-body text-text-muted">
+              Images missing on the live site (showing “Image not found”)? Re-pull every stock &amp; hero photo and commit them to the <span className="font-mono">draft</span> branch, then Publish.
+            </p>
+            <button
+              onClick={repullImages}
+              disabled={repullState === 'working' || deploying}
+              className="border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {repullState === 'working' ? 'Re-pulling images…' : 'Re-pull all images'}
+            </button>
+            {repullMsg && (
+              <p className={`text-xs font-body ${repullState === 'error' ? 'text-error' : 'text-text-secondary'}`}>
+                {repullMsg}
+              </p>
+            )}
+          </div>
         </div>
       ) : (
         <p className="text-xs font-body text-text-muted">
@@ -432,6 +485,21 @@ export default function DeliverablesPhase({
                   <li key={`${i.oldUrl}-${i.reason}`}>[{i.severity}] {i.oldUrl}: {i.reason}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {imageMissing.length > 0 && (
+            <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
+              <div className="font-heading font-semibold">
+                {imageMissing.length} image(s) didn&rsquo;t resolve — these pages will show “Image not found”:
+              </div>
+              <ul className="text-xs font-mono space-y-0.5">
+                {imageMissing.slice(0, 10).map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+                {imageMissing.length > 10 && <li>…and {imageMissing.length - 10} more</li>}
+              </ul>
+              <div className="text-xs">Use “Re-pull all images” above, then Publish. If it stays empty, confirm PEXELS_API_KEY is set in production.</div>
             </div>
           )}
 

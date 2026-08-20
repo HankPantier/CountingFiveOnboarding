@@ -46,8 +46,8 @@ import { siteHost } from '@/lib/content/deliverable-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
-import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto, type ImageRef } from '@/lib/content/stock-photo-resolver'
-import { extractInlineImageRefs } from '@/lib/content/image-ref-extractor'
+import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto } from '@/lib/content/stock-photo-resolver'
+import { collectPageImageRefs, computeImageCoverage } from '@/lib/content/image-coverage'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -97,6 +97,10 @@ export type PackageResult =
       sizeKB: number
       redirectIssues: RedirectIssue[]
       linkWarnings: string[]
+      // Referenced hero/inline images vs. what actually shipped under
+      // public/content-assets/. `missing` non-empty means the site will render
+      // "Image not found" on those refs — the operator should Re-pull images.
+      imageCoverage: { expected: number; committed: number; missing: string[] }
       // The push is decoupled: assembly returns this context and the caller
       // runs pushAssembledDeliverable() in the background (or awaits it in the
       // CLI). null when no repo is linked. Not part of the JSON response.
@@ -216,6 +220,11 @@ export async function assembleContentPackage(
   // computes a visual style suffix from palette + tone adjectives so every
   // photo on the site shares aesthetic. Pulls the existing asset list once
   // to know what's already resolved (deterministic reruns).
+  // NOT gated on the palette: a session that packages before its palette is
+  // locked still has real hero/inline image refs on every page. The old
+  // `if (palette)` gate silently stranded those entire sites with "Image not
+  // found" placeholders. deriveImageStyleSuffix already tolerates a null palette
+  // (falls back to brand-tone keywords), so resolve whenever there are refs.
   const palettePreResolve = job.palette as PaletteData | null
   const styleSuffix = deriveImageStyleSuffix(palettePreResolve, schema.brand)
   let stockPhotoResolutions: ResolvedStockPhoto[] = []
@@ -223,26 +232,13 @@ export async function assembleContentPackage(
     .from('assets')
     .select('*')
     .eq('session_id', job.session_id)
-  if (palettePreResolve) {
-    // Build a flat list of every image reference across all pages:
-    //   - hero images (from generated_pages columns)
-    //   - annotation images: content-split, image-bg cta-banner,
-    //     with-image checklist-section (inline in content_markdown)
-    //   - content-cards per-card photo references (inline)
-    const imageRefs: ImageRef[] = []
-    for (const p of pages) {
-      if (p.hero_image && p.hero_image_query) {
-        imageRefs.push({
-          pageUrl: p.page_url,
-          filename: p.hero_image,
-          subjectQuery: p.hero_image_query,
-          source: 'hero',
-        })
-      }
-      const inline = extractInlineImageRefs(p.content_markdown ?? '', p.page_url)
-      imageRefs.push(...inline)
-    }
 
+  // Flat list of every image reference across all pages (hero + inline). Kept
+  // in scope past resolution so the image-coverage guard below can compare what
+  // was referenced against what actually shipped.
+  const imageRefs = collectPageImageRefs(pages)
+
+  if (imageRefs.length > 0) {
     stockPhotoResolutions = await resolveStockPhotos(
       {
         sessionId: job.session_id,
@@ -661,6 +657,19 @@ export async function assembleContentPackage(
     console.warn(`[package] ${linkWarnings.length} internal-link warning(s):`, linkWarnings.join(' | '))
   }
 
+  // Image-coverage guard: every hero/inline image ref should have a real file
+  // bundled under public/content-assets/. When resolution silently returns
+  // fewer (missing PEXELS_API_KEY, Pexels outage, rate-limit) the page text
+  // still ships but the template renders "Image not found". Surface the
+  // shortfall loudly so a broken-image site never publishes unnoticed — the
+  // operator can then hit "Re-pull all images".
+  const imageCoverage = computeImageCoverage(imageRefs, assetEntries.map(a => a.fileName))
+  if (imageCoverage.missing.length > 0) {
+    console.error(
+      `[package] IMAGE COVERAGE SHORTFALL: ${imageCoverage.missing.length}/${imageCoverage.expected} referenced image(s) not bundled — ${imageCoverage.missing.join(', ')}`
+    )
+  }
+
   return {
     ok: true,
     storagePath,
@@ -669,6 +678,7 @@ export async function assembleContentPackage(
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
     linkWarnings,
+    imageCoverage,
     deploy,
   }
 }
