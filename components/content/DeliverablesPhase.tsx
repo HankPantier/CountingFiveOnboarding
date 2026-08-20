@@ -70,6 +70,10 @@ export default function DeliverablesPhase({
   const [repullTaskId, setRepullTaskId] = useState<string | null>(null)
   const [repullStartedAt, setRepullStartedAt] = useState<number | null>(null)
   const repullProgress = useTaskProgress(repullTaskId, repullState === 'working')
+  // Start timestamps for the indeterminate (elapsed-timer) bars on the opaque
+  // assemble + one-click publish flows, which have no determinate count.
+  const [assembleStartedAt, setAssembleStartedAt] = useState<number | null>(null)
+  const [deployStartedAt, setDeployStartedAt] = useState<number | null>(null)
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -133,6 +137,7 @@ export default function DeliverablesPhase({
 
   const assemblePackage = async () => {
     setPackaging(true)
+    setAssembleStartedAt(Date.now())
     setError(null)
     setUnapprovedFromGate(null)
     setDeployState('idle')
@@ -173,6 +178,7 @@ export default function DeliverablesPhase({
     setDeployErr(null)
     setConflictPrUrl(null)
     setUnapprovedFromGate(null)
+    setDeployStartedAt(Date.now())
     try {
       // Step 1 — seed the repo from the template (skips if already seeded).
       setDeployStep('seeding')
@@ -359,6 +365,15 @@ export default function DeliverablesPhase({
             </ol>
           )}
 
+          {deploying && (
+            <ProgressBar
+              phase={DEPLOY_STEPS[deployStepIndex]?.label ?? 'Working…'}
+              current={0}
+              total={0}
+              startedAt={deployStartedAt}
+            />
+          )}
+
           {deployStep === 'live' && (
             <div className="bg-success/10 border border-success/30 text-success text-sm font-body rounded-lg px-4 py-2">
               Published to <span className="font-mono">main</span>. Vercel will deploy the live site automatically.
@@ -471,6 +486,9 @@ export default function DeliverablesPhase({
                     ? 'Assemble & Download Package'
                     : 'Assemble Package (pending approvals)'}
           </button>
+          {packaging && (
+            <ProgressBar phase="Assembling package…" current={0} total={0} startedAt={assembleStartedAt} className="max-w-sm" />
+          )}
         </div>
       ) : (
         <div className="space-y-3">

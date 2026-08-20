@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ProgressBar from '@/components/ui/ProgressBar'
 
 type StatusResponse = {
   audit_status: string
@@ -57,6 +58,9 @@ export function AuditProgress({
     error_message: initialErrorMessage,
   })
   const refreshed = useRef(false)
+  // Elapsed timer starts when this card mounts — audits run for minutes, so an
+  // "alive for m:ss" signal reassures the operator the crawl hasn't stalled.
+  const [startedAt] = useState(() => Date.now())
 
   // Depends only on auditId/router (both stable) so the interval is set up once
   // and not torn down/recreated on every status change.
@@ -108,6 +112,16 @@ export function AuditProgress({
         <p className="mt-1 font-body text-sm text-text-secondary">
           {status.status_detail ?? 'Queued — starting shortly.'}
         </p>
+
+        {!isError && !isComplete && (
+          <ProgressBar
+            phase={PHASES.find((p) => stepState(p.key, status.audit_status) === 'active')?.label ?? 'Working…'}
+            current={0}
+            total={0}
+            startedAt={startedAt}
+            className="mt-4"
+          />
+        )}
 
         {!isError && (
           <ol className="mt-6 space-y-3">
