@@ -51,6 +51,7 @@ function OverflowMenu({
   onRollback,
   onSyncDraft,
   onResetDraft,
+  onRepullDone,
 }: {
   sessionId: string
   websiteUrl: string
@@ -62,10 +63,41 @@ function OverflowMenu({
   onRollback: () => void
   onSyncDraft: () => void
   onResetDraft: () => void
+  onRepullDone?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const preview = previewUrl(status.repo)
+
+  // Re-pull all images: re-fetch every stock/hero photo and commit any missing
+  // ones to the draft branch. The menu stays open during the (slow) op so the
+  // result shows inline; on success we refresh the editor's publish count.
+  const [repull, setRepull] = useState<{ state: 'idle' | 'working' | 'done' | 'error'; msg: string }>({
+    state: 'idle',
+    msg: '',
+  })
+  const repullImages = async () => {
+    setRepull({ state: 'working', msg: '' })
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/repull-images`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? 'Image re-pull failed')
+      const pushed: number = data.pushed ?? 0
+      const stillMissing: string[] = Array.isArray(data.stillMissing) ? data.stillMissing : []
+      setRepull({
+        state: 'done',
+        msg:
+          pushed > 0
+            ? `Pushed ${pushed} image(s) to draft${stillMissing.length ? ` · ${stillMissing.length} still missing` : ''}. Publish to go live.`
+            : stillMissing.length
+              ? `No images resolved · ${stillMissing.length} still missing. Check PEXELS_API_KEY in prod.`
+              : 'All images already present — nothing to re-pull.',
+      })
+      onRepullDone?.()
+    } catch (err) {
+      setRepull({ state: 'error', msg: err instanceof Error ? err.message : 'Image re-pull failed' })
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -141,6 +173,23 @@ function OverflowMenu({
           >
             Download doc ↓
           </a>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={repull.state === 'working'}
+            onClick={repullImages}
+            className={`${itemClass} text-text-secondary hover:text-brand-cyan disabled:opacity-50 disabled:cursor-not-allowed`}
+            title="Re-fetch every stock &amp; hero photo from Pexels and commit any missing ones to the draft branch. Fixes pages showing “Image not found.” Publish afterward to go live."
+          >
+            {repull.state === 'working' ? 'Re-pulling images…' : 'Re-pull all images ⟳'}
+          </button>
+          {repull.msg && (
+            <p
+              className={`px-3 py-1.5 text-[11px] font-body ${repull.state === 'error' ? 'text-error' : 'text-text-secondary'}`}
+            >
+              {repull.msg}
+            </p>
+          )}
           <div className="border-t border-border-default my-1" />
           {status.draftBehind > 0 && (
             <button
@@ -215,6 +264,7 @@ export default function EditorTopBar({
   onRollback,
   onSyncDraft,
   onResetDraft,
+  onRepullDone,
 }: {
   sessionId: string
   firmName: string
@@ -232,6 +282,7 @@ export default function EditorTopBar({
   onRollback: () => void
   onSyncDraft: () => void
   onResetDraft: () => void
+  onRepullDone?: () => void
 }) {
   const pill = statusPill(status, dirtyCount)
   const behind = status?.draftBehind ?? 0
@@ -313,6 +364,7 @@ export default function EditorTopBar({
             onRollback={onRollback}
             onSyncDraft={onSyncDraft}
             onResetDraft={onResetDraft}
+            onRepullDone={onRepullDone}
           />
         )}
       </div>

@@ -848,6 +848,7 @@ export default function EditorShell({
         onRollback={rollback}
         onSyncDraft={syncDraft}
         onResetDraft={resetDraft}
+        onRepullDone={() => void refreshStatus()}
       />
       {(isLivePage || isDraftPage) && selectedPath && (
         <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end gap-2">
