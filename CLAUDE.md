@@ -296,6 +296,28 @@ The full design specification lives in `raw-docs/design.md`. **Read it before wr
 
 ---
 
+## Theme / Template Rollout Rules
+
+Shared theme/template changes are propagated to live client sites by the **fleet-rollout**
+tool (`scripts/fleet-rollout.ts`, roster in `config/clients.json`, allowlist in
+`config/template-managed-paths.json`, docs in `docs/fleet-rollout.md`).
+
+**Whenever the user requests a change to the theme or a shared template file** (block
+components, `generate-theme.ts`, footer/nav/layout, design tokens — anything that would
+roll out to multiple client repos), before doing the rollout you MUST:
+1. Show the current **live/managed client roster** from `config/clients.json` (the repos
+   with `managed: true` in the relevant `themeGroup`).
+2. **Ask whether any repos need to be added or removed** for this change (new clients are
+   easy to miss; not every repo shares every theme).
+3. Only after the roster is confirmed, proceed: `plan` → `stage` → verify each
+   `template-sync` preview build is green → `promote --confirm-green`.
+
+Never roll a theme change straight to `main` on any client — always stage on the non-live
+`template-sync` branch and verify the build first. `theme.css` is regenerated per client
+from their own `brand.json` + `design.json`; never copy one client's `theme.css` to another.
+
+---
+
 ## Do Not
 
 - Do not use `localStorage` or `sessionStorage` anywhere in the application

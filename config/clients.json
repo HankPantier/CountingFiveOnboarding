@@ -1,0 +1,18 @@
+{
+  "_note": "Fleet registry — the canonical roster of client site repos for `scripts/fleet-rollout.ts`. NOT all of these share the theme. A repo is only touched by group/--all rollouts when `managed: true` AND `themeGroup` is set. `paused: true` skips it temporarily. `slug` is owner/repo. The template source is HankPantier/CountingFiveTemplate (resolveTemplateSlug) and is NOT listed here. Keep this file in sync with the fleet-rollout memory.",
+  "clients": [
+    { "slug": "HankPantier/bblcpa", "displayName": "BBL CPA", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
+    { "slug": "HankPantier/korbey-lague-site", "displayName": "Korbey Lague", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
+    { "slug": "HankPantier/Accord-Advisors", "displayName": "Accord Advisors", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
+    { "slug": "HankPantier/Abramson-Company-LLC", "displayName": "Abramson Company LLC", "liveUrl": null, "themeGroup": "ink-and-clay", "managed": true, "paused": false },
+
+    { "slug": "HankPantier/TEBO-maintenance", "displayName": "Tebo Repair", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/ali-gidfar", "displayName": "Ali Gidfar", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/arbor-anglers", "displayName": "Arbor Anglers", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/FoxPages", "displayName": "FoxPages", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/kay-twelve", "displayName": "Kay Twelve", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/lentine-app", "displayName": "Lentine", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/Nexsan-Skills", "displayName": "Nexsan Legal", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false },
+    { "slug": "HankPantier/Nexsan-Content-Creation", "displayName": "Nexsan Skills", "liveUrl": null, "themeGroup": null, "managed": false, "paused": false }
+  ]
+}
