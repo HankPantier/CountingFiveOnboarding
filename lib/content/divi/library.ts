@@ -12,6 +12,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import type { NavJson } from '@/types/nav-json'
+import { safeUrl, htmlAttrEscape } from './sanitize'
 
 const BV = '4.27.4'
 
@@ -19,13 +20,23 @@ function esc(value: string): string {
   return (value ?? '').replace(/"/g, '%22').replace(/\r?\n/g, ' ').trim()
 }
 
+// Encodes &, <, >, and both quote styles — safe for element text and for the
+// inside of a double-quoted HTML attribute (portal/social labels are untrusted).
 function htmlEsc(value: string): string {
-  return (value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return htmlAttrEscape(value)
+}
+
+// Render a single anchor, or just the escaped label when the URL is unsafe or
+// carries a disallowed scheme (javascript:/data:/…), so no XSS href is emitted.
+function anchor(url: string, label: string, style: string): string {
+  const safe = safeUrl(url)
+  if (!safe) return htmlEsc(label)
+  return `<a href="${htmlEsc(safe)}" style="${style}">${htmlEsc(label)}</a>`
 }
 
 function navLinksHtml(nav: NavJson, color: string): string {
   const links = nav.primary
-    .map((i) => `<a href="${htmlEsc(i.url)}" style="color:${color};margin-right:18px;text-decoration:none;font-weight:600;">${htmlEsc(i.label)}</a>`)
+    .map((i) => anchor(i.url, i.label, `color:${color};margin-right:18px;text-decoration:none;font-weight:600;`))
     .join('')
   return `<p>${links}</p>`
 }
@@ -35,7 +46,7 @@ function clientCenterHtml(cc: ClientCenterJson, color: string): string {
   const groups = cc.groups
     .map((g) => {
       const links = g.links
-        .map((l) => `<li><a href="${htmlEsc(l.url)}" style="color:${color};">${htmlEsc(l.label)}</a></li>`)
+        .map((l) => `<li>${anchor(l.url, l.label, `color:${color};`)}</li>`)
         .join('')
       return `<h4 style="color:${color};">${htmlEsc(g.title)}</h4><ul>${links}</ul>`
     })
@@ -82,7 +93,7 @@ function buildFooter(brand: BrandJson, nav: NavJson): string {
   const phone = brand.contact.phone ? `<p>${htmlEsc(brand.contact.phone)}</p>` : ''
   const email = brand.contact.email ? `<p>${htmlEsc(brand.contact.email)}</p>` : ''
   const social = brand.social.length
-    ? `<p>${brand.social.map((s) => `<a href="${htmlEsc(s.url)}" style="color:#FFFFFF;margin-right:14px;">${htmlEsc(s.platform)}</a>`).join('')}</p>`
+    ? `<p>${brand.social.map((s) => anchor(s.url, s.platform, 'color:#FFFFFF;margin-right:14px;')).join('')}</p>`
     : ''
   const navHtml = navLinksHtml(nav, '#FFFFFF')
 

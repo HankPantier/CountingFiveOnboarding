@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { markdownToHtml, inlineMarkdown } from './markdown'
+import { safeUrl } from './sanitize'
 
 const BV = '4.27.4' // Divi _builder_version stamped on emitted modules
 
@@ -143,9 +144,10 @@ export function copyImageBlock(opts: {
   const sub = opts.subhead
     ? `\n<h2>${inlineMarkdown(opts.subhead)}</h2>`
     : ''
+  const buttonHref = opts.buttonUrl ? safeUrl(opts.buttonUrl) : null
   const button =
-    opts.buttonText && opts.buttonUrl
-      ? `[et_pb_button button_url="${attr(opts.buttonUrl)}" button_text="${attr(opts.buttonText)}" button_alignment="left" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="15px" button_text_color="${opts.hero ? '#003B71' : '#FFFFFF'}" button_bg_color="${opts.hero ? '#FFFFFF' : '#00C1DE'}" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="15px|25px|15px|25px|true|true" global_colors_info="{}"][/et_pb_button]`
+    opts.buttonText && buttonHref
+      ? `[et_pb_button button_url="${attr(buttonHref)}" button_text="${attr(opts.buttonText)}" button_alignment="left" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="15px" button_text_color="${opts.hero ? '#003B71' : '#FFFFFF'}" button_bg_color="${opts.hero ? '#FFFFFF' : '#00C1DE'}" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="15px|25px|15px|25px|true|true" global_colors_info="{}"][/et_pb_button]`
       : ''
 
   const textColor = opts.hero ? '#FFFFFF' : '#333333'
@@ -228,7 +230,7 @@ export function ctaBlock(opts: {
     `<h2>${inlineMarkdown(opts.heading)}</h2>\n${opts.bodyHtml}` +
     `[/et_pb_text][/et_pb_column]` +
     `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_button button_url="${attr(opts.buttonUrl)}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="#003B71" button_bg_color="#00C1DE" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="rgba(0,193,222,0.35)" global_colors_info="{}"][/et_pb_button]` +
+    `[et_pb_button button_url="${attr(safeUrl(opts.buttonUrl) ?? '/contact/')}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="#003B71" button_bg_color="#00C1DE" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="rgba(0,193,222,0.35)" global_colors_info="{}"][/et_pb_button]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }

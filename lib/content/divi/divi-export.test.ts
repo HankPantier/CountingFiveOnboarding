@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { parseDiviSections, parseCards, parseQA, accordionBlock } from './blocks'
-import { markdownToHtml } from './markdown'
+import { parseDiviSections, parseCards, parseQA, accordionBlock, ctaBlock } from './blocks'
+import { markdownToHtml, inlineMarkdown } from './markdown'
+import { safeUrl } from './sanitize'
 import { buildPageDivi, collectPageQueries, type DiviPageInput } from './page'
 import { buildWxr } from './wxr'
 import { buildDiviLibrary } from './library'
@@ -134,6 +135,38 @@ describe('page assembly', () => {
   })
   it('collects the image queries needing resolution', () => {
     expect(collectPageQueries(PAGE)).toEqual(['business consultation office'])
+  })
+})
+
+describe('URL + XSS hardening', () => {
+  it('allows http(s), mailto, tel, and relative URLs', () => {
+    expect(safeUrl('https://x.com')).toBe('https://x.com')
+    expect(safeUrl('/services')).toBe('/services')
+    expect(safeUrl('mailto:a@b.com')).toBe('mailto:a@b.com')
+    expect(safeUrl('#faq')).toBe('#faq')
+    expect(safeUrl('services')).toBe('services')
+  })
+  it('drops javascript:/data:/vbscript: URLs', () => {
+    expect(safeUrl('javascript:alert(1)')).toBeNull()
+    expect(safeUrl('JavaScript:alert(1)')).toBeNull()
+    expect(safeUrl('data:text/html,<script>')).toBeNull()
+    expect(safeUrl('vbscript:msgbox')).toBeNull()
+  })
+  it('markdown link with a javascript: scheme renders as plain text, no anchor', () => {
+    const html = inlineMarkdown('click [here](javascript:alert(1))')
+    expect(html).not.toContain('<a ')
+    expect(html).not.toContain('javascript:')
+    expect(html).toContain('here')
+  })
+  it('markdown link cannot break out of the href attribute', () => {
+    const html = inlineMarkdown('[x](https://x.com/"onmouseover="alert(1))')
+    expect(html).not.toContain('"onmouseover="')
+    expect(html).toContain('&quot;')
+  })
+  it('cta button falls back to /contact/ when the source URL is unsafe', () => {
+    const sc = ctaBlock({ heading: 'Go', bodyHtml: '', buttonText: 'Click', buttonUrl: 'javascript:alert(1)' })
+    expect(sc).not.toContain('javascript:')
+    expect(sc).toContain('button_url="/contact/"')
   })
 })
 

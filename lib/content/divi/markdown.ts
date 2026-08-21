@@ -9,6 +9,8 @@
 // verbatim inside a text module.
 // ---------------------------------------------------------------------------
 
+import { safeUrl } from './sanitize'
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -22,8 +24,14 @@ function escapeHtml(text: string): string {
 export function inlineMarkdown(text: string): string {
   let out = escapeHtml(text.trim())
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, url: string) => {
-    const safeUrl = url.replace(/"/g, '%22')
-    return `<a href="${safeUrl}">${label}</a>`
+    // Drop links with an unsafe scheme (javascript:/data:/…) — keep the text so
+    // no copy is lost, but never emit the anchor. The URL is already HTML-escaped
+    // for &/</> by escapeHtml above; encode the quote chars so it can't break out
+    // of the href attribute.
+    const safe = safeUrl(url)
+    if (!safe) return label
+    const href = safe.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+    return `<a href="${href}">${label}</a>`
   })
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
