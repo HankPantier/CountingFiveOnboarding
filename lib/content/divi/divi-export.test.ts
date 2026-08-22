@@ -6,6 +6,7 @@ import { buildPageDivi, collectPageQueries, type DiviPageInput } from './page'
 import { buildWxr } from './wxr'
 import { buildDiviLibrary } from './library'
 import { buildDiviExport } from './index'
+import { pageInputFromRepoFile } from './from-frontmatter'
 import type { BrandJson } from '@/types/brand-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import type { NavJson } from '@/types/nav-json'
@@ -219,28 +220,56 @@ describe('Divi library JSON', () => {
   })
 })
 
+describe('pageInputFromRepoFile (live repo source)', () => {
+  const FILE = [
+    '---',
+    'title: "Virtual CFO Services | Korbey Lague PLLP"',
+    'url: /services/virtual-cfo',
+    'hero: page-header',
+    'hero_subhead: "Strategic financial guidance"',
+    'faq_block: [{"question":"Cost?","answer":"Depends."}]',
+    '---',
+    '',
+    '<!-- block: intro-text | variant: centered -->',
+    '## Why Virtual CFO',
+    '',
+    'Body copy.',
+    '',
+    '---',
+    '## SEO & AIO Metadata',
+    '',
+    '**Answer Block:**',
+    'Should not appear in the rendered page.',
+  ].join('\n')
+
+  it('maps frontmatter to DiviPageInput and strips the SEO appendix', () => {
+    const input = pageInputFromRepoFile('content/pages/services--virtual-cfo.md', FILE)
+    expect(input.page_title).toBe('Virtual CFO Services') // firm suffix removed
+    expect(input.page_url).toBe('/services/virtual-cfo')
+    expect(input.hero_block).toBe('page-header')
+    expect(input.hero_subhead).toBe('Strategic financial guidance')
+    expect(input.faq_block).toEqual([{ question: 'Cost?', answer: 'Depends.' }])
+    expect(input.content_markdown).toContain('## Why Virtual CFO')
+    expect(input.content_markdown).not.toContain('SEO & AIO Metadata')
+  })
+
+  it('derives url + title from the path when frontmatter omits them', () => {
+    const input = pageInputFromRepoFile('content/pages/about-us.md', '## About\n\nText.')
+    expect(input.page_url).toBe('/about-us')
+    expect(input.page_title).toBe('About Us')
+  })
+})
+
 describe('buildDiviExport (end to end)', () => {
-  it('produces a non-empty zip buffer', async () => {
+  it('produces a non-empty zip and nests child pages under their parent', async () => {
     const { zip, filenameBase } = await buildDiviExport({
       firmName: 'Korbey Lague PLLP',
       websiteUrl: 'https://www.korbeylague.com',
       pages: [
-        {
-          // Only the fields buildDiviExport reads; the rest of the row is unused.
-          page_title: 'Home',
-          page_url: '/',
-          hero_block: 'page-header',
-          hero_variant: null,
-          hero_image_alt: null,
-          hero_subhead: null,
-          hero_image_query: null,
-          content_markdown: BODY,
-          faq_block: [],
-          generation_status: 'complete',
-          created_at: '2026-08-01',
-        } as never,
+        { ...PAGE, page_title: 'Home', page_url: '/' },
+        { ...PAGE, page_title: 'Services', page_url: '/services' },
+        { ...PAGE, page_title: 'Virtual CFO', page_url: '/services/virtual-cfo' },
       ],
-      sitemap: [{ url: '/', title: 'Home' }],
       brand: BRAND,
       clientCenter: CLIENT_CENTER,
       nav: NAV,

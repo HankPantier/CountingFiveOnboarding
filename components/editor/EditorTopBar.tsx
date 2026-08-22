@@ -188,6 +188,16 @@ function OverflowMenu({
           >
             Download doc ↓
           </a>
+          <a
+            href={`/api/edit/${sessionId}/export-divi`}
+            download
+            role="menuitem"
+            className={`${itemClass} text-text-secondary hover:text-brand-cyan`}
+            title="Export the live site (pages, nav, header/footer) as a WordPress/Divi import bundle (.wxr + Divi library). Temporary bridge for standing sites up on the shared Divi boilerplate."
+            onClick={() => setOpen(false)}
+          >
+            Export to Divi ↓
+          </a>
           <button
             type="button"
             role="menuitem"

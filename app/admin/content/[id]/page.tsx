@@ -5,7 +5,6 @@ import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import PhaseStepper from '@/components/content/PhaseStepper'
 import PackageDownloadBar from '@/components/content/PackageDownloadBar'
 import GithubRepoConnector from '@/components/admin/GithubRepoConnector'
-import DiviExportButton from '@/components/content/DiviExportButton'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
 import type { NavJson } from '@/types/nav-json'
@@ -195,17 +194,6 @@ export default async function ContentWorkflowPage({
         >
           Edit contact settings
         </Link>
-      </div>
-
-      {/* Temporary Divi/WordPress export bridge — see lib/content/divi/README.md */}
-      <div className="mb-8 flex items-center justify-between border border-border-default bg-surface-card shadow-subtle rounded-xl p-4">
-        <div>
-          <h2 className="text-sm font-heading font-semibold text-brand-navy">WordPress / Divi export</h2>
-          <p className="text-xs font-body text-text-muted mt-0.5">
-            Bundle this client&rsquo;s pages as a WordPress import (WXR) plus a branded Divi header/footer, for the shared boilerplate site. Bridge only.
-          </p>
-        </div>
-        <DiviExportButton contentJobId={contentJobId} />
       </div>
 
       <GithubRepoConnector
