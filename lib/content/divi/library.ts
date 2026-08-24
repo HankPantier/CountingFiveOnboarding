@@ -44,20 +44,41 @@ function navLinksHtml(nav: NavJson, color: string): string {
     .join('')
 }
 
-// Compact utility-bar contents for the dark top strip: Client Center portal
-// links + phone, right-aligned by the text module that wraps it.
-function utilityBarHtml(cc: ClientCenterJson, phone: string | undefined): string {
-  const ccLinks = cc.enabled
-    ? cc.groups
-        .flatMap((g) => g.links)
-        .map((l) => anchor(l.url, l.label, 'color:#FFFFFF;margin-left:22px;text-decoration:none;'))
+// A single "Client Center" item that reveals the grouped portal links in a
+// dropdown — mirrors the real theme's Client Center modal. Uses a native
+// <details>/<summary> disclosure (no JS/plugin, and only inline styles so it
+// survives WordPress's content sanitizer). Portal links stay grouped inside.
+function clientCenterMenu(cc: ClientCenterJson): string {
+  if (!cc.enabled || cc.groups.length === 0) return ''
+  const showTitles = cc.groups.length > 1
+  const groups = cc.groups
+    .map((g) => {
+      const title = showTitles
+        ? `<div style="font-weight:700;color:#003B71;margin:10px 0 4px;font-size:13px;">${htmlEsc(g.title)}</div>`
+        : ''
+      const links = g.links
+        .map((l) => anchor(l.url, l.label, 'display:block;color:#003B71;text-decoration:none;padding:5px 0;font-weight:600;'))
         .join('')
-    : ''
+      return title + links
+    })
+    .join('')
+  return (
+    `<details style="display:inline-block;position:relative;vertical-align:middle;">` +
+    `<summary style="list-style:none;cursor:pointer;color:#FFFFFF;">${htmlEsc(cc.label)} ▾</summary>` +
+    `<div style="position:absolute;right:0;top:180%;background:#FFFFFF;padding:14px 18px;min-width:240px;text-align:left;box-shadow:0 10px 30px rgba(0,59,113,0.25);border-radius:8px;z-index:9999;">${groups}</div>` +
+    `</details>`
+  )
+}
+
+// Dark top-strip contents: the Client Center dropdown + phone, right-aligned by
+// the text module that wraps it.
+function utilityBarHtml(cc: ClientCenterJson, phone: string | undefined): string {
+  const ccMenu = clientCenterMenu(cc)
   const phoneHtml = phone
     ? `<span style="color:#FFFFFF;margin-left:22px;font-weight:700;">${htmlEsc(phone)}</span>`
     : ''
-  if (!ccLinks && !phoneHtml) return ''
-  return `<p style="margin:0;font-size:14px;">${ccLinks}${phoneHtml}</p>`
+  if (!ccMenu && !phoneHtml) return ''
+  return `<p style="margin:0;font-size:14px;">${ccMenu}${phoneHtml}</p>`
 }
 
 // Logo (or firm name) linked to the home page.

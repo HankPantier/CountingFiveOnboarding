@@ -219,6 +219,12 @@ describe('Divi library JSON', () => {
     expect(parsed.data['1'].post_content).toContain('Client Portal')
     expect(parsed.data['1'].post_content).toContain('(978) 555-0100')
   })
+  it('renders Client Center as a single dropdown disclosure, not flat links', () => {
+    const header: string = parsed.data['1'].post_content
+    expect(header).toContain('<details')
+    expect(header).toContain('<summary')
+    expect(header).toContain('Client Center') // the cc.label trigger
+  })
   it('stamps the layout_type term so Divi types it and shows it in the picker', () => {
     for (const key of ['1', '2']) {
       const terms = Object.values(parsed.data[key].terms) as Array<{ taxonomy: string; slug: string }>
