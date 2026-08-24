@@ -34,43 +34,60 @@ function anchor(url: string, label: string, style: string): string {
   return `<a href="${htmlEsc(safe)}" style="${style}">${htmlEsc(label)}</a>`
 }
 
+// Footer nav — one link per line (stacked).
 function navLinksHtml(nav: NavJson, color: string): string {
-  const links = nav.primary
-    .map((i) => anchor(i.url, i.label, `color:${color};margin-right:18px;text-decoration:none;font-weight:600;`))
+  return nav.primary
+    .map(
+      (i) =>
+        `<p style="margin:0 0 10px;">${anchor(i.url, i.label, `color:${color};text-decoration:none;font-weight:600;`)}</p>`
+    )
     .join('')
-  return `<p>${links}</p>`
 }
 
-function clientCenterHtml(cc: ClientCenterJson, color: string): string {
-  if (!cc.enabled || cc.groups.length === 0) return ''
-  const groups = cc.groups
-    .map((g) => {
-      const links = g.links
-        .map((l) => `<li>${anchor(l.url, l.label, `color:${color};`)}</li>`)
+// Compact utility-bar contents for the dark top strip: Client Center portal
+// links + phone, right-aligned by the text module that wraps it.
+function utilityBarHtml(cc: ClientCenterJson, phone: string | undefined): string {
+  const ccLinks = cc.enabled
+    ? cc.groups
+        .flatMap((g) => g.links)
+        .map((l) => anchor(l.url, l.label, 'color:#FFFFFF;margin-left:22px;text-decoration:none;'))
         .join('')
-      return `<h4 style="color:${color};">${htmlEsc(g.title)}</h4><ul>${links}</ul>`
-    })
-    .join('')
-  return `<h3 style="color:${color};">${htmlEsc(cc.label)}</h3>${groups}`
+    : ''
+  const phoneHtml = phone
+    ? `<span style="color:#FFFFFF;margin-left:22px;font-weight:700;">${htmlEsc(phone)}</span>`
+    : ''
+  if (!ccLinks && !phoneHtml) return ''
+  return `<p style="margin:0;font-size:14px;">${ccLinks}${phoneHtml}</p>`
 }
 
+// Logo (or firm name) linked to the home page.
 function logoOrName(brand: BrandJson, logoUrl: string | null, color: string): string {
   if (logoUrl) {
-    return `[et_pb_image src="${esc(logoUrl)}" alt="${esc(brand.logo.alt || brand.firm.name)}" _builder_version="${BV}" _module_preset="default" width="220px" global_colors_info="{}"][/et_pb_image]`
+    return `[et_pb_image src="${esc(logoUrl)}" alt="${esc(brand.logo.alt || brand.firm.name)}" url="/" url_new_window="off" _builder_version="${BV}" _module_preset="default" width="200px" global_colors_info="{}"][/et_pb_image]`
   }
-  return `[et_pb_text _builder_version="${BV}" header_2_font="Inter|800|||||||" header_2_text_color="${color}" header_2_font_size="26px" global_colors_info="{}"]<h2 style="color:${color};">${htmlEsc(brand.firm.name)}</h2>[/et_pb_text]`
+  return `[et_pb_text _builder_version="${BV}" header_2_font="Inter|800|||||||" header_2_text_color="${color}" header_2_font_size="26px" global_colors_info="{}"]<h2 style="margin:0;"><a href="/" style="color:${color};text-decoration:none;">${htmlEsc(brand.firm.name)}</a></h2>[/et_pb_text]`
 }
 
 function buildHeader(
   brand: BrandJson,
   cc: ClientCenterJson,
-  nav: NavJson,
+  _nav: NavJson,
   logoUrl: string | null
 ): string {
   const primary = brand.palette.primary || '#003B71'
   const action = brand.palette.action || '#00C1DE'
-  const phone = brand.contact.phone
-  const ccHtml = clientCenterHtml(cc, primary)
+  const dark = brand.palette.nearBlack || '#231F20'
+
+  // Dark top utility bar: Client Center + phone, right-aligned.
+  const util = utilityBarHtml(cc, brand.contact.phone)
+  const topBar = util
+    ? `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${dark}" custom_padding="8px||8px|||" global_colors_info="{}" template_type="section"]` +
+      `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="92%" module_alignment="center" custom_padding="0px||0px|||" global_colors_info="{}"]` +
+      `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
+      `[et_pb_text _builder_version="${BV}" text_orientation="right" background_layout="dark" global_colors_info="{}"]${util}[/et_pb_text]` +
+      `[/et_pb_column][/et_pb_row][/et_pb_section]`
+    : ''
+
   // A real Divi menu module — with no fixed menu_id it renders whatever menu is
   // assigned to the theme's Primary location, i.e. the imported "Primary Menu"
   // once the operator assigns it. Managed in Appearance → Menus, with dropdowns.
@@ -79,21 +96,16 @@ function buildHeader(
     `menu_font="||||||||" menu_text_color="${primary}" active_link_color="${action}" ` +
     `dropdown_menu_bg_color="#FFFFFF" dropdown_menu_text_color="${primary}" ` +
     `background_color="rgba(0,0,0,0)" module_alignment="right" global_colors_info="{}"][/et_pb_menu]`
-  const belowMenu =
-    (phone ? `<p style="font-weight:700;color:${primary};margin:8px 0 0;">${htmlEsc(phone)}</p>` : '') +
-    (ccHtml ? `<div>${ccHtml}</div>` : '')
 
-  return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#FFFFFF" custom_padding="16px||16px|||" global_colors_info="{}" template_type="section"]` +
-    `[et_pb_row column_structure="1_3,2_3" _builder_version="${BV}" _module_preset="default" width="100%" max_width="90%" module_alignment="center" global_colors_info="{}"]` +
-    `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl, primary)}[/et_pb_column]` +
-    `[et_pb_column type="2_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `${menu}` +
-    (belowMenu
-      ? `[et_pb_text _builder_version="${BV}" text_orientation="right" global_colors_info="{}"]${belowMenu}[/et_pb_text]`
-      : '') +
-    `[/et_pb_column][/et_pb_row][/et_pb_section]`
-  )
+  // Main bar: logo (linked home) left, nav menu flowing to the right.
+  const mainBar =
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#FFFFFF" custom_padding="14px||14px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_row column_structure="1_4,3_4" _builder_version="${BV}" _module_preset="default" width="100%" max_width="92%" module_alignment="center" custom_padding="0px||0px|||" global_colors_info="{}"]` +
+    `[et_pb_column type="1_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl, primary)}[/et_pb_column]` +
+    `[et_pb_column type="3_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${menu}[/et_pb_column]` +
+    `[/et_pb_row][/et_pb_section]`
+
+  return topBar + mainBar
 }
 
 function buildFooter(brand: BrandJson, nav: NavJson): string {

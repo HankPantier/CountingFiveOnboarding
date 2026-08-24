@@ -231,6 +231,15 @@ describe('Divi library JSON', () => {
     expect(parsed.data['1'].post_content).toContain('[et_pb_menu')
     expect(parsed.data['1'].post_content).toContain('menu_id=""')
   })
+  it('links the logo home and puts phone/utility in a dark top bar', () => {
+    const header: string = parsed.data['1'].post_content
+    expect(header).toContain('href="/"') // firm-name logo → home (fixture has no logoUrl)
+    expect(header).toContain('background_color="#231F20"') // dark top utility bar
+    expect((header.match(/\[et_pb_section/g) || []).length).toBeGreaterThanOrEqual(2) // top bar + main bar
+  })
+  it('stacks the footer nav links one per line', () => {
+    expect(parsed.data['2'].post_content).toContain('margin:0 0 10px;')
+  })
 })
 
 describe('nav-driven hierarchy', () => {
