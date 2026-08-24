@@ -109,18 +109,55 @@ function buildFooter(brand: BrandJson, nav: NavJson): string {
   )
 }
 
-// A Divi Library layout record. Field set mirrors the reference export
-// (raw-docs/Divi Builder Layouts.json) closely enough for Divi's importer.
+// Divi Library taxonomy terms. Without these the imported layout has no
+// `layout_type` and Divi shows Type "—" and hides it from the Theme Builder /
+// "Load From Library → Your Saved Layouts" picker. `layout` = a full layout
+// (loadable as a whole into a header/footer template); `not_global` keeps it a
+// plain editable copy rather than a linked global module.
+function layoutTerms() {
+  const mk = (name: string, taxonomy: string) => ({
+    name,
+    slug: name,
+    taxonomy,
+    parent: 0,
+    all_parents: [] as number[],
+    description: '',
+  })
+  return {
+    '1': mk('not_global', 'scope'),
+    '2': mk('regular', 'module_width'),
+    '3': mk('layout', 'layout_type'),
+  }
+}
+
+// A Divi Library layout record. Field set + terms mirror the reference export
+// (raw-docs/Divi Builder Layouts.json) so Divi's importer types it correctly.
 function layoutRecord(id: number, title: string, content: string, dateGmt: string) {
   return {
     ID: id,
-    post_title: title,
-    post_content: content,
-    post_type: 'et_pb_layout',
-    post_status: 'publish',
-    post_name: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
     post_date: dateGmt,
     post_date_gmt: dateGmt,
+    post_content: content,
+    post_title: title,
+    post_excerpt: '',
+    post_status: 'publish',
+    comment_status: 'closed',
+    ping_status: 'closed',
+    post_password: '',
+    post_name: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    to_ping: '',
+    pinged: '',
+    post_modified: dateGmt,
+    post_modified_gmt: dateGmt,
+    post_content_filtered: '',
+    post_parent: 0,
+    menu_order: 0,
+    post_type: 'et_pb_layout',
+    post_mime_type: '',
+    comment_count: '0',
+    filter: 'raw',
+    post_meta: { _et_pb_built_for_post_type: ['page'] },
+    terms: layoutTerms(),
   }
 }
 
@@ -134,16 +171,19 @@ export function buildDiviLibrary(opts: {
   const header = buildHeader(opts.brand, opts.clientCenter, opts.nav, opts.logoUrl)
   const footer = buildFooter(opts.brand, opts.nav)
 
+  // Envelope shape matches a native Divi Library export exactly.
   const envelope = {
     context: 'et_builder_layouts',
     data: {
       '1': layoutRecord(1, `${opts.brand.firm.name} — Header`, header, opts.dateGmt),
       '2': layoutRecord(2, `${opts.brand.firm.name} — Footer`, footer, opts.dateGmt),
     },
-    presets: {},
+    presets: '',
     global_colors: [],
-    images: {},
-    thumbnails: {},
+    global_variables: [],
+    canvases: [],
+    images: [],
+    thumbnails: [],
   }
 
   return JSON.stringify(envelope, null, 2)

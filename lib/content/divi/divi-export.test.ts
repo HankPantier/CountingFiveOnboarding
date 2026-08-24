@@ -218,6 +218,14 @@ describe('Divi library JSON', () => {
     expect(parsed.data['1'].post_content).toContain('Client Portal')
     expect(parsed.data['1'].post_content).toContain('(978) 555-0100')
   })
+  it('stamps the layout_type term so Divi types it and shows it in the picker', () => {
+    for (const key of ['1', '2']) {
+      const terms = Object.values(parsed.data[key].terms) as Array<{ taxonomy: string; slug: string }>
+      const layoutType = terms.find((t) => t.taxonomy === 'layout_type')
+      expect(layoutType?.slug).toBe('layout')
+      expect(parsed.data[key].post_meta._et_pb_built_for_post_type).toEqual(['page'])
+    }
+  })
 })
 
 describe('pageInputFromRepoFile (live repo source)', () => {
