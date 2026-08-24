@@ -114,6 +114,39 @@ function OverflowMenu({
     }
   }
 
+  // Divi export: builds a WordPress import bundle from the live repo. Can take a
+  // while (dozens of GitHub reads + time-boxed Pexels lookups), so we fetch as a
+  // blob with an inline working/error state instead of a bare download link —
+  // otherwise a slow build or a failure looks like "nothing happened".
+  const [divi, setDivi] = useState<{ state: 'idle' | 'working' | 'error'; msg: string }>({
+    state: 'idle',
+    msg: '',
+  })
+  const exportDivi = async () => {
+    setDivi({ state: 'working', msg: '' })
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/export-divi`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error ?? `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const cd = res.headers.get('content-disposition') ?? ''
+      const filename = cd.match(/filename="([^"]+)"/)?.[1] ?? 'divi-export.zip'
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      setDivi({ state: 'idle', msg: '' })
+    } catch (err) {
+      setDivi({ state: 'error', msg: err instanceof Error ? err.message : 'Export failed' })
+    }
+  }
+
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
@@ -188,16 +221,19 @@ function OverflowMenu({
           >
             Download doc ↓
           </a>
-          <a
-            href={`/api/edit/${sessionId}/export-divi`}
-            download
+          <button
+            type="button"
             role="menuitem"
-            className={`${itemClass} text-text-secondary hover:text-brand-cyan`}
+            disabled={divi.state === 'working'}
+            onClick={exportDivi}
+            className={`${itemClass} text-text-secondary hover:text-brand-cyan disabled:opacity-50 disabled:cursor-not-allowed`}
             title="Export the live site (pages, nav, header/footer) as a WordPress/Divi import bundle (.wxr + Divi library). Temporary bridge for standing sites up on the shared Divi boilerplate."
-            onClick={() => setOpen(false)}
           >
-            Export to Divi ↓
-          </a>
+            {divi.state === 'working' ? 'Building Divi export…' : 'Export to Divi ↓'}
+          </button>
+          {divi.state === 'error' && divi.msg && (
+            <p className="px-3 py-1.5 text-[11px] font-body text-error">{divi.msg}</p>
+          )}
           <button
             type="button"
             role="menuitem"

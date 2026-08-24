@@ -14,9 +14,10 @@ import type { NavJson } from '@/types/nav-json'
 import type { ClientCenterJson } from '@/types/client-center'
 
 // archiver (zip) + GitHub reads require the Node.js runtime; a large site takes
-// a few dozen sequential reads plus Pexels lookups.
+// dozens of GitHub reads plus (time-boxed) Pexels lookups, so allow the full
+// serverless window rather than the 60s default.
 export const runtime = 'nodejs'
-export const maxDuration = 60
+export const maxDuration = 300
 
 const NAV_PATH = 'content/nav.json'
 const CLIENT_CENTER_PATH = 'content/client-center.json'
