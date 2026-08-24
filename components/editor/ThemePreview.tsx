@@ -2,18 +2,31 @@
 
 import { useMemo } from 'react'
 import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
-import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
+import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
+import type { PaletteRole } from '@/lib/editor/theme-edit'
+import ThemeControls from './ThemeControls'
 import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
 
 // Live 1:1 preview: the client's REAL deployed homepage (shellHtml) re-skinned
-// with the pending draft theme.css + design-overrides.css. Recomposes whenever
-// the sources change (after an AI commit), giving the prompt → see-it-change loop.
+// with the pending draft theme.css + design-overrides.css. The controls bar lets
+// an admin click a swatch to pick a color or choose a font per slot — previews
+// update instantly, and commit to the draft (+ MBP) via the parent's handlers.
 export default function ThemePreview({
   shellHtml,
   sources,
+  saving,
+  contrastWarnings,
+  onPreviewPalette,
+  onCommitPalette,
+  onChangeFont,
 }: {
   shellHtml: string
   sources: ThemeSources
+  saving: boolean
+  contrastWarnings: string[]
+  onPreviewPalette: (role: PaletteRole, hex: string) => void
+  onCommitPalette: (role: PaletteRole, hex: string) => void
+  onChangeFont: (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => void
 }) {
   const srcDoc = useMemo(
     () =>
@@ -21,27 +34,26 @@ export default function ThemePreview({
         shellHtml,
         themeCss: sources.themeCss,
         overridesCss: sources.overridesCss,
+        typography: sources.typography,
       }),
-    [shellHtml, sources.themeCss, sources.overridesCss]
+    [shellHtml, sources.themeCss, sources.overridesCss, sources.typography]
   )
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border-default bg-surface-subtle px-4 py-2">
-        <div className="flex items-center gap-1.5">
-          {PALETTE_ROLES.map((role) => (
-            <span
-              key={role}
-              title={`${role}: ${sources.palette[role]}`}
-              className="h-5 w-5 rounded-full border border-border-default"
-              style={{ backgroundColor: sources.palette[role] }}
-            />
-          ))}
-        </div>
-        <span className="font-body text-[11px] text-text-muted">
-          roundness: {sources.roundness} · density: {sources.density} · feel: {sources.visualFeel}
-        </span>
-      </div>
+      <ThemeControls
+        palette={sources.palette}
+        typography={sources.typography}
+        roundness={sources.roundness}
+        density={sources.density}
+        visualFeel={sources.visualFeel}
+        fonts={CURATED_FONTS}
+        contrastWarnings={contrastWarnings}
+        saving={saving}
+        onPreviewPalette={onPreviewPalette}
+        onCommitPalette={onCommitPalette}
+        onChangeFont={onChangeFont}
+      />
       <iframe
         title="Theme preview"
         srcDoc={srcDoc}

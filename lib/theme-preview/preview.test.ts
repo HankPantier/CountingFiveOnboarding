@@ -70,4 +70,21 @@ describe('composePreviewSrcDoc', () => {
     const evil = composePreviewSrcDoc({ shellHtml: shell.shellHtml, themeCss: '</style><script>x</script>', overridesCss: '' })
     expect(evil).not.toContain('</style><script>')
   })
+
+  it('loads the chosen fonts when typography is supplied', () => {
+    const doc2 = composePreviewSrcDoc({
+      shellHtml: shell.shellHtml,
+      themeCss: '',
+      overridesCss: '',
+      typography: {
+        headingFont: 'Lora',
+        bodyFont: 'Inter',
+        accentFont: 'Fraunces',
+        googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Lora&family=Inter&display=swap',
+      },
+    })
+    expect(doc2).toContain('--font-heading-loaded:"Lora"')
+    expect(doc2).toContain('--font-body-loaded:"Inter"')
+    expect(doc2).toContain('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora')
+  })
 })

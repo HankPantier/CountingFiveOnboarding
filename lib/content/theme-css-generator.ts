@@ -99,7 +99,10 @@ export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
 
 // Regenerate the full theme.css contents from brand.json + design.json. The
 // output string must match the template's generate-theme.ts exactly.
-export function generateThemeCss(brand: BrandJson, design: DesignJson): string {
+// Accepts just `{ palette }` (a full BrandJson is assignable) so the Theme
+// Studio can regenerate the preview client-side without reconstructing a whole
+// BrandJson.
+export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: DesignJson): string {
   const { palette } = brand
   const { spacing, radius } = design
 

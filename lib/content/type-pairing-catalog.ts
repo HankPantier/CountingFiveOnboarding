@@ -13,7 +13,7 @@ export type TypePairing = {
   accentFont?: string
 }
 
-function gfUrl(families: string[]): string {
+export function gfUrl(families: string[]): string {
   // Each family: "Family Name:wght@400;700"
   const params = families
     .map(f => `family=${f.replace(/ /g, '+')}:wght@400;500;700`)
@@ -90,6 +90,16 @@ export const TYPE_PAIRINGS: readonly TypePairing[] = [
     description: 'Slab-leaning warm serif with a balanced humanist sans.',
     googleFontsUrl: gfUrl(['Bitter', 'Karla']) },
 ] as const
+
+// The curated, deduped font families used across the pairings, for the Theme
+// Studio per-slot font pickers and the typography validator. Fraunces is the
+// template's default accent, so it's always available.
+export const CURATED_FONTS: readonly string[] = Array.from(
+  new Set([
+    ...TYPE_PAIRINGS.flatMap((p) => [p.headingFont, p.bodyFont, ...(p.accentFont ? [p.accentFont] : [])]),
+    'Fraunces',
+  ])
+).sort()
 
 export function findPairing(id: string): TypePairing | undefined {
   return TYPE_PAIRINGS.find(p => p.id === id)

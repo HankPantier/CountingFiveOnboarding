@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { patchBrandPalette, patchDesignTokens, upsertBlockOverride } from './theme-edit'
+import { patchBrandPalette, patchDesignTokens, patchDesignTypography, upsertBlockOverride } from './theme-edit'
 
 const BRAND = JSON.stringify(
   {
@@ -77,6 +77,28 @@ describe('patchDesignTokens', () => {
   it('rejects an unknown enum', () => {
     // @ts-expect-error — exercising the runtime guard with a bad value
     const r = patchDesignTokens(DESIGN, { roundness: 'blobby' })
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe('patchDesignTypography', () => {
+  it('changes a font slot and rebuilds the Google Fonts URL from all families', () => {
+    const r = patchDesignTypography(DESIGN, { headingFont: 'Inter' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.design.typography.headingFont).toBe('Inter')
+    expect(r.design.typography.bodyFont).toBe('Public Sans') // untouched
+    expect(r.design.typography.googleFontsUrl).toContain('family=Inter')
+    expect(r.design.typography.googleFontsUrl).toContain('family=Public+Sans')
+    expect(r.design.typography.googleFontsUrl).toContain('family=Fraunces')
+    expect(r.changed).toBe(true)
+  })
+  it('rejects a font outside the curated list', () => {
+    const r = patchDesignTypography(DESIGN, { headingFont: 'Comic Sans MS' })
+    expect(r.ok).toBe(false)
+  })
+  it('rejects an empty patch', () => {
+    const r = patchDesignTypography(DESIGN, {})
     expect(r.ok).toBe(false)
   })
 })

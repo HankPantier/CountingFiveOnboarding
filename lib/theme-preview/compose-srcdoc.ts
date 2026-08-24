@@ -13,18 +13,44 @@ function cssSafe(css: string): string {
   return css.replace(/<\/(style)/gi, '<\\/$1')
 }
 
-// v1 does not swap fonts: alias the template's --font-*-loaded vars to the
-// Google-loaded families the shell preconnects, so the real page's var chain
-// resolves to the correct type even when next/font's own files don't load
-// cross-origin into the frame.
-const FONT_VARS = `:root{--font-heading-loaded:"Public Sans",system-ui,sans-serif;--font-body-loaded:"Public Sans",system-ui,sans-serif;--font-accent-loaded:"Fraunces",Georgia,"Times New Roman",serif;}`
+// Fallback font vars when no typography is supplied — the template's defaults.
+const DEFAULT_FONT_VARS = `:root{--font-heading-loaded:"Public Sans",system-ui,sans-serif;--font-body-loaded:"Public Sans",system-ui,sans-serif;--font-accent-loaded:"Fraunces",Georgia,"Times New Roman",serif;}`
+
+type PreviewTypography = {
+  headingFont: string
+  bodyFont: string
+  accentFont: string
+  googleFontsUrl: string
+}
+
+// Escape a value for a double-quoted HTML attribute (the font URL) / CSS string.
+function attrSafe(value: string): string {
+  return value.replace(/"/g, '&quot;').replace(/</g, '&lt;')
+}
+
+// Map the chosen fonts onto the template's --font-*-loaded vars + a <link> that
+// loads the families into the frame, so a font swap re-skins the preview
+// instantly (the frame allows external CSS/fonts even while fully sandboxed).
+function fontHead(typography: PreviewTypography | undefined): { link: string; vars: string } {
+  if (!typography) return { link: '', vars: DEFAULT_FONT_VARS }
+  const { headingFont, bodyFont, accentFont, googleFontsUrl } = typography
+  const link = googleFontsUrl ? `<link rel="stylesheet" href="${attrSafe(googleFontsUrl)}">` : ''
+  const vars =
+    `:root{` +
+    `--font-heading-loaded:"${attrSafe(headingFont)}",system-ui,sans-serif;` +
+    `--font-body-loaded:"${attrSafe(bodyFont)}",system-ui,sans-serif;` +
+    `--font-accent-loaded:"${attrSafe(accentFont)}",Georgia,"Times New Roman",serif;}`
+  return { link, vars }
+}
 
 export function composePreviewSrcDoc(args: {
   shellHtml: string
   themeCss: string
   overridesCss: string
+  typography?: PreviewTypography
 }): string {
-  const style = `<style>${FONT_VARS}\n${cssSafe(args.themeCss)}\n${cssSafe(args.overridesCss)}</style>`
+  const { link, vars } = fontHead(args.typography)
+  const style = `${link}<style>${vars}\n${cssSafe(args.themeCss)}\n${cssSafe(args.overridesCss)}</style>`
   const { shellHtml } = args
   return shellHtml.includes(THEME_SLOT)
     ? shellHtml.replace(THEME_SLOT, style)

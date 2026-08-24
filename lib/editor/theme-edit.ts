@@ -6,6 +6,7 @@
 // generateThemeCss(); these helpers only own the JSON source-of-truth files.
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
+import { CURATED_FONTS, gfUrl } from '@/lib/content/type-pairing-catalog'
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 export const PALETTE_ROLES = [
@@ -124,6 +125,47 @@ export function patchDesignTokens(designJsonText: string, patch: TokenPatch): De
   }
 
   if (!touched) return { ok: false, reason: 'No token changes were provided.' }
+  const nextText = serialize(next)
+  return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
+}
+
+// ---------------------------------------------------------------------------
+// Typography (fonts). Mirrors patchDesignTokens but for the font slots. Every
+// font must be in the curated allow-list so an unvalidated family name can
+// never smuggle arbitrary text into the rebuilt Google Fonts URL.
+// ---------------------------------------------------------------------------
+export type TypographyPatch = {
+  headingFont?: string
+  bodyFont?: string
+  accentFont?: string
+}
+
+export function patchDesignTypography(designJsonText: string, patch: TypographyPatch): DesignPatchResult {
+  let design: DesignJson
+  try {
+    design = JSON.parse(designJsonText) as DesignJson
+  } catch {
+    return { ok: false, reason: 'content/design.json is not valid JSON.' }
+  }
+
+  const entries = Object.entries(patch).filter(([, v]) => v != null) as [keyof TypographyPatch, string][]
+  if (entries.length === 0) return { ok: false, reason: 'No font changes were provided.' }
+  for (const [slot, font] of entries) {
+    if (!CURATED_FONTS.includes(font)) {
+      return { ok: false, reason: `Unknown font "${font}" for ${slot}. Choose one from the curated list.` }
+    }
+  }
+
+  const typography = { ...design.typography }
+  for (const [slot, font] of entries) typography[slot] = font
+
+  // Rebuild the embed URL from the (deduped) heading + body + accent families.
+  const families = Array.from(
+    new Set([typography.headingFont, typography.bodyFont, typography.accentFont].filter(Boolean))
+  ) as string[]
+  typography.googleFontsUrl = gfUrl(families)
+
+  const next: DesignJson = { ...design, typography }
   const nextText = serialize(next)
   return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
 }

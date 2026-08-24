@@ -3,7 +3,30 @@
 import { useCallback, useEffect, useState } from 'react'
 import ThemePreview from './ThemePreview'
 import ThemeChat from './ThemeChat'
+import { generateThemeCss } from '@/lib/content/theme-css-generator'
+import { gfUrl } from '@/lib/content/type-pairing-catalog'
+import type { PaletteRole } from '@/lib/editor/theme-edit'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
+
+// Regenerate theme.css client-side (generateThemeCss is pure) so a color/font
+// pick re-skins the preview instantly, before the draft commit round-trips.
+function rebuildThemeCss(
+  s: ThemeSources,
+  palette: ThemeSources['palette'],
+  typography: ThemeSources['typography']
+): string {
+  return generateThemeCss(
+    { palette },
+    {
+      typography,
+      roundness: s.roundness,
+      density: s.density,
+      visualFeel: s.visualFeel,
+      spacing: s.spacing,
+      radius: s.radius,
+    }
+  )
+}
 
 // Admin-only Theme Studio: a live 1:1 preview of the client's site (left) beside
 // the AI theme assistant (right). The preview fetches a real deployed URL — the
@@ -35,6 +58,9 @@ export default function ThemeStudio({
   const [loading, setLoading] = useState(true)
   const [busyUrl, setBusyUrl] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [contrastWarnings, setContrastWarnings] = useState<string[]>([])
 
   const loadSources = useCallback(async () => {
     const res = await fetch(`/api/edit/${sessionId}/theme`)
@@ -113,6 +139,67 @@ export default function ThemeStudio({
     [sessionId, loadPreview]
   )
 
+  // Commit a palette/typography change to the draft branch (+ MBP sync) via the
+  // direct PATCH endpoint, then reconcile with the server's canonical sources.
+  const commitTheme = useCallback(
+    async (patch: { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string> }) => {
+      setSaving(true)
+      setSaveError(null)
+      try {
+        const res = await fetch(`/api/edit/${sessionId}/theme`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        })
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string
+          contrastWarnings?: string[]
+        }
+        if (!res.ok) throw new Error(data.error ?? `Failed to save (${res.status})`)
+        setContrastWarnings(Array.isArray(data.contrastWarnings) ? data.contrastWarnings : [])
+        await loadSources().catch(() => {})
+        onCommitted()
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to save theme change')
+      } finally {
+        setSaving(false)
+      }
+    },
+    [sessionId, loadSources, onCommitted]
+  )
+
+  // Live (local) preview while dragging the picker — regenerate theme.css from
+  // the new palette without a round-trip.
+  const previewPalette = useCallback((role: PaletteRole, hex: string) => {
+    setSources((s) => {
+      if (!s) return s
+      const palette = { ...s.palette, [role]: hex }
+      return { ...s, palette, themeCss: rebuildThemeCss(s, palette, s.typography) }
+    })
+  }, [])
+
+  const commitPalette = useCallback(
+    (role: PaletteRole, hex: string) => void commitTheme({ palette: { [role]: hex } }),
+    [commitTheme]
+  )
+
+  // Font change is discrete: preview instantly (new families + rebuilt fonts
+  // URL) and commit in the same action.
+  const changeFont = useCallback(
+    (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => {
+      setSources((s) => {
+        if (!s) return s
+        const typography = { ...s.typography, [slot]: font }
+        typography.googleFontsUrl = gfUrl(
+          Array.from(new Set([typography.headingFont, typography.bodyFont, typography.accentFont]))
+        )
+        return { ...s, typography, themeCss: rebuildThemeCss(s, s.palette, typography) }
+      })
+      void commitTheme({ typography: { [slot]: font } })
+    },
+    [commitTheme]
+  )
+
   const overrideSet = !!info?.previewUrl
   const canResetToDefault = overrideSet && !!info?.configUrl && info.configUrl !== info.previewUrl
 
@@ -123,7 +210,7 @@ export default function ThemeStudio({
           <div className="min-w-0">
             <h1 className="font-heading text-sm font-semibold text-brand-navy">Theme &amp; styling</h1>
             <p className="font-body text-xs text-text-muted">
-              A live preview of the site. Ask the assistant to change colours, roundness, spacing, or a block&rsquo;s look — then Publish.
+              Live preview. Click a color to pick a new one or choose fonts below — or ask the assistant for roundness, spacing, or a block&rsquo;s look. Then Publish.
             </p>
           </div>
           <button
@@ -197,7 +284,22 @@ export default function ThemeStudio({
             {error}
           </div>
         ) : shellHtml && sources ? (
-          <ThemePreview shellHtml={shellHtml} sources={sources} />
+          <>
+            {saveError && (
+              <div className="border-b border-border-default bg-error/10 px-4 py-1.5 font-body text-[11px] text-error">
+                {saveError}
+              </div>
+            )}
+            <ThemePreview
+              shellHtml={shellHtml}
+              sources={sources}
+              saving={saving}
+              contrastWarnings={contrastWarnings}
+              onPreviewPalette={previewPalette}
+              onCommitPalette={commitPalette}
+              onChangeFont={changeFont}
+            />
+          </>
         ) : null}
       </div>
       <div className="w-[360px] shrink-0">
