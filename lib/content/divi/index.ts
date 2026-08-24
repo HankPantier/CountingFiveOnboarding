@@ -83,10 +83,27 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     if (!realByPath.has(s.path)) recs.push({ path: s.path, title: s.title, section: s })
   }
 
-  // Dedup by path (first wins — real pages are added first), then order home →
-  // shallow → deep so every parent precedes its children (WP importer needs it).
+  // Dedup by path (first wins — real pages are added first).
   const seen = new Set<string>()
   const uniqueRecs = recs.filter((r) => (seen.has(r.path) ? false : (seen.add(r.path), true)))
+
+  // Guarantee a home page exists. If the site has no page at '/', synthesize a
+  // simple landing page linking the top-level nav so there's always a front page
+  // to set under Settings → Reading.
+  if (!uniqueRecs.some((r) => r.path === '/')) {
+    uniqueRecs.push({
+      path: '/',
+      title: 'Home',
+      section: {
+        path: '/',
+        title: input.firmName || 'Home',
+        children: resolvedNav.primary.map((i) => ({ title: i.label, path: toPagePath(i.url) })),
+      },
+    })
+  }
+
+  // Order home → shallow → deep so every parent precedes its children (WP
+  // importer needs it).
   uniqueRecs.sort((a, b) => {
     if (a.path === '/') return -1
     if (b.path === '/') return 1
@@ -112,7 +129,10 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
   const imageUrls = await resolveImageUrls(allQueries, input.pexelsApiKey)
 
   const wxrPages: WxrPage[] = uniqueRecs.map((r) => ({
-    title: r.title,
+    // Always name the front page "Home" so it's unmistakable in the Pages list
+    // and easy to set under Settings → Reading (its real title is often the firm
+    // name, which reads as a normal page and gets missed).
+    title: r.path === '/' ? 'Home' : r.title,
     path: r.path,
     slug: slugFor(r.path),
     postId: pageIdByPath.get(r.path)!,

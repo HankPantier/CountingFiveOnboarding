@@ -34,11 +34,15 @@ function postmeta(key: string, value: string): string {
   return `\t\t<wp:postmeta>\n\t\t\t<wp:meta_key>${cdata(key)}</wp:meta_key>\n\t\t\t<wp:meta_value>${cdata(value)}</wp:meta_value>\n\t\t</wp:postmeta>\n`
 }
 
-function pageItem(page: WxrPage, dateGmt: string, author: string): string {
+function pageItem(page: WxrPage, dateGmt: string, author: string, baseUrl: string): string {
+  const permalink = page.path === '/' ? `${baseUrl}/` : `${baseUrl}${page.path}/`
   return (
     `\t<item>\n` +
     `\t\t<title>${cdata(page.title)}</title>\n` +
+    `\t\t<link>${permalink}</link>\n` +
     `\t\t<dc:creator>${cdata(author)}</dc:creator>\n` +
+    // Stable guid so a re-import updates rather than duplicates these pages.
+    `\t\t<guid isPermaLink="false">${baseUrl}/?page_id=${page.postId}</guid>\n` +
     `\t\t<content:encoded>${cdata(page.content)}</content:encoded>\n` +
     `\t\t<excerpt:encoded>${cdata('')}</excerpt:encoded>\n` +
     `\t\t<wp:post_id>${page.postId}</wp:post_id>\n` +
@@ -161,7 +165,7 @@ export function buildWxr(opts: {
     `\t<wp:author><wp:author_id>1</wp:author_id><wp:author_login>${cdata(author)}</wp:author_login><wp:author_email>${cdata('')}</wp:author_email><wp:author_display_name>${cdata(author)}</wp:author_display_name><wp:author_first_name>${cdata('')}</wp:author_first_name><wp:author_last_name>${cdata('')}</wp:author_last_name></wp:author>\n` +
     `\t<wp:term>\n\t\t<wp:term_id>${MENU_TERM_ID}</wp:term_id>\n\t\t<wp:term_taxonomy>nav_menu</wp:term_taxonomy>\n\t\t<wp:term_slug>${MENU_SLUG}</wp:term_slug>\n\t\t<wp:term_name>${cdata(MENU_NAME)}</wp:term_name>\n\t</wp:term>\n`
 
-  const pageItems = opts.pages.map((p) => pageItem(p, opts.dateGmt, author)).join('')
+  const pageItems = opts.pages.map((p) => pageItem(p, opts.dateGmt, author, baseUrl)).join('')
   const menuItems = menuLinks.map((l) => menuItemItem(l, opts.dateGmt, author)).join('')
 
   return header + pageItems + menuItems + `</channel>\n</rss>\n`

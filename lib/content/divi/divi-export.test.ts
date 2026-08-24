@@ -287,6 +287,35 @@ describe('WXR page nesting', () => {
     expect(wxr).toContain('<wp:post_id>101</wp:post_id>')
     expect(wxr).toMatch(/<wp:post_id>101<\/wp:post_id>[\s\S]*?<wp:post_parent>100<\/wp:post_parent>/)
   })
+  it('gives each page a permalink and a stable guid', () => {
+    const wxr = buildWxr({
+      siteTitle: 'Firm',
+      siteUrl: 'https://firm.com',
+      pages: [{ title: 'Home', path: '/', slug: 'home', postId: 100, parentId: 0, content: '[et_pb_section][/et_pb_section]' }],
+      nav: NAV,
+      dateGmt: '2026-08-24 12:00:00',
+    })
+    expect(wxr).toContain('<link>https://firm.com/</link>')
+    expect(wxr).toContain('<guid isPermaLink="false">https://firm.com/?page_id=100</guid>')
+  })
+})
+
+describe('home page guarantee', () => {
+  it('synthesizes a Home page when none exists at /', async () => {
+    const { zip } = await buildDiviExport({
+      firmName: 'Firm',
+      websiteUrl: 'https://firm.com',
+      pages: [{ ...PAGE, page_title: 'About', page_url: '/about' }], // no '/' page
+      brand: BRAND,
+      clientCenter: CLIENT_CENTER,
+      nav: NAV,
+      logoUrl: null,
+      pexelsApiKey: '',
+      dateGmt: '2026-08-24 12:00:00',
+    })
+    // The zip builds (home synthesized) rather than shipping a homeless site.
+    expect(zip.length).toBeGreaterThan(100)
+  })
 })
 
 describe('pageInputFromRepoFile (live repo source)', () => {
