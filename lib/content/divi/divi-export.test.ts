@@ -7,6 +7,7 @@ import { buildWxr } from './wxr'
 import { buildDiviLibrary } from './library'
 import { buildDiviExport } from './index'
 import { pageInputFromRepoFile } from './from-frontmatter'
+import { analyzeNav, buildSectionLandingDivi } from './hierarchy'
 import type { BrandJson } from '@/types/brand-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import type { NavJson } from '@/types/nav-json'
@@ -225,6 +226,66 @@ describe('Divi library JSON', () => {
       expect(layoutType?.slug).toBe('layout')
       expect(parsed.data[key].post_meta._et_pb_built_for_post_type).toEqual(['page'])
     }
+  })
+  it('renders the header nav as a real Divi menu module', () => {
+    expect(parsed.data['1'].post_content).toContain('[et_pb_menu')
+    expect(parsed.data['1'].post_content).toContain('menu_id=""')
+  })
+})
+
+describe('nav-driven hierarchy', () => {
+  // "Services" is a dropdown parent with no page of its own; its children live
+  // at flat URLs that don't share a /services prefix.
+  const NAV_TREE: NavJson = {
+    primary: [
+      { label: 'Home', url: '/' },
+      {
+        label: 'Services',
+        url: '#',
+        children: [
+          { label: 'Tax', url: '/tax-services' },
+          { label: 'Audit', url: '/audit-services' },
+        ],
+      },
+    ],
+  }
+
+  it('maps children to their nav parent regardless of URL prefix', () => {
+    const { parentByChildPath, sections, resolvedNav } = analyzeNav(NAV_TREE)
+    expect(parentByChildPath.get('/tax-services')).toBe('/services')
+    expect(parentByChildPath.get('/audit-services')).toBe('/services')
+    expect(sections).toHaveLength(1)
+    expect(sections[0]).toMatchObject({ path: '/services', title: 'Services' })
+    // The '#' dropdown parent is rewritten to its synthesized page path.
+    expect(resolvedNav.primary[1].url).toBe('/services')
+  })
+
+  it('synthesizes a section landing page that links to each child', () => {
+    const divi = buildSectionLandingDivi({
+      path: '/services',
+      title: 'Services',
+      children: [{ title: 'Tax', path: '/tax-services' }],
+    })
+    expect(divi).toContain('<h1>Services</h1>')
+    expect(divi).toContain('href="/tax-services"')
+  })
+})
+
+describe('WXR page nesting', () => {
+  it('emits wp:post_parent linking a child page to its parent', () => {
+    const wxr = buildWxr({
+      siteTitle: 'Firm',
+      siteUrl: 'https://firm.com',
+      pages: [
+        { title: 'Services', path: '/services', slug: 'services', postId: 100, parentId: 0, content: '[et_pb_section][/et_pb_section]' },
+        { title: 'Tax', path: '/tax-services', slug: 'tax-services', postId: 101, parentId: 100, content: '[et_pb_section][/et_pb_section]' },
+      ],
+      nav: NAV,
+      dateGmt: '2026-08-24 12:00:00',
+    })
+    // The Tax page item carries the Services post id as its parent.
+    expect(wxr).toContain('<wp:post_id>101</wp:post_id>')
+    expect(wxr).toMatch(/<wp:post_id>101<\/wp:post_id>[\s\S]*?<wp:post_parent>100<\/wp:post_parent>/)
   })
 })
 

@@ -36,9 +36,14 @@ Import steps (start from a FRESH copy of the c5d5 boilerplate):
      Then Divi -> Theme Builder -> assign them to the Default Website Template
      (add global Header / Footer, insert the imported layout in each).
 
-  3. Menu location:
+  3. Menu location (IMPORTANT — this also drives the header nav):
      Appearance -> Menus -> select "Primary Menu" -> Manage Locations ->
-     assign it to the boilerplate's primary/header location.
+     assign it to the boilerplate's Primary location. The header's menu module
+     has no menu hard-coded, so it shows whatever is on the Primary location —
+     assign "Primary Menu" there and the header nav + dropdowns light up. (If it
+     doesn't, open the Header layout and pick "Primary Menu" in the menu module.)
+     Pages import with their parent/child nesting from the site nav, so child
+     page URLs become /parent/child (expected for a freshly stood-up site).
 
   4. Front page:
      Settings -> Reading -> "Your homepage displays" -> A static page ->

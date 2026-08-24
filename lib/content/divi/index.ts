@@ -23,6 +23,7 @@ import { resolveImageUrls } from './images'
 import { buildWxr, type WxrPage } from './wxr'
 import { buildDiviLibrary } from './library'
 import { buildReadme } from './readme'
+import { analyzeNav, levelOf, buildSectionLandingDivi, type NavSection } from './hierarchy'
 
 export type { DiviPageInput } from './page'
 
@@ -61,50 +62,78 @@ function parentPathFor(path: string, existing: Set<string>): string | null {
   return null
 }
 
+type PageRec = { path: string; title: string; real?: DiviPageInput; section?: NavSection }
+
 export async function buildDiviExport(input: DiviExportInput): Promise<DiviExportResult> {
-  // Home first, then everything else by URL for a stable, readable import order.
-  const ordered = [...input.pages].sort((a, b) => {
-    const pa = toPagePath(a.page_url)
-    const pb = toPagePath(b.page_url)
-    if (pa === '/') return -1
-    if (pb === '/') return 1
-    return pa.localeCompare(pb)
+  // nav.json is the authoritative structure: parent/child + which section pages
+  // must be synthesized, plus a nav with URLs rewritten to real page paths.
+  const { parentByChildPath, sections, resolvedNav } = analyzeNav(input.nav)
+
+  const realByPath = new Map<string, DiviPageInput>()
+  for (const p of input.pages) realByPath.set(toPagePath(p.page_url), p)
+
+  // A dropdown parent with no page of its own gets a synthesized landing page so
+  // its children have something to nest under and the section is navigable.
+  const recs: PageRec[] = input.pages.map((p) => ({
+    path: toPagePath(p.page_url),
+    title: p.page_title,
+    real: p,
+  }))
+  for (const s of sections) {
+    if (!realByPath.has(s.path)) recs.push({ path: s.path, title: s.title, section: s })
+  }
+
+  // Dedup by path (first wins — real pages are added first), then order home →
+  // shallow → deep so every parent precedes its children (WP importer needs it).
+  const seen = new Set<string>()
+  const uniqueRecs = recs.filter((r) => (seen.has(r.path) ? false : (seen.add(r.path), true)))
+  uniqueRecs.sort((a, b) => {
+    if (a.path === '/') return -1
+    if (b.path === '/') return 1
+    const la = levelOf(a.path, parentByChildPath)
+    const lb = levelOf(b.path, parentByChildPath)
+    return la !== lb ? la - lb : a.path.localeCompare(b.path)
   })
 
   // Stable post IDs so nav menu items and page parents can reference them.
   const pageIdByPath = new Map<string, number>()
-  ordered.forEach((p, i) => pageIdByPath.set(toPagePath(p.page_url), 100 + i))
-  const existingPaths = new Set(pageIdByPath.keys())
+  uniqueRecs.forEach((r, i) => pageIdByPath.set(r.path, 100 + i))
+  const allPaths = new Set(pageIdByPath.keys())
 
-  // Resolve every image query once, deduped across the whole site.
-  const allQueries = ordered.flatMap((p) => collectPageQueries(p))
+  const parentIdFor = (path: string): number => {
+    const navParent = parentByChildPath.get(path)
+    if (navParent && pageIdByPath.has(navParent)) return pageIdByPath.get(navParent)!
+    const urlParent = parentPathFor(path, allPaths) // fallback: URL-prefix nesting
+    return (urlParent && pageIdByPath.get(urlParent)) || 0
+  }
+
+  // Resolve every image query once, deduped across the real pages.
+  const allQueries = uniqueRecs.filter((r) => r.real).flatMap((r) => collectPageQueries(r.real!))
   const imageUrls = await resolveImageUrls(allQueries, input.pexelsApiKey)
 
-  const wxrPages: WxrPage[] = ordered.map((p) => {
-    const path = toPagePath(p.page_url)
-    const parentPath = parentPathFor(path, existingPaths)
-    return {
-      title: p.page_title,
-      path,
-      slug: slugFor(path),
-      postId: pageIdByPath.get(path)!,
-      parentId: (parentPath && pageIdByPath.get(parentPath)) || 0,
-      content: buildPageDivi(p, imageUrls, input.websiteUrl),
-    }
-  })
+  const wxrPages: WxrPage[] = uniqueRecs.map((r) => ({
+    title: r.title,
+    path: r.path,
+    slug: slugFor(r.path),
+    postId: pageIdByPath.get(r.path)!,
+    parentId: parentIdFor(r.path),
+    content: r.real
+      ? buildPageDivi(r.real, imageUrls, input.websiteUrl)
+      : buildSectionLandingDivi(r.section!),
+  }))
 
   const wxr = buildWxr({
     siteTitle: input.firmName || siteHost(input.websiteUrl),
     siteUrl: input.websiteUrl,
     pages: wxrPages,
-    nav: input.nav,
+    nav: resolvedNav,
     dateGmt: input.dateGmt,
   })
 
   const library = buildDiviLibrary({
     brand: input.brand,
     clientCenter: input.clientCenter,
-    nav: input.nav,
+    nav: resolvedNav,
     logoUrl: input.logoUrl,
     dateGmt: input.dateGmt,
   })

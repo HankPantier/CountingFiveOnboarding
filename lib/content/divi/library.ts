@@ -68,11 +68,19 @@ function buildHeader(
   logoUrl: string | null
 ): string {
   const primary = brand.palette.primary || '#003B71'
+  const action = brand.palette.action || '#00C1DE'
   const phone = brand.contact.phone
   const ccHtml = clientCenterHtml(cc, primary)
-  const rightText =
-    navLinksHtml(nav, primary) +
-    (phone ? `<p style="font-weight:700;color:${primary};">${htmlEsc(phone)}</p>` : '') +
+  // A real Divi menu module — with no fixed menu_id it renders whatever menu is
+  // assigned to the theme's Primary location, i.e. the imported "Primary Menu"
+  // once the operator assigns it. Managed in Appearance → Menus, with dropdowns.
+  const menu =
+    `[et_pb_menu menu_id="" _builder_version="${BV}" _module_preset="default" menu_style="left_aligned" ` +
+    `menu_font="||||||||" menu_text_color="${primary}" active_link_color="${action}" ` +
+    `dropdown_menu_bg_color="#FFFFFF" dropdown_menu_text_color="${primary}" ` +
+    `background_color="rgba(0,0,0,0)" module_alignment="right" global_colors_info="{}"][/et_pb_menu]`
+  const belowMenu =
+    (phone ? `<p style="font-weight:700;color:${primary};margin:8px 0 0;">${htmlEsc(phone)}</p>` : '') +
     (ccHtml ? `<div>${ccHtml}</div>` : '')
 
   return (
@@ -80,7 +88,10 @@ function buildHeader(
     `[et_pb_row column_structure="1_3,2_3" _builder_version="${BV}" _module_preset="default" width="100%" max_width="90%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl, primary)}[/et_pb_column]` +
     `[et_pb_column type="2_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" text_orientation="right" global_colors_info="{}"]${rightText}[/et_pb_text]` +
+    `${menu}` +
+    (belowMenu
+      ? `[et_pb_text _builder_version="${BV}" text_orientation="right" global_colors_info="{}"]${belowMenu}[/et_pb_text]`
+      : '') +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }
