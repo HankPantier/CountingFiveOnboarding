@@ -191,7 +191,9 @@ export default function OutlineCard({
         <div className="px-4 pb-4 pt-2 border-t border-border-default space-y-3">
           {needsReview && (
             <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs font-body text-warning-strong">
-              This outline is an auto-generated placeholder because generation failed. Edit the sections, then clear this note before approving.
+              {outline.admin_notes?.trim()
+                ? outline.admin_notes
+                : 'This outline is an auto-generated placeholder because generation failed. Edit the sections, then clear this note before approving.'}
             </div>
           )}
           {/* H1 */}

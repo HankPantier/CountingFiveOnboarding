@@ -4,6 +4,19 @@ import type { SessionSchema } from '@/types/session-schema'
 // the page generator and the Resources blog generators describe the firm's
 // voice identically — one source of truth for "on-brand."
 
+// Schema string fields are declared `string`, but stored schema_data can carry a
+// non-string (array/object) from an AI draft, import, or hand edit. Coerce
+// defensively so a dirty value degrades to empty/text instead of throwing:
+// calling `.trim()` on a non-string TypeError'd here and took down BOTH the
+// outline and page-body generators (they swallow it into a generic "generation
+// failed" note). Arrays are flattened to a comma list; anything else → ''.
+const str = (v: unknown): string =>
+  typeof v === 'string'
+    ? v
+    : Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === 'string').join(', ')
+      : ''
+
 export function buildCredentials(schema: SessionSchema): string {
   const creds: string[] = []
   for (const member of schema.team ?? []) {
@@ -60,40 +73,47 @@ export function buildFirmContext(schema: SessionSchema): string {
 
   // Per-niche pain points + value prop (not just names) so niche pages can speak
   // to the specific audience, not generically.
-  const niches = (schema.niches ?? []).filter(n => n.name)
+  const niches = (schema.niches ?? []).filter(n => str(n.name).trim())
   if (niches.length) {
     const nicheLines = niches.map(n => {
-      const bits = [n.name]
-      if (n.painPoints?.trim()) bits.push(`pain: ${n.painPoints.trim().slice(0, 120)}`)
-      if (n.valueProp?.trim()) bits.push(`value: ${n.valueProp.trim().slice(0, 120)}`)
+      const bits = [str(n.name).trim()]
+      const pain = str(n.painPoints).trim()
+      if (pain) bits.push(`pain: ${pain.slice(0, 120)}`)
+      const value = str(n.valueProp).trim()
+      if (value) bits.push(`value: ${value.slice(0, 120)}`)
       return bits.join(' — ')
     })
     lines.push(`Niches served:\n  ${nicheLines.join('\n  ')}`)
   }
 
   // Client success stories — proof/E-E-A-T material for testimonials & stats.
-  const stories = (b?.clientSuccessStories ?? []).filter(Boolean).slice(0, 3).map(s => s.slice(0, 200))
+  const stories = (b?.clientSuccessStories ?? []).map(s => str(s).trim()).filter(Boolean).slice(0, 3).map(s => s.slice(0, 200))
   if (stories.length) lines.push(`Client success stories (use as proof, don't fabricate specifics): ${stories.join(' | ')}`)
 
   // Reputation & trust signals (ratings, review themes, press).
   const rep = schema.reputation
   if (rep) {
     const repBits: string[] = []
-    if (rep.googleRating?.trim()) repBits.push(`Google ${rep.googleRating.trim()}`)
-    if (rep.yelpRating?.trim()) repBits.push(`Yelp ${rep.yelpRating.trim()}`)
-    if (rep.reviewSummary?.trim()) repBits.push(rep.reviewSummary.trim().slice(0, 160))
+    const google = str(rep.googleRating).trim()
+    if (google) repBits.push(`Google ${google}`)
+    const yelp = str(rep.yelpRating).trim()
+    if (yelp) repBits.push(`Yelp ${yelp}`)
+    const review = str(rep.reviewSummary).trim()
+    if (review) repBits.push(review.slice(0, 160))
     if (rep.pressAndMedia?.length) repBits.push(`Press: ${rep.pressAndMedia.slice(0, 3).join(', ')}`)
     if (repBits.length) lines.push(`Reputation & trust signals: ${repBits.join(' | ')}`)
   }
 
   // Local competitors — for differentiation only. Never name them in copy.
   const competitors = (b?.competitors ?? [])
-    .filter(c2 => c2.name?.trim())
+    .filter(c2 => str(c2.name).trim())
     .slice(0, 5)
     .map(c2 => {
-      const bits = [c2.name.trim()]
-      if (c2.nicheClaim?.trim()) bits.push(c2.nicheClaim.trim().slice(0, 60))
-      if (c2.positioningNotes?.trim()) bits.push(c2.positioningNotes.trim().slice(0, 80))
+      const bits = [str(c2.name).trim()]
+      const claim = str(c2.nicheClaim).trim()
+      if (claim) bits.push(claim.slice(0, 60))
+      const notes = str(c2.positioningNotes).trim()
+      if (notes) bits.push(notes.slice(0, 80))
       return bits.join(' — ')
     })
   if (competitors.length) {
@@ -129,13 +149,13 @@ export function buildContentScopeBlock(schema: SessionSchema): string {
 }
 
 export function buildBrandVoiceBlock(schema: SessionSchema): string {
-  const personality = schema.brand?.brandPersonality?.trim()
-  const example = schema.brand?.voiceExample?.trim()
+  const personality = str(schema.brand?.brandPersonality).trim()
+  const example = str(schema.brand?.voiceExample).trim()
   return `BRAND VOICE:
 ${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
 Tone adjectives: ${schema.brand?.toneAdjectives?.join(', ') ?? ''}
 Avoid: ${schema.brand?.toneToAvoid?.join(', ') ?? ''}
-${personality ? `Personality: ${personality}\n` : ''}Positioning: ${schema.business?.positioningOption ?? ''} — ${schema.business?.positioningStatement?.slice(0, 300) ?? ''}
+${personality ? `Personality: ${personality}\n` : ''}Positioning: ${schema.business?.positioningOption ?? ''} — ${str(schema.business?.positioningStatement).slice(0, 300)}
 ${example ? `\nVOICE EXAMPLE (match this writing style, do not copy it verbatim):\n${example.slice(0, 600)}\n` : ''}
 DIFFERENTIATORS (use these specifically, do not generalize):
 ${schema.business?.differentiators ?? 'Not specified'}

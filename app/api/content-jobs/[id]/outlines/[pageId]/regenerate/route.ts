@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { generateOutlineForPage } from '@/lib/content/outline-generator'
+import { buildOutlineFailureNote } from '@/lib/content/outline-fallback'
+import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 
@@ -74,6 +76,23 @@ export async function POST(
     return NextResponse.json({ outline: updated })
   } catch (err) {
     console.error('[outline-regen] Failed:', err)
-    return NextResponse.json({ error: 'Regeneration failed' }, { status: 500 })
+    // The row was reset to h1=null above; a bare error would strand it as
+    // "Generating..." forever. Recover it to a review-flagged fallback carrying
+    // the real error so the card shows "Needs review" and the operator sees why.
+    const { data: recovered } = await supabase
+      .from('page_outlines')
+      .update({
+        h1: outline.page_title,
+        sections: asJson([{ h2: 'Overview', description: 'Add content here', word_count: 300 }]),
+        admin_notes: buildOutlineFailureNote(err),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', pageId)
+      .select('*')
+      .single()
+    return NextResponse.json(
+      { error: 'Regeneration failed', detail: err instanceof Error ? err.message : String(err), outline: recovered },
+      { status: 500 },
+    )
   }
 }

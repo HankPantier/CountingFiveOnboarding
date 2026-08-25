@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildFirmContext } from './brand-voice'
+import { buildFirmContext, buildBrandVoiceBlock } from './brand-voice'
 import type { SessionSchema } from '@/types/session-schema'
 
 const base = (over: Partial<SessionSchema['business']> = {}, rest: Partial<SessionSchema> = {}): SessionSchema => ({
@@ -73,5 +73,36 @@ describe('buildFirmContext — enriched MBP fields', () => {
     expect(out).toContain('CONTENT SCOPE')
     expect(out).toContain('real estate')
     expect(out).not.toContain('FIRM PROFILE')
+  })
+
+  // Regression: stored schema_data occasionally holds a non-string where the
+  // schema declares `string` (from an AI draft/import). Calling `.trim()` on it
+  // threw a TypeError that both the outline and page-body generators swallowed
+  // into a generic "generation failed" note. buildFirmContext must degrade, not throw.
+  it('does not throw when string-typed schema fields hold arrays/objects', () => {
+    const dirty = base(
+      {
+        // reputation review as an array; competitor claim as an array
+        competitors: [{ name: 'Smith CPA', location: '', size: '', nicheClaim: ['dental', 'legal'], positioningNotes: { note: 'budget' } }],
+        clientSuccessStories: [['Saved $40k'], 'Grew revenue 3x'],
+      } as unknown as SessionSchema['business'],
+      {
+        niches: [{ name: 'Dental practices', description: '', icp: '', painPoints: ['cash flow swings', 'AR aging'], valueProp: 42 }],
+        reputation: { googleRating: 4.9, reviewSummary: ['praise', 'responsive'], trustSignalGaps: [], pressAndMedia: [] },
+      } as unknown as Partial<SessionSchema>,
+    )
+    let out = ''
+    expect(() => { out = buildFirmContext(dirty) }).not.toThrow()
+    // array painPoints flattened to a comma list; non-string valueProp dropped
+    expect(out).toContain('pain: cash flow swings, AR aging')
+    expect(out).not.toContain('value:')
+    expect(out).toContain('Smith CPA')
+  })
+
+  it('buildBrandVoiceBlock does not throw on non-string brand fields', () => {
+    const dirty = base({}, {
+      brand: { brandPersonality: ['warm', 'precise'], voiceExample: 99, currentTone: 'friendly', toneAdjectives: [], toneToAvoid: [] },
+    } as unknown as Partial<SessionSchema>)
+    expect(() => buildBrandVoiceBlock(dirty)).not.toThrow()
   })
 })

@@ -8,7 +8,7 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
-import { OUTLINE_FALLBACK_NOTE } from './outline-fallback'
+import { OUTLINE_FALLBACK_NOTE, buildOutlineFailureNote } from './outline-fallback'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
@@ -307,13 +307,14 @@ export async function runOutlineGeneration(
         )
       } catch (err) {
         console.error(`[outline-gen] Error generating outline for ${outline.page_url}:`, err)
-        // Store fallback
+        // Store a review-flagged fallback carrying the real error so the operator
+        // sees the cause (isFallbackOutline recognizes the prefix → "Needs review").
         await supabase
           .from('page_outlines')
           .update({
             h1: outline.page_title,
             sections: asJson([{ h2: 'Overview', description: 'Add content here', word_count: 300 }]),
-            admin_notes: 'Auto-generated fallback — generation failed. Admin must edit before approving.',
+            admin_notes: buildOutlineFailureNote(err),
             updated_at: new Date().toISOString(),
           })
           .eq('id', outline.id)

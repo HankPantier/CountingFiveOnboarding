@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest'
+import {
+  OUTLINE_FALLBACK_NOTE,
+  OUTLINE_FALLBACK_PREFIX,
+  buildOutlineFailureNote,
+  isFallbackOutline,
+} from './outline-fallback'
+
+describe('outline fallback markers', () => {
+  it('recognizes the parse-failure placeholder note', () => {
+    expect(isFallbackOutline(OUTLINE_FALLBACK_NOTE)).toBe(true)
+  })
+
+  it('embeds the real error in the failure note and stays recognized', () => {
+    const note = buildOutlineFailureNote(new Error('e.painPoints?.trim is not a function'))
+    expect(note.startsWith(OUTLINE_FALLBACK_PREFIX)).toBe(true)
+    expect(note).toContain('e.painPoints?.trim is not a function')
+    // The prefix is what makes the approval UI flag it as "Needs review".
+    expect(isFallbackOutline(note)).toBe(true)
+  })
+
+  it('handles non-Error throwables', () => {
+    expect(isFallbackOutline(buildOutlineFailureNote('boom'))).toBe(true)
+  })
+
+  it('caps a very long error message', () => {
+    const note = buildOutlineFailureNote(new Error('x'.repeat(1000)))
+    expect(note.length).toBeLessThan(400)
+  })
+
+  it('does not flag a normal admin note or blanks', () => {
+    expect(isFallbackOutline('Notes for the copywriter: punchy tone')).toBe(false)
+    expect(isFallbackOutline(null)).toBe(false)
+    expect(isFallbackOutline(undefined)).toBe(false)
+    expect(isFallbackOutline('')).toBe(false)
+  })
+})
