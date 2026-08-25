@@ -6,7 +6,8 @@ import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-va
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
-import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
+import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { extractJson } from './extract-json'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { resolveStockPhotos, type ImageRef } from './stock-photo-resolver'
 import {
@@ -158,61 +159,94 @@ ${args.internalTargets
   })
   .join('\n') || '- (none yet)'}${retryNote}`
 
-  const { text, usage } = await generateText({
-    model: anthropic(DRAFT_MODEL),
-    messages: buildCachedMessages(staticPrefix, dynamicSuffix),
-    // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
-    maxOutputTokens: 8000,
-    providerOptions: GENERATION_PROVIDER_OPTIONS,
-  })
+  // One generation attempt: call the model, record usage, and parse the JSON
+  // answer via extractJson (tolerates fences/prose, throws on truncation).
+  // Returns the parsed draft or { ok:false } carrying finishReason so the caller
+  // can retry. Mirrors the page-body generator's attempt/retry contract.
+  const attempt = async (
+    maxOutputTokens: number,
+    providerOptions: Parameters<typeof generateText>[0]['providerOptions']
+  ): Promise<{ ok: true; result: DraftResult } | { ok: false; finishReason: string }> => {
+    const { text, usage, finishReason } = await generateText({
+      model: anthropic(DRAFT_MODEL),
+      messages: buildCachedMessages(staticPrefix, dynamicSuffix),
+      maxOutputTokens,
+      providerOptions,
+      // Ride out transient overload/rate-limit (529/429) on big 4-firm batches
+      // with the SDK's built-in exponential backoff instead of failing the draft.
+      maxRetries: 4,
+    })
 
-  const cache = extractCacheUsage(usage)
-  console.warn(
-    `[resource-draft] idea="${idea.title}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens}`
-  )
-  checkTokenBudget('resource-draft', idea.title, usage?.inputTokens, 5000)
-  await recordTokenUsage({
-    task: 'content',
-    contentJobId: args.contentJobId,
-    sessionId: args.sessionId,
-    stage: 'resource',
-    pageUrl: kebabSlug(idea.title),
-    model: DRAFT_MODEL,
-    inputTokens: usage?.inputTokens,
-    outputTokens: usage?.outputTokens,
-    cacheReadInputTokens: cache.cacheReadInputTokens,
-    cacheCreationInputTokens: cache.cacheCreationInputTokens,
-  })
+    const cache = extractCacheUsage(usage)
+    console.warn(
+      `[resource-draft] idea="${idea.title}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
+    )
+    checkTokenBudget('resource-draft', idea.title, usage?.inputTokens, 5000)
+    await recordTokenUsage({
+      task: 'content',
+      contentJobId: args.contentJobId,
+      sessionId: args.sessionId,
+      stage: 'resource',
+      pageUrl: kebabSlug(idea.title),
+      model: DRAFT_MODEL,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+      cacheReadInputTokens: cache.cacheReadInputTokens,
+      cacheCreationInputTokens: cache.cacheCreationInputTokens,
+    })
 
-  try {
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
-    if (!parsed?.body || !parsed?.frontmatter?.title) return null
-    const fm = parsed.frontmatter
-    return {
-      body: parsed.body,
-      frontmatter: {
-        title: fm.title,
-        excerpt: fm.excerpt ?? '',
-        meta_title: fm.meta_title ?? fm.title,
-        meta_description: fm.meta_description ?? '',
-        target_keyword: fm.target_keyword ?? idea.target_keyword ?? '',
-        secondary_keywords: Array.isArray(fm.secondary_keywords) ? fm.secondary_keywords : [],
-        answer_block: fm.answer_block ?? '',
-        schema_markup: fm.schema_markup ?? 'BlogPosting',
-        tags: Array.isArray(fm.tags) ? fm.tags : [],
-        hero_image: typeof fm.hero_image === 'string' && fm.hero_image.trim() ? fm.hero_image.trim() : null,
-        hero_image_query:
-          typeof fm.hero_image_query === 'string' && fm.hero_image_query.trim()
-            ? fm.hero_image_query.trim()
-            : null,
-        image_alt: typeof fm.image_alt === 'string' && fm.image_alt.trim() ? fm.image_alt.trim() : null,
-      },
+    try {
+      const parsed = extractJson(text) as {
+        body?: string
+        frontmatter?: Record<string, unknown> & { title?: string }
+      }
+      if (!parsed?.body || !parsed?.frontmatter?.title) return { ok: false, finishReason }
+      const fm = parsed.frontmatter
+      const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+      return {
+        ok: true,
+        result: {
+          body: parsed.body,
+          frontmatter: {
+            title: String(fm.title),
+            excerpt: typeof fm.excerpt === 'string' ? fm.excerpt : '',
+            meta_title: typeof fm.meta_title === 'string' ? fm.meta_title : String(fm.title),
+            meta_description: typeof fm.meta_description === 'string' ? fm.meta_description : '',
+            target_keyword:
+              typeof fm.target_keyword === 'string' ? fm.target_keyword : idea.target_keyword ?? '',
+            secondary_keywords: Array.isArray(fm.secondary_keywords) ? (fm.secondary_keywords as string[]) : [],
+            answer_block: typeof fm.answer_block === 'string' ? fm.answer_block : '',
+            schema_markup: typeof fm.schema_markup === 'string' ? fm.schema_markup : 'BlogPosting',
+            tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : [],
+            hero_image: str(fm.hero_image),
+            hero_image_query: str(fm.hero_image_query),
+            image_alt: str(fm.image_alt),
+          },
+        },
+      }
+    } catch {
+      return { ok: false, finishReason }
     }
-  } catch {
-    console.error(`[resource-draft] Failed to parse JSON for "${idea.title}"`)
-    return null
   }
+
+  // First pass: generous budget so adaptive thinking + the full article JSON both
+  // fit. A parse failure (usually a `length` finish = truncated JSON) retries once
+  // with a bigger budget and low effort — less thinking leaves more room for the
+  // answer. This mirrors the page-body generator and turns the old intermittent
+  // "Draft generation returned unparseable output" error into a transparent
+  // self-heal, so an operator no longer has to click retry.
+  let res = await attempt(24000, GENERATION_PROVIDER_OPTIONS)
+  if (!res.ok) {
+    console.warn(
+      `[resource-draft] JSON parse failed for "${idea.title}" (finish=${res.finishReason}) — retrying with larger budget`
+    )
+    res = await attempt(32000, OUTLINE_PROVIDER_OPTIONS)
+  }
+  if (res.ok) return res.result
+  console.error(
+    `[resource-draft] Failed to parse JSON for "${idea.title}" after retry (finish=${res.finishReason})`
+  )
+  return null
 }
 
 // Citation guard: strip any absolute URL that isn't in the approved list.
