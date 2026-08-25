@@ -13,6 +13,7 @@ import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
+import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
 import { splitTrailers, setFaqAccordionBody } from '@/lib/editor/page-body'
 import {
@@ -84,6 +85,12 @@ export async function POST(
   // Write the new file to draft and advance the working copy + sha. Throws on a
   // GitHub failure or a stale sha; callers convert that into a tool error.
   async function commitWorking(next: string, message: string): Promise<void> {
+    // Reject any edit that would leave the file with invalid YAML frontmatter
+    // before it lands in the draft — otherwise it surfaces as a broken `next
+    // build` at deploy time. The tool executors catch this throw and return the
+    // message to the model, which can retry with the value properly quoted.
+    const yamlError = validateFrontmatterYaml(next)
+    if (yamlError) throw new Error(yamlError)
     const res = await writeFile(githubRepo, path!, next, DRAFT_BRANCH, message, {
       expectedSha: workingSha,
       ...commitAuthor,
