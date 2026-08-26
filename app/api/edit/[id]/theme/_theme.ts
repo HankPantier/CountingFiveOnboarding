@@ -1,5 +1,6 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
+import { gfUrl } from '@/lib/content/type-pairing-catalog'
 
 // The four files the theme editor owns in a client site repo. brand.json +
 // design.json are the source of truth; theme.css is regenerated from them (never
@@ -21,6 +22,23 @@ export type ThemeSources = {
   themeCss: string
   /** Per-client design-overrides.css on draft. */
   overridesCss: string
+}
+
+// design.json files packaged before the Ink & Clay `accentFont` slot existed
+// (and, defensively, any with a partial typography object) are missing font
+// fields. Fill them with the template defaults so every consumer — the Theme
+// Studio preview (compose-srcdoc), the font selectors, and generateThemeCss —
+// always receives a complete typography and never calls a string method on
+// undefined. Defaults mirror lib/content/design-json-builder.ts.
+export function normalizeTypography(
+  t: Partial<DesignJson['typography']> | undefined,
+): DesignJson['typography'] {
+  const headingFont = t?.headingFont || 'Public Sans'
+  const bodyFont = t?.bodyFont || 'Public Sans'
+  const accentFont = t?.accentFont || 'Fraunces'
+  const googleFontsUrl =
+    t?.googleFontsUrl || gfUrl(Array.from(new Set([headingFont, bodyFont, accentFont])))
+  return { headingFont, bodyFont, accentFont, googleFontsUrl }
 }
 
 export type PreviewUrlInfo = {

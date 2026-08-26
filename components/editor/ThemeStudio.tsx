@@ -191,7 +191,7 @@ export default function ThemeStudio({
         if (!s) return s
         const typography = { ...s.typography, [slot]: font }
         typography.googleFontsUrl = gfUrl(
-          Array.from(new Set([typography.headingFont, typography.bodyFont, typography.accentFont]))
+          Array.from(new Set([typography.headingFont, typography.bodyFont, typography.accentFont].filter(Boolean)))
         )
         return { ...s, typography, themeCss: rebuildThemeCss(s, s.palette, typography) }
       })

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { transformShellHtml } from './build-preview-shell'
 import { composePreviewSrcDoc, THEME_SLOT } from './compose-srcdoc'
+import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 
 // A minimal page shaped like the real Next output: a stylesheet whose utilities
 // reference var(--color-primary), the site's baked theme :root, a script, and a
@@ -86,5 +87,38 @@ describe('composePreviewSrcDoc', () => {
     expect(doc2).toContain('--font-heading-loaded:"Lora"')
     expect(doc2).toContain('--font-body-loaded:"Inter"')
     expect(doc2).toContain('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora')
+  })
+
+  // Regression: legacy design.json omits accentFont (added later for Ink & Clay).
+  // A partial typography must fall back per-field, never throw at mount.
+  it('does not throw and falls back per-field when a font slot is missing', () => {
+    const partial = { headingFont: 'Lora', bodyFont: 'Inter' } as unknown as Parameters<typeof composePreviewSrcDoc>[0]['typography']
+    let doc3 = ''
+    expect(() => {
+      doc3 = composePreviewSrcDoc({ shellHtml: shell.shellHtml, themeCss: '', overridesCss: '', typography: partial })
+    }).not.toThrow()
+    expect(doc3).toContain('--font-heading-loaded:"Lora"')
+    expect(doc3).toContain('--font-accent-loaded:"Fraunces"') // filled default
+  })
+})
+
+describe('normalizeTypography', () => {
+  it('fills missing font slots with template defaults and builds a fonts URL', () => {
+    const t = normalizeTypography({ headingFont: 'Lora' })
+    expect(t.headingFont).toBe('Lora')
+    expect(t.bodyFont).toBe('Public Sans')
+    expect(t.accentFont).toBe('Fraunces')
+    expect(t.googleFontsUrl).toContain('Lora')
+  })
+
+  it('returns a complete object for undefined input', () => {
+    const t = normalizeTypography(undefined)
+    expect(t).toMatchObject({ headingFont: 'Public Sans', bodyFont: 'Public Sans', accentFont: 'Fraunces' })
+    expect(typeof t.googleFontsUrl).toBe('string')
+  })
+
+  it('preserves an existing googleFontsUrl', () => {
+    const t = normalizeTypography({ headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces', googleFontsUrl: 'https://example.com/fonts' })
+    expect(t.googleFontsUrl).toBe('https://example.com/fonts')
   })
 })

@@ -28,6 +28,7 @@ import {
   DESIGN_PATH,
   OVERRIDES_PATH,
   THEME_CSS_PATH,
+  normalizeTypography,
   type ThemeSources,
 } from './_theme'
 
@@ -81,7 +82,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const sources: ThemeSources = {
       palette: brand.palette,
-      typography: design.typography,
+      typography: normalizeTypography(design.typography),
       roundness: design.roundness,
       density: design.density,
       visualFeel: design.visualFeel,
@@ -212,7 +213,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (session) {
       let schema = (session.schema_data ?? {}) as Record<string, unknown>
       if (brandChanged) schema = deepSetPath(schema, 'brand.primaryColors', paletteSummary(brand.palette))
-      if (designChanged) schema = deepSetPath(schema, 'brand.typography', typographySummary(design.typography))
+      if (designChanged) schema = deepSetPath(schema, 'brand.typography', typographySummary(normalizeTypography(design.typography)))
       await supabase.from('sessions').update({ schema_data: asJson(schema) }).eq('id', sessionId)
     }
     if (brandChanged) {
@@ -228,7 +229,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({
       ok: true,
       palette: brand.palette,
-      typography: design.typography,
+      typography: normalizeTypography(design.typography),
       contrastWarnings: checkThemeContrast(brand).map(
         (f) => `${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`
       ),

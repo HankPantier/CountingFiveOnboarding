@@ -24,22 +24,26 @@ type PreviewTypography = {
 }
 
 // Escape a value for a double-quoted HTML attribute (the font URL) / CSS string.
-function attrSafe(value: string): string {
-  return value.replace(/"/g, '&quot;').replace(/</g, '&lt;')
+// Coerce first: a legacy design.json can omit a font field, and this must never
+// throw on an undefined value (that crashed the whole Theme Studio at mount).
+function attrSafe(value: string | undefined): string {
+  return (typeof value === 'string' ? value : '').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 }
 
 // Map the chosen fonts onto the template's --font-*-loaded vars + a <link> that
 // loads the families into the frame, so a font swap re-skins the preview
 // instantly (the frame allows external CSS/fonts even while fully sandboxed).
-function fontHead(typography: PreviewTypography | undefined): { link: string; vars: string } {
+// Per-field fallbacks handle a partial typography (e.g. no accentFont) — the
+// route normalizes on read, this is defense-in-depth.
+function fontHead(typography: Partial<PreviewTypography> | undefined): { link: string; vars: string } {
   if (!typography) return { link: '', vars: DEFAULT_FONT_VARS }
   const { headingFont, bodyFont, accentFont, googleFontsUrl } = typography
   const link = googleFontsUrl ? `<link rel="stylesheet" href="${attrSafe(googleFontsUrl)}">` : ''
   const vars =
     `:root{` +
-    `--font-heading-loaded:"${attrSafe(headingFont)}",system-ui,sans-serif;` +
-    `--font-body-loaded:"${attrSafe(bodyFont)}",system-ui,sans-serif;` +
-    `--font-accent-loaded:"${attrSafe(accentFont)}",Georgia,"Times New Roman",serif;}`
+    `--font-heading-loaded:"${attrSafe(headingFont || 'Public Sans')}",system-ui,sans-serif;` +
+    `--font-body-loaded:"${attrSafe(bodyFont || 'Public Sans')}",system-ui,sans-serif;` +
+    `--font-accent-loaded:"${attrSafe(accentFont || 'Fraunces')}",Georgia,"Times New Roman",serif;}`
   return { link, vars }
 }
 

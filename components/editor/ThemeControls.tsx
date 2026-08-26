@@ -148,7 +148,7 @@ export default function ThemeControls({
               <Swatch
                 key={role}
                 role={role}
-                hex={palette[role]}
+                hex={palette?.[role] ?? '#000000'}
                 saving={saving}
                 onPreview={onPreviewPalette}
                 onCommit={onCommitPalette}
@@ -159,25 +159,30 @@ export default function ThemeControls({
 
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-heading text-[11px] font-semibold text-text-secondary">Fonts</span>
-          {FONT_SLOTS.map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-1.5">
-              <span className="font-body text-[11px] text-text-muted">{label}</span>
-              <select
-                value={typography[key]}
-                disabled={saving}
-                onChange={(e) => onChangeFont(key, e.target.value)}
-                className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
-              >
-                {/* The current font may be outside the curated list (legacy) — keep it selectable. */}
-                {!fonts.includes(typography[key]) && <option value={typography[key]}>{typography[key]}</option>}
-                {fonts.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          {FONT_SLOTS.map(({ key, label }) => {
+            // Legacy design.json can omit a font slot (e.g. accentFont). Guard so
+            // a missing value renders a blank <select> instead of crashing.
+            const current = typography?.[key] ?? ''
+            return (
+              <label key={key} className="flex items-center gap-1.5">
+                <span className="font-body text-[11px] text-text-muted">{label}</span>
+                <select
+                  value={current}
+                  disabled={saving}
+                  onChange={(e) => onChangeFont(key, e.target.value)}
+                  className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
+                >
+                  {/* The current font may be outside the curated list (legacy) — keep it selectable. */}
+                  {current && !fonts.includes(current) && <option value={current}>{current}</option>}
+                  {fonts.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )
+          })}
         </div>
 
         <span className="font-body text-[11px] text-text-muted">
