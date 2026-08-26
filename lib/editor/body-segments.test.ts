@@ -5,6 +5,7 @@ import {
   splitProseParts,
   joinProseParts,
 } from './body-segments'
+import { setCardTitle, addCard } from './structured-blocks/card-blocks'
 
 // A body exercising every structural shape the scanner must protect: a prose
 // intro block, a content-split with prose, a feature-grid with icon chunks, a
@@ -99,6 +100,53 @@ describe('scanBodySegments / serializeBodySegments', () => {
     expect(next).toContain('icon: FileText')
     expect(next).toContain('photo: ron.jpg')
     expect(next).toContain('**Q: Do you offer payroll?**')
+  })
+})
+
+// Integration: the inline structured-block editors hand updateStructural a
+// byte-surgical rewrite of one structural segment. Prove that flows back into a
+// coherent body — the whole thing still round-trips and re-scans to the same
+// segment kinds, and neighboring blocks are untouched.
+describe('structural segment edits integrate with the scanner', () => {
+  // Mirror RichBodyEditor.renderStructural: a structural segment can hold
+  // several adjacent blocks, so split on annotation boundaries (join('') is
+  // lossless) and edit only the matching block part.
+  const applyToStructural = (
+    body: string,
+    match: string,
+    edit: (blockPart: string) => string
+  ): string => {
+    const segs = scanBodySegments(body)
+    const idx = segs.findIndex((s) => s.kind === 'structural' && s.text.includes(match))
+    expect(idx).toBeGreaterThanOrEqual(0)
+    const parts = segs[idx].text.split(/(?=<!--\s*block:)/g)
+    const pi = parts.findIndex((p) => p.includes(match))
+    const nextText = parts.map((p, i) => (i === pi ? edit(p) : p)).join('')
+    const next = segs.map((s, i) => (i === idx ? { ...s, text: nextText } : s))
+    return serializeBodySegments(next)
+  }
+
+  it('renaming a feature-grid card keeps the body coherent and siblings intact', () => {
+    const next = applyToStructural(BODY, 'Tax Prep', (segText) =>
+      setCardTitle(segText, 0, 'Tax Preparation')
+    )
+    expect(next).toContain('### Tax Preparation')
+    expect(next).not.toContain('### Tax Prep\n')
+    // Re-scans losslessly and to the same kind layout.
+    expect(serializeBodySegments(scanBodySegments(next))).toBe(next)
+    const before = scanBodySegments(BODY).map((s) => s.kind)
+    expect(scanBodySegments(next).map((s) => s.kind)).toEqual(before)
+    // Neighboring structural + prose content survives.
+    expect(next).toContain('photo: ron.jpg')
+    expect(next).toContain('More prose describing the firm.')
+  })
+
+  it('adding a card grows the feature-grid without corrupting the next block', () => {
+    const next = applyToStructural(BODY, 'Tax Prep', (segText) => addCard(segText))
+    expect(next).toContain('### New item')
+    expect(serializeBodySegments(scanBodySegments(next))).toBe(next)
+    // The team-grid annotation that trailed the feature-grid segment survives.
+    expect(next).toContain('<!-- block: team-grid | variant: 3-col -->')
   })
 })
 

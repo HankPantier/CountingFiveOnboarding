@@ -11,6 +11,9 @@ import { ASSET_ROOT, localImageFilename } from '@/lib/editor/page-images'
 import { extractImageBlocks } from '@/lib/editor/block-images'
 import { extractTeamMembers } from '@/lib/editor/team-photos'
 import AssetThumb from './AssetThumb'
+import StructuredBlockEditor, { isStructuredBlockEditable } from './StructuredBlockEditor'
+import FaqInlineEditor from './FaqInlineEditor'
+import type { FaqItem } from '@/lib/editor/structured-fields'
 import {
   scanBodySegments,
   serializeBodySegments,
@@ -18,6 +21,8 @@ import {
   joinProseParts,
   type BodySegment,
 } from '@/lib/editor/body-segments'
+
+const FAQ_BLOCK_RE = /^<!--\s*block:\s*faq-accordion\b/
 
 // tiptap-markdown augments editor.storage at runtime but ships no module
 // augmentation, so narrow the access here rather than reach into `any`.
@@ -234,12 +239,21 @@ export default function RichBodyEditor({
   heroSrc,
   body,
   onChange,
+  faqItems,
+  faqHeading,
+  onFaqChange,
 }: {
   sessionId: string
   title: string
   heroSrc: string
   body: string
   onChange: (next: string) => void
+  // FAQ edits dual-write frontmatter faq_block, so they route to the parent
+  // rather than through the body-only segment path. Omitted for files (e.g.
+  // posts/social) that have no faq handling.
+  faqItems?: FaqItem[]
+  faqHeading?: string
+  onFaqChange?: (items: FaqItem[]) => void
 }) {
   const [mode, setMode] = useState<'wysiwyg' | 'source'>('wysiwyg')
   const [segments, setSegments] = useState<BodySegment[]>(() => scanBodySegments(body))
@@ -264,6 +278,21 @@ export default function RichBodyEditor({
       const text = joinProseParts(splitProseParts(seg.text), core)
       if (text === seg.text) return prev
       const nextSegments = prev.map((s, i) => (i === index ? { ...s, text } : s))
+      const next = serializeBodySegments(nextSegments)
+      emittedRef.current = next
+      onChange(next)
+      return nextSegments
+    })
+  }
+
+  // Replace a structural segment's text wholesale (the inline block editors
+  // hand back byte-surgical rewrites). Mirrors updateProse: echo-guarded so our
+  // own emit doesn't remount the editors mid-edit.
+  const updateStructural = (index: number, nextText: string) => {
+    setSegments((prev) => {
+      const seg = prev[index]
+      if (!seg || seg.kind !== 'structural' || nextText === seg.text) return prev
+      const nextSegments = prev.map((s, i) => (i === index ? { ...s, text: nextText } : s))
       const next = serializeBodySegments(nextSegments)
       emittedRef.current = next
       onChange(next)
@@ -297,18 +326,60 @@ export default function RichBodyEditor({
   const rows = groupRows(segments)
   const hasRail = rows.some((r) => r.rail)
 
-  const renderSegment = (seg: BodySegment, i: number) => {
-    if (seg.kind === 'structural') {
-      const display = structuralDisplay(seg.text)
-      if (!display) return null
-      return (
-        <div key={`s-${i}`} className="opacity-90">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-            {display}
-          </ReactMarkdown>
-        </div>
-      )
+  // A structural segment can hold several adjacent blocks plus the next block's
+  // dangling annotation. Split on annotation boundaries (join('') is lossless)
+  // and give each recognized block its own inline editor; anything unrecognized
+  // (tables, stray comments, image-only blocks) keeps the read-only preview.
+  const renderStructural = (seg: BodySegment, i: number) => {
+    const parts = seg.text.split(/(?=<!--\s*block:)/g)
+    const updatePart = (pi: number, nextPart: string) => {
+      const next = parts.map((p, idx) => (idx === pi ? nextPart : p)).join('')
+      updateStructural(i, next)
     }
+    return (
+      <div key={`s-${i}`}>
+        {parts.map((part, pi) => {
+          // FAQ dual-writes frontmatter via the parent, so each keystroke round-
+          // trips the whole body and bumps resetKey. A stable key keeps its
+          // buffer + focus across that (it reseeds on tab switch / file change).
+          if (onFaqChange && FAQ_BLOCK_RE.test(part)) {
+            return (
+              <FaqInlineEditor
+                key={`faq-${i}-${pi}`}
+                heading={faqHeading ?? 'Frequently Asked Questions'}
+                items={faqItems ?? []}
+                onChange={onFaqChange}
+              />
+            )
+          }
+          // Card/team edits are echo-guarded (no resetKey bump), so keying on
+          // resetKey only remounts them on genuinely external edits (source
+          // mode, Media tab) — exactly when their inputs must reseed.
+          if (isStructuredBlockEditable(part)) {
+            return (
+              <StructuredBlockEditor
+                key={`blk-${resetKey}-${i}-${pi}`}
+                text={part}
+                onChange={(next) => updatePart(pi, next)}
+              />
+            )
+          }
+          const display = structuralDisplay(part)
+          if (!display) return null
+          return (
+            <div key={`ro-${resetKey}-${i}-${pi}`} className="opacity-90">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {display}
+              </ReactMarkdown>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const renderSegment = (seg: BodySegment, i: number) => {
+    if (seg.kind === 'structural') return renderStructural(seg, i)
     const core = cores[i] ?? ''
     const showEditor = core !== '' || (!hasProse && i === firstProseIndex)
     if (!showEditor) return null

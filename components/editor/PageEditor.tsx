@@ -449,6 +449,9 @@ export default function PageEditor({
               heroSrc={heroSrc}
               body={bodyContent}
               onChange={setBody}
+              faqItems={displayFaq}
+              faqHeading={faqHeading}
+              onFaqChange={fm && !isSocial ? onFaqChange : undefined}
             />
           )}
 
