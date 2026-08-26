@@ -42,13 +42,18 @@ function Swatch({
   const ref = useRef<HTMLDivElement>(null)
   const committedRef = useRef(hex) // last value we told the server about
 
-  // Keep the local draft in sync when the source value changes (e.g. reload).
-  useEffect(() => {
+  // `draft` is only read while the popover is open, so seed it from the current
+  // source color at open time (an event handler — no setState-in-effect). This
+  // also captures the baseline we diff against to decide whether to commit.
+  const toggle = () => {
     if (!open) {
       setDraft(hex)
       committedRef.current = hex
+      setOpen(true)
+    } else {
+      setOpen(false)
     }
-  }, [hex, open])
+  }
 
   // Commit on close (click-outside / Escape) if the color actually changed.
   useEffect(() => {
@@ -85,7 +90,7 @@ function Swatch({
         type="button"
         title={`${ROLE_LABELS[role]}: ${hex}`}
         aria-label={`Edit ${ROLE_LABELS[role]} color`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         className="h-6 w-6 rounded-full border border-border-default shadow-subtle transition-transform hover:scale-110"
         style={{ backgroundColor: hex }}
       />

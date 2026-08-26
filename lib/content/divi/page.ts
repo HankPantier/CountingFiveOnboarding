@@ -32,8 +32,6 @@ export type DiviPageInput = {
   cta: { text: string; url: string } | null
 }
 
-const CARD_BLOCKS = new Set(['feature-grid', 'service-cards', 'industry-cards'])
-
 function colsFromVariant(variant: string | undefined, fallback: number): number {
   const m = (variant ?? '').match(/(\d+)/)
   const n = m ? Number(m[1]) : NaN

@@ -18,7 +18,12 @@ export default function DashboardSearch({
   const [value, setValue] = useState(initialQuery)
   const firstRun = useRef(true)
   const statusRef = useRef(status)
-  statusRef.current = status
+  // Keep the latest status in a ref so the debounced navigation reads it without
+  // re-arming the timer on every status change. Writing the ref in an effect (not
+  // during render) satisfies react-hooks/refs.
+  useEffect(() => {
+    statusRef.current = status
+  }, [status])
 
   useEffect(() => {
     // Don't navigate on mount — only when the user actually types.

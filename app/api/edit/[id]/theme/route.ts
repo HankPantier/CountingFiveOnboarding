@@ -21,7 +21,6 @@ import { deepSetPath } from '@/lib/mbp/schema-write'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
-import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import {
   BRAND_PATH,

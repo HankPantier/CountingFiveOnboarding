@@ -32,6 +32,9 @@ export default function LoginPage() {
     window.history.replaceState(null, '', window.location.pathname + window.location.search)
 
     if (errorDescription || !accessToken || !refreshToken) {
+      // Legitimate effect: surfacing an error parsed from the one-time auth
+      // redirect hash on mount, not deriving state from props/render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(errorDescription ?? 'This link is invalid or has expired. Request a new one below.')
       return
     }
