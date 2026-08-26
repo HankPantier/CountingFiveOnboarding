@@ -5,6 +5,7 @@ import NavCurationPhase from './NavCurationPhase'
 import PackageDownloadBar from './PackageDownloadBar'
 import ProgressBar from '@/components/ui/ProgressBar'
 import { useTaskProgress } from '@/components/ui/use-task-progress'
+import { packageErrorMessage } from '@/lib/content/package-error-message'
 import type { NavJson } from '@/types/nav-json'
 
 type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
@@ -24,12 +25,13 @@ type Unapproved = { id?: string; page_title?: string; page_url?: string }
 // within its own maxDuration (no single-invocation timeout risk).
 const DEPLOY_STEPS = [
   { key: 'seeding', label: 'Seed template' },
+  { key: 'resolving', label: 'Resolve images' },
   { key: 'assembling', label: 'Assemble & push to draft' },
   { key: 'confirming', label: 'Confirm draft push' },
   { key: 'publishing', label: 'Publish to live' },
 ] as const
 
-type DeployStep = 'idle' | 'seeding' | 'assembling' | 'confirming' | 'publishing' | 'live'
+type DeployStep = 'idle' | 'seeding' | 'resolving' | 'assembling' | 'confirming' | 'publishing' | 'live'
 
 export default function DeliverablesPhase({
   sessionId,
@@ -69,7 +71,9 @@ export default function DeliverablesPhase({
   const [repullMsg, setRepullMsg] = useState<string | null>(null)
   const [repullTaskId, setRepullTaskId] = useState<string | null>(null)
   const [repullStartedAt, setRepullStartedAt] = useState<number | null>(null)
-  const repullProgress = useTaskProgress(repullTaskId, repullState === 'working')
+  // Drives both the manual "Re-pull all images" bar and the one-click flow's
+  // pre-assemble "Resolve images" step (same repull route + taskId plumbing).
+  const repullProgress = useTaskProgress(repullTaskId, repullState === 'working' || deployStep === 'resolving')
   // Start timestamps for the indeterminate (elapsed-timer) bars on the opaque
   // assemble + one-click publish flows, which have no determinate count.
   const [assembleStartedAt, setAssembleStartedAt] = useState<number | null>(null)
@@ -155,7 +159,7 @@ export default function DeliverablesPhase({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         if (Array.isArray(data?.unapproved)) setUnapprovedFromGate(data.unapproved)
-        throw new Error(data?.error ?? 'Failed to assemble package')
+        throw new Error(packageErrorMessage(res.status, data))
       }
       setPackageInfo({ pageCount: data.pageCount, sizeKB: data.sizeKB })
       setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
@@ -186,7 +190,36 @@ export default function DeliverablesPhase({
       const seedData = await seedRes.json().catch(() => ({}))
       if (!seedRes.ok) throw new Error(seedData?.error ?? 'Repo seeding failed')
 
-      // Step 2 — assemble the package and background-push it to the draft branch.
+      // Step 2 — pre-resolve stock/hero images out-of-band. resolveStockPhotos'
+      // Phase 1 is deliberately SEQUENTIAL (one Pexels round-trip per new ref),
+      // so running it inside the assemble invocation blows its maxDuration on a
+      // large fresh site (every ref unresolved) → bodyless 504 → the old generic
+      // "Failed to assemble package". Doing it here — through the repull route,
+      // which has its own budget + progress bar — means assemble then finds every
+      // photo already in `assets` and skips its own resolve (idempotent), the same
+      // fast path an existing managed site takes. Best-effort: a failure is
+      // NON-FATAL (assemble still resolves anything missed, and the post-assemble
+      // image-coverage guard below is the backstop), so we warn and press on.
+      setDeployStep('resolving')
+      const resolveTaskId = crypto.randomUUID()
+      setRepullTaskId(resolveTaskId)
+      try {
+        const resolveRes = await fetch(`/api/content-jobs/${contentJobId}/images/repull`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: resolveTaskId }),
+        })
+        if (!resolveRes.ok) {
+          const rd = await resolveRes.json().catch(() => ({}))
+          console.warn('[deploy] Pre-resolve images failed (non-fatal):', rd?.error ?? resolveRes.status)
+        }
+      } catch (e) {
+        console.warn('[deploy] Pre-resolve images request failed (non-fatal):', e)
+      } finally {
+        setRepullTaskId(null)
+      }
+
+      // Step 3 — assemble the package and background-push it to the draft branch.
       setDeployStep('assembling')
       let baselineSha: string | null = null
       try {
@@ -199,7 +232,7 @@ export default function DeliverablesPhase({
       const pkgData = await pkgRes.json().catch(() => ({}))
       if (!pkgRes.ok) {
         if (Array.isArray(pkgData?.unapproved)) setUnapprovedFromGate(pkgData.unapproved)
-        throw new Error(pkgData?.error ?? 'Failed to assemble package')
+        throw new Error(packageErrorMessage(pkgRes.status, pkgData))
       }
       setPackageInfo({ pageCount: pkgData.pageCount, sizeKB: pkgData.sizeKB })
       setLinkWarnings(Array.isArray(pkgData.linkWarnings) ? pkgData.linkWarnings : [])
@@ -223,14 +256,14 @@ export default function DeliverablesPhase({
         )
       }
 
-      // Step 3 — wait for the background push to land on draft.
+      // Step 4 — wait for the background push to land on draft.
       setDeployStep('confirming')
       const confirmed = await trackDeploy(baselineSha)
       if (!confirmed) {
         throw new Error('Timed out confirming the draft push. The package still shipped — publish from the content editor once the draft commit appears.')
       }
 
-      // Step 4 — publish draft→main. First deploy is a clean fast-forward; a
+      // Step 5 — publish draft→main. First deploy is a clean fast-forward; a
       // conflict (not expected here) opens a PR instead of merging.
       setDeployStep('publishing')
       const pubRes = await fetch(`/api/edit/${sessionId}/publish`, { method: 'POST' })
@@ -301,13 +334,15 @@ export default function DeliverablesPhase({
       ? 'Retry publish site live'
       : deployStep === 'seeding'
         ? 'Seeding repo…'
-        : deployStep === 'assembling'
-          ? 'Assembling package…'
-          : deployStep === 'confirming'
-            ? 'Pushing to draft…'
-            : deployStep === 'publishing'
-              ? 'Publishing to live…'
-              : 'Publish site live'
+        : deployStep === 'resolving'
+          ? 'Resolving images…'
+          : deployStep === 'assembling'
+            ? 'Assembling package…'
+            : deployStep === 'confirming'
+              ? 'Pushing to draft…'
+              : deployStep === 'publishing'
+                ? 'Publishing to live…'
+                : 'Publish site live'
 
   const allApproved = approval ? approval.complete > 0 && approval.complete === approval.approved : false
   const hasUnapproved = approval ? approval.complete - approval.approved > 0 : false
@@ -380,9 +415,13 @@ export default function DeliverablesPhase({
 
           {deploying && (
             <ProgressBar
-              phase={DEPLOY_STEPS[deployStepIndex]?.label ?? 'Working…'}
-              current={0}
-              total={0}
+              phase={
+                deployStep === 'resolving'
+                  ? (repullProgress?.phase ?? 'Finding photos…')
+                  : (DEPLOY_STEPS[deployStepIndex]?.label ?? 'Working…')
+              }
+              current={deployStep === 'resolving' ? (repullProgress?.current ?? 0) : 0}
+              total={deployStep === 'resolving' ? (repullProgress?.total ?? 0) : 0}
               startedAt={deployStartedAt}
             />
           )}

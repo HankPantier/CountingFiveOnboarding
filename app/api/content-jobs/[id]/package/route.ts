@@ -6,8 +6,11 @@ export const runtime = 'nodejs'
 // Assembly (asset downloads + LLM brand doc + docx + ~45MB resumable upload) is
 // what the response waits on. The git push of the full deliverable (hundreds of
 // blobs) is decoupled into an after() background task, but it still shares this
-// invocation's budget — keep 300 so the background push has room.
-export const maxDuration = 300
+// invocation's budget. The dominant cost on a large FRESH site — the sequential
+// Pexels resolution — is now pre-resolved out-of-band by the one-click flow
+// (via the repull route) so assemble skips it, but 600 gives the residual
+// docx/zip/upload headroom on big sites. Mirror this value in vercel.json.
+export const maxDuration = 600
 
 export async function POST(
   _req: Request,

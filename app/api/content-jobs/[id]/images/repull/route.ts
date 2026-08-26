@@ -3,9 +3,11 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { repullJobImages } from '@/lib/content/repull-images'
 
 export const runtime = 'nodejs'
-// Resolving a whole site's stock photos (Pexels search + download, bounded
-// parallelism) plus a git blob push shares this budget — keep 300.
-export const maxDuration = 300
+// Resolving a whole site's stock photos (SEQUENTIAL Pexels search + bounded
+// parallel download) plus a git blob push shares this budget. The one-click
+// publish flow now routes a large fresh site's entire first-time resolution
+// through here, so give it 600 like the audit runners. Mirror in vercel.json.
+export const maxDuration = 600
 
 export async function POST(
   req: Request,
