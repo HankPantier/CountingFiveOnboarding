@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 import { runWhoisLookup } from '@/lib/whois/lookup'
+import { selectResumableContentJobs } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -142,27 +143,21 @@ export async function GET(req: Request) {
 
   // Auto-resume content generation that stalled (Vercel killed the function
   // before the self-chain fired, or the chain's progress-guard stopped it).
-  // Mirror the WHOIS retry: re-trigger /generate for any job that still has
-  // PENDING (never-attempted) pages and nothing currently running. Keyed on
-  // 'pending' so genuinely-failed 'error' pages aren't auto-retried forever —
-  // those surface in the UI for manual retry. The job's atomic per-page claim
-  // and complete-skip make a re-trigger idempotent if a run is actually healthy.
+  // Mirror the WHOIS retry: re-trigger /generate for any job with resumable work
+  // (never-attempted `pending` pages, OR `error` pages still under the attempt
+  // cap) and nothing currently running. Crucially this includes the page THIS
+  // sweep just flipped `running → error` a few lines above — without it, a job
+  // whose worker died mid-run strands forever at phase 5 (all pages terminal
+  // except one retriable error, which the old `pending`-only filter ignored),
+  // and Deliverables never unlocks. Capped-out errors are excluded so the loop
+  // stays finite. The atomic per-page claim + complete-skip keep re-triggers
+  // idempotent for healthy runs.
   const { data: liveGen } = await supabase
     .from('generated_pages')
-    .select('content_job_id, generation_status')
-    .in('generation_status', ['pending', 'running'])
+    .select('content_job_id, generation_status, generation_attempts')
+    .in('generation_status', ['pending', 'running', 'error'])
 
-  const jobCounts = new Map<string, { pending: number; running: number }>()
-  for (const p of liveGen ?? []) {
-    const c = jobCounts.get(p.content_job_id) ?? { pending: 0, running: 0 }
-    if (p.generation_status === 'running') c.running++
-    else c.pending++
-    jobCounts.set(p.content_job_id, c)
-  }
-  const resumableJobs = [...jobCounts.entries()]
-    .filter(([, c]) => c.pending > 0 && c.running === 0)
-    .map(([jobId]) => jobId)
-    .slice(0, 5)
+  const resumableJobs = selectResumableContentJobs(liveGen ?? []).slice(0, 5)
 
   let generationResumed = 0
   const resumeBase = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL

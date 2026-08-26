@@ -1,7 +1,7 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
-import { generateSinglePage } from '@/lib/content/content-generator'
+import { generateSinglePage, finalizeGenerationIfComplete } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -47,6 +47,10 @@ export async function POST(
   after(async () => {
     try {
       await generateSinglePage(id, outline.id)
+      // Retrying the last stranded page can be what finally makes every page
+      // terminal — advance to Deliverables so the job doesn't stay locked at
+      // phase 5 just because completion happened outside the batch runner.
+      await finalizeGenerationIfComplete(supabase, id)
     } catch (err) {
       console.error('[content-gen] Per-page regenerate failed:', err)
     }

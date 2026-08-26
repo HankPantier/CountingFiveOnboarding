@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import MarkdownPreviewModal from './MarkdownPreviewModal'
 
 type PageStatus = {
@@ -84,6 +85,11 @@ export default function GenerationPhase({
   contentJobId: string
   jobPhase: number
 }) {
+  const router = useRouter()
+  // Fires the phase-finalize/refresh once per "generation just finished"
+  // transition so a stranded phase-5 job unlocks Deliverables without a manual
+  // hard reload. Reset when a restart puts work back in flight (pollNonce bump).
+  const finalizedRef = useRef(false)
   const [status, setStatus] = useState<GenStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [pollNonce, setPollNonce] = useState(0)
@@ -116,8 +122,30 @@ export default function GenerationPhase({
               nowTs - new Date(p.startedAt).getTime() > STALE_RUNNING_MS,
           ).length,
         )
-        if (data.total > 0 && data.complete + data.error >= data.total && data.running === 0) {
+        const generationDone =
+          data.total > 0 && data.complete + data.error >= data.total && data.running === 0
+        // Re-arm the finalize trigger whenever work is back in flight (e.g. a
+        // restart/retry), so it fires again when generation next settles.
+        if (!generationDone) finalizedRef.current = false
+        if (generationDone) {
           clearInterval(intervalId)
+          // The Deliverables step is gated on the server-rendered content_jobs.phase.
+          // When generation finishes it should be 6, but the phase can lag behind
+          // the live status shown here — the batch runner never advanced it (a page
+          // was stranded 'running' then swept to 'error'), completion came through a
+          // per-page retry, or this browser is holding a stale server render. If the
+          // phase prop says we're not there yet, ask the server to reconcile (idempotent
+          // — advances the phase / retries any straggler) and re-render so the lock lifts.
+          if (jobPhase < 6 && !finalizedRef.current) {
+            finalizedRef.current = true
+            try {
+              await fetch(`/api/content-jobs/${contentJobId}/generate`, { method: 'POST' })
+            } catch {
+              // Non-fatal — the refresh below still picks up any phase the server
+              // has already advanced; the cron sweep is the backstop.
+            }
+            if (!cancelled) router.refresh()
+          }
         }
       } catch {
         // Retry on next poll
@@ -127,7 +155,7 @@ export default function GenerationPhase({
     const intervalId = setInterval(poll, 5000)
     poll()
     return () => { cancelled = true; clearInterval(intervalId) }
-  }, [contentJobId, pollNonce])
+  }, [contentJobId, pollNonce, jobPhase, router])
 
   const setAction = (key: string, on: boolean) => {
     setPendingActions(prev => {

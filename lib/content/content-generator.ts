@@ -46,6 +46,77 @@ export function shouldChainGeneration(args: {
   return !allDone && (completedThisRun > 0 || retriableErrorCount > 0)
 }
 
+type ResumablePageRow = {
+  content_job_id: string
+  generation_status: string
+  generation_attempts?: number | null
+}
+
+// Decide which content jobs a stalled-job sweep should re-trigger. A job is
+// resumable when nothing is currently running for it AND there is work a fresh
+// /generate call would pick up: either never-attempted `pending` pages, or
+// `error` pages still under the attempt cap (which the pipeline re-attempts —
+// only `complete` URLs are skipped). This is what unstrands a job whose worker
+// died mid-`running`: the sweep flips that page `running → error`, and this then
+// re-kicks the pipeline so the retriable error drains instead of hanging forever.
+// Capped-out errors are excluded (they're terminal → the job finalizes to phase
+// 6 on its own), keeping the resume loop finite.
+export function selectResumableContentJobs(
+  pages: ResumablePageRow[],
+  maxAttempts: number = MAX_GENERATION_ATTEMPTS
+): string[] {
+  const counts = new Map<string, { pending: number; running: number; retriableError: number }>()
+  for (const p of pages) {
+    const c = counts.get(p.content_job_id) ?? { pending: 0, running: 0, retriableError: 0 }
+    if (p.generation_status === 'running') c.running++
+    else if (p.generation_status === 'pending') c.pending++
+    else if (p.generation_status === 'error' && (p.generation_attempts ?? 0) < maxAttempts)
+      c.retriableError++
+    counts.set(p.content_job_id, c)
+  }
+  return [...counts.entries()]
+    .filter(([, c]) => c.running === 0 && (c.pending > 0 || c.retriableError > 0))
+    .map(([jobId]) => jobId)
+}
+
+// Advance a content job to phase 6 (Deliverables) once every page has reached a
+// terminal state — `complete`, or `error` capped out at the attempt limit. Idempotent
+// and safe to call from any completion path (the batch runner's final check, or a
+// per-page retry that finishes the last straggler). Returns whether it advanced,
+// so callers can decide whether to trigger downstream side effects. Does nothing
+// when pages are still pending/running or an error is still retriable — those are
+// not "done" and must not unlock the deliverable.
+export async function finalizeGenerationIfComplete(
+  supabase: ReturnType<typeof createServerClient>,
+  contentJobId: string
+): Promise<boolean> {
+  const { data: allPages } = await supabase
+    .from('generated_pages')
+    .select('generation_status, generation_attempts')
+    .eq('content_job_id', contentJobId)
+
+  if (!allPages?.length) return false
+  const allDone = allPages.every(
+    p =>
+      p.generation_status === 'complete' ||
+      (p.generation_status === 'error' && (p.generation_attempts ?? 0) >= MAX_GENERATION_ATTEMPTS)
+  )
+  if (!allDone) return false
+
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('phase')
+    .eq('id', contentJobId)
+    .single()
+  if ((job?.phase ?? 0) >= 6) return false
+
+  await supabase
+    .from('content_jobs')
+    .update({ phase: 6, updated_at: new Date().toISOString() })
+    .eq('id', contentJobId)
+  return true
+}
+
 type GeneratedResult = {
   content: string
   metadata: {
