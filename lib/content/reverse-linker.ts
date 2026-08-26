@@ -169,6 +169,7 @@ Return ONLY JSON:
     model: anthropic(REVERSE_LINK_MODEL),
     prompt,
     maxOutputTokens: 800,
+    maxRetries: 4,
   })
 
   checkTokenBudget('reverse-link', `/resources/${candidate.slug}`, usage?.inputTokens, 5000)

@@ -61,11 +61,19 @@ export async function runResearchPipeline(
         return
       }
 
-      // Mark as running
-      await supabase
+      // Atomically claim the row: the update only lands when it wasn't already
+      // 'running', so two concurrent workers can't double-run the 3 research
+      // sub-jobs (mirrors generateSinglePage's `.neq('generation_status','running')`).
+      const { data: claimed } = await supabase
         .from('research_results')
         .update({ research_status: 'running', updated_at: new Date().toISOString() })
         .eq('id', researchRow.id)
+        .neq('research_status', 'running')
+        .select('id')
+      if (!claimed || claimed.length === 0) {
+        console.warn('[Research] Skipping — already running:', page.url)
+        return
+      }
 
       try {
         // Job 1: Keyword research

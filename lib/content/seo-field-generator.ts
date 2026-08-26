@@ -133,6 +133,7 @@ Ground everything in the page content and firm profile above. NEVER invent facts
     // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
     maxOutputTokens: 3000,
     providerOptions: GENERATION_PROVIDER_OPTIONS,
+    maxRetries: 4,
   })
 
   let result: SeoFieldResult

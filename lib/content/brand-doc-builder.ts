@@ -1,8 +1,8 @@
-import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
-import { GENERATION_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
+import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { generateJson } from './json-generation'
 import type { SessionSchema } from '@/types/session-schema'
 
 export type BrandDoc = {
@@ -104,35 +104,35 @@ RULES:
 - For each niche, include pain points and value proposition if present.
 - No marketing fluff or invented credentials.`
 
-  try {
-    const { text, usage } = await generateText({
-      model: anthropic(PUBLISHED_CONTENT_MODEL),
-      prompt,
-      // Generous budget: adaptive thinking shares maxOutputTokens, and a tight
-      // cap starves the JSON answer (see OUTLINE_PROVIDER_OPTIONS history).
-      maxOutputTokens: 6000,
-      providerOptions: GENERATION_PROVIDER_OPTIONS,
-    })
-    checkTokenBudget('brand-doc', firmName, usage?.inputTokens, 4000)
-    await recordTokenUsage({
-      task: 'content',
-      contentJobId: ctx?.contentJobId,
-      sessionId: ctx?.sessionId,
-      stage: 'brand',
-      pageUrl: 'brand-doc',
-      model: 'claude-sonnet-5',
-      inputTokens: usage?.inputTokens,
-      outputTokens: usage?.outputTokens,
-    })
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned) as Partial<BrandDoc>
-    if (nonEmpty(parsed.summary) && nonEmpty(parsed.fullDoc)) {
-      return { summary: parsed.summary.trim(), fullDoc: parsed.fullDoc.trim() }
-    }
-    console.warn(`[brand-doc] LLM returned empty fields, using compiled fallback`)
-    return fallback
-  } catch (err) {
-    console.warn(`[brand-doc] LLM call failed, using compiled fallback:`, err instanceof Error ? err.message : err)
-    return fallback
+  // Generous budget: adaptive thinking shares maxOutputTokens, and a tight cap
+  // starves the JSON answer (see OUTLINE_PROVIDER_OPTIONS history). Retry drops to
+  // low effort so a truncated first pass has more room for the answer.
+  const parsed = (await generateJson({
+    model: anthropic(PUBLISHED_CONTENT_MODEL),
+    prompt,
+    firstBudget: 6000,
+    retryBudget: 10000,
+    providerOptions: GENERATION_PROVIDER_OPTIONS,
+    retryProviderOptions: OUTLINE_PROVIDER_OPTIONS,
+    label: 'brand-doc',
+    onAttempt: async (usage) => {
+      checkTokenBudget('brand-doc', firmName, usage?.inputTokens, 4000)
+      await recordTokenUsage({
+        task: 'content',
+        contentJobId: ctx?.contentJobId,
+        sessionId: ctx?.sessionId,
+        stage: 'brand',
+        pageUrl: 'brand-doc',
+        model: 'claude-sonnet-5',
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      })
+    },
+  })) as Partial<BrandDoc> | null
+
+  if (parsed && nonEmpty(parsed.summary) && nonEmpty(parsed.fullDoc)) {
+    return { summary: parsed.summary.trim(), fullDoc: parsed.fullDoc.trim() }
   }
+  console.warn(`[brand-doc] LLM returned empty/unparseable fields, using compiled fallback`)
+  return fallback
 }

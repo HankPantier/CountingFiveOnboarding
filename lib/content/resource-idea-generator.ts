@@ -1,10 +1,10 @@
-import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { headCheckUrls, type ExternalLink } from './link-checker'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { generateJson } from './json-generation'
 import { listTree, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
@@ -211,33 +211,28 @@ EXTERNAL SOURCES: for each idea, suggest 1-3 authoritative URLs that would valid
 Return ONLY a JSON array of ${count} objects:
 [{ "title": "...", "angle": "one-line hook", "target_keyword": "...", "secondary_keywords": ["...", "..."], "rationale": "why this fits the firm and audience", "suggested_external_links": [{"url": "...", "title": "..."}], "score": 0-100, "score_breakdown": {"stickiness": 0-25, "sharability": 0-25, "localRelevance": 0-25, "aioAnswerability": 0-25} }]`
 
-  const { text, usage } = await generateText({
+  const parsed = await generateJson({
     model: anthropic(IDEA_MODEL),
     system: 'You are an SEO and content strategist for CPA firms. Return JSON only, no prose.',
     prompt,
-    maxOutputTokens: 4000,
+    firstBudget: 4000,
+    retryBudget: 8000,
+    label: 'resource-ideas',
+    onAttempt: async (usage) => {
+      checkTokenBudget('resource-ideas', contentJobId, usage?.inputTokens, 5000)
+      await recordTokenUsage({
+        task: 'content',
+        contentJobId,
+        sessionId,
+        stage: 'idea',
+        model: IDEA_MODEL,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      })
+    },
   })
 
-  checkTokenBudget('resource-ideas', contentJobId, usage?.inputTokens, 5000)
-  await recordTokenUsage({
-    task: 'content',
-    contentJobId,
-    sessionId,
-    stage: 'idea',
-    model: IDEA_MODEL,
-    inputTokens: usage?.inputTokens,
-    outputTokens: usage?.outputTokens,
-  })
-
-  let ideas: GeneratedIdea[] = []
-  try {
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
-    if (Array.isArray(parsed)) ideas = parsed as GeneratedIdea[]
-  } catch {
-    console.error('[resource-ideas] Failed to parse Claude response')
-    return { created: 0 }
-  }
+  const ideas: GeneratedIdea[] = Array.isArray(parsed) ? (parsed as GeneratedIdea[]) : []
 
   // Belt-and-suspenders dedupe by normalized title, then verify every
   // suggested external URL before it can ever reach a drafting prompt.

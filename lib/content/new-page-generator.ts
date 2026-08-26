@@ -1,8 +1,8 @@
-import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateAndFinalizePage, type Cta } from './content-generator'
 import { buildPageMarkdown, type PageMarkdownInput, type CtaInfo } from './deliverable-builder'
+import { generateJson } from './json-generation'
 import { PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { extractInlineImageRefs } from './image-ref-extractor'
@@ -47,11 +47,10 @@ async function deriveOutline(args: {
     sections: [{ h2: 'Overview', description: args.brief || args.title, word_count: 500 }],
     targetKeyword: args.title.toLowerCase(),
   }
-  try {
-    const { text, usage } = await generateText({
-      model: anthropic(PUBLISHED_CONTENT_MODEL),
-      system: 'You outline website pages. Return JSON only, no prose.',
-      prompt: `Outline a new website page for ${firmName}.
+  const parsed = (await generateJson({
+    model: anthropic(PUBLISHED_CONTENT_MODEL),
+    system: 'You outline website pages. Return JSON only, no prose.',
+    prompt: `Outline a new website page for ${firmName}.
 
 PAGE TITLE: ${args.title}
 WHAT THE PAGE SHOULD COVER (admin brief): ${args.brief || '(none — infer from the title)'}
@@ -65,40 +64,41 @@ Return JSON only:
 }
 
 Produce 3-6 sections that make a complete, well-structured page. Keep word_count realistic per section (100-350).`,
-      maxOutputTokens: 4000,
-      providerOptions: OUTLINE_PROVIDER_OPTIONS,
-    })
-    await recordTokenUsage({
-      task: 'content',
-      contentJobId: args.contentJobId,
-      sessionId: args.sessionId,
-      stage: 'new_page',
-      pageUrl: 'outline',
-      model: PUBLISHED_CONTENT_MODEL,
-      inputTokens: usage?.inputTokens,
-      outputTokens: usage?.outputTokens,
-    })
-    const parsed = JSON.parse(text.replace(/```json?\n?/g, '').replace(/```/g, '').trim())
-    const sections: OutlineSection[] = Array.isArray(parsed?.sections)
-      ? parsed.sections
-          .filter((s: unknown): s is { h2: unknown; description?: unknown; word_count?: unknown } =>
-            !!s && typeof (s as { h2?: unknown }).h2 === 'string')
-          .map((s: { h2: unknown; description?: unknown; word_count?: unknown }) => ({
-            h2: String(s.h2),
-            description: typeof s.description === 'string' ? s.description : '',
-            word_count: typeof s.word_count === 'number' ? s.word_count : 200,
-          }))
-      : []
-    if (sections.length === 0) return fallback
-    const targetKeyword =
-      typeof parsed?.target_keyword === 'string' && parsed.target_keyword.trim()
-        ? parsed.target_keyword.trim()
-        : fallback.targetKeyword
-    return { sections, targetKeyword }
-  } catch (err) {
-    console.warn('[new-page] Outline derivation failed (using fallback):', err)
-    return fallback
-  }
+    firstBudget: 4000,
+    retryBudget: 8000,
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
+    label: 'new-page-outline',
+    onAttempt: async (usage) => {
+      await recordTokenUsage({
+        task: 'content',
+        contentJobId: args.contentJobId,
+        sessionId: args.sessionId,
+        stage: 'new_page',
+        pageUrl: 'outline',
+        model: PUBLISHED_CONTENT_MODEL,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      })
+    },
+  })) as { sections?: unknown; target_keyword?: unknown } | null
+
+  if (!parsed) return fallback
+  const sections: OutlineSection[] = Array.isArray(parsed.sections)
+    ? parsed.sections
+        .filter((s: unknown): s is { h2: unknown; description?: unknown; word_count?: unknown } =>
+          !!s && typeof (s as { h2?: unknown }).h2 === 'string')
+        .map((s: { h2: unknown; description?: unknown; word_count?: unknown }) => ({
+          h2: String(s.h2),
+          description: typeof s.description === 'string' ? s.description : '',
+          word_count: typeof s.word_count === 'number' ? s.word_count : 200,
+        }))
+    : []
+  if (sections.length === 0) return fallback
+  const targetKeyword =
+    typeof parsed.target_keyword === 'string' && parsed.target_keyword.trim()
+      ? parsed.target_keyword.trim()
+      : fallback.targetKeyword
+  return { sections, targetKeyword }
 }
 
 // Turn a finalized GeneratedResult into the exact subset buildPageMarkdown

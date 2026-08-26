@@ -8,6 +8,7 @@ import { recordTokenUsage } from './token-usage'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { DRAFT_BRANCH, listTree, readFile } from '@/lib/github/repo-files'
 import { extractJson } from './extract-json'
+import { generateJson } from './json-generation'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -33,11 +34,12 @@ async function resolveReferences(args: {
   sessionId: string
 }): Promise<OneOffContext> {
   if (args.pageUrls.length === 0 && args.teamNames.length === 0) return {}
-  try {
-    const { text, usage } = await generateText({
-      model: anthropic(RESOLVE_MODEL),
-      system: 'You resolve references. Return JSON only, no prose.',
-      prompt: `An admin asked a content engine: "${args.prompt}"
+  // Haiku — no providerOptions. Best-effort: a null result just means we proceed
+  // without the resolved page/team context.
+  const parsed = (await generateJson({
+    model: anthropic(RESOLVE_MODEL),
+    system: 'You resolve references. Return JSON only, no prose.',
+    prompt: `An admin asked a content engine: "${args.prompt}"
 
 Which of these (if any) does the request refer to?
 
@@ -45,31 +47,33 @@ PAGES: ${args.pageUrls.join(', ') || '(none)'}
 TEAM MEMBERS: ${args.teamNames.join(', ') || '(none)'}
 
 Return JSON: { "pageUrl": "exact url from the list or null", "teamMemberName": "exact name from the list or null" }`,
-      maxOutputTokens: 100,
-    })
-    await recordTokenUsage({
-      task: 'content',
-      contentJobId: args.contentJobId,
-      sessionId: args.sessionId,
-      stage: 'oneoff',
-      pageUrl: 'resolve',
-      model: RESOLVE_MODEL,
-      inputTokens: usage?.inputTokens,
-      outputTokens: usage?.outputTokens,
-    })
-    const parsed = JSON.parse(text.replace(/```json?\n?/g, '').replace(/```/g, '').trim())
-    const out: OneOffContext = {}
-    if (typeof parsed?.pageUrl === 'string' && args.pageUrls.includes(parsed.pageUrl)) {
+    firstBudget: 300,
+    retryBudget: 600,
+    label: 'oneoff-resolve',
+    onAttempt: async (usage) => {
+      await recordTokenUsage({
+        task: 'content',
+        contentJobId: args.contentJobId,
+        sessionId: args.sessionId,
+        stage: 'oneoff',
+        pageUrl: 'resolve',
+        model: RESOLVE_MODEL,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      })
+    },
+  })) as { pageUrl?: unknown; teamMemberName?: unknown } | null
+
+  const out: OneOffContext = {}
+  if (parsed) {
+    if (typeof parsed.pageUrl === 'string' && args.pageUrls.includes(parsed.pageUrl)) {
       out.pageUrl = parsed.pageUrl
     }
-    if (typeof parsed?.teamMemberName === 'string' && args.teamNames.includes(parsed.teamMemberName)) {
+    if (typeof parsed.teamMemberName === 'string' && args.teamNames.includes(parsed.teamMemberName)) {
       out.teamMemberName = parsed.teamMemberName
     }
-    return out
-  } catch (err) {
-    console.warn('[oneoff] Reference resolution failed (continuing without):', err)
-    return {}
   }
+  return out
 }
 
 export async function generateOneOff(
@@ -194,6 +198,7 @@ ${ANTI_SLOP_RULES}`
         model: anthropic(ONEOFF_MODEL),
         prompt: genPrompt,
         maxOutputTokens,
+        maxRetries: 4,
       })
       checkTokenBudget('oneoff', generationId, usage?.inputTokens, 5000)
       await recordTokenUsage({

@@ -204,10 +204,23 @@ export default function DeliverablesPhase({
       setPackageInfo({ pageCount: pkgData.pageCount, sizeKB: pkgData.sizeKB })
       setLinkWarnings(Array.isArray(pkgData.linkWarnings) ? pkgData.linkWarnings : [])
       setRedirectIssues(Array.isArray(pkgData.redirectIssues) ? pkgData.redirectIssues : [])
-      setImageMissing(Array.isArray(pkgData.imageCoverage?.missing) ? pkgData.imageCoverage.missing : [])
+      const missingImages: string[] = Array.isArray(pkgData.imageCoverage?.missing)
+        ? pkgData.imageCoverage.missing
+        : []
+      setImageMissing(missingImages)
       setPackaged(true)
       if (!pkgData.pushScheduled) {
         throw new Error('No repo push was scheduled — confirm a GitHub repo is linked above.')
+      }
+
+      // Broken-image guard: the package pushed to draft but references images that
+      // never resolved (missing PEXELS_API_KEY, Pexels outage, rate-limit). Publishing
+      // now would render "Image not found" across the live site — halt before
+      // confirm/publish and steer the operator to Re-pull.
+      if (missingImages.length > 0) {
+        throw new Error(
+          `Publish halted — ${missingImages.length} referenced image(s) didn't ship, so the live site would show “Image not found”. Click “Re-pull all images” below, then Publish again.`
+        )
       }
 
       // Step 3 — wait for the background push to land on draft.
@@ -406,14 +419,16 @@ export default function DeliverablesPhase({
           {deployStep !== 'live' && (
             <button
               onClick={runFullDeploy}
-              disabled={deploying || hasUnapproved || !generationDone}
+              disabled={deploying || hasUnapproved || !generationDone || imageMissing.length > 0}
               className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {!generationDone
                 ? 'Publish site live (waiting on generation)'
                 : hasUnapproved
                   ? 'Publish site live (pending approvals)'
-                  : deployButtonLabel}
+                  : imageMissing.length > 0
+                    ? 'Re-pull images before publishing'
+                    : deployButtonLabel}
             </button>
           )}
 

@@ -73,6 +73,7 @@ ${ANTI_SLOP_RULES}`
       model: anthropic(SOCIAL_MODEL),
       prompt,
       maxOutputTokens,
+      maxRetries: 4,
     })
     checkTokenBudget('social', input.slug, usage?.inputTokens, 5000)
     await recordTokenUsage({

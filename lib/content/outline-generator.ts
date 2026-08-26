@@ -169,6 +169,7 @@ ${auditHintsBlock}`
     // truncated the answer once thinking ran, collapsing pages into the fallback.
     maxOutputTokens: 8000,
     providerOptions: OUTLINE_PROVIDER_OPTIONS,
+    maxRetries: 4,
   })
 
   const cache = extractCacheUsage(usage)

@@ -6,9 +6,9 @@
 // Model tier: Haiku 4.5 (structured extraction). CLAUDE.md: NEVER send `effort`
 // or the generation provider-options object to a Haiku call — it errors.
 // ---------------------------------------------------------------------------
-import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { recordTokenUsage } from './token-usage'
+import { generateJson } from './json-generation'
 import { normalizePricingConfig } from './pricing-calculator-config'
 import { DEFAULT_CALCULATOR_CONFIG, type PricingCalculatorConfig } from '@/types/pricing-calculator'
 import type { SessionSchema } from '@/types/session-schema'
@@ -58,31 +58,31 @@ Return ONLY JSON matching exactly this shape (monthly USD rates; multipliers sca
 
 Rules: 2-5 serviceLines drawn from the firm's actual services; 3 sizeTiers; exactly 3 complexityLevels (Basic 1.0, Standard ~1.3, Complex ~1.7); 0-3 addOns. Base the numbers on the pricing notes when they give figures, otherwise use sensible small-firm defaults. Output JSON only, no prose.`
 
-  try {
-    const { text, usage } = await generateText({
-      model: anthropic(SEED_MODEL),
-      system: 'You configure pricing calculators for accounting firms. Return JSON only, no prose.',
-      prompt,
-      maxOutputTokens: 1200,
-    })
-    await recordTokenUsage({
-      task: 'content',
-      contentJobId: args.contentJobId ?? undefined,
-      sessionId: args.sessionId,
-      stage: 'idea',
-      pageUrl: 'pricing-calculator-seed',
-      model: SEED_MODEL,
-      inputTokens: usage?.inputTokens,
-      outputTokens: usage?.outputTokens,
-    })
+  // Haiku — no providerOptions. Returns null on a model/parse failure; we then
+  // fall back to the default config the operator can fill in manually.
+  const parsed = (await generateJson({
+    model: anthropic(SEED_MODEL),
+    system: 'You configure pricing calculators for accounting firms. Return JSON only, no prose.',
+    prompt,
+    firstBudget: 2500,
+    retryBudget: 4000,
+    label: 'pricing-seed',
+    onAttempt: async (usage) => {
+      await recordTokenUsage({
+        task: 'content',
+        contentJobId: args.contentJobId ?? undefined,
+        sessionId: args.sessionId,
+        stage: 'idea',
+        pageUrl: 'pricing-calculator-seed',
+        model: SEED_MODEL,
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+      })
+    },
+  })) as Record<string, unknown> | null
 
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>
-    // Merge over the default so any field the model omitted keeps a sane value,
-    // then normalize (which enforces the full shape + bounds).
-    return normalizePricingConfig({ ...DEFAULT_CALCULATOR_CONFIG, ...parsed, version: 1 })
-  } catch (err) {
-    console.warn('[pricing-seed] Seed failed, returning default config:', err)
-    return DEFAULT_CALCULATOR_CONFIG
-  }
+  if (!parsed) return DEFAULT_CALCULATOR_CONFIG
+  // Merge over the default so any field the model omitted keeps a sane value,
+  // then normalize (which enforces the full shape + bounds).
+  return normalizePricingConfig({ ...DEFAULT_CALCULATOR_CONFIG, ...parsed, version: 1 })
 }

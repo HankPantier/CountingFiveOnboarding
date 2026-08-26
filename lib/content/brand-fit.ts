@@ -61,6 +61,7 @@ Return ONLY JSON:
       system: 'You are a meticulous brand steward. Return JSON only, no prose.',
       prompt,
       maxOutputTokens: 500,
+      maxRetries: 4,
     })
     await recordTokenUsage({
       task: 'content',

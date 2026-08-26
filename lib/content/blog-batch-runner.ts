@@ -40,27 +40,41 @@ export async function runBlogBatch(batchId: string): Promise<void> {
     await Promise.all(
       batch.map(async (target) => {
         const ideaId = target.resource_idea_id as string
-        await supabase
-          .from('blog_batch_targets')
-          .update({ status: 'generating', updated_at: new Date().toISOString() })
-          .eq('id', target.id)
+        // Per-target isolation: an unexpected throw (Supabase hiccup, network)
+        // must not reject Promise.all and abort the whole batch (which would skip
+        // the reconciliation + auto-chain below). Settle this target as 'error'
+        // and let its siblings finish.
+        try {
+          await supabase
+            .from('blog_batch_targets')
+            .update({ status: 'generating', updated_at: new Date().toISOString() })
+            .eq('id', target.id)
 
-        const result = await generateResourceDraft(ideaId)
-        // 'skipped' = another worker owns the idea lock; leave it 'generating'
-        // and let the reconciliation pass below settle it from draft_status.
-        const next =
-          result.status === 'complete' ? 'complete' : result.status === 'error' ? 'error' : 'generating'
-        await supabase
-          .from('blog_batch_targets')
-          .update({
-            status: next,
-            error: result.status === 'error' ? result.error ?? 'Generation failed' : null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', target.id)
-        // Only real terminal outcomes count as progress — counting 'skipped'
-        // (another worker holds the idea lock) lets racing chains multiply.
-        if (result.status !== 'skipped') completedThisRun += 1
+          const result = await generateResourceDraft(ideaId)
+          // 'skipped' = another worker owns the idea lock; leave it 'generating'
+          // and let the reconciliation pass below settle it from draft_status.
+          const next =
+            result.status === 'complete' ? 'complete' : result.status === 'error' ? 'error' : 'generating'
+          await supabase
+            .from('blog_batch_targets')
+            .update({
+              status: next,
+              error: result.status === 'error' ? result.error ?? 'Generation failed' : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', target.id)
+          // Only real terminal outcomes count as progress — counting 'skipped'
+          // (another worker holds the idea lock) lets racing chains multiply.
+          if (result.status !== 'skipped') completedThisRun += 1
+        } catch (err) {
+          console.error('[blog-batch] Target failed:', target.id, err)
+          const message = err instanceof Error ? err.message : String(err)
+          await supabase
+            .from('blog_batch_targets')
+            .update({ status: 'error', error: message.slice(0, 500), updated_at: new Date().toISOString() })
+            .eq('id', target.id)
+          completedThisRun += 1
+        }
       })
     )
   }
