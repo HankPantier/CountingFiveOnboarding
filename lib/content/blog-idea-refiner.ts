@@ -2,6 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { extractJson } from './extract-json'
 import type { ExternalLink } from './link-checker'
 
 // Brand-agnostic blog-idea refinement for the blog-first multi-client tool.
@@ -72,48 +73,77 @@ Return ONLY a JSON object:
 }
 
 export async function refineBlogIdea(input: RefineBlogIdeaInput): Promise<RefinedBlogIdea | null> {
-  const { text, usage } = await generateText({
-    model: anthropic(REFINE_MODEL),
-    system: 'You are an SEO and content strategist for CPA firms. Return JSON only, no prose.',
-    prompt: buildPrompt(input),
-    maxOutputTokens: 1000,
-  })
+  const prompt = buildPrompt(input)
 
-  checkTokenBudget('blog-idea-refine', input.seed.slice(0, 40), usage?.inputTokens, 5000)
-  await recordTokenUsage({
-    task: 'content',
-    stage: 'idea',
-    model: REFINE_MODEL,
-    inputTokens: usage?.inputTokens,
-    outputTokens: usage?.outputTokens,
-  })
+  // One attempt = one model call + a tolerant parse. A parse failure (usually a
+  // truncated `length` finish) is the caller's cue to retry with a bigger budget.
+  // This is an interactive button click, so — unlike the async page/resource
+  // generators — we deliberately skip high-effort adaptive thinking to stay snappy.
+  const attempt = async (
+    maxOutputTokens: number
+  ): Promise<{ ok: true; result: RefinedBlogIdea } | { ok: false; finishReason: string }> => {
+    const { text, usage, finishReason } = await generateText({
+      model: anthropic(REFINE_MODEL),
+      system: 'You are an SEO and content strategist for CPA firms. Return JSON only, no prose.',
+      prompt,
+      maxOutputTokens,
+      // Ride out transient overload/rate-limit (529/429) with the SDK's built-in
+      // exponential backoff instead of throwing a 500 out of the route.
+      maxRetries: 4,
+    })
 
-  try {
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
-    if (!parsed?.title || typeof parsed.title !== 'string') return null
-    return {
-      title: parsed.title.trim(),
-      angle: typeof parsed.angle === 'string' ? parsed.angle.trim() : '',
-      target_keyword: typeof parsed.target_keyword === 'string' ? parsed.target_keyword.trim() : '',
-      secondary_keywords: Array.isArray(parsed.secondary_keywords)
-        ? parsed.secondary_keywords.filter((k: unknown): k is string => typeof k === 'string')
-        : [],
-      rationale: typeof parsed.rationale === 'string' ? parsed.rationale.trim() : '',
-      suggested_external_links: Array.isArray(parsed.suggested_external_links)
-        ? parsed.suggested_external_links
-            .filter(
-              (l: unknown): l is { url: string; title?: unknown } =>
-                !!l && typeof (l as { url?: unknown }).url === 'string'
-            )
-            .map((l: { url: string; title?: unknown }) => ({
-              url: l.url,
-              title: typeof l.title === 'string' ? l.title : undefined,
-            }))
-        : [],
+    checkTokenBudget('blog-idea-refine', input.seed.slice(0, 40), usage?.inputTokens, 5000)
+    await recordTokenUsage({
+      task: 'content',
+      stage: 'idea',
+      model: REFINE_MODEL,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    })
+
+    try {
+      const parsed = extractJson(text) as { title?: unknown } & Record<string, unknown>
+      if (!parsed?.title || typeof parsed.title !== 'string') return { ok: false, finishReason }
+      return {
+        ok: true,
+        result: {
+          title: parsed.title.trim(),
+          angle: typeof parsed.angle === 'string' ? parsed.angle.trim() : '',
+          target_keyword: typeof parsed.target_keyword === 'string' ? parsed.target_keyword.trim() : '',
+          secondary_keywords: Array.isArray(parsed.secondary_keywords)
+            ? parsed.secondary_keywords.filter((k: unknown): k is string => typeof k === 'string')
+            : [],
+          rationale: typeof parsed.rationale === 'string' ? parsed.rationale.trim() : '',
+          suggested_external_links: Array.isArray(parsed.suggested_external_links)
+            ? parsed.suggested_external_links
+                .filter(
+                  (l: unknown): l is { url: string; title?: unknown } =>
+                    !!l && typeof (l as { url?: unknown }).url === 'string'
+                )
+                .map((l: { url: string; title?: unknown }) => ({
+                  url: l.url,
+                  title: typeof l.title === 'string' ? l.title : undefined,
+                }))
+            : [],
+        },
+      }
+    } catch {
+      return { ok: false, finishReason }
     }
-  } catch {
-    console.error('[blog-idea-refine] Failed to parse Claude response')
-    return null
   }
+
+  // First pass at a modest budget; a parse failure (usually truncated JSON)
+  // retries once with a larger budget before giving up. Mirrors the self-heal
+  // in the page-body and resource-draft generators.
+  let res = await attempt(2000)
+  if (!res.ok) {
+    console.warn(
+      `[blog-idea-refine] JSON parse failed (finish=${res.finishReason}) — retrying with larger budget`
+    )
+    res = await attempt(4000)
+  }
+  if (res.ok) return res.result
+
+  console.error(`[blog-idea-refine] Failed to parse Claude response after retry (finish=${res.finishReason})`)
+  return null
 }
