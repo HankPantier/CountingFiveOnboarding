@@ -30,6 +30,13 @@ import HeaderImagePicker from './HeaderImagePicker'
 import IconPickerControl from './IconPickerControl'
 import StructuredContentEditor from './StructuredContentEditor'
 import RichBodyEditor from './RichBodyEditor'
+import SectionOutline from './SectionOutline'
+import {
+  describeSections,
+  reorderSections,
+  moveSection,
+  removeSection,
+} from '@/lib/editor/section-reorder'
 
 type EditorTab = 'editor' | 'seo' | 'media'
 
@@ -166,6 +173,21 @@ export default function PageEditor({
   }
   const onLinksChange = (links: InternalLink[]) => {
     if (fm) commit(setInternalLinks(fm, links), bodyContent)
+  }
+
+  // Whole-section reordering (the Sections outline). Reorder/move are body-only
+  // rewrites; deleting a faq-accordion section also clears frontmatter faq_block
+  // (its live source of truth) so the FAQ doesn't linger on the rendered page.
+  const sectionOutline = useMemo(() => describeSections(bodyContent), [bodyContent])
+  const onSectionReorder = (from: number, to: number) =>
+    setBody(reorderSections(bodyContent, from, to))
+  const onSectionMove = (index: number, dir: 'up' | 'down') =>
+    setBody(moveSection(bodyContent, index, dir))
+  const onSectionDelete = (index: number) => {
+    const blockId = sectionOutline.sections[index]?.blockId
+    const nextBody = removeSection(bodyContent, index)
+    if (blockId === 'faq-accordion' && fm) commit(setFaqBlock(fm, []), nextBody)
+    else setBody(nextBody)
   }
   const heroRaw = parsed.frontmatter?.fields['image'] ?? parsed.frontmatter?.fields['hero_image'] ?? ''
   const heroFile = heroRaw ? localImageFilename(heroRaw) : ''
@@ -443,16 +465,27 @@ export default function PageEditor({
 
         <div role="tabpanel" className="space-y-6">
           {activeTab === 'editor' && (
-            <RichBodyEditor
-              sessionId={sessionId}
-              title={title}
-              heroSrc={heroSrc}
-              body={bodyContent}
-              onChange={setBody}
-              faqItems={displayFaq}
-              faqHeading={faqHeading}
-              onFaqChange={fm && !isSocial ? onFaqChange : undefined}
-            />
+            <>
+              {!isPost && !isSocial && (
+                <SectionOutline
+                  sections={sectionOutline.sections}
+                  leadIn={sectionOutline.leadIn}
+                  onReorder={onSectionReorder}
+                  onMove={onSectionMove}
+                  onDelete={onSectionDelete}
+                />
+              )}
+              <RichBodyEditor
+                sessionId={sessionId}
+                title={title}
+                heroSrc={heroSrc}
+                body={bodyContent}
+                onChange={setBody}
+                faqItems={displayFaq}
+                faqHeading={faqHeading}
+                onFaqChange={fm && !isSocial ? onFaqChange : undefined}
+              />
+            </>
           )}
 
           {activeTab === 'seo' && (
