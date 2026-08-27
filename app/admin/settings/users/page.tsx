@@ -1,14 +1,17 @@
 import { createServerClient } from '@/lib/supabase/server'
 import AddUserDialog from '@/components/admin/AddUserDialog'
 import UserRow from '@/components/admin/UserRow'
+import { contentReadySessionIds } from '@/lib/admin/content-ready'
 import type { UserSummary } from '@/types/users'
 import type { Capability } from '@/lib/auth/access'
 
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor', 'owner']
 
 export interface SessionOption {
   id: string
   website_url: string
+  // A Site Owner may only be assigned a content-ready site (phase >= 6 + repo).
+  contentReady: boolean
 }
 
 export default async function UsersPage() {
@@ -40,9 +43,11 @@ export default async function UsersPage() {
     }
   })
 
+  const ready = await contentReadySessionIds((sessions ?? []).map(s => s.id))
   const sessionOptions: SessionOption[] = (sessions ?? []).map(s => ({
     id: s.id,
     website_url: s.website_url,
+    contentReady: ready.has(s.id),
   }))
 
   return (

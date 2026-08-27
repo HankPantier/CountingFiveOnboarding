@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
-import { getCurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, isSiteOwner } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -46,9 +46,11 @@ export async function POST(
   if (ctx instanceof NextResponse) return ctx
   const { githubRepo, sessionId, adminEmail, adminName } = ctx
 
-  // resolveEditContext allows assigned managers; the AI editor is admin-only.
+  // resolveEditContext already enforced session access (incl. owners). The
+  // per-page AI editor is limited to staff admins and Site Owners (who edit
+  // their own site) — managers/editors don't get it.
   const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  if (!user || !(user.isAdmin || isSiteOwner(user))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

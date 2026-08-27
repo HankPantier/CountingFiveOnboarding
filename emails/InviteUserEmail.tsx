@@ -14,6 +14,7 @@ type Props = {
 const CAPABILITY_LABELS: Record<Capability, string> = {
   manager: 'manager',
   editor: 'editor',
+  owner: 'site owner',
   auditor: 'auditor',
 }
 

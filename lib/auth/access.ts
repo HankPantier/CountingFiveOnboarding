@@ -10,16 +10,22 @@ export type Role = 'admin' | 'member'
 //   manager — site-scoped content access (via manager_clients), incl. publishing
 //   editor  — site-scoped content access like manager, but CANNOT push to live
 //             (Publish/Rollback denied — see canPublish); assigned via manager_clients
+//   owner   — Site Owner: the end client for ONE site. Site-scoped content access
+//             + publish (like manager) but locked down — assigned to exactly one
+//             content-ready session, dropped straight into that editor, and denied
+//             theme/nav/site-assistant and every non-content admin surface. The
+//             role is exclusive (a member holding it holds nothing else) and its
+//             lockdown lives in the UI + user-management routes, not here.
 //   auditor — own-audit access (scoped by audit_runs.created_by)
-// manager and editor are two tiers of the same content role: a member holds at
-// most one of them (enforced by the user-management routes).
-export type Capability = 'manager' | 'auditor' | 'editor'
+// manager, editor, and owner are tiers of the same content role: a member holds
+// at most one of them (enforced by the user-management routes).
+export type Capability = 'manager' | 'auditor' | 'editor' | 'owner'
 
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor', 'owner']
 
 // Capabilities that grant site-scoped content access (the draft editor + all
-// session-scoped content routes). manager can also publish; editor cannot.
-const CONTENT_CAPABILITIES: Capability[] = ['manager', 'editor']
+// session-scoped content routes). manager and owner can also publish; editor cannot.
+const CONTENT_CAPABILITIES: Capability[] = ['manager', 'editor', 'owner']
 
 export interface CurrentUser {
   id: string
@@ -77,9 +83,32 @@ export function hasContentAccess(user: CurrentUser): boolean {
 }
 
 // True when the user may push content to the live site (Publish / Rollback).
-// Editors are content users who are denied this — only admins and managers pass.
+// Editors are content users who are denied this; admins, managers, and site
+// owners (who publish their own single site) pass.
 export function canPublish(user: CurrentUser): boolean {
-  return user.isAdmin || user.capabilities.includes('manager')
+  return user.isAdmin || user.capabilities.includes('manager') || user.capabilities.includes('owner')
+}
+
+// True when the user is a Site Owner — a member whose single content capability
+// is `owner`. Admins hold every capability implicitly, so the !isAdmin guard is
+// what keeps staff on the full UI rather than the locked-down owner view.
+export function isSiteOwner(user: CurrentUser): boolean {
+  return !user.isAdmin && user.capabilities.includes('owner')
+}
+
+// The single session a Site Owner is assigned to (their one content repo), or
+// null if they have no assignment yet. Used to drop them straight into their
+// editor after login and to guard against reaching another site's editor.
+export async function getSiteOwnerSessionId(user: CurrentUser): Promise<string | null> {
+  if (!isSiteOwner(user)) return null
+  const supabase = createServerClient()
+  const { data } = await supabase
+    .from('manager_clients')
+    .select('session_id')
+    .eq('manager_id', user.id)
+    .limit(1)
+    .maybeSingle()
+  return data?.session_id ?? null
 }
 
 // True when the user may reach the Onboarding surface (dashboard, sessions,

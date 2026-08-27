@@ -21,10 +21,13 @@ export default function UserRow({
   const [copiedPw, setCopiedPw] = useState(false)
   const router = useRouter()
 
-  // manager and editor are both content roles that get per-client assignments.
+  // manager, editor, and owner are content roles that get per-client assignments.
   const isContentUser =
     user.role !== 'admin' &&
-    (user.capabilities.includes('manager') || user.capabilities.includes('editor'))
+    (user.capabilities.includes('manager') ||
+      user.capabilities.includes('editor') ||
+      user.capabilities.includes('owner'))
+  const isOwner = user.role !== 'admin' && user.capabilities.includes('owner')
 
   async function resend() {
     if (!confirm(`Send a new invite email to ${user.email}?`)) return
@@ -270,6 +273,7 @@ export default function UserRow({
             <ClientAssignmentEditor
               userId={user.id}
               sessions={sessions}
+              ownerMode={isOwner}
               onClose={() => setEditing(false)}
             />
           </td>

@@ -1,4 +1,4 @@
-import { getCurrentUser, hasOnboardingAccess } from '@/lib/auth/access'
+import { getCurrentUser, hasOnboardingAccess, isSiteOwner } from '@/lib/auth/access'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import AdminTopBar from '@/components/admin/AdminTopBar'
 
@@ -9,6 +9,11 @@ import AdminTopBar from '@/components/admin/AdminTopBar'
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser()
   if (!user) return <>{children}</>
+
+  // Site Owners live entirely inside their one site's editor — no admin sidebar
+  // or search chrome (which links to sections they can't reach). Their editor
+  // carries its own top bar with a sign-out control.
+  if (isSiteOwner(user)) return <>{children}</>
 
   return (
     <div className="flex min-h-screen bg-surface-page">

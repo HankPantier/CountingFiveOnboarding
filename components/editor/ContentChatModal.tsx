@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import ContentChat from '@/components/editor/ContentChat'
 import ChatDrawer from '@/components/ui/ChatDrawer'
 
@@ -7,29 +7,23 @@ export default function ContentChatModal({
   sessionId,
   path,
   isDirty,
+  allowed,
   onEdited,
   onSave,
 }: {
   sessionId: string
   path: string
   isDirty: boolean
+  // The per-page AI editor is reachable by admins and Site Owners; the caller
+  // (EditorShell) resolves this from the viewer's role/capabilities. The route
+  // enforces the same gate server-side.
+  allowed: boolean
   onEdited: () => void
   onSave: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
 
-  // The AI content editor is admin-only; hide the entry point for managers.
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/auth/me')
-      .then(r => r.json())
-      .then((d: { role?: string }) => { if (!cancelled && d.role === 'admin') setIsAdmin(true) })
-      .catch(() => { /* ignore */ })
-    return () => { cancelled = true }
-  }, [])
-
-  if (!isAdmin) return null
+  if (!allowed) return null
 
   return (
     <>

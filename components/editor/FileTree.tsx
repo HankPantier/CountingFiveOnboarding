@@ -128,6 +128,7 @@ export default function FileTree({
   dirtyPaths,
   changesCount,
   showTheme,
+  showConfiguration = true,
   onSelect,
   onNewPage,
   onBulkMove,
@@ -138,6 +139,9 @@ export default function FileTree({
   changesCount: number
   // Admin-only Theme Studio entry — hidden for managers (route also 403s them).
   showTheme: boolean
+  // The Configuration section (Navigation + Client Center) — hidden for Site
+  // Owners, who edit page/resource content only.
+  showConfiguration?: boolean
   onSelect: (path: string) => void
   onNewPage: () => void
   // Bulk-relocate selected pages (multi-select). Resolves true when all moved.
@@ -532,35 +536,39 @@ export default function FileTree({
         </>
       )}
 
-      <SectionHeader
-        label="Configuration"
-        open={open.configuration}
-        onToggle={() => toggle('configuration')}
-      />
-      {open.configuration && (
-        <ul className="mb-4 pl-[18px]">
-          {nav ? (
-            <li>
-              <button
-                onClick={() => onSelect(nav.path)}
-                className={fileButtonClass(selectedPath === nav.path)}
-              >
-                Navigation (nav.json)
-                {dirtyPaths.has(nav.path) && <DirtyDot />}
-              </button>
-            </li>
-          ) : (
-            <li className="text-xs text-text-muted px-2 py-1">nav.json missing</li>
+      {showConfiguration && (
+        <>
+          <SectionHeader
+            label="Configuration"
+            open={open.configuration}
+            onToggle={() => toggle('configuration')}
+          />
+          {open.configuration && (
+            <ul className="mb-4 pl-[18px]">
+              {nav ? (
+                <li>
+                  <button
+                    onClick={() => onSelect(nav.path)}
+                    className={fileButtonClass(selectedPath === nav.path)}
+                  >
+                    Navigation (nav.json)
+                    {dirtyPaths.has(nav.path) && <DirtyDot />}
+                  </button>
+                </li>
+              ) : (
+                <li className="text-xs text-text-muted px-2 py-1">nav.json missing</li>
+              )}
+              <li>
+                <button
+                  onClick={() => onSelect(CLIENT_CENTER_VIEW)}
+                  className={fileButtonClass(selectedPath === CLIENT_CENTER_VIEW)}
+                >
+                  Client Center
+                </button>
+              </li>
+            </ul>
           )}
-          <li>
-            <button
-              onClick={() => onSelect(CLIENT_CENTER_VIEW)}
-              className={fileButtonClass(selectedPath === CLIENT_CENTER_VIEW)}
-            >
-              Client Center
-            </button>
-          </li>
-        </ul>
+        </>
       )}
 
       <SectionHeader label="Media" open={open.media} onToggle={() => toggle('media')} />

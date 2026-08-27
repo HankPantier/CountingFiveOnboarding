@@ -26,6 +26,7 @@ export default function EditorShell({
   firmName,
   websiteUrl,
   initialPath,
+  viewerIsOwner = false,
 }: {
   sessionId: string
   firmName: string
@@ -33,14 +34,20 @@ export default function EditorShell({
   // Optional deep-link target (e.g. a Batch Content "Open draft" link). Selected
   // once after the tree loads so the file resolves against a populated tree.
   initialPath?: string
+  // True when the viewer is a Site Owner — locks the UI to their one site:
+  // no theme, no site-wide assistant, no nav/config editing; they publish and
+  // use per-page AI edit. Known server-side to avoid a flash of the full chrome.
+  viewerIsOwner?: boolean
 }) {
   const [tree, setTree] = useState<TreeFile[]>([])
   const [status, setStatus] = useState<EditorStatus | null>(null)
-  // Theme Studio is admin-only; managers never see the entry (route also 403s).
+  // Theme Studio is admin-only; managers and owners never see the entry (the
+  // route also 403s them).
   const [isAdmin, setIsAdmin] = useState(false)
   // Publishing to live is denied to editors — the publish/rollback routes 403
-  // them, so hide those affordances. Admins and managers may publish.
-  const [publishAllowed, setPublishAllowed] = useState(false)
+  // them, so hide those affordances. Admins, managers, and site owners may
+  // publish (owner is known server-side, so seed the state true for them).
+  const [publishAllowed, setPublishAllowed] = useState(viewerIsOwner)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Map<string, LoadedFile>>(new Map())
   const [dirty, setDirty] = useState<Map<string, string>>(new Map())
@@ -840,6 +847,7 @@ export default function EditorShell({
         selectedPath={selectedPath}
         canSave={!!selectedPath && dirty.has(selectedPath)}
         canPublishLive={publishAllowed}
+        isOwner={viewerIsOwner}
         saving={saving}
         publishing={publishing}
         draftBusy={draftBusy}
@@ -872,6 +880,7 @@ export default function EditorShell({
               sessionId={sessionId}
               path={selectedPath}
               isDirty={dirty.has(selectedPath)}
+              allowed={isAdmin || viewerIsOwner}
               onSave={() => void save()}
               onEdited={() => {
                 void reloadFile(selectedPath)
@@ -1009,6 +1018,7 @@ export default function EditorShell({
             dirtyPaths={new Set(dirty.keys())}
             changesCount={status?.draftAhead ?? 0}
             showTheme={isAdmin}
+            showConfiguration={!viewerIsOwner}
             onSelect={(p) => void select(p)}
             onNewPage={() => setNewPageOpen(true)}
             onBulkMove={bulkMove}

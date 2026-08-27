@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds, hasOnboardingAccess } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, getSiteOwnerSessionId, hasOnboardingAccess, isSiteOwner } from '@/lib/auth/access'
 import ContentTable, { type ContentRow } from '@/components/admin/content/ContentTable'
 
 export default async function ContentHubPage() {
@@ -10,6 +10,11 @@ export default async function ContentHubPage() {
   // Managers see only their assigned clients; admins see all (allowed === null).
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
+  // A Site Owner never sees the content list — send them to their one editor.
+  if (isSiteOwner(user)) {
+    const ownedSessionId = await getSiteOwnerSessionId(user)
+    redirect(ownedSessionId ? `/admin/content/${ownedSessionId}/edit` : '/admin/home')
+  }
   // Editors reach Content but not the Onboarding surface (Batch, Dashboard).
   const canOnboard = hasOnboardingAccess(user)
   const allowed = await getAccessibleSessionIds(user)

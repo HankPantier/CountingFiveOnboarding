@@ -20,7 +20,9 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
-  const isContentUser = role === 'member' && (capabilities.has('manager') || capabilities.has('editor'))
+  const isOwner = role === 'member' && capabilities.has('owner')
+  const isContentUser =
+    role === 'member' && (capabilities.has('manager') || capabilities.has('editor') || capabilities.has('owner'))
 
   function reset() {
     setName('')
@@ -41,16 +43,28 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     })
   }
 
+  // Owner is assigned exactly one site — clicking a site replaces the selection.
+  function pickSingle(id: string) {
+    setSelected(new Set([id]))
+  }
+
   function toggleCapability(cap: Capability) {
     setCapabilities(prev => {
       const next = new Set(prev)
-      if (next.has(cap)) next.delete(cap)
-      else {
-        next.add(cap)
-        // manager and editor are mutually exclusive tiers of the content role.
-        if (cap === 'manager') next.delete('editor')
-        if (cap === 'editor') next.delete('manager')
+      if (next.has(cap)) {
+        next.delete(cap)
+        return next
       }
+      // Site Owner is exclusive with every other capability (and vice versa).
+      if (cap === 'owner') {
+        setSelected(new Set())
+        return new Set<Capability>(['owner'])
+      }
+      next.add(cap)
+      // manager and editor are mutually exclusive tiers of the content role.
+      if (cap === 'manager') next.delete('editor')
+      if (cap === 'editor') next.delete('manager')
+      next.delete('owner')
       return next
     })
   }
@@ -63,6 +77,10 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     if (!EMAIL_RE.test(email.trim())) { setError('Please enter a valid email address'); return }
     if (role === 'member' && capabilities.size === 0) {
       setError('Select at least one capability for a member')
+      return
+    }
+    if (isOwner && selected.size !== 1) {
+      setError('A Site Owner must be assigned exactly one site')
       return
     }
     setSaving(true)
@@ -113,7 +131,7 @@ export default function AddUserDialog({ sessions }: { sessions: SessionOption[] 
     )
   }
 
-  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, warning, saving, handleSubmit, isContentUser }} />
+  return <AddUserDialogPanel onClose={() => { reset(); setOpen(false) }} {...{ sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, pickSingle, error, warning, saving, handleSubmit, isContentUser, isOwner }} />
 }
 
 interface PanelProps {
@@ -129,17 +147,21 @@ interface PanelProps {
   toggleCapability: (c: Capability) => void
   selected: Set<string>
   toggle: (id: string) => void
+  pickSingle: (id: string) => void
   error: string
   warning: string
   saving: boolean
   handleSubmit: (e: React.FormEvent) => void
   isContentUser: boolean
+  isOwner: boolean
 }
 
 // Separate component so useDialog mounts/unmounts with the panel itself —
 // focus is captured on open and restored to the trigger on close.
-function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, error, warning, saving, handleSubmit, isContentUser }: PanelProps) {
+function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail, role, setRole, capabilities, toggleCapability, selected, toggle, pickSingle, error, warning, saving, handleSubmit, isContentUser, isOwner }: PanelProps) {
   const dialogRef = useDialog(onClose)
+  // A Site Owner may only be assigned a content-ready site.
+  const pickable = isOwner ? sessions.filter(s => s.contentReady) : sessions
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/40 p-4">
@@ -213,7 +235,7 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
             <div className="space-y-1">
               <label className="text-sm font-semibold text-text-secondary font-body">Capabilities</label>
               <div className="flex flex-col gap-2">
-                {([['manager', 'Manager — view, edit & publish content for assigned clients'], ['editor', 'Editor — proof, edit & stage content for assigned clients, but cannot publish'], ['auditor', 'Auditor — run & manage their own site audits']] as const).map(([cap, desc]) => (
+                {([['manager', 'Manager — view, edit & publish content for assigned clients'], ['editor', 'Editor — proof, edit & stage content for assigned clients, but cannot publish'], ['owner', 'Site Owner — the client for one site: edit & publish their own single site, nothing else'], ['auditor', 'Auditor — run & manage their own site audits']] as const).map(([cap, desc]) => (
                   <label
                     key={cap}
                     className="flex items-start gap-2 cursor-pointer rounded-card border border-border-default px-3 py-2 hover:bg-surface-subtle"
@@ -234,21 +256,24 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
           {isContentUser && (
             <div className="space-y-1">
               <label className="text-sm font-semibold text-text-secondary font-body">
-                Client access ({selected.size} selected)
+                {isOwner ? 'Assigned site (one)' : `Client access (${selected.size} selected)`}
               </label>
               <div className="border border-border-default rounded-card max-h-48 overflow-y-auto divide-y divide-border-default">
-                {sessions.length === 0 && (
-                  <p className="text-sm text-text-muted font-body p-3">No clients available.</p>
+                {pickable.length === 0 && (
+                  <p className="text-sm text-text-muted font-body p-3">
+                    {isOwner ? 'No content-ready sites yet.' : 'No clients available.'}
+                  </p>
                 )}
-                {sessions.map(s => (
+                {pickable.map(s => (
                   <label
                     key={s.id}
                     className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-subtle"
                   >
                     <input
-                      type="checkbox"
+                      type={isOwner ? 'radio' : 'checkbox'}
+                      name={isOwner ? 'owner-site' : undefined}
                       checked={selected.has(s.id)}
-                      onChange={() => toggle(s.id)}
+                      onChange={() => (isOwner ? pickSingle(s.id) : toggle(s.id))}
                       className="accent-brand-cyan"
                     />
                     <span className="text-sm font-body text-text-primary truncate">{s.website_url}</span>

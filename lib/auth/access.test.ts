@@ -4,6 +4,7 @@ import {
   hasContentAccess,
   canPublish,
   hasOnboardingAccess,
+  isSiteOwner,
   type CurrentUser,
   type Capability,
 } from './access'
@@ -20,6 +21,7 @@ const admin = user({ role: 'admin', isAdmin: true, capabilities: ['manager', 'au
 const manager = user({ capabilities: ['manager'] })
 const editor = user({ capabilities: ['editor'] })
 const auditor = user({ capabilities: ['auditor'] })
+const owner = user({ capabilities: ['owner'] })
 
 describe('capability model — the core authorization rules', () => {
   it('admin passes every predicate', () => {
@@ -47,6 +49,19 @@ describe('capability model — the core authorization rules', () => {
     expect(hasContentAccess(auditor)).toBe(false)
     expect(canPublish(auditor)).toBe(false)
     expect(hasCapability(auditor, 'auditor')).toBe(true)
+  })
+
+  it('owner: content access + publish, but NO onboarding, and is a site owner', () => {
+    expect(hasContentAccess(owner)).toBe(true)
+    expect(canPublish(owner)).toBe(true)
+    expect(hasOnboardingAccess(owner)).toBe(false)
+    expect(isSiteOwner(owner)).toBe(true)
+  })
+
+  it('isSiteOwner is false for admins (they hold every capability) and non-owners', () => {
+    expect(isSiteOwner(admin)).toBe(false)
+    expect(isSiteOwner(manager)).toBe(false)
+    expect(isSiteOwner(editor)).toBe(false)
   })
 
   it('a member with no capabilities is denied everything non-audit', () => {

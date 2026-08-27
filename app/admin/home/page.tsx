@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getCurrentUser, hasCapability, hasOnboardingAccess, type Capability, type CurrentUser } from '@/lib/auth/access'
+import { getCurrentUser, getSiteOwnerSessionId, hasCapability, hasOnboardingAccess, isSiteOwner, type Capability, type CurrentUser } from '@/lib/auth/access'
 import { getHomeStats } from '@/lib/admin/home-stats'
 import { getCommandIndex } from '@/lib/admin/command-index'
 import HomeGreeting from '@/components/admin/home/HomeGreeting'
@@ -36,6 +36,22 @@ function canSee(user: CurrentUser, requires: SectionRequires): boolean {
 export default async function AdminHomePage() {
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
+
+  // A Site Owner has one site and no workspace — drop them straight into their
+  // editor. This also catches the invite/set-password flow, which lands here.
+  if (isSiteOwner(user)) {
+    const ownedSessionId = await getSiteOwnerSessionId(user)
+    if (ownedSessionId) redirect(`/admin/content/${ownedSessionId}/edit`)
+    return (
+      <main className="mx-auto max-w-lg p-8 pt-20 text-center">
+        <h1 className="font-heading text-xl font-bold text-brand-navy">No site assigned yet</h1>
+        <p className="mt-3 font-body text-sm text-text-secondary">
+          Your account isn&apos;t linked to a site yet. Please contact your CountingFive
+          administrator to finish setup.
+        </p>
+      </main>
+    )
+  }
 
   const [stats, index] = await Promise.all([getHomeStats(user), getCommandIndex(user)])
 

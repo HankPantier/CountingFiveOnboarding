@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import ProgressBar from '@/components/ui/ProgressBar'
 import { useTaskProgress } from '@/components/ui/use-task-progress'
+import { signOut } from '@/app/admin/dashboard/actions'
 
 export type EditorStatus = {
   draftAhead: number
@@ -327,6 +328,7 @@ export default function EditorTopBar({
   selectedPath,
   canSave,
   canPublishLive,
+  isOwner = false,
   saving,
   publishing,
   draftBusy,
@@ -345,6 +347,9 @@ export default function EditorTopBar({
   selectedPath: string | null
   canSave: boolean
   canPublishLive: boolean
+  // Site Owners have no admin workspace to go back to — show a sign-out control
+  // in place of the "← Dashboard/Content" back link.
+  isOwner?: boolean
   saving: boolean
   publishing: boolean
   draftBusy: boolean
@@ -361,12 +366,23 @@ export default function EditorTopBar({
   return (
     <header className="flex items-center justify-between gap-4 px-6 py-3 border-b border-border-default bg-surface-card">
       <div className="flex items-center gap-3 min-w-0">
-        <Link
-          href={canPublishLive ? '/admin/dashboard' : '/admin/content'}
-          className="text-text-muted hover:text-brand-cyan font-heading text-xs whitespace-nowrap"
-        >
-          ← {canPublishLive ? 'Dashboard' : 'Content'}
-        </Link>
+        {isOwner ? (
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="text-text-muted hover:text-brand-cyan font-heading text-xs whitespace-nowrap"
+            >
+              Sign out
+            </button>
+          </form>
+        ) : (
+          <Link
+            href={canPublishLive ? '/admin/dashboard' : '/admin/content'}
+            className="text-text-muted hover:text-brand-cyan font-heading text-xs whitespace-nowrap"
+          >
+            ← {canPublishLive ? 'Dashboard' : 'Content'}
+          </Link>
+        )}
         <h1 className="font-heading font-semibold text-sm text-brand-navy truncate max-w-[18rem]">
           {firmName}
         </h1>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
+import { contentReadySessionIds } from '@/lib/admin/content-ready'
 import type { AssignedClient, UpdateAssignmentsRequest, UserAssignmentsResponse } from '@/types/users'
 
 export const runtime = 'nodejs'
@@ -57,11 +58,23 @@ export async function PUT(
     .eq('id', id)
     .maybeSingle()
   if (!target) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-  // Client assignment applies to content-role members — manager or editor.
+  // Client assignment applies to content-role members — manager, editor, or owner.
   const caps = Array.isArray(target.capabilities) ? target.capabilities : []
-  const isContentUser = target.role !== 'admin' && (caps.includes('manager') || caps.includes('editor'))
+  const isContentUser =
+    target.role !== 'admin' && (caps.includes('manager') || caps.includes('editor') || caps.includes('owner'))
   if (!isContentUser) {
-    return NextResponse.json({ error: 'Only managers or editors can be assigned clients' }, { status: 400 })
+    return NextResponse.json({ error: 'Only managers, editors, or site owners can be assigned clients' }, { status: 400 })
+  }
+
+  // A Site Owner is locked to exactly one content-ready site.
+  if (caps.includes('owner')) {
+    if (next.length !== 1) {
+      return NextResponse.json({ error: 'A Site Owner must be assigned exactly one site' }, { status: 400 })
+    }
+    const ready = await contentReadySessionIds(next)
+    if (!ready.has(next[0])) {
+      return NextResponse.json({ error: 'A Site Owner can only be assigned a site whose content is ready' }, { status: 400 })
+    }
   }
 
   const { data: existingRows } = await supabase

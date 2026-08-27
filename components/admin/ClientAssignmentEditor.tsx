@@ -8,10 +8,13 @@ import type { UserAssignmentsResponse } from '@/types/users'
 export default function ClientAssignmentEditor({
   userId,
   sessions,
+  ownerMode = false,
   onClose,
 }: {
   userId: string
   sessions: SessionOption[]
+  // A Site Owner is locked to exactly one content-ready site — single-select.
+  ownerMode?: boolean
   onClose: () => void
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -20,6 +23,7 @@ export default function ClientAssignmentEditor({
   const [error, setError] = useState('')
   const router = useRouter()
   const dialogRef = useDialog(onClose)
+  const pickable = ownerMode ? sessions.filter(s => s.contentReady) : sessions
 
   useEffect(() => {
     let active = true
@@ -41,6 +45,10 @@ export default function ClientAssignmentEditor({
   }, [userId])
 
   function toggle(id: string) {
+    if (ownerMode) {
+      setSelected(new Set([id]))
+      return
+    }
     setSelected(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -50,6 +58,10 @@ export default function ClientAssignmentEditor({
   }
 
   async function save() {
+    if (ownerMode && selected.size !== 1) {
+      setError('A Site Owner must be assigned exactly one site')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -83,7 +95,7 @@ export default function ClientAssignmentEditor({
         className="w-full max-w-md bg-surface-card rounded-card p-6 shadow-subtle max-h-[90vh] overflow-y-auto"
       >
         <h2 id="client-access-title" className="text-lg font-heading font-bold text-brand-navy mb-4">
-          Client access ({selected.size} selected)
+          {ownerMode ? 'Assigned site (one)' : `Client access (${selected.size} selected)`}
         </h2>
 
         {error && (
@@ -94,16 +106,19 @@ export default function ClientAssignmentEditor({
           <p className="text-sm text-text-muted font-body py-6 text-center">Loading…</p>
         ) : (
           <div className="border border-border-default rounded-card max-h-64 overflow-y-auto divide-y divide-border-default mb-4">
-            {sessions.length === 0 && (
-              <p className="text-sm text-text-muted font-body p-3">No clients available.</p>
+            {pickable.length === 0 && (
+              <p className="text-sm text-text-muted font-body p-3">
+                {ownerMode ? 'No content-ready sites yet.' : 'No clients available.'}
+              </p>
             )}
-            {sessions.map(s => (
+            {pickable.map(s => (
               <label
                 key={s.id}
                 className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-subtle"
               >
                 <input
-                  type="checkbox"
+                  type={ownerMode ? 'radio' : 'checkbox'}
+                  name={ownerMode ? 'owner-site' : undefined}
                   checked={selected.has(s.id)}
                   onChange={() => toggle(s.id)}
                   className="accent-brand-cyan"

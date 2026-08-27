@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
 import { buildConfirmLink } from '@/lib/auth/confirm-link'
+import { contentReadySessionIds } from '@/lib/admin/content-ready'
 import { sendInviteEmail } from '@/lib/email/send-invite'
 import type {
   CreateUserRequest,
@@ -13,12 +14,12 @@ import type {
 export const runtime = 'nodejs'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor', 'owner']
 
-// manager and editor are two tiers of the same content role (editor = manager
-// minus publish) — a member holds at most one. Both grant client assignment.
+// manager, editor, and owner are tiers of the same content role — a member holds
+// at most one. All three grant client assignment (owner to exactly one site).
 function isContentCapability(caps: Capability[]): boolean {
-  return caps.includes('manager') || caps.includes('editor')
+  return caps.includes('manager') || caps.includes('editor') || caps.includes('owner')
 }
 
 function isRole(v: unknown): v is Role {
@@ -89,6 +90,19 @@ export async function POST(req: Request) {
   }
   if (capabilities.includes('manager') && capabilities.includes('editor')) {
     return NextResponse.json({ error: 'A member cannot be both manager and editor' }, { status: 400 })
+  }
+  const isOwner = capabilities.includes('owner')
+  if (isOwner && capabilities.length > 1) {
+    return NextResponse.json({ error: 'A Site Owner cannot hold other capabilities' }, { status: 400 })
+  }
+  if (isOwner) {
+    if (sessionIds.length !== 1) {
+      return NextResponse.json({ error: 'A Site Owner must be assigned exactly one site' }, { status: 400 })
+    }
+    const ready = await contentReadySessionIds(sessionIds)
+    if (!ready.has(sessionIds[0])) {
+      return NextResponse.json({ error: 'A Site Owner can only be assigned a site whose content is ready' }, { status: 400 })
+    }
   }
   const isContentUser = isContentCapability(capabilities)
 

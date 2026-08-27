@@ -5,7 +5,7 @@ import type { UpdateUserRequest } from '@/types/users'
 
 export const runtime = 'nodejs'
 
-const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor']
+const ALL_CAPABILITIES: Capability[] = ['manager', 'auditor', 'editor', 'owner']
 
 function isRole(v: unknown): v is Role {
   return v === 'admin' || v === 'member'
@@ -79,6 +79,25 @@ export async function PATCH(
     if (caps.includes('manager') && caps.includes('editor')) {
       return NextResponse.json({ error: 'A member cannot be both manager and editor' }, { status: 400 })
     }
+    if (caps.includes('owner') && caps.length > 1) {
+      return NextResponse.json({ error: 'A Site Owner cannot hold other capabilities' }, { status: 400 })
+    }
+    // A Site Owner reaches exactly one site. Switching an existing multi-site
+    // content member to owner would leave them able to open every assigned
+    // editor by URL, so require they be reduced to a single site first (via
+    // Manage access) — a fresh owner is created with one site through POST.
+    if (caps.includes('owner')) {
+      const { count } = await supabase
+        .from('manager_clients')
+        .select('id', { count: 'exact', head: true })
+        .eq('manager_id', id)
+      if ((count ?? 0) > 1) {
+        return NextResponse.json(
+          { error: 'A Site Owner can be assigned only one site — reduce their client access to a single site before switching them to Site Owner' },
+          { status: 400 },
+        )
+      }
+    }
     update.capabilities = caps
   }
 
@@ -93,7 +112,7 @@ export async function PATCH(
   // capability (manager or editor) — clear them once the user is an admin or
   // holds neither.
   const finalCaps = update.capabilities ?? normalizeCapabilities(target.capabilities)
-  const keepsContentAccess = finalRole !== 'admin' && (finalCaps.includes('manager') || finalCaps.includes('editor'))
+  const keepsContentAccess = finalRole !== 'admin' && (finalCaps.includes('manager') || finalCaps.includes('editor') || finalCaps.includes('owner'))
   if (!keepsContentAccess) {
     await supabase.from('manager_clients').delete().eq('manager_id', id)
   }

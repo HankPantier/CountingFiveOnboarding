@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser, getSiteOwnerSessionId, isSiteOwner } from '@/lib/auth/access'
 import EditorShell from '@/components/editor/EditorShell'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -14,6 +15,17 @@ export default async function EditPage({
 }) {
   const { id } = await params
   if (!UUID_RE.test(id)) notFound()
+
+  // A Site Owner may only reach their own site's editor — bounce any other URL
+  // back to theirs. (The /api/edit routes also 403 cross-site; this is UX.)
+  const user = await getCurrentUser()
+  const viewerIsOwner = !!user && isSiteOwner(user)
+  if (viewerIsOwner) {
+    const ownedSessionId = await getSiteOwnerSessionId(user)
+    if (ownedSessionId && ownedSessionId !== id) {
+      redirect(`/admin/content/${ownedSessionId}/edit`)
+    }
+  }
 
   // Optional deep-link to a specific file (Batch Content "Open draft"). The file
   // API validates/normalizes the path server-side; we only sanity-check it
@@ -50,6 +62,7 @@ export default async function EditPage({
       firmName={firmName}
       websiteUrl={websiteUrl}
       initialPath={initialPath}
+      viewerIsOwner={viewerIsOwner}
     />
   )
 }
