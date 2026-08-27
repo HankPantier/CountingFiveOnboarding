@@ -25,6 +25,13 @@ import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './so
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
+import {
+  CONTENT_TYPES,
+  asContentType,
+  buildFormatRules,
+  hasCaseStudyData,
+  type ContentType,
+} from './content-types'
 import type { NavJson } from '@/types/nav-json'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -73,6 +80,7 @@ ${notes}`
 
 async function generateDraftContent(args: {
   idea: { title: string; angle: string | null; target_keyword: string | null; rationale: string | null }
+  contentType: ContentType
   notes: string | null
   secondaryKeywords: string[]
   externalLinks: ExternalLink[]
@@ -82,9 +90,10 @@ async function generateDraftContent(args: {
   sessionId: string
   flaggedPhrases?: string[]
 }): Promise<DraftResult | null> {
-  const { idea, schema } = args
+  const { idea, schema, contentType } = args
   const firmName = schema.business?.name ?? 'the firm'
   const location = firmLocation(schema)
+  const typeSpec = CONTENT_TYPES[contentType]
 
   const retryNote = args.flaggedPhrases?.length
     ? `\n\nIMPORTANT: A previous draft was flagged for these issues — fix all of them: ${args.flaggedPhrases.join(' | ')}`
@@ -99,19 +108,13 @@ async function generateDraftContent(args: {
   // a client's batch — and the anti-slop retry of a single post — reuses it as a
   // cache read. The per-post task lives in dynamicSuffix below; keep every
   // per-idea value OUT of this string.
-  const staticPrefix = `You are writing a blog post for the Resources section of ${firmName}, a CPA firm in ${location}.
+  const staticPrefix = `You are writing a ${typeSpec.articleNoun} for the Resources section of ${firmName}, a CPA firm in ${location}.
 
 ${buildBrandVoiceBlock(schema)}
 
 ${buildFirmContext(schema)}
 
-FORMAT RULES:
-- 1,200–1,800 words of plain markdown prose. Start with a paragraph, not a heading. Use ## for section headings (the page title renders separately — no H1).
-- No HTML, no block-annotation comments — this renders through a plain markdown pipeline.
-- GFM tables are allowed where data genuinely helps.
-- If the topic suits it, end with a short "## Common Questions" section of 2-4 Q&As (bold question line, then answer paragraph) — this feeds AI-search answerability.
-- Close with one clear call-to-action paragraph linking to /contact.
-- Write for a human reader first: specific numbers, concrete scenarios, this firm's actual niches. Local relevance to ${location || 'the firm\'s market'} where natural.
+${buildFormatRules(contentType, location)}
 
 OUTPUT: Return a JSON object:
 {
@@ -216,7 +219,8 @@ ${args.internalTargets
               typeof fm.target_keyword === 'string' ? fm.target_keyword : idea.target_keyword ?? '',
             secondary_keywords: Array.isArray(fm.secondary_keywords) ? (fm.secondary_keywords as string[]) : [],
             answer_block: typeof fm.answer_block === 'string' ? fm.answer_block : '',
-            schema_markup: typeof fm.schema_markup === 'string' ? fm.schema_markup : 'BlogPosting',
+            schema_markup:
+              typeof fm.schema_markup === 'string' ? fm.schema_markup : typeSpec.defaultSchemaMarkup,
             tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : [],
             hero_image: str(fm.hero_image),
             hero_image_query: str(fm.hero_image_query),
@@ -274,6 +278,7 @@ function buildPostMarkdown(args: {
   body: string
   slug: string
   date: string
+  contentType: ContentType
   author: string | null
   canonicalUrl: string
   heroImage: string | null
@@ -284,6 +289,7 @@ function buildPostMarkdown(args: {
     `title: ${escapeFrontmatterValue(fm.title)}`,
     `slug: ${args.slug}`,
     `date: ${args.date}`,
+    `content_type: ${args.contentType}`,
     ...(args.author ? [`author: ${escapeFrontmatterValue(args.author)}`] : []),
     `excerpt: ${escapeFrontmatterValue(fm.excerpt)}`,
     ...(args.heroImage ? [`image: ${args.heroImage}`] : []),
@@ -437,11 +443,12 @@ export async function generateResourceDraft(
 
   const { data: idea } = await supabase
     .from('resource_ideas')
-    .select('id, content_job_id, session_id, title, angle, target_keyword, secondary_keywords, rationale, external_links, status, draft_notes')
+    .select('id, content_job_id, session_id, title, angle, target_keyword, secondary_keywords, rationale, external_links, status, draft_notes, content_type')
     .eq('id', ideaId)
     .single()
   if (!idea) return { status: 'error', error: 'Idea not found' }
   if (idea.status === 'dismissed') return { status: 'error', error: 'Idea is dismissed' }
+  const contentType = asContentType(idea.content_type)
 
   const { data: job } = await supabase
     .from('content_jobs')
@@ -473,6 +480,19 @@ export async function generateResourceDraft(
   const externalLinks = (idea.external_links as ExternalLink[]) ?? []
   const secondaryKeywords = (idea.secondary_keywords as string[]) ?? []
 
+  // Case-study data gate (backstop; the draft API route gates first for instant
+  // UI feedback, but batch runs reach this path directly). A case study without
+  // a real client story to ground it must fail rather than fabricate one.
+  if (CONTENT_TYPES[contentType].requiresCaseData && !hasCaseStudyData(schema, idea.draft_notes)) {
+    const message =
+      'Case study needs client details — add a client success story to the MBP, or provide the client, challenge, actions, and results in the draft notes.'
+    await supabase
+      .from('resource_ideas')
+      .update({ draft_status: 'error', draft_error: message, updated_at: new Date().toISOString() })
+      .eq('id', ideaId)
+    return { status: 'error', error: message }
+  }
+
   try {
     await ensureDraftBranch(job.github_repo)
     // Self-heal: drop a stale static sitemap a prior package left behind so the
@@ -495,6 +515,7 @@ export async function generateResourceDraft(
 
     let result = await generateDraftContent({
       idea,
+      contentType,
       notes: idea.draft_notes,
       secondaryKeywords,
       externalLinks,
@@ -512,6 +533,7 @@ export async function generateResourceDraft(
       )
       const retry = await generateDraftContent({
         idea,
+        contentType,
         notes: idea.draft_notes,
         secondaryKeywords,
         externalLinks,
@@ -588,6 +610,7 @@ export async function generateResourceDraft(
       body: result.body,
       slug,
       date,
+      contentType,
       author,
       canonicalUrl,
       heroImage,

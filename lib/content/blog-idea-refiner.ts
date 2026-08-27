@@ -3,7 +3,20 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { extractJson } from './extract-json'
+import { CONTENT_TYPES, asContentType, type ContentType } from './content-types'
 import type { ExternalLink } from './link-checker'
+
+// Per-type framing for the brand-agnostic refinement prompt. The idea stays
+// generic across firms; the type only shapes what kind of piece it becomes.
+const TYPE_REFINE_GUIDANCE: Record<ContentType, string> = {
+  blog: '',
+  article:
+    'This will become a longer, in-depth researched article — pick a topic with enough substance to sustain 1,800+ words.',
+  'thought-leadership':
+    'This will become a thought-leadership piece — the idea should carry a clear, opinionated stance, not a neutral explainer.',
+  'case-study':
+    'This will become a case study — frame it as a client-outcome narrative (situation → what was done → measurable result). Each firm grounds it in its own real client story downstream.',
+}
 
 // Brand-agnostic blog-idea refinement for the blog-first multi-client tool.
 // The admin authors a rough topic; this sharpens it into a reusable idea that
@@ -32,14 +45,19 @@ export type RefineBlogIdeaInput = {
   // Prior refined idea + a follow-up instruction drive the iterative loop.
   current?: RefinedBlogIdea | null
   instruction?: string
+  contentType?: ContentType
 }
 
 function buildPrompt(input: RefineBlogIdeaInput): string {
   const revising = input.current && input.instruction?.trim()
+  const contentType = asContentType(input.contentType)
+  const noun = CONTENT_TYPES[contentType].articleNoun
+  const typeGuidance = TYPE_REFINE_GUIDANCE[contentType]
+  const typeLine = typeGuidance ? `\n\n${typeGuidance}` : ''
 
   if (revising) {
     const c = input.current as RefinedBlogIdea
-    return `You are a content strategist for CPA / accounting firms. Refine an existing blog-post idea per the editor's instruction.
+    return `You are a content strategist for CPA / accounting firms. Refine an existing ${noun} idea per the editor's instruction.
 
 CURRENT IDEA:
 Title: ${c.title}
@@ -52,7 +70,7 @@ ORIGINAL SEED: ${input.seed}
 
 EDITOR INSTRUCTION (apply this): ${input.instruction}
 
-Keep the idea generic enough to work for multiple different CPA firms (it will be tailored to each firm's brand and location later) — do NOT bake in a specific firm name, city, or niche unless the instruction asks for it.
+Keep the idea generic enough to work for multiple different CPA firms (it will be tailored to each firm's brand and location later) — do NOT bake in a specific firm name, city, or niche unless the instruction asks for it.${typeLine}
 
 ${EXTERNAL_SOURCES_GUIDANCE}
 
@@ -60,11 +78,11 @@ Return ONLY a JSON object:
 { "title": "...", "angle": "one-line hook", "target_keyword": "...", "secondary_keywords": ["...", "..."], "rationale": "why this topic earns attention and ranks", "suggested_external_links": [{"url": "...", "title": "..."}] }`
   }
 
-  return `You are a content strategist for CPA / accounting firms. Sharpen the editor's rough topic into one fully-formed blog-post idea.
+  return `You are a content strategist for CPA / accounting firms. Sharpen the editor's rough topic into one fully-formed ${noun} idea.
 
 EDITOR'S TOPIC: ${input.seed}
 
-Produce a single strong idea: a specific, opinionated title (not a generic listicle), a one-line angle, a primary SEO keyword, 2-4 secondary keywords, and a short rationale. Keep it generic enough to work for multiple different CPA firms — it will be tailored to each firm's brand and location later — so do NOT bake in a specific firm name, city, or niche.
+Produce a single strong idea: a specific, opinionated title (not a generic listicle), a one-line angle, a primary SEO keyword, 2-4 secondary keywords, and a short rationale. Keep it generic enough to work for multiple different CPA firms — it will be tailored to each firm's brand and location later — so do NOT bake in a specific firm name, city, or niche.${typeLine}
 
 ${EXTERNAL_SOURCES_GUIDANCE}
 

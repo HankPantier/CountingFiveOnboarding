@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser, hasCapability } from '@/lib/auth/access'
 import { refineBlogIdea, type RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
+import { asContentType } from '@/lib/content/content-types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -12,6 +13,7 @@ interface RefineBody {
   seed?: string
   current?: RefinedBlogIdea
   instruction?: string
+  contentType?: string
 }
 
 // Brand-agnostic idea refinement for the blog-first tool. No client is selected
@@ -43,8 +45,9 @@ export async function POST(req: Request) {
   }
   const instruction =
     typeof body.instruction === 'string' ? body.instruction.trim().slice(0, MAX_INSTRUCTION_LENGTH) : undefined
+  const contentType = asContentType(body.contentType)
 
-  const idea = await refineBlogIdea({ seed, current: body.current ?? null, instruction })
+  const idea = await refineBlogIdea({ seed, current: body.current ?? null, instruction, contentType })
   if (!idea) {
     return NextResponse.json({ error: 'Could not refine the idea — please try again' }, { status: 502 })
   }

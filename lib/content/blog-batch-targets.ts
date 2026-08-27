@@ -1,6 +1,7 @@
 import type { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { ExternalLink } from '@/lib/content/link-checker'
+import type { ContentType } from '@/lib/content/content-types'
 
 type ServerClient = ReturnType<typeof createServerClient>
 
@@ -10,6 +11,7 @@ export interface BatchIdeaFields {
   targetKeyword: string | null
   secondaryKeywords: string[]
   rationale: string | null
+  contentType: ContentType
 }
 
 export interface BatchClient {
@@ -78,6 +80,7 @@ export async function insertBatchTargets(
           external_links: asJson(verifiedLinks),
           status: 'approved',
           draft_status: 'idle',
+          content_type: idea.contentType,
         }))
       )
       .select('id, session_id')
@@ -96,6 +99,7 @@ export async function insertBatchTargets(
       content_job_id: e.contentJobId,
       resource_idea_id: ideaBySession.get(e.sessionId) ?? null,
       status: 'pending',
+      content_type: idea.contentType,
     })),
     ...ineligible.map((e) => ({
       batch_id: batchId,
@@ -104,6 +108,7 @@ export async function insertBatchTargets(
       resource_idea_id: null,
       status: 'skipped',
       error: 'Site is not published / repo not provisioned',
+      content_type: idea.contentType,
     })),
   ]
 

@@ -3,6 +3,7 @@ import { resolveEditContext } from '../../../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateResourceDraft } from '@/lib/content/resource-draft-generator'
 import { checkBrandFit, OFF_BRAND_MARKER } from '@/lib/content/brand-fit'
+import { CONTENT_TYPES, asContentType, hasCaseStudyData } from '@/lib/content/content-types'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
@@ -48,7 +49,7 @@ export async function POST(
   const supabase = createServerClient()
   const { data: idea } = await supabase
     .from('resource_ideas')
-    .select('id, status, draft_status')
+    .select('id, status, draft_status, content_type')
     .eq('id', ideaId)
     .eq('content_job_id', ctx.jobId)
     .single()
@@ -61,6 +62,28 @@ export async function POST(
   // Defense in depth over the SQL lock inside generateResourceDraft.
   if (idea.draft_status === 'running') {
     return NextResponse.json({ error: 'Draft already in progress' }, { status: 409 })
+  }
+
+  // Case-study data gate: block before triggering the detached worker so the
+  // operator gets instant feedback to supply the client story via notes. The
+  // drafter re-checks this as a backstop (batch runs bypass this route).
+  if (CONTENT_TYPES[asContentType(idea.content_type)].requiresCaseData) {
+    const { data: session } = await supabase
+      .from('sessions')
+      .select('schema_data')
+      .eq('id', ctx.sessionId)
+      .single()
+    const schema = (session?.schema_data ?? {}) as SessionSchema
+    if (!hasCaseStudyData(schema, notes ?? null)) {
+      return NextResponse.json(
+        {
+          error:
+            'This case study needs client details. Add the client, challenge, actions, and results in the notes below — or add a client success story to the MBP.',
+          needsCaseData: true,
+        },
+        { status: 422 }
+      )
+    }
   }
 
   // Brand-fit gate on writer notes — the other place an admin can pull the

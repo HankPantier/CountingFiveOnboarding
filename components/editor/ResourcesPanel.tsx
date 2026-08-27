@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrandFitResult } from '@/lib/content/brand-fit'
+import { CONTENT_TYPES, CONTENT_TYPE_OPTIONS, asContentType, type ContentType } from '@/lib/content/content-types'
 import BrandConflictCard from './BrandConflictCard'
 
 type ScoreBreakdown = {
@@ -33,6 +34,7 @@ export type ResourceIdea = {
   social_path: string | null
   social_status: 'idle' | 'running' | 'complete' | 'error'
   reverse_links: ReverseLink[]
+  content_type: ContentType
 }
 
 // Render a markdown link as plain text ([anchor](url) → anchor) so the
@@ -85,6 +87,9 @@ export default function ResourcesPanel({
   const [loading, setLoading] = useState(true)
   const [brainstorming, setBrainstorming] = useState(false)
   const [seed, setSeed] = useState('')
+  // Content type the operator is brainstorming/drafting — governs both the open
+  // "Brainstorm ideas" run and a seeded "Extrapolate" run; stored on each idea.
+  const [contentType, setContentType] = useState<ContentType>('blog')
   // Ideas with a social backfill in flight (cleared when social_path arrives).
   const [socialBusy, setSocialBusy] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -220,12 +225,11 @@ export default function ResourcesPanel({
     try {
       const res = await fetch(`/api/edit/${sessionId}/resources/brainstorm`, {
         method: 'POST',
-        ...(seedIdea
-          ? {
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ seed: seedIdea, overrideBrandFit }),
-            }
-          : {}),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentType,
+          ...(seedIdea ? { seed: seedIdea, overrideBrandFit } : {}),
+        }),
       })
       if (res.status === 409 && seedIdea) {
         const data = (await res.json().catch(() => ({}))) as { brandFit?: BrandFitResult }
@@ -304,6 +308,15 @@ export default function ResourcesPanel({
         }
         throw new Error(data.error ?? 'Draft already in progress')
       }
+      // Case study missing its grounding data — reopen the notes box so the
+      // operator can supply the client story, and surface why.
+      if (res.status === 422) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string; needsCaseData?: boolean }
+        setNotesFor(ideaId)
+        setNotesText(notes)
+        setError(data.error ?? 'This case study needs client details.')
+        return
+      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(data.error ?? `Draft failed: ${res.status}`)
@@ -360,14 +373,32 @@ export default function ResourcesPanel({
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="font-heading text-lg font-semibold text-brand-navy">Resources — blog posts</h2>
-        <button
-          onClick={() => void brainstorm()}
-          disabled={brainstorming}
-          className="rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
-        >
-          {brainstorming ? 'Brainstorming…' : ideas.length > 0 ? 'Brainstorm more' : 'Brainstorm ideas'}
-        </button>
+        <h2 className="font-heading text-lg font-semibold text-brand-navy">Resources — content</h2>
+        <div className="flex items-center gap-2">
+          <label className="sr-only" htmlFor="resource-content-type">
+            Content type
+          </label>
+          <select
+            id="resource-content-type"
+            value={contentType}
+            onChange={(e) => setContentType(asContentType(e.target.value))}
+            disabled={brainstorming}
+            className="rounded-pill border border-border-default bg-surface-card px-3 py-1.5 text-xs font-heading font-semibold text-brand-navy focus:outline-none focus:border-brand-cyan disabled:opacity-50"
+          >
+            {CONTENT_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => void brainstorm()}
+            disabled={brainstorming}
+            className="rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-white hover:opacity-90 disabled:bg-surface-subtle disabled:text-text-muted transition-colors"
+          >
+            {brainstorming ? 'Brainstorming…' : ideas.length > 0 ? 'Brainstorm more' : 'Brainstorm ideas'}
+          </button>
+        </div>
       </div>
       <p className="text-xs font-body text-text-muted mb-4">
         Researches sticky, sharable angles for this firm and drafts on-brand posts under{' '}
@@ -460,6 +491,11 @@ export default function ResourcesPanel({
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
+                {idea.content_type !== 'blog' && (
+                  <span className="rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy">
+                    {CONTENT_TYPES[asContentType(idea.content_type)].uiLabel}
+                  </span>
+                )}
                 {idea.status === 'approved' && (
                   <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-success">
                     ★ Interested

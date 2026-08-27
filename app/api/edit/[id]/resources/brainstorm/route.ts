@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { generateResourceIdeas } from '@/lib/content/resource-idea-generator'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { checkBrandFit } from '@/lib/content/brand-fit'
+import { asContentType } from '@/lib/content/content-types'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
@@ -14,6 +15,7 @@ const MAX_SEED_LENGTH = 300
 interface BrainstormBody {
   seed?: string
   overrideBrandFit?: boolean
+  contentType?: string
 }
 
 export async function POST(
@@ -28,6 +30,7 @@ export async function POST(
   // extrapolate the admin's base idea.
   let seed: string | undefined
   let overrideBrandFit = false
+  let contentTypeRaw: string | undefined
   try {
     const body = (await req.json()) as BrainstormBody
     if (body && typeof body.seed === 'string' && body.seed.trim()) {
@@ -40,9 +43,11 @@ export async function POST(
       seed = body.seed.trim()
     }
     overrideBrandFit = body?.overrideBrandFit === true
+    contentTypeRaw = typeof body?.contentType === 'string' ? body.contentType : undefined
   } catch {
     // No JSON body — open brainstorm.
   }
+  const contentType = asContentType(contentTypeRaw)
 
   // Brand-fit gate: an admin seed can pull generation off the documented
   // voice. Conflicts block here (409) until explicitly overridden.
@@ -67,7 +72,7 @@ export async function POST(
   const offBrandApproved = !!seed && overrideBrandFit
   after(async () => {
     try {
-      await generateResourceIdeas(ctx.jobId, ctx.sessionId, { seed, offBrandApproved })
+      await generateResourceIdeas(ctx.jobId, ctx.sessionId, { seed, offBrandApproved, contentType })
     } catch (err) {
       console.error('[resource-ideas] Brainstorm failed:', err)
     }

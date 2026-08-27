@@ -310,6 +310,7 @@ export type Database = {
       blog_batches: {
         Row: {
           angle: string | null
+          content_type: string
           created_at: string
           created_by: string | null
           id: string
@@ -323,6 +324,7 @@ export type Database = {
         }
         Insert: {
           angle?: string | null
+          content_type?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -336,6 +338,7 @@ export type Database = {
         }
         Update: {
           angle?: string | null
+          content_type?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -361,6 +364,7 @@ export type Database = {
         Row: {
           batch_id: string
           content_job_id: string
+          content_type: string
           created_at: string
           error: string | null
           id: string
@@ -372,6 +376,7 @@ export type Database = {
         Insert: {
           batch_id: string
           content_job_id: string
+          content_type?: string
           created_at?: string
           error?: string | null
           id?: string
@@ -383,6 +388,7 @@ export type Database = {
         Update: {
           batch_id?: string
           content_job_id?: string
+          content_type?: string
           created_at?: string
           error?: string | null
           id?: string
@@ -1076,6 +1082,7 @@ export type Database = {
         Row: {
           angle: string | null
           content_job_id: string
+          content_type: string
           created_at: string
           draft_commit_sha: string | null
           draft_error: string | null
@@ -1101,6 +1108,7 @@ export type Database = {
         Insert: {
           angle?: string | null
           content_job_id: string
+          content_type?: string
           created_at?: string
           draft_commit_sha?: string | null
           draft_error?: string | null
@@ -1126,6 +1134,7 @@ export type Database = {
         Update: {
           angle?: string | null
           content_job_id?: string
+          content_type?: string
           created_at?: string
           draft_commit_sha?: string | null
           draft_error?: string | null

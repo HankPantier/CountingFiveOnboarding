@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
+import { CONTENT_TYPE_OPTIONS, asContentType, type ContentType } from '@/lib/content/content-types'
 
 export type ClientOption = { id: string; websiteUrl: string; firmName: string | null }
 
@@ -24,6 +25,9 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
   const [instruction, setInstruction] = useState('')
   const [idea, setIdea] = useState<RefinedBlogIdea | null>(null)
   const [refining, setRefining] = useState(false)
+  // Content type for the whole batch — shapes the refined idea and is stored on
+  // every per-client draft.
+  const [contentType, setContentType] = useState<ContentType>('blog')
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [submitting, setSubmitting] = useState(false)
@@ -44,6 +48,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
           seed,
           current: withInstruction ? idea : undefined,
           instruction: withInstruction ? instruction : undefined,
+          contentType,
         }),
       })
       const data = (await res.json()) as { idea?: RefinedBlogIdea; error?: string }
@@ -81,7 +86,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
       const res = await fetch('/api/blog-batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea, sessionIds: [...selected], seed }),
+        body: JSON.stringify({ idea, sessionIds: [...selected], seed, contentType }),
       })
       const data = (await res.json()) as { batchId?: string; error?: string }
       if (!res.ok || !data.batchId) {
@@ -116,9 +121,25 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
       {step === 'ideate' && (
         <div className="space-y-5">
           <div className="bg-surface-card border border-border-default rounded-xl p-5 shadow-subtle">
-            <label className="block text-xs font-heading font-semibold text-brand-navy uppercase tracking-wide mb-2">
-              1. Your topic
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-heading font-semibold text-brand-navy uppercase tracking-wide">
+                1. Your topic
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-body text-text-muted">Type</span>
+                <select
+                  value={contentType}
+                  onChange={(e) => setContentType(asContentType(e.target.value))}
+                  className="rounded-pill border border-border-default bg-surface-card px-3 py-1 text-xs font-heading font-semibold text-brand-navy focus:outline-none focus:border-brand-cyan"
+                >
+                  {CONTENT_TYPE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
             <textarea
               value={seed}
               onChange={(e) => setSeed(e.target.value)}
@@ -137,6 +158,13 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                 {refining ? 'Refining…' : idea ? 'Regenerate' : 'Refine with AI'}
               </button>
             </div>
+            {contentType === 'case-study' && (
+              <p className="mt-3 text-xs font-body text-text-muted">
+                Case studies draft only for clients with a documented client success story (in their
+                MBP). Clients without one will be marked as errored in the batch — add their story
+                first, then re-run.
+              </p>
+            )}
           </div>
 
           {idea && (

@@ -7,7 +7,21 @@ import { recordTokenUsage } from './token-usage'
 import { generateJson } from './json-generation'
 import { listTree, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { asJson } from '@/lib/supabase/json-typed'
+import { CONTENT_TYPES, asContentType, type ContentType } from './content-types'
 import type { SessionSchema } from '@/types/session-schema'
+
+// Per-type framing for the brainstorm prompt. Ideas suit the type the operator
+// picked — an article idea rewards depth, a thought-leadership idea stakes out a
+// stance, a case-study idea must map to a real, substantiable client story.
+const TYPE_IDEA_GUIDANCE: Record<ContentType, string> = {
+  blog: '',
+  article:
+    'These are longer, in-depth researched articles — favor meatier topics that reward 1,800+ words and can be supported with authoritative sources.',
+  'thought-leadership':
+    'These are opinion / point-of-view pieces — each idea must stake out a clear, defensible stance the firm can own, not a neutral overview.',
+  'case-study':
+    'These are client case studies — each idea must map to a REAL client success story the firm can substantiate (see the stories below). Do NOT propose case studies the firm has no evidence for.',
+}
 
 const IDEA_MODEL = 'claude-sonnet-5'
 const DEFAULT_IDEA_COUNT = 9
@@ -99,10 +113,12 @@ function buildResearchBlock(results: Array<{ query: string; result: SerperResult
 export async function generateResourceIdeas(
   contentJobId: string,
   sessionId: string,
-  opts: { count?: number; seed?: string; offBrandApproved?: boolean } = {}
+  opts: { count?: number; seed?: string; offBrandApproved?: boolean; contentType?: ContentType } = {}
 ): Promise<{ created: number }> {
   const supabase = createServerClient()
   const seed = opts.seed?.trim() || null
+  const contentType = asContentType(opts.contentType)
+  const typeSpec = CONTENT_TYPES[contentType]
   // Seeded runs extrapolate one base idea — fewer, tighter variations.
   const count = opts.count ?? (seed ? SEEDED_IDEA_COUNT : DEFAULT_IDEA_COUNT)
 
@@ -167,19 +183,34 @@ export async function generateResourceIdeas(
     .map((n) => `- ${n.name}: pain points: ${n.painPoints?.slice(0, 200) ?? ''} | value prop: ${n.valueProp?.slice(0, 200) ?? ''}`)
     .join('\n')
 
+  const typeGuidance = TYPE_IDEA_GUIDANCE[contentType]
   const task = seed
-    ? `The admin provided this base idea for a blog post:
+    ? `The admin provided this base idea for a ${typeSpec.articleNoun}:
 
 "${seed}"
 
-Extrapolate it into ${count} distinct, fully-formed post ideas for the firm's "Resources" section. Each must stay rooted in the base idea but take a different path: a sharper contrarian angle, a specific niche application (use the firm's actual niches below), a local tie-in, a seasonal/timely hook, or a practical framework/checklist treatment. Do not drift into unrelated topics.${
+Extrapolate it into ${count} distinct, fully-formed ${typeSpec.articleNoun} ideas for the firm's "Resources" section. Each must stay rooted in the base idea but take a different path: a sharper contrarian angle, a specific niche application (use the firm's actual niches below), a local tie-in, a seasonal/timely hook, or a practical framework/checklist treatment. Do not drift into unrelated topics.${
         opts.offBrandApproved
           ? `\n\nNOTE: The admin explicitly approved this direction even though it diverges from the documented brand voice below. Follow the seed's direction and energy; keep factual rigor and the scoring honesty.`
           : ''
       }`
-    : `Brainstorm ${count} blog post ideas for the firm's "Resources" section.`
+    : `Brainstorm ${count} ${typeSpec.articleNoun} ideas for the firm's "Resources" section.`
 
-  const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. ${task}
+  const successStories = (schema.business?.clientSuccessStories ?? [])
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean)
+  const caseStudyBlock =
+    contentType === 'case-study'
+      ? `\n\nCLIENT SUCCESS STORIES — base every case-study idea on one of these; do not invent clients or outcomes:\n${
+          successStories.length
+            ? successStories.map((s) => `- ${s}`).join('\n')
+            : '- (none on file yet — only propose a case study the firm context clearly substantiates)'
+        }`
+      : ''
+
+  const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. ${task}${
+    typeGuidance ? `\n\n${typeGuidance}` : ''
+  }
 
 ${buildBrandVoiceBlock(schema)}
 
@@ -187,7 +218,7 @@ ${buildFirmContext(schema)}
 
 SERVICES: ${services.join(', ') || 'Not specified'}
 NICHES:
-${nicheDetail || 'Not specified'}
+${nicheDetail || 'Not specified'}${caseStudyBlock}
 
 ${buildResearchBlock(research) ? `LIVE SEARCH RESEARCH (real questions and competing content — mine these for angles):\n${buildResearchBlock(research)}` : ''}
 
@@ -260,6 +291,7 @@ Return ONLY a JSON array of ${count} objects:
       score_breakdown: asJson(idea.score_breakdown ?? {}),
       external_links: asJson(verifiedLinks),
       status: 'suggested',
+      content_type: contentType,
     })
     if (error) {
       console.warn(`[resource-ideas] Insert failed for "${idea.title}": ${error.message}`)
