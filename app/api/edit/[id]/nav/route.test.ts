@@ -7,6 +7,14 @@ const h = vi.hoisted(() => {
   class AssetExistsError extends Error {}
   class StaleShaError extends Error {}
   return {
+    // The caller resolveEditContext hands back — a non-owner by default so the
+    // config-surface lockdown passes. Individual tests can reassign it.
+    ctxUser: {
+      id: 'u-1',
+      role: 'member',
+      isAdmin: false,
+      capabilities: ['manager'],
+    } as { id: string; role: string; isAdmin: boolean; capabilities: string[] },
     fs: new Map<string, { content: string; sha: string }>(),
     moveCalls: [] as Array<[string, string]>,
     FileNotFoundError,
@@ -36,6 +44,7 @@ vi.mock('../_helpers', () => ({
     jobId: 'job-1',
     sessionId: 'sess-1',
     githubRepo: 'repo-1',
+    user: h.ctxUser,
   })),
 }))
 
@@ -56,6 +65,7 @@ function seed(path: string, url: string) {
 }
 
 beforeEach(() => {
+  h.ctxUser = { id: 'u-1', role: 'member', isAdmin: false, capabilities: ['manager'] }
   h.fs.clear()
   h.moveCalls.length = 0
   h.readFile.mockReset()
@@ -120,6 +130,17 @@ describe('POST /api/edit/[id]/nav — move validation', () => {
     const body = (await res.json()) as { error: string; collision: { to: string } }
     expect(body.collision.to).toBe('/services/y')
     expect(h.moveFile).not.toHaveBeenCalled()
+  })
+
+  it('denies a Site Owner with 403 — nav is a staff-only config surface', async () => {
+    h.ctxUser = { id: 'owner-1', role: 'member', isAdmin: false, capabilities: ['owner'] }
+    seed('content/pages/a.md', '/a')
+
+    const res = await POST(req([{ from: '/a', to: '/b' }]), { params })
+
+    expect(res.status).toBe(403)
+    expect(h.moveFile).not.toHaveBeenCalled()
+    expect(h.writeFile).not.toHaveBeenCalled()
   })
 
   it('dedupes identical moves', async () => {

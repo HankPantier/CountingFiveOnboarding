@@ -96,6 +96,18 @@ export function isSiteOwner(user: CurrentUser): boolean {
   return !user.isAdmin && user.capabilities.includes('owner')
 }
 
+// Config surfaces (nav.json, client-center.json, Theme Studio, Site Assistant)
+// are staff-only: a Site Owner edits their site's page content but NOT its
+// structure/config. Returns a 403 NextResponse for owners, null to proceed.
+// The UI hides these surfaces for owners too, but the guarantee (CLAUDE.md
+// rule 6) must hold server-side — the routes use the service-role client, so a
+// hidden button is not a control. Admins/managers/editors pass.
+export function denySiteOwnerConfig(user: CurrentUser): NextResponse | null {
+  return isSiteOwner(user)
+    ? NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    : null
+}
+
 // The single session a Site Owner is assigned to (their one content repo), or
 // null if they have no assignment yet. Used to drop them straight into their
 // editor after login and to guard against reaching another site's editor.

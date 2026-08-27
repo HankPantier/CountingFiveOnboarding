@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
+import { contentReadySessionIds } from '@/lib/admin/content-ready'
 import type { UpdateUserRequest } from '@/types/users'
 
 export const runtime = 'nodejs'
@@ -86,16 +87,29 @@ export async function PATCH(
     // content member to owner would leave them able to open every assigned
     // editor by URL, so require they be reduced to a single site first (via
     // Manage access) — a fresh owner is created with one site through POST.
+    // That single site must also be content-ready (phase ≥6 + repo), matching
+    // POST /users and PUT /clients — otherwise the owner is dropped into an
+    // editor that bounces them back with no admin surface to escape.
     if (caps.includes('owner')) {
-      const { count } = await supabase
+      const { data: links } = await supabase
         .from('manager_clients')
-        .select('id', { count: 'exact', head: true })
+        .select('session_id')
         .eq('manager_id', id)
-      if ((count ?? 0) > 1) {
+      const sessionIds = (links ?? []).map(l => l.session_id)
+      if (sessionIds.length > 1) {
         return NextResponse.json(
           { error: 'A Site Owner can be assigned only one site — reduce their client access to a single site before switching them to Site Owner' },
           { status: 400 },
         )
+      }
+      if (sessionIds.length === 1) {
+        const ready = await contentReadySessionIds(sessionIds)
+        if (!ready.has(sessionIds[0])) {
+          return NextResponse.json(
+            { error: 'A Site Owner can only be assigned a site whose content is ready — this member’s site is not published yet' },
+            { status: 400 },
+          )
+        }
       }
     }
     update.capabilities = caps

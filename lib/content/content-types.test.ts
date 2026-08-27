@@ -93,7 +93,7 @@ describe('buildFormatRules', () => {
 
 describe('hasCaseStudyData', () => {
   const withStory = { business: { clientSuccessStories: ['Helped a SaaS firm cut its close by 40%'] } } as SessionSchema
-  const noStory = { business: { clientSuccessStories: [] } } as SessionSchema
+  const noStory = { business: { clientSuccessStories: [] as string[] } } as SessionSchema
 
   it('is true when the MBP has a client success story', () => {
     expect(hasCaseStudyData(withStory, null)).toBe(true)

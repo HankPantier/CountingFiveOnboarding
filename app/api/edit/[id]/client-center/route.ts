@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext, type EditContext } from '../_helpers'
+import { denySiteOwnerConfig } from '@/lib/auth/access'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -37,6 +38,10 @@ export async function GET(
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
 
+  // Client-Center config is a staff-only surface — denied to Site Owners.
+  const denied = denySiteOwnerConfig(ctx.user)
+  if (denied) return denied
+
   try {
     const file = await readFile(ctx.githubRepo, CLIENT_CENTER_PATH, DRAFT_BRANCH)
     let config: ClientCenterJson
@@ -69,6 +74,9 @@ export async function POST(
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+
+  const denied = denySiteOwnerConfig(ctx.user)
+  if (denied) return denied
 
   let body: Body
   try {

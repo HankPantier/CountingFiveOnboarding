@@ -5,6 +5,7 @@ import {
   canPublish,
   hasOnboardingAccess,
   isSiteOwner,
+  denySiteOwnerConfig,
   type CurrentUser,
   type Capability,
 } from './access'
@@ -62,6 +63,16 @@ describe('capability model — the core authorization rules', () => {
     expect(isSiteOwner(admin)).toBe(false)
     expect(isSiteOwner(manager)).toBe(false)
     expect(isSiteOwner(editor)).toBe(false)
+  })
+
+  it('denySiteOwnerConfig 403s only site owners; admins/managers/editors pass', () => {
+    // Owners are the only ones denied config surfaces (nav/client-center/theme).
+    expect(denySiteOwnerConfig(owner)).not.toBeNull()
+    expect(denySiteOwnerConfig(owner)?.status).toBe(403)
+    // Managers and editors keep nav/client-center editing; admins always pass.
+    expect(denySiteOwnerConfig(admin)).toBeNull()
+    expect(denySiteOwnerConfig(manager)).toBeNull()
+    expect(denySiteOwnerConfig(editor)).toBeNull()
   })
 
   it('a member with no capabilities is denied everything non-audit', () => {

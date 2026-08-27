@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
+import { denySiteOwnerConfig } from '@/lib/auth/access'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import { orderMoves, toPathname } from '@/lib/editor/nav-urls'
 import {
@@ -49,6 +50,11 @@ export async function POST(
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+
+  // Nav editing (page relocation + 301s) is a config surface — denied to Site
+  // Owners even for their own site (CLAUDE.md rule 6).
+  const denied = denySiteOwnerConfig(ctx.user)
+  if (denied) return denied
 
   let body: Body
   try {

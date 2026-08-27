@@ -128,7 +128,11 @@ export default function DeliverablesPhase({
   }, [contentJobId])
 
   // Poll the included-library-article draft status so the gate + progress reflect
-  // it. Keeps polling while any selection is still drafting.
+  // it. One stable interval per job: on mount, pending selections keep it polling
+  // straight through a run (pending → drafting → complete never hits `terminal`),
+  // so it needs no `libraryRunning` dependency — adding one only tore the interval
+  // down and recreated it on every start/stop, doubling requests around the run
+  // that runLibraryArticles is already polling.
   useEffect(() => {
     let cancelled = false
     const poll = async () => {
@@ -145,7 +149,7 @@ export default function DeliverablesPhase({
     const intervalId = setInterval(poll, 5000)
     poll()
     return () => { cancelled = true; clearInterval(intervalId) }
-  }, [contentJobId, libraryRunning])
+  }, [contentJobId])
 
   // Poll the linked repo's draft HEAD until a new "Deploy packaged content"
   // commit appears (the background push landed) or we give up. `baselineSha` is

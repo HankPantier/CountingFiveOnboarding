@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireSessionAccess, type CurrentUser } from '@/lib/auth/access'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -11,6 +11,10 @@ export type EditContext = {
   jobId: string
   sessionId: string
   githubRepo: string
+  // The authenticated caller (already resolved by requireSessionAccess) — carried
+  // through so config routes can apply the Site Owner lockdown without a second
+  // auth round-trip. See denySiteOwnerConfig.
+  user: CurrentUser
 }
 
 // Resolve [id] (session UUID) into a content_jobs row, enforce that the
@@ -56,5 +60,6 @@ export async function resolveEditContext(
     jobId: job.id,
     sessionId: job.session_id,
     githubRepo: job.github_repo,
+    user: auth.user,
   }
 }

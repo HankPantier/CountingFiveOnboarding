@@ -16,14 +16,16 @@ export default async function EditPage({
   const { id } = await params
   if (!UUID_RE.test(id)) notFound()
 
-  // A Site Owner may only reach their own site's editor — bounce any other URL
-  // back to theirs. (The /api/edit routes also 403 cross-site; this is UX.)
+  // A Site Owner may only reach their own site's editor — bounce any other URL.
+  // (The /api/edit routes also 403 cross-site; this guard keeps the shell — which
+  // fetches the target firm's name/URL below — from rendering another site at all,
+  // and sends an owner with no assignment yet to their "no site" home.)
   const user = await getCurrentUser()
   const viewerIsOwner = !!user && isSiteOwner(user)
   if (viewerIsOwner) {
     const ownedSessionId = await getSiteOwnerSessionId(user)
-    if (ownedSessionId && ownedSessionId !== id) {
-      redirect(`/admin/content/${ownedSessionId}/edit`)
+    if (ownedSessionId !== id) {
+      redirect(ownedSessionId ? `/admin/content/${ownedSessionId}/edit` : '/admin/home')
     }
   }
 
