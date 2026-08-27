@@ -4,7 +4,7 @@
 // Pure with respect to the DB; the route owns persistence and token recording.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
-import { deepSetPath, isPathFilled } from '@/lib/mbp/schema-write'
+import { deepSetPath, getByPath, isPathFilled } from '@/lib/mbp/schema-write'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import type { TokenContext } from '@/lib/content/token-usage'
@@ -35,6 +35,9 @@ export interface NotesModel {
     currentTone?: string; aspirationalTone?: string; toneAdjectives?: string[]; toneToAvoid?: string[]
     primaryColors?: string; voiceExample?: string; brandPersonality?: string
   }
+  // Any material fact the rep noted that maps to no structured field above.
+  // Appended (never blank-only) to additional.otherDetails so it's never lost.
+  additionalNotes?: string
 }
 
 export function validateNotesModel(parsed: unknown): NotesModel | null {
@@ -73,6 +76,7 @@ export function validateNotesModel(parsed: unknown): NotesModel | null {
       toneToAvoid: asStrArr(br.toneToAvoid), primaryColors: asStr(br.primaryColors), voiceExample: asStr(br.voiceExample),
       brandPersonality: asStr(br.brandPersonality),
     },
+    additionalNotes: asStr(p.additionalNotes),
   }
 }
 
@@ -192,6 +196,20 @@ export function mergeNotesExtraction(
     applied.push({ path: cand.path, label: cand.label })
   }
 
+  // additional.otherDetails is the freeform sink for facts that fit no
+  // structured field. Unlike every other candidate it is APPENDED, not
+  // blank-only-filled, so repeated extractions accumulate rather than clobber.
+  // The dedup guard skips text already present verbatim (re-running extraction
+  // on unchanged notes must not duplicate the paragraph).
+  const extra = asStr(model.additionalNotes)
+  if (extra) {
+    const existing = asStr(getByPath(schema, 'additional.otherDetails'))
+    if (!existing.includes(extra)) {
+      schema = deepSetPath(schema, 'additional.otherDetails', existing ? `${existing}\n\n${extra}` : extra)
+      applied.push({ path: 'additional.otherDetails', label: 'Additional details' })
+    }
+  }
+
   const merged = schema as SessionSchema
   const gaps = currentGaps.map((g) =>
     g.resolved || isPathFilled(merged, g.field) ? { ...g, resolved: true } : g,
@@ -230,12 +248,14 @@ Return a JSON object with this exact shape (omit any field/array you can't fill 
   "team": [ { "name": string, "title": string, "bio": string } ],
   "clientPortals": [ { "label": string, "url": string, "description": string, "category": string } ],
   "culture": { "missionVisionValues": string, "teamDescription": string, "socialMediaChannels": string[] },
-  "brand": { "currentTone": string, "aspirationalTone": string, "toneAdjectives": string[], "toneToAvoid": string[], "primaryColors": string, "voiceExample": string, "brandPersonality": string }
+  "brand": { "currentTone": string, "aspirationalTone": string, "toneAdjectives": string[], "toneToAvoid": string[], "primaryColors": string, "voiceExample": string, "brandPersonality": string },
+  "additionalNotes": string
 }
 - "niches" = the industries / client types the firm serves. Per niche, "revenueBand"/"businessStage"/"decisionMaker" describe the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder") — only when the notes state it.
 - "serviceAreas" = the specific cities/counties the firm serves or targets (local-SEO geography); "targetKeywords" = search terms the firm wants to rank for, if mentioned.
 - "contentEmphasis" = industries, services, or topics the notes say to FEATURE, prioritize, or lean into on the new site. "contentExclusions" = anything the notes say to AVOID, NOT include, drop, de-emphasize, or "don't cover" (industries, services, or topics). Capture each as a short phrase (e.g. "real estate", "cryptocurrency", "audit services"). Only include what the notes explicitly direct — do not infer exclusions from mere absence.
 - "clientPortals" = external tools/portals the firm's CLIENTS log into (e.g. QuickBooks Online, ShareFile/secure file upload, payroll, online bill-pay, remote support). Give each a short "category" (e.g. Documents, Payments, Support) when clear. NEVER capture passwords or credentials — links only.
+- "additionalNotes" = any material fact about the firm the notes state that does NOT fit a field above — history quirks, notable relationships, personal/operational context, stated preferences, anything useful for writing the site later. Capture it as concise prose. Omit entirely if the notes hold nothing beyond the structured fields. Never invent.
 - Keep descriptions concise (1–2 sentences).
 
 CALL NOTES:

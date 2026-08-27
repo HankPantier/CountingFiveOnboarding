@@ -109,6 +109,30 @@ describe('mergeNotesExtraction — non-destructive fill', () => {
     )
   })
 
+  it('appends freeform additionalNotes to additional.otherDetails without duplicating', () => {
+    const empty: SessionSchema = { business: { name: 'Firm' } } as SessionSchema
+    const first = mergeNotesExtraction(empty, [], { additionalNotes: 'Founder races vintage cars; sponsors a local little league.' })
+    expect((first.schema.additional as Record<string, unknown>).otherDetails)
+      .toBe('Founder races vintage cars; sponsors a local little league.')
+    expect(first.applied.map((a) => a.path)).toContain('additional.otherDetails')
+
+    // A second, different note appends (does not overwrite).
+    const second = mergeNotesExtraction(first.schema, [], { additionalNotes: 'Office moving to a new building in 2027.' })
+    const details = (second.schema.additional as Record<string, unknown>).otherDetails as string
+    expect(details).toContain('vintage cars')
+    expect(details).toContain('new building in 2027')
+
+    // Re-running the same note is a no-op (dedup guard) and not re-flagged.
+    const third = mergeNotesExtraction(second.schema, [], { additionalNotes: 'Office moving to a new building in 2027.' })
+    expect((third.schema.additional as Record<string, unknown>).otherDetails).toBe(details)
+    expect(third.applied.map((a) => a.path)).not.toContain('additional.otherDetails')
+  })
+
+  it('validateNotesModel coerces additionalNotes and drops a non-string', () => {
+    expect(validateNotesModel({ additionalNotes: '  keep this  ' })!.additionalNotes).toBe('keep this')
+    expect(validateNotesModel({ additionalNotes: 42 })!.additionalNotes).toBe('')
+  })
+
   it('resolves a gap once its field is filled from the notes', () => {
     const schema: SessionSchema = { business: { foundingYear: '' } } as SessionSchema
     const gaps: GapItem[] = [
