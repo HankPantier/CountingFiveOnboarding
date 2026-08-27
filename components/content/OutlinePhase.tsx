@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import OutlineCard from './OutlineCard'
+import LibraryContentPanel from './LibraryContentPanel'
 import type { Json } from '@/types/database'
 
 type Outline = {
@@ -30,6 +31,9 @@ export default function OutlinePhase({
   const [regeneratingAll, setRegeneratingAll] = useState(false)
   const [retryNonce, setRetryNonce] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // The operator must make an explicit choice about including library content
+  // before content generation can start (choosing "none" counts, once saved).
+  const [libraryAcknowledged, setLibraryAcknowledged] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -115,6 +119,8 @@ export default function OutlinePhase({
   const handleUpdate = (updated: Outline) => {
     setOutlines(prev => prev.map(o => o.id === updated.id ? updated : o))
   }
+
+  const handleLibraryAck = useCallback((ack: boolean) => setLibraryAcknowledged(ack), [])
 
   const startContentGeneration = async () => {
     setAdvancing(true)
@@ -205,11 +211,16 @@ export default function OutlinePhase({
         </div>
       )}
 
+      {/* Include existing library content — shown once the outline is proofed. */}
+      {allApproved && (
+        <LibraryContentPanel contentJobId={contentJobId} onAcknowledgedChange={handleLibraryAck} />
+      )}
+
       {/* Start content generation */}
       <div className="pt-2 flex items-center gap-3">
         <button
           onClick={startContentGeneration}
-          disabled={!allApproved || advancing}
+          disabled={!allApproved || !libraryAcknowledged || advancing}
           className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {advancing ? 'Starting...' : 'Start Content Generation →'}
@@ -227,6 +238,11 @@ export default function OutlinePhase({
       {!allApproved && outlines.length > 0 && generatingCount === 0 && (
         <p className="text-xs text-text-muted font-body">
           Approve all outlines to enable content generation.
+        </p>
+      )}
+      {allApproved && !libraryAcknowledged && (
+        <p className="text-xs text-text-muted font-body">
+          Confirm your library-content choice above to enable content generation.
         </p>
       )}
     </div>

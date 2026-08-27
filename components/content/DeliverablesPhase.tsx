@@ -28,10 +28,20 @@ const DEPLOY_STEPS = [
   { key: 'resolving', label: 'Resolve images' },
   { key: 'assembling', label: 'Assemble & push to draft' },
   { key: 'confirming', label: 'Confirm draft push' },
+  { key: 'articles', label: 'Draft included articles' },
   { key: 'publishing', label: 'Publish to live' },
 ] as const
 
-type DeployStep = 'idle' | 'seeding' | 'resolving' | 'assembling' | 'confirming' | 'publishing' | 'live'
+type DeployStep = 'idle' | 'seeding' | 'resolving' | 'assembling' | 'confirming' | 'articles' | 'publishing' | 'live'
+
+type LibrarySelectionStatus = {
+  total: number
+  pending: number
+  drafting: number
+  complete: number
+  error: number
+  terminal: boolean
+}
 
 export default function DeliverablesPhase({
   sessionId,
@@ -78,6 +88,10 @@ export default function DeliverablesPhase({
   // assemble + one-click publish flows, which have no determinate count.
   const [assembleStartedAt, setAssembleStartedAt] = useState<number | null>(null)
   const [deployStartedAt, setDeployStartedAt] = useState<number | null>(null)
+  // Included library articles (Feature: bulk content at onboarding). null until
+  // the first status poll resolves; total === 0 means none were selected.
+  const [libraryStatus, setLibraryStatus] = useState<LibrarySelectionStatus | null>(null)
+  const [libraryRunning, setLibraryRunning] = useState(false)
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -113,6 +127,26 @@ export default function DeliverablesPhase({
     return () => { cancelled = true; clearInterval(intervalId) }
   }, [contentJobId])
 
+  // Poll the included-library-article draft status so the gate + progress reflect
+  // it. Keeps polling while any selection is still drafting.
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/content-jobs/${contentJobId}/library/status`)
+        if (cancelled || !res.ok) return
+        const data = (await res.json()) as LibrarySelectionStatus
+        setLibraryStatus(data)
+        if (data.terminal) clearInterval(intervalId)
+      } catch {
+        // retry on next tick
+      }
+    }
+    const intervalId = setInterval(poll, 5000)
+    poll()
+    return () => { cancelled = true; clearInterval(intervalId) }
+  }, [contentJobId, libraryRunning])
+
   // Poll the linked repo's draft HEAD until a new "Deploy packaged content"
   // commit appears (the background push landed) or we give up. `baselineSha` is
   // the pre-push HEAD captured before assembly, so a fresh deploy commit is a
@@ -137,6 +171,36 @@ export default function DeliverablesPhase({
     }
     setDeployState('unknown')
     return false
+  }
+
+  // Draft the included library articles and wait until every selection reaches a
+  // terminal state (complete/error). Returns true when settled, false on timeout.
+  // A no-op (returns true immediately) when nothing was selected.
+  const runLibraryArticles = async (): Promise<boolean> => {
+    setLibraryRunning(true)
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/library/run`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to start article drafting')
+      if (data?.status?.terminal) return true
+
+      const MAX_POLLS = 120 // ~10 min at 5s
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, 5000))
+        try {
+          const s = await fetch(`/api/content-jobs/${contentJobId}/library/status`)
+          if (!s.ok) continue
+          const st = (await s.json()) as LibrarySelectionStatus
+          setLibraryStatus(st)
+          if (st.terminal) return true
+        } catch {
+          // keep polling
+        }
+      }
+      return false
+    } finally {
+      setLibraryRunning(false)
+    }
   }
 
   const assemblePackage = async () => {
@@ -263,7 +327,15 @@ export default function DeliverablesPhase({
         throw new Error('Timed out confirming the draft push. The package still shipped — publish from the content editor once the draft commit appears.')
       }
 
-      // Step 5 — publish draft→main. First deploy is a clean fast-forward; a
+      // Step 5 — draft any included library articles onto the draft branch and
+      // wait for them, so they publish together with the site (block completion).
+      setDeployStep('articles')
+      const articlesSettled = await runLibraryArticles()
+      if (!articlesSettled) {
+        throw new Error('Included articles are still drafting. The site content already pushed to draft — click “Publish site live” again to finish once they settle.')
+      }
+
+      // Step 6 — publish draft→main. First deploy is a clean fast-forward; a
       // conflict (not expected here) opens a PR instead of merging.
       setDeployStep('publishing')
       const pubRes = await fetch(`/api/edit/${sessionId}/publish`, { method: 'POST' })
@@ -340,9 +412,11 @@ export default function DeliverablesPhase({
             ? 'Assembling package…'
             : deployStep === 'confirming'
               ? 'Pushing to draft…'
-              : deployStep === 'publishing'
-                ? 'Publishing to live…'
-                : 'Publish site live'
+              : deployStep === 'articles'
+                ? 'Drafting included articles…'
+                : deployStep === 'publishing'
+                  ? 'Publishing to live…'
+                  : 'Publish site live'
 
   const allApproved = approval ? approval.complete > 0 && approval.complete === approval.approved : false
   const hasUnapproved = approval ? approval.complete - approval.approved > 0 : false
@@ -380,6 +454,40 @@ export default function DeliverablesPhase({
           {approval
             ? `Waiting for content generation — ${approval.complete} of ${approval.total} pages ready${approval.error > 0 ? ` (${approval.error} failed)` : ''}.`
             : 'Loading generation status…'}
+        </div>
+      )}
+
+      {/* Included library articles — selected at outline proofing, re-drafted
+          uniquely for this client and published with the site. */}
+      {libraryStatus && libraryStatus.total > 0 && (
+        <div className="border border-border-default rounded-lg p-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-heading font-semibold text-brand-navy">Included articles</h3>
+              <p className="text-xs font-body text-text-muted">
+                {libraryStatus.complete}/{libraryStatus.total} drafted
+                {libraryStatus.error > 0 ? ` · ${libraryStatus.error} failed` : ''}
+                {!libraryStatus.terminal ? ` · ${libraryStatus.pending + libraryStatus.drafting} pending` : ''}. Each is re-drafted uniquely for this client and published with the site.
+              </p>
+            </div>
+            {githubRepo && !libraryStatus.terminal && (
+              <button
+                onClick={() => void runLibraryArticles()}
+                disabled={libraryRunning || deploying}
+                className="shrink-0 border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {libraryRunning ? 'Drafting…' : 'Draft now'}
+              </button>
+            )}
+          </div>
+          {libraryRunning && (
+            <ProgressBar
+              phase="Drafting included articles…"
+              current={libraryStatus.complete + libraryStatus.error}
+              total={libraryStatus.total}
+              className="max-w-sm"
+            />
+          )}
         </div>
       )}
 
