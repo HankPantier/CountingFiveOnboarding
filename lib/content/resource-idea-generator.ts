@@ -8,6 +8,7 @@ import { generateJson } from './json-generation'
 import { listTree, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { asJson } from '@/lib/supabase/json-typed'
 import { CONTENT_TYPES, asContentType, type ContentType } from './content-types'
+import { inferSessionIndustry } from './infer-industry'
 import type { SessionSchema } from '@/types/session-schema'
 
 // Per-type framing for the brainstorm prompt. Ideas suit the type the operator
@@ -138,6 +139,7 @@ export async function generateResourceIdeas(
   }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
+  const industry = inferSessionIndustry(schema)
   const firmName = schema.business?.name ?? 'the firm'
   const location = firmLocation(schema)
   const services = (schema.services ?? []).map((s) => s.name).filter(Boolean)
@@ -292,6 +294,7 @@ Return ONLY a JSON array of ${count} objects:
       external_links: asJson(verifiedLinks),
       status: 'suggested',
       content_type: contentType,
+      industry,
     })
     if (error) {
       console.warn(`[resource-ideas] Insert failed for "${idea.title}": ${error.message}`)

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
 import { CONTENT_TYPE_OPTIONS, asContentType, type ContentType } from '@/lib/content/content-types'
+import { INDUSTRY_OPTIONS, asIndustry, DEFAULT_INDUSTRY } from '@/lib/content/industries'
 
 export type ClientOption = { id: string; websiteUrl: string; firmName: string | null }
 
@@ -14,6 +15,7 @@ const EMPTY_IDEA: RefinedBlogIdea = {
   target_keyword: '',
   secondary_keywords: [],
   rationale: '',
+  industry: DEFAULT_INDUSTRY,
   suggested_external_links: [],
 }
 
@@ -86,7 +88,7 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
       const res = await fetch('/api/blog-batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea, sessionIds: [...selected], seed, contentType }),
+        body: JSON.stringify({ idea, sessionIds: [...selected], seed, contentType, industry: idea.industry }),
       })
       const data = (await res.json()) as { batchId?: string; error?: string }
       if (!res.ok || !data.batchId) {
@@ -214,6 +216,22 @@ export default function NewBatchFlow({ clients }: { clients: ClientOption[] }) {
                   rows={2}
                   className={inputCls}
                 />
+              </div>
+              <div>
+                <span className="block text-xs font-body text-text-muted mb-1">
+                  Industry <span className="text-text-muted">(AI-inferred — confirm or change)</span>
+                </span>
+                <select
+                  value={idea.industry}
+                  onChange={(e) => updateIdea('industry', asIndustry(e.target.value))}
+                  className={inputCls}
+                >
+                  {INDUSTRY_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="border-t border-border-default pt-4">

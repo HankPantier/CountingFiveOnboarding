@@ -6,6 +6,7 @@ import { headCheckUrls, type ExternalLink } from '@/lib/content/link-checker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { resolveEligibility, insertBatchTargets } from '@/lib/content/blog-batch-targets'
 import { asContentType } from '@/lib/content/content-types'
+import { asIndustry } from '@/lib/content/industries'
 import type { RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
 
 export const runtime = 'nodejs'
@@ -19,6 +20,7 @@ interface CreateBody {
   sessionIds?: string[]
   seed?: string
   contentType?: string
+  industry?: string
 }
 
 // Create a blog batch and fan one locked idea out to the selected clients.
@@ -85,6 +87,8 @@ export async function POST(req: Request) {
   const rationale = typeof idea.rationale === 'string' && idea.rationale.trim() ? idea.rationale.trim() : null
   const seed = typeof body.seed === 'string' && body.seed.trim() ? body.seed.trim().slice(0, 300) : null
   const contentType = asContentType(body.contentType)
+  // Operator-confirmed vertical wins; fall back to the idea's inferred industry.
+  const industry = asIndustry(body.industry ?? idea.industry)
 
   // Verify the AI-suggested sources once (shared across all clients) so the
   // per-client drafting prompt only ever sees live, authoritative URLs.
@@ -107,6 +111,7 @@ export async function POST(req: Request) {
       created_by: user.id,
       status: 'generating',
       content_type: contentType,
+      industry,
     })
     .select('id')
     .single()
@@ -119,7 +124,7 @@ export async function POST(req: Request) {
   const { error: targetsError } = await insertBatchTargets(
     supabase,
     batch.id,
-    { title, angle, targetKeyword, secondaryKeywords, rationale, contentType },
+    { title, angle, targetKeyword, secondaryKeywords, rationale, contentType, industry },
     verifiedLinks,
     eligible,
     ineligible

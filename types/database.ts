@@ -311,6 +311,7 @@ export type Database = {
         Row: {
           angle: string | null
           content_type: string
+          industry: string
           created_at: string
           created_by: string | null
           id: string
@@ -325,6 +326,7 @@ export type Database = {
         Insert: {
           angle?: string | null
           content_type?: string
+          industry?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -339,6 +341,7 @@ export type Database = {
         Update: {
           angle?: string | null
           content_type?: string
+          industry?: string
           created_at?: string
           created_by?: string | null
           id?: string
@@ -365,6 +368,7 @@ export type Database = {
           batch_id: string
           content_job_id: string
           content_type: string
+          industry: string
           created_at: string
           error: string | null
           id: string
@@ -377,6 +381,7 @@ export type Database = {
           batch_id: string
           content_job_id: string
           content_type?: string
+          industry?: string
           created_at?: string
           error?: string | null
           id?: string
@@ -389,6 +394,7 @@ export type Database = {
           batch_id?: string
           content_job_id?: string
           content_type?: string
+          industry?: string
           created_at?: string
           error?: string | null
           id?: string
@@ -421,6 +427,71 @@ export type Database = {
           },
           {
             foreignKeyName: "blog_batch_targets_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_job_library_selections: {
+        Row: {
+          batch_id: string
+          content_job_id: string
+          created_at: string
+          error: string | null
+          id: string
+          resource_idea_id: string | null
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          batch_id: string
+          content_job_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          resource_idea_id?: string | null
+          session_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          batch_id?: string
+          content_job_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          resource_idea_id?: string | null
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_job_library_selections_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "blog_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_job_library_selections_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_job_library_selections_resource_idea_id_fkey"
+            columns: ["resource_idea_id"]
+            isOneToOne: false
+            referencedRelation: "resource_ideas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_job_library_selections_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
@@ -1083,6 +1154,7 @@ export type Database = {
           angle: string | null
           content_job_id: string
           content_type: string
+          industry: string
           created_at: string
           draft_commit_sha: string | null
           draft_error: string | null
@@ -1109,6 +1181,7 @@ export type Database = {
           angle?: string | null
           content_job_id: string
           content_type?: string
+          industry?: string
           created_at?: string
           draft_commit_sha?: string | null
           draft_error?: string | null
@@ -1135,6 +1208,7 @@ export type Database = {
           angle?: string | null
           content_job_id?: string
           content_type?: string
+          industry?: string
           created_at?: string
           draft_commit_sha?: string | null
           draft_error?: string | null

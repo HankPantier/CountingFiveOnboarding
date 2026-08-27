@@ -4,6 +4,7 @@ import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/au
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
 import { resolveEligibility, insertBatchTargets } from '@/lib/content/blog-batch-targets'
 import { asContentType } from '@/lib/content/content-types'
+import { asIndustry } from '@/lib/content/industries'
 import type { ExternalLink } from '@/lib/content/link-checker'
 
 export const runtime = 'nodejs'
@@ -59,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { data: batch } = await supabase
     .from('blog_batches')
-    .select('id, title, angle, target_keyword, secondary_keywords, rationale, content_type')
+    .select('id, title, angle, target_keyword, secondary_keywords, rationale, content_type, industry')
     .eq('id', id)
     .single()
   if (!batch) return NextResponse.json({ error: 'Batch not found' }, { status: 404 })
@@ -113,6 +114,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       secondaryKeywords,
       rationale: batch.rationale,
       contentType: asContentType(batch.content_type),
+      industry: asIndustry(batch.industry),
     },
     verifiedLinks,
     eligible,
