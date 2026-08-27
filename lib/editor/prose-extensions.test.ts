@@ -7,8 +7,8 @@ import { buildProseExtensions } from './prose-extensions'
 // toolbar-supported markdown constructs survive a parse → serialize round-trip.
 // This is the riskiest part of the WYSIWYG (structural markdown is protected by
 // the segment scanner; prose is only safe if it round-trips faithfully).
-function roundTrip(markdown: string): string {
-  const editor = new Editor({ extensions: buildProseExtensions(), content: markdown })
+function roundTrip(markdown: string, opts?: { headings?: boolean }): string {
+  const editor = new Editor({ extensions: buildProseExtensions(opts), content: markdown })
   const storage = editor.storage as unknown as { markdown: { getMarkdown(): string } }
   const out = storage.markdown.getMarkdown()
   editor.destroy()
@@ -40,5 +40,16 @@ describe('prose markdown round-trip (shipped editor config)', () => {
   it('preserves a mixed heading + paragraph + list body', () => {
     const md = '## Services\n\nWe help with **taxes**.\n\n- Planning\n- Filing'
     expect(roundTrip(md)).toBe(md)
+  })
+})
+
+describe('headings: false (card description editor)', () => {
+  it('keeps bold/italic/links but demotes a heading to plain text', () => {
+    // A card description must never contain a `##` line — it would start a new
+    // card. With headings disabled the marker is dropped to a paragraph.
+    expect(roundTrip('Full service. **Fast** and [linked](/x).', { headings: false })).toBe(
+      'Full service. **Fast** and [linked](/x).'
+    )
+    expect(roundTrip('## Not a heading', { headings: false })).not.toContain('#')
   })
 })

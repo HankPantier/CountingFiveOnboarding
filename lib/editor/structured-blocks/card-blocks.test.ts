@@ -72,6 +72,52 @@ describe('parseCardBlock', () => {
   })
 })
 
+// The real-world shape from generated pages: the CTA sits at the END of the
+// description sentence, not on its own line.
+const SERVICE_INLINE_CTA = [
+  '<!-- block: service-cards | variant: 3-col -->',
+  '## Our Services',
+  '',
+  '### Outsourced Accounting',
+  'icon: FileText',
+  '',
+  'A full accounting department without the overhead. [Learn more](/services/outsourced-accounting)',
+].join('\n')
+
+describe('inline trailing CTA', () => {
+  it('peels a CTA at the end of the description into the link field', () => {
+    const model = parseCardBlock(SERVICE_INLINE_CTA)
+    expect(model.cards[0].description).toBe('A full accounting department without the overhead.')
+    expect(model.cards[0].link).toEqual({
+      label: 'Learn more',
+      url: '/services/outsourced-accounting',
+    })
+  })
+
+  it('normalizes the CTA onto its own line when the description is edited', () => {
+    const next = setCardDescription(SERVICE_INLINE_CTA, 0, 'A full outsourced finance team.')
+    expect(next).toContain(
+      '### Outsourced Accounting\nicon: FileText\n\nA full outsourced finance team.\n\n[Learn more](/services/outsourced-accounting)'
+    )
+    // The link is no longer buried in the description text.
+    expect(parseCardBlock(next).cards[0].description).toBe('A full outsourced finance team.')
+  })
+
+  it('does not peel a link that sits mid-sentence', () => {
+    const midLink = [
+      '<!-- block: service-cards -->',
+      '## S',
+      '',
+      '### A',
+      'See [our guide](/g) for details before you begin.',
+    ].join('\n')
+    expect(parseCardBlock(midLink).cards[0].link).toBeNull()
+    expect(parseCardBlock(midLink).cards[0].description).toBe(
+      'See [our guide](/g) for details before you begin.'
+    )
+  })
+})
+
 describe('field edits are byte-surgical', () => {
   it('setCardTitle rewrites only the heading (chunk)', () => {
     const next = setCardTitle(SERVICE, 0, 'Bookkeeping & Payroll')
@@ -84,9 +130,9 @@ describe('field edits are byte-surgical', () => {
     expect(next).toContain('- TrendingUp: **Forecasting**')
   })
 
-  it('setCardDescription replaces the prose region only (chunk)', () => {
+  it('setCardDescription replaces the prose region and keeps the CTA (chunk)', () => {
     const next = setCardDescription(SERVICE, 0, 'Full-service monthly bookkeeping.')
-    expect(next).toContain('### Bookkeeping\nicon: Calculator\n\nFull-service monthly bookkeeping.\n[Learn more](/services/bookkeeping)')
+    expect(next).toContain('### Bookkeeping\nicon: Calculator\n\nFull-service monthly bookkeeping.\n\n[Learn more](/services/bookkeeping)')
     expect(next).toContain('Proactive tax strategy to lower your bill.')
   })
 

@@ -8,12 +8,17 @@ import type { Extensions } from '@tiptap/core'
 // Heading levels 1–4 stay enabled so existing headings of any level survive a
 // round-trip even though the toolbar only creates H2/H3.
 //
+// `headings: false` disables the heading node entirely (node + `## ` input
+// rule) — used by the structured-card description editor, where a `##`/`###`
+// line would start a NEW card and corrupt the block. tiptap-markdown then
+// serializes such lines as plain paragraphs.
+//
 // Shared by RichBodyEditor and the round-trip test so the tested config is
 // exactly what ships. tiptap-markdown handles markdown parse + serialize.
-export function buildProseExtensions(): Extensions {
+export function buildProseExtensions({ headings = true }: { headings?: boolean } = {}): Extensions {
   return [
     StarterKit.configure({
-      heading: { levels: [1, 2, 3, 4] },
+      heading: headings ? { levels: [1, 2, 3, 4] } : false,
       link: {
         openOnClick: false,
         autolink: false,

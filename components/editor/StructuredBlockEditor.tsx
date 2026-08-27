@@ -1,6 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { EditorContent, useEditor, type Editor } from '@tiptap/react'
+import { BubbleMenu } from '@tiptap/react/menus'
+import { buildProseExtensions } from '@/lib/editor/prose-extensions'
 import type { IconItemRef } from '@/lib/editor/icon-items'
 import {
   cardBlockId,
@@ -41,6 +44,114 @@ const removeBtn =
   'ml-auto text-[11px] font-heading font-semibold text-error hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed'
 const addBtn =
   'rounded-pill border border-brand-navy px-3.5 py-1.5 font-heading font-semibold text-xs text-brand-navy hover:bg-brand-navy/5 transition-colors'
+
+// tiptap-markdown augments editor.storage at runtime; narrow the access here.
+type MarkdownStorage = { markdown: { getMarkdown(): string } }
+const getMarkdown = (editor: Editor): string =>
+  (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown()
+
+const tbBtn = 'text-xs font-heading font-semibold px-2.5 py-1 rounded-pill transition-colors'
+const tbClass = (active: boolean) =>
+  `${tbBtn} ${active ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'}`
+
+function DescLinkControl({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false)
+  const [value, setValue] = useState('')
+  const start = () => {
+    setValue(editor.getAttributes('link').href ?? '')
+    setOpen(true)
+  }
+  const apply = () => {
+    const href = value.trim()
+    const chain = editor.chain().focus().extendMarkRange('link')
+    if (href) chain.setLink({ href }).run()
+    else chain.unsetLink().run()
+    setOpen(false)
+  }
+  if (open) {
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          apply()
+        }}
+        className="flex items-center gap-1"
+      >
+        <input
+          autoFocus
+          type="url"
+          value={value}
+          placeholder="https://…"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setOpen(false)
+          }}
+          className="w-40 text-xs font-body px-2 py-1 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
+        />
+        <button type="submit" className={tbClass(false)}>
+          Apply
+        </button>
+      </form>
+    )
+  }
+  return (
+    <button type="button" onClick={start} className={tbClass(editor.isActive('link'))}>
+      Link
+    </button>
+  )
+}
+
+// Rich-text editor for a card's description: click-to-format (bold / italic /
+// link) matching prose sections, but with headings disabled so a stray `##`
+// can't split the card. Emits markdown; uncontrolled after mount (the parent
+// remounts it on structural changes via the card row key).
+const DESC_CLASS =
+  'outline-none text-sm font-body text-text-primary leading-relaxed ' +
+  '[&_p]:my-1.5 [&_a]:text-brand-cyan [&_a]:underline [&_strong]:font-semibold [&_em]:italic ' +
+  '[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5'
+
+function CardDescriptionField({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (markdown: string) => void
+}) {
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: buildProseExtensions({ headings: false }),
+    content: value,
+    editorProps: { attributes: { class: DESC_CLASS } },
+    onUpdate: ({ editor }) => onChange(getMarkdown(editor)),
+  })
+  return (
+    <div className="w-full px-3 py-2 rounded border border-border-default focus-within:border-brand-cyan">
+      <EditorContent editor={editor} />
+      {editor && (
+        <BubbleMenu
+          editor={editor}
+          className="flex items-center gap-1 bg-surface-card border border-border-default rounded-lg shadow-medium px-1.5 py-1"
+        >
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            className={tbClass(editor.isActive('bold'))}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            className={`${tbClass(editor.isActive('italic'))} italic`}
+          >
+            I
+          </button>
+          <DescLinkControl editor={editor} />
+        </BubbleMenu>
+      )}
+    </div>
+  )
+}
 
 function BlockShell({ heading, children }: { heading: string; children: React.ReactNode }) {
   return (
@@ -102,14 +213,13 @@ function CardEditor({
                 className={`${fieldInput} font-heading font-semibold`}
               />
             </label>
-            <label className="block">
+            <div className="block">
               <span className={fieldLabel}>Description</span>
-              <textarea
-                defaultValue={card.description}
-                onChange={(e) => emit(setCardDescription(textRef.current, i, e.target.value))}
-                className={fieldTextarea}
+              <CardDescriptionField
+                value={card.description}
+                onChange={(md) => emit(setCardDescription(textRef.current, i, md))}
               />
-            </label>
+            </div>
             {isService && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="block">

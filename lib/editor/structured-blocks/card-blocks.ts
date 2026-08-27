@@ -26,7 +26,6 @@ const BULLET_RE = /^(\s*[-*]\s+)(?:([A-Za-z][A-Za-z0-9]*):\s+)?\*\*(.+?)\*\*\s*(
 const ICON_LINE_RE = /^icon:\s*([A-Za-z][A-Za-z0-9]*)\s*$/
 const PHOTO_LINE_RE = /^\s*photo:\s*\S/
 const IMAGE_LINE_RE = /^\s*!\[[^\]]*\]\([^)\s]+(?:\s+"[^"]*")?\)\s*$/
-const CTA_LINE_RE = /^\s*\[([^\]]+)\]\(([^)]+)\)\s*$/
 
 const CARD_BLOCK_IDS = new Set(['feature-grid', 'service-cards', 'industry-cards'])
 
@@ -46,16 +45,25 @@ type CardSpan = {
   headingForm: 'h3' | 'bold' | 'bullet'
   title: string
   icon: string | null
-  /** Prose region [start, end) to replace on description edit; equal bounds = empty. */
+  /**
+   * Content region [start, end) holding the description AND any trailing CTA
+   * (chunk cards). Rewrites replace this whole region so description/link stay
+   * cleanly separable regardless of whether the CTA was inline or on its own
+   * line. Equal bounds = empty.
+   */
   descStart: number
   descEnd: number
+  /** Description with any trailing `[label](url)` CTA peeled off. */
   description: string
-  /** Trailing CTA line index, or null. */
-  linkLine: number | null
   link: { label: string; url: string } | null
   /** For bullet cards, the parsed pieces needed to re-emit the single line. */
   bullet?: { prefix: string; icon: string | null; sep: string }
 }
+
+// A trailing markdown link at the very end of a description blob (inline at the
+// end of a sentence or on its own line) — mirrors the template's
+// md-utils.ts extractTrailingCta so the editor peels the CTA the same way.
+const TRAILING_CTA_RE = /\[([^\]]+)\]\(([^)]+)\)\s*$/
 
 function isBlank(line: string): boolean {
   return line.trim() === ''
@@ -86,7 +94,6 @@ function scanCards(lines: string[]): { kind: CardKind; cards: CardSpan[] } {
         descStart: start,
         descEnd: start,
         description: m[5].trim(),
-        linkLine: null,
         link: null,
         bullet: { prefix: m[1], icon: m[2] ?? null, sep: m[4] },
       }
@@ -109,31 +116,28 @@ function scanCards(lines: string[]): { kind: CardKind; cards: CardSpan[] } {
       cursor++
     }
 
-    // Trailing CTA: the last non-blank line in the span, if it is a lone link.
-    let tail = end
-    while (tail > cursor && isBlank(lines[tail - 1])) tail--
-    let linkLine: number | null = null
-    let link: { label: string; url: string } | null = null
-    if (tail > cursor) {
-      const cta = lines[tail - 1].match(CTA_LINE_RE)
-      if (cta) {
-        linkLine = tail - 1
-        link = { label: cta[1].trim(), url: cta[2].trim() }
-        tail--
-      }
-    }
-
-    // Description = prose between the leading metadata and the trailing CTA,
-    // skipping a leading photo:/image line and surrounding blanks.
+    // Content region = everything after the leading metadata (icon + any
+    // leading photo:/image line) up to the last non-blank line. It holds the
+    // description and any trailing CTA together.
     let descStart = cursor
     while (
-      descStart < tail &&
+      descStart < end &&
       (isBlank(lines[descStart]) || PHOTO_LINE_RE.test(lines[descStart]) || IMAGE_LINE_RE.test(lines[descStart]))
     )
       descStart++
-    let descEnd = tail
+    let descEnd = end
     while (descEnd > descStart && isBlank(lines[descEnd - 1])) descEnd--
-    const description = lines.slice(descStart, descEnd).join('\n').trim()
+
+    // Peel a trailing CTA (inline at the end of the text OR on its own line) so
+    // it populates the link fields instead of sitting in the description.
+    const blob = lines.slice(descStart, descEnd).join('\n')
+    let link: { label: string; url: string } | null = null
+    let description = blob.trim()
+    const cta = blob.match(TRAILING_CTA_RE)
+    if (cta) {
+      link = { label: cta[1].trim(), url: cta[2].trim() }
+      description = blob.slice(0, cta.index).trim()
+    }
 
     return {
       index: idx,
@@ -146,7 +150,6 @@ function scanCards(lines: string[]): { kind: CardKind; cards: CardSpan[] } {
       descStart,
       descEnd,
       description,
-      linkLine,
       link,
     }
   })
@@ -200,6 +203,20 @@ export function setCardTitle(block: string, index: number, value: string): strin
   })
 }
 
+// Rebuild a chunk card's content region from description + optional CTA. The
+// CTA always lands on its own line so description and link stay separable.
+function contentRegion(description: string, link: { label: string; url: string } | null): string[] {
+  const desc = description.trim()
+  const region: string[] = desc === '' ? [] : desc.split('\n')
+  const label = link?.label.trim() ?? ''
+  const url = link?.url.trim() ?? ''
+  if (label && url) {
+    if (region.length) region.push('')
+    region.push(`[${label}](${url})`)
+  }
+  return region
+}
+
 export function setCardDescription(block: string, index: number, value: string): string {
   return rewrite(block, index, (lines, card) => {
     const next = [...lines]
@@ -210,8 +227,8 @@ export function setCardDescription(block: string, index: number, value: string):
       next[card.startLine] = `${b.prefix}${iconPart}**${card.title}** ${b.sep} ${desc}`
       return next
     }
-    const descLines = value.trim() === '' ? [] : value.trim().split('\n')
-    next.splice(card.descStart, card.descEnd - card.descStart, ...descLines)
+    // Preserve the card's existing link; only the description text changes.
+    next.splice(card.descStart, card.descEnd - card.descStart, ...contentRegion(value, card.link))
     return next
   })
 }
@@ -224,18 +241,8 @@ export function setCardLink(
   return rewrite(block, index, (lines, card) => {
     if (card.kind === 'bullet') return null // bullets carry no CTA
     const next = [...lines]
-    const label = link?.label.trim() ?? ''
-    const url = link?.url.trim() ?? ''
-    if (card.linkLine !== null) {
-      if (label && url) next[card.linkLine] = `[${label}](${url})`
-      else next.splice(card.linkLine, 1) // clearing removes the line
-      return next
-    }
-    if (!label || !url) return null
-    // Insert after the last non-blank line of the card span.
-    let tail = card.endLine
-    while (tail > card.startLine && isBlank(next[tail - 1])) tail--
-    next.splice(tail, 0, '', `[${label}](${url})`)
+    // Preserve the card's existing description; only the link changes.
+    next.splice(card.descStart, card.descEnd - card.descStart, ...contentRegion(card.description, link))
     return next
   })
 }
