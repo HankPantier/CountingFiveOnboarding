@@ -32,7 +32,9 @@ import {
   PRICING_CALCULATOR_URL,
   PRICING_CALCULATOR_NAV_LABEL,
 } from './pricing-calculator-json-builder'
+import { buildCalculatorConfigFromAudit } from './pricing-from-audit'
 import { DEFAULT_CALCULATOR_CONFIG, type PricingCalculatorConfig } from '@/types/pricing-calculator'
+import type { SessionSchema } from '@/types/session-schema'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -84,7 +86,19 @@ export async function loadPricingCalculatorForSession(
     const fromRepo = await readPricingCalculatorFromRepo(githubRepo)
     if (fromRepo) return { config: fromRepo, enabled: true, exists: false, githubRepo, published }
   }
-  return { config: DEFAULT_CALCULATOR_CONFIG, enabled: true, exists: false, githubRepo, published }
+
+  // No saved row and no repo file — open the editor pre-populated with the base
+  // built from per-service rates the audit captured on the client's current site
+  // (the operator can still override/edit); fall back to the generic default.
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('schema_data')
+    .eq('id', sessionId)
+    .maybeSingle()
+  const auditBase = session?.schema_data
+    ? buildCalculatorConfigFromAudit(session.schema_data as SessionSchema)
+    : null
+  return { config: auditBase ?? DEFAULT_CALCULATOR_CONFIG, enabled: true, exists: false, githubRepo, published }
 }
 
 // Overwrite (or create) a file on the draft branch, resolving the current sha.

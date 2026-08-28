@@ -49,6 +49,7 @@ import {
   PRICING_PLANS_URL,
   PRICING_PLANS_NAV_LABEL,
 } from '@/lib/content/pricing-plans-json-builder'
+import { buildPlansConfigFromAudit, buildCalculatorConfigFromAudit } from '@/lib/content/pricing-from-audit'
 import { siteHost } from '@/lib/content/deliverable-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
@@ -380,8 +381,14 @@ export async function assembleContentPackage(
   const prefWantsCalculator = pricingPref === 'calculator' || pricingPref === 'both'
   const prefWantsPlans = pricingPref === 'plans' || pricingPref === 'both'
 
+  // Config to ship when the operator hasn't saved an editor row yet: the base
+  // built from pricing the audit captured on the client's current site, falling
+  // back to the generic default only when the audit found nothing.
   const pricingCalc = await getPricingCalculator(job.session_id)
   const shipPricingCalculator = pricingCalc.exists ? pricingCalc.enabled : prefWantsCalculator
+  const calcConfig = pricingCalc.exists
+    ? pricingCalc.config
+    : (buildCalculatorConfigFromAudit(schema) ?? pricingCalc.config)
   if (shipPricingCalculator && !navJson.primary.some(item => item.url === PRICING_CALCULATOR_URL)) {
     navJson.primary.push({ label: PRICING_CALCULATOR_NAV_LABEL, url: PRICING_CALCULATOR_URL })
   }
@@ -389,6 +396,9 @@ export async function assembleContentPackage(
   // Plans page (/pricing). Skip if a generated page already owns /pricing so we
   // never clobber real page content with the config-driven host page.
   const pricingPlans = await getPricingPlans(job.session_id)
+  const plansConfig = pricingPlans.exists
+    ? pricingPlans.config
+    : (buildPlansConfigFromAudit(schema) ?? pricingPlans.config)
   const pricingUrlTaken = pages.some(p => p.page_url === PRICING_PLANS_URL)
   const shipPricingPlans =
     !pricingUrlTaken && (pricingPlans.exists ? pricingPlans.enabled : prefWantsPlans)
@@ -541,19 +551,19 @@ export async function assembleContentPackage(
       : []),
     ...(shipPricingCalculator
       ? [
-          pricingCalculatorJsonEntry(pricingCalc.config),
+          pricingCalculatorJsonEntry(calcConfig),
           {
             path: 'content/pages/pricing-calculator.md',
-            content: buildPricingCalculatorPageMd(firmName, pricingCalc.config),
+            content: buildPricingCalculatorPageMd(firmName, calcConfig),
           },
         ]
       : []),
     ...(shipPricingPlans
       ? [
-          pricingPlansJsonEntry(pricingPlans.config),
+          pricingPlansJsonEntry(plansConfig),
           {
             path: 'content/pages/pricing.md',
-            content: buildPricingPlansPageMd(firmName, pricingPlans.config),
+            content: buildPricingPlansPageMd(firmName, plansConfig),
           },
         ]
       : []),

@@ -56,8 +56,19 @@ Template mirror: `src/lib/content/pricing-plans-types.ts`.
 
 The plans page ships when a session's `pricing_plans` row exists AND `enabled`,
 OR — absent a row — when `business.pricingPagePreference` is `plans` or `both`.
-An explicit editor row always overrides the preference. The package assembler
-emits:
+An explicit editor row always overrides the preference.
+
+When no editor row exists yet, the shipped config (and the config the admin
+editor opens with) is built **from the pricing the initial audit captured on the
+client's current site** — `_meta.audit_context.pricing` → tier cards, via
+`buildPlansConfigFromAudit` in `lib/content/pricing-from-audit.ts` (deterministic,
+no AI). It falls back to the generic `DEFAULT_PLANS_CONFIG` only when the audit
+found no pricing. The operator can always override/edit, or run "Draft with AI"
+for a richer draft (also anchored on the same captured pricing). The calculator
+mirrors this via `buildCalculatorConfigFromAudit` (captured per-service rates →
+service lines).
+
+The package assembler emits:
 
 - `content/pricing-plans.json` — the config above
 - `content/pages/pricing.md` — a standalone page with a single

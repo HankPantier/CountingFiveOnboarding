@@ -32,7 +32,9 @@ import {
   PRICING_PLANS_URL,
   PRICING_PLANS_NAV_LABEL,
 } from './pricing-plans-json-builder'
+import { buildPlansConfigFromAudit } from './pricing-from-audit'
 import { DEFAULT_PLANS_CONFIG, type PricingPlansConfig } from '@/types/pricing-plans'
+import type { SessionSchema } from '@/types/session-schema'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -84,7 +86,19 @@ export async function loadPricingPlansForSession(
     const fromRepo = await readPricingPlansFromRepo(githubRepo)
     if (fromRepo) return { config: fromRepo, enabled: true, exists: false, githubRepo, published }
   }
-  return { config: DEFAULT_PLANS_CONFIG, enabled: true, exists: false, githubRepo, published }
+
+  // No saved row and no repo file — open the editor pre-populated with the base
+  // built from pricing the audit captured on the client's current site (the
+  // operator can still override/edit); fall back to the generic default.
+  const { data: session } = await supabase
+    .from('sessions')
+    .select('schema_data')
+    .eq('id', sessionId)
+    .maybeSingle()
+  const auditBase = session?.schema_data
+    ? buildPlansConfigFromAudit(session.schema_data as SessionSchema)
+    : null
+  return { config: auditBase ?? DEFAULT_PLANS_CONFIG, enabled: true, exists: false, githubRepo, published }
 }
 
 // Overwrite (or create) a file on the draft branch, resolving the current sha.
