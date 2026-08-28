@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { parseDiviSections, parseCards, parseQA, accordionBlock, ctaBlock } from './blocks'
+import { parseDiviSections, parseCards, parseQA, accordionBlock, ctaBlock, pricingTablesBlock } from './blocks'
+import { DEFAULT_PLANS_CONFIG } from '@/types/pricing-plans'
 import { markdownToHtml, inlineMarkdown } from './markdown'
 import { safeUrl } from './sanitize'
 import { buildPageDivi, collectPageQueries, type DiviPageInput } from './page'
@@ -392,5 +393,46 @@ describe('buildDiviExport (end to end)', () => {
     })
     expect(zip.length).toBeGreaterThan(100)
     expect(filenameBase).toBe('korbeylague-com')
+  })
+})
+
+describe('pricing plans → Divi', () => {
+  it('renders tiers as a native pricing-tables module with the popular tier featured', () => {
+    const out = pricingTablesBlock(DEFAULT_PLANS_CONFIG)
+    expect(out).toContain('[et_pb_pricing_tables')
+    expect(out).toContain('title="Growth"')
+    expect(out).toContain('featured="on"') // the most-popular tier
+    // Shared "all plans include" list renders as prose beneath the tables.
+    expect(out).toContain(DEFAULT_PLANS_CONFIG.sharedFeatures.heading)
+  })
+
+  it('marks excluded features with a leading dash', () => {
+    const cfg = {
+      ...DEFAULT_PLANS_CONFIG,
+      tiers: [
+        {
+          id: 't', name: 'T', monthlyPrice: 100, annualPrice: 90, isMostPopular: false,
+          features: [
+            { id: 'a', label: 'Included thing', included: true },
+            { id: 'b', label: 'Excluded thing', included: false },
+          ],
+          cta: { label: 'Go', url: '/contact' },
+        },
+      ],
+    }
+    const out = pricingTablesBlock(cfg)
+    expect(out).toContain('Included thing')
+    expect(out).toContain('-Excluded thing')
+  })
+
+  it('is emitted for a pricing-plans host page when a config is threaded in', () => {
+    const md = '---\ntitle: Pricing\nurl: /pricing\nhero: page-header\n---\n\n<!-- block: pricing-plans -->\n## Plans & pricing\n\nOur plans.\n'
+    const page: DiviPageInput = {
+      page_title: 'Pricing', page_url: '/pricing', hero_block: 'page-header', hero_variant: null,
+      hero_image_alt: null, hero_subhead: null, hero_image_query: null, content_markdown: md,
+      faq_block: null, cta: null,
+    }
+    const divi = buildPageDivi(page, new Map(), 'https://firm.com', DEFAULT_PLANS_CONFIG)
+    expect(divi).toContain('[et_pb_pricing_tables')
   })
 })

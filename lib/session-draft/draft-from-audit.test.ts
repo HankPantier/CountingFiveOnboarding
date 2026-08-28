@@ -94,6 +94,26 @@ describe('validateDraftModel (coercion)', () => {
     expect(validateDraftModel(null)).toBeNull()
     expect(validateDraftModel('x')).toBeNull()
   })
+
+  it('captures detected pricing and drops empty tier entries', () => {
+    const out = validateDraftModel({
+      business: { name: 'Acme' },
+      pricing: {
+        pageUrl: 'https://acme.example/pricing',
+        strategy: 'tiers',
+        tiers: [{ name: 'Starter', price: '$299/mo', features: ['Bookkeeping'] }, { name: '' }],
+        rates: [{ service: 'Payroll', rate: '$99/mo' }],
+      },
+    })
+    expect(out!.pricing?.strategy).toBe('tiers')
+    expect(out!.pricing?.tiers).toEqual([{ name: 'Starter', price: '$299/mo', features: ['Bookkeeping'] }])
+    expect(out!.pricing?.rates).toEqual([{ service: 'Payroll', rate: '$99/mo' }])
+  })
+
+  it('omits pricing entirely when nothing usable was found', () => {
+    const out = validateDraftModel({ business: { name: 'Acme' }, pricing: { strategy: 'bogus', tiers: [] } })
+    expect(out!.pricing).toBeUndefined()
+  })
 })
 
 describe('draftSessionFromAudit', () => {

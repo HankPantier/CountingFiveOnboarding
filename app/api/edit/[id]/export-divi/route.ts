@@ -7,6 +7,7 @@ import { parseClientCenterJson } from '@/lib/editor/client-center-config'
 import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { buildDiviExport, type DiviPageInput } from '@/lib/content/divi'
+import { normalizePricingPlansConfig } from '@/lib/content/pricing-plans-config'
 import { pageInputFromRepoFile } from '@/lib/content/divi/from-frontmatter'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -21,6 +22,7 @@ export const maxDuration = 300
 
 const NAV_PATH = 'content/nav.json'
 const CLIENT_CENTER_PATH = 'content/client-center.json'
+const PRICING_PLANS_PATH = 'content/pricing-plans.json'
 const READ_CONCURRENCY = 4
 
 // Fallback palette (brand navy/cyan) when a job hasn't run the Design System
@@ -152,6 +154,19 @@ export async function GET(
       }
     }
 
+    // The /pricing host page carries only the block annotation; the real tiers
+    // live in content/pricing-plans.json. Read it so the Divi export renders a
+    // pricing-tables layout instead of dropping to plain prose.
+    let pricingPlans = null
+    if (tree.some((e) => e.path === PRICING_PLANS_PATH)) {
+      try {
+        const ppBlob = await readFile(ctx.githubRepo, PRICING_PLANS_PATH, DRAFT_BRANCH)
+        pricingPlans = normalizePricingPlansConfig(JSON.parse(ppBlob.content))
+      } catch {
+        /* malformed plans config — omit; the host page falls back to prose */
+      }
+    }
+
     const { zip, filenameBase } = await buildDiviExport({
       firmName,
       websiteUrl: session.website_url,
@@ -161,6 +176,7 @@ export async function GET(
       nav,
       logoUrl,
       pexelsApiKey: process.env.PEXELS_API_KEY ?? '',
+      pricingPlans,
       dateGmt: gmtStamp(new Date()),
     })
 

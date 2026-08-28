@@ -1103,6 +1103,7 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     // Per flow doc Tier 2: success stories + pricing — ask only if time allows.
     { field: 'business.clientSuccessStories', label: 'Client Success Stories (1–2 examples)', phase: 4, tier: 2, resolved: false },
     { field: 'business.pricing', label: 'Pricing / Fee Structure', phase: 4, tier: 2, resolved: false },
+    { field: 'business.pricingPagePreference', label: 'Pricing Page Preference (plans / calculator / both / none)', phase: 4, tier: 2, resolved: false },
     // Differentiators & growth
     { field: 'business.differentiators', label: 'Differentiators (in their own words)', phase: 4, tier: 1, resolved: false },
     { field: 'business.growthGoals', label: 'Growth Goals / Where They Want to Be in 3 Years', phase: 4, tier: 2, resolved: false },

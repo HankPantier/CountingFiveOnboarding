@@ -59,6 +59,12 @@ interface DraftModel {
   team?: Array<{ name?: string; title?: string; bio?: string }>
   culture?: { socialMediaChannels?: string[] }
   brand?: { currentTone?: string; toneAdjectives?: string[] }
+  pricing?: {
+    pageUrl?: string
+    strategy?: 'calculator' | 'tiers' | 'flat' | 'mixed'
+    tiers?: Array<{ name?: string; price?: string; features?: string[] }>
+    rates?: Array<{ service?: string; rate?: string }>
+  }
 }
 
 const asStr = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
@@ -118,11 +124,13 @@ Return a JSON object with this exact shape (omit fields/arrays you can't fill):
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
   "team": [ { "name": string, "title": string, "bio": string } ],
   "culture": { "socialMediaChannels": string[] },
-  "brand": { "currentTone": string, "toneAdjectives": string[] }
+  "brand": { "currentTone": string, "toneAdjectives": string[] },
+  "pricing": { "pageUrl": string, "strategy": "calculator"|"tiers"|"flat"|"mixed", "tiers": [ { "name": string, "price": string, "features": string[] } ], "rates": [ { "service": string, "rate": string } ] }
 }
 - "niches" = the industries/client types the firm serves.
 - "serviceAreas" = specific cities/counties the site says the firm serves (e.g. an "Areas We Serve" section); omit if none stated.
 - "brand.currentTone" / "toneAdjectives" = how the site's copy actually reads (e.g. "formal", "approachable").
+- "pricing" = ONLY if the site actually shows pricing. "strategy": "tiers" for plan cards, "calculator" for an interactive estimator, "flat" for fixed per-service rates, "mixed" for a combination. Capture concrete tier names/prices/features and any per-service rates verbatim. Omit "pricing" entirely if no pricing is shown.
 - Keep descriptions concise (1–2 sentences).
 
 WEBSITE CONTENT:
@@ -157,7 +165,34 @@ export function validateDraftModel(parsed: unknown): DraftModel | null {
     team: asObjArr(p.team).map((t) => ({ name: asStr(t.name), title: asStr(t.title), bio: asStr(t.bio) })),
     culture: { socialMediaChannels: asStrArr(c.socialMediaChannels) },
     brand: { currentTone: asStr(br.currentTone), toneAdjectives: asStrArr(br.toneAdjectives) },
+    ...coercePricing(p.pricing),
   }
+}
+
+// Coerce the optional pricing block. Returns {} (no `pricing` key) when nothing
+// usable was found, so the audit never fabricates a pricing page.
+const PRICING_STRATEGIES = ['calculator', 'tiers', 'flat', 'mixed'] as const
+function coercePricing(v: unknown): Pick<DraftModel, 'pricing'> {
+  if (!v || typeof v !== 'object') return {}
+  const p = v as Record<string, unknown>
+  const strategyRaw = asStr(p.strategy)
+  const strategy = (PRICING_STRATEGIES as readonly string[]).includes(strategyRaw)
+    ? (strategyRaw as NonNullable<DraftModel['pricing']>['strategy'])
+    : undefined
+  const tiers = asObjArr(p.tiers)
+    .map((t) => ({ name: asStr(t.name), price: asStr(t.price), features: asStrArr(t.features) }))
+    .filter((t) => t.name)
+  const rates = asObjArr(p.rates)
+    .map((r) => ({ service: asStr(r.service), rate: asStr(r.rate) }))
+    .filter((r) => r.service || r.rate)
+  const pageUrl = asStr(p.pageUrl)
+  if (!pageUrl && !strategy && tiers.length === 0 && rates.length === 0) return {}
+  const pricing: NonNullable<DraftModel['pricing']> = {}
+  if (pageUrl) pricing.pageUrl = pageUrl
+  if (strategy) pricing.strategy = strategy
+  if (tiers.length) pricing.tiers = tiers
+  if (rates.length) pricing.rates = rates
+  return { pricing }
 }
 
 function mapToSchema(
@@ -218,6 +253,34 @@ function mapToSchema(
 
   schema.brand!.currentTone = model.brand?.currentTone ?? ''
   schema.brand!.toneAdjectives = model.brand?.toneAdjectives ?? []
+
+  // Carry any pricing the audit found into _meta.audit_context.pricing (seeds the
+  // plans/calculator editors) and pre-default the rep's pricing-page preference:
+  // a tiered/flat current page → "plans", an existing calculator → "calculator".
+  // The rep can still override in Phase 4.
+  const pricing = model.pricing
+  if (pricing && (pricing.pageUrl || pricing.strategy || pricing.tiers?.length || pricing.rates?.length)) {
+    const meta = (schema._meta ??= {
+      phase3_completed_chunks: [],
+      phase4_resolved_tiers: { tier1_done: false, tier2_done: false },
+      phase4_flagged_for_followup: [],
+      admin_overrides: {},
+    })
+    meta.audit_context ??= {}
+    meta.audit_context.pricing = {
+      ...(pricing.pageUrl ? { pageUrl: pricing.pageUrl } : {}),
+      ...(pricing.strategy ? { strategy: pricing.strategy } : {}),
+      // coercePricing already dropped tiers without a name; assert the string.
+      ...(pricing.tiers?.length
+        ? { tiers: pricing.tiers.map((t) => ({ name: t.name ?? '', price: t.price, features: t.features })) }
+        : {}),
+      ...(pricing.rates?.length ? { rates: pricing.rates } : {}),
+    }
+    if (!schema.business!.pricingPagePreference) {
+      schema.business!.pricingPagePreference =
+        pricing.strategy === 'calculator' ? 'calculator' : 'plans'
+    }
+  }
 
   return schema
 }

@@ -16,6 +16,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import type { NavJson } from '@/types/nav-json'
+import type { PricingPlansConfig } from '@/types/pricing-plans'
 import { toPagePath, siteHost } from '@/lib/content/deliverable-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
 import { buildPageDivi, collectPageQueries, type DiviPageInput } from './page'
@@ -36,6 +37,9 @@ export type DiviExportInput = {
   nav: NavJson
   logoUrl: string | null
   pexelsApiKey: string
+  // Config-driven plans page (content/pricing-plans.json), if the client ships
+  // one — the /pricing host page md carries only the annotation, not the tiers.
+  pricingPlans?: PricingPlansConfig | null
   dateGmt: string // "YYYY-MM-DD HH:mm:ss" — passed in so the builder stays pure
 }
 
@@ -138,7 +142,7 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     postId: pageIdByPath.get(r.path)!,
     parentId: parentIdFor(r.path),
     content: r.real
-      ? buildPageDivi(r.real, imageUrls, input.websiteUrl)
+      ? buildPageDivi(r.real, imageUrls, input.websiteUrl, input.pricingPlans ?? null)
       : buildSectionLandingDivi(r.section!),
   }))
 

@@ -333,6 +333,7 @@ Group remaining gaps into 2–3 per exchange by topic:
 - Differentiators and growth goals
 - Culture (mission/values, team description)
 - Client portals (see below)
+- Pricing page (see below)
 - Brand & Tone (see below — always last before the close)
 
 - Tier 1: Always ask
@@ -343,6 +344,10 @@ One natural follow-up per thin answer, then move on.
 CLIENT PORTALS BLOCK — ask once, before Brand & Tone:
 Ask: "Do your clients log into any outside tools or portals — QuickBooks Online, a secure file/document upload, payroll, online bill-pay, remote support? If so, what are they and where's the login link?"
 For each one captured, write an entry to clientPortals[] with label, url, a short description, and a category (e.g. Documents, Payments, Support). These become the site's "Client Center" button. NEVER ask for or store portal passwords or credentials — links only; if a password comes up, decline and note it's handled through a secure channel.
+
+PRICING PAGE BLOCK — ask once, after client portals:
+Ask: "Would you like a pricing page on the new site? We can build a plans page with tiers and features, an interactive pricing calculator that estimates a monthly figure, both, or neither."
+Capture the answer to business.pricingPagePreference as exactly one of: "plans", "calculator", "both", or "none". If they're already showing pricing on their current site, a plans page is usually the natural fit — offer that as the default. Don't collect prices here; the team drafts the actual numbers from the firm's fee notes in the next step.
 
 BRAND & TONE BLOCK — ask this as the last topic, after differentiators and culture:
 Ask in one exchange: "Before we wrap up, I want to capture a sense of your brand voice. How would clients describe your firm today — and how would you like them to feel after reading your new site?"

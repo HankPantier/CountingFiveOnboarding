@@ -39,6 +39,7 @@ from `raw-docs/Divi Builder Layouts.json`:
 | `feature-grid`, `service-cards`, `industry-cards` | `cardGridBlock` (blurb cards) |
 | `cta-banner` | `ctaBlock` |
 | `faq-accordion` + `faq_block` column | `accordionBlock` |
+| `pricing-plans` + `content/pricing-plans.json` | `pricingTablesBlock` (native `et_pb_pricing_tables` + shared-features/add-ons prose) |
 | everything else | `basicContentBlock` (clean styled text — no content dropped) |
 
 ## Files

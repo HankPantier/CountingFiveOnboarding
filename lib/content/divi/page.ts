@@ -15,9 +15,11 @@ import {
   cardGridBlock,
   ctaBlock,
   accordionBlock,
+  pricingTablesBlock,
   type DiviSection,
   type QA,
 } from './blocks'
+import type { PricingPlansConfig } from '@/types/pricing-plans'
 
 export type DiviPageInput = {
   page_title: string
@@ -61,11 +63,19 @@ function firstLink(content: string): { text: string; url: string } | null {
 function renderSection(
   section: DiviSection,
   images: Map<string, string>,
-  pageCta: { text: string; url: string } | null
+  pageCta: { text: string; url: string } | null,
+  pricingPlans: PricingPlansConfig | null
 ): string {
   const imageUrl = section.query ? images.get(section.query.trim()) : undefined
 
   switch (section.blockId) {
+    case 'pricing-plans': {
+      // Config-driven: the page md is a minimal host, the tiers live in
+      // content/pricing-plans.json (threaded in as pricingPlans).
+      if (pricingPlans && pricingPlans.tiers.length > 0) return pricingTablesBlock(pricingPlans)
+      return basicContentBlock(headingHtml(section))
+    }
+
     case 'content-split': {
       const side = section.variant === 'image-left' ? 'image-left' : 'image-right'
       return copyImageBlock({
@@ -156,7 +166,8 @@ export function collectPageQueries(page: DiviPageInput): string[] {
 export function buildPageDivi(
   page: DiviPageInput,
   images: Map<string, string>,
-  websiteUrl: string
+  websiteUrl: string,
+  pricingPlans: PricingPlansConfig | null = null
 ): string {
   const host = siteHost(websiteUrl)
   const body = internalizeLinks(page.content_markdown ?? '', host)
@@ -164,7 +175,7 @@ export function buildPageDivi(
 
   const parts: string[] = [renderHero(page, images, body)]
   for (const section of sections) {
-    parts.push(renderSection(section, images, page.cta))
+    parts.push(renderSection(section, images, page.cta, pricingPlans))
   }
 
   // Append the structured FAQ unless the page already carried an inline

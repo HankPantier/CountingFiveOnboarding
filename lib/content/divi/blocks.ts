@@ -16,6 +16,7 @@
 
 import { markdownToHtml, inlineMarkdown } from './markdown'
 import { safeUrl } from './sanitize'
+import type { PricingPlansConfig } from '@/types/pricing-plans'
 
 const BV = '4.27.4' // Divi _builder_version stamped on emitted modules
 
@@ -233,6 +234,77 @@ export function ctaBlock(opts: {
     `[et_pb_button button_url="${attr(safeUrl(opts.buttonUrl) ?? '/contact/')}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="#003B71" button_bg_color="#00C1DE" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="rgba(0,193,222,0.35)" global_colors_info="{}"][/et_pb_button]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
+}
+
+// The currency symbol for a Divi pricing table (falls back to the code).
+function currencySymbol(currency: string): string {
+  try {
+    const parts = new Intl.NumberFormat('en-US', { style: 'currency', currency }).formatToParts(1)
+    return parts.find((p) => p.type === 'currency')?.value ?? currency
+  } catch {
+    return currency
+  }
+}
+
+// Config-driven pricing plans → a native Divi pricing-tables module, plus a
+// styled prose block for the "all plans include" list + add-ons (Divi's pricing
+// module has no shared-features/add-ons slot, so nothing is dropped). Uses the
+// monthly price — the interactive monthly/annual toggle has no Divi equivalent.
+export function pricingTablesBlock(config: PricingPlansConfig): string {
+  const symbol = currencySymbol(config.currency)
+  const tables = config.tiers
+    .map((tier) => {
+      // Divi lists features one per line inside the module body; a leading `-`
+      // marks a feature as unavailable (struck through).
+      const features = tier.features
+        .map((f) => `${f.included ? '' : '-'}${f.label}`)
+        .join('\n')
+      const numeric = (tier.monthlyPrice ?? 0) > 0
+      const sum = numeric ? String(tier.monthlyPrice) : (tier.priceSuffix || 'Custom')
+      const per = numeric ? attr((tier.priceSuffix || '/mo').replace(/^\//, '')) : ''
+      const buttonUrl = safeUrl(tier.cta.url) ?? '/contact/'
+      return (
+        `[et_pb_pricing_table featured="${tier.isMostPopular ? 'on' : 'off'}" title="${attr(tier.name)}"` +
+        (tier.description ? ` subtitle="${attr(tier.description)}"` : '') +
+        ` currency="${attr(symbol)}" per="${per}" sum="${attr(sum)}"` +
+        ` button_url="${attr(buttonUrl)}" button_text="${attr(tier.cta.label)}"` +
+        ` _builder_version="${BV}" _module_preset="default" button_bg_color="#00C1DE" button_border_radius="40px" global_colors_info="{}"]` +
+        `${features}` +
+        `[/et_pb_pricing_table]`
+      )
+    })
+    .join('')
+
+  const pricingSection =
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" custom_padding="50px||60px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="90%" module_alignment="center" global_colors_info="{}"]` +
+    `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
+    `[et_pb_pricing_tables _builder_version="${BV}" _module_preset="default" header_background_color="#003B71" featured_table_background_color="#F7FAFC" global_colors_info="{}"]${tables}[/et_pb_pricing_tables]` +
+    `[/et_pb_column][/et_pb_row][/et_pb_section]`
+
+  // Shared features + add-ons as a styled prose block below the tables.
+  const sharedList = config.sharedFeatures.items.length
+    ? `<h3>${inlineMarkdown(config.sharedFeatures.heading)}</h3>\n<ul>` +
+      config.sharedFeatures.items.map((i) => `<li>${inlineMarkdown(i)}</li>`).join('') +
+      `</ul>`
+    : ''
+  const addOnList = config.addOns.length
+    ? `<h3>Add-ons</h3>\n<ul>` +
+      config.addOns
+        .map((a) => {
+          const price =
+            a.type === 'flat'
+              ? `${currencySymbol(config.currency)}${a.price}${a.cadence === 'once' ? ' one-time' : a.cadence === 'year' ? '/yr' : '/mo'}`
+              : `${currencySymbol(config.currency)}${a.unitPrice} / ${a.unitLabel}`
+          return `<li><strong>${inlineMarkdown(a.label)}</strong> — ${price}${a.description ? `: ${inlineMarkdown(a.description)}` : ''}</li>`
+        })
+        .join('') +
+      `</ul>`
+    : ''
+  const disclaimer = config.disclaimer ? `<p><em>${inlineMarkdown(config.disclaimer)}</em></p>` : ''
+  const extras = sharedList + addOnList + disclaimer
+
+  return pricingSection + (extras ? basicContentBlock(extras) : '')
 }
 
 export function accordionBlock(heading: string, items: QA[]): string {

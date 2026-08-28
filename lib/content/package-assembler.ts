@@ -42,6 +42,13 @@ import {
   PRICING_CALCULATOR_URL,
   PRICING_CALCULATOR_NAV_LABEL,
 } from '@/lib/content/pricing-calculator-json-builder'
+import { getPricingPlans } from '@/lib/content/pricing-plans-config'
+import {
+  buildPricingPlansPageMd,
+  pricingPlansJsonEntry,
+  PRICING_PLANS_URL,
+  PRICING_PLANS_NAV_LABEL,
+} from '@/lib/content/pricing-plans-json-builder'
 import { siteHost } from '@/lib/content/deliverable-builder'
 import { generateWordmarkSvg } from '@/lib/content/wordmark-generator'
 import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
@@ -365,13 +372,31 @@ export async function assembleContentPackage(
   // in nav.json, so there's nothing to append here.
   const clientCenterJson = buildClientCenterJson(schema)
 
-  // Pricing calculator — emitted only when the session has an enabled row (the
-  // operator opted in via the admin editor). Appends a nav entry so the
-  // /pricing-calculator page is reachable.
+  // Pricing pages — shipped when the operator opted in via the admin editor
+  // (explicit enabled row) OR, absent a row, when the onboarding pricing-page
+  // preference asked for it. An explicit row always overrides the preference.
+  // Each appends a nav entry so the page is reachable.
+  const pricingPref = schema.business?.pricingPagePreference
+  const prefWantsCalculator = pricingPref === 'calculator' || pricingPref === 'both'
+  const prefWantsPlans = pricingPref === 'plans' || pricingPref === 'both'
+
   const pricingCalc = await getPricingCalculator(job.session_id)
-  const shipPricingCalculator = pricingCalc.exists && pricingCalc.enabled
+  const shipPricingCalculator = pricingCalc.exists ? pricingCalc.enabled : prefWantsCalculator
   if (shipPricingCalculator && !navJson.primary.some(item => item.url === PRICING_CALCULATOR_URL)) {
     navJson.primary.push({ label: PRICING_CALCULATOR_NAV_LABEL, url: PRICING_CALCULATOR_URL })
+  }
+
+  // Plans page (/pricing). Skip if a generated page already owns /pricing so we
+  // never clobber real page content with the config-driven host page.
+  const pricingPlans = await getPricingPlans(job.session_id)
+  const pricingUrlTaken = pages.some(p => p.page_url === PRICING_PLANS_URL)
+  const shipPricingPlans =
+    !pricingUrlTaken && (pricingPlans.exists ? pricingPlans.enabled : prefWantsPlans)
+  if (pricingUrlTaken && (pricingPlans.exists ? pricingPlans.enabled : prefWantsPlans)) {
+    console.warn(`[package] Skipping plans page — a generated page already owns ${PRICING_PLANS_URL}`)
+  }
+  if (shipPricingPlans && !navJson.primary.some(item => item.url === PRICING_PLANS_URL)) {
+    navJson.primary.push({ label: PRICING_PLANS_NAV_LABEL, url: PRICING_PLANS_URL })
   }
 
   if (!palette) console.warn(`[package] brand.json — palette not locked, using neutral fallback`)
@@ -520,6 +545,15 @@ export async function assembleContentPackage(
           {
             path: 'content/pages/pricing-calculator.md',
             content: buildPricingCalculatorPageMd(firmName, pricingCalc.config),
+          },
+        ]
+      : []),
+    ...(shipPricingPlans
+      ? [
+          pricingPlansJsonEntry(pricingPlans.config),
+          {
+            path: 'content/pages/pricing.md',
+            content: buildPricingPlansPageMd(firmName, pricingPlans.config),
           },
         ]
       : []),

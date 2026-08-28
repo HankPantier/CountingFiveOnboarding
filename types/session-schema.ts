@@ -64,6 +64,19 @@ export type SessionSchema = {
         aiSearchPresence?: string
         localSeo?: string
       }
+      // Pricing data detected on the client's CURRENT site during the audit.
+      // Seeds the pricing calculator / plans editors and defaults the rep's
+      // pricing-page preference. Everything optional — present only when the
+      // audit found a pricing page or figures.
+      pricing?: {
+        pageUrl?: string
+        // How the current site presents pricing, if discernible.
+        strategy?: 'calculator' | 'tiers' | 'flat' | 'mixed'
+        // Tier/plan cards found on the current site.
+        tiers?: Array<{ name: string; price?: string; features?: string[] }>
+        // Per-service rates found (e.g. "Bookkeeping — $250/mo").
+        rates?: Array<{ service?: string; rate?: string }>
+      }
     }
   }
   contact?: {
@@ -202,6 +215,11 @@ export type SessionSchema = {
     contentExclusions?: string[]
     // schema.org priceRange hint (e.g. "$$"), distinct from the free-text `pricing`.
     priceRange?: string
+    // Which pricing page(s) the client wants on the new site, captured in Phase 4
+    // (and defaulted from audit-detected pricing). Drives emission of the plans
+    // page (/pricing) and/or interactive calculator (/pricing-calculator). An
+    // explicit pricing_plans / pricing_calculators editor row overrides this.
+    pricingPagePreference?: 'calculator' | 'plans' | 'both' | 'none'
     formerName?: string
     firmSizeEstimate?: string
     currentPositioning?: string
