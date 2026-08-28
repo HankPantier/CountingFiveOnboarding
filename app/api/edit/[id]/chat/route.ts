@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
+import { readJsonBody } from '@/app/api/_json'
 import { getCurrentUser, isSiteOwner } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
@@ -54,7 +55,9 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { messages, path: rawPath }: { messages: UIMessage[]; path?: string } = await req.json()
+  const body = await readJsonBody<{ messages: UIMessage[]; path?: string }>(req)
+  if (body instanceof NextResponse) return body
+  const { messages, path: rawPath } = body
   const path = rawPath ? safePath(rawPath) : null
   if (!path || !EDITABLE.some(p => path.startsWith(p))) {
     return NextResponse.json({ error: 'Open a page or post to edit with AI' }, { status: 400 })
@@ -338,5 +341,7 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
       },
     })
 
-  return result.toUIMessageStreamResponse()
+  return result.toUIMessageStreamResponse({
+    onError: () => 'The assistant hit an error — please try again.',
+  })
 }

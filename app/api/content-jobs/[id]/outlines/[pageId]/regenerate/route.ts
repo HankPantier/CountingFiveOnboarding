@@ -24,6 +24,7 @@ export async function POST(
     .from('page_outlines')
     .select('id, page_url, page_title, content_job_id')
     .eq('id', pageId)
+    .eq('content_job_id', id)
     .single()
 
   if (!outline) {

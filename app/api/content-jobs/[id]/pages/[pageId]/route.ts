@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
@@ -39,7 +40,8 @@ export async function PATCH(
   const sessionId = auth.sessionId
 
   const { id, pageId } = await params
-  const body = await req.json()
+  const body = await readJsonBody<Record<string, unknown>>(req)
+  if (body instanceof NextResponse) return body
   const supabase = createServerClient()
 
   const CONTENT_FIELDS = ['content_markdown', 'meta_title', 'meta_description', 'target_keyword']
@@ -77,16 +79,16 @@ export async function PATCH(
 
   // Process content fields
   for (const field of CONTENT_FIELDS) {
-    if (body[field] !== undefined) {
-      if (typeof body[field] !== 'string') {
+    const value = body[field]
+    if (value !== undefined) {
+      if (typeof value !== 'string') {
         return NextResponse.json({ error: `invalid type: ${field}` }, { status: 400 })
       }
-      const len = body[field].length
       const cap = FIELD_CAPS[field]
-      if (len > cap) {
+      if (value.length > cap) {
         return NextResponse.json({ error: `field too long: ${field}` }, { status: 400 })
       }
-      updates[field] = body[field]
+      updates[field] = value
       contentEdited = true
     }
   }

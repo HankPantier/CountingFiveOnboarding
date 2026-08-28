@@ -181,7 +181,7 @@ function AddUserDialogPanel({ onClose, sessions, name, setName, email, setEmail,
           )}
 
           {warning && (
-            <p className="text-sm text-warning bg-warning/10 px-3 py-2 rounded-card">{warning}</p>
+            <p className="text-sm text-warning-strong bg-warning/10 px-3 py-2 rounded-card">{warning}</p>
           )}
 
           <div className="space-y-1">

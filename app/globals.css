@@ -19,6 +19,7 @@
   --color-surface-page: #F8FAFC;
   --color-surface-card: #FFFFFF;
   --color-surface-subtle: #F1F5F9;
+  --color-surface-header: #FBFCFD; /* near-white table-header rows */
 
   /* Border colors */
   --color-border-default: #E2E8F0;

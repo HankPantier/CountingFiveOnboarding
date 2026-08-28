@@ -28,7 +28,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const storagePath = body?.storagePath
   const fileName = typeof body?.fileName === 'string' && body.fileName.trim() ? body.fileName.trim() : 'logo'
   // Bind the path to this session — never let a request claim another's file.
-  if (typeof storagePath !== 'string' || !storagePath.startsWith(`sessions/${id}/`)) {
+  // Decode before the prefix check (security rule 8): a percent-encoded
+  // traversal like sessions/{id}/..%2F..%2Fsessions/{other}/logo.png passes a
+  // raw startsWith but escapes the prefix once Supabase Storage decodes it.
+  if (typeof storagePath !== 'string') {
+    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
+  }
+  let decodedPath: string
+  try {
+    decodedPath = decodeURIComponent(storagePath)
+  } catch {
+    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
+  }
+  if (
+    decodedPath !== storagePath ||
+    !decodedPath.startsWith(`sessions/${id}/`) ||
+    decodedPath.split('/').some(s => s === '' || s === '.' || s === '..')
+  ) {
     return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
   }
 

@@ -15,6 +15,11 @@ export async function POST(
   const { id, ideaId } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+  // Social generation writes to the draft branch — a content-job (re)generation
+  // op, manager-only per CLAUDE.md rule 6 (editors/owners excluded).
+  if (!ctx.user.isAdmin && !ctx.user.capabilities.includes('manager')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   if (!UUID_RE.test(ideaId)) {
     return NextResponse.json({ error: 'Invalid idea id' }, { status: 400 })
   }

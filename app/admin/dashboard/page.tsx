@@ -214,7 +214,7 @@ export default async function DashboardPage({
         <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="border-b border-border-default bg-[#FBFCFD]">
+              <tr className="border-b border-border-default bg-surface-header">
                 {['Client', 'Status', 'Phase', 'Health', 'Last active', 'Inactive', ''].map((h, i) => (
                   <th
                     key={i}

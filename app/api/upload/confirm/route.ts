@@ -1,12 +1,18 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { fileTypeFromBuffer } from 'file-type'
+import { readJsonBody } from '@/app/api/_json'
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'application/pdf']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(req: Request) {
-  const { sessionId, storagePath, fileName, mimeType, fileSize, assetCategory, metadata } = await req.json()
+  const parsed = await readJsonBody<{
+    sessionId?: string; storagePath?: string; fileName?: string; mimeType?: string
+    assetCategory?: string; metadata?: unknown
+  }>(req)
+  if (parsed instanceof NextResponse) return parsed
+  const { sessionId, storagePath, fileName, mimeType, assetCategory, metadata } = parsed
 
   if (!sessionId || !storagePath || !fileName) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -100,7 +106,8 @@ export async function POST(req: Request) {
       storage_path: storagePath,
       public_url: null,
       mime_type: detected?.mime ?? mimeType,
-      file_size_bytes: fileSize,
+      // Trust the actual downloaded byte length, not the client-supplied fileSize.
+      file_size_bytes: buffer.byteLength,
       asset_category: resolvedCategory,
       metadata: resolvedMetadata,
     })

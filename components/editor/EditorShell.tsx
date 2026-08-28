@@ -333,6 +333,13 @@ export default function EditorShell({
       setError('Save all unsaved changes before publishing.')
       return
     }
+    if (
+      !window.confirm(
+        'Publish all draft changes to the live site? Visitors will see them once Vercel finishes deploying.'
+      )
+    ) {
+      return
+    }
     setPublishing(true)
     setError(null)
     setPublishResult(null)
@@ -959,6 +966,7 @@ export default function EditorShell({
             type="button"
             onClick={() => void deletePage()}
             disabled={!canPageAct}
+            aria-label="Delete this page"
             className="rounded-pill border border-error/40 px-3.5 py-1.5 font-heading font-semibold text-xs text-error hover:bg-error/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title="Delete this page from the repo"
           >
@@ -975,7 +983,7 @@ export default function EditorShell({
         </div>
       )}
       {error && (
-        <div className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning-strong font-body text-xs">
+        <div role="alert" className="px-6 py-2 bg-warning/10 border-b border-warning/30 text-warning-strong font-body text-xs">
           {error}
         </div>
       )}

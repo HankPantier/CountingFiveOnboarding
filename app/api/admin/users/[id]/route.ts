@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
 import { contentReadySessionIds } from '@/lib/admin/content-ready'
@@ -33,7 +34,8 @@ export async function PATCH(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const body = (await req.json()) as UpdateUserRequest
+  const body = await readJsonBody<UpdateUserRequest>(req)
+  if (body instanceof NextResponse) return body
   const supabase = createServerClient()
 
   const { data: target } = await supabase

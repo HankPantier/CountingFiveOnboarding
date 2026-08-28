@@ -1,19 +1,24 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
+import { readJsonBody } from '@/app/api/_json'
 import { Vibrant } from 'node-vibrant/node'
 import { derivePalette, NEUTRAL_PALETTE } from '@/lib/content/derive-palette'
 import { extractSvgColors, pickBrandColors } from '@/lib/content/svg-colors'
 
 export const runtime = 'nodejs'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export type { PaletteData, PaletteSwatch } from '@/types/palette'
 
 export async function POST(req: Request) {
-  const { sessionId }: { sessionId: string } = await req.json()
+  const body = await readJsonBody<{ sessionId?: string }>(req)
+  if (body instanceof NextResponse) return body
+  const sessionId = body?.sessionId
 
-  if (!sessionId) {
-    return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
+  if (!sessionId || !UUID_RE.test(sessionId)) {
+    return NextResponse.json({ error: 'Missing or invalid sessionId' }, { status: 400 })
   }
 
   const auth = await requireSessionAccess(sessionId)

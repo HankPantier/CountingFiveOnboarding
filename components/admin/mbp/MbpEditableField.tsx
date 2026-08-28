@@ -102,6 +102,7 @@ export default function MbpEditableField({
         {jsonEdit ? (
           <textarea
             autoFocus
+            aria-label={`Edit ${fieldPath}`}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
@@ -111,6 +112,7 @@ export default function MbpEditableField({
         ) : (
           <input
             autoFocus
+            aria-label={`Edit ${fieldPath}`}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={onKeyDown}

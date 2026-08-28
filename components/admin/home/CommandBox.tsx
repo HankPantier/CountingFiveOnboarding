@@ -241,8 +241,15 @@ function ActionChip({ href, onNavigate, children }: { href: string; onNavigate: 
   return (
     <span
       role="link"
-      tabIndex={-1}
+      tabIndex={0}
       onClick={e => { e.stopPropagation(); onNavigate(href) }}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          e.stopPropagation()
+          onNavigate(href)
+        }
+      }}
       className="text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy px-2 py-1 rounded-pill hover:bg-brand-cyan/10 transition-colors"
     >
       {children}

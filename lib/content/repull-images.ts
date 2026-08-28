@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 import { createServerClient } from '@/lib/supabase/server'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
-import { collectPageImageRefs } from './image-coverage'
+import { collectPageImageRefs, computeImageCoverage } from './image-coverage'
 import { resolveStockPhotos } from './stock-photo-resolver'
 import { makeProgressWriter, type ProgressWriter } from './task-progress'
 import {
@@ -34,6 +34,42 @@ export type RepullResult =
       // Referenced filenames still absent from the repo after the push.
       stillMissing: string[]
     }
+
+// Server-side image-coverage check against the DRAFT branch. The one-click
+// Deliverables flow gates on coverage client-side, but a direct editor Publish
+// bypassed it — this lets the publish route block a merge that would render
+// "Image not found" live. Same refs + pure diff the assembler and re-pull use.
+export async function getDraftImageCoverage(
+  contentJobId: string
+): Promise<{ ok: boolean; missing: string[] }> {
+  const supabase = createServerClient()
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('github_repo')
+    .eq('id', contentJobId)
+    .single()
+  if (!job?.github_repo) return { ok: true, missing: [] }
+
+  const { data: pages } = await supabase
+    .from('generated_pages')
+    .select('page_url, hero_image, hero_image_query, content_markdown, generation_status')
+    .eq('content_job_id', contentJobId)
+  const completed = (pages ?? []).filter(
+    p => p.generation_status === 'complete' && p.content_markdown
+  )
+  const imageRefs = collectPageImageRefs(completed)
+  if (imageRefs.length === 0) return { ok: true, missing: [] }
+
+  let repoAssets = new Set<string>()
+  try {
+    const tree = await listTree(job.github_repo, DRAFT_BRANCH, 'public/content-assets/')
+    repoAssets = new Set(tree.filter(e => e.type === 'blob').map(e => e.path.split('/').pop() ?? ''))
+  } catch {
+    repoAssets = new Set()
+  }
+  const coverage = computeImageCoverage(imageRefs, repoAssets)
+  return { ok: coverage.missing.length === 0, missing: coverage.missing }
+}
 
 export async function repullJobImages(
   contentJobId: string,
@@ -145,14 +181,25 @@ export async function repullJobImages(
       .eq('session_id', job.session_id)
 
     const toPush = (assetRows ?? []).filter(a => referenced.has(a.file_name) && !repoAssets.has(a.file_name))
+    // Download in bounded-concurrency batches rather than strictly one-at-a-time
+    // — the package assembler uses the same guard (a prior unbounded Promise.all
+    // exhausted the Supabase connection pool; a serial loop blew the maxDuration
+    // budget on large sites). 8 balances throughput against pool pressure.
+    const DOWNLOAD_CONCURRENCY = 8
     const entries: { path: string; content: Buffer }[] = []
-    for (const asset of toPush) {
-      const { data, error } = await supabase.storage.from('session-assets').download(asset.storage_path)
-      if (error || !data) {
-        console.warn(`[repull] Failed to download asset ${asset.storage_path}: ${error?.message}`)
-        continue
-      }
-      entries.push({ path: `public/content-assets/${asset.file_name}`, content: Buffer.from(await data.arrayBuffer()) })
+    for (let i = 0; i < toPush.length; i += DOWNLOAD_CONCURRENCY) {
+      const batch = toPush.slice(i, i + DOWNLOAD_CONCURRENCY)
+      const downloaded = await Promise.all(
+        batch.map(async (asset) => {
+          const { data, error } = await supabase.storage.from('session-assets').download(asset.storage_path)
+          if (error || !data) {
+            console.warn(`[repull] Failed to download asset ${asset.storage_path}: ${error?.message}`)
+            return null
+          }
+          return { path: `public/content-assets/${asset.file_name}`, content: Buffer.from(await data.arrayBuffer()) }
+        })
+      )
+      entries.push(...downloaded.filter((e): e is NonNullable<typeof e> => e !== null))
     }
 
     if (entries.length > 0) {

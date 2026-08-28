@@ -94,7 +94,9 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
     }
 
     poll()
-    intervalId = setInterval(poll, 2500)
+    // 5s matches every other long-running progress poller; a multi-hour batch
+    // at 2.5s issued ~1440 full-scan status requests/hour for no UX gain.
+    intervalId = setInterval(poll, 5000)
     return () => {
       active = false
       if (intervalId) clearInterval(intervalId)
@@ -156,7 +158,7 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
       <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
         <table className="w-full font-body text-sm">
           <thead>
-            <tr className="border-b border-border-default bg-[#FBFCFD]">
+            <tr className="border-b border-border-default bg-surface-header">
               <th className="px-4 py-3 text-left font-heading text-xs font-semibold uppercase tracking-wide text-text-secondary">
                 Site
               </th>

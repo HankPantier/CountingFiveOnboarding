@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
+import { readJsonBody } from '@/app/api/_json'
 import { contentReadySessionIds } from '@/lib/admin/content-ready'
 import type { AssignedClient, UpdateAssignmentsRequest, UserAssignmentsResponse } from '@/types/users'
 
@@ -42,7 +43,8 @@ export async function PUT(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const body = (await req.json()) as UpdateAssignmentsRequest
+  const body = await readJsonBody<UpdateAssignmentsRequest>(req)
+  if (body instanceof NextResponse) return body
   const next = Array.isArray(body.sessionIds)
     ? Array.from(new Set(body.sessionIds.filter(s => typeof s === 'string')))
     : null

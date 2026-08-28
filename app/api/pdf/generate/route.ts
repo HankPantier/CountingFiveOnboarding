@@ -5,9 +5,12 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { generateAndStoreMbp } from '@/lib/mbp/generate-deliverable'
 import { NextResponse } from 'next/server'
+import { readJsonBody } from '@/app/api/_json'
 
 export async function POST(req: Request) {
-  const { sessionId } = await req.json() as { sessionId: string }
+  const body = await readJsonBody<{ sessionId?: string }>(req)
+  if (body instanceof NextResponse) return body
+  const { sessionId } = body
   if (!sessionId) return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
 
   const auth = await requireSessionAccess(sessionId)

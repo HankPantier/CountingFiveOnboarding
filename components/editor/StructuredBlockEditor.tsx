@@ -268,6 +268,7 @@ function CardEditor({
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
+                aria-label="Move card up"
                 onClick={() => emitRemount(moveCard(textRef.current, i, 'up'))}
                 disabled={i === 0}
                 className={ctrlBtn}
@@ -276,6 +277,7 @@ function CardEditor({
               </button>
               <button
                 type="button"
+                aria-label="Move card down"
                 onClick={() => emitRemount(moveCard(textRef.current, i, 'down'))}
                 disabled={i === model.cards.length - 1}
                 className={ctrlBtn}

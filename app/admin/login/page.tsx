@@ -96,10 +96,11 @@ export default function LoginPage() {
           )}
 
           <div className="space-y-1">
-            <label className="text-sm font-semibold text-text-secondary font-body">
+            <label htmlFor="admin-login-email" className="text-sm font-semibold text-text-secondary font-body">
               Email
             </label>
             <input
+              id="admin-login-email"
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -110,10 +111,11 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-semibold text-text-secondary font-body">
+            <label htmlFor="admin-login-password" className="text-sm font-semibold text-text-secondary font-body">
               Password
             </label>
             <input
+              id="admin-login-password"
               type="password"
               value={password}
               onChange={e => setPassword(e.target.value)}

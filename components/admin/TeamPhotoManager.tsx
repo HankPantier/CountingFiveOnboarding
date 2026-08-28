@@ -280,7 +280,7 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls, 
                     </span>
                   )}
                   {!asset && conf === 'low' && (
-                    <span className="inline-block mt-0.5 text-[10px] font-heading font-semibold text-warning">
+                    <span className="inline-block mt-0.5 text-[10px] font-heading font-semibold text-warning-strong">
                       Possible match — confirm
                     </span>
                   )}

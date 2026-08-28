@@ -51,5 +51,7 @@ export async function POST(req: Request) {
     },
   })
 
-  return result.toUIMessageStreamResponse()
+  return result.toUIMessageStreamResponse({
+    onError: () => 'The assistant hit an error — please try again.',
+  })
 }

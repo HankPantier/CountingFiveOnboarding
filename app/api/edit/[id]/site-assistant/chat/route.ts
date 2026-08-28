@@ -4,6 +4,7 @@ import { after, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
 import { safePath } from '../../_path'
+import { readJsonBody } from '@/app/api/_json'
 import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
@@ -62,7 +63,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  const body = await readJsonBody<{ messages: UIMessage[] }>(req)
+  if (body instanceof NextResponse) return body
+  const { messages } = body
   const supabase = createServerClient()
 
   try {
@@ -450,5 +453,7 @@ RULES
     },
   })
 
-  return result.toUIMessageStreamResponse()
+  return result.toUIMessageStreamResponse({
+    onError: () => 'The assistant hit an error — please try again.',
+  })
 }

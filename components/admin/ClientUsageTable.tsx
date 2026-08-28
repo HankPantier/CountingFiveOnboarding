@@ -72,7 +72,7 @@ export default function ClientUsageTable({ clients }: { clients: ClientUsage[] }
   return (
     <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
       <table className="w-full text-left">
-        <thead className="bg-[#FBFCFD]">
+        <thead className="bg-surface-header">
           <tr className="border-b border-border-default">
             <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">Client</th>
             <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Cost</th>

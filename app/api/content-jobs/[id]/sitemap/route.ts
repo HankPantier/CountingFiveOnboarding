@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
@@ -55,7 +56,9 @@ export async function POST(
   const authCheck = await requireContentJobAccess(_jobId)
   if (authCheck instanceof NextResponse) return authCheck
   const { id } = await params
-  const { pages: rawPages }: { pages: SitemapPage[] } = await req.json()
+  const body = await readJsonBody<{ pages?: SitemapPage[] }>(req)
+  if (body instanceof NextResponse) return body
+  const { pages: rawPages } = body
 
   // Validate
   if (!rawPages || rawPages.length === 0) {

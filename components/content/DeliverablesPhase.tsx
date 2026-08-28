@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import NavCurationPhase from './NavCurationPhase'
 import PackageDownloadBar from './PackageDownloadBar'
 import ProgressBar from '@/components/ui/ProgressBar'
@@ -92,6 +92,11 @@ export default function DeliverablesPhase({
   // the first status poll resolves; total === 0 means none were selected.
   const [libraryStatus, setLibraryStatus] = useState<LibrarySelectionStatus | null>(null)
   const [libraryRunning, setLibraryRunning] = useState(false)
+  // While runLibraryArticles is actively polling /library/status, the background
+  // interval below skips its own fetch — otherwise both hit the endpoint every
+  // 5s for the whole ~10-min drafting window. A ref (not state) so the stable
+  // interval reads the live value without a dependency that would tear it down.
+  const libraryRunningRef = useRef(false)
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -136,6 +141,9 @@ export default function DeliverablesPhase({
   useEffect(() => {
     let cancelled = false
     const poll = async () => {
+      // runLibraryArticles is polling this same endpoint during a run — don't
+      // double up. It calls setLibraryStatus itself, so the UI stays current.
+      if (libraryRunningRef.current) return
       try {
         const res = await fetch(`/api/content-jobs/${contentJobId}/library/status`)
         if (cancelled || !res.ok) return
@@ -182,6 +190,7 @@ export default function DeliverablesPhase({
   // A no-op (returns true immediately) when nothing was selected.
   const runLibraryArticles = async (): Promise<boolean> => {
     setLibraryRunning(true)
+    libraryRunningRef.current = true // silence the background poller for the run
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/library/run`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
@@ -203,6 +212,7 @@ export default function DeliverablesPhase({
       }
       return false
     } finally {
+      libraryRunningRef.current = false
       setLibraryRunning(false)
     }
   }
@@ -246,6 +256,14 @@ export default function DeliverablesPhase({
   // push landed → publish draft→main (Vercel deploys main). Reuses the same
   // building blocks as the standalone assemble/track path; only publish is new.
   const runFullDeploy = async () => {
+    // Going live is high-impact and hard to undo — confirm before the chain runs.
+    if (
+      !window.confirm(
+        'Publish this site live? This assembles the content and pushes it to the live site — visitors will see it once Vercel finishes deploying.'
+      )
+    ) {
+      return
+    }
     setError(null)
     setDeployErr(null)
     setConflictPrUrl(null)

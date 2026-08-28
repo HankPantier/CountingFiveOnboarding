@@ -104,6 +104,7 @@ function Swatch({
             <input
               value={draft}
               onChange={(e) => preview(e.target.value.startsWith('#') ? e.target.value : `#${e.target.value}`)}
+              aria-label={`${ROLE_LABELS[role]} hex color value`}
               spellCheck={false}
               className="w-24 rounded border border-border-default px-2 py-1 font-mono text-xs focus:border-brand-cyan focus:outline-none"
             />

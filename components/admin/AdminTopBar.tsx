@@ -75,7 +75,12 @@ export default function AdminTopBar({
         <span className="absolute right-2 top-2 h-[7px] w-[7px] rounded-full border-[1.5px] border-surface-card bg-brand-cyan" />
       </Link>
 
-      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-cyan font-heading text-xs font-semibold text-text-inverse">
+      <div
+        role="img"
+        aria-label={userName ? `Signed in as ${userName}` : 'Signed in'}
+        title={userName}
+        className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-cyan font-heading text-xs font-semibold text-text-inverse"
+      >
         {initials(userName)}
       </div>
     </header>

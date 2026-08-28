@@ -187,7 +187,7 @@ This does NOT apply to the **background** impact reviews (`reviewContentForMbpIm
 ### Phase Advancement
 Phase advances are validated server-side in `updateSessionSchema`. Claude calling `advancePhase: true` is a request, not a guarantee. The server checks:
 - Phase 1 → 2: `contact.email`, `contact.firstName`, `contact.phone`, and `websiteUrl` must all be set
-- Phase 3 → 4: both `_meta.phase3_completed_chunks` entries (`chunk1`, `chunk2`) must be present
+- Phase 3 → 4: `_meta.phase3_completed_chunks` must include `chunk1` **and** both `chunk2a` and `chunk2b` (a legacy single `chunk2` marker is still accepted in place of the 2a/2b pair)
 - Phase 4 → 5: all Tier 1 gaps must have `resolved: true`
 
 If validation fails, do not advance the phase and do not surface an error to the client.

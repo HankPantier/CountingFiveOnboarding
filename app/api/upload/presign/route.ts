@@ -2,6 +2,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
+import { readJsonBody } from '@/app/api/_json'
 
 // image/svg+xml is allowed here so the admin logo flow can presign an SVG; the
 // bytes are validated/sanitized at its own confirm step (the generic
@@ -11,7 +12,11 @@ const MAX_BYTES = 300 * 1024 * 1024
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function POST(req: Request) {
-  const { sessionId, fileName, mimeType, fileSize, assetCategory } = await req.json()
+  const body = await readJsonBody<{
+    sessionId?: string; fileName?: string; mimeType?: string; fileSize?: number; assetCategory?: string
+  }>(req)
+  if (body instanceof NextResponse) return body
+  const { sessionId, fileName, mimeType, fileSize, assetCategory } = body
 
   if (!sessionId || !fileName || !mimeType) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -49,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'File type not allowed' }, { status: 400 })
   }
 
-  if (fileSize > MAX_BYTES) {
+  if (typeof fileSize === 'number' && fileSize > MAX_BYTES) {
     return NextResponse.json({ error: 'File too large (max 300MB)' }, { status: 400 })
   }
 

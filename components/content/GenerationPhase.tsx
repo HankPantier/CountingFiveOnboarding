@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import MarkdownPreviewModal from './MarkdownPreviewModal'
 
@@ -99,6 +99,12 @@ export default function GenerationPhase({
   const [restartError, setRestartError] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
+  // url→parent lookup for the page tree's indentation — memoized so it isn't
+  // rebuilt on every render (was recreated inside the render IIFE below).
+  const parentByUrl = useMemo(
+    () => new Map((status?.pages ?? []).map(p => [p.url, p.parent])),
+    [status?.pages],
+  )
   // Count of pages stuck 'running' past the stale threshold. Computed in the
   // poll (reading the clock is a side effect, not allowed during render).
   const [staleCount, setStaleCount] = useState(0)
@@ -128,7 +134,7 @@ export default function GenerationPhase({
         // restart/retry), so it fires again when generation next settles.
         if (!generationDone) finalizedRef.current = false
         if (generationDone) {
-          clearInterval(intervalId)
+          if (intervalId) clearInterval(intervalId)
           // The Deliverables step is gated on the server-rendered content_jobs.phase.
           // When generation finishes it should be 6, but the phase can lag behind
           // the live status shown here — the batch runner never advanced it (a page
@@ -152,9 +158,12 @@ export default function GenerationPhase({
       }
     }
 
-    const intervalId = setInterval(poll, 5000)
+    // Once the job has advanced to Deliverables (phase ≥ 6), generation is done
+    // and DeliverablesPhase owns the live generation-status poll — a one-shot
+    // fetch populates this view without a second recurring interval.
+    const intervalId = jobPhase < 6 ? setInterval(poll, 5000) : null
     poll()
-    return () => { cancelled = true; clearInterval(intervalId) }
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId) }
   }, [contentJobId, pollNonce, jobPhase, router])
 
   const setAction = (key: string, on: boolean) => {
@@ -398,7 +407,6 @@ export default function GenerationPhase({
 
       <div className="max-h-[400px] overflow-y-auto space-y-1">
         {(() => {
-          const parentByUrl = new Map(status.pages.map(p => [p.url, p.parent]))
           return status.pages.map(page => {
             const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
             const depth = depthOf(page.url, parentByUrl)

@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
     terminal: true,
   } as LibrarySelectionStatus,
   canPublish: true,
+  imageCoverage: { ok: true, missing: [] as string[] },
   mergeDraftToMain: vi.fn(),
   resetDraftToMain: vi.fn(),
   ensureDraftBranch: vi.fn(),
@@ -24,6 +25,9 @@ vi.mock('@/lib/auth/access', () => ({
 }))
 vi.mock('@/lib/content/library-inclusion', () => ({
   getLibrarySelectionStatus: vi.fn(async () => h.libraryStatus),
+}))
+vi.mock('@/lib/content/repull-images', () => ({
+  getDraftImageCoverage: vi.fn(async () => h.imageCoverage),
 }))
 vi.mock('@/lib/github/repo-files', () => ({
   ensureDraftBranch: h.ensureDraftBranch,
@@ -39,6 +43,7 @@ const call = () => POST(new Request('http://test/publish', { method: 'POST' }), 
 beforeEach(() => {
   h.libraryStatus = { total: 0, pending: 0, drafting: 0, complete: 0, error: 0, terminal: true }
   h.canPublish = true
+  h.imageCoverage = { ok: true, missing: [] }
   h.mergeDraftToMain.mockReset().mockResolvedValue({ merged: true })
   h.resetDraftToMain.mockReset()
   h.ensureDraftBranch.mockReset()
@@ -59,6 +64,16 @@ describe('POST /api/edit/[id]/publish — included-library gate', () => {
     const res = await call()
     expect(res.status).toBe(200)
     expect(h.mergeDraftToMain).toHaveBeenCalledOnce()
+  })
+
+  it('blocks with 409 (no merge) when the draft still references unresolved images', async () => {
+    h.imageCoverage = { ok: false, missing: ['hero-x.jpg', 'inline-y.jpg'] }
+    const res = await call()
+    expect(res.status).toBe(409)
+    const body = (await res.json()) as { imagesMissing?: boolean; missing?: string[] }
+    expect(body.imagesMissing).toBe(true)
+    expect(body.missing).toHaveLength(2)
+    expect(h.mergeDraftToMain).not.toHaveBeenCalled()
   })
 
   it('rejects a non-publisher with 403 before the library check runs', async () => {

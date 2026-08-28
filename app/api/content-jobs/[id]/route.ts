@@ -1,6 +1,7 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
+import { readJsonBody } from '@/app/api/_json'
 import { runContentGeneration } from '@/lib/content/content-generator'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -20,7 +21,16 @@ export async function PATCH(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const body = await req.json()
+  const body = await readJsonBody<{
+    palette?: unknown
+    design_tokens?: unknown
+    confirmed_sitemap?: unknown
+    nav_config?: unknown
+    phase?: number
+    status?: string
+    error_message?: unknown
+  }>(req)
+  if (body instanceof NextResponse) return body
 
   const supabase = createServerClient()
 

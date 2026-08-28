@@ -834,7 +834,7 @@ export async function generateSinglePage(
     const degradedReason =
       'Content JSON failed to parse or came back empty after retries — raw draft saved for salvage; will auto-retry.'
 
-    await supabase
+    const { error: writeErr } = await supabase
       .from('generated_pages')
       .update({
         content_markdown: result.content,
@@ -863,6 +863,15 @@ export async function generateSinglePage(
         generation_error: degraded ? degradedReason : null,  // clear prior failure on a clean (re)generation
       })
       .eq('id', genPage.id)
+
+    // A non-throwing write error (constraint/client failure) would otherwise
+    // leave the row 'running' while we report 'complete' — the content is
+    // silently discarded and completedThisRun is over-counted. Surface it as an
+    // error so the cron sweep + retry path re-attempt the page.
+    if (writeErr) {
+      console.error(`[content-gen] DB write failed for ${outline.page_url}: ${writeErr.message}`)
+      return { status: 'error', pageUrl: outline.page_url, error: writeErr.message }
+    }
 
     if (degraded) {
       console.error(`[content-gen] Degraded (marked error): ${outline.page_title} (${outline.page_url})`)
@@ -1041,16 +1050,22 @@ export async function runContentGeneration(
       .select('domain, created_by')
       .eq('session_id', sessionId)
     const seenDomains = new Set<string>()
-    for (const a of linkedAudits ?? []) {
+    const toPromote = (linkedAudits ?? []).filter((a) => {
       const key = `${a.domain}|${a.created_by ?? ''}`
-      if (seenDomains.has(key)) continue
+      if (seenDomains.has(key)) return false
       seenDomains.add(key)
-      await promoteAuditGroupByDomain(supabase, {
-        domain: a.domain,
-        createdBy: a.created_by,
-        to: 'client',
-      })
-    }
+      return true
+    })
+    // Distinct domains are independent — promote them in parallel.
+    await Promise.all(
+      toPromote.map((a) =>
+        promoteAuditGroupByDomain(supabase, {
+          domain: a.domain,
+          createdBy: a.created_by,
+          to: 'client',
+        })
+      )
+    )
 
     const firmName = pageCtx.schema.business?.name ?? 'Unknown firm'
 

@@ -33,7 +33,9 @@ export function useTaskProgress(taskId: string | null, active: boolean): TaskPro
       }
     }
     void poll()
-    const iv = setInterval(poll, 1500)
+    // 2.5s keeps the bar responsive without hammering /api/progress through a
+    // multi-minute deploy/repull (1.5s was ~40 req/min for the whole run).
+    const iv = setInterval(poll, 2500)
     return () => {
       cancelled = true
       clearInterval(iv)

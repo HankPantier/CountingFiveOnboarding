@@ -27,6 +27,7 @@ export async function PATCH(
     .from('page_outlines')
     .select('id, content_job_id, page_url, h1, sections, cta')
     .eq('id', pageId)
+    .eq('content_job_id', _jobId)
     .single()
   if (loadErr || !existing) {
     return NextResponse.json({ error: loadErr?.message ?? 'Outline not found' }, { status: 404 })
@@ -72,6 +73,7 @@ export async function PATCH(
     .from('page_outlines')
     .update(updates)
     .eq('id', pageId)
+    .eq('content_job_id', _jobId)
     .select('*')
     .single()
 

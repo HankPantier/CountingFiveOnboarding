@@ -75,7 +75,7 @@ export default function ApproveButton({ sessionId }: { sessionId: string }) {
         <p className="text-sm font-body text-error mb-3">{error}</p>
       )}
       {warning && (
-        <p className="text-sm font-body text-warning mb-3">{warning}</p>
+        <p className="text-sm font-body text-warning-strong mb-3">{warning}</p>
       )}
       {busy && (
         <div className="mb-3 flex items-center gap-2 text-sm font-body text-text-secondary">

@@ -32,16 +32,30 @@ export async function runWhoisLookup(sessionId: string, domain: string): Promise
     // Non-fatal — advance to Phase 3 with empty technical fields
   }
 
-  const { data: session } = await supabase
+  const { data: session, error: fetchErr } = await supabase
     .from('sessions')
     .select('schema_data, current_phase')
     .eq('id', sessionId)
     .single()
 
+  // A re-fetch failure (DB/network transient) is non-fatal — CLAUDE.md requires
+  // WHOIS to advance to Phase 3 regardless. But we can't safely merge into a
+  // schema we couldn't read, so advance the phase alone and leave schema_data
+  // untouched (the phase guard keeps it a no-op if the row already moved on).
+  if (fetchErr || !session) {
+    console.warn('[WHOIS] Session re-fetch failed — advancing phase without schema write:', fetchErr)
+    await supabase
+      .from('sessions')
+      .update({ current_phase: 3 })
+      .eq('id', sessionId)
+      .eq('current_phase', 2)
+    return
+  }
+
   // Only advance a session that is still on Phase 2. If it has moved on (a
   // concurrent run, a manual advance), this lookup is stale — don't clobber
   // the phase or overwrite newer schema_data.
-  if (session?.current_phase !== 2) {
+  if (session.current_phase !== 2) {
     console.warn('[WHOIS] Session', sessionId, 'no longer on Phase 2 — skipping write')
     return
   }

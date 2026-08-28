@@ -40,6 +40,15 @@ type OutlineResult = {
   notes?: string
 }
 
+// Per-page research row, as consumed here. Loosely typed (JSONB columns) so the
+// existing downstream casts (as string[], as Array<...>) still apply.
+export type PageResearch = {
+  target_keyword: string | null
+  secondary_keywords: unknown
+  competitor_references: unknown
+  existing_content: string | null
+}
+
 export async function generateOutlineForPage(
   outlineId: string,
   pageTitle: string,
@@ -49,18 +58,26 @@ export async function generateOutlineForPage(
   schema: SessionSchema,
   palette: PaletteData | null,
   auditResult: AuditResult | null = null,
-  auditPageByUrl?: Map<string, AuditPageSummary>
+  auditPageByUrl?: Map<string, AuditPageSummary>,
+  researchByUrl?: Map<string, PageResearch>
 ): Promise<void> {
   const supabase = createServerClient()
 
-  // Load research results for this page
-  const { data: research } = await supabase
-    .from('research_results')
-    .select('target_keyword, secondary_keywords, competitor_references, existing_content')
-    .eq('content_job_id', contentJobId)
-    .eq('page_url', pageUrl)
-    .limit(1)
-    .maybeSingle()
+  // Research for this page — prefer the batch-loaded Map (one query for the whole
+  // job); fall back to a per-page SELECT when called standalone (regenerate route).
+  let research: PageResearch | null
+  if (researchByUrl) {
+    research = researchByUrl.get(pageUrl) ?? null
+  } else {
+    const { data } = await supabase
+      .from('research_results')
+      .select('target_keyword, secondary_keywords, competitor_references, existing_content')
+      .eq('content_job_id', contentJobId)
+      .eq('page_url', pageUrl)
+      .limit(1)
+      .maybeSingle()
+    research = data
+  }
 
   const targetKeyword = research?.target_keyword ?? pageTitle.toLowerCase()
   const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
@@ -286,6 +303,18 @@ export async function runOutlineGeneration(
   let completedThisRun = 0
 
   const auditPageByUrl = buildAuditPageIndex(auditResult)
+
+  // Batch-load research once for the whole job (was a per-page SELECT inside
+  // generateOutlineForPage = N+1), mirroring runContentGeneration's researchByUrl.
+  const { data: researchRows } = await supabase
+    .from('research_results')
+    .select('page_url, target_keyword, secondary_keywords, competitor_references, existing_content')
+    .eq('content_job_id', contentJobId)
+  const researchByUrl = new Map<string, PageResearch>()
+  for (const r of researchRows ?? []) {
+    if (!researchByUrl.has(r.page_url)) researchByUrl.set(r.page_url, r)
+  }
+
   const pending = outlines.filter(o => !o.h1)
   for (let i = 0; i < pending.length; i += BATCH_SIZE) {
     if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
@@ -304,7 +333,8 @@ export async function runOutlineGeneration(
           schema,
           palette,
           auditResult,
-          auditPageByUrl
+          auditPageByUrl,
+          researchByUrl
         )
       } catch (err) {
         console.error(`[outline-gen] Error generating outline for ${outline.page_url}:`, err)

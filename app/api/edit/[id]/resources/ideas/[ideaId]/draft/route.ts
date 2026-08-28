@@ -24,6 +24,13 @@ export async function POST(
   const { id, ideaId } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+  // Drafting writes generated content to the draft branch — a content-job
+  // (re)generation op. Per CLAUDE.md rule 6 this is manager-only; editors and
+  // Site Owners get draft access via resolveEditContext but are excluded here
+  // (mirrors the predicate in requireContentJobAccess).
+  if (!ctx.user.isAdmin && !ctx.user.capabilities.includes('manager')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
   if (!UUID_RE.test(ideaId)) {
     return NextResponse.json({ error: 'Invalid idea id' }, { status: 400 })
   }

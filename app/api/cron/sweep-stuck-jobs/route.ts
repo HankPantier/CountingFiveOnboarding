@@ -112,6 +112,21 @@ export async function GET(req: Request) {
   const [research, pages, ideas, socials, oneoffs, audits, batchTargets, newPages] =
     sweep ?? [null, null, null, null, null, null, null, null]
 
+  // content_job_library_selections stuck at 'drafting' (worker died mid-draft —
+  // the resource_ideas sweep above already reset the underlying idea to error)
+  // hold the publish gate at 409 forever. Reset them to 'error' so the library
+  // auto-resume below re-drafts them; a still-live idea is re-claimed idempotently.
+  const { data: libSelections } = await supabase
+    .from('content_job_library_selections')
+    .update({ status: 'error', error: 'Draft timed out (swept by cron)', updated_at: new Date().toISOString() })
+    .eq('status', 'drafting')
+    .lt('updated_at', cutoff)
+    .select('id')
+  const librarySelectionsSwept = libSelections?.length ?? 0
+  if (librarySelectionsSwept) {
+    console.warn(`[sweep-stuck-jobs] library-selections reset to error=${librarySelectionsSwept}`)
+  }
+
   // Prune rate-limiter events older than 24h (largest window is 1h; 24h keeps
   // the table tiny without racing any active window).
   await supabase
@@ -176,6 +191,46 @@ export async function GET(req: Request) {
     }
     if (generationResumed) {
       console.warn(`[sweep-stuck-jobs] content-generation auto-resumed jobs=${generationResumed}`)
+    }
+  }
+
+  // Library selections: a job with non-terminal selections (pending/error) and
+  // none currently drafting has no worker coming back for it — re-trigger
+  // /library/run (idempotent: it reconciles in-flight rows and retries the rest).
+  // Without this a stalled library draft blocks publish permanently.
+  const { data: liveSelections } = await supabase
+    .from('content_job_library_selections')
+    .select('content_job_id, status')
+    .in('status', ['pending', 'drafting', 'error'])
+
+  const libCounts = new Map<string, { open: number; drafting: number }>()
+  for (const s of liveSelections ?? []) {
+    const c = libCounts.get(s.content_job_id) ?? { open: 0, drafting: 0 }
+    if (s.status === 'drafting') c.drafting += 1
+    else c.open += 1 // pending | error
+    libCounts.set(s.content_job_id, c)
+  }
+  const resumableLibraryJobs = [...libCounts.entries()]
+    .filter(([, c]) => c.open > 0 && c.drafting === 0)
+    .map(([jobId]) => jobId)
+    .slice(0, 5)
+
+  let librarySelectionsResumed = 0
+  if (resumeBase && resumableLibraryJobs.length) {
+    const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
+    for (const jobId of resumableLibraryJobs) {
+      try {
+        const res = await fetch(`${url}/api/content-jobs/${jobId}/library/run`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+        if (res.ok) librarySelectionsResumed += 1
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] library auto-resume failed for', jobId, err)
+      }
+    }
+    if (librarySelectionsResumed) {
+      console.warn(`[sweep-stuck-jobs] library-selections auto-resumed jobs=${librarySelectionsResumed}`)
     }
   }
 
@@ -320,5 +375,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, cutoff })
 }

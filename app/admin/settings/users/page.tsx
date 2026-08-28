@@ -65,7 +65,7 @@ export default async function UsersPage() {
       <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
         <table className="w-full text-sm font-body">
           <thead>
-            <tr className="border-b border-border-default bg-[#FBFCFD]">
+            <tr className="border-b border-border-default bg-surface-header">
               <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Name</th>
               <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Email</th>
               <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Role</th>

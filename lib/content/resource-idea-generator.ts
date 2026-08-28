@@ -267,8 +267,19 @@ Return ONLY a JSON array of ${count} objects:
 
   const ideas: GeneratedIdea[] = Array.isArray(parsed) ? (parsed as GeneratedIdea[]) : []
 
-  // Belt-and-suspenders dedupe by normalized title, then verify every
-  // suggested external URL before it can ever reach a drafting prompt.
+  // Verify every suggested external URL once, up front — deduped across all
+  // ideas into a single headCheckUrls call. The per-idea call inside the loop
+  // was up to 9 sequential rounds of 8s timeouts (~72s worst case) that risked
+  // blowing the function budget. liveByUrl then filters each idea's links.
+  const allSuggested = ideas.flatMap((i) =>
+    Array.isArray(i.suggested_external_links) ? i.suggested_external_links : []
+  )
+  const dedupedSuggested = [...new Map(allSuggested.map((l) => [l.url, l])).values()]
+  const liveByUrl = new Map(
+    (await headCheckUrls(dedupedSuggested)).map((l) => [l.url, l])
+  )
+
+  // Belt-and-suspenders dedupe by normalized title.
   const known = new Set(existingTitles.map((t) => t.toLowerCase().trim()))
   let created = 0
   for (const idea of ideas) {
@@ -277,9 +288,11 @@ Return ONLY a JSON array of ${count} objects:
     if (known.has(norm)) continue
     known.add(norm)
 
-    const verifiedLinks = await headCheckUrls(
+    const verifiedLinks = (
       Array.isArray(idea.suggested_external_links) ? idea.suggested_external_links : []
     )
+      .map((l) => liveByUrl.get(l.url))
+      .filter((l): l is ExternalLink => l !== undefined)
 
     const { error } = await supabase.from('resource_ideas').insert({
       content_job_id: contentJobId,

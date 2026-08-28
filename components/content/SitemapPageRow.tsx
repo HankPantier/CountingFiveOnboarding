@@ -43,6 +43,7 @@ export default function SitemapPageRow({
           value={page.title}
           onChange={e => onChange({ ...page, title: e.target.value })}
           placeholder="Page title"
+          aria-label="Page title"
           className="flex-1 min-w-0 px-2 py-1 text-sm font-body bg-transparent border border-transparent hover:border-border-default focus:border-brand-cyan focus:outline-none rounded transition-colors"
         />
         <input
@@ -51,6 +52,7 @@ export default function SitemapPageRow({
           onChange={e => onChange({ ...page, url: e.target.value })}
           onBlur={e => onChange({ ...page, url: formatSlug(e.target.value) })}
           placeholder="/url-slug"
+          aria-label="Page URL"
           className="w-[220px] flex-shrink-0 px-2 py-1 text-sm font-mono text-text-secondary bg-transparent border border-transparent hover:border-border-default focus:border-brand-cyan focus:outline-none rounded transition-colors"
         />
         <button

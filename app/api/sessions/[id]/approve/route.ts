@@ -1,5 +1,7 @@
 export const runtime = 'nodejs'
-export const maxDuration = 30
+// PDF generation + dual storage upload (intake summary + MBP) can exceed the
+// 30s default on a large session; 60s gives headroom.
+export const maxDuration = 60
 
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'

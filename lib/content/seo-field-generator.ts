@@ -1,7 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
-import { GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
+import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { extractJson } from './extract-json'
 import type { SessionSchema } from '@/types/session-schema'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
@@ -130,9 +130,12 @@ Ground everything in the page content and firm profile above. NEVER invent facts
   const { text, usage } = await generateText({
     model: anthropic(MODEL),
     prompt,
-    // Headroom for adaptive-thinking reasoning tokens ahead of the JSON answer.
-    maxOutputTokens: 3000,
-    providerOptions: GENERATION_PROVIDER_OPTIONS,
+    // Small structured JSON (incl. a 4–6 item FAQ). Low-effort adaptive thinking
+    // + a generous budget: high effort against a tight 3000 budget starved the
+    // JSON answer, truncating it into a silent empty faq_block (same failure the
+    // outline generator hit — see OUTLINE_PROVIDER_OPTIONS).
+    maxOutputTokens: 8000,
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
     maxRetries: 4,
   })
 

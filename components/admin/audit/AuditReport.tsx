@@ -595,7 +595,7 @@ function PageInventoryBody({ pages }: { pages: PageSummary[] }) {
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm font-body">
           <thead>
-            <tr className="border-b border-border-default bg-[#FBFCFD] text-left">
+            <tr className="border-b border-border-default bg-surface-header text-left">
               {['URL', 'Title', 'Status', 'H1', 'Schema', 'Words', 'Issues'].map((h) => (
                 <th
                   key={h}
@@ -722,7 +722,7 @@ function IntelTable({ headers, rows }: { headers: string[]; rows: string[][] }) 
     <div className="mt-3 overflow-x-auto">
       <table className="w-full text-sm font-body">
         <thead>
-          <tr className="border-b border-border-default bg-[#FBFCFD]">
+          <tr className="border-b border-border-default bg-surface-header">
             {headers.map((h) => (
               <th key={h} className={intelTableHead}>{h}</th>
             ))}
@@ -935,7 +935,7 @@ function NarrativeRecsBody({ narrative }: { narrative: NarrativeIntelligence }) 
     <div className="overflow-x-auto">
       <table className="w-full text-sm font-body">
         <thead>
-          <tr className="border-b border-border-default bg-[#FBFCFD]">
+          <tr className="border-b border-border-default bg-surface-header">
             {['Priority', 'Issue & Impact', 'Section', 'Revaltus Service'].map((h) => (
               <th key={h} className={intelTableHead}>
                 {h}

@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
+import { anthropic, type AnthropicProviderOptions } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
+import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { ANTI_SLOP_RULES } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
@@ -67,12 +68,14 @@ ${ANTI_SLOP_RULES}`
   // platform blocks together can overrun a tight budget and truncate the JSON
   // mid-object (a `length` finish confirms it) — hence the factored retry.
   const attempt = async (
-    maxOutputTokens: number
+    maxOutputTokens: number,
+    providerOptions: { anthropic: AnthropicProviderOptions }
   ): Promise<SocialJson | { failed: true; text: string; finishReason: string }> => {
     const { text, usage, finishReason } = await generateText({
       model: anthropic(SOCIAL_MODEL),
       prompt,
       maxOutputTokens,
+      providerOptions,
       maxRetries: 4,
     })
     checkTokenBudget('social', input.slug, usage?.inputTokens, 5000)
@@ -109,12 +112,15 @@ ${ANTI_SLOP_RULES}`
     }
   }
 
-  let res = await attempt(4000)
+  // First pass: adaptive thinking at high effort (async content-writing path,
+  // per CLAUDE.md). Retry: low effort so short reasoning leaves the larger budget
+  // for the full JSON (mirrors the outline/page-body retry safety net).
+  let res = await attempt(4000, GENERATION_PROVIDER_OPTIONS)
   if ('failed' in res) {
     console.warn(
       `[social-gen] Parse failed for "${input.title}" (finish=${res.finishReason}) — retrying with larger budget. Raw: ${res.text.slice(0, 200)}`
     )
-    res = await attempt(8000)
+    res = await attempt(8000, OUTLINE_PROVIDER_OPTIONS)
   }
   if ('failed' in res) {
     console.error(

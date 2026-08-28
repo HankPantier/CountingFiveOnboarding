@@ -35,6 +35,7 @@ export default function SwatchEditor({
         <input
           type="text"
           value={hex}
+          aria-label={`Hex color value for ${name}`}
           onChange={e => {
             const v = e.target.value
             if (/^#[0-9a-fA-F]{0,6}$/.test(v)) onChange(v)

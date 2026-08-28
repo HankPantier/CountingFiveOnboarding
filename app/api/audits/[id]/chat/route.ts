@@ -104,5 +104,7 @@ export async function POST(
     },
   })
 
-  return result.toUIMessageStreamResponse()
+  return result.toUIMessageStreamResponse({
+    onError: () => 'The assistant hit an error — please try again.',
+  })
 }

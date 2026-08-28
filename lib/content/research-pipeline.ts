@@ -1,7 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { runKeywordResearch } from './keyword-research'
 import { fetchCompetitorPages, fetchExistingContent } from './competitor-fetch'
-import { runOutlineGeneration } from './outline-generator'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -141,10 +140,26 @@ export async function runResearchPipeline(
 
     console.warn(`[content-job] phase 3→4 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
 
-    // Fire outline generation automatically
-    runOutlineGeneration(contentJobId, sessionId).catch(err =>
-      console.error('[outline-gen] Pipeline failed:', err)
-    )
+    // Kick off outline generation via an HTTP self-call so it runs as its own
+    // Vercel invocation (the generate route sets maxDuration 300 and wraps the
+    // work in after()). A bare fire-and-forget here would be an unawaited promise
+    // dangling inside the sitemap route's after() budget and could be cut off,
+    // stranding outline rows at h1 = null with no cron to resume them.
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+    const cronSecret = process.env.CRON_SECRET
+    if (baseUrl && cronSecret) {
+      const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+      try {
+        await fetch(`${url}/api/content-jobs/${contentJobId}/outlines/generate`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+      } catch (err) {
+        console.error('[outline-gen] Trigger failed:', err)
+      }
+    } else {
+      console.warn('[outline-gen] Auto-start skipped — NEXT_PUBLIC_APP_URL or CRON_SECRET missing.')
+    }
 
     // Send email notification (skip if Resend not configured)
     if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {

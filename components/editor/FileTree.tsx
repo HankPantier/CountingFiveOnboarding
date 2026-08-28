@@ -72,7 +72,14 @@ function fileButtonClass(selected: boolean): string {
 }
 
 function DirtyDot() {
-  return <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-warning align-middle" />
+  return (
+    <span
+      role="img"
+      aria-label="Unsaved changes"
+      title="Unsaved changes"
+      className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-warning align-middle"
+    />
+  )
 }
 
 function Chevron({ open }: { open: boolean }) {

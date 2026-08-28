@@ -279,7 +279,7 @@ export default function AuditsTable({
         <div className="overflow-x-auto">
           <table className="w-full text-sm font-body">
             <thead>
-              <tr className="border-b border-border-default bg-[#FBFCFD] text-left">
+              <tr className="border-b border-border-default bg-surface-header text-left">
                 <th className="w-10 px-4 py-3">
                   <input
                     ref={headerRef}

@@ -86,23 +86,27 @@ export async function runBlogBatch(batchId: string): Promise<void> {
     .select('id, resource_idea_id')
     .eq('batch_id', batchId)
     .eq('status', 'generating')
-  for (const t of stuck ?? []) {
-    if (!t.resource_idea_id) continue
-    const { data: idea } = await supabase
+  const stuckRows = (stuck ?? []).filter((t) => t.resource_idea_id)
+  if (stuckRows.length) {
+    // Batch-load the linked ideas once (was one SELECT per stuck target = N+1).
+    const { data: ideas } = await supabase
       .from('resource_ideas')
-      .select('draft_status, draft_error')
-      .eq('id', t.resource_idea_id)
-      .single()
-    if (idea?.draft_status === 'complete') {
-      await supabase
-        .from('blog_batch_targets')
-        .update({ status: 'complete', updated_at: new Date().toISOString() })
-        .eq('id', t.id)
-    } else if (idea?.draft_status === 'error') {
-      await supabase
-        .from('blog_batch_targets')
-        .update({ status: 'error', error: idea.draft_error ?? 'Generation failed', updated_at: new Date().toISOString() })
-        .eq('id', t.id)
+      .select('id, draft_status, draft_error')
+      .in('id', stuckRows.map((t) => t.resource_idea_id as string))
+    const byId = new Map((ideas ?? []).map((i) => [i.id, i]))
+    for (const t of stuckRows) {
+      const idea = byId.get(t.resource_idea_id as string)
+      if (idea?.draft_status === 'complete') {
+        await supabase
+          .from('blog_batch_targets')
+          .update({ status: 'complete', updated_at: new Date().toISOString() })
+          .eq('id', t.id)
+      } else if (idea?.draft_status === 'error') {
+        await supabase
+          .from('blog_batch_targets')
+          .update({ status: 'error', error: idea.draft_error ?? 'Generation failed', updated_at: new Date().toISOString() })
+          .eq('id', t.id)
+      }
     }
   }
 

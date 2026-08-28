@@ -1,5 +1,6 @@
 'use client'
 
+import { useId } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 
@@ -19,6 +20,10 @@ export default function OutlineSectionRow({
   onRemove: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const fieldId = useId()
+  const wordsId = `${fieldId}-words`
+  const h2Id = `${fieldId}-h2`
+  const descId = `${fieldId}-desc`
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -53,8 +58,9 @@ export default function OutlineSectionRow({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-body text-text-muted">Words</label>
+          <label htmlFor={wordsId} className="text-xs font-body text-text-muted">Words</label>
           <input
+            id={wordsId}
             type="number"
             value={section.word_count}
             onChange={e => onChange({ ...section, word_count: parseInt(e.target.value) || 0 })}
@@ -75,8 +81,9 @@ export default function OutlineSectionRow({
       </div>
 
       <div>
-        <label className="text-xs font-heading font-semibold text-text-secondary">H2</label>
+        <label htmlFor={h2Id} className="text-xs font-heading font-semibold text-text-secondary">H2</label>
         <input
+          id={h2Id}
           type="text"
           value={section.h2}
           onChange={e => onChange({ ...section, h2: e.target.value })}
@@ -86,8 +93,9 @@ export default function OutlineSectionRow({
       </div>
 
       <div>
-        <label className="text-xs font-heading font-semibold text-text-secondary">Description</label>
+        <label htmlFor={descId} className="text-xs font-heading font-semibold text-text-secondary">Description</label>
         <textarea
+          id={descId}
           value={section.description}
           onChange={e => onChange({ ...section, description: e.target.value })}
           placeholder="What this section covers"

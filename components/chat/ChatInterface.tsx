@@ -229,7 +229,14 @@ export default function ChatInterface({
           </div>
         </div>
         {currentPhase > 0 && (
-          <div className="h-0.5 bg-border-default">
+          <div
+            className="h-0.5 bg-border-default"
+            role="progressbar"
+            aria-label="Onboarding progress"
+            aria-valuenow={Math.round(progressPct)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
             <div
               className="h-full bg-brand-cyan transition-all duration-700"
               style={{ width: `${progressPct}%` }}
@@ -396,6 +403,7 @@ export default function ChatInterface({
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={isLoading}
+              aria-label="Message"
               placeholder="Type your reply…"
               className="flex-1 border border-border-default rounded-pill px-4 py-3 text-sm font-body bg-surface-page focus:outline-none focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/15 disabled:opacity-50 transition-all duration-150"
             />

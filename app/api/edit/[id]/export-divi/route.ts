@@ -89,8 +89,10 @@ export async function GET(
     .eq('id', ctx.jobId)
     .maybeSingle()
 
-  // Logo: signed because session-assets is private. Embedded in the header
-  // layout; long TTL since it can't be refreshed after download (README notes it).
+  // Logo: signed because session-assets is private. The private-bucket contract
+  // (security rule 7) caps signed URLs at 1 hour, so the export README instructs
+  // the operator to run the Divi import within the hour or re-export — a long
+  // TTL would leak a durable direct link to the client's private asset.
   const { data: logoAsset } = await supabase
     .from('assets')
     .select('storage_path')
@@ -103,7 +105,7 @@ export async function GET(
   if (logoAsset?.storage_path) {
     const { data: signed } = await supabase.storage
       .from('session-assets')
-      .createSignedUrl(logoAsset.storage_path, 60 * 60 * 24 * 7)
+      .createSignedUrl(logoAsset.storage_path, 3600)
     logoUrl = signed?.signedUrl ?? null
   }
 

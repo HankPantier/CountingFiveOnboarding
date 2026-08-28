@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
+import { readJsonBody } from '@/app/api/_json'
 import { searchPexels, downloadPexelsImage } from '@/lib/content/pexels-fetcher'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
 import type { SessionSchema } from '@/types/session-schema'
@@ -30,7 +31,9 @@ export const runtime = 'nodejs'
  * Returns the updated asset summary.
  */
 export async function POST(req: Request) {
-  const { assetId, query } = (await req.json()) as { assetId?: string; query?: string }
+  const body = await readJsonBody<{ assetId?: string; query?: string }>(req)
+  if (body instanceof NextResponse) return body
+  const { assetId, query } = body
   if (!assetId || typeof assetId !== 'string') {
     return NextResponse.json({ error: 'assetId required' }, { status: 400 })
   }

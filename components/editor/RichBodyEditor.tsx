@@ -142,6 +142,7 @@ function LinkControl({ editor }: { editor: Editor }) {
           type="url"
           value={value}
           placeholder="https://…"
+          aria-label="Link URL"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') setOpen(false)
@@ -155,7 +156,7 @@ function LinkControl({ editor }: { editor: Editor }) {
     )
   }
   return (
-    <button type="button" onClick={start} className={tbClass(editor.isActive('link'))}>
+    <button type="button" aria-label="Link" onClick={start} className={tbClass(editor.isActive('link'))}>
       Link
     </button>
   )
@@ -186,6 +187,8 @@ function ProseSegment({
         >
           <button
             type="button"
+            aria-label="Bold"
+            aria-pressed={editor.isActive('bold')}
             onClick={() => editor.chain().focus().toggleBold().run()}
             className={tbClass(editor.isActive('bold'))}
           >
@@ -193,6 +196,8 @@ function ProseSegment({
           </button>
           <button
             type="button"
+            aria-label="Italic"
+            aria-pressed={editor.isActive('italic')}
             onClick={() => editor.chain().focus().toggleItalic().run()}
             className={`${tbClass(editor.isActive('italic'))} italic`}
           >
@@ -200,6 +205,8 @@ function ProseSegment({
           </button>
           <button
             type="button"
+            aria-label="Heading 2"
+            aria-pressed={editor.isActive('heading', { level: 2 })}
             onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
             className={tbClass(editor.isActive('heading', { level: 2 }))}
           >
@@ -207,6 +214,8 @@ function ProseSegment({
           </button>
           <button
             type="button"
+            aria-label="Heading 3"
+            aria-pressed={editor.isActive('heading', { level: 3 })}
             onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
             className={tbClass(editor.isActive('heading', { level: 3 }))}
           >
@@ -214,6 +223,8 @@ function ProseSegment({
           </button>
           <button
             type="button"
+            aria-label="Bullet list"
+            aria-pressed={editor.isActive('bulletList')}
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             className={tbClass(editor.isActive('bulletList'))}
           >
@@ -221,6 +232,8 @@ function ProseSegment({
           </button>
           <button
             type="button"
+            aria-label="Numbered list"
+            aria-pressed={editor.isActive('orderedList')}
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             className={tbClass(editor.isActive('orderedList'))}
           >

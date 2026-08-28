@@ -448,8 +448,10 @@ export default function PageEditor({
             {tabs.map((t) => (
               <button
                 key={t.id}
+                id={`editor-tab-${t.id}`}
                 role="tab"
                 aria-selected={activeTab === t.id}
+                aria-controls="editor-tabpanel"
                 onClick={() => setTab(t.id)}
                 className={`text-xs font-heading font-semibold px-4 py-1.5 transition-colors ${
                   activeTab === t.id
@@ -463,7 +465,12 @@ export default function PageEditor({
           </div>
         </div>
 
-        <div role="tabpanel" className="space-y-6">
+        <div
+          id="editor-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`editor-tab-${activeTab}`}
+          className="space-y-6"
+        >
           {activeTab === 'editor' && (
             <>
               {!isPost && !isSocial && (

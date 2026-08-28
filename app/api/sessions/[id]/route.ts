@@ -1,6 +1,7 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
+import { readJsonBody } from '@/app/api/_json'
 import { deepSetPath, isPathFilled } from '@/lib/mbp/schema-write'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { normalizeGapField } from '@/lib/mbp/completeness'
@@ -52,11 +53,13 @@ export async function PATCH(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const { fieldPath, value, isAdminOverride } = await req.json() as {
-    fieldPath: string
-    value: unknown
+  const body = await readJsonBody<{
+    fieldPath?: string
+    value?: unknown
     isAdminOverride?: boolean
-  }
+  }>(req)
+  if (body instanceof NextResponse) return body
+  const { fieldPath, value, isAdminOverride } = body
 
   if (!fieldPath) return NextResponse.json({ error: 'fieldPath required' }, { status: 400 })
 
