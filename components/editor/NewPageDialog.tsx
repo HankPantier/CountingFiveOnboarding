@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 // Mirror the server's slug normalization (create-page route) closely enough
 // for a live preview: lowercase, keep a-z0-9 and '/', spaces → hyphens.
@@ -16,8 +17,24 @@ function slugify(input: string): string {
 }
 
 type Phase = 'form' | 'generating' | 'error'
+type PageType = 'standard' | 'plans' | 'calculator'
 
 const MAX_BRIEF = 500
+
+const PRICING_COPY: Record<Exclude<PageType, 'standard'>, { url: string; label: string; blurb: string }> = {
+  plans: {
+    url: '/pricing',
+    label: 'Pricing plans page',
+    blurb:
+      'A tiered plans page with feature cards, a monthly/annual toggle, and add-ons. We seed it from the firm’s pricing (and anything the audit found on their current site), then you refine the numbers.',
+  },
+  calculator: {
+    url: '/pricing-calculator',
+    label: 'Pricing calculator page',
+    blurb:
+      'An interactive estimate: visitors pick services and options for a ballpark monthly figure. We seed it from the firm’s pricing, then you refine the rates.',
+  },
+}
 
 export default function NewPageDialog({
   sessionId,
@@ -32,6 +49,8 @@ export default function NewPageDialog({
   // Called when the AI first draft finishes — reload the file to show it.
   onGenerated: (path: string) => void
 }) {
+  const router = useRouter()
+  const [pageType, setPageType] = useState<PageType>('standard')
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [slugEdited, setSlugEdited] = useState(false)
@@ -90,7 +109,36 @@ export default function NewPageDialog({
     setError('The AI draft is taking longer than expected. Check back shortly, or edit the page directly.')
   }
 
+  // Config-driven pricing pages: enable + push the config to the draft branch,
+  // then drop the operator into the pricing editor to refine the numbers.
+  const submitPricing = async (kind: Exclude<PageType, 'standard'>) => {
+    setError(null)
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/create-pricing-page`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind }),
+      })
+      const data = (await res.json()) as { url?: string; editorPath?: string; error?: string }
+      if (!res.ok || !data.editorPath) {
+        setError(data.error ?? `Could not add the page (${res.status}).`)
+        setBusy(false)
+        return
+      }
+      // The page is staged on the draft; go refine the numbers, then publish.
+      router.push(data.editorPath)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add the page.')
+      setBusy(false)
+    }
+  }
+
   const submit = async () => {
+    if (pageType !== 'standard') {
+      void submitPricing(pageType)
+      return
+    }
     setError(null)
     if (!title.trim()) {
       setError('Enter a page title.')
@@ -180,6 +228,41 @@ export default function NewPageDialog({
         ) : (
           <>
             <div className="mt-4 space-y-4">
+              <fieldset>
+                <span className="font-heading text-xs font-semibold text-text-secondary">Page type</span>
+                <div className="mt-1.5 space-y-1.5">
+                  {([
+                    ['standard', 'Standard page', 'A normal content page you write yourself or with AI.'],
+                    ['plans', PRICING_COPY.plans.label, 'Tiered plan cards with pricing — configured, not written.'],
+                    ['calculator', PRICING_COPY.calculator.label, 'An interactive cost estimate — configured, not written.'],
+                  ] as const).map(([value, label, hint]) => (
+                    <label key={value} className="flex items-start gap-2">
+                      <input
+                        type="radio"
+                        name="pageType"
+                        checked={pageType === value}
+                        onChange={() => setPageType(value)}
+                        className="mt-0.5 accent-brand-cyan"
+                      />
+                      <span className="font-body text-sm text-text-primary">
+                        {label}
+                        <span className="block text-xs text-text-muted">{hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {pageType !== 'standard' ? (
+                <div className="rounded-lg border border-border-default bg-surface-subtle px-3 py-2.5">
+                  <p className="font-body text-sm text-text-primary">{PRICING_COPY[pageType].blurb}</p>
+                  <p className="mt-2 font-body text-xs text-text-muted">
+                    Adds <span className="text-brand-navy">{PRICING_COPY[pageType].url}</span> to the draft and
+                    opens its editor so you can review the numbers. Publish when you&apos;re ready.
+                  </p>
+                </div>
+              ) : (
+              <>
               <label className="block">
                 <span className="font-heading text-xs font-semibold text-text-secondary">Title</span>
                 <input
@@ -282,6 +365,8 @@ export default function NewPageDialog({
                 />
                 <span className="font-body text-sm text-text-primary">Add to main navigation</span>
               </label>
+              </>
+              )}
             </div>
 
             {error && (
@@ -307,10 +392,20 @@ export default function NewPageDialog({
                 <button
                   type="button"
                   onClick={() => void submit()}
-                  disabled={busy || !title.trim()}
+                  disabled={busy || (pageType === 'standard' && !title.trim())}
                   className="rounded-pill bg-brand-cyan px-4 py-1.5 font-heading text-xs font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {busy ? 'Creating…' : mode === 'ai' ? 'Create & draft' : 'Create page'}
+                  {busy
+                    ? pageType === 'standard'
+                      ? 'Creating…'
+                      : 'Adding…'
+                    : pageType === 'plans'
+                      ? 'Add pricing page'
+                      : pageType === 'calculator'
+                        ? 'Add calculator page'
+                        : mode === 'ai'
+                          ? 'Create & draft'
+                          : 'Create page'}
                 </button>
               )}
             </div>

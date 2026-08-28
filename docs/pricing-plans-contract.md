@@ -83,9 +83,18 @@ save, and the operator publishes via the content editor.
 
 ### Adding a pricing page to a live client after the fact
 
-From the content editor (`/admin/content/[id]/edit`), the ••• overflow menu has
-**"Add / edit pricing plans →"** and **"Add / edit pricing calculator →"** (staff
-only — hidden and 403'd for Site Owners). The flow:
+There are two entry points from the content editor
+(`/admin/content/[id]/edit`), both staff-only (hidden and 403'd for Site Owners):
+
+- **New page dialog** → "Page type" → *Pricing plans page* / *Pricing calculator
+  page*. This `POST`s `/api/edit/[id]/create-pricing-page` `{kind}`, which enables
+  the config (reusing an existing DB row / repo file, else AI-seeding from the
+  firm's pricing + audit-captured pricing), pushes it to the draft branch, and
+  drops the operator into the pricing editor to refine the numbers.
+- **••• overflow menu** → "Add / edit pricing plans →" / "Add / edit pricing
+  calculator →" — opens the same editor directly.
+
+The editor flow either way:
 
 1. Open the editor from the menu — it loads pre-populated from the DB row, the
    repo file, or the audit-captured base (falling back to the default).
