@@ -17,15 +17,30 @@ const str = (v: unknown): string =>
       ? v.filter((x): x is string => typeof x === 'string').join(', ')
       : ''
 
+// Schema array fields are declared arrays, but stored schema_data can carry a
+// non-array (a string/object) from an AI draft, import, or hand edit. `?? []`
+// only guards null/undefined, so a stringy value slips through and throws on
+// .filter/.map/.join/for-of. Coerce so a dirty value degrades instead of
+// crashing outline/page generation (client 07df2372 stored an array field as a
+// string → "(t ?? []).filter is not a function" on every outline). Symmetric
+// with str() (arrays → comma string): a stray non-empty string is preserved as a
+// single element so a string[] field's content survives; anything else → [].
+const arr = <T>(v: T[] | undefined | null): T[] => {
+  if (Array.isArray(v)) return v
+  const u = v as unknown
+  return typeof u === 'string' && u.trim() ? ([u.trim()] as unknown as T[]) : []
+}
+
 export function buildCredentials(schema: SessionSchema): string {
   const creds: string[] = []
-  for (const member of schema.team ?? []) {
-    if (member.certifications?.length) {
-      creds.push(`${member.name}: ${member.certifications.join(', ')}`)
+  for (const member of arr(schema.team)) {
+    const certs = arr(member.certifications)
+    if (certs.length) {
+      creds.push(`${str(member.name)}: ${certs.join(', ')}`)
     }
   }
-  for (const aff of schema.business?.affiliations ?? []) {
-    creds.push(aff)
+  for (const aff of arr(schema.business?.affiliations)) {
+    if (str(aff).trim()) creds.push(str(aff).trim())
   }
   return creds.join('\n') || 'Not specified'
 }
@@ -48,7 +63,7 @@ export function buildFirmContext(schema: SessionSchema): string {
     if (typeof v === 'string' && v.trim()) lines.push(`${label}: ${v.trim().slice(0, cap)}`)
   }
   const list = (label: string, v: string[] | undefined) => {
-    const items = (v ?? []).filter(Boolean)
+    const items = arr(v).map(x => str(x).trim()).filter(Boolean)
     if (items.length) lines.push(`${label}: ${items.join(', ')}`)
   }
 
@@ -66,14 +81,14 @@ export function buildFirmContext(schema: SessionSchema): string {
   list('Client age ranges', b?.clientAgeRanges)
   add('Growth goals', b?.growthGoals)
 
-  const services = (schema.services ?? [])
-    .filter(s => s.name)
-    .map(s => (s.description ? `${s.name} (${s.description.slice(0, 80)})` : s.name))
+  const services = arr(schema.services)
+    .filter(s => str(s?.name).trim())
+    .map(s => (str(s.description).trim() ? `${str(s.name).trim()} (${str(s.description).trim().slice(0, 80)})` : str(s.name).trim()))
   if (services.length) lines.push(`Services: ${services.join('; ')}`)
 
   // Per-niche pain points + value prop (not just names) so niche pages can speak
   // to the specific audience, not generically.
-  const niches = (schema.niches ?? []).filter(n => str(n.name).trim())
+  const niches = arr(schema.niches).filter(n => str(n?.name).trim())
   if (niches.length) {
     const nicheLines = niches.map(n => {
       const bits = [str(n.name).trim()]
@@ -87,7 +102,7 @@ export function buildFirmContext(schema: SessionSchema): string {
   }
 
   // Client success stories — proof/E-E-A-T material for testimonials & stats.
-  const stories = (b?.clientSuccessStories ?? []).map(s => str(s).trim()).filter(Boolean).slice(0, 3).map(s => s.slice(0, 200))
+  const stories = arr(b?.clientSuccessStories).map(s => str(s).trim()).filter(Boolean).slice(0, 3).map(s => s.slice(0, 200))
   if (stories.length) lines.push(`Client success stories (use as proof, don't fabricate specifics): ${stories.join(' | ')}`)
 
   // Reputation & trust signals (ratings, review themes, press).
@@ -100,13 +115,14 @@ export function buildFirmContext(schema: SessionSchema): string {
     if (yelp) repBits.push(`Yelp ${yelp}`)
     const review = str(rep.reviewSummary).trim()
     if (review) repBits.push(review.slice(0, 160))
-    if (rep.pressAndMedia?.length) repBits.push(`Press: ${rep.pressAndMedia.slice(0, 3).join(', ')}`)
+    const press = arr(rep.pressAndMedia).map(p => str(p).trim()).filter(Boolean)
+    if (press.length) repBits.push(`Press: ${press.slice(0, 3).join(', ')}`)
     if (repBits.length) lines.push(`Reputation & trust signals: ${repBits.join(' | ')}`)
   }
 
   // Local competitors — for differentiation only. Never name them in copy.
-  const competitors = (b?.competitors ?? [])
-    .filter(c2 => str(c2.name).trim())
+  const competitors = arr(b?.competitors)
+    .filter(c2 => str(c2?.name).trim())
     .slice(0, 5)
     .map(c2 => {
       const bits = [str(c2.name).trim()]
@@ -134,8 +150,8 @@ export function buildFirmContext(schema: SessionSchema): string {
 // mention them. Rendered as its own block so it survives prompt truncation and
 // reads as a rule, not a suggestion.
 export function buildContentScopeBlock(schema: SessionSchema): string {
-  const emphasis = (schema.business?.contentEmphasis ?? []).filter(Boolean)
-  const exclusions = (schema.business?.contentExclusions ?? []).filter(Boolean)
+  const emphasis = arr(schema.business?.contentEmphasis).map(x => str(x).trim()).filter(Boolean)
+  const exclusions = arr(schema.business?.contentExclusions).map(x => str(x).trim()).filter(Boolean)
   if (!emphasis.length && !exclusions.length) return ''
   const lines: string[] = ['CONTENT SCOPE (client directives — obey exactly):']
   if (emphasis.length) lines.push(`Emphasize / prioritize: ${emphasis.join(', ')}.`)
@@ -153,8 +169,8 @@ export function buildBrandVoiceBlock(schema: SessionSchema): string {
   const example = str(schema.brand?.voiceExample).trim()
   return `BRAND VOICE:
 ${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
-Tone adjectives: ${schema.brand?.toneAdjectives?.join(', ') ?? ''}
-Avoid: ${schema.brand?.toneToAvoid?.join(', ') ?? ''}
+Tone adjectives: ${arr(schema.brand?.toneAdjectives).map(x => str(x).trim()).filter(Boolean).join(', ')}
+Avoid: ${arr(schema.brand?.toneToAvoid).map(x => str(x).trim()).filter(Boolean).join(', ')}
 ${personality ? `Personality: ${personality}\n` : ''}Positioning: ${schema.business?.positioningOption ?? ''} — ${str(schema.business?.positioningStatement).slice(0, 300)}
 ${example ? `\nVOICE EXAMPLE (match this writing style, do not copy it verbatim):\n${example.slice(0, 600)}\n` : ''}
 DIFFERENTIATORS (use these specifically, do not generalize):

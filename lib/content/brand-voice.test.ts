@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildFirmContext, buildBrandVoiceBlock } from './brand-voice'
+import { buildFirmContext, buildBrandVoiceBlock, buildCredentials } from './brand-voice'
 import type { SessionSchema } from '@/types/session-schema'
 
 const base = (over: Partial<SessionSchema['business']> = {}, rest: Partial<SessionSchema> = {}): SessionSchema => ({
@@ -97,6 +97,37 @@ describe('buildFirmContext — enriched MBP fields', () => {
     expect(out).toContain('pain: cash flow swings, AR aging')
     expect(out).not.toContain('value:')
     expect(out).toContain('Smith CPA')
+  })
+
+  // Regression (client 07df2372): stored schema_data held an ARRAY-typed field
+  // as a non-array (string), e.g. idealClients: 'contractors'. `?? []` only
+  // guards null/undefined, so the string slipped through and `.filter` threw
+  // "(t ?? []).filter is not a function" — crashing ALL outline generation.
+  // Every schema array read must coerce, not just the scalar ones.
+  it('does not throw when array-typed schema fields hold non-arrays', () => {
+    const dirty = base(
+      {
+        idealClients: 'contractors and nonprofits',
+        clientAgeRanges: '35-55',
+        affiliations: 'AICPA',
+        clientSuccessStories: 'Saved a client $40k',
+        contentEmphasis: 'nonprofits',
+        contentExclusions: 'crypto',
+        competitors: 'Smith CPA',
+      } as unknown as SessionSchema['business'],
+      {
+        services: 'Bookkeeping, Tax',
+        niches: 'Dental practices',
+        team: 'Jane Doe',
+        reputation: { googleRating: '4.9', reviewSummary: 'great', trustSignalGaps: [], pressAndMedia: 'Featured in Forbes' },
+      } as unknown as Partial<SessionSchema>,
+    )
+    let out = ''
+    expect(() => { out = buildFirmContext(dirty) }).not.toThrow()
+    expect(() => buildCredentials(dirty)).not.toThrow()
+    // A string[] field stored as a plain string is preserved (not silently lost).
+    expect(out).toContain('Ideal clients: contractors and nonprofits')
+    expect(out).toContain('Emphasize / prioritize: nonprofits')
   })
 
   it('buildBrandVoiceBlock does not throw on non-string brand fields', () => {
