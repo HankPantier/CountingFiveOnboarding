@@ -51,6 +51,7 @@ function OverflowMenu({
   draftBusy,
   dirtyCount,
   canPublishLive,
+  isOwner,
   onRollback,
   onSyncDraft,
   onResetDraft,
@@ -63,6 +64,7 @@ function OverflowMenu({
   draftBusy: boolean
   dirtyCount: number
   canPublishLive: boolean
+  isOwner: boolean
   onRollback: () => void
   onSyncDraft: () => void
   onResetDraft: () => void
@@ -211,6 +213,31 @@ function OverflowMenu({
           >
             Open on GitHub ↗
           </a>
+          {/* Add a pricing page to a live client after the fact: configure here,
+              Save pushes it to the draft branch, then Publish to live. */}
+          {!isOwner && (
+            <>
+              <div className="border-t border-border-default my-1" />
+              <Link
+                href={`/admin/content/${sessionId}/plans`}
+                role="menuitem"
+                className={`${itemClass} text-text-secondary hover:text-brand-cyan`}
+                title="Configure the plans/pricing page (tier cards). Saving pushes it to the draft branch; publish to add /pricing to the live site."
+                onClick={() => setOpen(false)}
+              >
+                Add / edit pricing plans →
+              </Link>
+              <Link
+                href={`/admin/content/${sessionId}/pricing-calculator`}
+                role="menuitem"
+                className={`${itemClass} text-text-secondary hover:text-brand-cyan`}
+                title="Configure the interactive pricing calculator. Saving pushes it to the draft branch; publish to add /pricing-calculator to the live site."
+                onClick={() => setOpen(false)}
+              >
+                Add / edit pricing calculator →
+              </Link>
+            </>
+          )}
           <div className="border-t border-border-default my-1" />
           <a
             href={`/api/edit/${sessionId}/document`}
@@ -448,6 +475,7 @@ export default function EditorTopBar({
             draftBusy={draftBusy}
             dirtyCount={dirtyCount}
             canPublishLive={canPublishLive}
+            isOwner={isOwner}
             onRollback={onRollback}
             onSyncDraft={onSyncDraft}
             onResetDraft={onResetDraft}

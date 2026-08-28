@@ -81,6 +81,21 @@ For already-published clients, `lib/content/pricing-plans-repo-sync.ts`
 (`syncPricingPlansToRepo`) pushes the same three artifacts to the draft branch on
 save, and the operator publishes via the content editor.
 
+### Adding a pricing page to a live client after the fact
+
+From the content editor (`/admin/content/[id]/edit`), the ••• overflow menu has
+**"Add / edit pricing plans →"** and **"Add / edit pricing calculator →"** (staff
+only — hidden and 403'd for Site Owners). The flow:
+
+1. Open the editor from the menu — it loads pre-populated from the DB row, the
+   repo file, or the audit-captured base (falling back to the default).
+2. "Draft with AI" and/or edit the tiers/numbers, tick **enabled**, and **Save** —
+   for a published client this pushes `pricing-plans.json` + `pricing.md` + the
+   `/pricing` nav entry to the draft branch (`syncPricingPlansToRepo`).
+3. Back in the editor, **Publish to live** deploys it.
+
+Disabling + Save removes the three artifacts and the nav entry from the draft.
+
 ## Rendering (template)
 
 - `src/lib/content/get-pricing-plans-config.ts` reads the JSON at build time.

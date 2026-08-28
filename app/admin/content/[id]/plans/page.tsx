@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, isSiteOwner } from '@/lib/auth/access'
 import { loadPricingPlansForSession } from '@/lib/content/pricing-plans-repo-sync'
 import PricingPlansEditor from '@/components/content/PricingPlansEditor'
 import type { SessionSchema } from '@/types/session-schema'
@@ -13,9 +13,11 @@ export default async function PricingPlansPage({
 }) {
   const { id } = await params
 
-  // Managers may only open clients assigned to them.
+  // Managers may only open clients assigned to them. Site Owners are locked out
+  // of config surfaces (CLAUDE.md rule 6) — pricing config is staff-only.
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
+  if (isSiteOwner(user)) notFound()
   if (user.role !== 'admin') {
     const allowed = await getAccessibleSessionIds(user)
     if (!allowed?.includes(id)) notFound()

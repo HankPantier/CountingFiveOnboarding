@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireSessionAccess, denySiteOwnerConfig } from '@/lib/auth/access'
 import { seedPricingPlans } from '@/lib/content/pricing-plans-seed'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -22,6 +22,8 @@ export async function POST(
   }
   const auth = await requireSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
+  const ownerDenied = denySiteOwnerConfig(auth.user)
+  if (ownerDenied) return ownerDenied
 
   const supabase = createServerClient()
   const { data: session } = await supabase

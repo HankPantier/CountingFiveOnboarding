@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireSessionAccess, denySiteOwnerConfig } from '@/lib/auth/access'
 import { savePricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
   loadPricingCalculatorForSession,
@@ -29,6 +29,8 @@ export async function GET(
   }
   const auth = await requireSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
+  const ownerDenied = denySiteOwnerConfig(auth.user)
+  if (ownerDenied) return ownerDenied
 
   const record = await loadPricingCalculatorForSession(sessionId)
   return NextResponse.json({
@@ -51,6 +53,8 @@ export async function PUT(
   }
   const auth = await requireSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
+  const ownerDenied = denySiteOwnerConfig(auth.user)
+  if (ownerDenied) return ownerDenied
 
   let body: PutBody
   try {
