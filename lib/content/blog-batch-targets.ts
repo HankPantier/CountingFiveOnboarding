@@ -56,7 +56,9 @@ export async function resolveEligibility(
 
 // Create one real per-client idea row per eligible client (the existing pipeline
 // drafts these against each client's MBP) plus the batch_target rows that the
-// runner processes. Shared by batch creation and add-clients.
+// runner processes. Shared by batch creation and add-clients. Returns the
+// session→idea-id map it already builds, so a single-client caller (library
+// inclusion) can read the created idea id without a follow-up SELECT.
 export async function insertBatchTargets(
   supabase: ServerClient,
   batchId: string,
@@ -64,7 +66,7 @@ export async function insertBatchTargets(
   verifiedLinks: ExternalLink[],
   eligible: BatchClient[],
   ineligible: BatchClient[]
-): Promise<{ error: string | null }> {
+): Promise<{ error: string | null; ideaBySession: Map<string, string> }> {
   let ideaBySession = new Map<string, string>()
 
   if (eligible.length) {
@@ -90,7 +92,7 @@ export async function insertBatchTargets(
 
     if (ideasErr || !ideas) {
       console.error('[blog-batch] Failed to create per-client ideas:', ideasErr?.message)
-      return { error: 'Failed to create per-client ideas' }
+      return { error: 'Failed to create per-client ideas', ideaBySession }
     }
     ideaBySession = new Map(ideas.map((i) => [i.session_id, i.id]))
   }
@@ -120,8 +122,8 @@ export async function insertBatchTargets(
   const { error: targetsErr } = await supabase.from('blog_batch_targets').insert(targetRows)
   if (targetsErr) {
     console.error('[blog-batch] Failed to create targets:', targetsErr.message)
-    return { error: 'Failed to create batch targets' }
+    return { error: 'Failed to create batch targets', ideaBySession }
   }
 
-  return { error: null }
+  return { error: null, ideaBySession }
 }

@@ -54,6 +54,26 @@ async function mark(
     .eq('id', id)
 }
 
+// Settle a selection from its idea's real draft_status — reconciles a row left
+// 'drafting' (by a prior run, or a concurrent 'skipped' lock) once the underlying
+// draft has actually finished. Leaves it 'drafting' if the idea hasn't settled
+// yet; a re-run reconciles again. Shared by the in-flight pre-pass and the
+// per-selection 'skipped' branch so the terminal-status mapping lives in one place.
+async function settleFromIdeaStatus(
+  supabase: ServerClient,
+  selectionId: string,
+  ideaId: string
+): Promise<void> {
+  const { data: idea } = await supabase
+    .from('resource_ideas')
+    .select('draft_status, draft_error')
+    .eq('id', ideaId)
+    .single()
+  if (idea?.draft_status === 'complete') await mark(supabase, selectionId, 'complete', null)
+  else if (idea?.draft_status === 'error')
+    await mark(supabase, selectionId, 'error', idea.draft_error ?? 'Generation failed')
+}
+
 // The verified external sources already attached to an earlier client's draft of
 // this same batch idea, so a re-draft cites the same authoritative URLs. Empty on
 // a batch whose only client is this fresh site.
@@ -107,7 +127,9 @@ async function ensureIdeaForSelection(
     : []
   const verifiedLinks = await siblingLinks(supabase, batchId)
 
-  const { error } = await insertBatchTargets(
+  // insertBatchTargets already builds the session→idea-id map when it inserts the
+  // per-client idea row; read it back directly instead of a follow-up SELECT.
+  const { error, ideaBySession } = await insertBatchTargets(
     supabase,
     batchId,
     {
@@ -124,14 +146,7 @@ async function ensureIdeaForSelection(
     []
   )
   if (error) return null
-
-  const { data: created } = await supabase
-    .from('blog_batch_targets')
-    .select('resource_idea_id')
-    .eq('batch_id', batchId)
-    .eq('session_id', sessionId)
-    .maybeSingle()
-  return created?.resource_idea_id ?? null
+  return ideaBySession.get(sessionId) ?? null
 }
 
 // Draft every not-yet-complete library selection for a content job, committing
@@ -143,21 +158,26 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
   const supabase = createServerClient()
 
   // Reconcile any row left 'drafting' by a prior run against the idea's real
-  // draft_status, so a completed/failed draft closes out on resume.
+  // draft_status, so a completed/failed draft closes out on resume. One batched
+  // read for all in-flight ideas (not a query per row).
   const { data: inFlight } = await supabase
     .from('content_job_library_selections')
     .select('id, resource_idea_id')
     .eq('content_job_id', contentJobId)
     .eq('status', 'drafting')
-  for (const row of inFlight ?? []) {
-    if (!row.resource_idea_id) continue
-    const { data: idea } = await supabase
+  const inFlightRows = (inFlight ?? []).filter((r) => r.resource_idea_id)
+  if (inFlightRows.length) {
+    const { data: ideas } = await supabase
       .from('resource_ideas')
-      .select('draft_status, draft_error')
-      .eq('id', row.resource_idea_id)
-      .single()
-    if (idea?.draft_status === 'complete') await mark(supabase, row.id, 'complete', null)
-    else if (idea?.draft_status === 'error') await mark(supabase, row.id, 'error', idea.draft_error ?? 'Generation failed')
+      .select('id, draft_status, draft_error')
+      .in('id', inFlightRows.map((r) => r.resource_idea_id as string))
+    const byId = new Map((ideas ?? []).map((i) => [i.id, i]))
+    for (const row of inFlightRows) {
+      const idea = byId.get(row.resource_idea_id as string)
+      if (idea?.draft_status === 'complete') await mark(supabase, row.id, 'complete', null)
+      else if (idea?.draft_status === 'error')
+        await mark(supabase, row.id, 'error', idea.draft_error ?? 'Generation failed')
+    }
   }
 
   const { data: selections } = await supabase
@@ -198,15 +218,9 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
       } else if (result.status === 'error') {
         await mark(supabase, sel.id, 'error', result.error ?? 'Generation failed')
       } else {
-        // 'skipped' = another worker holds the idea lock; reconcile from draft_status.
-        const { data: idea } = await supabase
-          .from('resource_ideas')
-          .select('draft_status, draft_error')
-          .eq('id', ideaId)
-          .single()
-        if (idea?.draft_status === 'complete') await mark(supabase, sel.id, 'complete', null)
-        else if (idea?.draft_status === 'error') await mark(supabase, sel.id, 'error', idea.draft_error ?? 'Generation failed')
-        // else leave 'drafting' — the other worker will finish it; a re-run reconciles.
+        // 'skipped' = another worker holds the idea lock; reconcile from
+        // draft_status (or leave 'drafting' — a re-run reconciles).
+        await settleFromIdeaStatus(supabase, sel.id, ideaId)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

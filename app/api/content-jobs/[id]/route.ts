@@ -47,11 +47,26 @@ export async function PATCH(
   }
   if (body.error_message !== undefined) updates.error_message = body.error_message
 
-  // Minimum completeness gate before content generation (phase 5 trigger):
-  // without a firm name the generator falls back to "the firm"/"Unknown firm"
-  // everywhere, producing unusable content. Block the advance instead.
+  // Completeness gates before content generation (phase 5 trigger).
   if (body.phase === 5) {
-    const { data: job } = await supabase.from('content_jobs').select('session_id').eq('id', id).single()
+    const { data: job } = await supabase
+      .from('content_jobs')
+      .select('session_id, library_reviewed_at')
+      .eq('id', id)
+      .single()
+
+    // The operator must make an explicit library-content inclusion choice (select
+    // + save, or save none) at outline proofing. The OutlinePhase UI gates on
+    // this; enforcing it here stops a direct PATCH from skipping the review.
+    if (job && !job.library_reviewed_at) {
+      return NextResponse.json(
+        { error: 'Confirm your library-content choice on the outline step before starting content generation.' },
+        { status: 422 },
+      )
+    }
+
+    // Without a firm name the generator falls back to "the firm"/"Unknown firm"
+    // everywhere, producing unusable content. Block the advance instead.
     if (job?.session_id) {
       const { data: sess } = await supabase.from('sessions').select('schema_data').eq('id', job.session_id).single()
       const name = (sess?.schema_data as SessionSchema | null)?.business?.name

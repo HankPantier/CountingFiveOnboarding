@@ -127,5 +127,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
+  // Record that the operator made an explicit inclusion choice (even "save none").
+  // The phase 4 → 5 advance is gated on this, enforcing the review server-side.
+  const { error: reviewErr } = await supabase
+    .from('content_jobs')
+    .update({ library_reviewed_at: new Date().toISOString() })
+    .eq('id', id)
+  if (reviewErr) {
+    console.error('[library] Failed to stamp review:', reviewErr.message)
+    return NextResponse.json({ error: 'Failed to save selections' }, { status: 500 })
+  }
+
   return NextResponse.json({ saved: validIds.length })
 }

@@ -507,6 +507,7 @@ export type Database = {
           error_message: string | null
           github_repo: string | null
           id: string
+          library_reviewed_at: string | null
           nav_config: Json | null
           palette: Json | null
           phase: number
@@ -522,6 +523,7 @@ export type Database = {
           error_message?: string | null
           github_repo?: string | null
           id?: string
+          library_reviewed_at?: string | null
           nav_config?: Json | null
           palette?: Json | null
           phase?: number
@@ -537,6 +539,7 @@ export type Database = {
           error_message?: string | null
           github_repo?: string | null
           id?: string
+          library_reviewed_at?: string | null
           nav_config?: Json | null
           palette?: Json | null
           phase?: number
