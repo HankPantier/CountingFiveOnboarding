@@ -13,6 +13,9 @@ export interface LibrarySelectionStatus {
   drafting: number
   complete: number
   error: number
+  // Distinct error messages across failed selections, so the UI can show WHY
+  // (e.g. "API usage limit reached") instead of a bare "N failed".
+  errorSamples: string[]
   // True when nothing is left to wait on (all selections reached a terminal
   // state, or there were none). The publish gate reads this.
   terminal: boolean
@@ -26,20 +29,44 @@ export async function getLibrarySelectionStatus(
   const supabase = createServerClient()
   const { data } = await supabase
     .from('content_job_library_selections')
-    .select('status')
+    .select('status, error')
     .eq('content_job_id', contentJobId)
   const rows = data ?? []
   const count = (s: string) => rows.filter((r) => r.status === s).length
   const pending = count('pending')
   const drafting = count('drafting')
+  const errorSamples = [
+    ...new Set(
+      rows
+        .filter((r) => r.status === 'error' && r.error)
+        .map((r) => (r.error as string).slice(0, 160))
+    ),
+  ]
   return {
     total: rows.length,
     pending,
     drafting,
     complete: count('complete'),
     error: count('error'),
+    errorSamples,
     terminal: pending + drafting === 0,
   }
+}
+
+// Reset every errored selection for a job back to 'pending' so a subsequent
+// runLibrarySelectionsForJob retries it. Needed because an all-terminal job
+// (every row complete/error) is skipped by /library/run's terminal guard and the
+// cron — so a genuinely-failed article (API limit, timeout, unparseable output)
+// has no other path back into drafting. Returns how many rows were reset.
+export async function resetFailedLibrarySelections(contentJobId: string): Promise<number> {
+  const supabase = createServerClient()
+  const { data } = await supabase
+    .from('content_job_library_selections')
+    .update({ status: 'pending', error: null, updated_at: new Date().toISOString() })
+    .eq('content_job_id', contentJobId)
+    .eq('status', 'error')
+    .select('id')
+  return data?.length ?? 0
 }
 
 async function mark(

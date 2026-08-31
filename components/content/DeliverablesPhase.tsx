@@ -40,6 +40,7 @@ type LibrarySelectionStatus = {
   drafting: number
   complete: number
   error: number
+  errorSamples: string[]
   terminal: boolean
 }
 
@@ -192,11 +193,11 @@ export default function DeliverablesPhase({
   // Draft the included library articles and wait until every selection reaches a
   // terminal state (complete/error). Returns true when settled, false on timeout.
   // A no-op (returns true immediately) when nothing was selected.
-  const runLibraryArticles = async (): Promise<boolean> => {
+  const runLibraryArticles = async (action: 'run' | 'retry' = 'run'): Promise<boolean> => {
     setLibraryRunning(true)
     libraryRunningRef.current = true // silence the background poller for the run
     try {
-      const res = await fetch(`/api/content-jobs/${contentJobId}/library/run`, { method: 'POST' })
+      const res = await fetch(`/api/content-jobs/${contentJobId}/library/${action}`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error ?? 'Failed to start article drafting')
       if (data?.status?.terminal) return true
@@ -522,14 +523,36 @@ export default function DeliverablesPhase({
             </div>
             {githubRepo && !libraryStatus.terminal && (
               <button
-                onClick={() => void runLibraryArticles()}
+                onClick={() => void runLibraryArticles('run')}
                 disabled={libraryRunning || deploying}
                 className="shrink-0 border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {libraryRunning ? 'Drafting…' : 'Draft now'}
               </button>
             )}
+            {/* Terminal-with-failures: /library/run and the cron skip a terminal
+                job, so a failed article has no other path back into drafting.
+                This resets the failed rows and re-runs just them. */}
+            {githubRepo && libraryStatus.terminal && libraryStatus.error > 0 && (
+              <button
+                onClick={() => void runLibraryArticles('retry')}
+                disabled={libraryRunning || deploying}
+                className="shrink-0 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {libraryRunning ? 'Retrying…' : `Retry failed (${libraryStatus.error})`}
+              </button>
+            )}
           </div>
+          {libraryStatus.error > 0 && libraryStatus.errorSamples.length > 0 && (
+            <div className="text-xs font-body text-warning-strong space-y-0.5">
+              <div className="font-semibold">Why some failed:</div>
+              <ul className="font-mono space-y-0.5">
+                {libraryStatus.errorSamples.map((e, i) => (
+                  <li key={i}>• {e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {libraryRunning && (
             <ProgressBar
               phase="Drafting included articles…"
