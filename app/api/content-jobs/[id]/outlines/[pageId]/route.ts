@@ -47,6 +47,15 @@ export async function PATCH(
     updates.sections = body.sections as Json
   }
   if (body.admin_notes !== undefined) updates.admin_notes = body.admin_notes
+  if (body.angle !== undefined) {
+    // Per-page angle/POV directive. An angle-only edit does NOT invalidate
+    // already-generated content (it's not in the materialChanged set below) —
+    // it only steers the next generation.
+    if (body.angle !== null && typeof body.angle !== 'string') {
+      return NextResponse.json({ error: 'angle must be a string or null' }, { status: 400 })
+    }
+    updates.angle = body.angle
+  }
   if (body.admin_approved !== undefined) updates.admin_approved = body.admin_approved
   if (body.cta !== undefined) {
     if (body.cta === null) {

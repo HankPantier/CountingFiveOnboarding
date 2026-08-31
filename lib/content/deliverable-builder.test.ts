@@ -13,6 +13,7 @@ function makePage(overrides: Partial<GeneratedPage>): GeneratedPage {
     content_job_id: 'job-1',
     content_markdown: '<!-- block: intro-text -->\n## Overview\n\nBody.',
     created_at: '2026-01-01T00:00:00Z',
+    critic_review: null,
     eeat_signals: null,
     faq_block: null,
     generation_attempts: 0,

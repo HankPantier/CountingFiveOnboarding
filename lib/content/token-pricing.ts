@@ -27,6 +27,7 @@ export type TokenStage =
   | 'brand'
   | 'new_page'
   | 'content_assistant'
+  | 'critic'
 
 // Attribution context threaded into shared AI helpers (e.g. generateMbpJson)
 // so each call records who/what it was for. Omitted fields record as null.

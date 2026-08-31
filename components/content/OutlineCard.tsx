@@ -32,6 +32,7 @@ type Outline = {
   target_keyword: string | null
   admin_approved: boolean
   admin_notes: string | null
+  angle: string | null
   cta: Json | null
   content_job_id: string
 }
@@ -95,6 +96,7 @@ export default function OutlineCard({
           h1: outline.h1,
           sections: outline.sections,
           admin_notes: outline.admin_notes,
+          angle: outline.angle,
           cta: outline.cta,
         }),
       })
@@ -278,6 +280,21 @@ export default function OutlineCard({
             </div>
             <p className="mt-1 text-xs font-body text-text-muted">
               Closes every page. Leave empty for the default (&quot;Schedule a consultation&quot; → /contact).
+            </p>
+          </div>
+
+          {/* Angle / POV */}
+          <div>
+            <label className="text-xs font-heading font-semibold text-text-secondary">Angle / point of view</label>
+            <textarea
+              value={outline.angle ?? ''}
+              onChange={e => onUpdate({ ...outline, angle: e.target.value })}
+              rows={2}
+              className="w-full mt-1 px-3 py-2 text-sm font-body bg-surface-subtle border border-border-default rounded focus:border-brand-cyan focus:outline-none resize-none"
+              placeholder="Optional. The unique take or information-gain for this page — what it argues or emphasizes that competitors don't."
+            />
+            <p className="mt-1 text-xs font-body text-text-muted">
+              Steers generation. Save Edits, then Regenerate to apply. An angle-only change won&apos;t reset approved content.
             </p>
           </div>
 

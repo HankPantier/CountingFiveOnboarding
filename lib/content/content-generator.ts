@@ -1,6 +1,8 @@
 import { generateText } from 'ai'
+import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
+import { reviewDraftQuality } from './draft-critic'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
@@ -170,6 +172,7 @@ export async function generatePageContent(
   contentJobId: string,
   sessionId: string,
   sitemapUrls: string[],
+  angle: string | null,
   flaggedPhrases?: string[]
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
@@ -339,10 +342,14 @@ ${ANTI_SLOP_RULES}`
   // Per-page dynamic suffix — everything that varies per call. retryNote is kept
   // here (not in the prefix) so the first attempt and the anti-slop retry send an
   // identical cached prefix and the retry lands as a cache read.
+  const angleNote = angle?.trim()
+    ? `\n\nPAGE ANGLE / POINT OF VIEW (highest priority — shape the whole page around this take; it is the operator's directive for what makes this page distinct):\n${angle.trim()}`
+    : ''
+
   const dynamicSuffix = `PAGE TO WRITE:
 Title: ${pageTitle}
 URL: ${pageUrl}
-Approved outline: ${JSON.stringify(outlineSections)}
+Approved outline: ${JSON.stringify(outlineSections)}${angleNote}
 
 KEYWORD TARGET:
 Primary: ${targetKeyword}
@@ -499,6 +506,8 @@ export type FinalizePageInput = {
   contentJobId: string
   sessionId: string
   sitemapUrls: string[]
+  // Optional per-page angle/POV directive captured during outline proofing.
+  angle?: string | null
 }
 
 export async function generateAndFinalizePage(input: FinalizePageInput): Promise<GeneratedResult> {
@@ -518,6 +527,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       input.contentJobId,
       input.sessionId,
       input.sitemapUrls,
+      input.angle ?? null,
       flaggedPhrases
     )
 
@@ -747,7 +757,7 @@ export async function generateSinglePage(
 
   const { data: outline, error: outlineErr } = await supabase
     .from('page_outlines')
-    .select('id, page_url, page_title, sections, target_keyword, admin_approved, cta')
+    .select('id, page_url, page_title, sections, target_keyword, admin_approved, cta, angle')
     .eq('id', outlineId)
     .single()
 
@@ -821,6 +831,7 @@ export async function generateSinglePage(
       contentJobId,
       sessionId: ctx.sessionId,
       sitemapUrls,
+      angle: outline.angle,
     })
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
@@ -871,6 +882,33 @@ export async function generateSinglePage(
     if (writeErr) {
       console.error(`[content-gen] DB write failed for ${outline.page_url}: ${writeErr.message}`)
       return { status: 'error', pageUrl: outline.page_url, error: writeErr.message }
+    }
+
+    // Advisory draft-gate critic: grade the finished page in the background so it
+    // never adds latency to generation and never blocks approval/publish. Only
+    // for a clean (non-degraded) page — a broken draft isn't worth grading. The
+    // scheduling itself is wrapped so a hook failure (e.g. no request scope) can
+    // NEVER fall through to the catch below and mistakenly mark this completed
+    // page 'error'.
+    if (!degraded) {
+      try {
+        after(() =>
+          reviewDraftQuality({
+            pageId: genPage.id,
+            pageUrl: outline.page_url,
+            pageTitle: outline.page_title,
+            contentMarkdown: result.content,
+            outlineSections: outline.sections,
+            targetKeyword: result.metadata.target_keyword,
+            competitorRefs,
+            schema,
+            sessionId: ctx.sessionId,
+            contentJobId,
+          }).catch(err => console.error('[draft-critic] review failed:', err)),
+        )
+      } catch (hookErr) {
+        console.warn('[draft-critic] could not schedule review:', hookErr)
+      }
     }
 
     if (degraded) {

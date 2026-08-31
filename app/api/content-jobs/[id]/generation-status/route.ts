@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
+import { summarizeCritic } from '@/lib/content/critic-review'
 
 export async function GET(
   _req: Request,
@@ -34,6 +35,25 @@ export async function GET(
   const sitemap = (job?.confirmed_sitemap ?? []) as Array<{ url: string; parent?: string }>
   const parentByUrl = new Map(sitemap.map(p => [p.url, p.parent]))
 
+  // Advisory critic scores are fetched separately and best-effort: the
+  // critic_review column may not exist yet (pre-migration 064), so a failure
+  // here must not break the core status poll — it just omits the score chips.
+  const criticByPage = new Map<string, { overall: number; hasFlags: boolean }>()
+  try {
+    const { data: criticRows, error: criticErr } = await supabase
+      .from('generated_pages')
+      .select('id, critic_review')
+      .eq('content_job_id', id)
+    if (!criticErr) {
+      for (const r of criticRows ?? []) {
+        const summary = summarizeCritic(r.critic_review)
+        if (summary) criticByPage.set(r.id, summary)
+      }
+    }
+  } catch {
+    // critic_review column absent pre-migration — degrade silently.
+  }
+
   const all = pages ?? []
   return NextResponse.json({
     total: all.length,
@@ -62,6 +82,7 @@ export async function GET(
       clientApproved: p.client_approved_content,
       wordCountActual: p.word_count_actual,
       wordCountTarget: p.word_count_target,
+      critic: criticByPage.get(p.id) ?? null,
     })),
   })
 }

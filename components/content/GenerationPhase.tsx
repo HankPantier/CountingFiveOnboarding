@@ -17,6 +17,7 @@ type PageStatus = {
   clientApproved?: boolean
   wordCountActual?: number | null
   wordCountTarget?: number | null
+  critic?: { overall: number; hasFlags: boolean } | null
 }
 
 // Depth in the sitemap tree, capped to guard against accidental cycles.
@@ -75,6 +76,26 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
     label: `${actual} / ${target}`,
     cls: 'text-text-muted bg-surface-subtle',
     title: `${actual} words generated vs target of ${target} (${pct >= 0 ? '+' : ''}${pct}%). Within the acceptable ±25% range.`,
+  }
+}
+
+// Advisory quality-critic chip. Green ≥8, amber 6-7, red <6; a flag marker when
+// the critic surfaced unsupported specifics to verify. Advisory only — never
+// gates approval.
+function criticChip(
+  critic: { overall: number; hasFlags: boolean } | null | undefined,
+): { label: string; cls: string; title: string } | null {
+  if (!critic) return null
+  const cls =
+    critic.overall >= 8
+      ? 'text-success bg-success/10'
+      : critic.overall >= 6
+        ? 'text-warning-strong bg-warning/10'
+        : 'text-error bg-error/10'
+  return {
+    label: `Q ${critic.overall}/10${critic.hasFlags ? ' ⚑' : ''}`,
+    cls,
+    title: `Advisory quality review: ${critic.overall}/10 overall.${critic.hasFlags ? ' Flagged unsupported claim(s) to verify — open View for detail.' : ''} This is advisory and does not gate approval.`,
   }
 }
 
@@ -411,6 +432,7 @@ export default function GenerationPhase({
             const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
             const depth = depthOf(page.url, parentByUrl)
             const wcBadge = page.status === 'complete' ? wordCountBadge(page.wordCountActual, page.wordCountTarget) : null
+            const qBadge = page.status === 'complete' ? criticChip(page.critic) : null
             const approveBusy = pendingActions.has(`approve:${page.id}`)
             const regenBusy = pendingActions.has(`regen:${page.id}`)
             const flagBusy = pendingActions.has(`flag:${page.id}`)
@@ -429,6 +451,14 @@ export default function GenerationPhase({
                       title={wcBadge.title}
                     >
                       {wcBadge.label}
+                    </span>
+                  )}
+                  {qBadge && (
+                    <span
+                      className={`text-xs font-mono px-1.5 py-0.5 rounded ${qBadge.cls}`}
+                      title={qBadge.title}
+                    >
+                      {qBadge.label}
                     </span>
                   )}
                   {page.needsClientReview && (

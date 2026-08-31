@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useDialog } from '@/components/ui/use-dialog'
 import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
+import { parseCritic, criticOverall } from '@/lib/content/critic-review'
 
 type FaqItem = { question: string; answer: string }
 type InternalLink = { url: string; anchor_text: string; reason: string }
@@ -30,6 +31,7 @@ type GeneratedPageRow = {
   word_count_target: number | null
   admin_approved_content: boolean
   client_approved_content: boolean
+  critic_review: unknown
 }
 
 type EditForm = {
@@ -315,6 +317,8 @@ export default function MarkdownPreviewModal({
                 </div>
               )}
 
+              <CriticPanel review={page.critic_review} />
+
               {/* Body */}
               <div className="border-t border-border-default pt-4">
                 {view === 'rendered' ? (
@@ -454,6 +458,79 @@ function SeoBlocks({ page }: { page: GeneratedPageRow }) {
       <Section title="LLM citation note">
         <p className="text-text-secondary italic">{page.llm_citation_note || '—'}</p>
       </Section>
+    </div>
+  )
+}
+
+// Advisory draft-gate critic result. Read-only, collapsible — never gates
+// approval. Renders nothing until the background critic has scored the page.
+function CriticPanel({ review }: { review: unknown }) {
+  const [open, setOpen] = useState(false)
+  const parsed = parseCritic(review)
+  if (!parsed) return null
+
+  const overall = criticOverall(parsed)
+  const tone =
+    overall >= 8 ? 'text-success bg-success/10 border-success/30'
+      : overall >= 6 ? 'text-warning-strong bg-warning/10 border-warning/30'
+        : 'text-error bg-error/10 border-error/30'
+  const scores: Array<[string, number]> = [
+    ['Evidence & specificity', parsed.evidence_specificity],
+    ['Information gain', parsed.information_gain],
+    ['Brand fidelity', parsed.brand_fidelity],
+    ['Promise fulfillment', parsed.promise_fulfillment],
+  ]
+
+  return (
+    <div className={`mb-4 rounded-lg border ${tone.split(' ').slice(2).join(' ')} bg-surface-subtle`}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left"
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-2">
+          <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${tone.split(' ').slice(0, 2).join(' ')}`}>
+            Q {overall}/10{parsed.unsupported_claims.length > 0 ? ' ⚑' : ''}
+          </span>
+          <span className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
+            Quality review (advisory)
+          </span>
+        </span>
+        <span className="text-text-muted text-xs">{open ? '▲' : '▾'}</span>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 space-y-3 text-sm font-body">
+          <div className="grid grid-cols-2 gap-2">
+            {scores.map(([label, val]) => (
+              <div key={label} className="flex items-center justify-between gap-2">
+                <span className="text-text-secondary text-xs">{label}</span>
+                <span className="font-mono text-text-primary text-xs">{val}/10</span>
+              </div>
+            ))}
+          </div>
+
+          {parsed.notes && (
+            <p className="text-text-secondary text-xs italic border-t border-border-default pt-2">{parsed.notes}</p>
+          )}
+
+          {parsed.unsupported_claims.length > 0 && (
+            <div className="border-t border-border-default pt-2">
+              <div className="text-xs font-heading font-semibold text-warning-strong mb-1">
+                Unsupported specifics to verify ({parsed.unsupported_claims.length})
+              </div>
+              <ul className="list-disc pl-5 text-text-secondary text-xs space-y-0.5">
+                {parsed.unsupported_claims.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          )}
+
+          <p className="text-text-muted text-[11px]">
+            Advisory only — this score does not block approval or publishing.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

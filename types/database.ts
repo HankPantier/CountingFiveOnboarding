@@ -567,6 +567,7 @@ export type Database = {
           content_job_id: string
           content_markdown: string | null
           created_at: string
+          critic_review: Json | null
           eeat_signals: Json | null
           faq_block: Json | null
           generation_attempts: number
@@ -602,6 +603,7 @@ export type Database = {
           content_job_id: string
           content_markdown?: string | null
           created_at?: string
+          critic_review?: Json | null
           eeat_signals?: Json | null
           faq_block?: Json | null
           generation_attempts?: number
@@ -637,6 +639,7 @@ export type Database = {
           content_job_id?: string
           content_markdown?: string | null
           created_at?: string
+          critic_review?: Json | null
           eeat_signals?: Json | null
           faq_block?: Json | null
           generation_attempts?: number
@@ -913,6 +916,7 @@ export type Database = {
         Row: {
           admin_approved: boolean
           admin_notes: string | null
+          angle: string | null
           content_job_id: string
           created_at: string
           cta: Json | null
@@ -927,6 +931,7 @@ export type Database = {
         Insert: {
           admin_approved?: boolean
           admin_notes?: string | null
+          angle?: string | null
           content_job_id: string
           created_at?: string
           cta?: Json | null
@@ -941,6 +946,7 @@ export type Database = {
         Update: {
           admin_approved?: boolean
           admin_notes?: string | null
+          angle?: string | null
           content_job_id?: string
           created_at?: string
           cta?: Json | null
