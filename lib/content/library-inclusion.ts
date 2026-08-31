@@ -191,12 +191,23 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
   const { eligible } = await resolveEligibility(supabase, [sessionId])
   const isEligible = eligible.some((e) => e.contentJobId === contentJobId)
 
+  // The site repo isn't provisioned yet — a transient "too early" condition, not
+  // a failure. Leave the selections PENDING (clearing any stale not-provisioned
+  // error) so they read as "waiting" and auto-resume once the site is seeded: the
+  // publish chain seeds the repo before its library step, and the cron re-runs
+  // pending rows. Marking them 'error' made a timing issue look like a permanent
+  // failure ("N failed") that only self-healed by chance.
+  if (!isEligible) {
+    await supabase
+      .from('content_job_library_selections')
+      .update({ status: 'pending', error: null, updated_at: new Date().toISOString() })
+      .eq('content_job_id', contentJobId)
+      .eq('status', 'error')
+    return
+  }
+
   for (const sel of selections) {
     try {
-      if (!isEligible) {
-        await mark(supabase, sel.id, 'error', 'Site repo not provisioned yet — publish the site first, then retry.')
-        continue
-      }
       let ideaId = sel.resource_idea_id
       if (!ideaId) {
         ideaId = await ensureIdeaForSelection(supabase, sel.batch_id, sessionId, contentJobId)

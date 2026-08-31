@@ -67,6 +67,10 @@ export default function DeliverablesPhase({
   const [linkWarnings, setLinkWarnings] = useState<string[]>([])
   const [redirectIssues, setRedirectIssues] = useState<Array<{ severity: string; oldUrl: string; reason: string }>>([])
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
+  // Bumped to force an immediate approval re-poll (e.g. after "Approve all
+  // remaining"), since the poll interval stops once everything is approved.
+  const [pollNonce, setPollNonce] = useState(0)
+  const [approvingAll, setApprovingAll] = useState(false)
   // One-click "Publish site live" orchestration state. deployStep holds the
   // step currently running (or 'live' when finished); deployErr is set on the
   // step that failed (deployStep stays put so the stepper can mark it). prUrl is
@@ -130,7 +134,7 @@ export default function DeliverablesPhase({
     const intervalId = setInterval(poll, 5000)
     poll()
     return () => { cancelled = true; clearInterval(intervalId) }
-  }, [contentJobId])
+  }, [contentJobId, pollNonce])
 
   // Poll the included-library-article draft status so the gate + progress reflect
   // it. One stable interval per job: on mount, pending selections keep it polling
@@ -447,6 +451,27 @@ export default function DeliverablesPhase({
   // must not block assembly forever (they otherwise stall the whole deliverable).
   const generationDone = approval !== null && approval.total > 0 && approval.complete + approval.error >= approval.total
 
+  // Approve every remaining complete-but-unapproved page in one click, so a
+  // single missed (often nested) page can't silently hold the publish gate.
+  const approveAllRemaining = async () => {
+    if (!approval?.unapproved.length) return
+    setApprovingAll(true)
+    try {
+      await Promise.all(
+        approval.unapproved.map((p) =>
+          fetch(`/api/content-jobs/${contentJobId}/pages/${p.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ admin_approved_content: true }),
+          })
+        )
+      )
+      setPollNonce((n) => n + 1)
+    } finally {
+      setApprovingAll(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Nav Curation */}
@@ -490,6 +515,9 @@ export default function DeliverablesPhase({
                 {libraryStatus.complete}/{libraryStatus.total} drafted
                 {libraryStatus.error > 0 ? ` · ${libraryStatus.error} failed` : ''}
                 {!libraryStatus.terminal ? ` · ${libraryStatus.pending + libraryStatus.drafting} pending` : ''}. Each is re-drafted uniquely for this client and published with the site.
+                {!githubRepo && libraryStatus.pending > 0
+                  ? ' They draft automatically once the site is provisioned (publish the site first).'
+                  : ''}
               </p>
             </div>
             {githubRepo && !libraryStatus.terminal && (
@@ -641,12 +669,30 @@ export default function DeliverablesPhase({
           </p>
 
           {approval && generationDone && hasUnapproved && (
-            <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
+            <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-3 space-y-2">
               <div>
-                {approval.complete - approval.approved} of {approval.complete} pages still need approval before packaging.
+                {approval.complete - approval.approved} of {approval.complete} pages still need approval before packaging:
               </div>
-              <div className="text-xs font-mono text-warning-strong">
-                Approve them in the Content Generation step above.
+              {approval.unapproved.length > 0 && (
+                <ul className="text-xs font-mono space-y-0.5">
+                  {approval.unapproved.map((p) => (
+                    <li key={p.id}>
+                      • {p.title} <span className="text-text-muted">({p.url})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex items-center gap-3 pt-0.5">
+                <button
+                  onClick={approveAllRemaining}
+                  disabled={approvingAll}
+                  className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {approvingAll ? 'Approving…' : `Approve all remaining (${approval.unapproved.length})`}
+                </button>
+                <span className="text-xs font-body text-text-muted">
+                  or approve individually in the Content Generation step above.
+                </span>
               </div>
             </div>
           )}
