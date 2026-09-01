@@ -170,9 +170,12 @@ export default function DeliverablesPhase({
   // sha change — no clock comparison needed.
   const trackDeploy = async (baselineSha: string | null): Promise<boolean> => {
     setDeployState('deploying')
-    const MAX_POLLS = 40 // ~3.3 min at 5s
+    // deploy-status hits the GitHub API; poll at 8s (not 5s) to ease quota use —
+    // ETag revalidation makes the unchanged-branch polls free, this halves the
+    // rest. Same ~3.3 min window (25 × 8s).
+    const MAX_POLLS = 25
     for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise((r) => setTimeout(r, 5000))
+      await new Promise((r) => setTimeout(r, 8000))
       try {
         const res = await fetch(`/api/content-jobs/${contentJobId}/deploy-status`)
         if (!res.ok) continue

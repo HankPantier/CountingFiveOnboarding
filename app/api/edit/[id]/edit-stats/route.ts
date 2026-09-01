@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStatus, walkCommitFileStats } from '@/lib/github/repo-files'
+import { getStatus, walkCommitFileStats, walkNewCommitFileStats } from '@/lib/github/repo-files'
+import { isRateLimited } from '@/lib/github/rate-limit'
+import { RequestError } from '@octokit/request-error'
 import {
   aggregateEditStats,
   type EditStatsAggregate,
@@ -50,19 +52,48 @@ export async function GET(
 
     let aggregate: EditStatsAggregate
     let truncated = false
-    if (cached && headSha && cached.head_sha === headSha) {
-      // jsonb round-trips as the aggregate we wrote via asJson().
-      aggregate = cached.stats as unknown as EditStatsAggregate
-    } else {
+
+    // Full walk (first-ever load, or when the cached base sha is gone): walk the
+    // whole draft history. Persists the fresh aggregate keyed by HEAD.
+    const fullWalk = async (): Promise<EditStatsAggregate> => {
       const walk = await walkCommitFileStats(ctx.githubRepo)
-      aggregate = aggregateEditStats(walk.commits)
+      const agg = aggregateEditStats(walk.commits)
       truncated = walk.truncated
       await supabase.from('content_edit_stats').upsert({
         session_id: ctx.sessionId,
         head_sha: walk.headSha ?? headSha ?? '',
-        stats: asJson(aggregate),
+        stats: asJson(agg),
         computed_at: new Date().toISOString(),
       })
+      return agg
+    }
+
+    if (cached && headSha && cached.head_sha === headSha) {
+      // Cache hit — HEAD hasn't moved. jsonb round-trips as the aggregate we
+      // wrote via asJson(). Zero GitHub calls beyond the getStatus above.
+      aggregate = cached.stats as unknown as EditStatsAggregate
+    } else if (cached && cached.head_sha && headSha) {
+      // Incremental: fold only the commits added since the cached HEAD into the
+      // cached aggregate — a handful of GitHub calls instead of a full re-walk.
+      try {
+        const newCommits = await walkNewCommitFileStats(ctx.githubRepo, cached.head_sha)
+        aggregate = aggregateEditStats(newCommits, cached.stats as unknown as EditStatsAggregate)
+        await supabase.from('content_edit_stats').upsert({
+          session_id: ctx.sessionId,
+          head_sha: headSha,
+          stats: asJson(aggregate),
+          computed_at: new Date().toISOString(),
+        })
+      } catch (err) {
+        // Cached base sha no longer in history (draft reset/force-push) → full walk.
+        if (err instanceof RequestError && (err.status === 404 || err.status === 422)) {
+          aggregate = await fullWalk()
+        } else {
+          throw err
+        }
+      }
+    } else {
+      aggregate = await fullWalk()
     }
 
     // Enrich with AI-edit token spend, keyed by content path (= token_usage.page_url).
@@ -103,6 +134,11 @@ export async function GET(
 
     return NextResponse.json({ rows, truncated } satisfies EditStatsResponse)
   } catch (err) {
+    // A GitHub rate-limit must never break the editor: return an empty, soft
+    // result the panel renders as a transient note rather than a hard 500.
+    if (isRateLimited(err)) {
+      return NextResponse.json({ rows: [], truncated: false, rateLimited: true } satisfies EditStatsResponse)
+    }
     const message = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })
   }

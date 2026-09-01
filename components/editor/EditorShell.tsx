@@ -134,15 +134,16 @@ export default function EditorShell({
     void refreshStatus()
   }, [refreshTree, refreshStatus])
 
-  // Load edit activity once the caller is confirmed admin, and refresh it
-  // whenever a new commit lands (draft HEAD moves) so counts stay current. The
-  // route caches by HEAD sha, so a no-op HEAD makes this cheap.
+  // Load edit activity once per editor open, for admins only. We intentionally
+  // do NOT refetch on every new commit: the stats walk hits the GitHub API, and
+  // refetching on each save/publish (which moves draft HEAD) turned normal
+  // editing into a rate-limit storm. The panel's Refresh button covers staleness.
   useEffect(() => {
     if (!isAdmin) return
     // Data-loading effect; setState happens only after the fetch resolves.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshEditStats()
-  }, [isAdmin, refreshEditStats, status?.lastCommitSha])
+  }, [isAdmin, refreshEditStats])
 
   // Resolve the caller's role + capabilities: gate the Theme Studio entry
   // (admin-only) and the publish/rollback affordances (admin or manager).
@@ -1088,6 +1089,7 @@ export default function EditorShell({
           <EditStatsPanel
             rows={editStats?.rows ?? []}
             truncated={editStats?.truncated ?? false}
+            rateLimited={editStats?.rateLimited ?? false}
             loading={editStatsLoading}
             error={editStatsError}
             onRefresh={() => void refreshEditStats()}

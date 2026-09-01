@@ -26,7 +26,9 @@ export type EditStatRow = {
 export type EditStatsAggregate = Record<string, EditStatRow>
 
 // Shape returned by GET /api/edit/[id]/edit-stats and consumed by the panel.
-export type EditStatsResponse = { rows: EditStatRow[]; truncated: boolean }
+// `rateLimited` lets the panel show a soft note instead of the editor treating a
+// transient GitHub throttle as a hard error.
+export type EditStatsResponse = { rows: EditStatRow[]; truncated: boolean; rateLimited?: boolean }
 
 export type EditCommit = {
   message: string
@@ -58,8 +60,20 @@ function isAiCommit(message: string): boolean {
 // Fold commits into per-file stats. Order-independent: last-edit attribution is
 // resolved by comparing commit dates, so callers may pass any order. Bulk/merge
 // commits and non-content files are skipped.
-export function aggregateEditStats(commits: EditCommit[]): EditStatsAggregate {
+//
+// `base` lets a caller fold only NEW commits into an already-computed aggregate
+// (the incremental edit-stats cache). Because counts are additive and last-edit
+// is resolved by max date, fold(base, deltaCommits) is identical to a full walk
+// over base's commits + deltaCommits. Base rows are shallow-copied so the
+// caller's cached object is never mutated.
+export function aggregateEditStats(
+  commits: EditCommit[],
+  base: EditStatsAggregate = {}
+): EditStatsAggregate {
   const agg: EditStatsAggregate = {}
+  for (const [path, row] of Object.entries(base)) {
+    agg[path] = { ...row }
+  }
 
   for (const c of commits) {
     if (isBulkCommit(c)) continue

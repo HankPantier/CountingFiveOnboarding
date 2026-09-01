@@ -33,12 +33,14 @@ const td = 'px-3 py-2 font-body text-text-primary tabular-nums'
 export default function EditStatsPanel({
   rows,
   truncated,
+  rateLimited,
   loading,
   error,
   onRefresh,
 }: {
   rows: EditStatRow[]
   truncated: boolean
+  rateLimited?: boolean
   loading: boolean
   error: string | null
   onRefresh: () => void
@@ -88,6 +90,13 @@ export default function EditStatsPanel({
       {error && (
         <div className="mb-4 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-xs font-body text-warning-strong">
           {error}
+        </div>
+      )}
+
+      {rateLimited && (
+        <div className="mb-4 rounded border border-info/30 bg-info/10 px-3 py-2 text-xs font-body text-info">
+          GitHub is temporarily rate-limited — edit activity couldn&rsquo;t refresh just now. Try
+          Refresh again in a minute. The rest of the editor is unaffected.
         </div>
       )}
 

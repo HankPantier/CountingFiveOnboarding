@@ -1,6 +1,7 @@
 import { RequestError } from '@octokit/request-error'
 import { getOctokit, resolveRepo } from './app-client'
 import { withRateLimitRetry } from './rate-limit'
+import { conditionalGet } from './conditional'
 import type { BrandJson } from '@/types/brand-json'
 
 // How many blobs to upload at once when pushing a deliverable. Kept low so a
@@ -235,6 +236,11 @@ export async function writeFiles(
   return { commitSha: commit.data.sha, blobs }
 }
 
+// Full recursive tree per (repo, branch), memoized by the branch's commit sha so
+// an unchanged branch skips the getCommit + getTree calls entirely. Bounded by
+// the number of distinct repos/branches touched by a warm instance.
+const treeCache = new Map<string, { sha: string; entries: TreeEntry[] }>()
+
 export async function listTree(
   slug: string,
   branch: string,
@@ -242,27 +248,36 @@ export async function listTree(
 ): Promise<TreeEntry[]> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
-  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
-  const commit = await octokit.git.getCommit({
-    owner,
-    repo,
-    commit_sha: ref.data.object.sha,
-  })
-  const tree = await octokit.git.getTree({
-    owner,
-    repo,
-    tree_sha: commit.data.tree.sha,
-    recursive: 'true',
-  })
-  const filtered = tree.data.tree.filter(
-    (n): n is { path: string; sha: string; type: 'blob' | 'tree'; size?: number } =>
-      typeof n.path === 'string' &&
-      typeof n.sha === 'string' &&
-      (n.type === 'blob' || n.type === 'tree')
+  // Conditional getRef: a 304 (branch tip unchanged) is free against the rate
+  // limit, and either way we get the current commit sha back.
+  const ref = await conditionalGet(`ref:${owner}/${repo}:${branch}`, (headers) =>
+    octokit.git.getRef({ owner, repo, ref: `heads/${branch}`, headers })
   )
-  return filtered
-    .filter((n) => !prefix || n.path.startsWith(prefix))
-    .map((n) => ({ path: n.path, sha: n.sha, type: n.type, size: n.size }))
+  const commitSha = ref.object.sha
+  const cacheKey = `${owner}/${repo}:${branch}`
+  const cached = treeCache.get(cacheKey)
+
+  let entries: TreeEntry[]
+  if (cached && cached.sha === commitSha) {
+    entries = cached.entries
+  } else {
+    const commit = await conditionalGet(`commit-obj:${owner}/${repo}:${commitSha}`, (headers) =>
+      octokit.git.getCommit({ owner, repo, commit_sha: commitSha, headers })
+    )
+    const tree = await conditionalGet(`tree:${owner}/${repo}:${commit.tree.sha}`, (headers) =>
+      octokit.git.getTree({ owner, repo, tree_sha: commit.tree.sha, recursive: 'true', headers })
+    )
+    const filtered = tree.tree.filter(
+      (n): n is { path: string; sha: string; type: 'blob' | 'tree'; size?: number } =>
+        typeof n.path === 'string' &&
+        typeof n.sha === 'string' &&
+        (n.type === 'blob' || n.type === 'tree')
+    )
+    entries = filtered.map((n) => ({ path: n.path, sha: n.sha, type: n.type, size: n.size }))
+    treeCache.set(cacheKey, { sha: commitSha, entries })
+  }
+
+  return prefix ? entries.filter((n) => n.path.startsWith(prefix)) : entries.slice()
 }
 
 // List image blobs under the asset roots (public/content-assets, public/og-images).
@@ -924,22 +939,23 @@ const PUBLISH_MERGE_MESSAGE = 'Publish draft to live'
 async function isPublishMergeHead(slug: string) {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
-  const head = await octokit.repos.getCommit({ owner, repo, ref: MAIN_BRANCH })
+  const head = await conditionalGet(`commit:${owner}/${repo}:${MAIN_BRANCH}`, (headers) =>
+    octokit.repos.getCommit({ owner, repo, ref: MAIN_BRANCH, headers })
+  )
   const isPublish =
-    head.data.parents.length === 2 &&
-    head.data.commit.message.startsWith(PUBLISH_MERGE_MESSAGE)
-  return { isPublish, parentSha: head.data.parents[0]?.sha ?? null }
+    head.parents.length === 2 && head.commit.message.startsWith(PUBLISH_MERGE_MESSAGE)
+  return { isPublish, parentSha: head.parents[0]?.sha ?? null }
 }
 
 export async function getStatus(slug: string): Promise<RepoStatus> {
-  const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
-  const cmp = await octokit.repos.compareCommits({
-    owner,
-    repo,
-    base: MAIN_BRANCH,
-    head: DRAFT_BRANCH,
-  })
+  const octokit = getOctokit()
+  const cmpData = await conditionalGet(
+    `compare:${owner}/${repo}:${MAIN_BRANCH}...${DRAFT_BRANCH}`,
+    (headers) =>
+      octokit.repos.compareCommits({ owner, repo, base: MAIN_BRANCH, head: DRAFT_BRANCH, headers })
+  )
+  const cmp = { data: cmpData }
   const head = cmp.data.commits.at(-1)
   let canRevertPublish = false
   try {
@@ -1089,13 +1105,15 @@ export async function walkCommitFileStats(
   const perPage = 100
 
   for (let page = 1; ; page++) {
-    const list = await octokit.repos.listCommits({
-      owner,
-      repo,
-      sha: DRAFT_BRANCH,
-      per_page: perPage,
-      page,
-    })
+    const list = await withRateLimitRetry(() =>
+      octokit.repos.listCommits({
+        owner,
+        repo,
+        sha: DRAFT_BRANCH,
+        per_page: perPage,
+        page,
+      })
+    )
     if (list.data.length === 0) break
     for (const c of list.data) {
       if (headSha === null) headSha = c.sha
@@ -1103,7 +1121,9 @@ export async function walkCommitFileStats(
         truncated = true
         return { headSha, commits, truncated }
       }
-      const detail = await octokit.repos.getCommit({ owner, repo, ref: c.sha })
+      const detail = await withRateLimitRetry(() =>
+        octokit.repos.getCommit({ owner, repo, ref: c.sha })
+      )
       commits.push({
         sha: c.sha,
         message: c.commit.message ?? '',
@@ -1122,6 +1142,48 @@ export async function walkCommitFileStats(
     if (list.data.length < perPage) break
   }
   return { headSha, commits, truncated }
+}
+
+// Incremental companion to walkCommitFileStats: return only the commits added to
+// the draft branch since `sinceSha` (the last-cached HEAD), newest-last, each
+// with its per-file additions/deletions. One compareCommits call + one getCommit
+// per new commit — typically a handful, versus re-walking the whole history.
+// Callers fold these into the cached aggregate. Throws a 404/422 RequestError if
+// `sinceSha` is no longer in history (draft was reset/force-pushed); the caller
+// falls back to a full walk in that case.
+export async function walkNewCommitFileStats(
+  slug: string,
+  sinceSha: string
+): Promise<CommitFileStat[]> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const cmp = await withRateLimitRetry(() =>
+    octokit.repos.compareCommits({ owner, repo, base: sinceSha, head: DRAFT_BRANCH })
+  )
+  // compareCommits.commits are the commits reachable from head but not base,
+  // ordered oldest→newest (base itself is excluded).
+  const newCommits = cmp.data.commits ?? []
+  const out: CommitFileStat[] = []
+  for (const c of newCommits) {
+    const detail = await withRateLimitRetry(() =>
+      octokit.repos.getCommit({ owner, repo, ref: c.sha })
+    )
+    out.push({
+      sha: c.sha,
+      message: c.commit.message ?? '',
+      authorName: c.commit.author?.name ?? c.commit.committer?.name ?? '',
+      authorEmail: c.commit.author?.email ?? c.commit.committer?.email ?? '',
+      date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
+      parentCount: c.parents?.length ?? 0,
+      files: (detail.data.files ?? []).map((f) => ({
+        path: f.filename,
+        additions: f.additions ?? 0,
+        deletions: f.deletions ?? 0,
+        status: f.status ?? 'modified',
+      })),
+    })
+  }
+  return out
 }
 
 export type RevertFileResult = {
