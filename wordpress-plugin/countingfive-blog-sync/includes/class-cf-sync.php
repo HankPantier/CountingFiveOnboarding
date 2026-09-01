@@ -1,0 +1,225 @@
+<?php
+/**
+ * The sync worker: fetch the feed and reconcile WordPress posts.
+ *
+ * One-way. CountingFive is the source of truth. New/updated posts are published;
+ * posts that disappear from the feed are set to draft (never deleted).
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class CF_Blog_Sync {
+
+	/**
+	 * Run one sync pass.
+	 *
+	 * @return array|WP_Error Counts { created, updated, drafted } or an error.
+	 */
+	public static function run() {
+		$settings = get_option( CF_BLOG_SYNC_OPTION, array() );
+		$feed_url = isset( $settings['feed_url'] ) ? $settings['feed_url'] : '';
+		$secret   = isset( $settings['secret'] ) ? $settings['secret'] : '';
+		$enabled  = ! empty( $settings['enabled'] );
+
+		if ( ! $enabled ) {
+			return array( 'created' => 0, 'updated' => 0, 'drafted' => 0, 'skipped' => 'disabled' );
+		}
+		if ( '' === $feed_url || '' === $secret ) {
+			return new WP_Error( 'cf_config', __( 'Feed URL and secret are required.', 'cf-blog-sync' ) );
+		}
+
+		$response = wp_remote_get(
+			$feed_url,
+			array(
+				'timeout' => 30,
+				'headers' => array( 'Authorization' => 'Bearer ' . $secret ),
+			)
+		);
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+
+		// CRITICAL: only reconcile on a clean 200. On any other status (401 wrong
+		// secret, 404 disabled site, 5xx) we make NO changes — otherwise a
+		// transient failure would draft every synced post.
+		if ( 200 !== $code ) {
+			return new WP_Error(
+				'cf_http',
+				sprintf(
+					/* translators: %d: HTTP status code */
+					__( 'Feed returned HTTP %d — no changes made.', 'cf-blog-sync' ),
+					$code
+				)
+			);
+		}
+
+		$body = wp_remote_retrieve_body( $response );
+		$data = json_decode( $body, true );
+		if ( ! is_array( $data ) || ! isset( $data['posts'] ) || ! is_array( $data['posts'] ) ) {
+			return new WP_Error( 'cf_parse', __( 'Feed response was not valid JSON — no changes made.', 'cf-blog-sync' ) );
+		}
+
+		$created = 0;
+		$updated = 0;
+		$feed_slugs = array();
+
+		foreach ( $data['posts'] as $post ) {
+			if ( empty( $post['slug'] ) ) {
+				continue;
+			}
+			$slug = sanitize_title( $post['slug'] );
+			$feed_slugs[] = $slug;
+			$was_created = self::upsert_post( $slug, $post, $secret );
+			if ( 'created' === $was_created ) {
+				$created++;
+			} elseif ( 'updated' === $was_created ) {
+				$updated++;
+			}
+		}
+
+		$drafted = self::draft_removed( $feed_slugs );
+
+		return array( 'created' => $created, 'updated' => $updated, 'drafted' => $drafted );
+	}
+
+	/**
+	 * Insert or update a single post, matched by slug. Returns 'created' or
+	 * 'updated'.
+	 */
+	private static function upsert_post( $slug, $post, $secret ) {
+		$existing = self::find_existing( $slug );
+
+		$postarr = array(
+			'post_type'    => 'post',
+			'post_status'  => 'publish',
+			'post_name'    => $slug,
+			// Our feed HTML uses only tags inside wp_kses_post's allowlist, so no
+			// special unfiltered handling is needed. wp_slash survives the
+			// wp_unslash that wp_insert_post applies internally.
+			'post_title'   => wp_slash( isset( $post['title'] ) ? $post['title'] : $slug ),
+			'post_content' => wp_slash( isset( $post['html'] ) ? $post['html'] : '' ),
+			'post_excerpt' => wp_slash( isset( $post['excerpt'] ) ? $post['excerpt'] : '' ),
+		);
+
+		if ( ! empty( $post['date_gmt'] ) ) {
+			$postarr['post_date_gmt'] = $post['date_gmt'];
+			$postarr['post_date']     = get_date_from_gmt( $post['date_gmt'] );
+		}
+
+		if ( $existing ) {
+			$postarr['ID'] = $existing->ID;
+			$result = wp_update_post( $postarr, true );
+			$verb = 'updated';
+		} else {
+			$result = wp_insert_post( $postarr, true );
+			$verb = 'created';
+		}
+
+		if ( is_wp_error( $result ) || ! $result ) {
+			return 'error';
+		}
+		$post_id = is_object( $result ) ? $result->ID : (int) $result;
+
+		update_post_meta( $post_id, '_cf_synced', 1 );
+		update_post_meta( $post_id, '_cf_source_slug', $slug );
+
+		// Tags (replace the full set each sync).
+		if ( ! empty( $post['tags'] ) && is_array( $post['tags'] ) ) {
+			wp_set_post_tags( $post_id, array_map( 'sanitize_text_field', $post['tags'] ), false );
+		}
+
+		self::apply_seo_meta( $post_id, $post );
+
+		if ( ! empty( $post['hero_image'] ) && is_array( $post['hero_image'] ) ) {
+			CF_Blog_Sync_Media::attach_hero( $post_id, $post['hero_image'], $secret );
+		}
+
+		return $verb;
+	}
+
+	/**
+	 * Prefer a post we previously synced (by _cf_source_slug), then fall back to
+	 * any post with the same slug. Avoids clobbering an unrelated manual post
+	 * unless it genuinely shares the slug.
+	 */
+	private static function find_existing( $slug ) {
+		$query = new WP_Query(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => array( 'publish', 'draft', 'pending', 'private', 'future' ),
+				'meta_key'       => '_cf_source_slug',
+				'meta_value'     => $slug,
+				'posts_per_page' => 1,
+				'no_found_rows'  => true,
+			)
+		);
+		if ( $query->have_posts() ) {
+			return $query->posts[0];
+		}
+		$by_path = get_page_by_path( $slug, OBJECT, 'post' );
+		return $by_path ? $by_path : null;
+	}
+
+	/**
+	 * Write meta title/description for Yoast and Rank Math. Harmless if neither
+	 * plugin is active. Filterable so operators can map to another SEO plugin.
+	 */
+	private static function apply_seo_meta( $post_id, $post ) {
+		$meta_title = isset( $post['meta_title'] ) ? sanitize_text_field( $post['meta_title'] ) : '';
+		$meta_desc  = isset( $post['meta_description'] ) ? sanitize_text_field( $post['meta_description'] ) : '';
+
+		$map = apply_filters(
+			'cf_blog_sync_seo_meta_keys',
+			array(
+				'_yoast_wpseo_title'    => $meta_title,
+				'_yoast_wpseo_metadesc' => $meta_desc,
+				'rank_math_title'       => $meta_title,
+				'rank_math_description' => $meta_desc,
+			),
+			$post
+		);
+
+		foreach ( $map as $key => $value ) {
+			if ( '' !== $value ) {
+				update_post_meta( $post_id, $key, $value );
+			}
+		}
+	}
+
+	/**
+	 * Any synced post whose slug is no longer in the feed → set to draft.
+	 * Never deletes; a slug re-appearing flips it back to publish via upsert.
+	 *
+	 * @return int Number of posts drafted.
+	 */
+	private static function draft_removed( $feed_slugs ) {
+		$feed_slugs = array_flip( $feed_slugs );
+		$drafted = 0;
+
+		$query = new WP_Query(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'meta_key'       => '_cf_synced',
+				'meta_value'     => 1,
+				'posts_per_page' => -1,
+				'no_found_rows'  => true,
+				'fields'         => 'ids',
+			)
+		);
+
+		foreach ( $query->posts as $post_id ) {
+			$source_slug = get_post_meta( $post_id, '_cf_source_slug', true );
+			if ( '' === $source_slug || isset( $feed_slugs[ $source_slug ] ) ) {
+				continue;
+			}
+			wp_update_post( array( 'ID' => $post_id, 'post_status' => 'draft' ) );
+			$drafted++;
+		}
+
+		return $drafted;
+	}
+}

@@ -1,0 +1,41 @@
+import { NextResponse } from 'next/server'
+import { resolveSite, verifyBearer } from '@/lib/wordpress/sites'
+import { buildFeed } from '@/lib/wordpress/feed-builder'
+
+// GitHub reads require the Node.js runtime; a site with many posts takes dozens
+// of reads, so allow more than the 60s default.
+export const runtime = 'nodejs'
+export const maxDuration = 120
+
+// Public host the WP plugin will call back for image proxying. Prefer an
+// explicit env base; otherwise reconstruct from the forwarded host so proxy
+// URLs point at the real origin, not Vercel's internal request URL.
+function resolveOrigin(req: Request): string {
+  const envBase = process.env.NEXT_PUBLIC_APP_URL
+  if (envBase) return envBase.replace(/\/$/, '')
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host')
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https'
+  if (host) return `${proto}://${host}`
+  return new URL(req.url).origin
+}
+
+export async function GET(req: Request, { params }: { params: Promise<{ site: string }> }) {
+  const { site: siteKey } = await params
+  const site = resolveSite(siteKey)
+  // 404 for unknown AND disabled sites — don't reveal which.
+  if (!site) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!verifyBearer(req.headers.get('authorization'), site)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const posts = await buildFeed(site.github_repo, site.key, resolveOrigin(req))
+    return NextResponse.json(
+      { site: site.key, generated_at: new Date().toISOString(), posts },
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
