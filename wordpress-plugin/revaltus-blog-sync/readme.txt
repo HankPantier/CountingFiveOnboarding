@@ -3,7 +3,7 @@ Contributors: revaltus
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 
 One-way pull of published blog posts from a Revaltus feed into WordPress.
@@ -39,6 +39,11 @@ WordPress (Divi) site PULL those published posts in on a schedule.
 * If the feed returns anything other than HTTP 200 (wrong secret, disabled site,
   server error), the plugin makes NO changes — it will not draft posts on a
   transient failure.
+* Each sync run is time-bounded (default 40s, filter `rv_blog_sync_time_budget`)
+  and resumable, so a large repo won't trip your host's gateway timeout. If a run
+  reports posts "still pending", click "Sync now" again or let WP-cron finish
+  them; already-synced posts and images are skipped, so each run gets faster.
+  Per-image download timeout is `rv_blog_sync_image_timeout` (default 15s).
 * Post HTML from the feed uses only tags within WordPress's `wp_kses_post`
   allowlist (headings, paragraphs, lists, links, bold/italic, code).
 * SEO meta title/description are written for both Yoast and Rank Math; use the
@@ -53,6 +58,13 @@ WordPress (Divi) site PULL those published posts in on a schedule.
   and `_rv_hero_hash` are left in place.
 
 == Changelog ==
+
+= 1.1.0 =
+* Time-bounded, resumable sync: a run stops starting new work once its wall
+  budget (default 40s) is spent, so large repos no longer trip host gateway
+  timeouts. Unchanged posts skip by content hash; hero images skip by hash.
+* Shorter per-image download timeout (default 15s), both filterable.
+* "Sync now" reports how many posts are still pending.
 
 = 1.0.0 =
 * Initial release.

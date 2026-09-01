@@ -27,7 +27,11 @@ class RV_Blog_Sync_Media {
 			return;
 		}
 
-		$args = array( 'timeout' => 30 );
+		// Kept short (filterable) so a single slow image can't push a sync run
+		// past the host's gateway timeout; the run's own budget checks between
+		// posts, and an image that misses this run retries on the next.
+		$timeout = (int) apply_filters( 'rv_blog_sync_image_timeout', 15 );
+		$args = array( 'timeout' => $timeout );
 		if ( ! empty( $hero['requires_auth'] ) && $secret !== '' ) {
 			$args['headers'] = array( 'Authorization' => 'Bearer ' . $secret );
 		}

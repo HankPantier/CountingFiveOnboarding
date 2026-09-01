@@ -4,6 +4,11 @@
  *
  * One-way. Revaltus is the source of truth. New/updated posts are published;
  * posts that disappear from the feed are set to draft (never deleted).
+ *
+ * Time-bounded + resumable: a single run stops starting new work once its wall
+ * budget is spent (default 40s), so it never trips a host's gateway timeout on a
+ * large repo. Unchanged posts are skipped by content hash and already-fetched
+ * hero images by hash, so repeat runs (WP-cron or "Sync now") converge cheaply.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -15,7 +20,7 @@ class RV_Blog_Sync {
 	/**
 	 * Run one sync pass.
 	 *
-	 * @return array|WP_Error Counts { created, updated, drafted } or an error.
+	 * @return array|WP_Error Counts { created, updated, drafted, skipped, remaining } or an error.
 	 */
 	public static function run() {
 		$settings = get_option( RV_BLOG_SYNC_OPTION, array() );
@@ -24,11 +29,16 @@ class RV_Blog_Sync {
 		$enabled  = ! empty( $settings['enabled'] );
 
 		if ( ! $enabled ) {
-			return array( 'created' => 0, 'updated' => 0, 'drafted' => 0, 'skipped' => 'disabled' );
+			return array( 'created' => 0, 'updated' => 0, 'drafted' => 0, 'skipped' => 0, 'remaining' => 0, 'note' => 'disabled' );
 		}
 		if ( '' === $feed_url || '' === $secret ) {
 			return new WP_Error( 'rv_config', __( 'Feed URL and secret are required.', 'revaltus-blog-sync' ) );
 		}
+
+		// Wall budget for the whole run (from before the feed fetch). Kept well
+		// under a typical 60s gateway timeout; filterable for stricter hosts.
+		$start  = microtime( true );
+		$budget = (float) apply_filters( 'rv_blog_sync_time_budget', 40.0 );
 
 		$response = wp_remote_get(
 			$feed_url,
@@ -62,34 +72,105 @@ class RV_Blog_Sync {
 			return new WP_Error( 'rv_parse', __( 'Feed response was not valid JSON — no changes made.', 'revaltus-blog-sync' ) );
 		}
 
-		$created = 0;
-		$updated = 0;
+		// Full feed slug set up front, so a partial (budget-limited) pass still
+		// drafts the right posts and never drafts one it simply hasn't reached.
 		$feed_slugs = array();
+		foreach ( $data['posts'] as $p ) {
+			if ( ! empty( $p['slug'] ) ) {
+				$feed_slugs[] = sanitize_title( $p['slug'] );
+			}
+		}
+
+		$created   = 0;
+		$updated   = 0;
+		$skipped   = 0;
+		$remaining = 0;
 
 		foreach ( $data['posts'] as $post ) {
 			if ( empty( $post['slug'] ) ) {
 				continue;
 			}
-			$slug = sanitize_title( $post['slug'] );
-			$feed_slugs[] = $slug;
-			$was_created = self::upsert_post( $slug, $post, $secret );
-			if ( 'created' === $was_created ) {
+			$slug     = sanitize_title( $post['slug'] );
+			$existing = self::find_existing( $slug );
+			$hash     = self::content_hash( $post );
+
+			// Fast path: content unchanged AND the hero image is already attached
+			// (or there is none). Cheap DB reads only — safe to keep doing even
+			// after the budget is spent, so a converged site re-syncs instantly.
+			if ( $existing
+				&& get_post_meta( $existing->ID, '_rv_content_hash', true ) === $hash
+				&& self::image_ok( $existing->ID, $post ) ) {
+				$skipped++;
+				continue;
+			}
+
+			// Budget spent: leave the remaining work for the next run. Posts
+			// already processed above persist; the cron/"Sync now" resumes here.
+			if ( ( microtime( true ) - $start ) > $budget ) {
+				$remaining++;
+				continue;
+			}
+
+			$verb = self::upsert_post( $slug, $post, $secret, $hash );
+			if ( 'created' === $verb ) {
 				$created++;
-			} elseif ( 'updated' === $was_created ) {
+			} elseif ( 'updated' === $verb ) {
 				$updated++;
 			}
 		}
 
 		$drafted = self::draft_removed( $feed_slugs );
 
-		return array( 'created' => $created, 'updated' => $updated, 'drafted' => $drafted );
+		return array(
+			'created'   => $created,
+			'updated'   => $updated,
+			'drafted'   => $drafted,
+			'skipped'   => $skipped,
+			'remaining' => $remaining,
+		);
+	}
+
+	/**
+	 * Stable hash of the feed fields we write, so an unchanged post can be
+	 * skipped without touching the DB or re-sideloading its image.
+	 */
+	private static function content_hash( $post ) {
+		$hero = isset( $post['hero_image']['url'] ) ? $post['hero_image']['url'] : '';
+		$tags = ( isset( $post['tags'] ) && is_array( $post['tags'] ) ) ? implode( ',', $post['tags'] ) : '';
+		return md5(
+			implode(
+				'|',
+				array(
+					isset( $post['title'] ) ? $post['title'] : '',
+					isset( $post['html'] ) ? $post['html'] : '',
+					isset( $post['excerpt'] ) ? $post['excerpt'] : '',
+					isset( $post['date_gmt'] ) ? $post['date_gmt'] : '',
+					$tags,
+					isset( $post['meta_title'] ) ? $post['meta_title'] : '',
+					isset( $post['meta_description'] ) ? $post['meta_description'] : '',
+					$hero,
+				)
+			)
+		);
+	}
+
+	/**
+	 * True when the post needs no image work: it has no hero, or it already has
+	 * a featured image. A hero that failed to attach last run returns false so
+	 * it is retried.
+	 */
+	private static function image_ok( $post_id, $post ) {
+		if ( empty( $post['hero_image']['url'] ) ) {
+			return true;
+		}
+		return (bool) get_post_thumbnail_id( $post_id );
 	}
 
 	/**
 	 * Insert or update a single post, matched by slug. Returns 'created' or
-	 * 'updated'.
+	 * 'updated'. Stamps the content hash on success so the next run can skip it.
 	 */
-	private static function upsert_post( $slug, $post, $secret ) {
+	private static function upsert_post( $slug, $post, $secret, $hash ) {
 		$existing = self::find_existing( $slug );
 
 		$postarr = array(
@@ -136,6 +217,10 @@ class RV_Blog_Sync {
 		if ( ! empty( $post['hero_image'] ) && is_array( $post['hero_image'] ) ) {
 			RV_Blog_Sync_Media::attach_hero( $post_id, $post['hero_image'], $secret );
 		}
+
+		// Stamp last so a mid-run failure above leaves the post un-hashed and it
+		// is retried next run rather than skipped.
+		update_post_meta( $post_id, '_rv_content_hash', $hash );
 
 		return $verb;
 	}
@@ -192,6 +277,7 @@ class RV_Blog_Sync {
 	/**
 	 * Any synced post whose slug is no longer in the feed → set to draft.
 	 * Never deletes; a slug re-appearing flips it back to publish via upsert.
+	 * Safe after a partial pass because $feed_slugs is the FULL feed set.
 	 *
 	 * @return int Number of posts drafted.
 	 */

@@ -84,6 +84,7 @@ class RV_Blog_Sync_Settings {
 			$args['rv_created']   = isset( $result['created'] ) ? (int) $result['created'] : 0;
 			$args['rv_updated']   = isset( $result['updated'] ) ? (int) $result['updated'] : 0;
 			$args['rv_drafted']   = isset( $result['drafted'] ) ? (int) $result['drafted'] : 0;
+			$args['rv_remaining'] = isset( $result['remaining'] ) ? (int) $result['remaining'] : 0;
 		}
 		wp_safe_redirect( add_query_arg( $args, admin_url( 'options-general.php' ) ) );
 		exit;
@@ -103,6 +104,7 @@ class RV_Blog_Sync_Settings {
 			<h1><?php esc_html_e( 'Revaltus Blog Sync', 'revaltus-blog-sync' ); ?></h1>
 
 			<?php if ( isset( $_GET['rv_sync_done'] ) ) : ?>
+				<?php $rv_remaining = isset( $_GET['rv_remaining'] ) ? (int) $_GET['rv_remaining'] : 0; ?>
 				<div class="notice notice-success is-dismissible"><p>
 					<?php
 					printf(
@@ -114,6 +116,17 @@ class RV_Blog_Sync_Settings {
 					);
 					?>
 				</p></div>
+				<?php if ( $rv_remaining > 0 ) : ?>
+					<div class="notice notice-info is-dismissible"><p>
+						<?php
+						printf(
+							/* translators: %d: number of posts still pending */
+							esc_html__( '%d post(s) still pending — this run hit its time budget. Click “Sync now” again, or wait for the next scheduled sync to finish them.', 'revaltus-blog-sync' ),
+							$rv_remaining
+						);
+						?>
+					</p></div>
+				<?php endif; ?>
 			<?php endif; ?>
 
 			<?php if ( isset( $_GET['rv_sync_error'] ) ) : ?>
