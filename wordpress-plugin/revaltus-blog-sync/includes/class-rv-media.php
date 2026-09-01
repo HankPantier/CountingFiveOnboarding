@@ -1,6 +1,6 @@
 <?php
 /**
- * Media sideload for CountingFive Blog Sync.
+ * Media sideload for Revaltus Blog Sync.
  *
  * WP's core media_sideload_image() can't send an Authorization header, but the
  * feed's hero images are served by an authenticated proxy — so we fetch the
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class CF_Blog_Sync_Media {
+class RV_Blog_Sync_Media {
 
 	/**
 	 * Ensure the hero image is in the media library and set as the post's
@@ -42,7 +42,7 @@ class CF_Blog_Sync_Media {
 		}
 
 		$hash = md5( $body );
-		$existing_hash = get_post_meta( $post_id, '_cf_hero_hash', true );
+		$existing_hash = get_post_meta( $post_id, '_rv_hero_hash', true );
 		$existing_thumb = get_post_thumbnail_id( $post_id );
 		if ( $existing_hash === $hash && $existing_thumb ) {
 			return; // Unchanged — nothing to do.
@@ -78,6 +78,6 @@ class CF_Blog_Sync_Media {
 		}
 
 		set_post_thumbnail( $post_id, $attach_id );
-		update_post_meta( $post_id, '_cf_hero_hash', $hash );
+		update_post_meta( $post_id, '_rv_hero_hash', $hash );
 	}
 }

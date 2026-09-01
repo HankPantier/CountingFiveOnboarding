@@ -1,56 +1,52 @@
 // ---------------------------------------------------------------------------
-// Site registry + per-site bearer auth for the WordPress blog-sync bridge.
+// Site registry + per-site bearer auth for the Revaltus WordPress blog-sync
+// bridge (see ./README.md).
 //
-// Part of the self-contained, removable WordPress bridge (see ./README.md). The
-// registry is a static JSON file (config/wordpress-sites.json) so the whole
-// module stays decoupled from Supabase and deletes in one move. Secrets are
-// NEVER stored in the JSON — it only names the env var that holds each site's
-// bearer token, so rotation needs no code change.
+// The registry lives in the `wordpress_sites` table, managed from the admin UI
+// (Admin → WordPress Sites). Each row carries its own app-generated bearer
+// secret. The feed routes read config here via the service-role client; the
+// admin CRUD routes (app/api/admin/wordpress-sites) own writes. Deleting the
+// whole bridge still comes down to a few `rm`s + dropping the table.
 // ---------------------------------------------------------------------------
 
 import crypto from 'node:crypto'
-import registryJson from '@/config/wordpress-sites.json'
+import { createServerClient } from '@/lib/supabase/server'
 
 export type WordpressSite = {
   key: string
   github_repo: string
-  enabled: boolean
-  secret_env: string
+  secret: string
 }
-
-type RawSite = { github_repo?: string; enabled?: boolean; secret_env?: string }
-type Registry = Record<string, RawSite>
-
-const registry = registryJson as Registry
 
 // Resolve a site key to its config, or null if unknown or disabled. Callers
 // return a uniform 404 for null so a disabled site is indistinguishable from a
-// nonexistent one. A registry accepting-override lets tests inject fixtures.
-export function resolveSite(
-  key: string,
-  reg: Registry = registry
-): WordpressSite | null {
-  const raw = reg[key]
-  if (!raw) return null
-  if (raw.enabled !== true) return null
-  if (!raw.github_repo || !raw.secret_env) return null
-  return { key, github_repo: raw.github_repo, enabled: true, secret_env: raw.secret_env }
+// nonexistent one. Uses the service-role client (RLS is enabled with no
+// policies) — the feed route is the only non-admin reader.
+export async function resolveSite(key: string): Promise<WordpressSite | null> {
+  const supabase = createServerClient()
+  const { data } = await supabase
+    .from('wordpress_sites')
+    .select('site_key, github_repo, enabled, secret')
+    .eq('site_key', key)
+    .maybeSingle()
+
+  if (!data || !data.enabled) return null
+  if (!data.github_repo || !data.secret) return null
+  return { key: data.site_key, github_repo: data.github_repo, secret: data.secret }
 }
 
-// The site's bearer secret, read from the env var named by its config. Returns
-// null when the var is empty/absent so verifyBearer fails closed.
-export function getSiteSecret(site: WordpressSite): string | null {
-  const secret = process.env[site.secret_env]
-  return secret && secret.length > 0 ? secret : null
+// Generate a bearer secret for a new/rotated site. 48 hex chars (24 bytes).
+export function generateSiteSecret(): string {
+  return crypto.randomBytes(24).toString('hex')
 }
 
-// Constant-time bearer check. Fails closed: an empty/absent secret rejects every
-// request, so a misconfigured site can never be validated by `Bearer undefined`.
+// Constant-time bearer check against the site's stored secret. Fails closed: an
+// empty secret or missing header rejects every request, so a misconfigured site
+// can never be validated by `Bearer undefined`.
 export function verifyBearer(authHeader: string | null, site: WordpressSite): boolean {
-  const secret = getSiteSecret(site)
-  if (!secret || !authHeader) return false
+  if (!site.secret || !authHeader) return false
   const provided = Buffer.from(authHeader)
-  const expected = Buffer.from(`Bearer ${secret}`)
+  const expected = Buffer.from(`Bearer ${site.secret}`)
   // timingSafeEqual throws on unequal lengths; the length check both guards that
   // and short-circuits obviously-wrong headers.
   if (provided.length !== expected.length) return false

@@ -1,7 +1,7 @@
-import { describe, expect, it, afterEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { postFromRepoFile } from './feed-builder'
 import { isAllowedAssetPath, assetUrlFor } from './assets'
-import { resolveSite, verifyBearer, type WordpressSite } from './sites'
+import { verifyBearer, generateSiteSecret, type WordpressSite } from './sites'
 
 const OPTS = { siteKey: 'acmetax', origin: 'https://app.example.com' }
 
@@ -141,54 +141,28 @@ describe('assetUrlFor + isAllowedAssetPath', () => {
   })
 })
 
-describe('resolveSite', () => {
-  const REG = {
-    live: { github_repo: 'live-site', enabled: true, secret_env: 'WP_FEED_SECRET_LIVE' },
-    off: { github_repo: 'off-site', enabled: false, secret_env: 'WP_FEED_SECRET_OFF' },
-    partial: { enabled: true, secret_env: 'X' },
-  }
-
-  it('resolves an enabled, fully-configured site', () => {
-    expect(resolveSite('live', REG)).toEqual({
-      key: 'live',
-      github_repo: 'live-site',
-      enabled: true,
-      secret_env: 'WP_FEED_SECRET_LIVE',
-    })
-  })
-
-  it('returns null for disabled, unknown, or incomplete sites', () => {
-    expect(resolveSite('off', REG)).toBeNull()
-    expect(resolveSite('nope', REG)).toBeNull()
-    expect(resolveSite('partial', REG)).toBeNull()
-  })
-})
-
 describe('verifyBearer (fail-closed)', () => {
-  const site: WordpressSite = {
-    key: 'live',
-    github_repo: 'live-site',
-    enabled: true,
-    secret_env: 'WP_FEED_SECRET_TEST',
-  }
+  const site: WordpressSite = { key: 'live', github_repo: 'live-site', secret: 's3cret-token' }
 
-  afterEach(() => {
-    delete process.env.WP_FEED_SECRET_TEST
-  })
-
-  it('rejects when the secret env var is empty (never validates Bearer undefined)', () => {
-    expect(verifyBearer('Bearer anything', site)).toBe(false)
+  it('rejects when the stored secret is empty (never validates Bearer undefined)', () => {
+    expect(verifyBearer('Bearer anything', { ...site, secret: '' })).toBe(false)
   })
 
   it('accepts the exact matching bearer', () => {
-    process.env.WP_FEED_SECRET_TEST = 's3cret-token'
     expect(verifyBearer('Bearer s3cret-token', site)).toBe(true)
   })
 
   it('rejects a wrong or malformed header', () => {
-    process.env.WP_FEED_SECRET_TEST = 's3cret-token'
     expect(verifyBearer('Bearer wrong', site)).toBe(false)
     expect(verifyBearer('s3cret-token', site)).toBe(false)
     expect(verifyBearer(null, site)).toBe(false)
+  })
+})
+
+describe('generateSiteSecret', () => {
+  it('produces a 48-char hex token', () => {
+    const s = generateSiteSecret()
+    expect(s).toMatch(/^[0-9a-f]{48}$/)
+    expect(generateSiteSecret()).not.toBe(s)
   })
 })

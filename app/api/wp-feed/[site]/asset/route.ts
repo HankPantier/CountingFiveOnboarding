@@ -27,7 +27,7 @@ function contentTypeFor(path: string): string {
 
 export async function GET(req: Request, { params }: { params: Promise<{ site: string }> }) {
   const { site: siteKey } = await params
-  const site = resolveSite(siteKey)
+  const site = await resolveSite(siteKey)
   if (!site) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   if (!verifyBearer(req.headers.get('authorization'), site)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

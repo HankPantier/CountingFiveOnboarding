@@ -2,7 +2,7 @@
 /**
  * The sync worker: fetch the feed and reconcile WordPress posts.
  *
- * One-way. CountingFive is the source of truth. New/updated posts are published;
+ * One-way. Revaltus is the source of truth. New/updated posts are published;
  * posts that disappear from the feed are set to draft (never deleted).
  */
 
@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class CF_Blog_Sync {
+class RV_Blog_Sync {
 
 	/**
 	 * Run one sync pass.
@@ -18,7 +18,7 @@ class CF_Blog_Sync {
 	 * @return array|WP_Error Counts { created, updated, drafted } or an error.
 	 */
 	public static function run() {
-		$settings = get_option( CF_BLOG_SYNC_OPTION, array() );
+		$settings = get_option( RV_BLOG_SYNC_OPTION, array() );
 		$feed_url = isset( $settings['feed_url'] ) ? $settings['feed_url'] : '';
 		$secret   = isset( $settings['secret'] ) ? $settings['secret'] : '';
 		$enabled  = ! empty( $settings['enabled'] );
@@ -27,7 +27,7 @@ class CF_Blog_Sync {
 			return array( 'created' => 0, 'updated' => 0, 'drafted' => 0, 'skipped' => 'disabled' );
 		}
 		if ( '' === $feed_url || '' === $secret ) {
-			return new WP_Error( 'cf_config', __( 'Feed URL and secret are required.', 'cf-blog-sync' ) );
+			return new WP_Error( 'rv_config', __( 'Feed URL and secret are required.', 'revaltus-blog-sync' ) );
 		}
 
 		$response = wp_remote_get(
@@ -47,10 +47,10 @@ class CF_Blog_Sync {
 		// transient failure would draft every synced post.
 		if ( 200 !== $code ) {
 			return new WP_Error(
-				'cf_http',
+				'rv_http',
 				sprintf(
 					/* translators: %d: HTTP status code */
-					__( 'Feed returned HTTP %d — no changes made.', 'cf-blog-sync' ),
+					__( 'Feed returned HTTP %d — no changes made.', 'revaltus-blog-sync' ),
 					$code
 				)
 			);
@@ -59,7 +59,7 @@ class CF_Blog_Sync {
 		$body = wp_remote_retrieve_body( $response );
 		$data = json_decode( $body, true );
 		if ( ! is_array( $data ) || ! isset( $data['posts'] ) || ! is_array( $data['posts'] ) ) {
-			return new WP_Error( 'cf_parse', __( 'Feed response was not valid JSON — no changes made.', 'cf-blog-sync' ) );
+			return new WP_Error( 'rv_parse', __( 'Feed response was not valid JSON — no changes made.', 'revaltus-blog-sync' ) );
 		}
 
 		$created = 0;
@@ -123,8 +123,8 @@ class CF_Blog_Sync {
 		}
 		$post_id = is_object( $result ) ? $result->ID : (int) $result;
 
-		update_post_meta( $post_id, '_cf_synced', 1 );
-		update_post_meta( $post_id, '_cf_source_slug', $slug );
+		update_post_meta( $post_id, '_rv_synced', 1 );
+		update_post_meta( $post_id, '_rv_source_slug', $slug );
 
 		// Tags (replace the full set each sync).
 		if ( ! empty( $post['tags'] ) && is_array( $post['tags'] ) ) {
@@ -134,14 +134,14 @@ class CF_Blog_Sync {
 		self::apply_seo_meta( $post_id, $post );
 
 		if ( ! empty( $post['hero_image'] ) && is_array( $post['hero_image'] ) ) {
-			CF_Blog_Sync_Media::attach_hero( $post_id, $post['hero_image'], $secret );
+			RV_Blog_Sync_Media::attach_hero( $post_id, $post['hero_image'], $secret );
 		}
 
 		return $verb;
 	}
 
 	/**
-	 * Prefer a post we previously synced (by _cf_source_slug), then fall back to
+	 * Prefer a post we previously synced (by _rv_source_slug), then fall back to
 	 * any post with the same slug. Avoids clobbering an unrelated manual post
 	 * unless it genuinely shares the slug.
 	 */
@@ -150,7 +150,7 @@ class CF_Blog_Sync {
 			array(
 				'post_type'      => 'post',
 				'post_status'    => array( 'publish', 'draft', 'pending', 'private', 'future' ),
-				'meta_key'       => '_cf_source_slug',
+				'meta_key'       => '_rv_source_slug',
 				'meta_value'     => $slug,
 				'posts_per_page' => 1,
 				'no_found_rows'  => true,
@@ -172,7 +172,7 @@ class CF_Blog_Sync {
 		$meta_desc  = isset( $post['meta_description'] ) ? sanitize_text_field( $post['meta_description'] ) : '';
 
 		$map = apply_filters(
-			'cf_blog_sync_seo_meta_keys',
+			'rv_blog_sync_seo_meta_keys',
 			array(
 				'_yoast_wpseo_title'    => $meta_title,
 				'_yoast_wpseo_metadesc' => $meta_desc,
@@ -203,7 +203,7 @@ class CF_Blog_Sync {
 			array(
 				'post_type'      => 'post',
 				'post_status'    => 'publish',
-				'meta_key'       => '_cf_synced',
+				'meta_key'       => '_rv_synced',
 				'meta_value'     => 1,
 				'posts_per_page' => -1,
 				'no_found_rows'  => true,
@@ -212,7 +212,7 @@ class CF_Blog_Sync {
 		);
 
 		foreach ( $query->posts as $post_id ) {
-			$source_slug = get_post_meta( $post_id, '_cf_source_slug', true );
+			$source_slug = get_post_meta( $post_id, '_rv_source_slug', true );
 			if ( '' === $source_slug || isset( $feed_slugs[ $source_slug ] ) ) {
 				continue;
 			}

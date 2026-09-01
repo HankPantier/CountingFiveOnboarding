@@ -1,17 +1,19 @@
-# WordPress blog-sync bridge
+# WordPress blog-sync bridge (Revaltus)
 
 A **one-way, opt-in** bridge that lets self-hosted WordPress (Divi) sites pull
 published blog/resource posts from a client's git repo during the transition
-period, while blogs are still authored and edited inside CountingFive.
+period, while blogs are still authored and edited inside Revaltus.
 
 It is deliberately **isolated and removable** — the sibling of the throwaway Divi
 export bridge (`lib/content/divi/`). It is **not** wired into the content/publish
-workflow, phase pipeline, publish gates, cron config, or editor UI. It only adds:
+workflow, phase pipeline, publish gates, cron config, or editor UI. It adds:
 
-- `lib/wordpress/` — feed builder + site registry + image proxy helpers
+- `lib/wordpress/` — feed builder + DB-backed site registry + image proxy helpers
 - `app/api/wp-feed/[site]/` — the feed route + authenticated image-proxy route
-- `config/wordpress-sites.json` — the per-site registry (empty = nothing enabled)
-- `wordpress-plugin/countingfive-blog-sync/` — the PHP plugin operators install
+- `app/api/admin/wordpress-sites/` — admin CRUD for the site registry
+- `app/admin/wordpress-sites/` — the admin roster page (add/toggle/regenerate/delete)
+- `wordpress_sites` table (migration 067) — one row per synced WP site
+- `wordpress-plugin/revaltus-blog-sync/` — the PHP plugin operators install
 
 ## How it works
 
@@ -25,41 +27,40 @@ WP plugin (WP-cron)  ──GET /api/wp-feed/{site}  (Bearer secret)──▶  th
 
 The app holds **all** GitHub credentials and serves clean JSON + proxied image
 bytes. WordPress holds only a feed URL + a per-site bearer secret — never a
-GitHub token. The repos are private, so hero images are emitted as authenticated
+GitHub token. Repos are private, so hero images are emitted as authenticated
 proxy URLs (`requires_auth: true`) that the plugin fetches with the bearer.
 
-## Enabling a site
+## Enabling a site (admin UI)
 
-1. Add an entry to `config/wordpress-sites.json`:
-   ```json
-   {
-     "acmetax": {
-       "github_repo": "acmetax-site",
-       "enabled": true,
-       "secret_env": "WP_FEED_SECRET_ACMETAX"
-     }
-   }
-   ```
-   `github_repo` accepts `name` or `owner/name` (same as `content_jobs.github_repo`).
-2. Set the named secret env var to a random 32-byte hex string (Vercel + `.env.local`):
-   `WP_FEED_SECRET_ACMETAX=<openssl rand -hex 32>`
-3. Install the `countingfive-blog-sync` plugin on the WordPress site and enter the
-   feed URL (`https://<app-host>/api/wp-feed/acmetax`) + the same secret.
+1. **Admin → WordPress Sites → Add site.** Enter a **site key** (URL slug, e.g.
+   `acmetax`) and the **GitHub repo** (`name` or `owner/name`, same as
+   `content_jobs.github_repo`). The app generates a bearer secret and shows it
+   **once** with the feed URL — copy both.
+2. Install the `revaltus-blog-sync` plugin on the WordPress site and paste the
+   feed URL (`https://<app-host>/api/wp-feed/acmetax`) + the secret.
+3. Click **Sync now** in WordPress (or wait for WP-cron).
+
+Lost the secret? Use **Regenerate** on the row (rotates it, shown once) and
+update the plugin. **Disable** flips `enabled` off (feed 404s); **Delete**
+removes the row.
 
 ## Disabling
 
-- **Per-site:** set `"enabled": false` in the JSON, or unset the secret env var.
-  The feed then returns 404/401 and the plugin **no-ops** (it never drafts posts
-  on a non-200 response), so nothing is destroyed.
+- **Per-site:** toggle the site off (or delete it) in the admin UI. The feed then
+  returns 404 and the plugin **no-ops** (it never drafts posts on a non-200), so
+  nothing is destroyed.
 
 ## Full removal (one move)
 
 ```
 rm -rf lib/wordpress
 rm -rf app/api/wp-feed
-rm -rf wordpress-plugin/countingfive-blog-sync
-rm config/wordpress-sites.json
-# drop any WP_FEED_SECRET_* env vars + the .env.example block
+rm -rf app/api/admin/wordpress-sites
+rm -rf app/admin/wordpress-sites
+rm -rf wordpress-plugin/revaltus-blog-sync
+rm components/admin/AddWordpressSiteDialog.tsx components/admin/WordpressSiteRow.tsx types/wordpress-sites.ts
+# remove the "WordPress" link from components/admin/AdminSidebar.tsx
+# drop table: DROP TABLE wordpress_sites;  (+ remove the type block from types/database.ts)
 npx tsc --noEmit   # clean compile confirms nothing else depended on it
 ```
 
@@ -72,5 +73,5 @@ npx tsc --noEmit   # clean compile confirms nothing else depended on it
 - **Hero image only**: current generator output has no inline body images. If
   inline `![]()` images referencing repo assets are ever added, extend
   `markdownToHtml` (module-local copy) and populate `inline_images`.
-- `github_repo` is duplicated from Supabase into the JSON (intentional, for
+- `github_repo` is duplicated from Supabase into the site row (intentional, for
   isolation) — keep it in sync if a repo is renamed.
