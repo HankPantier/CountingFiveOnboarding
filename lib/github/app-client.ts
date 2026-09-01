@@ -1,7 +1,16 @@
 import { Octokit } from '@octokit/rest'
 import { createAppAuth } from '@octokit/auth-app'
+import { throttling } from '@octokit/plugin-throttling'
 
-let cached: Octokit | null = null
+// GitHub enforces a PRIMARY hourly quota AND a SECONDARY rate limit that trips on
+// bursts of concurrent/rapid requests — including the editor firing several
+// repo-reading routes at once and the content push creating many blobs. The
+// throttling plugin is GitHub's recommended handling: it queues requests, caps
+// concurrency, spaces mutations, and (via the handlers below) waits out and
+// retries both limit types instead of surfacing a 403 to the editor UI.
+const ThrottledOctokit = Octokit.plugin(throttling)
+
+let cached: InstanceType<typeof ThrottledOctokit> | null = null
 
 // PEM private keys span multiple lines. To keep them in a single env var we
 // accept either the raw PEM (with real newlines, which is fine for some
@@ -43,12 +52,28 @@ function readEnv(): {
 // installation. @octokit/auth-app handles installation-token minting and
 // caching internally (tokens are valid for 1 hour and re-minted as needed),
 // so we keep a single Octokit across requests within the same Node process.
-export function getOctokit(): Octokit {
+export function getOctokit(): InstanceType<typeof ThrottledOctokit> {
   if (cached) return cached
   const { appId, privateKey, installationId } = readEnv()
-  cached = new Octokit({
+  cached = new ThrottledOctokit({
     authStrategy: createAppAuth,
     auth: { appId, privateKey, installationId },
+    throttle: {
+      // Return true to wait `retryAfter` seconds and retry; bound the retries so
+      // a genuinely stuck limit eventually surfaces rather than hanging forever.
+      onRateLimit: (retryAfter, options, octokit, retryCount) => {
+        octokit.log.warn(
+          `GitHub primary rate limit on ${options.method} ${options.url} — retry ${retryCount} in ${retryAfter}s`
+        )
+        return retryCount < 3
+      },
+      onSecondaryRateLimit: (retryAfter, options, octokit, retryCount) => {
+        octokit.log.warn(
+          `GitHub secondary rate limit on ${options.method} ${options.url} — retry ${retryCount} in ${retryAfter}s`
+        )
+        return retryCount < 3
+      },
+    },
   })
   return cached
 }
