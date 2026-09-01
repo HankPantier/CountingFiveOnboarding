@@ -208,9 +208,6 @@ export default function BatchContentTable({
             <tr className="border-b border-border-default bg-surface-header">
               <SortHeader label="Idea" keyName="title" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">
-                Keyword
-              </th>
-              <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">
                 Type
               </th>
               <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">
@@ -225,7 +222,7 @@ export default function BatchContentTable({
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-text-muted font-body">
+                <td colSpan={7} className="px-4 py-10 text-center text-text-muted font-body">
                   No batches match these filters.
                 </td>
               </tr>
@@ -235,20 +232,22 @@ export default function BatchContentTable({
                   key={b.id}
                   className="border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors"
                 >
-                  <td className="px-4 py-3 font-body text-text-primary font-semibold max-w-md truncate">
-                    {b.title}
+                  <td className="px-4 py-3 max-w-md">
+                    <div className="font-body text-text-primary font-semibold truncate">{b.title}</div>
+                    {b.targetKeyword && (
+                      <div className="text-text-muted text-xs mt-0.5 truncate">{b.targetKeyword}</div>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-text-secondary">{b.targetKeyword ?? '—'}</td>
                   <td className="px-4 py-3">
                     <TagBadge>{CONTENT_TYPES[asContentType(b.contentType)].uiLabel}</TagBadge>
                   </td>
                   <td className="px-4 py-3">
                     <TagBadge>{INDUSTRIES[asIndustry(b.industry)].uiLabel}</TagBadge>
                   </td>
-                  <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
+                  <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">
                     {`${b.clientsTotal} client${b.clientsTotal === 1 ? '' : 's'} · ${b.clientsComplete} drafted`}
                   </td>
-                  <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
+                  <td className="px-4 py-3 text-text-secondary text-xs whitespace-nowrap">
                     {new Date(b.createdAt).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
@@ -262,11 +261,11 @@ export default function BatchContentTable({
                     <div className="inline-flex items-center gap-2">
                       <Link
                         href={`/admin/blog-batch/${b.id}`}
-                        className="inline-flex items-center rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
+                        className="inline-flex items-center rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-[11px] px-2.5 py-1 transition-all hover:bg-surface-subtle"
                       >
                         View
                       </Link>
-                      {isAdmin && <DeleteBatchButton batchId={b.id} />}
+                      {isAdmin && <DeleteBatchButton batchId={b.id} size="sm" />}
                     </div>
                   </td>
                 </tr>

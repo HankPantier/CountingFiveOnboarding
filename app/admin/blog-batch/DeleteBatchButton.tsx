@@ -9,11 +9,14 @@ export default function DeleteBatchButton({
   batchId,
   redirect,
   label = 'Delete',
+  size = 'md',
 }: {
   batchId: string
   redirect?: string
   label?: string
+  size?: 'sm' | 'md'
 }) {
+  const sizeClasses = size === 'sm' ? 'text-[11px] px-2.5 py-1' : 'text-xs px-3.5 py-1.5'
   const [state, setState] = useState<'idle' | 'deleting' | 'error'>('idle')
   const [error, setError] = useState('')
   const router = useRouter()
@@ -49,7 +52,7 @@ export default function DeleteBatchButton({
         type="button"
         onClick={handleDelete}
         disabled={state === 'deleting'}
-        className="inline-flex items-center rounded-pill border border-error/20 text-error font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-error/10 hover:border-error/50 disabled:opacity-50 disabled:cursor-not-allowed"
+        className={`inline-flex items-center rounded-pill border border-error/20 text-error font-heading font-semibold ${sizeClasses} transition-all hover:bg-error/10 hover:border-error/50 disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {state === 'deleting' ? 'Deleting…' : label}
       </button>
