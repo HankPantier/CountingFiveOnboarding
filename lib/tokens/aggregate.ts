@@ -287,3 +287,81 @@ export function dailySeries(rows: UsageRow[], task?: TokenTask): DailyPoint[] {
   }
   return [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
+
+export type NamedCost = { name: string; cost: number }
+
+/** Rank {name, cost} items by cost desc, keep the top `topN`, and fold the
+ * positive-cost remainder into a single `otherLabel` slice. Drops zero-cost
+ * items. Shared by the top-clients / top-users / top-pair breakdown charts. */
+export function topByCost(items: NamedCost[], topN: number, otherLabel = 'Other'): NamedCost[] {
+  const sorted = items.filter((i) => i.cost > 0).sort((a, b) => b.cost - a.cost)
+  const top = sorted.slice(0, topN)
+  const other = sorted.slice(topN).reduce((sum, i) => sum + i.cost, 0)
+  if (other > 0) top.push({ name: otherLabel, cost: other })
+  return top
+}
+
+export type UserDaily = { key: string; label: string; points: DailyPoint[] }
+
+/** Per-user daily series for the stacked "by user" trend. Users are ranked by
+ * total cost; the top `topN` keep their own series and the rest fold into one
+ * "Other" bucket. Each series' points are ascending by UTC date. The null-actor
+ * rows collapse into the Unattributed series (subject to the same top-N cut). */
+export function dailySeriesByUser(
+  rows: UsageRow[],
+  userLabels: Record<string, string>,
+  topN = 6
+): UserDaily[] {
+  const perUser = new Map<string, { label: string; total: number; days: Map<string, DailyPoint> }>()
+
+  for (const row of rows) {
+    const u = resolveUser(row, userLabels)
+    let entry = perUser.get(u.key)
+    if (!entry) {
+      entry = { label: u.label, total: 0, days: new Map() }
+      perUser.set(u.key, entry)
+    }
+    const cost = rowCost(row)
+    entry.total += cost
+    const date = row.created_at.slice(0, 10)
+    let point = entry.days.get(date)
+    if (!point) {
+      point = { date, cost: 0, tokens: 0 }
+      entry.days.set(date, point)
+    }
+    point.cost += cost
+    point.tokens += row.input_tokens + row.output_tokens
+  }
+
+  const ranked = [...perUser.entries()].sort((a, b) => b[1].total - a[1].total)
+  const top = ranked.slice(0, topN)
+  const rest = ranked.slice(topN)
+
+  const series: UserDaily[] = top.map(([key, u]) => ({
+    key,
+    label: u.label,
+    points: [...u.days.values()].sort((a, b) => a.date.localeCompare(b.date)),
+  }))
+
+  if (rest.length) {
+    const otherDays = new Map<string, DailyPoint>()
+    for (const [, u] of rest) {
+      for (const p of u.days.values()) {
+        let point = otherDays.get(p.date)
+        if (!point) {
+          point = { date: p.date, cost: 0, tokens: 0 }
+          otherDays.set(p.date, point)
+        }
+        point.cost += p.cost
+        point.tokens += p.tokens
+      }
+    }
+    series.push({
+      key: '__other__',
+      label: 'Other',
+      points: [...otherDays.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    })
+  }
+
+  return series
+}

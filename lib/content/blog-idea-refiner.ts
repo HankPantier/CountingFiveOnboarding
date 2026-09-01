@@ -54,6 +54,9 @@ export type RefineBlogIdeaInput = {
   current?: RefinedBlogIdea | null
   instruction?: string
   contentType?: ContentType
+  // No client is selected yet at refine time, so there's nothing session-scoped
+  // to attribute against — carry the acting user so the spend isn't Unattributed.
+  createdBy?: string | null
 }
 
 function buildPrompt(input: RefineBlogIdeaInput): string {
@@ -122,6 +125,7 @@ export async function refineBlogIdea(input: RefineBlogIdeaInput): Promise<Refine
       return recordTokenUsage({
         task: 'content',
         stage: 'idea',
+        createdBy: input.createdBy ?? null,
         model: REFINE_MODEL,
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,

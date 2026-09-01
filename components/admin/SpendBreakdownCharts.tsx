@@ -47,10 +47,12 @@ export default function SpendBreakdownCharts({
   categories,
   models,
   clients,
+  users,
 }: {
   categories: SpendSlice[]
   models: SpendSlice[]
   clients: SpendSlice[]
+  users?: SpendSlice[]
 }) {
   const cats = categories.filter((c) => c.cost > 0)
 
@@ -79,6 +81,13 @@ export default function SpendBreakdownCharts({
         <div className={`${card} lg:col-span-2`}>
           <h2 className={title}>Top clients by spend</h2>
           <CostBars data={clients} />
+        </div>
+      )}
+
+      {users && users.length > 0 && (
+        <div className={`${card} lg:col-span-2`}>
+          <h2 className={title}>Top users by spend</h2>
+          <CostBars data={users} />
         </div>
       )}
     </div>

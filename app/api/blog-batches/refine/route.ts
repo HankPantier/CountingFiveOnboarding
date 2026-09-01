@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     typeof body.instruction === 'string' ? body.instruction.trim().slice(0, MAX_INSTRUCTION_LENGTH) : undefined
   const contentType = asContentType(body.contentType)
 
-  const idea = await refineBlogIdea({ seed, current: body.current ?? null, instruction, contentType })
+  const idea = await refineBlogIdea({ seed, current: body.current ?? null, instruction, contentType, createdBy: user.id })
   if (!idea) {
     return NextResponse.json({ error: 'Could not refine the idea — please try again' }, { status: 502 })
   }

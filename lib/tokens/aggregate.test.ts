@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summarize, byClient, byUser, byUserClient, dailySeries, type UsageRow } from './aggregate'
+import { summarize, byClient, byUser, byUserClient, dailySeries, dailySeriesByUser, type UsageRow } from './aggregate'
 
 const SONNET = 'claude-sonnet-4-6' // $3/$15 per 1M in/out
 const HAIKU = 'claude-haiku-4-5-20251001' // $1/$5 per 1M in/out
@@ -173,6 +173,37 @@ describe('byUserClient', () => {
     expect(unattributed.clients).toHaveLength(1)
     expect(unattributed.clients[0].clientKind).toBe('audit-site')
     expect(unattributed.clients[0].clientLabel).toBe('BBL')
+  })
+})
+
+describe('dailySeriesByUser', () => {
+  it('returns one ascending-by-date series per user', () => {
+    const rows: UsageRow[] = [
+      row({ created_by: 'u1', created_at: '2026-06-15T00:00:00Z', input_tokens: 1_000_000 }), // $3
+      row({ created_by: 'u1', created_at: '2026-06-14T00:00:00Z', input_tokens: 1_000_000 }), // $3
+      row({ created_by: 'u2', created_at: '2026-06-15T00:00:00Z', input_tokens: 1_000_000 }), // $3
+    ]
+    const series = dailySeriesByUser(rows, { u1: 'Alice', u2: 'Bob' })
+    expect(series.map((s) => s.label).sort()).toEqual(['Alice', 'Bob'])
+    const alice = series.find((s) => s.key === 'u1')!
+    expect(alice.points.map((p) => p.date)).toEqual(['2026-06-14', '2026-06-15'])
+    expect(alice.points[0].cost).toBeCloseTo(3, 6)
+  })
+
+  it('folds users beyond topN into a single Other series', () => {
+    const rows: UsageRow[] = [
+      row({ created_by: 'u1', input_tokens: 3_000_000 }), // $9 — rank 1
+      row({ created_by: 'u2', input_tokens: 2_000_000 }), // $6 — rank 2
+      row({ created_by: 'u3', input_tokens: 1_000_000 }), // $3 — folds to Other
+      row({ created_by: 'u4', input_tokens: 1_000_000 }), // $3 — folds to Other
+    ]
+    const series = dailySeriesByUser(rows, {}, 2)
+    expect(series).toHaveLength(3)
+    const other = series.find((s) => s.key === '__other__')!
+    expect(other.label).toBe('Other')
+    // u3 + u4 same day → merged point of $6
+    expect(other.points).toHaveLength(1)
+    expect(other.points[0].cost).toBeCloseTo(6, 6)
   })
 })
 
