@@ -1424,6 +1424,36 @@ export type Database = {
           },
         ]
       }
+      wordpress_sites: {
+        Row: {
+          id: string
+          site_key: string
+          github_repo: string
+          enabled: boolean
+          secret: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          site_key: string
+          github_repo: string
+          enabled?: boolean
+          secret: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          site_key?: string
+          github_repo?: string
+          enabled?: boolean
+          secret?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       task_progress: {
         Row: {
           content_job_id: string | null
