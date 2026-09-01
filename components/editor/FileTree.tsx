@@ -16,6 +16,8 @@ export const CHANGES_VIEW = '__changes__'
 export const THEME_VIEW = '__theme__'
 // Sentinel selectedPath that opens the Client Center portal-links editor.
 export const CLIENT_CENTER_VIEW = '__client_center__'
+// Sentinel selectedPath that opens the admin-only Edit Activity panel.
+export const EDIT_STATS_VIEW = '__edit_stats__'
 
 const VIRTUAL_NAV = 'content/nav.json'
 
@@ -82,6 +84,18 @@ function DirtyDot() {
   )
 }
 
+// Admin-only lifetime edit count shown next to a page/resource in the tree.
+function EditCountBadge({ n }: { n: number }) {
+  return (
+    <span
+      title={`${n} edit${n === 1 ? '' : 's'}`}
+      className="ml-1.5 inline-flex items-center rounded-full bg-surface-subtle px-1.5 py-0.5 align-middle font-heading text-[9px] font-semibold text-text-muted"
+    >
+      {n}
+    </span>
+  )
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -135,6 +149,8 @@ export default function FileTree({
   dirtyPaths,
   changesCount,
   showTheme,
+  showEditStats = false,
+  editCounts,
   showConfiguration = true,
   onSelect,
   onNewPage,
@@ -146,6 +162,9 @@ export default function FileTree({
   changesCount: number
   // Admin-only Theme Studio entry — hidden for managers (route also 403s them).
   showTheme: boolean
+  // Admin-only Edit Activity entry + per-file edit-count badges (route 403s others).
+  showEditStats?: boolean
+  editCounts?: Record<string, number>
   // The Configuration section (Navigation + Client Center) — hidden for Site
   // Owners, who edit page/resource content only.
   showConfiguration?: boolean
@@ -313,6 +332,22 @@ export default function FileTree({
         </button>
       )}
 
+      {showEditStats && (
+        <button
+          onClick={() => onSelect(EDIT_STATS_VIEW)}
+          className={`mb-4 w-full flex items-center gap-2 text-left text-xs font-heading font-semibold px-3 py-2 rounded-lg border transition-colors ${
+            selectedPath === EDIT_STATS_VIEW
+              ? 'border-brand-navy bg-brand-navy/10 text-brand-navy'
+              : 'border-border-default bg-surface-default text-brand-navy hover:bg-surface-subtle'
+          }`}
+        >
+          <span className="text-brand-navy" aria-hidden>
+            ▤
+          </span>
+          Edit activity
+        </button>
+      )}
+
       <div className="flex items-center justify-between gap-1 pr-1">
         <div className="min-w-0 flex-1">
           <SectionHeader
@@ -398,6 +433,7 @@ export default function FileTree({
                     >
                       {label}
                       {dirtyPaths.has(p.path) && <DirtyDot />}
+                      {editCounts?.[p.path] ? <EditCountBadge n={editCounts[p.path]} /> : null}
                     </button>
                   </div>
                 </li>
@@ -496,6 +532,7 @@ export default function FileTree({
                   >
                     {p.path.split('/').pop()}
                     {dirtyPaths.has(p.path) && <DirtyDot />}
+                    {editCounts?.[p.path] ? <EditCountBadge n={editCounts[p.path]} /> : null}
                   </button>
                   {social && (
                     <button

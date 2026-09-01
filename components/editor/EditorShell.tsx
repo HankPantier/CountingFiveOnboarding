@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import EditorTopBar, { type EditorStatus } from './EditorTopBar'
-import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, THEME_VIEW, CLIENT_CENTER_VIEW, type TreeFile } from './FileTree'
+import FileTree, { MEDIA_VIEW, RESOURCES_VIEW, ONEOFF_VIEW, CHANGES_VIEW, THEME_VIEW, CLIENT_CENTER_VIEW, EDIT_STATS_VIEW, type TreeFile } from './FileTree'
 import PageEditor from './PageEditor'
 import NavEditor from './NavEditor'
 import ContentChatModal from './ContentChatModal'
@@ -10,6 +10,8 @@ import MediaLibrary from './MediaLibrary'
 import ResourcesPanel from './ResourcesPanel'
 import OneOffPanel from './OneOffPanel'
 import ChangesPanel from './ChangesPanel'
+import EditStatsPanel from './EditStatsPanel'
+import type { EditStatsResponse } from '@/lib/content/edit-stats'
 import ThemeStudio from './ThemeStudio'
 import ClientCenterEditor from './ClientCenterEditor'
 import NewPageDialog from './NewPageDialog'
@@ -44,6 +46,11 @@ export default function EditorShell({
   // Theme Studio is admin-only; managers and owners never see the entry (the
   // route also 403s them).
   const [isAdmin, setIsAdmin] = useState(false)
+  // Admin-only edit-activity stats (git-history derived). Fetched once the caller
+  // is known to be an admin; drives the Edit Activity panel + per-file tree badges.
+  const [editStats, setEditStats] = useState<EditStatsResponse | null>(null)
+  const [editStatsLoading, setEditStatsLoading] = useState(false)
+  const [editStatsError, setEditStatsError] = useState<string | null>(null)
   // Publishing to live is denied to editors — the publish/rollback routes 403
   // them, so hide those affordances. Admins, managers, and site owners may
   // publish (owner is known server-side, so seed the state true for them).
@@ -101,6 +108,23 @@ export default function EditorShell({
     }
   }, [sessionId])
 
+  const refreshEditStats = useCallback(async () => {
+    setEditStatsLoading(true)
+    setEditStatsError(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/edit-stats`)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Failed to load edit activity: ${res.status}`)
+      }
+      setEditStats((await res.json()) as EditStatsResponse)
+    } catch (err) {
+      setEditStatsError(err instanceof Error ? err.message : 'Failed to load edit activity')
+    } finally {
+      setEditStatsLoading(false)
+    }
+  }, [sessionId])
+
   useEffect(() => {
     // Standard data-loading-on-mount pattern. setState happens only after
     // the async fetches resolve; ESLint's set-state-in-effect rule still
@@ -109,6 +133,16 @@ export default function EditorShell({
     void refreshTree()
     void refreshStatus()
   }, [refreshTree, refreshStatus])
+
+  // Load edit activity once the caller is confirmed admin, and refresh it
+  // whenever a new commit lands (draft HEAD moves) so counts stay current. The
+  // route caches by HEAD sha, so a no-op HEAD makes this cheap.
+  useEffect(() => {
+    if (!isAdmin) return
+    // Data-loading effect; setState happens only after the fetch resolves.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshEditStats()
+  }, [isAdmin, refreshEditStats, status?.lastCommitSha])
 
   // Resolve the caller's role + capabilities: gate the Theme Studio entry
   // (admin-only) and the publish/rollback affordances (admin or manager).
@@ -1026,6 +1060,12 @@ export default function EditorShell({
             dirtyPaths={new Set(dirty.keys())}
             changesCount={status?.draftAhead ?? 0}
             showTheme={isAdmin}
+            showEditStats={isAdmin}
+            editCounts={
+              editStats
+                ? Object.fromEntries(editStats.rows.map((r) => [r.path, r.editCount]))
+                : undefined
+            }
             showConfiguration={!viewerIsOwner}
             onSelect={(p) => void select(p)}
             onNewPage={() => setNewPageOpen(true)}
@@ -1042,6 +1082,14 @@ export default function EditorShell({
             draftBusy={draftBusy}
             onReverted={handleReverted}
             onDiscardAll={resetDraft}
+          />
+        ) : selectedPath === EDIT_STATS_VIEW ? (
+          <EditStatsPanel
+            rows={editStats?.rows ?? []}
+            truncated={editStats?.truncated ?? false}
+            loading={editStatsLoading}
+            error={editStatsError}
+            onRefresh={() => void refreshEditStats()}
           />
         ) : selectedPath === THEME_VIEW ? (
           <ThemeStudio

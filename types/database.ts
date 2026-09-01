@@ -499,6 +499,35 @@ export type Database = {
           },
         ]
       }
+      content_edit_stats: {
+        Row: {
+          computed_at: string
+          head_sha: string
+          session_id: string
+          stats: Json
+        }
+        Insert: {
+          computed_at?: string
+          head_sha: string
+          session_id: string
+          stats: Json
+        }
+        Update: {
+          computed_at?: string
+          head_sha?: string
+          session_id?: string
+          stats?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_edit_stats_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_jobs: {
         Row: {
           confirmed_sitemap: Json | null

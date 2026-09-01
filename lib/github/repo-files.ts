@@ -1061,6 +1061,69 @@ export async function getDraftChanges(slug: string): Promise<{ files: ChangedFil
   return { files }
 }
 
+export type CommitFileStat = {
+  sha: string
+  message: string
+  authorName: string
+  authorEmail: string
+  date: string | null
+  /** Number of parents — a merge (≥2) is a bulk publish, not a per-file edit. */
+  parentCount: number
+  files: { path: string; additions: number; deletions: number; status: string }[]
+}
+
+// Walk the draft branch's commit history newest-first (up to `cap`), returning
+// each commit with the files it touched + per-file additions/deletions. This is
+// the raw material for per-page edit-activity stats. Cost is one getCommit call
+// per commit, so callers cache the aggregate by draft HEAD sha and only re-walk
+// when HEAD moves. `truncated` is true when history exceeds `cap`.
+export async function walkCommitFileStats(
+  slug: string,
+  cap = 500
+): Promise<{ headSha: string | null; commits: CommitFileStat[]; truncated: boolean }> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const commits: CommitFileStat[] = []
+  let headSha: string | null = null
+  let truncated = false
+  const perPage = 100
+
+  for (let page = 1; ; page++) {
+    const list = await octokit.repos.listCommits({
+      owner,
+      repo,
+      sha: DRAFT_BRANCH,
+      per_page: perPage,
+      page,
+    })
+    if (list.data.length === 0) break
+    for (const c of list.data) {
+      if (headSha === null) headSha = c.sha
+      if (commits.length >= cap) {
+        truncated = true
+        return { headSha, commits, truncated }
+      }
+      const detail = await octokit.repos.getCommit({ owner, repo, ref: c.sha })
+      commits.push({
+        sha: c.sha,
+        message: c.commit.message ?? '',
+        authorName: c.commit.author?.name ?? c.commit.committer?.name ?? '',
+        authorEmail: c.commit.author?.email ?? c.commit.committer?.email ?? '',
+        date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
+        parentCount: c.parents?.length ?? 0,
+        files: (detail.data.files ?? []).map((f) => ({
+          path: f.filename,
+          additions: f.additions ?? 0,
+          deletions: f.deletions ?? 0,
+          status: f.status ?? 'modified',
+        })),
+      })
+    }
+    if (list.data.length < perPage) break
+  }
+  return { headSha, commits, truncated }
+}
+
 export type RevertFileResult = {
   reverted: true
   commitSha: string
