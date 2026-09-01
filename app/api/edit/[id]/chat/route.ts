@@ -328,6 +328,7 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
         await recordTokenUsage({
           task: 'content',
           sessionId: sessionId,
+          createdBy: user?.id ?? null,
           stage: 'content_edit',
           pageUrl: path,
           model: 'claude-sonnet-4-6',

@@ -99,6 +99,7 @@ export async function POST(
           await recordTokenUsage({
             task: 'onboarding',
             sessionId: id,
+            createdBy: auth.user.id,
             stage: 'mbp_edit',
             model: 'claude-sonnet-4-6',
             inputTokens: totalUsage.inputTokens,

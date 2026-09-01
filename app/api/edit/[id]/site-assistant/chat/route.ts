@@ -441,6 +441,7 @@ RULES
       await recordTokenUsage({
         task: 'content',
         sessionId,
+        createdBy: user?.id ?? null,
         stage: 'site_structure_edit',
         model: 'claude-sonnet-4-6',
         inputTokens: totalUsage.inputTokens,

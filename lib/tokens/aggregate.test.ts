@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summarize, byClient, dailySeries, type UsageRow } from './aggregate'
+import { summarize, byClient, byUser, byUserClient, dailySeries, type UsageRow } from './aggregate'
 
 const SONNET = 'claude-sonnet-4-6' // $3/$15 per 1M in/out
 const HAIKU = 'claude-haiku-4-5-20251001' // $1/$5 per 1M in/out
@@ -13,6 +13,7 @@ function row(over: Partial<UsageRow>): UsageRow {
     output_tokens: 0,
     session_id: null,
     audit_id: null,
+    created_by: null,
     created_at: '2026-06-17T00:00:00.000Z',
     ...over,
   }
@@ -104,6 +105,74 @@ describe('byClient', () => {
     expect(clients[0].clientId).toBe('audit:bblcpa.com')
     expect(clients[0].label).toBe('BBL CPAs')
     expect(clients[0].byTask.audit.cost).toBeCloseTo(3, 6)
+  })
+})
+
+describe('byUser', () => {
+  it('splits by created_by, sub-splits by task/model, sorts by cost desc', () => {
+    const rows: UsageRow[] = [
+      row({ created_by: 'u1', task: 'onboarding', input_tokens: 1_000_000 }), // $3
+      row({ created_by: 'u1', task: 'content', output_tokens: 1_000_000 }), // $15
+      row({ created_by: 'u2', task: 'audit', model: HAIKU, input_tokens: 1_000_000 }), // $1
+    ]
+    const users = byUser(rows, { u1: 'Alice', u2: 'Bob' })
+    expect(users).toHaveLength(2)
+    // u1 ($18) sorts before u2 ($1)
+    expect(users[0].userId).toBe('u1')
+    expect(users[0].label).toBe('Alice')
+    expect(users[0].total.cost).toBeCloseTo(18, 6)
+    expect(users[0].byTask.onboarding.cost).toBeCloseTo(3, 6)
+    expect(users[0].byTask.content.cost).toBeCloseTo(15, 6)
+    expect(users[0].byModel[SONNET].cost).toBeCloseTo(18, 6)
+    expect(users[1].byModel[HAIKU].cost).toBeCloseTo(1, 6)
+  })
+
+  it('collapses rows with no actor into a single Unattributed bucket', () => {
+    const rows: UsageRow[] = [
+      row({ created_by: null, input_tokens: 1_000_000 }), // $3
+      row({ created_by: null, input_tokens: 1_000_000 }), // $3
+    ]
+    const users = byUser(rows, {})
+    expect(users).toHaveLength(1)
+    expect(users[0].userId).toBeNull()
+    expect(users[0].label).toBe('Unattributed')
+    expect(users[0].total.calls).toBe(2)
+    expect(users[0].total.cost).toBeCloseTo(6, 6)
+  })
+
+  it('falls back to the raw id when the label map has no entry', () => {
+    const users = byUser([row({ created_by: 'u9', input_tokens: 1_000_000 })], {})
+    expect(users[0].label).toBe('u9')
+  })
+})
+
+describe('byUserClient', () => {
+  it('builds a user × client matrix reusing the client-bucket resolution', () => {
+    const rows: UsageRow[] = [
+      row({ created_by: 'u1', session_id: 's1', input_tokens: 1_000_000 }), // $3 → Alice/s1
+      row({ created_by: 'u1', session_id: 's2', input_tokens: 1_000_000 }), // $3 → Alice/s2
+      row({ created_by: null, session_id: null, audit_id: 'a2', task: 'audit', input_tokens: 1_000_000 }), // $3 → Unattributed/audit-site
+    ]
+    const matrix = byUserClient(
+      rows,
+      { u1: 'Alice' },
+      { s1: 'one.com', s2: 'two.com' },
+      { a2: { sessionId: null, siteName: 'BBL', domain: 'bbl.com' } }
+    )
+    expect(matrix).toHaveLength(2)
+    // Alice ($6 across two clients) sorts before Unattributed ($3)
+    const alice = matrix[0]
+    expect(alice.userId).toBe('u1')
+    expect(alice.total.cost).toBeCloseTo(6, 6)
+    expect(alice.clients).toHaveLength(2)
+    expect(alice.clients.map((c) => c.clientLabel).sort()).toEqual(['one.com', 'two.com'])
+
+    const unattributed = matrix[1]
+    expect(unattributed.userId).toBeNull()
+    expect(unattributed.label).toBe('Unattributed')
+    expect(unattributed.clients).toHaveLength(1)
+    expect(unattributed.clients[0].clientKind).toBe('audit-site')
+    expect(unattributed.clients[0].clientLabel).toBe('BBL')
   })
 })
 

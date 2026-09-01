@@ -16,6 +16,7 @@ export type UsageRow = {
   output_tokens: number
   session_id: string | null
   audit_id: string | null
+  created_by: string | null
   created_at: string
 }
 
@@ -59,6 +60,8 @@ export type UsageSummary = {
 }
 
 const UNASSIGNED_LABEL = 'Unassigned / System'
+const UNATTRIBUTED_KEY = '__unattributed__'
+const UNATTRIBUTED_LABEL = 'Unattributed'
 
 export function emptyTotals(): Totals {
   return { cost: 0, inputTokens: 0, outputTokens: 0, calls: 0 }
@@ -170,6 +173,99 @@ export function byClient(
   }
 
   return [...map.values()].sort((a, b) => b.total.cost - a.total.cost)
+}
+
+export type UserUsage = {
+  // admins.id, or null for the single Unattributed bucket (rows with no actor —
+  // pre-tracking history or background work we couldn't resolve).
+  userId: string | null
+  label: string
+  total: Totals
+  byTask: Record<TokenTask, Totals>
+  byModel: Record<string, Totals>
+}
+
+// Resolve a row's actor bucket. null created_by collapses into one Unattributed
+// bucket; `labels` maps admins.id → a display label (name/email).
+function resolveUser(
+  row: UsageRow,
+  labels: Record<string, string>
+): { key: string; userId: string | null; label: string } {
+  if (!row.created_by) return { key: UNATTRIBUTED_KEY, userId: null, label: UNATTRIBUTED_LABEL }
+  return { key: row.created_by, userId: row.created_by, label: labels[row.created_by] ?? row.created_by }
+}
+
+/** Per-user rollup. Rows with no actor collapse into one Unattributed bucket.
+ * `userLabels` maps admins.id → display label (name/email). Sorted by cost desc. */
+export function byUser(rows: UsageRow[], userLabels: Record<string, string>): UserUsage[] {
+  const map = new Map<string, UserUsage>()
+
+  for (const row of rows) {
+    const u = resolveUser(row, userLabels)
+    let entry = map.get(u.key)
+    if (!entry) {
+      entry = { userId: u.userId, label: u.label, total: emptyTotals(), byTask: emptyByTask(), byModel: {} }
+      map.set(u.key, entry)
+    }
+    addInto(entry.total, row)
+    addInto(entry.byTask[asTask(row.task)], row)
+    entry.byModel[row.model] ??= emptyTotals()
+    addInto(entry.byModel[row.model], row)
+  }
+
+  return [...map.values()].sort((a, b) => b.total.cost - a.total.cost)
+}
+
+export type UserClientCell = {
+  clientId: string | null
+  clientLabel: string
+  clientKind: ClientKind
+  total: Totals
+}
+
+export type UserClientUsage = {
+  userId: string | null
+  label: string
+  total: Totals
+  clients: UserClientCell[]
+}
+
+/** The user × client matrix: how much each person spent on each client. The
+ * user axis is `created_by` (null → Unattributed); the client axis reuses the
+ * exact bucket resolution as byClient (session → audit's session → audited site
+ * → Unassigned). Users sorted by cost desc; each user's cells sorted by cost. */
+export function byUserClient(
+  rows: UsageRow[],
+  userLabels: Record<string, string>,
+  clientLabels: Record<string, string>,
+  audits: Record<string, AuditMeta> = {}
+): UserClientUsage[] {
+  const users = new Map<string, UserClientUsage & { cells: Map<string, UserClientCell> }>()
+
+  for (const row of rows) {
+    const u = resolveUser(row, userLabels)
+    let user = users.get(u.key)
+    if (!user) {
+      user = { userId: u.userId, label: u.label, total: emptyTotals(), clients: [], cells: new Map() }
+      users.set(u.key, user)
+    }
+    addInto(user.total, row)
+
+    const bucket = resolveBucket(row, clientLabels, audits)
+    let cell = user.cells.get(bucket.key)
+    if (!cell) {
+      cell = { clientId: bucket.clientId, clientLabel: bucket.label, clientKind: bucket.kind, total: emptyTotals() }
+      user.cells.set(bucket.key, cell)
+    }
+    addInto(cell.total, row)
+  }
+
+  return [...users.values()]
+    .map(({ cells, ...user }) => ({
+      ...user,
+      clients: [...cells.values()].sort((a, b) => b.total.cost - a.total.cost),
+    }))
+    .sort((a, b) => b.total.cost - a.total.cost)
 }
 
 export type DailyPoint = { date: string; cost: number; tokens: number }

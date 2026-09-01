@@ -88,6 +88,7 @@ export async function POST(
       task: 'content',
       sessionId: ctx.sessionId,
       contentJobId: ctx.jobId,
+      createdBy: user?.id ?? null,
       stage: 'seo_fields',
       pageUrl: path,
       model: SEO_MODEL,

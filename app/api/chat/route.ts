@@ -212,6 +212,7 @@ export async function POST(req: Request) {
           await recordTokenUsage({
             task: 'onboarding',
             sessionId,
+            createdBy: access.user.id,
             stage: 'onboarding',
             model: modelName === 'sonnet' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001',
             inputTokens: totalUsage.inputTokens,

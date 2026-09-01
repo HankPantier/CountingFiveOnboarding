@@ -293,7 +293,7 @@ export async function buildAssistantTools(user: CurrentUser) {
           supabase
             .from('token_usage')
             .select(
-              'task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_at'
+              'task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at'
             )
             .order('created_at', { ascending: false })
             .range(0, 49999),

@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       try {
         await recordTokenUsage({
           task: 'onboarding',
+          createdBy: user.id,
           stage: 'oneoff',
           model: 'claude-sonnet-4-6',
           inputTokens: totalUsage.inputTokens,

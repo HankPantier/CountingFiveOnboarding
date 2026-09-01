@@ -1,0 +1,133 @@
+'use client'
+
+import { Fragment, useState } from 'react'
+import type { UserUsage, Totals } from '@/lib/tokens/aggregate'
+import { TASKS } from '@/lib/tokens/aggregate'
+
+function money(v: number): string {
+  return `$${v.toFixed(2)}`
+}
+
+function tokens(v: number): string {
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`
+  if (v >= 1_000) return `${(v / 1_000).toFixed(1)}k`
+  return String(v)
+}
+
+function totalTokens(t: Totals): number {
+  return t.inputTokens + t.outputTokens
+}
+
+const TASK_LABEL: Record<string, string> = {
+  onboarding: 'Onboarding',
+  audit: 'Audit',
+  content: 'Content',
+}
+
+function Breakdown({ user }: { user: UserUsage }) {
+  const models = Object.entries(user.byModel).sort((a, b) => b[1].cost - a[1].cost)
+  return (
+    <div className="grid gap-6 md:grid-cols-2 px-4 py-4 bg-surface-subtle">
+      <div>
+        <h4 className="text-xs font-heading font-semibold text-text-muted uppercase tracking-wide mb-2">By task</h4>
+        <ul className="space-y-1">
+          {TASKS.map((task) => {
+            const t = user.byTask[task]
+            if (!t.calls) return null
+            return (
+              <li key={task} className="flex justify-between text-sm font-body text-text-secondary">
+                <span>{TASK_LABEL[task]}</span>
+                <span className="tabular-nums">
+                  {money(t.cost)} · {tokens(totalTokens(t))} tok · {t.calls} calls
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+      <div>
+        <h4 className="text-xs font-heading font-semibold text-text-muted uppercase tracking-wide mb-2">By model</h4>
+        <ul className="space-y-1">
+          {models.map(([model, t]) => (
+            <li key={model} className="flex justify-between text-sm font-body text-text-secondary">
+              <span className="truncate mr-3">{model}</span>
+              <span className="tabular-nums whitespace-nowrap">
+                {money(t.cost)} · {tokens(totalTokens(t))} tok
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+export default function UserUsageTable({ users }: { users: UserUsage[] }) {
+  const [open, setOpen] = useState<string | null>(null)
+
+  if (users.length === 0) {
+    return <p className="text-sm font-body text-text-muted py-8 text-center">No usage recorded yet.</p>
+  }
+
+  return (
+    <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
+      <table className="w-full text-left">
+        <thead className="bg-surface-header">
+          <tr className="border-b border-border-default">
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">User</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Cost</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Tokens</th>
+            <th className="px-4 py-3 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide text-right">Calls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((u) => {
+            const key = u.userId ?? '__unattributed__'
+            const isOpen = open === key
+            return (
+              <Fragment key={key}>
+                <tr
+                  onClick={() => setOpen(isOpen ? null : key)}
+                  className="border-b border-border-default cursor-pointer hover:bg-surface-subtle transition-colors"
+                >
+                  <td className="px-4 py-3 font-body text-text-primary">
+                    <span className="inline-flex items-center gap-2">
+                      <span className={`text-text-muted transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
+                      <span className="truncate">{u.label}</span>
+                      {u.userId === null && (
+                        <span className="inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] bg-surface-subtle text-text-muted">
+                          Unattributed
+                        </span>
+                      )}
+                    </span>
+                    <div className="mt-1 ml-6 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted tabular-nums">
+                      {TASKS.map((task) => {
+                        const t = u.byTask[task]
+                        if (!t.calls) return null
+                        return (
+                          <span key={task}>
+                            {TASK_LABEL[task]} {money(t.cost)}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 font-body text-text-primary text-right tabular-nums">{money(u.total.cost)}</td>
+                  <td className="px-4 py-3 font-body text-text-secondary text-right tabular-nums">{tokens(totalTokens(u.total))}</td>
+                  <td className="px-4 py-3 font-body text-text-secondary text-right tabular-nums">{u.total.calls}</td>
+                </tr>
+                {isOpen && (
+                  <tr>
+                    <td colSpan={4} className="p-0">
+                      <Breakdown user={u} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}

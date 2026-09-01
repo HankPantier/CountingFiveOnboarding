@@ -28,6 +28,12 @@ export async function runBlogBatch(batchId: string): Promise<void> {
   // chained continuations. generateResourceDraft holds its own atomic lock.
   const pending = targets.filter((t) => t.status === 'pending' && t.resource_idea_id)
 
+  // Attribute this batch's generated spend to the batch author: stamp them onto
+  // each target session's content job (only when unset) so the background token
+  // rows resolve to them via recordTokenUsage's actor fallback. Mirrors the
+  // migration-065 backfill (blog_batch_targets → blog_batches.created_by).
+  await attributeBatchAuthor(supabase, batchId, pending.map((t) => t.resource_idea_id as string))
+
   const startedAt = Date.now()
   let completedThisRun = 0
 
@@ -150,5 +156,40 @@ export async function runBlogBatch(batchId: string): Promise<void> {
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', batchId)
     console.warn(`[blog-batch] Batch ${batchId} done: complete=${completed} error=${errored}`)
+  }
+}
+
+// Stamp the batch author onto the content jobs behind these ideas, only where
+// created_by is still null (first attributor wins). Best-effort: any failure is
+// swallowed — attribution must never block generation.
+async function attributeBatchAuthor(
+  supabase: ReturnType<typeof createServerClient>,
+  batchId: string,
+  ideaIds: string[]
+): Promise<void> {
+  if (!ideaIds.length) return
+  try {
+    const { data: batch } = await supabase
+      .from('blog_batches')
+      .select('created_by')
+      .eq('id', batchId)
+      .maybeSingle()
+    if (!batch?.created_by) return
+
+    const { data: ideas } = await supabase
+      .from('resource_ideas')
+      .select('content_job_id')
+      .in('id', ideaIds)
+    const jobIds = [...new Set((ideas ?? []).map((r) => r.content_job_id).filter(Boolean))] as string[]
+
+    for (const jobId of jobIds) {
+      await supabase
+        .from('content_jobs')
+        .update({ created_by: batch.created_by })
+        .eq('id', jobId)
+        .is('created_by', null)
+    }
+  } catch (err) {
+    console.warn('[blog-batch] Author attribution skipped:', err)
   }
 }

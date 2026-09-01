@@ -20,21 +20,29 @@ export async function POST(
 
   const { id } = await params
 
+  let actorId: string | null = null
   if (!isInternalChain) {
     const auth = await requireContentJobAccess(id)
     if (auth instanceof NextResponse) return auth
+    actorId = auth.user.id
   }
 
   const supabase = createServerClient()
 
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('session_id')
+    .select('session_id, created_by')
     .eq('id', id)
     .single()
 
   if (!job) {
     return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
+  }
+
+  // Record who kicked off generation so background token rows attribute to them.
+  // Only set when unset, to keep the first attributor across cron-chained runs.
+  if (actorId && !job.created_by) {
+    await supabase.from('content_jobs').update({ created_by: actorId }).eq('id', id)
   }
 
   // after() runs the work after the response is sent and is guaranteed to

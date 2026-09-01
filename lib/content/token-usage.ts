@@ -15,6 +15,7 @@ export async function recordTokenUsage(args: {
   contentJobId?: string | null
   sessionId?: string | null
   auditId?: string | null
+  createdBy?: string | null
   stage: TokenStage
   pageUrl?: string | null
   model: string
@@ -31,11 +32,16 @@ export async function recordTokenUsage(args: {
 
   try {
     const supabase = createServerClient()
+    // Attribute to a person. Interactive callers pass createdBy directly;
+    // background generation (no live user) resolves it from the audit's or
+    // content job's owner — the same links the migration backfill uses.
+    const createdBy = args.createdBy ?? (await resolveActor(supabase, args.auditId, args.contentJobId))
     const { error } = await supabase.from('token_usage').insert({
       task: args.task,
       content_job_id: args.contentJobId ?? null,
       session_id: args.sessionId ?? null,
       audit_id: args.auditId ?? null,
+      created_by: createdBy,
       stage: args.stage,
       page_url: args.pageUrl ?? null,
       model: args.model,
@@ -49,4 +55,23 @@ export async function recordTokenUsage(args: {
   } catch (err) {
     console.warn('[token-usage] Failed to record usage:', err)
   }
+}
+
+// Best-effort actor resolution for background rows that can't pass createdBy.
+// Prefers the audit's creator, else the content job's kickoff user. Any lookup
+// failure returns null (rows stay "Unattributed") — never breaks recording.
+async function resolveActor(
+  supabase: ReturnType<typeof createServerClient>,
+  auditId?: string | null,
+  contentJobId?: string | null
+): Promise<string | null> {
+  if (auditId) {
+    const { data } = await supabase.from('audit_runs').select('created_by').eq('id', auditId).maybeSingle()
+    if (data?.created_by) return data.created_by
+  }
+  if (contentJobId) {
+    const { data } = await supabase.from('content_jobs').select('created_by').eq('id', contentJobId).maybeSingle()
+    if (data?.created_by) return data.created_by
+  }
+  return null
 }

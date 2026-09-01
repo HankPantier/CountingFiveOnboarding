@@ -503,6 +503,7 @@ export type Database = {
         Row: {
           confirmed_sitemap: Json | null
           created_at: string
+          created_by: string | null
           design_tokens: Json | null
           error_message: string | null
           github_repo: string | null
@@ -519,6 +520,7 @@ export type Database = {
         Insert: {
           confirmed_sitemap?: Json | null
           created_at?: string
+          created_by?: string | null
           design_tokens?: Json | null
           error_message?: string | null
           github_repo?: string | null
@@ -535,6 +537,7 @@ export type Database = {
         Update: {
           confirmed_sitemap?: Json | null
           created_at?: string
+          created_by?: string | null
           design_tokens?: Json | null
           error_message?: string | null
           github_repo?: string | null
@@ -1460,6 +1463,7 @@ export type Database = {
           content_job_id: string | null
           cost_usd: number
           created_at: string
+          created_by: string | null
           id: string
           input_tokens: number
           model: string
@@ -1476,6 +1480,7 @@ export type Database = {
           content_job_id?: string | null
           cost_usd?: number
           created_at?: string
+          created_by?: string | null
           id?: string
           input_tokens?: number
           model: string
@@ -1492,6 +1497,7 @@ export type Database = {
           content_job_id?: string | null
           cost_usd?: number
           created_at?: string
+          created_by?: string | null
           id?: string
           input_tokens?: number
           model?: string

@@ -38,6 +38,10 @@ export type TokenContext = {
   contentJobId?: string | null
   auditId?: string | null
   pageUrl?: string | null
+  // admins.id of the person this spend attributes to. Interactive routes pass it
+  // directly; for background work recordTokenUsage resolves it from the audit /
+  // content job when omitted.
+  createdBy?: string | null
 }
 
 // USD per 1,000,000 tokens, keyed by model id. Verify against current

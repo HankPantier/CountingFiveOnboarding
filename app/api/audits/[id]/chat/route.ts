@@ -90,6 +90,7 @@ export async function POST(
           task: 'audit',
           auditId: id,
           sessionId: run.session_id,
+          createdBy: auth.user.id,
           stage: 'audit_edit',
           model: 'claude-sonnet-4-6',
           inputTokens: totalUsage.inputTokens,
