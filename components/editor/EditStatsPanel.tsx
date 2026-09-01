@@ -97,8 +97,17 @@ export default function EditStatsPanel({
         </div>
       )}
 
-      {!loading && rows.length === 0 && !error ? (
-        <p className="py-10 text-center text-sm font-body text-text-muted">No edits recorded yet.</p>
+      {loading && rows.length === 0 ? (
+        <p className="py-10 text-center text-sm font-body text-text-muted">
+          Reading this site&rsquo;s edit history…
+        </p>
+      ) : rows.length === 0 ? (
+        error ? null : (
+          <p className="py-10 text-center text-sm font-body text-text-muted">
+            No edits yet — pages and resources show up here once they&rsquo;ve been changed after the
+            initial build.
+          </p>
+        )
       ) : (
         <div className="overflow-hidden rounded-xl border border-border-default bg-surface-card shadow-subtle">
           <table className="w-full text-left">

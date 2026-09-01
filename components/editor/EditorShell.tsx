@@ -193,7 +193,8 @@ export default function EditorShell({
         path === ONEOFF_VIEW ||
         path === CHANGES_VIEW ||
         path === THEME_VIEW ||
-        path === CLIENT_CENTER_VIEW
+        path === CLIENT_CENTER_VIEW ||
+        path === EDIT_STATS_VIEW
       )
         return // virtual view, nothing to fetch
       if (loaded.has(path)) return
