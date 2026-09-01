@@ -299,7 +299,7 @@ export default function FileTree({
   }
 
   return (
-    <nav className="w-64 border-r border-border-default bg-surface-card overflow-y-auto p-3">
+    <nav className="w-80 border-r border-border-default bg-surface-card overflow-y-auto p-3">
       <button
         onClick={() => onSelect(CHANGES_VIEW)}
         className={`mb-4 w-full flex items-center justify-between gap-2 text-left text-xs font-heading font-semibold px-3 py-2 rounded-lg border transition-colors ${
@@ -348,8 +348,8 @@ export default function FileTree({
         </button>
       )}
 
-      <div className="flex items-center justify-between gap-1 pr-1">
-        <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-between gap-2 pr-1">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <SectionHeader
             label="Pages"
             count={pages.length}
@@ -369,7 +369,7 @@ export default function FileTree({
               }
             }}
             title="Select pages to move in bulk"
-            className="mb-1 shrink-0 rounded-pill border border-border-default px-2.5 py-1 font-heading text-[10px] font-semibold text-text-secondary transition-colors hover:bg-surface-subtle"
+            className="mb-1 shrink-0 whitespace-nowrap rounded-pill border border-border-default px-2.5 py-1 font-heading text-[10px] font-semibold text-text-secondary transition-colors hover:bg-surface-subtle"
           >
             {selectMode ? 'Cancel' : 'Select'}
           </button>
@@ -378,7 +378,7 @@ export default function FileTree({
           type="button"
           onClick={onNewPage}
           title="Create a new page"
-          className="mb-1 shrink-0 rounded-pill bg-brand-cyan px-2.5 py-1 font-heading text-[10px] font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
+          className="mb-1 shrink-0 whitespace-nowrap rounded-pill bg-brand-cyan px-2.5 py-1 font-heading text-[10px] font-semibold text-text-inverse transition-all hover:bg-brand-cyan-dark"
         >
           + New page
         </button>
