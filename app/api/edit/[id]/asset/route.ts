@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { fileTypeFromBuffer } from 'file-type'
 import { resolveEditContext } from '../_helpers'
 import { safeAssetPath } from '../_path'
@@ -176,8 +177,8 @@ export async function PUT(
       {
         mode,
         expectedSha: typeof expectedSha === 'string' ? expectedSha : undefined,
-        authorName: ctx.adminName ?? 'CountingFive Admin',
-        authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+        authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+        authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
       }
     )
     return NextResponse.json(result)
@@ -227,7 +228,7 @@ export async function DELETE(
       DRAFT_BRANCH,
       sha,
       `Delete ${path.split('/').pop()} via admin${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
-      { authorName: ctx.adminName ?? 'CountingFive Admin', authorEmail: ctx.adminEmail ?? 'admin@countingfive.com' }
+      { authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name, authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email }
     )
     return NextResponse.json(result)
   } catch (err) {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../../_helpers'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
@@ -109,7 +110,7 @@ export async function POST(
       next,
       DRAFT_BRANCH,
       `Brand voice amendment via admin (${ctx.adminEmail ?? 'admin'})`,
-      { expectedSha: doc.sha, authorName: ctx.adminName ?? 'CountingFive Admin', authorEmail: ctx.adminEmail }
+      { expectedSha: doc.sha, authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name, authorEmail: ctx.adminEmail }
     )
     repoUpdated = true
   } catch (err) {

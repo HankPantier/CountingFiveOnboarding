@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { seedRepoFromTemplate } from '@/lib/github/template-seed'
@@ -30,8 +31,8 @@ export async function POST(
 
   try {
     const result = await seedRepoFromTemplate(job.github_repo, {
-      authorName: 'CountingFive Admin',
-      authorEmail: auth.user.email ?? 'admin@countingfive.com',
+      authorName: DEFAULT_COMMIT_AUTHOR.name,
+      authorEmail: auth.user.email ?? DEFAULT_COMMIT_AUTHOR.email,
     })
     return NextResponse.json(result)
   } catch (err) {

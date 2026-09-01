@@ -1,4 +1,5 @@
 import { toPathname } from './nav-urls'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -21,8 +22,8 @@ export interface RelocateCtx {
 
 function author(ctx: RelocateCtx) {
   return {
-    authorName: ctx.adminName ?? 'CountingFive Admin',
-    authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+    authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+    authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
   }
 }
 

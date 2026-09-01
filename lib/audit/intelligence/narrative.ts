@@ -1,7 +1,7 @@
 // AI narrative layer — runs LAST, after every other intelligence sub-section.
 // Given the deterministic scores/findings plus the assembled intelligence, Claude
 // writes the executive summary, per-section commentary (keyed by section id), and
-// the business-framed "CountingFive Can Help" recommendations. Grounded strictly
+// the business-framed "Revaltus Can Help" recommendations. Grounded strictly
 // in the structured inputs passed in — no new facts.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
@@ -141,7 +141,7 @@ Return JSON:
 {
   "executive_summary": "1 paragraph (4-7 sentences): the site's real strengths, the 2-3 things holding it back, and the business upside of fixing them",
   "section_commentary": { ${ids.map((id) => `"${id}": "2-4 sentences on this section"`).join(', ')} },
-  "recommendations": [ { "title": string, "business_impact": "why it matters in business terms", "counting_five_help": "how CountingFive can help", "priority": "High|Medium|Low" } ]
+  "recommendations": [ { "title": string, "business_impact": "why it matters in business terms", "counting_five_help": "how Revaltus can help", "priority": "High|Medium|Low" } ]
 }
 Provide 4-6 recommendations, ordered most-impactful first. Return only the JSON.
 

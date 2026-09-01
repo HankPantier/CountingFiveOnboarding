@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { stripNavReference } from '@/lib/editor/nav-mutations'
@@ -18,8 +19,8 @@ const LIVE_ROOTS = ['content/pages/', 'content/posts/'] as const
 const DRAFT_ROOTS = ['content/drafts/pages/', 'content/drafts/posts/'] as const
 
 const author = (ctx: EditContext) => ({
-  authorName: ctx.adminName ?? 'CountingFive Admin',
-  authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+  authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+  authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
 })
 
 // Validate a client-supplied content path: traversal-safe AND under one of the

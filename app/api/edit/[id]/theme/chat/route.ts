@@ -1,4 +1,5 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 'ai'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
@@ -87,8 +88,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const commitAuthor = {
-    authorName: adminName ?? 'CountingFive Admin',
-    authorEmail: adminEmail ?? 'admin@countingfive.com',
+    authorName: adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+    authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
   }
 
   // Commit a set of already-computed file contents atomically to draft, then

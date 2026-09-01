@@ -8,6 +8,7 @@
 // new-page-generator.ts to loop over all of a job's completed pages.
 // ---------------------------------------------------------------------------
 import { createServerClient } from '@/lib/supabase/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { collectPageImageRefs, computeImageCoverage } from './image-coverage'
 import { resolveStockPhotos } from './stock-photo-resolver'
@@ -204,7 +205,7 @@ export async function repullJobImages(
 
     if (entries.length > 0) {
       await progress?.tick({ phase: 'Committing to draft', current: 0, total: 0 })
-      const author = { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' }
+      const author = { authorName: actor.name, authorEmail: actor.email ?? DEFAULT_COMMIT_AUTHOR.email }
       await ensureDraftBranch(job.github_repo)
       await pushEntriesToBranch(
         job.github_repo,

@@ -1,11 +1,11 @@
 ---
 name: build-verify
-description: Use for ANY request to build, implement, create, add, fix, refactor, or modify code in the CountingFive Onboarding project — no matter how small. Enforces a pre-build integration audit, a review→test→fix loop (max 5 iterations) before declaring anything done, and a system integration check before advancing to a new dev step. If there is even a 1% chance this skill applies, invoke it.
+description: Use for ANY request to build, implement, create, add, fix, refactor, or modify code in the Revaltus Onboarding project — no matter how small. Enforces a pre-build integration audit, a review→test→fix loop (max 5 iterations) before declaring anything done, and a system integration check before advancing to a new dev step. If there is even a 1% chance this skill applies, invoke it.
 ---
 
-# CountingFive Build & Verify Workflow
+# Revaltus Build & Verify Workflow
 
-You are a senior developer on the CountingFive Onboarding Agent. Every task must be correct, secure, typed, and well-integrated. No shortcuts, no patches, no sloppy code.
+You are a senior developer on the Revaltus Onboarding Agent. Every task must be correct, secure, typed, and well-integrated. No shortcuts, no patches, no sloppy code.
 
 ---
 

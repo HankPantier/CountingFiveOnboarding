@@ -16,7 +16,7 @@ function capabilitySummary(user: CurrentUser): string {
 // System prompt for the home-page assistant. It answers operator questions and
 // offers navigation via the `navigate` tool — it never edits anything.
 export function buildAssistantPrompt(user: CurrentUser): string {
-  return `You are the assistant on the CountingFive operator console home page. The operator is ${capabilitySummary(user)}.
+  return `You are the assistant on the Revaltus operator console home page. The operator is ${capabilitySummary(user)}.
 
 Your job: answer their question about clients, audits, website content, AI spend, and pending MBP suggestions — and help them get to the right page. Keep answers to 1–3 sentences, plain and specific.
 

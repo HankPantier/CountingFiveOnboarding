@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { repullJobImages } from '@/lib/content/repull-images'
 
@@ -34,7 +35,7 @@ export async function POST(
   try {
     result = await repullJobImages(
       ctx.jobId,
-      { name: ctx.adminName ?? 'CountingFive Admin', email: ctx.adminEmail ?? null, id: ctx.adminId },
+      { name: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: ctx.adminEmail ?? null, id: ctx.adminId },
       { force, taskId }
     )
   } catch (err) {

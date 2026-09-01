@@ -1,4 +1,4 @@
-# CountingFive Onboarding Agent — Project Rules
+# Revaltus Onboarding Agent — Project Rules
 
 This file is read by AI coding assistants before working on this codebase. Follow all rules below without exception.
 
@@ -286,7 +286,7 @@ The full design specification lives in `raw-docs/design.md`. **Read it before wr
 
 4. **Shadows use the navy-tinted palette** defined in `raw-docs/design.md`. Never use `rgba(0,0,0,0.5)` or similar generic black shadows.
 
-5. **The CountingFive logo (white version) appears in the client-facing session header.** Place it at `/public/logo-white.svg`. Never stretch, filter, or display it on a cyan background.
+5. **The Revaltus logo (white version) appears in the client-facing session header.** Place it at `/public/logo-white.svg`. Never stretch, filter, or display it on a cyan background.
 
 6. **Chat bubbles:** agent = white card with `border-color: #E2E8F0`; user = `#003B71` navy background with white text.
 

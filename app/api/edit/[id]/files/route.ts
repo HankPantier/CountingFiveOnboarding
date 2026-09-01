@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
@@ -53,8 +54,8 @@ export async function PATCH(
       `Edit ${path.split('/').pop()} via admin${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
       {
         expectedSha,
-        authorName: ctx.adminName ?? 'CountingFive Admin',
-        authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+        authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+        authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
       }
     )
     reviewContentEdit(ctx.sessionId, path, contents)

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { denySiteOwnerConfig } from '@/lib/auth/access'
@@ -28,8 +29,8 @@ type Move = { from: string; to: string }
 type Body = { contents?: string; moves?: Move[]; expectedSha?: string }
 
 const author = (ctx: EditContext) => ({
-  authorName: ctx.adminName ?? 'CountingFive Admin',
-  authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+  authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+  authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
 })
 
 // Root-relative page url → repo path, traversal-checked. Null for non-page urls.

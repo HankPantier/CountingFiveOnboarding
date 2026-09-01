@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { assembleContentPackage, pushAssembledDeliverable } from '@/lib/content/package-assembler'
 
@@ -30,7 +31,7 @@ export async function POST(
   let result
   try {
     result = await assembleContentPackage(id, {
-      name: 'CountingFive Admin',
+      name: DEFAULT_COMMIT_AUTHOR.name,
       email: auth.user.email ?? null,
     })
   } catch (err) {

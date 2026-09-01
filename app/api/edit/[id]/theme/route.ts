@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
@@ -198,8 +199,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (designChanged) changes.push({ path: DESIGN_PATH, content: designText, expectedSha: designFile.sha })
 
     await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: update ${brandChanged ? 'palette' : ''}${brandChanged && designChanged ? ' + ' : ''}${designChanged ? 'fonts' : ''} (${adminEmail ?? 'admin'})`, {
-      authorName: adminName ?? 'CountingFive Admin',
-      authorEmail: adminEmail ?? 'admin@countingfive.com',
+      authorName: adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+      authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
     })
 
     // MBP sync: keep the profile in step with the site.

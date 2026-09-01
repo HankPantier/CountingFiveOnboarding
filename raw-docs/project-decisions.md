@@ -6,9 +6,9 @@
 
 ## Concept
 
-Convert the existing CountingFive website development questionnaire (Gravity Forms intake form) into an AI-powered conversational onboarding chat agent.
+Convert the existing Revaltus website development questionnaire (Gravity Forms intake form) into an AI-powered conversational onboarding chat agent.
 
-**Source form:** https://countingfive.com/website-development-questionnaire/
+**Source form:** https://countingfive.com/website-development-questionnaire/ (legacy CountingFive domain — brand since rebranded to Revaltus)
 **Full form data:** See `website-development-questionnaire.md`
 
 ---
@@ -30,7 +30,7 @@ Convert the existing CountingFive website development questionnaire (Gravity For
 ### Authentication & Access
 - **No login required** — clients receive a **unique link** (likely query string param, e.g., `?session=abc123`)
 - Need a mechanism for generating and managing these unique URLs
-- CountingFive team sends the link to the client
+- Revaltus team sends the link to the client
 
 ### Session Persistence
 - **To be explored** — option for clients to leave and return to finish later
@@ -40,7 +40,7 @@ Convert the existing CountingFive website development questionnaire (Gravity For
 
 ### Data Destination
 - **Database** for archival of all collected data
-- **Admin dashboard** — CountingFive team needs visibility into in-progress and completed sessions
+- **Admin dashboard** — Revaltus team needs visibility into in-progress and completed sessions
 
 ### File Uploads
 - **Explore in-chat file upload** for logos and photos (within the agent chat UI)

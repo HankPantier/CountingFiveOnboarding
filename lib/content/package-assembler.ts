@@ -5,6 +5,7 @@
 // builder libs; all gates and side effects live here.
 // ---------------------------------------------------------------------------
 import { createServerClient } from '@/lib/supabase/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { buildAllPageFiles, buildErrorsFile, appendFaqBlock, injectTeamPhotos, standardizeContactPage } from '@/lib/content/deliverable-builder'
 import type { CtaInfo } from '@/lib/content/deliverable-builder'
 import { buildDocx } from '@/lib/content/docx-builder'
@@ -687,7 +688,7 @@ export async function assembleContentPackage(
       ),
       siteUrl: session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://'),
       booking: { provider: siteSettings.bookingProvider, url: siteSettings.bookingUrl },
-      author: { authorName: actor.name, authorEmail: actor.email ?? 'admin@countingfive.com' },
+      author: { authorName: actor.name, authorEmail: actor.email ?? DEFAULT_COMMIT_AUTHOR.email },
     }
   }
 

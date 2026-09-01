@@ -2,13 +2,14 @@
 // CLI — same code path as the admin UI's "Assemble Package" button. Run with:
 //   npx tsx scripts/package-job.ts <contentJobId>
 import { assembleContentPackage, pushAssembledDeliverable } from '../lib/content/package-assembler'
+import { DEFAULT_COMMIT_AUTHOR } from '../lib/github/commit-identity'
 
 const jobId = process.argv[2]
 if (!jobId) throw new Error('usage: package-job.ts <contentJobId>')
 
 async function main() {
   const result = await assembleContentPackage(jobId, {
-    name: 'CountingFive Admin (CLI)',
+    name: `${DEFAULT_COMMIT_AUTHOR.name} (CLI)`,
     email: process.env.ADMIN_EMAIL ?? null,
   })
 

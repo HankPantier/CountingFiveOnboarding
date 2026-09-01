@@ -46,7 +46,7 @@ export default async function AdminHomePage() {
       <main className="mx-auto max-w-lg p-8 pt-20 text-center">
         <h1 className="font-heading text-xl font-bold text-brand-navy">No site assigned yet</h1>
         <p className="mt-3 font-body text-sm text-text-secondary">
-          Your account isn&apos;t linked to a site yet. Please contact your CountingFive
+          Your account isn&apos;t linked to a site yet. Please contact your Revaltus
           administrator to finish setup.
         </p>
       </main>

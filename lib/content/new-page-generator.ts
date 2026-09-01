@@ -1,4 +1,5 @@
 import { anthropic } from '@ai-sdk/anthropic'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateAndFinalizePage, type Cta } from './content-generator'
 import { buildPageMarkdown, type PageMarkdownInput, type CtaInfo } from './deliverable-builder'
@@ -293,8 +294,8 @@ export async function generateNewPage(
     const palette = (job.palette ?? null) as PaletteData | null
     const firmName = schema.business?.name ?? 'the firm'
     const author = {
-      authorName: 'CountingFive Admin',
-      authorEmail: 'admin@countingfive.com',
+      authorName: DEFAULT_COMMIT_AUTHOR.name,
+      authorEmail: DEFAULT_COMMIT_AUTHOR.email,
     }
 
     // Internal-link allow-list = the pages that actually exist on the draft

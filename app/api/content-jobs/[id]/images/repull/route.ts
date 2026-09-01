@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { repullJobImages } from '@/lib/content/repull-images'
 
@@ -32,7 +33,7 @@ export async function POST(
   try {
     result = await repullJobImages(
       id,
-      { name: auth.user.name ?? 'CountingFive Admin', email: auth.user.email ?? null, id: auth.user.id },
+      { name: auth.user.name ?? DEFAULT_COMMIT_AUTHOR.name, email: auth.user.email ?? null, id: auth.user.id },
       { force, taskId }
     )
   } catch (err) {

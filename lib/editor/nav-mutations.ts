@@ -1,4 +1,5 @@
 import { parseNavJson, serializeNavJson } from './nav-config'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { contentPathToUrl, stripNavUrl } from './content-paths'
 import {
   DRAFT_BRANCH,
@@ -21,8 +22,8 @@ export interface NavMutationCtx {
 
 function author(ctx: NavMutationCtx) {
   return {
-    authorName: ctx.adminName ?? 'CountingFive Admin',
-    authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+    authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+    authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
   }
 }
 

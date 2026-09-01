@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { denySiteOwnerConfig } from '@/lib/auth/access'
 import {
@@ -23,8 +24,8 @@ const CLIENT_CENTER_PATH = 'content/client-center.json'
 const EMPTY: ClientCenterJson = { enabled: false, label: 'Client Center', groups: [] }
 
 const author = (ctx: EditContext) => ({
-  authorName: ctx.adminName ?? 'CountingFive Admin',
-  authorEmail: ctx.adminEmail ?? 'admin@countingfive.com',
+  authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+  authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
 })
 
 // GET — return the draft-branch client-center.json plus its blob sha (for
