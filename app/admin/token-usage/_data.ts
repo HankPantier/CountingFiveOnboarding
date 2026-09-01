@@ -9,20 +9,28 @@ import {
   type UsageRow,
   type AuditMeta,
 } from '@/lib/tokens/aggregate'
+import { resolveDateRange, type DateRangeParams } from '@/lib/tokens/date-range'
 
 // Shared loader for every Token Usage page (overview + by-user + by-user-client).
 // Each page is force-dynamic and re-runs this; at current volume the single 50k
 // fetch + in-memory aggregation is fine (a DB-side aggregate view is the scale
-// path). Centralized so the three pages stay consistent.
-export async function loadTokenUsage() {
+// path). Centralized so the three pages stay consistent. The date range (from
+// the URL) is resolved here and pushed into the query so every aggregate — tiles,
+// charts, tables, matrix — reflects the same window.
+export async function loadTokenUsage(params: DateRangeParams = {}) {
   const supabase = createServerClient()
+  const range = resolveDateRange(params, Date.now())
+
+  let usageQuery = supabase
+    .from('token_usage')
+    .select('task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at')
+    .order('created_at', { ascending: false })
+    .range(0, 49999)
+  if (range.fromISO) usageQuery = usageQuery.gte('created_at', range.fromISO)
+  if (range.toISO) usageQuery = usageQuery.lte('created_at', range.toISO)
 
   const [{ data: usage }, { data: sessions }, { data: auditRuns }, { data: admins }] = await Promise.all([
-    supabase
-      .from('token_usage')
-      .select('task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at')
-      .order('created_at', { ascending: false })
-      .range(0, 49999),
+    usageQuery,
     supabase.from('sessions').select('id, website_url'),
     supabase.from('audit_runs').select('id, session_id, site_name, domain'),
     supabase.from('admins').select('id, name, email'),
@@ -45,6 +53,7 @@ export async function loadTokenUsage() {
   const summary = summarize(rows, Date.now())
 
   return {
+    range,
     rows,
     labels,
     audits,

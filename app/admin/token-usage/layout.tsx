@@ -1,5 +1,6 @@
 import { requirePageAccess } from '@/lib/auth/page-guards'
 import TokenUsageTabs from '@/components/admin/TokenUsageTabs'
+import TokenUsageRangeFilter from '@/components/admin/TokenUsageRangeFilter'
 
 // Token usage (AI spend) is admin-only; everyone else gets 403. The sidebar
 // shell lives in app/admin/layout.tsx. The shared header + sub-nav live here so
@@ -19,6 +20,7 @@ export default async function TokenUsageLayout({
         </p>
       </header>
       <TokenUsageTabs />
+      <TokenUsageRangeFilter />
       {children}
     </div>
   )

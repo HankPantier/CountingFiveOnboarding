@@ -5,15 +5,20 @@ import type { SpendSlice } from '@/components/admin/SpendBreakdownCharts'
 import SpendBarCard from '@/components/admin/SpendBarCard'
 import UserClientMatrix from '@/components/admin/UserClientMatrix'
 import { loadTokenUsage } from '../_data'
+import type { DateRangeParams } from '@/lib/tokens/date-range'
 
 export const dynamic = 'force-dynamic'
 
 // Per-user × per-client AI spend. Admin-only enforcement lives in the layout.
-export default async function ByUserClientPage() {
+export default async function ByUserClientPage({
+  searchParams,
+}: {
+  searchParams: Promise<DateRangeParams>
+}) {
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
 
-  const { userClients } = await loadTokenUsage()
+  const { userClients } = await loadTokenUsage(await searchParams)
 
   // Top user→client pairs by spend across the whole matrix.
   const pairs: SpendSlice[] = topByCost(
