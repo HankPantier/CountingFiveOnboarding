@@ -156,8 +156,21 @@ describe('syncMainIntoDraft', () => {
     expect(merge).not.toHaveBeenCalled()
   })
 
-  it('merges live into draft when main has new commits', async () => {
-    compareCommits.mockResolvedValue({ data: { ahead_by: 4 } })
+  it('fast-forwards draft to main when draft has no commits of its own', async () => {
+    // Draft strictly behind (main ahead, no draft-only commits) → move the ref, no merge.
+    compareCommits.mockResolvedValue({ data: { ahead_by: 1, behind_by: 0 } })
+    getRef.mockResolvedValue({ data: { object: { sha: 'mainHeadSha' } } })
+    updateRef.mockResolvedValue({})
+    const res = await syncMainIntoDraft('site')
+    expect(res).toEqual({ synced: true, alreadyCurrent: false, mergeCommitSha: null })
+    expect(merge).not.toHaveBeenCalled()
+    expect(updateRef).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'heads/draft', sha: 'mainHeadSha', force: false })
+    )
+  })
+
+  it('merges live into draft when both branches have diverged', async () => {
+    compareCommits.mockResolvedValue({ data: { ahead_by: 4, behind_by: 2 } })
     merge.mockResolvedValue({ data: { sha: 'draftMergeSha' } })
     const res = await syncMainIntoDraft('site')
     expect(res).toEqual({ synced: true, alreadyCurrent: false, mergeCommitSha: 'draftMergeSha' })
@@ -165,10 +178,11 @@ describe('syncMainIntoDraft', () => {
     expect(merge).toHaveBeenCalledWith(
       expect.objectContaining({ base: 'draft', head: 'main' })
     )
+    expect(updateRef).not.toHaveBeenCalled()
   })
 
   it('reports a conflict without forcing anything', async () => {
-    compareCommits.mockResolvedValue({ data: { ahead_by: 4 } })
+    compareCommits.mockResolvedValue({ data: { ahead_by: 4, behind_by: 2 } })
     merge.mockRejectedValue(reqError(409, 'Merge conflict'))
     const res = await syncMainIntoDraft('site')
     expect(res).toMatchObject({ synced: false })

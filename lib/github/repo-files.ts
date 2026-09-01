@@ -884,7 +884,8 @@ export async function syncMainIntoDraft(slug: string): Promise<SyncResult> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
 
-  // ahead_by = commits main has that draft lacks (how stale draft is).
+  // base=draft, head=main: ahead_by = commits main has that draft lacks (how stale
+  // draft is); behind_by = draft-only commits main lacks (genuine divergence).
   const cmp = await octokit.repos.compareCommits({
     owner,
     repo,
@@ -893,6 +894,22 @@ export async function syncMainIntoDraft(slug: string): Promise<SyncResult> {
   })
   if (cmp.data.ahead_by === 0) {
     return { synced: true, alreadyCurrent: true, mergeCommitSha: null }
+  }
+
+  // Draft has no commits of its own → main is strictly ahead, so fast-forward the
+  // draft ref to main instead of merging. octokit.repos.merge ALWAYS writes a merge
+  // commit (never fast-forwards), which would leave draft "1 ahead" of main by an
+  // empty commit — surfacing a phantom "N to publish" badge with an empty diff.
+  if (cmp.data.behind_by === 0) {
+    const main = await octokit.git.getRef({ owner, repo, ref: `heads/${MAIN_BRANCH}` })
+    await octokit.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${DRAFT_BRANCH}`,
+      sha: main.data.object.sha,
+      force: false,
+    })
+    return { synced: true, alreadyCurrent: false, mergeCommitSha: null }
   }
 
   try {
