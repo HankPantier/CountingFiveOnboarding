@@ -2,29 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
-import DeleteBatchButton from './DeleteBatchButton'
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    complete: 'bg-success/10 text-success',
-    error: 'bg-error/10 text-error',
-    generating: 'bg-brand-cyan/10 text-brand-cyan-dark',
-  }
-  const label: Record<string, string> = {
-    complete: 'Complete',
-    error: 'Error',
-    generating: 'Generating',
-  }
-  return (
-    <span
-      className={`inline-flex items-center rounded-badge px-2.5 py-1 font-heading text-[10.5px] font-semibold uppercase tracking-[0.04em] ${
-        map[status] ?? 'bg-surface-subtle text-text-muted'
-      }`}
-    >
-      {label[status] ?? status}
-    </span>
-  )
-}
+import BatchContentTable, { type BatchContentRow } from './BatchContentTable'
 
 export default async function BlogBatchListPage() {
   // Capability enforcement (manager/admin, else 403) lives in the section layout.
@@ -43,11 +21,19 @@ export default async function BlogBatchListPage() {
     accessibleBatchIds = [...new Set((tgts ?? []).map((t) => t.batch_id))]
   }
 
-  let batches: Array<{ id: string; title: string; target_keyword: string | null; status: string; created_at: string }> = []
+  let batches: Array<{
+    id: string
+    title: string
+    target_keyword: string | null
+    status: string
+    content_type: string | null
+    industry: string | null
+    created_at: string
+  }> = []
   if (accessibleBatchIds === null || accessibleBatchIds.length > 0) {
     let query = supabase
       .from('blog_batches')
-      .select('id, title, target_keyword, status, created_at')
+      .select('id, title, target_keyword, status, content_type, industry, created_at')
       .order('created_at', { ascending: false })
       .limit(50)
     if (accessibleBatchIds !== null) query = query.in('id', accessibleBatchIds)
@@ -71,6 +57,21 @@ export default async function BlogBatchListPage() {
     }
   }
 
+  const rows: BatchContentRow[] = batches.map((b) => {
+    const c = countByBatch.get(b.id)
+    return {
+      id: b.id,
+      title: b.title,
+      targetKeyword: b.target_keyword,
+      status: b.status,
+      contentType: b.content_type,
+      industry: b.industry,
+      createdAt: b.created_at,
+      clientsTotal: c?.total ?? 0,
+      clientsComplete: c?.complete ?? 0,
+    }
+  })
+
   return (
     <main className="p-8">
       <div className="flex items-center justify-between mb-8">
@@ -93,55 +94,7 @@ export default async function BlogBatchListPage() {
           No batches yet. Start one to fan a blog idea out to multiple clients.
         </div>
       ) : (
-        <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
-          <table className="w-full text-sm font-body">
-            <thead>
-              <tr className="border-b border-border-default bg-surface-header">
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Idea</th>
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Keyword</th>
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Clients</th>
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Created</th>
-                <th className="text-left px-4 py-3 text-text-secondary font-heading font-semibold text-xs uppercase tracking-wide">Status</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {batches.map((b) => (
-                <tr
-                  key={b.id}
-                  className="border-b border-border-default last:border-0 hover:bg-surface-subtle transition-colors"
-                >
-                  <td className="px-4 py-3 font-body text-text-primary font-semibold max-w-md truncate">{b.title}</td>
-                  <td className="px-4 py-3 text-text-secondary">{b.target_keyword ?? '—'}</td>
-                  <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
-                    {(() => {
-                      const c = countByBatch.get(b.id)
-                      if (!c) return '—'
-                      return `${c.total} client${c.total === 1 ? '' : 's'} · ${c.complete} drafted`
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-text-secondary">
-                    {new Date(b.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={b.status} />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <Link
-                        href={`/admin/blog-batch/${b.id}`}
-                        className="inline-flex items-center rounded-pill border border-border-default text-text-secondary font-heading font-semibold text-xs px-3.5 py-1.5 transition-all hover:bg-surface-subtle"
-                      >
-                        View
-                      </Link>
-                      {user.isAdmin && <DeleteBatchButton batchId={b.id} />}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <BatchContentTable rows={rows} isAdmin={user.isAdmin} />
       )}
     </main>
   )
