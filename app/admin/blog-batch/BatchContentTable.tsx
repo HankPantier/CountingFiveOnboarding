@@ -110,9 +110,8 @@ export default function BatchContentTable({
   const [industryFilter, setIndustryFilter] = useState<Industry | 'all'>('all')
   const [sortKey, setSortKey] = useState<SortKey>('created')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  // Row currently showing its type dropdown, and optimistic type overrides keyed
-  // by batch id (so a relabel is reflected before the server round-trip settles).
-  const [editingId, setEditingId] = useState<string | null>(null)
+  // Batch currently saving a relabel, and optimistic type overrides keyed by
+  // batch id (so a relabel is reflected before the server round-trip settles).
   const [savingId, setSavingId] = useState<string | null>(null)
   const [typeOverrides, setTypeOverrides] = useState<Record<string, ContentType>>({})
 
@@ -122,7 +121,6 @@ export default function BatchContentTable({
   )
 
   async function reclassify(batchId: string, next: ContentType) {
-    setEditingId(null)
     const prev = typeOverrides[batchId]
     setSavingId(batchId)
     setTypeOverrides((m) => ({ ...m, [batchId]: next }))
@@ -276,33 +274,26 @@ export default function BatchContentTable({
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {canReclassify && editingId === b.id ? (
-                      <select
-                        autoFocus
-                        value={effectiveType(b)}
-                        onChange={(e) => void reclassify(b.id, asContentType(e.target.value))}
-                        onBlur={() => setEditingId(null)}
-                        className="rounded-full border border-border-default bg-surface-card px-2 py-0.5 text-[11px] font-heading font-semibold text-brand-navy focus:outline-none focus:border-brand-cyan"
-                      >
-                        {CONTENT_TYPE_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : canReclassify ? (
-                      <button
-                        type="button"
-                        onClick={() => setEditingId(b.id)}
-                        disabled={savingId === b.id}
-                        title="Change content type"
-                        className="group inline-flex items-center gap-1 disabled:opacity-60"
-                      >
-                        <TagBadge>{CONTENT_TYPES[effectiveType(b)].uiLabel}</TagBadge>
-                        <span className="text-[10px] text-text-muted group-hover:text-brand-cyan">
-                          {savingId === b.id ? '…' : '✎'}
+                    {canReclassify ? (
+                      <div className="relative inline-flex items-center">
+                        <select
+                          aria-label="Content type"
+                          title="Change content type"
+                          value={effectiveType(b)}
+                          onChange={(e) => void reclassify(b.id, asContentType(e.target.value))}
+                          disabled={savingId === b.id}
+                          className="appearance-none cursor-pointer rounded-full bg-brand-navy/10 pl-2.5 pr-6 py-0.5 text-[10px] font-heading font-semibold text-brand-navy hover:bg-brand-navy/20 focus:outline-none focus:ring-1 focus:ring-brand-cyan disabled:opacity-60 transition-colors"
+                        >
+                          {CONTENT_TYPE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="pointer-events-none absolute right-2 text-[8px] text-brand-navy">
+                          {savingId === b.id ? '…' : '▾'}
                         </span>
-                      </button>
+                      </div>
                     ) : (
                       <TagBadge>{CONTENT_TYPES[effectiveType(b)].uiLabel}</TagBadge>
                     )}

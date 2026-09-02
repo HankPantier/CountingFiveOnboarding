@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrandFitResult } from '@/lib/content/brand-fit'
-import { CONTENT_TYPES, CONTENT_TYPE_OPTIONS, asContentType, type ContentType } from '@/lib/content/content-types'
+import { CONTENT_TYPE_OPTIONS, asContentType, type ContentType } from '@/lib/content/content-types'
 import BrandConflictCard from './BrandConflictCard'
 
 type ScoreBreakdown = {
@@ -96,8 +96,6 @@ export default function ResourcesPanel({
   // Idea with the writer-notes box open, and its text.
   const [notesFor, setNotesFor] = useState<string | null>(null)
   const [notesText, setNotesText] = useState('')
-  // Idea currently showing its content-type dropdown (reclassify).
-  const [editingTypeFor, setEditingTypeFor] = useState<string | null>(null)
   // Brand-fit conflict awaiting an admin decision (seed or draft notes).
   const [brandConflict, setBrandConflict] = useState<{
     action: { kind: 'seed'; seed: string } | { kind: 'draft'; ideaId: string; notes: string }
@@ -297,7 +295,6 @@ export default function ResourcesPanel({
   // rules a future draft/regenerate uses; it does not rewrite an existing draft.
   const setIdeaType = async (ideaId: string, next: ContentType) => {
     setError(null)
-    setEditingTypeFor(null)
     // Optimistic — reflect the new chip immediately.
     setIdeas((prev) => prev.map((i) => (i.id === ideaId ? { ...i, content_type: next } : i)))
     try {
@@ -518,14 +515,14 @@ export default function ResourcesPanel({
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2 items-center">
-                {editingTypeFor === idea.id ? (
+                <div className="relative inline-flex items-center">
                   <select
-                    autoFocus
+                    aria-label="Content type"
+                    title="Change content type"
                     value={idea.content_type}
                     onChange={(e) => void setIdeaType(idea.id, asContentType(e.target.value))}
-                    onBlur={() => setEditingTypeFor(null)}
                     disabled={idea.draft_status === 'running'}
-                    className="rounded-full border border-border-default bg-surface-card px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy focus:outline-none focus:border-brand-cyan disabled:opacity-50"
+                    className="appearance-none cursor-pointer rounded-full bg-brand-navy/10 pl-2.5 pr-6 py-0.5 text-[10px] font-heading font-semibold text-brand-navy hover:bg-brand-navy/20 focus:outline-none focus:ring-1 focus:ring-brand-cyan disabled:opacity-50 transition-colors"
                   >
                     {CONTENT_TYPE_OPTIONS.map((o) => (
                       <option key={o.value} value={o.value}>
@@ -533,18 +530,10 @@ export default function ResourcesPanel({
                       </option>
                     ))}
                   </select>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingTypeFor(idea.id)}
-                    disabled={idea.draft_status === 'running'}
-                    title="Change content type"
-                    className="group inline-flex items-center gap-1 rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy hover:bg-brand-navy/20 disabled:opacity-50 transition-colors"
-                  >
-                    {CONTENT_TYPES[asContentType(idea.content_type)].uiLabel}
-                    <span className="text-text-muted group-hover:text-brand-cyan">✎</span>
-                  </button>
-                )}
+                  <span className="pointer-events-none absolute right-2 text-[8px] text-brand-navy">
+                    ▾
+                  </span>
+                </div>
                 {idea.status === 'approved' && (
                   <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-success">
                     ★ Interested
