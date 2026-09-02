@@ -10,12 +10,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 interface RetryBody {
   sessionId?: string
+  // Regenerate a single already-settled client (complete/error/skipped), not
+  // just errored ones — used after a reclassify to re-draft with the new type.
+  // Only honored together with a single `sessionId` so it can't mass-redraft.
+  force?: boolean
 }
 
 // Re-run the clients that errored. Resets each errored target back to 'pending'
 // and its idea's draft_status back to 'idle' (so generateResourceDraft can
 // re-claim the lock), then re-triggers the runner. With a `sessionId` in the
 // body, only that one client is retried; otherwise every errored client is.
+// With `force` + a `sessionId`, a settled (complete/error/skipped) target for
+// that one client is re-drafted regardless of its current status.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -31,6 +37,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const singleSessionId =
     typeof body.sessionId === 'string' && UUID_RE.test(body.sessionId) ? body.sessionId : null
+  // Force only applies to a single targeted client — never a whole-batch redraft.
+  const force = body.force === true && !!singleSessionId
 
   const supabase = createServerClient()
 
@@ -44,7 +52,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .from('blog_batch_targets')
     .select('id, resource_idea_id, session_id')
     .eq('batch_id', id)
-    .eq('status', 'error')
+  // Force redraws a settled target; otherwise only errored ones are picked up.
+  // Either way in-flight targets (pending/generating) are left alone.
+  query = force
+    ? query.in('status', ['complete', 'error', 'skipped'])
+    : query.eq('status', 'error')
   if (singleSessionId) query = query.eq('session_id', singleSessionId)
   if (allowed !== null) {
     if (allowed.length === 0) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

@@ -32,6 +32,7 @@ export default function BlogBatchProgress({
   const [notFound, setNotFound] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
   // Bumped after a retry/add to restart polling (the interval self-stops at rest).
   const [reloadNonce, setReloadNonce] = useState(0)
 
@@ -82,6 +83,24 @@ export default function BlogBatchProgress({
     } finally {
       if (sessionId) setRetryingId(null)
       else setRetrying(false)
+    }
+  }
+
+  // Re-draft an already-complete client with the batch's current (possibly
+  // reclassified) content type — overwrites that client's existing draft.
+  async function regenerateOne(sessionId: string) {
+    setRegeneratingId(sessionId)
+    try {
+      const res = await fetch(`/api/blog-batches/${batchId}/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, force: true }),
+      })
+      if (res.ok) setReloadNonce((n) => n + 1)
+    } catch {
+      // Transient — the user can click again.
+    } finally {
+      setRegeneratingId(null)
     }
   }
 
@@ -175,16 +194,29 @@ export default function BlogBatchProgress({
                     </td>
                     <td className="px-4 py-3 text-right">
                       {t.status === 'complete' && (
-                        <Link
-                          href={
-                            t.draftPath
-                              ? `/admin/content/${t.sessionId}/edit?path=${encodeURIComponent(t.draftPath)}`
-                              : `/admin/content/${t.sessionId}/edit`
-                          }
-                          className="inline-flex items-center border border-success/40 text-success font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-success/10"
-                        >
-                          Open draft
-                        </Link>
+                        <div className="inline-flex items-center gap-2">
+                          <Link
+                            href={
+                              t.draftPath
+                                ? `/admin/content/${t.sessionId}/edit?path=${encodeURIComponent(t.draftPath)}`
+                                : `/admin/content/${t.sessionId}/edit`
+                            }
+                            className="inline-flex items-center border border-success/40 text-success font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-success/10"
+                          >
+                            Open draft
+                          </Link>
+                          {counts.inFlight === 0 && (
+                            <button
+                              type="button"
+                              onClick={() => regenerateOne(t.sessionId)}
+                              disabled={regeneratingId === t.sessionId}
+                              title="Re-draft this client with the batch's current content type (overwrites the existing draft)"
+                              className="inline-flex items-center border border-brand-cyan/40 text-brand-cyan-dark font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {regeneratingId === t.sessionId ? 'Regenerating…' : 'Regenerate'}
+                            </button>
+                          )}
+                        </div>
                       )}
                       {t.status === 'error' && counts.inFlight === 0 && (
                         <button

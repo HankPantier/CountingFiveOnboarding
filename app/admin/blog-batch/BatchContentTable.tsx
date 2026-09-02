@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   CONTENT_TYPES,
@@ -100,14 +100,51 @@ function SortHeader({
 export default function BatchContentTable({
   rows,
   isAdmin,
+  canReclassify,
 }: {
   rows: BatchContentRow[]
   isAdmin: boolean
+  canReclassify: boolean
 }) {
   const [contentTypeFilter, setContentTypeFilter] = useState<ContentType | 'all'>('all')
   const [industryFilter, setIndustryFilter] = useState<Industry | 'all'>('all')
   const [sortKey, setSortKey] = useState<SortKey>('created')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  // Row currently showing its type dropdown, and optimistic type overrides keyed
+  // by batch id (so a relabel is reflected before the server round-trip settles).
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [typeOverrides, setTypeOverrides] = useState<Record<string, ContentType>>({})
+
+  const effectiveType = useCallback(
+    (b: BatchContentRow): ContentType => typeOverrides[b.id] ?? asContentType(b.contentType),
+    [typeOverrides]
+  )
+
+  async function reclassify(batchId: string, next: ContentType) {
+    setEditingId(null)
+    const prev = typeOverrides[batchId]
+    setSavingId(batchId)
+    setTypeOverrides((m) => ({ ...m, [batchId]: next }))
+    try {
+      const res = await fetch(`/api/blog-batches/${batchId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: next }),
+      })
+      if (!res.ok) throw new Error()
+    } catch {
+      // Revert the optimistic override on failure.
+      setTypeOverrides((m) => {
+        const copy = { ...m }
+        if (prev === undefined) delete copy[batchId]
+        else copy[batchId] = prev
+        return copy
+      })
+    } finally {
+      setSavingId(null)
+    }
+  }
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -121,7 +158,7 @@ export default function BatchContentTable({
 
   const visible = useMemo(() => {
     const filtered = rows.filter((r) => {
-      if (contentTypeFilter !== 'all' && asContentType(r.contentType) !== contentTypeFilter) return false
+      if (contentTypeFilter !== 'all' && effectiveType(r) !== contentTypeFilter) return false
       if (industryFilter !== 'all' && asIndustry(r.industry) !== industryFilter) return false
       return true
     })
@@ -146,7 +183,7 @@ export default function BatchContentTable({
       // Stable tiebreak on creation time (newest first) so equal keys don't jump.
       return b.createdAt.localeCompare(a.createdAt)
     })
-  }, [rows, contentTypeFilter, industryFilter, sortKey, sortDir])
+  }, [rows, contentTypeFilter, industryFilter, sortKey, sortDir, effectiveType])
 
   return (
     <div>
@@ -239,7 +276,36 @@ export default function BatchContentTable({
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <TagBadge>{CONTENT_TYPES[asContentType(b.contentType)].uiLabel}</TagBadge>
+                    {canReclassify && editingId === b.id ? (
+                      <select
+                        autoFocus
+                        value={effectiveType(b)}
+                        onChange={(e) => void reclassify(b.id, asContentType(e.target.value))}
+                        onBlur={() => setEditingId(null)}
+                        className="rounded-full border border-border-default bg-surface-card px-2 py-0.5 text-[11px] font-heading font-semibold text-brand-navy focus:outline-none focus:border-brand-cyan"
+                      >
+                        {CONTENT_TYPE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : canReclassify ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(b.id)}
+                        disabled={savingId === b.id}
+                        title="Change content type"
+                        className="group inline-flex items-center gap-1 disabled:opacity-60"
+                      >
+                        <TagBadge>{CONTENT_TYPES[effectiveType(b)].uiLabel}</TagBadge>
+                        <span className="text-[10px] text-text-muted group-hover:text-brand-cyan">
+                          {savingId === b.id ? '…' : '✎'}
+                        </span>
+                      </button>
+                    ) : (
+                      <TagBadge>{CONTENT_TYPES[effectiveType(b)].uiLabel}</TagBadge>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <TagBadge>{INDUSTRIES[asIndustry(b.industry)].uiLabel}</TagBadge>

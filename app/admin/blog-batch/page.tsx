@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import BatchContentTable, { type BatchContentRow } from './BatchContentTable'
 
 export default async function BlogBatchListPage() {
@@ -94,7 +94,11 @@ export default async function BlogBatchListPage() {
           No batches yet. Start one to fan a blog idea out to multiple clients.
         </div>
       ) : (
-        <BatchContentTable rows={rows} isAdmin={user.isAdmin} />
+        <BatchContentTable
+          rows={rows}
+          isAdmin={user.isAdmin}
+          canReclassify={hasCapability(user, 'manager')}
+        />
       )}
     </main>
   )

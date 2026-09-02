@@ -96,6 +96,8 @@ export default function ResourcesPanel({
   // Idea with the writer-notes box open, and its text.
   const [notesFor, setNotesFor] = useState<string | null>(null)
   const [notesText, setNotesText] = useState('')
+  // Idea currently showing its content-type dropdown (reclassify).
+  const [editingTypeFor, setEditingTypeFor] = useState<string | null>(null)
   // Brand-fit conflict awaiting an admin decision (seed or draft notes).
   const [brandConflict, setBrandConflict] = useState<{
     action: { kind: 'seed'; seed: string } | { kind: 'draft'; ideaId: string; notes: string }
@@ -288,6 +290,31 @@ export default function ResourcesPanel({
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
+    }
+  }
+
+  // Reclassify an idea's content type (relabel only). This changes the format
+  // rules a future draft/regenerate uses; it does not rewrite an existing draft.
+  const setIdeaType = async (ideaId: string, next: ContentType) => {
+    setError(null)
+    setEditingTypeFor(null)
+    // Optimistic — reflect the new chip immediately.
+    setIdeas((prev) => prev.map((i) => (i.id === ideaId ? { ...i, content_type: next } : i)))
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/resources/ideas/${ideaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: next }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Update failed: ${res.status}`)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      // Reconcile with the server either way (revert on failure).
+      await refresh()
     }
   }
 
@@ -490,11 +517,33 @@ export default function ResourcesPanel({
                 )}
               </div>
 
-              <div className="mt-2 flex flex-wrap gap-2">
-                {idea.content_type !== 'blog' && (
-                  <span className="rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy">
+              <div className="mt-2 flex flex-wrap gap-2 items-center">
+                {editingTypeFor === idea.id ? (
+                  <select
+                    autoFocus
+                    value={idea.content_type}
+                    onChange={(e) => void setIdeaType(idea.id, asContentType(e.target.value))}
+                    onBlur={() => setEditingTypeFor(null)}
+                    disabled={idea.draft_status === 'running'}
+                    className="rounded-full border border-border-default bg-surface-card px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy focus:outline-none focus:border-brand-cyan disabled:opacity-50"
+                  >
+                    {CONTENT_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setEditingTypeFor(idea.id)}
+                    disabled={idea.draft_status === 'running'}
+                    title="Change content type"
+                    className="group inline-flex items-center gap-1 rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy hover:bg-brand-navy/20 disabled:opacity-50 transition-colors"
+                  >
                     {CONTENT_TYPES[asContentType(idea.content_type)].uiLabel}
-                  </span>
+                    <span className="text-text-muted group-hover:text-brand-cyan">✎</span>
+                  </button>
                 )}
                 {idea.status === 'approved' && (
                   <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-success">
@@ -567,12 +616,22 @@ export default function ResourcesPanel({
 
               <div className="mt-3 flex items-center gap-2 flex-wrap">
                 {idea.status === 'drafted' && idea.draft_path ? (
+                  idea.draft_status === 'running' ? (
+                    <span className="text-xs font-body text-info">Regenerating…</span>
+                  ) : (
                   <>
                     <button
                       onClick={() => onOpenPost(idea.draft_path!)}
                       className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
                     >
                       Open draft
+                    </button>
+                    <button
+                      onClick={() => void draft(idea.id, '')}
+                      title="Re-draft this post with the current content type (overwrites the existing draft)"
+                      className="rounded-pill border border-brand-navy px-3.5 py-1.5 text-xs font-heading font-semibold text-brand-navy hover:bg-brand-navy/5 transition-colors"
+                    >
+                      Regenerate
                     </button>
                     {canPublishLive && (
                       <button
@@ -614,6 +673,7 @@ export default function ResourcesPanel({
                       </button>
                     )}
                   </>
+                  )
                 ) : idea.draft_status === 'running' ? (
                   <span className="text-xs font-body text-info">Drafting post…</span>
                 ) : (
