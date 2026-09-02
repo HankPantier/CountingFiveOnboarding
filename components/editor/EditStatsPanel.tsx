@@ -27,8 +27,9 @@ function timeAgo(iso: string | null): string {
 
 type SortKey = 'edits' | 'churn' | 'cost'
 
-const th = 'px-3 py-2 text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide'
-const td = 'px-3 py-2 font-body text-text-primary tabular-nums'
+const th =
+  'px-2.5 py-1.5 text-[10px] font-heading font-semibold text-text-secondary uppercase tracking-wide whitespace-nowrap'
+const td = 'px-2.5 py-1.5 text-[11px] font-body text-text-primary tabular-nums whitespace-nowrap'
 
 export default function EditStatsPanel({
   rows,
@@ -60,7 +61,7 @@ export default function EditStatsPanel({
     <button
       type="button"
       onClick={() => setSort(key)}
-      className={`${th} text-right hover:text-brand-navy transition-colors ${sort === key ? 'text-brand-navy' : ''}`}
+      className={`text-[10px] font-heading font-semibold uppercase tracking-wide whitespace-nowrap hover:text-brand-navy transition-colors ${sort === key ? 'text-brand-navy' : 'text-text-secondary'}`}
     >
       {label}
       {sort === key ? ' ↓' : ''}
@@ -68,11 +69,11 @@ export default function EditStatsPanel({
   )
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex-1 overflow-y-auto p-4">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="font-heading text-lg font-semibold text-brand-navy">Edit activity</h2>
-          <p className="mt-0.5 text-xs font-body text-text-muted">
+          <h2 className="font-heading text-base font-semibold text-brand-navy">Edit activity</h2>
+          <p className="mt-0.5 text-xs font-body leading-snug text-text-muted">
             How many times each page and resource has been edited (AI vs by hand), how much changed,
             and the AI spend — from this site&rsquo;s full edit history. Admin-only.
           </p>
@@ -133,8 +134,11 @@ export default function EditStatsPanel({
             <tbody>
               {sorted.map((r) => (
                 <tr key={r.path} className="border-b border-border-default last:border-0">
-                  <td className="px-3 py-2 font-body text-text-primary">
-                    <span className="truncate">{fileLabel(r)}</span>
+                  <td
+                    className="max-w-[220px] truncate px-2.5 py-1.5 text-[11px] font-body text-text-primary"
+                    title={fileLabel(r)}
+                  >
+                    {fileLabel(r)}
                   </td>
                   <td className={`${td} text-right`}>{r.editCount}</td>
                   <td className={`${td} text-right text-text-secondary`}>
@@ -147,7 +151,10 @@ export default function EditStatsPanel({
                     <span className="text-error">−{r.deletions}</span>
                   </td>
                   <td className={`${td} text-right`}>{money(r.aiCostUsd ?? 0)}</td>
-                  <td className={`${td} text-right text-text-secondary`}>
+                  <td
+                    className={`${td} max-w-[150px] truncate text-right text-text-secondary`}
+                    title={r.lastAuthorName ?? undefined}
+                  >
                     {timeAgo(r.lastEditAt)}
                     {r.lastAuthorName ? ` · ${r.lastAuthorName}` : ''}
                   </td>
@@ -156,7 +163,7 @@ export default function EditStatsPanel({
             </tbody>
             <tfoot>
               <tr className="bg-surface-subtle">
-                <td className="px-3 py-2 font-heading text-xs font-semibold text-text-secondary uppercase tracking-wide">
+                <td className="px-2.5 py-1.5 font-heading text-[10px] font-semibold text-text-secondary uppercase tracking-wide">
                   {rows.length} pages
                 </td>
                 <td className={`${td} text-right font-semibold`}>{totalEdits}</td>
