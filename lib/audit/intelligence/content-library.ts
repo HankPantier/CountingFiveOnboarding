@@ -5,7 +5,7 @@ import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
 import type { AuditResult, ContentLibraryFormat, ContentLibraryIntelligence } from '../types'
 
-const ARTICLE_URL_RE = /\/(blog|resources?|insights?|articles?|news|posts?|quick-?reads?|magazine)\b/i
+export const ARTICLE_URL_RE = /\/(blog|resources?|insights?|articles?|news|posts?|quick-?reads?|magazine)\b/i
 const MIN_PIECES = 3
 const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000
 

@@ -127,6 +127,20 @@ export async function GET(req: Request) {
     console.warn(`[sweep-stuck-jobs] library-selections reset to error=${librarySelectionsSwept}`)
   }
 
+  // content_job_article_imports stuck at 'drafting' (worker died mid-import) hold
+  // the publish gate at 409 forever. Reset to 'error' so the imports auto-resume
+  // below re-runs them; importArticleAsIs re-claims idempotently.
+  const { data: articleImports } = await supabase
+    .from('content_job_article_imports')
+    .update({ status: 'error', error: 'Import timed out (swept by cron)', updated_at: new Date().toISOString() })
+    .eq('status', 'drafting')
+    .lt('updated_at', cutoff)
+    .select('id')
+  const articleImportsSwept = articleImports?.length ?? 0
+  if (articleImportsSwept) {
+    console.warn(`[sweep-stuck-jobs] article-imports reset to error=${articleImportsSwept}`)
+  }
+
   // Prune rate-limiter events older than 24h (largest window is 1h; 24h keeps
   // the table tiny without racing any active window).
   await supabase
@@ -231,6 +245,45 @@ export async function GET(req: Request) {
     }
     if (librarySelectionsResumed) {
       console.warn(`[sweep-stuck-jobs] library-selections auto-resumed jobs=${librarySelectionsResumed}`)
+    }
+  }
+
+  // Article imports: same recovery as library selections — a job with open
+  // (pending/error) imports and none drafting has no worker; re-trigger
+  // /imports/run (idempotent). Without this a stalled import blocks publish.
+  const { data: liveImports } = await supabase
+    .from('content_job_article_imports')
+    .select('content_job_id, status')
+    .in('status', ['pending', 'drafting', 'error'])
+
+  const importCounts = new Map<string, { open: number; drafting: number }>()
+  for (const s of liveImports ?? []) {
+    const c = importCounts.get(s.content_job_id) ?? { open: 0, drafting: 0 }
+    if (s.status === 'drafting') c.drafting += 1
+    else c.open += 1
+    importCounts.set(s.content_job_id, c)
+  }
+  const resumableImportJobs = [...importCounts.entries()]
+    .filter(([, c]) => c.open > 0 && c.drafting === 0)
+    .map(([jobId]) => jobId)
+    .slice(0, 5)
+
+  let articleImportsResumed = 0
+  if (resumeBase && resumableImportJobs.length) {
+    const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
+    for (const jobId of resumableImportJobs) {
+      try {
+        const res = await fetch(`${url}/api/content-jobs/${jobId}/imports/run`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+        if (res.ok) articleImportsResumed += 1
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] article-import auto-resume failed for', jobId, err)
+      }
+    }
+    if (articleImportsResumed) {
+      console.warn(`[sweep-stuck-jobs] article-imports auto-resumed jobs=${articleImportsResumed}`)
     }
   }
 
@@ -375,5 +428,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed, cutoff })
 }

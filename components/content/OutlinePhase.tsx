@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import OutlineCard from './OutlineCard'
 import LibraryContentPanel from './LibraryContentPanel'
+import ArticleImportPanel from './ArticleImportPanel'
 import type { Json } from '@/types/database'
 
 type Outline = {
@@ -35,6 +36,10 @@ export default function OutlinePhase({
   // The operator must make an explicit choice about including library content
   // before content generation can start (choosing "none" counts, once saved).
   const [libraryAcknowledged, setLibraryAcknowledged] = useState(false)
+  // Same explicit-choice gate for importing the client's own existing articles.
+  // Defaults acknowledged — a session with no discovered articles auto-clears via
+  // the panel, and the server gate is the real enforcement.
+  const [articlesAcknowledged, setArticlesAcknowledged] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -122,6 +127,7 @@ export default function OutlinePhase({
   }
 
   const handleLibraryAck = useCallback((ack: boolean) => setLibraryAcknowledged(ack), [])
+  const handleArticlesAck = useCallback((ack: boolean) => setArticlesAcknowledged(ack), [])
 
   const startContentGeneration = async () => {
     setAdvancing(true)
@@ -217,11 +223,16 @@ export default function OutlinePhase({
         <LibraryContentPanel contentJobId={contentJobId} onAcknowledgedChange={handleLibraryAck} />
       )}
 
+      {/* Bring over the client's own existing articles verbatim. */}
+      {allApproved && (
+        <ArticleImportPanel contentJobId={contentJobId} onAcknowledgedChange={handleArticlesAck} />
+      )}
+
       {/* Start content generation */}
       <div className="pt-2 flex items-center gap-3">
         <button
           onClick={startContentGeneration}
-          disabled={!allApproved || !libraryAcknowledged || advancing}
+          disabled={!allApproved || !libraryAcknowledged || !articlesAcknowledged || advancing}
           className="bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {advancing ? 'Starting...' : 'Start Content Generation →'}
@@ -244,6 +255,11 @@ export default function OutlinePhase({
       {allApproved && !libraryAcknowledged && (
         <p className="text-xs text-text-muted font-body">
           Confirm your library-content choice above to enable content generation.
+        </p>
+      )}
+      {allApproved && libraryAcknowledged && !articlesAcknowledged && (
+        <p className="text-xs text-text-muted font-body">
+          Confirm your existing-article import choice above to enable content generation.
         </p>
       )}
     </div>

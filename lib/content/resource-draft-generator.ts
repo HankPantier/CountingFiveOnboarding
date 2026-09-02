@@ -18,7 +18,8 @@ import {
   removeStaleStaticSitemap,
   FileNotFoundError,
 } from '@/lib/github/repo-files'
-import { buildInternalLinkTargets, type InternalLinkTarget } from './internal-link-targets'
+import { buildCrossLinkIndex, type InternalLinkTarget } from './internal-link-targets'
+import { buildPostMarkdown } from './post-markdown'
 import { insertReverseLinks } from './reverse-linker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
@@ -265,54 +266,11 @@ function stripUnapprovedExternalLinks(body: string, approved: ExternalLink[]): s
   })
 }
 
-function escapeFrontmatterValue(value: string): string {
-  // Collapse newlines, then emit a YAML double-quoted scalar. Free-text fields
-  // (title, excerpt, meta_description…) routinely contain a colon-space
-  // ("City, ST: summary") which breaks unquoted YAML. JSON strings are valid
-  // YAML double-quoted scalars, so JSON.stringify makes every value safe.
-  return JSON.stringify(value.replace(/\n/g, ' ').trim())
-}
-
-function buildPostMarkdown(args: {
-  fm: DraftFrontmatter
-  body: string
-  slug: string
-  date: string
-  contentType: ContentType
-  author: string | null
-  canonicalUrl: string
-  heroImage: string | null
-}): string {
-  const { fm } = args
-  const lines = [
-    '---',
-    `title: ${escapeFrontmatterValue(fm.title)}`,
-    `slug: ${args.slug}`,
-    `date: ${args.date}`,
-    `content_type: ${args.contentType}`,
-    ...(args.author ? [`author: ${escapeFrontmatterValue(args.author)}`] : []),
-    `excerpt: ${escapeFrontmatterValue(fm.excerpt)}`,
-    ...(args.heroImage ? [`image: ${args.heroImage}`] : []),
-    ...(args.heroImage && fm.image_alt ? [`image_alt: ${escapeFrontmatterValue(fm.image_alt)}`] : []),
-    `tags: [${fm.tags.map((t) => escapeFrontmatterValue(t)).join(', ')}]`,
-    `meta_title: ${escapeFrontmatterValue(fm.meta_title)}`,
-    `meta_description: ${escapeFrontmatterValue(fm.meta_description)}`,
-    `target_keyword: ${escapeFrontmatterValue(fm.target_keyword)}`,
-    `secondary_keywords: [${fm.secondary_keywords.map((k) => escapeFrontmatterValue(k)).join(', ')}]`,
-    `canonical_url: ${args.canonicalUrl}`,
-    `schema_markup: ${escapeFrontmatterValue(fm.schema_markup)}`,
-    `answer_block: ${escapeFrontmatterValue(fm.answer_block)}`,
-    '---',
-    '',
-  ]
-  return lines.join('\n') + args.body.trim() + '\n'
-}
-
 // Self-register the Resources section in the site nav the first time a post
 // is drafted. Packaged repos ship a nav.json built from the page sitemap, so
 // /resources isn't there until a post exists to justify it. No-op when any
 // top-level entry already points at /resources (admins may have customized).
-async function updatedNavJson(githubRepo: string): Promise<{ path: string; content: string } | null> {
+export async function updatedNavJson(githubRepo: string): Promise<{ path: string; content: string } | null> {
   let raw: string
   try {
     const blob = await readFile(githubRepo, 'content/nav.json', DRAFT_BRANCH)
@@ -345,7 +303,7 @@ async function updatedNavJson(githubRepo: string): Promise<{ path: string; conte
 // Append (or update) this post's entry in the static public/llms.txt that
 // packaging pushed to the repo. The template serves it as a static file, so
 // drafting is the only moment posts can self-register. Missing file → skip.
-async function updatedLlmsTxt(
+export async function updatedLlmsTxt(
   githubRepo: string,
   slug: string,
   title: string,
@@ -376,7 +334,7 @@ async function updatedLlmsTxt(
 // Append this post's full content to public/llms-full.txt, mirroring the
 // per-section format buildLlmsFullTxt() uses (### title, URL, body, rule).
 // Like updatedLlmsTxt: missing file → skip, already-present slug → skip.
-async function updatedLlmsFullTxt(
+export async function updatedLlmsFullTxt(
   githubRepo: string,
   slug: string,
   title: string,
@@ -502,7 +460,9 @@ export async function generateResourceDraft(
     } catch (err) {
       console.warn(`[resource-draft] Stale sitemap cleanup failed for ${job.github_repo}:`, err)
     }
-    const { targets, postSlugs } = await buildInternalLinkTargets(job.github_repo)
+    // Cross-link index: draft (within-batch) ∪ main (already-published), so a new
+    // post links back to the client's live corpus, not just this batch's drafts.
+    const { targets, postSlugs } = await buildCrossLinkIndex(job.github_repo)
 
     // Slug: derive from the idea title, dodge collisions with existing posts.
     let slug = kebabSlug(idea.title) || `post-${ideaId.slice(0, 8)}`

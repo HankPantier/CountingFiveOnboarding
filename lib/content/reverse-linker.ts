@@ -60,6 +60,10 @@ export type Candidate = {
 }
 
 // Exported for diagnostics (scripts/test-reverse-linker.ts prints scores).
+// Candidates come from the draft branch only: reverse-links are committed to
+// draft, and publish keeps draft a superset of main (syncMainIntoDraft), so
+// already-published posts are reachable here too. The forward direction (new
+// content → published corpus) is covered separately by buildCrossLinkIndex.
 export async function loadCandidates(
   githubRepo: string,
   newPost: ReverseLinkNewPost

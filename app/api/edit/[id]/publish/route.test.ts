@@ -12,6 +12,15 @@ const h = vi.hoisted(() => ({
     errorSamples: [],
     terminal: true,
   } as LibrarySelectionStatus,
+  importStatus: {
+    total: 0,
+    pending: 0,
+    drafting: 0,
+    complete: 0,
+    error: 0,
+    errorSamples: [],
+    terminal: true,
+  } as LibrarySelectionStatus,
   canPublish: true,
   imageCoverage: { ok: true, missing: [] as string[] },
   mergeDraftToMain: vi.fn(),
@@ -26,6 +35,9 @@ vi.mock('@/lib/auth/access', () => ({
 }))
 vi.mock('@/lib/content/library-inclusion', () => ({
   getLibrarySelectionStatus: vi.fn(async () => h.libraryStatus),
+}))
+vi.mock('@/lib/content/article-import-inclusion', () => ({
+  getArticleImportStatus: vi.fn(async () => h.importStatus),
 }))
 vi.mock('@/lib/content/repull-images', () => ({
   getDraftImageCoverage: vi.fn(async () => h.imageCoverage),
@@ -43,6 +55,7 @@ const call = () => POST(new Request('http://test/publish', { method: 'POST' }), 
 
 beforeEach(() => {
   h.libraryStatus = { total: 0, pending: 0, drafting: 0, complete: 0, error: 0, errorSamples: [], terminal: true }
+  h.importStatus = { total: 0, pending: 0, drafting: 0, complete: 0, error: 0, errorSamples: [], terminal: true }
   h.canPublish = true
   h.imageCoverage = { ok: true, missing: [] }
   h.mergeDraftToMain.mockReset().mockResolvedValue({ merged: true })

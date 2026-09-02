@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
 import { canPublish } from '@/lib/auth/access'
 import { getLibrarySelectionStatus } from '@/lib/content/library-inclusion'
+import { getArticleImportStatus } from '@/lib/content/article-import-inclusion'
 import { getDraftImageCoverage } from '@/lib/content/repull-images'
 import {
   ensureDraftBranch,
@@ -45,6 +46,21 @@ export async function POST(
         error: `${remaining} included library article${remaining === 1 ? '' : 's'} ${remaining === 1 ? "hasn't" : "haven't"} finished generating yet. Run them from the Deliverables step, then publish.`,
         libraryPending: true,
         status: libraryStatus,
+      },
+      { status: 409 }
+    )
+  }
+
+  // Same gate for verbatim article imports — publishing while an import is still
+  // pending/drafting would merge WITHOUT it. Terminal (complete/error/none) is allowed.
+  const importStatus = await getArticleImportStatus(ctx.jobId)
+  if (!importStatus.terminal) {
+    const remaining = importStatus.pending + importStatus.drafting
+    return NextResponse.json(
+      {
+        error: `${remaining} imported article${remaining === 1 ? '' : 's'} ${remaining === 1 ? "hasn't" : "haven't"} finished importing yet. Run them from the Deliverables step, then publish.`,
+        importsPending: true,
+        status: importStatus,
       },
       { status: 409 }
     )

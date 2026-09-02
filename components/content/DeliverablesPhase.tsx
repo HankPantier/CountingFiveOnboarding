@@ -102,6 +102,11 @@ export default function DeliverablesPhase({
   // 5s for the whole ~10-min drafting window. A ref (not state) so the stable
   // interval reads the live value without a dependency that would tear it down.
   const libraryRunningRef = useRef(false)
+  // Verbatim article imports (the client's own existing posts, brought in as-is).
+  // Same status shape + lifecycle as included library articles.
+  const [importStatus, setImportStatus] = useState<LibrarySelectionStatus | null>(null)
+  const [importsRunning, setImportsRunning] = useState(false)
+  const importsRunningRef = useRef(false)
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -154,6 +159,26 @@ export default function DeliverablesPhase({
         if (cancelled || !res.ok) return
         const data = (await res.json()) as LibrarySelectionStatus
         setLibraryStatus(data)
+        if (data.terminal) clearInterval(intervalId)
+      } catch {
+        // retry on next tick
+      }
+    }
+    const intervalId = setInterval(poll, 5000)
+    poll()
+    return () => { cancelled = true; clearInterval(intervalId) }
+  }, [contentJobId])
+
+  // Poll the verbatim-import draft status — same pattern as the library poll.
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      if (importsRunningRef.current) return
+      try {
+        const res = await fetch(`/api/content-jobs/${contentJobId}/imports/status`)
+        if (cancelled || !res.ok) return
+        const data = (await res.json()) as LibrarySelectionStatus
+        setImportStatus(data)
         if (data.terminal) clearInterval(intervalId)
       } catch {
         // retry on next tick
@@ -222,6 +247,37 @@ export default function DeliverablesPhase({
     } finally {
       libraryRunningRef.current = false
       setLibraryRunning(false)
+    }
+  }
+
+  // Import the selected verbatim articles and wait until every one reaches a
+  // terminal state. Mirrors runLibraryArticles. No-op (returns true) when none.
+  const runArticleImports = async (action: 'run' | 'retry' = 'run'): Promise<boolean> => {
+    setImportsRunning(true)
+    importsRunningRef.current = true
+    try {
+      const res = await fetch(`/api/content-jobs/${contentJobId}/imports/${action}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to start article import')
+      if (data?.status?.terminal) return true
+
+      const MAX_POLLS = 120 // ~10 min at 5s
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise((r) => setTimeout(r, 5000))
+        try {
+          const s = await fetch(`/api/content-jobs/${contentJobId}/imports/status`)
+          if (!s.ok) continue
+          const st = (await s.json()) as LibrarySelectionStatus
+          setImportStatus(st)
+          if (st.terminal) return true
+        } catch {
+          // keep polling
+        }
+      }
+      return false
+    } finally {
+      importsRunningRef.current = false
+      setImportsRunning(false)
     }
   }
 
@@ -363,6 +419,13 @@ export default function DeliverablesPhase({
       const articlesSettled = await runLibraryArticles()
       if (!articlesSettled) {
         throw new Error('Included articles are still drafting. The site content already pushed to draft — click “Publish site live” again to finish once they settle.')
+      }
+
+      // Step 5b — import any verbatim articles (the client's own existing posts)
+      // onto the draft branch and wait, so they publish together with the site.
+      const importsSettled = await runArticleImports()
+      if (!importsSettled) {
+        throw new Error('Imported articles are still processing. The site content already pushed to draft — click “Publish site live” again to finish once they settle.')
       }
 
       // Step 6 — publish draft→main. First deploy is a clean fast-forward; a
@@ -561,6 +624,62 @@ export default function DeliverablesPhase({
               phase="Drafting included articles…"
               current={libraryStatus.complete + libraryStatus.error}
               total={libraryStatus.total}
+              className="max-w-sm"
+            />
+          )}
+        </div>
+      )}
+
+      {/* Verbatim article imports — the client's own existing posts, selected at
+          outline proofing, brought in as-is and published with the site. */}
+      {importStatus && importStatus.total > 0 && (
+        <div className="border border-border-default rounded-lg p-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-heading font-semibold text-brand-navy">Imported articles</h3>
+              <p className="text-xs font-body text-text-muted">
+                {importStatus.complete}/{importStatus.total} imported
+                {importStatus.error > 0 ? ` · ${importStatus.error} failed` : ''}
+                {!importStatus.terminal ? ` · ${importStatus.pending + importStatus.drafting} pending` : ''}. Each keeps its original wording, with images re-hosted and internal links added, and publishes with the site.
+                {!githubRepo && importStatus.pending > 0
+                  ? ' They import automatically once the site is provisioned (publish the site first).'
+                  : ''}
+              </p>
+            </div>
+            {githubRepo && !importStatus.terminal && (
+              <button
+                onClick={() => void runArticleImports('run')}
+                disabled={importsRunning || deploying}
+                className="shrink-0 border border-brand-cyan text-brand-cyan font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan/10 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {importsRunning ? 'Importing…' : 'Import now'}
+              </button>
+            )}
+            {githubRepo && importStatus.terminal && importStatus.error > 0 && (
+              <button
+                onClick={() => void runArticleImports('retry')}
+                disabled={importsRunning || deploying}
+                className="shrink-0 bg-brand-cyan text-text-inverse font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {importsRunning ? 'Retrying…' : `Retry failed (${importStatus.error})`}
+              </button>
+            )}
+          </div>
+          {importStatus.error > 0 && importStatus.errorSamples.length > 0 && (
+            <div className="text-xs font-body text-warning-strong space-y-0.5">
+              <div className="font-semibold">Why some failed:</div>
+              <ul className="font-mono space-y-0.5">
+                {importStatus.errorSamples.map((e, i) => (
+                  <li key={i}>• {e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {importsRunning && (
+            <ProgressBar
+              phase="Importing existing articles…"
+              current={importStatus.complete + importStatus.error}
+              total={importStatus.total}
               className="max-w-sm"
             />
           )}

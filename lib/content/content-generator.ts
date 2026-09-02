@@ -8,6 +8,7 @@ import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-va
 import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
 import { ensureBlockMedia, deriveQuery } from './ensure-block-media'
 import { filterKnownInternalLinks } from './link-validator'
+import { buildCrossLinkIndex } from './internal-link-targets'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
@@ -708,7 +709,7 @@ async function loadPageGenContext(
 ): Promise<PageGenContext | null> {
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('session_id, palette, confirmed_sitemap')
+    .select('session_id, palette, confirmed_sitemap, github_repo')
     .eq('id', contentJobId)
     .single()
   if (!job) return null
@@ -718,6 +719,22 @@ async function loadPageGenContext(
   const sitemapUrls = ((job.confirmed_sitemap as Array<{ url?: string }>) ?? [])
     .map((s) => s.url)
     .filter((u): u is string => typeof u === 'string' && u.length > 0)
+
+  // Rolling cross-link index: fold every already-published page/post URL into the
+  // allow-list so new page bodies can link to the client's live corpus (not just
+  // this batch's sitemap). URL-only here — enrichment context isn't worth the
+  // per-page Sonnet token cost across the whole batch. Non-fatal on a fresh repo.
+  if (job.github_repo) {
+    try {
+      const { targets } = await buildCrossLinkIndex(job.github_repo)
+      const merged = new Set(sitemapUrls)
+      for (const t of targets) merged.add(t.url)
+      sitemapUrls.length = 0
+      sitemapUrls.push(...merged)
+    } catch (err) {
+      console.warn(`[content-gen] Cross-link index unavailable for ${job.github_repo}:`, err)
+    }
+  }
 
   const { data: session } = await supabase
     .from('sessions')

@@ -434,6 +434,76 @@ export type Database = {
           },
         ]
       }
+      content_job_article_imports: {
+        Row: {
+          audit_run_id: string
+          content_job_id: string
+          created_at: string
+          draft_commit_sha: string | null
+          draft_path: string | null
+          error: string | null
+          id: string
+          session_id: string
+          slug: string | null
+          source_title: string | null
+          source_url: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          audit_run_id: string
+          content_job_id: string
+          created_at?: string
+          draft_commit_sha?: string | null
+          draft_path?: string | null
+          error?: string | null
+          id?: string
+          session_id: string
+          slug?: string | null
+          source_title?: string | null
+          source_url: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          audit_run_id?: string
+          content_job_id?: string
+          created_at?: string
+          draft_commit_sha?: string | null
+          draft_path?: string | null
+          error?: string | null
+          id?: string
+          session_id?: string
+          slug?: string | null
+          source_title?: string | null
+          source_url?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_job_article_imports_audit_run_id_fkey"
+            columns: ["audit_run_id"]
+            isOneToOne: false
+            referencedRelation: "audit_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_job_article_imports_content_job_id_fkey"
+            columns: ["content_job_id"]
+            isOneToOne: false
+            referencedRelation: "content_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "content_job_article_imports_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       content_job_library_selections: {
         Row: {
           batch_id: string
@@ -530,6 +600,7 @@ export type Database = {
       }
       content_jobs: {
         Row: {
+          articles_reviewed_at: string | null
           confirmed_sitemap: Json | null
           created_at: string
           created_by: string | null
@@ -547,6 +618,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          articles_reviewed_at?: string | null
           confirmed_sitemap?: Json | null
           created_at?: string
           created_by?: string | null
@@ -564,6 +636,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          articles_reviewed_at?: string | null
           confirmed_sitemap?: Json | null
           created_at?: string
           created_by?: string | null

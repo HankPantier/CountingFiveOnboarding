@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
 import { runContentGeneration } from '@/lib/content/content-generator'
+import { discoverImportableArticles } from '@/lib/content/article-import-discovery'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
@@ -61,7 +62,7 @@ export async function PATCH(
   if (body.phase === 5) {
     const { data: job } = await supabase
       .from('content_jobs')
-      .select('session_id, library_reviewed_at')
+      .select('session_id, library_reviewed_at, articles_reviewed_at')
       .eq('id', id)
       .single()
 
@@ -73,6 +74,23 @@ export async function PATCH(
         { error: 'Confirm your library-content choice on the outline step before starting content generation.' },
         { status: 422 },
       )
+    }
+
+    // Same gate for verbatim article imports — but only when the audit actually
+    // surfaced importable articles. A session with no blog (or no audit) has an
+    // empty panel and must never deadlock, so auto-stamp and proceed.
+    if (job && !job.articles_reviewed_at) {
+      const { articles } = await discoverImportableArticles(id)
+      if (articles.length > 0) {
+        return NextResponse.json(
+          { error: 'Confirm your existing-article import choice on the outline step before starting content generation.' },
+          { status: 422 },
+        )
+      }
+      await supabase
+        .from('content_jobs')
+        .update({ articles_reviewed_at: new Date().toISOString() })
+        .eq('id', id)
     }
 
     // Without a firm name the generator falls back to "the firm"/"Unknown firm"
