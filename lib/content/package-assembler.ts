@@ -36,6 +36,7 @@ import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/desi
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
 import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
   buildPricingCalculatorPageMd,
@@ -547,6 +548,9 @@ export async function assembleContentPackage(
     { path: 'content/brand.json', content: JSON.stringify(brandJson, null, 2) },
     { path: 'content/design.json', content: JSON.stringify(designJson, null, 2) },
     { path: 'content/nav.json', content: JSON.stringify(navJson, null, 2) },
+    // Blog/insights section config — Resources defaults; operators rename the
+    // section or change its path via Site settings (see blog-settings route).
+    { path: 'content/blog.json', content: serializeBlogConfig(DEFAULT_BLOG_CONFIG) },
     ...(clientCenterJson.enabled
       ? [{ path: 'content/client-center.json', content: JSON.stringify(clientCenterJson, null, 2) }]
       : []),

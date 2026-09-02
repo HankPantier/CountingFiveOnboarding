@@ -26,6 +26,7 @@ import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './so
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
+import { DEFAULT_BLOG_CONFIG, resolveBlogConfig } from '@/lib/content/blog-config'
 import {
   CONTENT_TYPES,
   asContentType,
@@ -266,10 +267,12 @@ function stripUnapprovedExternalLinks(body: string, approved: ExternalLink[]): s
   })
 }
 
-// Self-register the Resources section in the site nav the first time a post
-// is drafted. Packaged repos ship a nav.json built from the page sitemap, so
-// /resources isn't there until a post exists to justify it. No-op when any
-// top-level entry already points at /resources (admins may have customized).
+// Self-register the blog/resources section in the site nav the first time a
+// post is drafted. Packaged repos ship a nav.json built from the page sitemap,
+// so the section isn't there until a post exists to justify it. The section's
+// label + path come from content/blog.json (Resources defaults when absent), so
+// a client who renamed it to Insights/News gets the right nav entry. No-op when
+// any top-level entry already points at the blog path (admins may have customized).
 export async function updatedNavJson(githubRepo: string): Promise<{ path: string; content: string } | null> {
   let raw: string
   try {
@@ -288,9 +291,21 @@ export async function updatedNavJson(githubRepo: string): Promise<{ path: string
     console.warn('[resource-draft] nav.json unparseable, leaving as-is:', err)
     return null
   }
-  if (nav.primary.some((item) => item.url.replace(/\/$/, '') === '/resources')) return null
 
-  const entry = { label: 'Resources', url: '/resources' }
+  let blog = DEFAULT_BLOG_CONFIG
+  try {
+    const blob = await readFile(githubRepo, 'content/blog.json', DRAFT_BRANCH)
+    blog = resolveBlogConfig(JSON.parse(blob.content))
+  } catch (err) {
+    if (!(err instanceof FileNotFoundError)) {
+      console.warn('[resource-draft] blog.json read/parse failed, using Resources defaults:', err)
+    }
+  }
+
+  const blogPath = blog.path.replace(/\/$/, '')
+  if (nav.primary.some((item) => item.url.replace(/\/$/, '') === blogPath)) return null
+
+  const entry = { label: blog.label, url: blog.path }
   const contactIdx = nav.primary.findIndex((item) => item.url.replace(/\/$/, '') === '/contact')
   if (contactIdx >= 0) {
     nav.primary.splice(contactIdx, 0, entry)

@@ -3,7 +3,9 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { loadSiteSettingsForSession } from '@/lib/content/site-settings-repo-sync'
+import { loadBlogSettingsForSession } from '@/lib/content/blog-settings-repo-sync'
 import ContactSettingsEditor from '@/components/content/ContactSettingsEditor'
+import BlogLandingEditor from '@/components/content/BlogLandingEditor'
 import type { SessionSchema } from '@/types/session-schema'
 
 export default async function ContactSettingsPage({
@@ -28,7 +30,10 @@ export default async function ContactSettingsPage({
     .single()
   if (!session) notFound()
 
-  const record = await loadSiteSettingsForSession(id)
+  const [record, blog] = await Promise.all([
+    loadSiteSettingsForSession(id),
+    loadBlogSettingsForSession(id),
+  ])
   const firmName = (session.schema_data as SessionSchema | null)?.business?.name
 
   return (
@@ -53,6 +58,14 @@ export default async function ContactSettingsPage({
         initial={{ bookingProvider: record.bookingProvider, bookingUrl: record.bookingUrl }}
         published={record.published}
       />
+
+      <div className="mt-8">
+        <BlogLandingEditor
+          sessionId={id}
+          initial={{ path: blog.path, label: blog.label, title: blog.title, intro: blog.intro }}
+          hasRepo={!!blog.githubRepo}
+        />
+      </div>
     </main>
   )
 }
