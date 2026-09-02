@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
-import { getStatus, walkCommitFileStats, walkNewCommitFileStats } from '@/lib/github/repo-files'
+import { getDraftHeadSha, walkCommitFileStats, walkNewCommitFileStats } from '@/lib/github/repo-files'
 import { isRateLimited } from '@/lib/github/rate-limit'
 import { RequestError } from '@octokit/request-error'
 import {
@@ -42,7 +42,12 @@ export async function GET(
   const supabase = createServerClient()
 
   try {
-    const headSha = (await getStatus(ctx.githubRepo)).lastCommitSha
+    // Cache key = the real draft branch tip. getStatus().lastCommitSha is the tip
+    // of the commits draft is AHEAD of main by, which is null once a site is up to
+    // date with live — that null defeated the cache and forced a full 500-commit
+    // walk on every open (the "Reading edit history…" hang). The draft ref sha is
+    // always present, so the head-sha cache and incremental fold work as intended.
+    const headSha = await getDraftHeadSha(ctx.githubRepo)
 
     const { data: cached } = await supabase
       .from('content_edit_stats')

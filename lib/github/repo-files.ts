@@ -991,6 +991,21 @@ export async function getStatus(slug: string): Promise<RepoStatus> {
   }
 }
 
+// The real draft branch tip sha — always present, independent of main. Use this
+// (not getStatus().lastCommitSha, which is the tip of the commits draft is AHEAD
+// of main by and is therefore null whenever draft is up to date with live) as the
+// cache key for anything derived from draft history, so the cache still keys on a
+// stable sha once a site has published and draft == main. Conditional getRef: a
+// 304 (tip unchanged) is free against the rate limit.
+export async function getDraftHeadSha(slug: string): Promise<string | null> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const ref = await conditionalGet(`ref:${owner}/${repo}:${DRAFT_BRANCH}`, (headers) =>
+    octokit.git.getRef({ owner, repo, ref: `heads/${DRAFT_BRANCH}`, headers })
+  )
+  return ref.object.sha ?? null
+}
+
 export type RevertResult =
   | { reverted: true; revertedTo: string }
   | { reverted: false; reason: string }

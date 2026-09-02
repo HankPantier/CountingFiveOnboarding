@@ -25,6 +25,7 @@ import {
   moveFile,
   mergeDraftToMain,
   syncMainIntoDraft,
+  getDraftHeadSha,
   FileNotFoundError,
   StaleShaError,
   AssetExistsError,
@@ -145,6 +146,20 @@ describe('mergeDraftToMain', () => {
     )
     const res = await mergeDraftToMain('site')
     expect(res).toEqual({ merged: false, prUrl: 'https://github.com/cf/site/pull/9' })
+  })
+})
+
+describe('getDraftHeadSha', () => {
+  it('returns the draft branch tip sha regardless of ahead/behind vs main', async () => {
+    // Real branch tip — present even when draft is identical to main (0 ahead).
+    getRef.mockResolvedValue({ data: { object: { sha: 'draftTipSha' } } })
+    const sha = await getDraftHeadSha('site')
+    expect(sha).toBe('draftTipSha')
+    expect(getRef).toHaveBeenCalledWith(
+      expect.objectContaining({ ref: 'heads/draft' })
+    )
+    // Must not depend on the main...draft comparison (which is empty when up to date).
+    expect(compareCommits).not.toHaveBeenCalled()
   })
 })
 
