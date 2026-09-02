@@ -2,11 +2,11 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
-import { loadSiteSettingsForSession } from '@/lib/content/site-settings-repo-sync'
-import ContactSettingsEditor from '@/components/content/ContactSettingsEditor'
+import { loadBlogSettingsForSession } from '@/lib/content/blog-settings-repo-sync'
+import BlogLandingEditor from '@/components/content/BlogLandingEditor'
 import type { SessionSchema } from '@/types/session-schema'
 
-export default async function ContactSettingsPage({
+export default async function BlogLandingPage({
   params,
 }: {
   params: Promise<{ id: string }>
@@ -28,30 +28,30 @@ export default async function ContactSettingsPage({
     .single()
   if (!session) notFound()
 
-  const record = await loadSiteSettingsForSession(id)
+  const blog = await loadBlogSettingsForSession(id)
   const firmName = (session.schema_data as SessionSchema | null)?.business?.name
 
   return (
     <main className="p-8 max-w-[900px] mx-auto">
       <div className="mb-8">
         <Link
-          href={record.published ? `/admin/content/${id}/edit` : `/admin/content/${id}`}
+          href={`/admin/content/${id}/edit`}
           className="text-sm font-body text-text-muted hover:text-brand-cyan transition-colors"
         >
-          &larr; Back to {record.published ? 'content editor' : 'content workflow'}
+          &larr; Back to content editor
         </Link>
         <div className="mt-4">
-          <h1 className="text-2xl font-heading font-bold text-brand-navy">Contact &amp; scheduling</h1>
+          <h1 className="text-2xl font-heading font-bold text-brand-navy">Blog landing</h1>
           <p className="text-text-secondary font-body text-sm mt-1">
-            {firmName ?? session.website_url} · the booking link behind the site&rsquo;s contact drawer
+            {firmName ?? session.website_url} · where the articles / blog index lives, and what it&rsquo;s called
           </p>
         </div>
       </div>
 
-      <ContactSettingsEditor
+      <BlogLandingEditor
         sessionId={id}
-        initial={{ bookingProvider: record.bookingProvider, bookingUrl: record.bookingUrl }}
-        published={record.published}
+        initial={{ path: blog.path, label: blog.label, title: blog.title, intro: blog.intro }}
+        hasRepo={!!blog.githubRepo}
       />
     </main>
   )

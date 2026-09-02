@@ -64,6 +64,8 @@ export default function BlogLandingEditor({
           <p className="text-xs font-body text-text-muted mt-0.5">
             Controls the section that lists articles, blogs, and case studies — its name, URL, and intro.
             The default is <span className="font-semibold">Resources</span> at <span className="font-semibold">/resources</span>.
+            Set a custom path (e.g. <span className="font-semibold">/insights</span>) to move the blog there and free
+            <span className="font-semibold"> /resources</span> for a regular page.
           </p>
         </div>
 

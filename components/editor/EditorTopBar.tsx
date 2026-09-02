@@ -236,6 +236,15 @@ function OverflowMenu({
               >
                 Add / edit pricing calculator →
               </Link>
+              <Link
+                href={`/admin/content/${sessionId}/blog-landing`}
+                role="menuitem"
+                className={`${itemClass} text-text-secondary hover:text-brand-cyan`}
+                title="Set where the articles / blog index lives and what it's called (e.g. move it to /insights so /resources can stay a regular page). Saving pushes it to the draft branch; publish to go live."
+                onClick={() => setOpen(false)}
+              >
+                Blog landing settings →
+              </Link>
             </>
           )}
           <div className="border-t border-border-default my-1" />
