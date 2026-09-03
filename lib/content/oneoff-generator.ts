@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
-import { ANTI_SLOP_RULES } from './anti-slop-validator'
+import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { OFF_BRAND_MARKER } from './brand-fit'
@@ -215,7 +215,7 @@ ${ANTI_SLOP_RULES}`
         if (!Array.isArray(parsed)) throw new Error('not an array')
         const options = parsed
           .filter((o) => o && typeof o.text === 'string' && o.text.trim())
-          .map((o) => ({ label: typeof o.label === 'string' ? o.label : 'Option', text: o.text.trim() }))
+          .map((o) => ({ label: typeof o.label === 'string' ? o.label : 'Option', text: sanitizeGeneratedText(o.text.trim()) }))
         if (options.length === 0) throw new Error('no options')
         return { ok: true, options }
       } catch {

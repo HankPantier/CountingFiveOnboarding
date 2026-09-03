@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
+import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { extractJson } from './extract-json'
 import type { SessionSchema } from '@/types/session-schema'
@@ -125,7 +126,9 @@ ${pageContent.slice(0, 6000)}
 
 TASK: ${fieldInstruction(field, sitemapUrls, pageUrl)}
 
-Ground everything in the page content and firm profile above. NEVER invent facts — credentials, numbers, named people, or dates not supported by the profile or the page content. Output JSON only, no commentary.`
+Ground everything in the page content and firm profile above. NEVER invent facts — credentials, numbers, named people, or dates not supported by the profile or the page content. Output JSON only, no commentary.
+
+${ANTI_SLOP_RULES}`
 
   const { text, usage } = await generateText({
     model: anthropic(MODEL),
@@ -139,19 +142,34 @@ Ground everything in the page content and firm profile above. NEVER invent facts
     maxRetries: 4,
   })
 
+  // Sanitize the visible prose the model produced (answers, questions, E-E-A-T
+  // claims, link anchor text) before it reaches the page. URLs and the internal
+  // `reason` note are left as-is. Parse functions stay pure/testable.
   let result: SeoFieldResult
   switch (field) {
     case 'answer':
-      result = { field, value: parseAnswerOutput(text) }
+      result = { field, value: sanitizeGeneratedText(parseAnswerOutput(text)) }
       break
     case 'faq':
-      result = { field, value: parseFaqOutput(text) }
+      result = {
+        field,
+        value: parseFaqOutput(text).map((it) => ({
+          question: sanitizeGeneratedText(it.question),
+          answer: sanitizeGeneratedText(it.answer),
+        })),
+      }
       break
     case 'eeat':
-      result = { field, value: parseEeatOutput(text) }
+      result = { field, value: parseEeatOutput(text).map(sanitizeGeneratedText) }
       break
     case 'links':
-      result = { field, value: parseLinksOutput(text, sitemapUrls, pageUrl) }
+      result = {
+        field,
+        value: parseLinksOutput(text, sitemapUrls, pageUrl).map((it) => ({
+          ...it,
+          anchor_text: sanitizeGeneratedText(it.anchor_text),
+        })),
+      }
       break
   }
 

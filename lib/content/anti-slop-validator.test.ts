@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { validateContent, humanizeDashes, cleanHeading } from './anti-slop-validator'
+import { validateContent, humanizeDashes, cleanHeading, sanitizeGeneratedText } from './anti-slop-validator'
 
 const CLEAN = `## Tax planning for medical practices
 
@@ -92,6 +92,17 @@ describe('humanizeDashes', () => {
 
   it('does not corrupt standalone numbers surrounded by spaces', () => {
     expect(humanizeDashes('We have 5 offices and 12 staff.')).toBe('We have 5 offices and 12 staff.')
+  })
+})
+
+describe('sanitizeGeneratedText — shared output choke point', () => {
+  it('strips em-dashes like humanizeDashes', () => {
+    expect(sanitizeGeneratedText('We file fast — and accurately.')).toBe('We file fast, and accurately.')
+  })
+
+  it('preserves numeric ranges and fenced code', () => {
+    const md = 'Hours 9–5 today — call us.\n```\na — b\n```'
+    expect(sanitizeGeneratedText(md)).toBe('Hours 9–5 today, call us.\n```\na — b\n```')
   })
 })
 

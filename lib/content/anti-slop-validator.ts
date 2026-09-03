@@ -171,6 +171,15 @@ export function humanizeDashes(text: string): string {
   return out.replace(/\u0000(\d+)\u0000/g, (_, i: string) => protectedBlocks[Number(i)])
 }
 
+// Canonical output-sanitize choke point. EVERY generator (and the interactive
+// AI editor) should run its model-produced prose through this before persisting,
+// so the "no AI red flags" guarantee never depends on each call site remembering
+// the individual fixes. Today it just strips dashes; new deterministic cleanups
+// belong here so they apply everywhere at once.
+export function sanitizeGeneratedText(text: string): string {
+  return humanizeDashes(text)
+}
+
 // Clean a single heading string: drop a trailing parenthetical subtitle
 // ("… (Beyond the Buzzwords)") and normalize dashes. Used at the outline stage
 // so page headings inherit clean titles. Colons are left alone — often legitimate.

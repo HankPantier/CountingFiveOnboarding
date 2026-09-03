@@ -525,6 +525,17 @@ export async function generateResourceDraft(
     result.body = humanizeDashes(result.body)
     warnUnknownInternalLinks(result.body, slug, targets, postSlugs)
 
+    // Strip AI dash-tells from the visible frontmatter prose too (the body is
+    // handled above). Keywords, tags, filenames, and JSON-LD schema markup are
+    // left untouched.
+    const rfm = result.frontmatter
+    rfm.title = humanizeDashes(rfm.title)
+    rfm.excerpt = humanizeDashes(rfm.excerpt)
+    rfm.meta_title = humanizeDashes(rfm.meta_title)
+    rfm.meta_description = humanizeDashes(rfm.meta_description)
+    rfm.answer_block = humanizeDashes(rfm.answer_block)
+    if (rfm.image_alt) rfm.image_alt = humanizeDashes(rfm.image_alt)
+
     // Hero image via Pexels — non-fatal. Resolution persists an assets row +
     // storage object; we then download the bytes to push into the repo commit.
     const entries: Array<{ path: string; content: string | Buffer }> = []

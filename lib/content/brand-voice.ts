@@ -96,7 +96,7 @@ export function buildFirmContext(schema: SessionSchema): string {
       if (pain) bits.push(`pain: ${pain.slice(0, 120)}`)
       const value = str(n.valueProp).trim()
       if (value) bits.push(`value: ${value.slice(0, 120)}`)
-      return bits.join(' — ')
+      return bits.join(' | ')
     })
     lines.push(`Niches served:\n  ${nicheLines.join('\n  ')}`)
   }
@@ -130,7 +130,7 @@ export function buildFirmContext(schema: SessionSchema): string {
       if (claim) bits.push(claim.slice(0, 60))
       const notes = str(c2.positioningNotes).trim()
       if (notes) bits.push(notes.slice(0, 80))
-      return bits.join(' — ')
+      return bits.join(' | ')
     })
   if (competitors.length) {
     lines.push(`Local competitors (differentiate against these — do NOT name them in published copy): ${competitors.join('; ')}`)
@@ -171,7 +171,7 @@ export function buildBrandVoiceBlock(schema: SessionSchema): string {
 ${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
 Tone adjectives: ${arr(schema.brand?.toneAdjectives).map(x => str(x).trim()).filter(Boolean).join(', ')}
 Avoid: ${arr(schema.brand?.toneToAvoid).map(x => str(x).trim()).filter(Boolean).join(', ')}
-${personality ? `Personality: ${personality}\n` : ''}Positioning: ${schema.business?.positioningOption ?? ''} — ${str(schema.business?.positioningStatement).slice(0, 300)}
+${personality ? `Personality: ${personality}\n` : ''}Positioning: ${schema.business?.positioningOption ?? ''}: ${str(schema.business?.positioningStatement).slice(0, 300)}
 ${example ? `\nVOICE EXAMPLE (match this writing style, do not copy it verbatim):\n${example.slice(0, 600)}\n` : ''}
 DIFFERENTIATORS (use these specifically, do not generalize):
 ${schema.business?.differentiators ?? 'Not specified'}

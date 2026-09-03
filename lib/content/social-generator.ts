@@ -3,7 +3,7 @@ import { anthropic, type AnthropicProviderOptions } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
-import { ANTI_SLOP_RULES } from './anti-slop-validator'
+import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { extractJson } from './extract-json'
@@ -103,9 +103,9 @@ ${ANTI_SLOP_RULES}`
         throw new Error('missing required fields')
       }
       return {
-        linkedin: parsed.linkedin,
-        twitter: parsed.twitter,
-        facebook: parsed.facebook,
+        linkedin: sanitizeGeneratedText(parsed.linkedin),
+        twitter: sanitizeGeneratedText(parsed.twitter),
+        facebook: sanitizeGeneratedText(parsed.facebook),
       }
     } catch {
       return { failed: true, text, finishReason }
