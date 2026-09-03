@@ -7,6 +7,7 @@ import { applyMbpUpdate } from '@/lib/mbp/apply-update'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { trimMessages } from '@/lib/agent/trim-messages'
+import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
 
@@ -121,6 +122,6 @@ export async function POST(
   })
 
   return result.toUIMessageStreamResponse({
-    onError: () => 'The assistant hit an error — please try again.',
+    onError: (error) => aiStreamErrorMessage(error),
   })
 }

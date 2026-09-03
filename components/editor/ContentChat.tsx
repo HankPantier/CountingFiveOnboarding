@@ -2,6 +2,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
+import { summarizeEditRun } from '@/lib/editor/edit-run-summary'
+import AiIssueNotice from '@/components/ui/AiIssueNotice'
 
 export default function ContentChat({
   sessionId,
@@ -17,6 +19,7 @@ export default function ContentChat({
   onSave: () => void
 }) {
   const [input, setInput] = useState('')
+  const [lastSent, setLastSent] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   const transport = useMemo(
@@ -27,20 +30,14 @@ export default function ContentChat({
   const { messages, sendMessage, status, error } = useChat({ transport })
   const isLoading = status === 'submitted' || status === 'streaming'
 
-  // Did the most recent assistant turn actually commit a file change? Scan its
-  // tool parts for a successful commit-tool output so we can confirm the save
-  // (rather than implying one when the agent only asked a question or a tool
-  // errored). Tolerant of the SDK exposing the result as `output` or `result`.
-  const committed = useMemo(() => {
+  // Honest summary of the most recent assistant turn: how many edits actually
+  // committed, how many failed, and whether the run was truncated by the step
+  // cap (so we never imply a full save when it only partially applied).
+  const runSummary = useMemo(() => {
     const last = [...messages].reverse().find(m => m.role === 'assistant')
-    if (!last) return false
-    const COMMIT_TOOLS = ['tool-apply_edit', 'tool-set_faq', 'tool-update_firm_contact']
-    return last.parts.some(p => {
-      const tp = p as { type?: string; output?: unknown; result?: unknown }
-      if (!tp.type || !COMMIT_TOOLS.includes(tp.type)) return false
-      const out = (tp.output ?? tp.result) as { success?: boolean; error?: string } | undefined
-      return !!out && !out.error && out.success !== false
-    })
+    if (!last) return null
+    const finishReason = (last as { metadata?: { finishReason?: string } }).metadata?.finishReason
+    return summarizeEditRun(last.parts as { type?: string; output?: unknown; result?: unknown }[], finishReason)
   }, [messages])
 
   // After each completed exchange the agent may have committed a new version of
@@ -61,7 +58,13 @@ export default function ContentChat({
     const text = input.trim()
     if (!text || isLoading || isDirty) return
     setInput('')
+    setLastSent(text)
     sendMessage({ text })
+  }
+
+  const retryLast = () => {
+    if (!lastSent || isLoading || isDirty) return
+    sendMessage({ text: lastSent })
   }
 
   return (
@@ -102,11 +105,21 @@ export default function ContentChat({
         <div ref={bottomRef} />
       </div>
 
-      {error && <p className="px-4 py-2 text-sm text-error bg-error/10 font-body">{error.message}</p>}
+      {error && <AiIssueNotice message={error.message} onRetry={lastSent ? retryLast : undefined} />}
 
-      {status === 'ready' && committed && (
+      {status === 'ready' && !error && runSummary && (runSummary.failed > 0 || runSummary.incomplete) && (
+        <p className="px-4 py-2 text-xs text-warning-strong font-body bg-warning/10 border-t border-warning/30">
+          {runSummary.applied > 0
+            ? `Applied ${runSummary.applied} change${runSummary.applied === 1 ? '' : 's'}`
+            : 'No changes were applied'}
+          {runSummary.failed > 0 && `, ${runSummary.failed} failed`}
+          {runSummary.incomplete && ', and the run stopped early'}. Review the page and send again to finish the rest.
+        </p>
+      )}
+
+      {status === 'ready' && !error && runSummary && runSummary.failed === 0 && !runSummary.incomplete && runSummary.applied > 0 && (
         <p className="px-4 py-2 text-xs text-success font-body bg-success/10 border-t border-success/30">
-          ✓ Saved to draft — Publish when you&rsquo;re ready to push it live.
+          ✓ Saved {runSummary.applied} change{runSummary.applied === 1 ? '' : 's'} to draft — Publish when you&rsquo;re ready to push it live.
         </p>
       )}
 

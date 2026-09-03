@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
+import AiIssueNotice from '@/components/ui/AiIssueNotice'
 
 // AI theme assistant — mirrors ContentChat but drives the theme chat route and
 // its palette/token/override tools. On a successful theme commit it calls
@@ -97,7 +98,7 @@ export default function ThemeChat({
         <div ref={bottomRef} />
       </div>
 
-      {error && <p className="bg-error/10 px-4 py-2 font-body text-sm text-error">{error.message}</p>}
+      {error && <AiIssueNotice message={error.message} />}
 
       {status === 'ready' && committed && (
         <p className="border-t border-success/30 bg-success/10 px-4 py-2 font-body text-xs text-success">

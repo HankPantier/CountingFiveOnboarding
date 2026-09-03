@@ -8,6 +8,7 @@ import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
 import {
   DRAFT_BRANCH,
@@ -283,6 +284,6 @@ RULES
   })
 
   return result.toUIMessageStreamResponse({
-    onError: () => 'The assistant hit an error — please try again.',
+    onError: (error) => aiStreamErrorMessage(error),
   })
 }

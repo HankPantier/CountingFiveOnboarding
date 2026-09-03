@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import { useRouter } from 'next/navigation'
+import AiIssueNotice from '@/components/ui/AiIssueNotice'
 
 export default function AuditChat({
   auditId,
@@ -92,9 +93,7 @@ export default function AuditChat({
         <div ref={bottomRef} />
       </div>
 
-      {error && (
-        <p className="px-4 py-2 text-sm text-error bg-error/10 font-body">{error.message}</p>
-      )}
+      {error && <AiIssueNotice message={error.message} />}
 
       <form onSubmit={handleSubmit} className="flex items-start gap-2 p-3 border-t border-border-default">
         <textarea

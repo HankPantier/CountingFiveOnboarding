@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import MarkdownPreviewModal from './MarkdownPreviewModal'
+import { classifyAiErrorText, ANTHROPIC_STATUS_URL } from '@/lib/ai/ai-error-text'
 
 type PageStatus = {
   id: string
@@ -380,6 +381,11 @@ export default function GenerationPhase({
 
       {showErrors && status.error > 0 && (
         <div className="border border-error/30 bg-error/5 rounded-lg p-3 space-y-2">
+          {status.pages.some(p => p.status === 'error' && classifyAiErrorText(p.errorMessage).isProviderIssue) && (
+            <div className="rounded-md bg-warning/10 border border-warning/30 px-3 py-2 text-xs font-body text-warning-strong">
+              This looks like a Claude API issue (likely a temporary outage), not a problem with your content. Wait a minute, then use “Retry all failed”. If it keeps happening, check {ANTHROPIC_STATUS_URL}.
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-xs font-heading font-semibold text-error">
               Failed pages ({status.error})

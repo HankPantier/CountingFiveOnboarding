@@ -8,6 +8,7 @@ import { validatePhaseAdvance } from '@/lib/agent/phase-validators'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { deepMerge, isPathFilled, preserveAppendOnlyMarkers } from '@/lib/mbp/schema-write'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { asJson } from '@/lib/supabase/json-typed'
 import { z } from 'zod'
@@ -240,9 +241,10 @@ export async function POST(req: Request) {
 
     // Surface a real, safe message to the client instead of the SDK default
     // (which masks stream errors as an empty string → a bare "— please try
-    // again." banner with no explanation).
+    // again." banner with no explanation). Classify Claude/Anthropic outages so
+    // the client's error banner tells the user it's a provider issue + next steps.
     return result.toUIMessageStreamResponse({
-      onError: () => 'The assistant hit an error mid-reply.',
+      onError: (error) => aiStreamErrorMessage(error),
     })
   } catch (err) {
     await supabase.from('sessions').update({ processing: false }).eq('id', sessionId)

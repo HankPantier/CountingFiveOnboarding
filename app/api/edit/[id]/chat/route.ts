@@ -14,6 +14,8 @@ import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voic
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
+import { sanitizeGeneratedText } from '@/lib/content/anti-slop-validator'
+import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
@@ -129,6 +131,7 @@ ${workingContent}
 """
 
 HOW YOU EDIT
+Never introduce em-dashes or en-dashes (— –) in any copy you write; use commas, periods, or colons instead. They read as AI-written.
 You do NOT rewrite the whole file. You make small, targeted changes with these tools:
 - apply_edit({ find, replace, all? }) — replace an EXACT snippet copied verbatim from the file above (matching whitespace, punctuation, and casing) with new text. Use this for copy edits, rewrites, and LAYOUT changes. \`find\` must be long enough to match exactly ONE place; if it could match several, include more surrounding text (or set all=true to replace every occurrence, e.g. a repeated phrase). Preserve the YAML frontmatter and every \`<!-- block: ... -->\` annotation unless the change is specifically about layout.
 - set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file above, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit.
@@ -179,7 +182,10 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
               .describe('Replace every occurrence instead of requiring a single unique match.'),
           }),
           execute: async ({ find, replace, all }) => {
-            const res = applyFindReplace(workingContent, find, replace, all ?? false)
+            // Strip AI dash-tells from model-authored replacement text before it
+            // lands in live content. humanizeDashes protects code fences and
+            // block annotations, so layout edits stay intact.
+            const res = applyFindReplace(workingContent, find, sanitizeGeneratedText(replace), all ?? false)
             if (!res.ok) return { error: res.reason }
             const annotationErrors = validatePageAnnotations(res.next)
             if (annotationErrors.length > 0) {
@@ -206,7 +212,10 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             if (!parsed.frontmatter) {
               return { error: 'This file has no frontmatter, so it cannot store an FAQ block.' }
             }
-            const faqItems: FaqItem[] = items.map((i: FaqItem) => ({ question: i.question, answer: i.answer }))
+            const faqItems: FaqItem[] = items.map((i: FaqItem) => ({
+              question: sanitizeGeneratedText(i.question),
+              answer: sanitizeGeneratedText(i.answer),
+            }))
             const nextFm = setFaqBlock(parsed.frontmatter, faqItems)
             const { content: bodyContent, trailer } = splitTrailers(parsed.body)
             const nextBody = setFaqAccordionBody(bodyContent, faqItems, 'Frequently Asked Questions')
@@ -324,7 +333,9 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             }),
         },
       },
-      stopWhen: stepCountIs(6),
+      // A multi-part instruction ("remove every X, Y, Z") fans out into many
+      // apply_edit tool-loops; a low cap silently truncates the run mid-task.
+      stopWhen: stepCountIs(16),
       onFinish: async ({ totalUsage }) => {
         await recordTokenUsage({
           task: 'content',
@@ -344,6 +355,10 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
     })
 
   return result.toUIMessageStreamResponse({
-    onError: () => 'The assistant hit an error — please try again.',
+    // Relay the finish reason to the client so it can tell a truncated run
+    // (`tool-calls` = the model was stopped while still wanting to edit) from a
+    // clean stop, and report honest applied/incomplete status.
+    messageMetadata: ({ part }) => (part.type === 'finish' ? { finishReason: part.finishReason } : undefined),
+    onError: (error) => aiStreamErrorMessage(error),
   })
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { DefaultChatTransport, type TextUIPart, type UIMessage } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import type { ClientEntry, AuditEntry } from '@/lib/admin/command-index'
+import AiIssueNotice from '@/components/ui/AiIssueNotice'
 
 export interface CommandSection {
   label: string
@@ -187,9 +188,7 @@ export default function CommandBox({
               ) : isLoading ? (
                 <p className="text-sm font-body text-text-muted italic">Thinking…</p>
               ) : null}
-              {error && (
-                <p className="text-sm font-body text-error mt-1">{error.message}</p>
-              )}
+              {error && <AiIssueNotice message={error.message} />}
               {navLinks.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2.5">
                   {navLinks.map((link, i) => (
