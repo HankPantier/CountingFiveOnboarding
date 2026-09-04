@@ -14,7 +14,8 @@ import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voic
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
-import { sanitizeGeneratedText } from '@/lib/content/anti-slop-validator'
+import { sanitizeGeneratedText, humanizeDashes } from '@/lib/content/anti-slop-validator'
+import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
 import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
@@ -93,17 +94,22 @@ export async function POST(
   // Write the new file to draft and advance the working copy + sha. Throws on a
   // GitHub failure or a stale sha; callers convert that into a tool error.
   async function commitWorking(next: string, message: string): Promise<void> {
+    // Auto-scrub em/en dashes across the WHOLE file on every edit (code fences
+    // and `<!-- block -->` annotations are protected; numeric ranges kept). Kept
+    // here so apply_edit, set_faq, and remove_text all leave the page dash-clean
+    // without each tool remembering to do it. Idempotent.
+    const scrubbed = humanizeDashes(next)
     // Reject any edit that would leave the file with invalid YAML frontmatter
     // before it lands in the draft — otherwise it surfaces as a broken `next
     // build` at deploy time. The tool executors catch this throw and return the
     // message to the model, which can retry with the value properly quoted.
-    const yamlError = validateFrontmatterYaml(next)
+    const yamlError = validateFrontmatterYaml(scrubbed)
     if (yamlError) throw new Error(yamlError)
-    const res = await writeFile(githubRepo, path!, next, DRAFT_BRANCH, message, {
+    const res = await writeFile(githubRepo, path!, scrubbed, DRAFT_BRANCH, message, {
       expectedSha: workingSha,
       ...commitAuthor,
     })
-    workingContent = next
+    workingContent = scrubbed
     workingSha = res.blobSha
   }
 
@@ -133,8 +139,9 @@ ${workingContent}
 HOW YOU EDIT
 Never introduce em-dashes or en-dashes (— –) in any copy you write; use commas, periods, or colons instead. They read as AI-written.
 You do NOT rewrite the whole file. You make small, targeted changes with these tools:
-- apply_edit({ find, replace, all? }) — replace an EXACT snippet copied verbatim from the file above (matching whitespace, punctuation, and casing) with new text. Use this for copy edits, rewrites, and LAYOUT changes. \`find\` must be long enough to match exactly ONE place; if it could match several, include more surrounding text (or set all=true to replace every occurrence, e.g. a repeated phrase). Preserve the YAML frontmatter and every \`<!-- block: ... -->\` annotation unless the change is specifically about layout.
-- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file above, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit.
+- apply_edit({ find, replace, all? }) — replace an EXACT snippet copied verbatim from the file above (matching whitespace, punctuation, and casing) with new text. Use this for copy edits, rewrites, and LAYOUT changes. \`find\` must be long enough to match exactly ONE place; if it could match several, include more surrounding text (or set all=true to replace every occurrence, e.g. a repeated phrase). Keep every \`<!-- block: ... -->\` annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
+- remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
+- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file above, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)
 - update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.
 
 LAYOUT CHANGES (via apply_edit on the annotation comment)
@@ -157,6 +164,7 @@ These are NOT page-specific — they render on every page (footer, contact page,
 RULES
 - Make ONLY what the admin asks for. Never invent facts (credentials, numbers, named people, dates) not supported by the firm profile above or the existing file.
 - After a successful edit, briefly tell the admin what changed. If a tool returns an error, tell the admin plainly and try a corrected edit — do not claim success when a tool failed.
+- When remove_text returns, report its numbers honestly: state per-phrase how many you removed (\`applied\`), and note any phrase with removed 0 as "not found on this page". If \`residual\` is non-empty, that phrase is STILL on the page — say so and fix it, don't claim it's gone. If \`firmWide\` is non-empty, the phrase also lives in brand.json or the firm profile and will reappear on the next rebuild — tell the admin, and offer to flag the firm profile (MBP) so it's removed everywhere. Do NOT claim a phrase is fully removed when residual or firmWide say otherwise.
 
 IMPROVING THE MBP
 Watch for anything durable the admin states that should apply to ALL of this firm's content going forward — not just this file. Two kinds count:
@@ -226,6 +234,75 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
               return { error: err instanceof Error ? err.message : 'Failed to save the FAQ.' }
             }
             return { success: true, count: faqItems.length }
+          },
+        },
+        remove_text: {
+          description:
+            'Remove or replace EVERY occurrence of one or more phrases across the whole page, including SEO/frontmatter fields (meta_title, meta_description, keywords, FAQ). Use for "remove all references to X" or "strip em-dashes". Reports counts removed, any still remaining, and firm-wide hits.',
+          inputSchema: z.object({
+            removals: z
+              .array(
+                z.object({
+                  find: z.string().describe('Exact phrase to remove, e.g. "Root Advisors".'),
+                  replace: z.string().optional().describe('Replacement text (default: delete it).'),
+                })
+              )
+              .default([])
+              .describe('Phrases to remove/replace. May be empty when only stripDashes is set.'),
+            caseInsensitive: z.boolean().optional().describe('Match regardless of letter case.'),
+            stripDashes: z.boolean().optional().describe('Also normalize em/en dashes page-wide.'),
+          }),
+          execute: async ({ removals, caseInsensitive, stripDashes }) => {
+            if (removals.length === 0 && !stripDashes) {
+              return { error: 'Give at least one phrase to remove, or set stripDashes to clean em-dashes.' }
+            }
+            const ci = caseInsensitive ?? false
+            const res = applyBulkRemovals(workingContent, removals, {
+              caseInsensitive: ci,
+              stripDashes: stripDashes ?? false,
+            })
+            const annotationErrors = validatePageAnnotations(res.next)
+            if (annotationErrors.length > 0) {
+              return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
+            }
+            // Only commit when the file actually changed — a strip-dashes pass on
+            // an already-clean page (or phrases not present) is a no-op, and an
+            // identical write would be a pointless empty commit.
+            const changed = res.next !== workingContent
+            if (changed) {
+              try {
+                await commitWorking(res.next, `Remove text on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
+              } catch (err) {
+                return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
+              }
+            }
+            // Page-scoped edit only, but a phrase living in a firm-wide source
+            // (brand.json or the firm profile) reappears on the next rebuild —
+            // surface that so the admin knows it isn't fully gone site-wide.
+            const firmWide: { find: string; source: string; remaining: number }[] = []
+            const targets = removals.filter((r: { find: string }) => r.find && r.find.trim() !== '')
+            if (targets.length > 0) {
+              let brandText = ''
+              try {
+                brandText = (await readFile(githubRepo, 'content/brand.json', DRAFT_BRANCH)).content
+              } catch {
+                brandText = ''
+              }
+              const schemaText = JSON.stringify(rawSchema)
+              for (const { find } of targets) {
+                const inBrand = countPhrase(brandText, find, ci)
+                if (inBrand > 0) firmWide.push({ find, source: 'brand.json', remaining: inBrand })
+                const inSchema = countPhrase(schemaText, find, ci)
+                if (inSchema > 0) firmWide.push({ find, source: 'firm profile', remaining: inSchema })
+              }
+            }
+            return {
+              success: true,
+              applied: res.applied,
+              dashesStripped: res.dashesStripped,
+              residual: res.residual,
+              firmWide,
+            }
           },
         },
         update_firm_contact: {

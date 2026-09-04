@@ -37,4 +37,53 @@ describe('summarizeEditRun', () => {
     expect(summarizeEditRun([{ type: 'text' }], 'stop')).toEqual({ applied: 0, failed: 0, incomplete: false })
     expect(summarizeEditRun(undefined)).toEqual({ applied: 0, failed: 0, incomplete: false })
   })
+
+  it('counts remove_text as one applied commit and surfaces a per-phrase details breakdown', () => {
+    const parts = [
+      {
+        type: 'tool-remove_text',
+        output: {
+          success: true,
+          applied: [
+            { find: '40 years', removed: 3 },
+            { find: 'Root Advisors', removed: 4 },
+            { find: 'Nowhere Inc', removed: 0 },
+          ],
+          dashesStripped: 6,
+          residual: [{ find: 'Jared Hammack, CPA', remaining: 1 }],
+          firmWide: [{ find: 'Root Advisors', source: 'firm profile', remaining: 2 }],
+        },
+      },
+    ]
+    expect(summarizeEditRun(parts, 'stop')).toEqual({
+      applied: 1,
+      failed: 0,
+      incomplete: false,
+      details: {
+        removed: [
+          { find: '40 years', removed: 3 },
+          { find: 'Root Advisors', removed: 4 },
+          { find: 'Nowhere Inc', removed: 0 },
+        ],
+        dashesStripped: 6,
+        residual: [{ find: 'Jared Hammack, CPA', remaining: 1 }],
+        firmWide: [{ find: 'Root Advisors', source: 'firm profile', remaining: 2 }],
+      },
+    })
+  })
+
+  it('sums removed counts per phrase across multiple remove_text calls', () => {
+    const parts = [
+      { type: 'tool-remove_text', output: { success: true, applied: [{ find: 'X', removed: 2 }], dashesStripped: 1, residual: [], firmWide: [] } },
+      { type: 'tool-remove_text', output: { success: true, applied: [{ find: 'X', removed: 3 }], dashesStripped: 4, residual: [], firmWide: [] } },
+    ]
+    const summary = summarizeEditRun(parts, 'stop')
+    expect(summary.applied).toBe(2)
+    expect(summary.details).toEqual({ removed: [{ find: 'X', removed: 5 }], dashesStripped: 5, residual: [], firmWide: [] })
+  })
+
+  it('counts a failed remove_text as failed and adds no details', () => {
+    const parts = [{ type: 'tool-remove_text', output: { error: 'That edit would break a block annotation: ...' } }]
+    expect(summarizeEditRun(parts, 'stop')).toEqual({ applied: 0, failed: 1, incomplete: false })
+  })
 })

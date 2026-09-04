@@ -117,7 +117,40 @@ export default function ContentChat({
         </p>
       )}
 
-      {status === 'ready' && !error && runSummary && runSummary.failed === 0 && !runSummary.incomplete && runSummary.applied > 0 && (
+      {/* Specific per-phrase breakdown for remove_text runs — what was removed,
+          what's still on the page, and what will reappear from a firm-wide source. */}
+      {status === 'ready' && !error && runSummary?.details && (
+        <div className="px-4 py-2 text-xs font-body border-t border-border-default bg-surface-subtle space-y-1">
+          {(() => {
+            const d = runSummary.details!
+            const removedParts = d.removed.filter(r => r.removed > 0).map(r => `“${r.find}” (${r.removed})`)
+            if (d.dashesStripped > 0) removedParts.push(`${d.dashesStripped} em-dash${d.dashesStripped === 1 ? '' : 'es'}`)
+            const notFound = d.removed.filter(r => r.removed === 0 && !d.residual.some(x => x.find === r.find))
+            return (
+              <>
+                {removedParts.length > 0 && (
+                  <p className="text-success">✓ Removed: {removedParts.join(', ')} — saved to draft.</p>
+                )}
+                {notFound.length > 0 && (
+                  <p className="text-text-muted">Not found on this page: {notFound.map(r => `“${r.find}”`).join(', ')}.</p>
+                )}
+                {d.residual.map((r, i) => (
+                  <p key={`res-${i}`} className="text-warning-strong">
+                    ⚠ Still on this page: “{r.find}” ({r.remaining}) — review and remove manually.
+                  </p>
+                ))}
+                {d.firmWide.map((r, i) => (
+                  <p key={`fw-${i}`} className="text-warning-strong">
+                    ⚠ “{r.find}” also appears in the {r.source} — it will reappear on rebuild. Update the firm profile to remove it everywhere.
+                  </p>
+                ))}
+              </>
+            )
+          })()}
+        </div>
+      )}
+
+      {status === 'ready' && !error && runSummary && !runSummary.details && runSummary.failed === 0 && !runSummary.incomplete && runSummary.applied > 0 && (
         <p className="px-4 py-2 text-xs text-success font-body bg-success/10 border-t border-success/30">
           ✓ Saved {runSummary.applied} change{runSummary.applied === 1 ? '' : 's'} to draft — Publish when you&rsquo;re ready to push it live.
         </p>
