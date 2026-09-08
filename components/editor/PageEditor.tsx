@@ -409,6 +409,22 @@ export default function PageEditor({
   return (
     <div className="flex-1 overflow-y-auto bg-surface-default">
       <div className="max-w-4xl mx-auto p-6 space-y-6">
+        {path === 'content/pages/pricing.md' && contents.includes('block: pricing-plans') && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 p-4">
+            <div className="min-w-0">
+              <p className="text-sm font-heading font-semibold text-brand-navy">Pricing plans</p>
+              <p className="mt-0.5 text-xs font-body text-text-muted">
+                This page only holds the intro copy. Edit the plan tiers, features, and add-ons in the plans editor.
+              </p>
+            </div>
+            <a
+              href={`/admin/content/${sessionId}/plans`}
+              className="shrink-0 rounded-pill bg-brand-cyan px-3.5 py-1.5 text-xs font-heading font-semibold text-text-inverse transition-colors hover:bg-brand-cyan-dark"
+            >
+              Edit plans &rarr;
+            </a>
+          </div>
+        )}
         {path === 'content/pages/pricing-calculator.md' && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-brand-cyan/30 bg-brand-cyan/5 p-4">
             <div className="min-w-0">
