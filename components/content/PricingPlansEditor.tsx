@@ -1,6 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { GripVertical } from 'lucide-react'
 import type {
   PricingPlansConfig,
   PlanTier,
@@ -46,6 +63,153 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
     <div>
       <h2 className="text-sm font-heading font-semibold text-brand-navy">{title}</h2>
       {hint && <p className="text-xs font-body text-text-muted mt-0.5">{hint}</p>}
+    </div>
+  )
+}
+
+// --- feature rows (drag-to-reorder) ----------------------------------------
+
+function FeatureRowBody({
+  feature,
+  onUpdate,
+  onRemove,
+  grip,
+}: {
+  feature: PlanFeature
+  onUpdate: (patch: Partial<PlanFeature>) => void
+  onRemove: () => void
+  grip: ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {grip}
+      <input
+        value={feature.label}
+        onChange={e => onUpdate({ label: e.target.value })}
+        placeholder="Feature (e.g. Monthly bookkeeping)"
+        className={`${inputCls} flex-1`}
+      />
+      <label className="shrink-0 text-[11px] font-body text-text-muted flex items-center gap-1">
+        <input type="checkbox" checked={feature.included} onChange={e => onUpdate({ included: e.target.checked })} className="h-3.5 w-3.5 accent-brand-cyan" />
+        Included
+      </label>
+      <button type="button" onClick={onRemove} className={removeBtn} aria-label="Remove feature">×</button>
+    </div>
+  )
+}
+
+function SortableFeatureRow({
+  id,
+  feature,
+  onUpdate,
+  onRemove,
+}: {
+  id: string
+  feature: PlanFeature
+  onUpdate: (patch: Partial<PlanFeature>) => void
+  onRemove: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <FeatureRowBody
+        feature={feature}
+        onUpdate={onUpdate}
+        onRemove={onRemove}
+        grip={
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label="Reorder feature"
+            className="shrink-0 cursor-grab active:cursor-grabbing w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-brand-navy hover:bg-surface-subtle transition-colors"
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+        }
+      />
+    </div>
+  )
+}
+
+function FeatureList({
+  features,
+  onUpdate,
+  onAdd,
+  onRemove,
+  onReorder,
+}: {
+  features: PlanFeature[]
+  onUpdate: (fi: number, patch: Partial<PlanFeature>) => void
+  onAdd: () => void
+  onRemove: (fi: number) => void
+  onReorder: (from: number, to: number) => void
+}) {
+  // Defer the DnD context until after mount — dnd-kit's generated ids would
+  // otherwise mismatch between server and client render (mirrors SectionOutline).
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const ids = features.map((_, i) => String(i))
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const from = ids.indexOf(String(active.id))
+    const to = ids.indexOf(String(over.id))
+    if (from >= 0 && to >= 0) onReorder(from, to)
+  }
+
+  return (
+    <div className="rounded-lg border border-border-default bg-surface-default p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-heading font-semibold text-text-secondary">
+          Features <span className="font-body font-normal text-text-muted">— drag to reorder, uncheck to show as not included</span>
+        </span>
+        <button onClick={onAdd} className={secondaryBtn}>+ Add feature</button>
+      </div>
+      {features.length > 0 &&
+        (mounted ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+              <div className="space-y-2">
+                {features.map((f, fi) => (
+                  <SortableFeatureRow
+                    key={fi}
+                    id={String(fi)}
+                    feature={f}
+                    onUpdate={patch => onUpdate(fi, patch)}
+                    onRemove={() => onRemove(fi)}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <div className="space-y-2">
+            {features.map((f, fi) => (
+              <FeatureRowBody
+                key={fi}
+                feature={f}
+                onUpdate={patch => onUpdate(fi, patch)}
+                onRemove={() => onRemove(fi)}
+                grip={
+                  <span className="shrink-0 w-6 h-6 flex items-center justify-center text-text-muted" aria-hidden>
+                    <GripVertical className="w-4 h-4" />
+                  </span>
+                }
+              />
+            ))}
+          </div>
+        ))}
     </div>
   )
 }
@@ -105,6 +269,12 @@ export default function PricingPlansEditor({
   function removeFeature(ti: number, fi: number) {
     const tier = config.tiers[ti]
     updateTier(ti, { features: tier.features.filter((_, idx) => idx !== fi) })
+  }
+  function reorderFeature(ti: number, from: number, to: number) {
+    const next = [...config.tiers[ti].features]
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    updateTier(ti, { features: next })
   }
 
   // --- shared features ---
@@ -320,28 +490,13 @@ export default function PricingPlansEditor({
             </div>
 
             {/* Features */}
-            <div className="rounded-lg border border-border-default bg-surface-default p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-heading font-semibold text-text-secondary">
-                  Features <span className="font-body font-normal text-text-muted">— uncheck to show as not included</span>
-                </span>
-                <button onClick={() => addFeature(ti)} className={secondaryBtn}>+ Add feature</button>
-              </div>
-              {tier.features.map((f, fi) => (
-                <div key={fi} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-9">
-                    <input value={f.label} onChange={e => updateFeature(ti, fi, { label: e.target.value })} placeholder="Feature (e.g. Monthly bookkeeping)" className={inputCls} />
-                  </div>
-                  <label className="col-span-2 text-[11px] font-body text-text-muted flex items-center gap-1">
-                    <input type="checkbox" checked={f.included} onChange={e => updateFeature(ti, fi, { included: e.target.checked })} className="h-3.5 w-3.5 accent-brand-cyan" />
-                    Included
-                  </label>
-                  <div className="col-span-1 flex justify-end">
-                    <button onClick={() => removeFeature(ti, fi)} className={removeBtn} aria-label="Remove feature">×</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <FeatureList
+              features={tier.features}
+              onUpdate={(fi, patchFeat) => updateFeature(ti, fi, patchFeat)}
+              onAdd={() => addFeature(ti)}
+              onRemove={fi => removeFeature(ti, fi)}
+              onReorder={(from, to) => reorderFeature(ti, from, to)}
+            />
 
             {/* Tier CTA */}
             <div className="grid grid-cols-2 gap-3">
