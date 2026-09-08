@@ -32,6 +32,13 @@ describe('generateThemeCss', () => {
     const rounder: DesignJson = { ...design, radius: { ...design.radius, pill: '40px' } }
     expect(generateThemeCss(brand, rounder)).toContain('--radius-pill: 40px;')
   })
+
+  it('emits a brand-tinted ink section token + near-white foreground', () => {
+    const css = generateThemeCss(brand, design)
+    // Deep near-black derived from the fixture navy primary (#003B71).
+    expect(css).toContain('--color-ink: #131c2a;')
+    expect(css).toContain('--color-ink-foreground: #F7F5F2;')
+  })
 })
 
 describe('checkThemeContrast', () => {

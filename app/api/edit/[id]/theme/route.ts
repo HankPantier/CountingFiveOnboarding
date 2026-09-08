@@ -13,9 +13,11 @@ import {
 import {
   patchBrandPalette,
   patchDesignTypography,
+  patchDesignFlags,
   PALETTE_ROLES,
   type PalettePatch,
   type TypographyPatch,
+  type DesignFlagsPatch,
 } from '@/lib/editor/theme-edit'
 import { generateThemeCss, checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { deepSetPath } from '@/lib/mbp/schema-write'
@@ -86,6 +88,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       roundness: design.roundness,
       density: design.density,
       visualFeel: design.visualFeel,
+      headlineStyle: design.headlineStyle ?? 'sans',
+      eyebrowStyle: design.eyebrowStyle ?? 'standard',
+      darkSections: design.darkSections ?? false,
       spacing: design.spacing,
       radius: design.radius,
       themeCss,
@@ -100,7 +105,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch }
+type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch; flags?: DesignFlagsPatch }
 
 // Build the free-text MBP summary the operator sees on the profile.
 function paletteSummary(palette: BrandJson['palette']): string {
@@ -136,7 +141,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = (await req.json().catch(() => ({}))) as ThemePatchBody
-  if (!body.palette && !body.typography) {
+  if (!body.palette && !body.typography && !body.flags) {
     return NextResponse.json({ error: 'Nothing to change.' }, { status: 400 })
   }
 
@@ -169,6 +174,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     let design = JSON.parse(designText) as DesignJson
     let brandChanged = false
     let designChanged = false
+    let fontsChanged = false
+    let treatmentsChanged = false
 
     if (body.palette) {
       const res = patchBrandPalette(brandText, body.palette)
@@ -182,8 +189,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (!res.ok) return NextResponse.json({ error: res.reason }, { status: 400 })
       design = res.design
       designText = res.next
-      designChanged = res.changed
+      fontsChanged = res.changed
     }
+    if (body.flags) {
+      const res = patchDesignFlags(designText, body.flags)
+      if (!res.ok) return NextResponse.json({ error: res.reason }, { status: 400 })
+      design = res.design
+      designText = res.next
+      treatmentsChanged = res.changed
+    }
+    designChanged = fontsChanged || treatmentsChanged
 
     if (!brandChanged && !designChanged) {
       return NextResponse.json({ ok: true, note: 'No change — those values were already set.' })
@@ -198,7 +213,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (brandChanged) changes.push({ path: BRAND_PATH, content: brandText, expectedSha: brandFile.sha })
     if (designChanged) changes.push({ path: DESIGN_PATH, content: designText, expectedSha: designFile.sha })
 
-    await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: update ${brandChanged ? 'palette' : ''}${brandChanged && designChanged ? ' + ' : ''}${designChanged ? 'fonts' : ''} (${adminEmail ?? 'admin'})`, {
+    const changedParts = [
+      brandChanged && 'palette',
+      fontsChanged && 'fonts',
+      treatmentsChanged && 'treatments',
+    ].filter(Boolean) as string[]
+    await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: update ${changedParts.join(' + ')} (${adminEmail ?? 'admin'})`, {
       authorName: adminName ?? DEFAULT_COMMIT_AUTHOR.name,
       authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
     })
@@ -230,6 +250,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ok: true,
       palette: brand.palette,
       typography: normalizeTypography(design.typography),
+      headlineStyle: design.headlineStyle ?? 'sans',
+      eyebrowStyle: design.eyebrowStyle ?? 'standard',
+      darkSections: design.darkSections ?? false,
       contrastWarnings: checkThemeContrast(brand).map(
         (f) => `${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`
       ),

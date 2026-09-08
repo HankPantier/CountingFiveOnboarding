@@ -119,30 +119,44 @@ function Swatch({
 // The Theme Studio direct controls: click-to-edit palette swatches + per-slot
 // font selectors. Colors preview live and commit on picker close; font changes
 // commit immediately. Both persist to the draft branch and update the MBP.
+export type FlagsPatch = {
+  headlineStyle?: ThemeSources['headlineStyle']
+  eyebrowStyle?: ThemeSources['eyebrowStyle']
+  darkSections?: boolean
+}
+
 export default function ThemeControls({
   palette,
   typography,
   roundness,
   density,
   visualFeel,
+  headlineStyle,
+  eyebrowStyle,
+  darkSections,
   fonts,
   contrastWarnings,
   saving,
   onPreviewPalette,
   onCommitPalette,
   onChangeFont,
+  onChangeFlags,
 }: {
   palette: ThemeSources['palette']
   typography: ThemeSources['typography']
   roundness: ThemeSources['roundness']
   density: ThemeSources['density']
   visualFeel: ThemeSources['visualFeel']
+  headlineStyle: ThemeSources['headlineStyle']
+  eyebrowStyle: ThemeSources['eyebrowStyle']
+  darkSections: boolean
   fonts: readonly string[]
   contrastWarnings: string[]
   saving: boolean
   onPreviewPalette: (role: PaletteRole, hex: string) => void
   onCommitPalette: (role: PaletteRole, hex: string) => void
   onChangeFont: (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => void
+  onChangeFlags: (patch: FlagsPatch) => void
 }) {
   return (
     <div className="flex flex-col gap-2 border-b border-border-default bg-surface-subtle px-4 py-2.5">
@@ -191,10 +205,52 @@ export default function ThemeControls({
           })}
         </div>
 
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="font-heading text-[11px] font-semibold text-text-secondary">Treatments</span>
+          <label className="flex items-center gap-1.5">
+            <span className="font-body text-[11px] text-text-muted">Headlines</span>
+            <select
+              value={headlineStyle}
+              disabled={saving}
+              onChange={(e) => onChangeFlags({ headlineStyle: e.target.value as ThemeSources['headlineStyle'] })}
+              className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
+            >
+              <option value="sans">Sans</option>
+              <option value="serif">Serif</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="font-body text-[11px] text-text-muted">Eyebrows</span>
+            <select
+              value={eyebrowStyle}
+              disabled={saving}
+              onChange={(e) => onChangeFlags({ eyebrowStyle: e.target.value as ThemeSources['eyebrowStyle'] })}
+              className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
+            >
+              <option value="standard">Standard</option>
+              <option value="mono">Mono</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={darkSections}
+              disabled={saving}
+              onChange={(e) => onChangeFlags({ darkSections: e.target.checked })}
+              className="h-3.5 w-3.5 accent-brand-cyan disabled:opacity-50"
+            />
+            <span className="font-body text-[11px] text-text-muted">Dark sections</span>
+          </label>
+        </div>
+
         <span className="font-body text-[11px] text-text-muted">
           roundness: {roundness} · density: {density} · feel: {visualFeel}
         </span>
       </div>
+
+      <p className="font-body text-[11px] text-text-muted">
+        Treatments apply after the site rebuilds on the updated template — the preview above won&rsquo;t reflect them until then.
+      </p>
 
       {contrastWarnings.length > 0 && (
         <p className="font-body text-[11px] text-warning-strong">

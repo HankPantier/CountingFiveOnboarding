@@ -6,6 +6,7 @@ import ThemeChat from './ThemeChat'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
+import type { FlagsPatch } from './ThemeControls'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
 
 // Regenerate theme.css client-side (generateThemeCss is pure) so a color/font
@@ -142,7 +143,7 @@ export default function ThemeStudio({
   // Commit a palette/typography change to the draft branch (+ MBP sync) via the
   // direct PATCH endpoint, then reconcile with the server's canonical sources.
   const commitTheme = useCallback(
-    async (patch: { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string> }) => {
+    async (patch: { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string>; flags?: FlagsPatch }) => {
       setSaving(true)
       setSaveError(null)
       try {
@@ -196,6 +197,18 @@ export default function ThemeStudio({
         return { ...s, typography, themeCss: rebuildThemeCss(s, s.palette, typography) }
       })
       void commitTheme({ typography: { [slot]: font } })
+    },
+    [commitTheme]
+  )
+
+  // Treatment flags (headline/eyebrow/dark sections). Update the local display
+  // immediately and commit to design.json. The preview iframe can't reflect
+  // these until the site rebuilds on the updated template (see ThemeControls
+  // note), so no client-side theme.css rebuild is needed here.
+  const changeFlags = useCallback(
+    (patch: FlagsPatch) => {
+      setSources((s) => (s ? { ...s, ...patch } : s))
+      void commitTheme({ flags: patch })
     },
     [commitTheme]
   )
@@ -298,6 +311,7 @@ export default function ThemeStudio({
               onPreviewPalette={previewPalette}
               onCommitPalette={commitPalette}
               onChangeFont={changeFont}
+              onChangeFlags={changeFlags}
             />
           </>
         ) : null}

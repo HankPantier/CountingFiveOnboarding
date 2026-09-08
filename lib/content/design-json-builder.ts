@@ -39,6 +39,15 @@ export function buildDesignJson(tokens: DesignTokens): DesignJson {
     roundness: tokens.roundness,
     density: tokens.density,
     visualFeel: tokens.visualFeel,
+    // Opt-in treatments — omit the key entirely when at the default so an
+    // untouched design.json stays byte-identical to prior deliverables.
+    ...(tokens.headlineStyle && tokens.headlineStyle !== 'sans'
+      ? { headlineStyle: tokens.headlineStyle }
+      : {}),
+    ...(tokens.eyebrowStyle && tokens.eyebrowStyle !== 'standard'
+      ? { eyebrowStyle: tokens.eyebrowStyle }
+      : {}),
+    ...(tokens.darkSections ? { darkSections: true } : {}),
     spacing: {
       xs: '4px',
       sm: '8px',

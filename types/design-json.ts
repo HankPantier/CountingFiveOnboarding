@@ -14,6 +14,13 @@ export type DesignJson = {
   roundness: Roundness
   density: Density
   visualFeel: VisualFeel
+  /** Opt-in Revaltus-corporate treatments. Each defaults to the current look, so
+   * a design.json without these fields renders exactly as before. Read by the
+   * template's layout.tsx to set <html data-headline> / <html data-eyebrow>; the
+   * dark-section token is always emitted and gated by darkSections at use-site. */
+  headlineStyle?: 'sans' | 'serif'
+  eyebrowStyle?: 'standard' | 'mono'
+  darkSections?: boolean
   spacing: {
     xs: string
     sm: string

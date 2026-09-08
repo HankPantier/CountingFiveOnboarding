@@ -170,6 +170,55 @@ export function patchDesignTypography(designJsonText: string, patch: TypographyP
   return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
 }
 
+// ---------------------------------------------------------------------------
+// Opt-in treatment flags (Revaltus-corporate look). Each maps to a design.json
+// field the template reads to set <html data-headline>/<html data-eyebrow> and
+// to gate the ink section rhythm. A flag at its DEFAULT is deleted so an
+// untouched design.json stays minimal and matches design-json-builder's
+// omit-at-default behaviour.
+// ---------------------------------------------------------------------------
+export type DesignFlagsPatch = {
+  headlineStyle?: DesignJson['headlineStyle']
+  eyebrowStyle?: DesignJson['eyebrowStyle']
+  darkSections?: DesignJson['darkSections']
+}
+
+const HEADLINE_STYLES = ['sans', 'serif'] as const
+const EYEBROW_STYLES = ['standard', 'mono'] as const
+
+export function patchDesignFlags(designJsonText: string, patch: DesignFlagsPatch): DesignPatchResult {
+  let design: DesignJson
+  try {
+    design = JSON.parse(designJsonText) as DesignJson
+  } catch {
+    return { ok: false, reason: 'content/design.json is not valid JSON.' }
+  }
+
+  const provided = Object.entries(patch).filter(([, v]) => v !== undefined)
+  if (provided.length === 0) return { ok: false, reason: 'No treatment changes were provided.' }
+
+  const next: DesignJson = { ...design }
+
+  if (patch.headlineStyle !== undefined) {
+    if (!HEADLINE_STYLES.includes(patch.headlineStyle)) return { ok: false, reason: 'headlineStyle must be sans or serif.' }
+    if (patch.headlineStyle === 'sans') delete next.headlineStyle
+    else next.headlineStyle = patch.headlineStyle
+  }
+  if (patch.eyebrowStyle !== undefined) {
+    if (!EYEBROW_STYLES.includes(patch.eyebrowStyle)) return { ok: false, reason: 'eyebrowStyle must be standard or mono.' }
+    if (patch.eyebrowStyle === 'standard') delete next.eyebrowStyle
+    else next.eyebrowStyle = patch.eyebrowStyle
+  }
+  if (patch.darkSections !== undefined) {
+    if (typeof patch.darkSections !== 'boolean') return { ok: false, reason: 'darkSections must be true or false.' }
+    if (!patch.darkSections) delete next.darkSections
+    else next.darkSections = true
+  }
+
+  const nextText = serialize(next)
+  return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
+}
+
 // The block ids that carry a data-block attribute and can be targeted from
 // design-overrides.css. Kept in sync with the template's block catalog.
 export const OVERRIDE_BLOCKS = [

@@ -38,6 +38,10 @@
   --color-footer: #1A1C1E;
   --color-footer-foreground: #F7F5F2;
 
+  /* Ink section surface — optional dark section rhythm (design.json darkSections). */
+  --color-ink: #131c2a;
+  --color-ink-foreground: #F7F5F2;
+
   /* Spacing scale — exposed under a c5-prefixed namespace to avoid
    * colliding with Tailwind v4's --spacing-* namespace, which feeds
    * max-w-*, w-*, h-*, p-*, m-*, gap-* utilities. Naming these tokens
@@ -110,6 +114,10 @@
    * .dark override below. */
   --color-footer: #1A1C1E;
   --color-footer-foreground: #F7F5F2;
+
+  /* Ink section surface — optional dark section rhythm (design.json darkSections). */
+  --color-ink: #131c2a;
+  --color-ink-foreground: #F7F5F2;
 
   /* Spacing scale (c5-prefixed to avoid Tailwind --spacing-* collision) */
   --c5-space-xs: 4px;

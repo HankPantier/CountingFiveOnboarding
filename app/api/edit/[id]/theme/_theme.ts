@@ -16,6 +16,10 @@ export type ThemeSources = {
   roundness: DesignJson['roundness']
   density: DesignJson['density']
   visualFeel: DesignJson['visualFeel']
+  /** Opt-in treatment flags (absent in design.json => default look). */
+  headlineStyle: NonNullable<DesignJson['headlineStyle']>
+  eyebrowStyle: NonNullable<DesignJson['eyebrowStyle']>
+  darkSections: boolean
   spacing: DesignJson['spacing']
   radius: DesignJson['radius']
   /** The client's committed theme.css on draft — the real artifact the preview renders. */

@@ -13,4 +13,8 @@ export type DesignTokens = {
   roundness: Roundness
   density: Density
   visualFeel: VisualFeel
+  /** Opt-in Revaltus-corporate treatments; default to the current look. */
+  headlineStyle?: 'sans' | 'serif'
+  eyebrowStyle?: 'standard' | 'mono'
+  darkSections?: boolean
 }

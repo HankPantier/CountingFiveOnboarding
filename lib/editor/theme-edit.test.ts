@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { patchBrandPalette, patchDesignTokens, patchDesignTypography, upsertBlockOverride } from './theme-edit'
+import { patchBrandPalette, patchDesignTokens, patchDesignTypography, patchDesignFlags, upsertBlockOverride } from './theme-edit'
 
 const BRAND = JSON.stringify(
   {
@@ -99,6 +99,39 @@ describe('patchDesignTypography', () => {
   })
   it('rejects an empty patch', () => {
     const r = patchDesignTypography(DESIGN, {})
+    expect(r.ok).toBe(false)
+  })
+})
+
+describe('patchDesignFlags', () => {
+  it('sets a non-default treatment flag', () => {
+    const r = patchDesignFlags(DESIGN, { headlineStyle: 'serif', eyebrowStyle: 'mono', darkSections: true })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.design.headlineStyle).toBe('serif')
+    expect(r.design.eyebrowStyle).toBe('mono')
+    expect(r.design.darkSections).toBe(true)
+    expect(r.changed).toBe(true)
+  })
+  it('deletes a flag when set back to its default (keeps design.json minimal)', () => {
+    const withFlags = patchDesignFlags(DESIGN, { headlineStyle: 'serif', darkSections: true })
+    expect(withFlags.ok).toBe(true)
+    if (!withFlags.ok) return
+    const reset = patchDesignFlags(withFlags.next, { headlineStyle: 'sans', darkSections: false })
+    expect(reset.ok).toBe(true)
+    if (!reset.ok) return
+    expect('headlineStyle' in reset.design).toBe(false)
+    expect('darkSections' in reset.design).toBe(false)
+    // Back to the original untouched design.
+    expect(reset.next).toBe(DESIGN)
+  })
+  it('rejects an invalid flag value', () => {
+    // @ts-expect-error — exercising runtime validation with a bad value
+    const r = patchDesignFlags(DESIGN, { headlineStyle: 'cursive' })
+    expect(r.ok).toBe(false)
+  })
+  it('rejects an empty patch', () => {
+    const r = patchDesignFlags(DESIGN, {})
     expect(r.ok).toBe(false)
   })
 })
