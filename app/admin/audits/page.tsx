@@ -241,7 +241,11 @@ export default async function AuditsListPage({
             />
           </div>
 
-          {/* Filters — segmented folder pills + Run by / Batch dropdowns + active chips */}
+          {rows.length > 0 && <AuditsOverviewCharts overview={overview} />}
+
+          {/* Filters — folder pills + Run by / Batch dropdowns + active chips, grouped
+              directly above the search box below. Always rendered so a zero-result
+              filter stays clearable. */}
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <div className="inline-flex rounded-pill border border-border-default bg-surface-card p-1">
               {FOLDER_TABS.map(([key, label]) => (
@@ -296,10 +300,7 @@ export default async function AuditsListPage({
               <p className="font-body text-sm text-text-secondary">No audits match this filter.</p>
             </div>
           ) : (
-            <>
-              <AuditsOverviewCharts overview={overview} />
-              <AuditsTable rows={rows} deltas={deltas} showRunBy={user?.isAdmin ?? false} />
-            </>
+            <AuditsTable rows={rows} deltas={deltas} showRunBy={user?.isAdmin ?? false} />
           )}
         </>
       )}
