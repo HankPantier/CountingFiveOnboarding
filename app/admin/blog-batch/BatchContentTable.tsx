@@ -9,6 +9,7 @@ import {
   type ContentType,
 } from '@/lib/content/content-types'
 import { INDUSTRIES, INDUSTRY_OPTIONS, asIndustry, type Industry } from '@/lib/content/industries'
+import ListSearchInput from '@/components/admin/ListSearchInput'
 import DeleteBatchButton from './DeleteBatchButton'
 
 export interface BatchContentRow {
@@ -108,6 +109,7 @@ export default function BatchContentTable({
 }) {
   const [contentTypeFilter, setContentTypeFilter] = useState<ContentType | 'all'>('all')
   const [industryFilter, setIndustryFilter] = useState<Industry | 'all'>('all')
+  const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('created')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   // Batch currently saving a relabel, and optimistic type overrides keyed by
@@ -155,9 +157,11 @@ export default function BatchContentTable({
   }
 
   const visible = useMemo(() => {
+    const q = search.trim().toLowerCase()
     const filtered = rows.filter((r) => {
       if (contentTypeFilter !== 'all' && effectiveType(r) !== contentTypeFilter) return false
       if (industryFilter !== 'all' && asIndustry(r.industry) !== industryFilter) return false
+      if (q && ![r.title, r.targetKeyword].some((v) => v?.toLowerCase().includes(q))) return false
       return true
     })
     const dir = sortDir === 'asc' ? 1 : -1
@@ -181,7 +185,7 @@ export default function BatchContentTable({
       // Stable tiebreak on creation time (newest first) so equal keys don't jump.
       return b.createdAt.localeCompare(a.createdAt)
     })
-  }, [rows, contentTypeFilter, industryFilter, sortKey, sortDir, effectiveType])
+  }, [rows, contentTypeFilter, industryFilter, search, sortKey, sortDir, effectiveType])
 
   return (
     <div>
@@ -232,9 +236,17 @@ export default function BatchContentTable({
           ))}
         </div>
 
-        <span className="ml-auto font-body text-xs text-text-muted">
-          {visible.length} of {rows.length}
-        </span>
+        <div className="ml-auto flex items-center gap-3">
+          <ListSearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search ideas or keyword…"
+            ariaLabel="Search batch content by idea or keyword"
+          />
+          <span className="font-body text-xs text-text-muted">
+            {visible.length} of {rows.length}
+          </span>
+        </div>
       </div>
 
       <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
