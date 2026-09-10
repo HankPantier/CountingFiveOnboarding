@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleAuditScope, hasCapability } from '@/lib/auth/access'
 import AuditsTable, { type AuditRow } from '@/components/admin/audit/AuditsTable'
+import AuditFilters from '@/components/admin/audit/AuditFilters'
 import AuditsOverviewCharts from '@/components/admin/audit/AuditsOverviewCharts'
 import StatCard from '@/components/admin/ui/StatCard'
 import { auditsOverview } from '@/lib/audit/report-aggregates'
@@ -33,11 +34,12 @@ const FOLDERS = ['prospect', 'working', 'client'] as const
 type Folder = (typeof FOLDERS)[number]
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-// Build an audits-list URL, preserving the folder + runBy dimensions.
-function auditsHref(folder: string, runBy: string | null): string {
+// Build an audits-list URL, preserving the folder + runBy + batch dimensions.
+function auditsHref(next: { folder: string; runBy: string | null; batch: string | null }): string {
   const p = new URLSearchParams()
-  if (folder && folder !== 'all') p.set('folder', folder)
-  if (runBy) p.set('runBy', runBy)
+  if (next.folder && next.folder !== 'all') p.set('folder', next.folder)
+  if (next.runBy) p.set('runBy', next.runBy)
+  if (next.batch) p.set('batch', next.batch)
   const qs = p.toString()
   return qs ? `/admin/audits?${qs}` : '/admin/audits'
 }
@@ -45,7 +47,7 @@ function auditsHref(folder: string, runBy: string | null): string {
 export default async function AuditsListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ folder?: string; runBy?: string }>
+  searchParams: Promise<{ folder?: string; runBy?: string; batch?: string }>
 }) {
   const supabase = createServerClient()
   const user = await getCurrentUser()
@@ -58,12 +60,16 @@ export default async function AuditsListPage({
   // Filter to a single runner (created_by). Admins only in practice — the column
   // is admin-only and auditor scope already pins created_by to self.
   const runByFilter = sp.runBy && UUID_RE.test(sp.runBy) ? sp.runBy : null
+  // Filter to a single batch (audit_batch_id).
+  const batchFilter = sp.batch && UUID_RE.test(sp.batch) ? sp.batch : null
 
-  // Per-folder counts across ALL (scoped) audits, not just the loaded page.
+  // Per-folder counts across ALL (scoped) audits, not just the loaded page —
+  // consistent with the active Run by + Batch selection.
   const countFor = async (g: Folder): Promise<number> => {
     let q = supabase.from('audit_runs').select('id', { count: 'exact', head: true }).eq('audit_group', g)
     if (scope) q = q.eq('created_by', scope.createdBy)
     if (runByFilter) q = q.eq('created_by', runByFilter)
+    if (batchFilter) q = q.eq('audit_batch_id', batchFilter)
     const { count } = await q
     return count ?? 0
   }
@@ -85,6 +91,7 @@ export default async function AuditsListPage({
   if (scope) query = query.eq('created_by', scope.createdBy)
   if (folder !== 'all') query = query.eq('audit_group', folder)
   if (runByFilter) query = query.eq('created_by', runByFilter)
+  if (batchFilter) query = query.eq('audit_batch_id', batchFilter)
   const { data } = await query
 
   // Resolve batch labels for any runs that belong to a batch (scoped rows only,
@@ -106,6 +113,25 @@ export default async function AuditsListPage({
     : { data: [] }
   const nameByCreator = new Map((creators ?? []).map((a) => [a.id, a.name || a.email]))
   const runByName = runByFilter ? nameByCreator.get(runByFilter) ?? 'Unknown user' : null
+
+  // Filter-selector options. Run by is admin-only (auditor scope already pins to
+  // self); batches are scoped the same way the batch list API scopes them.
+  const runnerOptions = user?.isAdmin
+    ? ((await supabase.from('admins').select('id, name, email')).data ?? [])
+        .map((a) => ({ id: a.id, label: a.name || a.email }))
+        .sort((x, y) => x.label.localeCompare(y.label))
+    : []
+  let batchQuery = supabase
+    .from('audit_batches')
+    .select('id, label, created_at')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  if (scope) batchQuery = batchQuery.eq('created_by', scope.createdBy)
+  const { data: batchList } = await batchQuery
+  const batchOptions = (batchList ?? []).map((b) => ({ id: b.id, label: b.label || 'Untitled batch' }))
+  const batchName = batchFilter
+    ? batchOptions.find((b) => b.id === batchFilter)?.label ?? labelByBatch.get(batchFilter) ?? 'Selected batch'
+    : null
 
   const rows: AuditRow[] = (data ?? []).map((r) => ({
     id: r.id,
@@ -150,6 +176,7 @@ export default async function AuditsListPage({
           <p className="mt-1.5 font-body text-sm text-text-secondary">
             {folderCounts.all} audit{folderCounts.all === 1 ? '' : 's'} across prospect, working &amp; client
             {runByName && <span> · run by {runByName}</span>}
+            {batchName && <span> · batch {batchName}</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -173,7 +200,7 @@ export default async function AuditsListPage({
         </div>
       </div>
 
-      {folderCounts.all === 0 && !runByFilter ? (
+      {folderCounts.all === 0 && !runByFilter && !batchFilter ? (
         <div className="rounded-xl border border-border-default bg-surface-card p-12 text-center shadow-subtle">
           <h2 className="font-heading text-lg font-semibold text-brand-navy">No audits yet</h2>
           <p className="mx-auto mt-1 max-w-sm font-body text-sm text-text-secondary">
@@ -214,13 +241,13 @@ export default async function AuditsListPage({
             />
           </div>
 
-          {/* Filters — segmented pill control + active runner chip */}
+          {/* Filters — segmented folder pills + Run by / Batch dropdowns + active chips */}
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <div className="inline-flex rounded-pill border border-border-default bg-surface-card p-1">
               {FOLDER_TABS.map(([key, label]) => (
                 <Link
                   key={key}
-                  href={auditsHref(key, runByFilter)}
+                  href={auditsHref({ folder: key, runBy: runByFilter, batch: batchFilter })}
                   className={`rounded-pill px-3.5 py-1.5 font-heading text-[12.5px] font-semibold transition-colors ${
                     folder === key ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle'
                   }`}
@@ -229,12 +256,32 @@ export default async function AuditsListPage({
                 </Link>
               ))}
             </div>
+            <AuditFilters
+              folder={folder}
+              runBy={runByFilter}
+              batch={batchFilter}
+              runnerOptions={runnerOptions}
+              batchOptions={batchOptions}
+              showRunBy={user?.isAdmin ?? false}
+            />
             {runByFilter && (
               <span className="inline-flex items-center gap-2 rounded-badge bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan-dark">
                 Run by: {runByName}
                 <Link
-                  href={auditsHref(folder, null)}
+                  href={auditsHref({ folder, runBy: null, batch: batchFilter })}
                   aria-label="Clear runner filter"
+                  className="leading-none text-brand-cyan-dark transition-colors hover:text-brand-navy"
+                >
+                  ✕
+                </Link>
+              </span>
+            )}
+            {batchFilter && (
+              <span className="inline-flex items-center gap-2 rounded-badge bg-brand-cyan/10 px-3 py-1 font-heading text-xs font-semibold text-brand-cyan-dark">
+                Batch: {batchName}
+                <Link
+                  href={auditsHref({ folder, runBy: runByFilter, batch: null })}
+                  aria-label="Clear batch filter"
                   className="leading-none text-brand-cyan-dark transition-colors hover:text-brand-navy"
                 >
                   ✕
