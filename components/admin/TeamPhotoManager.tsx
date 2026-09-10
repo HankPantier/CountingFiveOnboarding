@@ -1,8 +1,10 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Database } from '@/types/database'
+import { rankCandidatesForMember, type HeadshotCandidate } from '@/lib/team-photos/match'
 
 type Asset = Database['public']['Tables']['assets']['Row']
 
@@ -37,17 +39,8 @@ type Props = {
   discovery?: TeamPhotoDiscovery | null
 }
 
-// Candidate headshot discovered on the client's live site (shape mirrors
-// HeadshotCandidate from lib/team-photos/scrape-headshots).
-type Candidate = {
-  imageUrl: string
-  altText: string | null
-  nearbyName: string | null
-  filename: string
-  width: number | null
-  height: number | null
-  sourcePageUrl: string
-}
+// Candidate headshot discovered on the client's live site.
+type Candidate = HeadshotCandidate
 
 type DiscoverResponse = {
   candidates: Candidate[]
@@ -253,7 +246,9 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls, 
           const isBusy = busyMember === member.name
           const isAssigning = assigning === member.name
           const err = errors[member.name]
-          const memberCandidates = candidates ?? []
+          // Headshots only, this member's likely face first (defensively
+          // re-filters older, unfiltered discovery snapshots too).
+          const memberCandidates = rankCandidatesForMember(member, candidates ?? [])
           const sel = selected[member.name]
           const conf = confidenceByMember.get(member.name)
           return (
@@ -309,22 +304,11 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls, 
 
               {memberCandidates.length > 0 && (
                 <div className="border-t border-border-default pt-2">
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                    {memberCandidates.map(c => (
-                      <button
-                        key={c.imageUrl}
-                        type="button"
-                        title={c.nearbyName ?? c.altText ?? c.filename}
-                        onClick={() => setSelected(prev => ({ ...prev, [member.name]: c.imageUrl }))}
-                        className={`w-11 h-11 rounded overflow-hidden border-2 flex-shrink-0 transition-colors ${
-                          sel === c.imageUrl ? 'border-brand-cyan' : 'border-transparent hover:border-border-default'
-                        }`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- public live-site preview URL */}
-                        <img src={c.imageUrl} alt={c.altText ?? c.filename} className="w-full h-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
+                  <CandidateStrip
+                    candidates={memberCandidates}
+                    selectedUrl={sel}
+                    onSelect={url => setSelected(prev => ({ ...prev, [member.name]: url }))}
+                  />
                   <button
                     type="button"
                     onClick={() => void pull(member.name)}
@@ -339,6 +323,107 @@ export default function TeamPhotoManager({ sessionId, team, assets, signedUrls, 
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// Horizontal thumbnail picker for one member's candidate headshots. Native
+// overflow scroll was unpredictable on trackpads, so this adds explicit
+// prev/next arrows, CSS scroll-snap, and auto-scrolls the selected tile into
+// view. Owns its own scroll state so members' strips don't collide.
+function CandidateStrip({
+  candidates,
+  selectedUrl,
+  onSelect,
+}: {
+  candidates: Candidate[]
+  selectedUrl: string | undefined
+  onSelect: (url: string) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [overflowing, setOverflowing] = useState(false)
+  const [atStart, setAtStart] = useState(true)
+  const [atEnd, setAtEnd] = useState(false)
+
+  const updateEdges = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const max = el.scrollWidth - el.clientWidth
+    setOverflowing(max > 1)
+    setAtStart(el.scrollLeft <= 1)
+    setAtEnd(el.scrollLeft >= max - 1)
+  }, [])
+
+  useEffect(() => {
+    updateEdges()
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(updateEdges)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [updateEdges, candidates.length])
+
+  // Bring the selected (or pre-suggested) tile into view when it changes.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !selectedUrl) return
+    const tile = el.querySelector<HTMLElement>(`[data-url="${CSS.escape(selectedUrl)}"]`)
+    tile?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+  }, [selectedUrl])
+
+  const step = (dir: 1 | -1) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * Math.max(el.clientWidth * 0.8, 120), behavior: 'smooth' })
+  }
+
+  return (
+    <div className="relative">
+      {overflowing && (
+        <button
+          type="button"
+          aria-label="Previous photos"
+          onClick={() => step(-1)}
+          disabled={atStart}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-surface-card border border-border-default text-brand-navy flex items-center justify-center transition-colors hover:border-brand-cyan disabled:opacity-40 disabled:hover:border-border-default"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      )}
+      <div
+        ref={scrollRef}
+        onScroll={updateEdges}
+        className={`flex items-center gap-1.5 overflow-x-auto pb-1 snap-x snap-mandatory scroll-smooth ${
+          overflowing ? 'px-7' : ''
+        }`}
+      >
+        {candidates.map(c => (
+          <button
+            key={c.imageUrl}
+            data-url={c.imageUrl}
+            type="button"
+            title={c.nearbyName ?? c.altText ?? c.filename}
+            onClick={() => onSelect(c.imageUrl)}
+            className={`w-11 h-11 rounded overflow-hidden border-2 flex-shrink-0 snap-start transition-colors ${
+              selectedUrl === c.imageUrl ? 'border-brand-cyan' : 'border-transparent hover:border-border-default'
+            }`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- public live-site preview URL */}
+            <img src={c.imageUrl} alt={c.altText ?? c.filename} className="w-full h-full object-cover" />
+          </button>
+        ))}
+      </div>
+      {overflowing && (
+        <button
+          type="button"
+          aria-label="More photos"
+          onClick={() => step(1)}
+          disabled={atEnd}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 w-6 h-6 rounded-full bg-surface-card border border-border-default text-brand-navy flex items-center justify-center transition-colors hover:border-brand-cyan disabled:opacity-40 disabled:hover:border-border-default"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      )}
     </div>
   )
 }

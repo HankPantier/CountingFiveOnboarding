@@ -1,35 +1,29 @@
 // Discover candidate team headshots on a client's live website so a rep can
 // pull them into onboarding instead of sourcing every photo by hand. Server-only
 // (the orchestrator fetches over the network via the audit engine's SSRF-guarded
-// safeGet). The parse/rank helpers are pure and unit-testable.
+// safeGet). The parse helpers here are pure and unit-testable; the pure
+// name-matching / classification / ranking logic lives in ./match (client-safe).
 //
 // This never auto-commits a photo — it surfaces candidates + a best-guess
 // suggestion per member; the rep confirms each assignment in the UI.
 import * as cheerio from 'cheerio'
 import { safeGet, normalizeUrl, sameDomain } from '@/lib/audit/crawl'
+import { TEAM_LINK_RE, isLikelyHeadshot, type HeadshotCandidate } from './match'
 
-export type HeadshotCandidate = {
-  imageUrl: string
-  altText: string | null
-  /** Figcaption / nearest heading text near the image — a naming hint. */
-  nearbyName: string | null
-  filename: string
-  width: number | null
-  height: number | null
-  /** The page the image was found on. A candidate on an individual bio page
-   * (slug matching a member's name) is a high-confidence headshot for them. */
-  sourcePageUrl: string
-}
-
-/** How sure we are that a candidate is a given member's headshot. `high` is
- * safe to auto-pull; `low` is surfaced for the rep to confirm. */
-export type MatchConfidence = 'high' | 'low' | 'none'
-
-export type MemberMatch = {
-  name: string
-  imageUrl: string | null
-  confidence: MatchConfidence
-}
+// Re-export the pure match/classify/rank helpers so existing importers (the
+// discover route, auto-pull, tests) keep a single import surface.
+export {
+  looksLikeTeamPageUrl,
+  slugTokens,
+  overlapCount,
+  nameTokens,
+  tokenOverlap,
+  isLikelyHeadshot,
+  rankCandidatesForMember,
+  matchHeadshotsToMembers,
+  suggestCandidatesByName,
+} from './match'
+export type { HeadshotCandidate, MatchConfidence, MemberMatch } from './match'
 
 export type ScrapeResult = {
   candidates: HeadshotCandidate[]
@@ -37,11 +31,9 @@ export type ScrapeResult = {
   warnings: string[]
 }
 
-// Anchor href/text that hints at a team/about page. Covers the common "About"
-// synonyms firms actually use for their roster page — "who we are", "our firm",
-// "professionals", "principals/shareholders" — not just literal team/about.
-const TEAM_LINK_RE = /team|about|our-people|our-team|staff|leadership|\bmeet\b|people|attorneys|advisors|partners|principals|shareholders|founders|professionals|who[- ]?we[- ]?are|our[- ]?firm|the[- ]?firm|\bbios?\b/i
-// Image filenames/paths that are almost never a person's headshot.
+// Image filenames/paths that are almost never a person's headshot. Cheap
+// first-pass skip at extraction time; isLikelyHeadshot (in ./match) does the
+// stricter classification when candidates are collected.
 const SKIP_IMG_RE = /logo|icon|favicon|sprite|badge|banner|placeholder|spacer|pixel|1x1|loading/i
 const MAX_TEAM_PAGES = 4
 // Individual bio/profile pages (e.g. /team/jane-doe) linked from a team listing
@@ -66,17 +58,6 @@ function basename(url: string): string {
     return (path.split('/').pop() || path).toLowerCase()
   } catch {
     return url.toLowerCase()
-  }
-}
-
-/** True when a URL's path looks like a team/about page — used to pick team-like
- * pages out of an already-crawled inventory (belt-and-suspenders to homepage
- * link discovery). Shares TEAM_LINK_RE so the two never drift. */
-export function looksLikeTeamPageUrl(url: string): boolean {
-  try {
-    return TEAM_LINK_RE.test(new URL(url).pathname)
-  } catch {
-    return TEAM_LINK_RE.test(url)
   }
 }
 
@@ -208,115 +189,14 @@ export function extractHeadshotCandidates(html: string, pageUrl: string): Headsh
   return out
 }
 
-/** Name tokens present in a URL's last path segment (the slug). A bio page at
- * /team/jane-doe yields ["jane", "doe"]. Pure. */
-function slugTokens(url: string): string[] {
-  let slug = ''
-  try {
-    const parts = new URL(url).pathname.replace(/\/+$/, '').split('/')
-    slug = parts[parts.length - 1] || ''
-  } catch {
-    slug = url
-  }
-  return slug
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 2)
-}
-
-/** How many of a member's name tokens appear in a set of haystack tokens. */
-function overlapCount(nameTokens: string[], haystack: Set<string>): number {
-  let n = 0
-  for (const t of nameTokens) if (haystack.has(t)) n++
-  return n
-}
-
-// Name tokens for matching: drop credentials after the first comma, lowercase,
-// split on non-alphanumerics, keep tokens ≥2 chars. Mirrors injectTeamPhotos'
-// leading-name-portion convention.
-function nameTokens(name: string): string[] {
-  return name
-    .split(',')[0]
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length >= 2)
-}
-
-function tokenOverlap(tokens: string[], haystack: string): number {
-  const hay = new Set(haystack.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean))
-  let score = 0
-  for (const t of tokens) if (hay.has(t)) score++
-  return score
-}
-
-/** Best-guess candidate per member, tagged with a confidence tier. Never
- * auto-commits — only the auto-pull orchestrator acts, and only on `high`. Pure.
- *
- * - `high`: the candidate sits on an individual bio page whose slug matches the
- *   member's name (one person per bio page), OR its surrounding text matches
- *   both name tokens (first + last). Safe to pull automatically.
- * - `low`: a single name token matched — surfaced for the rep to confirm.
- * - `none`: nothing matched. */
-export function matchHeadshotsToMembers(
-  members: { name: string }[],
-  candidates: HeadshotCandidate[]
-): MemberMatch[] {
-  return members.map((member) => {
-    const tokens = nameTokens(member.name)
-    if (tokens.length === 0) return { name: member.name, imageUrl: null, confidence: 'none' as const }
-
-    // A bio page carries one person: if its slug matches the member's name, the
-    // best image on that page is almost certainly them. Two name tokens must
-    // match (or the member's only token, for single-name people) so a generic
-    // slug like /about doesn't false-positive.
-    const slugNeeded = tokens.length === 1 ? 1 : 2
-    const bioMatches = candidates.filter((c) => {
-      const slug = new Set(slugTokens(c.sourcePageUrl))
-      return overlapCount(tokens, slug) >= slugNeeded
-    })
-    if (bioMatches.length > 0) {
-      // Among a bio page's images, prefer the one whose own text also names the
-      // member; else the first (usually the primary portrait).
-      let best = bioMatches[0]
-      let bestScore = -1
-      for (const c of bioMatches) {
-        const score = tokenOverlap(tokens, `${c.nearbyName ?? ''} ${c.altText ?? ''} ${c.filename}`)
-        if (score > bestScore) {
-          bestScore = score
-          best = c
-        }
-      }
-      return { name: member.name, imageUrl: best.imageUrl, confidence: 'high' as const }
-    }
-
-    // Fall back to name overlap in the image's own surrounding text.
-    let best: { url: string; score: number } | null = null
-    for (const c of candidates) {
-      const score = tokenOverlap(tokens, `${c.nearbyName ?? ''} ${c.altText ?? ''} ${c.filename}`)
-      if (score > 0 && (!best || score > best.score)) best = { url: c.imageUrl, score }
-    }
-    if (!best) return { name: member.name, imageUrl: null, confidence: 'none' as const }
-    return { name: member.name, imageUrl: best.url, confidence: best.score >= 2 ? 'high' : 'low' }
-  })
-}
-
-/** Best-guess candidate imageUrl per member. Thin wrapper over
- * {@link matchHeadshotsToMembers} kept for the discover route/UI. Pure. */
-export function suggestCandidatesByName(
-  members: { name: string }[],
-  candidates: HeadshotCandidate[]
-): Record<string, string | null> {
-  const result: Record<string, string | null> = {}
-  for (const m of matchHeadshotsToMembers(members, candidates)) result[m.name] = m.imageUrl
-  return result
-}
-
 function isHtml200(res: Awaited<ReturnType<typeof safeGet>>): boolean {
   return !!res && res.status === 200 && res.contentType.includes('text/html')
 }
 
 /** Fetch the homepage, discover team/about pages, and collect candidate
- * headshots across them. SSRF-guarded via safeGet on every request. */
+ * headshots across them. SSRF-guarded via safeGet on every request. Only images
+ * that pass isLikelyHeadshot are kept, so the 40-cap fills with real faces (not
+ * logos/banners/blog art) and downstream matching/auto-pull stay clean. */
 export async function scrapeTeamHeadshots(websiteUrl: string): Promise<ScrapeResult> {
   const scannedPages: string[] = []
   const warnings: string[] = []
@@ -328,6 +208,7 @@ export async function scrapeTeamHeadshots(websiteUrl: string): Promise<ScrapeRes
       if (candidates.length >= MAX_CANDIDATES) break
       if (seen.has(c.imageUrl)) continue
       seen.add(c.imageUrl)
+      if (!isLikelyHeadshot(c)) continue
       candidates.push(c)
     }
   }
