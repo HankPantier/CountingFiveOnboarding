@@ -6,7 +6,9 @@ import Image from 'next/image'
 import Link from 'next/link'
 import MessageBubble from './MessageBubble'
 import FileUploadButton from './FileUploadButton'
+import NicheReviewCard, { type ReviewNiche } from './NicheReviewCard'
 import type { Database } from '@/types/database'
+import type { SessionSchema } from '@/types/session-schema'
 
 type Session = Database['public']['Tables']['sessions']['Row']
 
@@ -55,6 +57,30 @@ export default function ChatInterface({
   // Last text the rep sent, so Retry / Reset can resend without re-typing.
   const [lastSent, setLastSent] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Phase-3 industry review, sourced from the audit-seeded schema snapshot. The
+  // NicheReviewCard is the authoritative keep/drop mechanism; the chat agent no
+  // longer asks keep/drop in prose (see lib/agent/phase-instructions.ts).
+  const schemaData = useMemo(
+    () => (initialSession.schema_data as SessionSchema | null) ?? ({} as SessionSchema),
+    [initialSession.schema_data]
+  )
+  const reviewNiches = useMemo<ReviewNiche[]>(
+    () =>
+      (schemaData.niches ?? [])
+        .filter((n) => n?.name?.trim())
+        .map((n) => ({ name: n.name, signal: n.signal, note: n.description?.trim() || undefined })),
+    [schemaData]
+  )
+  const highOpportunityNiches = useMemo(() => {
+    const have = new Set(reviewNiches.map((n) => n.name.toLowerCase()))
+    return (schemaData._meta?.opportunities?.highOpportunityNiches ?? []).filter(
+      (name) => name?.trim() && !have.has(name.toLowerCase())
+    )
+  }, [schemaData, reviewNiches])
+  const [reviewDone, setReviewDone] = useState(() => !!schemaData._meta?.niche_review)
+  const showNicheReview =
+    currentPhase === 3 && !reviewDone && (reviewNiches.length > 0 || highOpportunityNiches.length > 0)
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/chat', body: { sessionId } }),
@@ -348,6 +374,18 @@ export default function ChatInterface({
                 <span className="text-text-muted text-xs font-body">Thinking…</span>
               </div>
             </div>
+          )}
+
+          {showNicheReview && (
+            <NicheReviewCard
+              sessionId={sessionId}
+              niches={reviewNiches}
+              highOpportunityNiches={highOpportunityNiches}
+              onReviewed={() => {
+                setReviewDone(true)
+                sendMessage({ text: '[Industry review submitted]' })
+              }}
+            />
           )}
 
           <div ref={bottomRef} />

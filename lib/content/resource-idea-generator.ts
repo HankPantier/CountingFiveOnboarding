@@ -1,6 +1,7 @@
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
+import { activeNiches } from './active-niches'
 import { headCheckUrls, type ExternalLink } from './link-checker'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -143,7 +144,7 @@ export async function generateResourceIdeas(
   const firmName = schema.business?.name ?? 'the firm'
   const location = firmLocation(schema)
   const services = (schema.services ?? []).map((s) => s.name).filter(Boolean)
-  const niches = (schema.niches ?? []).map((n) => n.name).filter(Boolean)
+  const niches = activeNiches(schema).map((n) => n.name).filter(Boolean)
 
   // Serper research — up to 3 queries. Seeded runs research the seed itself;
   // open runs blend service × niche × locality. All failures are non-fatal;
@@ -180,7 +181,7 @@ export async function generateResourceIdeas(
     .map((i) => i.title)
   const existingPosts = await listExistingPostSlugs(job.github_repo)
 
-  const nicheDetail = (schema.niches ?? [])
+  const nicheDetail = activeNiches(schema)
     .slice(0, 4)
     .map((n) => `- ${n.name}: pain points: ${n.painPoints?.slice(0, 200) ?? ''} | value prop: ${n.valueProp?.slice(0, 200) ?? ''}`)
     .join('\n')

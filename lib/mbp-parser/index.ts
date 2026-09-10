@@ -1131,9 +1131,12 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
   }
 
   // Per-niche pain points & value props — only ask when the MBP didn't fill them.
+  // Iterate by real index (never filter) so kept niches keep their niches[i] gap
+  // paths; a niche the operator dropped in the Phase-3 review generates no gaps.
   if (schema?.niches?.length) {
     for (let i = 0; i < schema.niches.length; i++) {
       const niche = schema.niches[i]
+      if (niche.status === 'dropped') continue
       if (!niche.painPoints) {
         gaps.push({ field: `niches[${i}].painPoints`, label: `${niche.name} — Pain Points`, phase: 4, tier: 1, resolved: false })
       }

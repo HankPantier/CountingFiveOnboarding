@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { buildFirmContext } from './brand-voice'
+import { activeNiches } from './active-niches'
 import { cleanHeading } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -136,7 +137,7 @@ FIRM CONTEXT:
 Brand voice: ${schema.brand?.currentTone ?? 'professional and approachable'}
 Positioning: ${schema.business?.positioningOption ?? ''} — ${schema.business?.positioningStatement?.slice(0, 200) ?? ''}
 Differentiators: ${schema.business?.differentiators ?? 'Not specified'}
-Niches: ${schema.niches?.map(n => n.name).join(', ') ?? 'General CPA services'}
+Niches: ${activeNiches(schema).map(n => n.name).join(', ') || 'General CPA services'}
 ${paletteTone ? `Palette tone: ${paletteTone}` : ''}
 
 ${buildFirmContext(schema)}

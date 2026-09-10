@@ -1,4 +1,5 @@
 import type { SessionSchema } from '@/types/session-schema'
+import { activeNiches } from './active-niches'
 
 // Shared brand-voice prompt fragments. Extracted from content-generator.ts so
 // the page generator and the Resources blog generators describe the firm's
@@ -88,7 +89,7 @@ export function buildFirmContext(schema: SessionSchema): string {
 
   // Per-niche pain points + value prop (not just names) so niche pages can speak
   // to the specific audience, not generically.
-  const niches = arr(schema.niches).filter(n => str(n?.name).trim())
+  const niches = activeNiches(schema).filter(n => str(n?.name).trim())
   if (niches.length) {
     const nicheLines = niches.map(n => {
       const bits = [str(n.name).trim()]

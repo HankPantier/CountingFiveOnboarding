@@ -14,6 +14,16 @@ export type SessionSchema = {
       highOpportunityNiches: string[]
     }
     opportunities_confirmed?: string[]
+    // Record of the Phase-3 niche keep/drop review submitted via the
+    // NicheReviewCard. Its presence is the advancement gate for Phase 3 → 4
+    // (see lib/agent/phase-validators.ts) and drives the admin/MBP read-back.
+    niche_review?: {
+      reviewedAt: string
+      kept: string[]
+      dropped: string[]
+      added: string[]
+      reviewedBy?: string
+    }
     section11_responses?: Record<string, string>
     trust_signals_confirmed?: string[]
     sitemap_decisions?: {
@@ -170,6 +180,15 @@ export type SessionSchema = {
     icp: string
     painPoints: string
     valueProp: string
+    // Audit-detected confidence that the firm actually serves this niche
+    // (carried over from the audit's DetectedNiche.signal). Surfaced in the
+    // onboarding niche-review card so the operator can scrutinize weak signals.
+    signal?: 'weak' | 'moderate' | 'strong'
+    // Operator's keep/drop decision from the Phase-3 niche-review card. Absent =
+    // active/kept. A 'dropped' niche is excluded from all content generation via
+    // activeNiches() (lib/content/active-niches.ts) but kept in the array for
+    // auditability and to preserve niches[i] gap-path indexes.
+    status?: 'kept' | 'dropped'
     customerTrigger?: string
     typicalRevenueSize?: string
     nicheOrigin?: string

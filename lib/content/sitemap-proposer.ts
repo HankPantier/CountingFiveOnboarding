@@ -5,6 +5,7 @@
 // also the fallback when the AI call fails, so the proposal never regresses to
 // the old update-only flat list.
 import { buildFirmContext } from './brand-voice'
+import { activeNiches } from './active-niches'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { slugify } from './sitemap-utils'
@@ -79,7 +80,7 @@ export function buildSkeletonProposal(
   }
 
   // Templated differentiating pages from the firm's niches + services.
-  const niches = (schema.niches ?? []).filter(n => n.name?.trim())
+  const niches = activeNiches(schema).filter(n => n.name?.trim())
   if (niches.length) {
     push({ url: '/industries', title: 'Industries we serve', status: 'new', parent: '/' })
     for (const n of niches) {
@@ -201,7 +202,7 @@ function validateProposal(parsed: unknown): ProposedSitemap | null {
 
 // ── AI enrichment ────────────────────────────────────────────────────────────
 function buildPrompt(schema: SessionSchema, skeleton: ProposedSitemap): string {
-  const niches = (schema.niches ?? [])
+  const niches = activeNiches(schema)
     .filter(n => n.name?.trim())
     .map(n => `- ${n.name}: ${n.valueProp || n.painPoints || n.description || ''}`.trim())
     .join('\n')

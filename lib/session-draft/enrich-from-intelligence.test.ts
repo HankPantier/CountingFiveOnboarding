@@ -58,6 +58,22 @@ describe('enrichSchemaFromIntelligence — audit carry-over', () => {
     expect(s.services?.[0].rewriteDirection).toBe('Lead with proactive strategy.')
   })
 
+  it('adds detected niches with their audit signal and backfills signal onto an already-drafted niche', () => {
+    const s = baseSchema()
+    // Simulate an AI-drafted niche the audit also detected (no signal yet).
+    s.niches = [{ name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '' }]
+    const withNiches = intel()
+    ;(withNiches.niche_services as unknown as { detected_niches: unknown }).detected_niches = [
+      { name: 'Dental', signal: 'strong', note: 'x' },
+      { name: 'Construction', signal: 'weak', note: 'thin coverage' },
+    ]
+    enrichSchemaFromIntelligence(s, withNiches)
+    const dental = s.niches?.find((n) => n.name === 'Dental')
+    const construction = s.niches?.find((n) => n.name === 'Construction')
+    expect(dental?.signal).toBe('strong') // backfilled onto existing
+    expect(construction?.signal).toBe('weak') // carried onto new
+  })
+
   it('merges associations into an existing roster member and adds new personnel with associations', () => {
     const s = baseSchema()
     enrichSchemaFromIntelligence(s, intel())

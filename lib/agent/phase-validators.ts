@@ -55,6 +55,17 @@ export function validatePhaseAdvance(
       // If the asset exists (non-empty URL), require a usefulness rating too.
       if (typeof li!.url === 'string' && li!.url.trim() && !li!.usefulness) return 'culture.linkedIn.usefulness not captured'
       if (typeof gbp!.url === 'string' && gbp!.url.trim() && !gbp!.usefulness) return 'business.googleBusinessProfile.usefulness not captured'
+
+      // Industry keep/drop review gate. The NicheReviewCard writes
+      // _meta.niche_review; block the advance until it's present. Guarded on
+      // "there is something to review" so legacy / no-niche sessions never stall.
+      const niches = (schema.niches as Array<{ name?: string }> | undefined) ?? []
+      const highOpp =
+        (meta?.opportunities as { highOpportunityNiches?: string[] } | undefined)?.highOpportunityNiches ?? []
+      const reviewNeeded = niches.some(n => (n?.name ?? '').trim() !== '') || highOpp.length > 0
+      if (reviewNeeded && !meta?.niche_review) {
+        return 'the industry keep/drop review has not been completed — the client must submit the Industry review card (which writes _meta.niche_review) before Phase 3 can advance'
+      }
       return null
     }
     case 4: {

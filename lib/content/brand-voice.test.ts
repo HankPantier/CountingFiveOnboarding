@@ -29,6 +29,17 @@ describe('buildFirmContext — enriched MBP fields', () => {
     expect(out).toContain('value: specialized tax planning')
   })
 
+  it('omits a dropped niche from the firm context', () => {
+    const out = buildFirmContext(base({}, {
+      niches: [
+        { name: 'Dental practices', description: '', icp: '', painPoints: '', valueProp: '' },
+        { name: 'Cannabis dispensaries', description: '', icp: '', painPoints: '', valueProp: '', status: 'dropped' },
+      ],
+    }))
+    expect(out).toContain('Dental practices')
+    expect(out).not.toContain('Cannabis dispensaries')
+  })
+
   it('includes client success stories as proof', () => {
     const out = buildFirmContext(base({ clientSuccessStories: ['Saved a client $40k in taxes'] }))
     expect(out).toContain('Client success stories')

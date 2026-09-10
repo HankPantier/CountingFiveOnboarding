@@ -224,6 +224,9 @@ function mapToSchema(
     .filter((s) => s.name)
     .map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] }))
 
+  // The AI-draft model has no per-niche signal strength — that lives on the
+  // audit's DetectedNiche and is merged on afterward by enrichSchemaFromIntelligence
+  // (which runs after this mapping). Leave `signal` unset here; don't "fix" it.
   schema.niches = (model.niches ?? [])
     .filter((n) => n.name)
     .map((n) => ({ name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: '' }))

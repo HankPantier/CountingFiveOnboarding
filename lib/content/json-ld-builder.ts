@@ -1,6 +1,7 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { Database } from '@/types/database'
 import { parentChain, slugify } from './sitemap-utils'
+import { activeNiches } from './active-niches'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 type SitemapPage = { url: string; title: string; parent?: string; status: string }
@@ -245,7 +246,7 @@ function buildPageTypeNode(
     base['@type'] = 'Service'
     base.provider = { '@type': 'Organization', name: firmName, url: origin }
     base.serviceType = page.page_title
-    const audienceNiches = schema.niches?.map(n => n?.name).filter(nonEmpty) ?? []
+    const audienceNiches = activeNiches(schema).map(n => n?.name).filter(nonEmpty)
     if (audienceNiches.length) {
       base.audience = audienceNiches.map(name => ({ '@type': 'Audience', audienceType: name }))
     }

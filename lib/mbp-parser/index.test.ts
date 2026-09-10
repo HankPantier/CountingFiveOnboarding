@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseMBP } from './index'
+import { parseMBP, computePhase4Gaps } from './index'
+import type { SessionSchema } from '@/types/session-schema'
 
 // The Korbey Lague MBP is the canonical handoff fixture: an analyst-authored
 // document that an admin uploads to create a session (app/api/sessions/parse).
@@ -106,5 +107,23 @@ describe('parseMBP — gap list is what Phase 4 needs', () => {
     const fields = new Set(gaps.map((g) => g.field))
     expect(fields.has('business.firmHistory')).toBe(false) // parsed from Section 2
     expect(fields.has('business.name')).toBe(false)
+  })
+})
+
+describe('computePhase4Gaps — dropped niches', () => {
+  const withNiches = (): SessionSchema =>
+    ({
+      niches: [
+        { name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '' },
+        { name: 'Legal', description: '', icp: '', painPoints: '', valueProp: '', status: 'dropped' },
+        { name: 'Nonprofit', description: '', icp: '', painPoints: '', valueProp: '' },
+      ],
+    } as SessionSchema)
+
+  it('emits no gaps for a dropped niche but keeps kept niches at their original index', () => {
+    const fields = new Set(computePhase4Gaps(withNiches()).map((g) => g.field))
+    expect(fields.has('niches[1].painPoints')).toBe(false) // Legal is dropped
+    expect(fields.has('niches[0].painPoints')).toBe(true) // Dental keeps index 0
+    expect(fields.has('niches[2].painPoints')).toBe(true) // Nonprofit keeps index 2
   })
 })

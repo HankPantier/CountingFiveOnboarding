@@ -1,6 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { runKeywordResearch } from './keyword-research'
 import { fetchCompetitorPages, fetchExistingContent } from './competitor-fetch'
+import { activeNiches } from './active-niches'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -37,7 +38,7 @@ export async function runResearchPipeline(
       ? `${schema.locations[0].city}, ${schema.locations[0].state}`
       : '',
     services: schema.services?.map(s => s.name) ?? [],
-    niches: schema.niches?.map(n => n.name) ?? [],
+    niches: activeNiches(schema).map(n => n.name),
   }
   const currentSitemap = schema.current_sitemap
 

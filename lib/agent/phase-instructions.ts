@@ -12,6 +12,22 @@ type SchemaMeta = {
     serviceOpportunities?: string[]
     highOpportunityNiches?: string[]
   }
+  niche_review?: { reviewedAt?: string }
+}
+
+// The industry keep/drop review is captured by the NicheReviewCard UI (saved to
+// _meta.niche_review), not by the chat. This note keeps the agent from also
+// asking keep/drop in prose and racing the card.
+const INDUSTRY_REVIEW_CARD_NOTE =
+  'Industry keep/drop is handled by the "Industry review" card shown above the message box — that card is the authoritative mechanism and saves its result to _meta.niche_review. Do NOT ask the client to keep, drop, or add industries in chat prose.'
+
+// True when the session has industries to review (detected niches or analyst
+// high-opportunity niches) and the card hasn't been submitted yet.
+function isNicheReviewPending(meta: SchemaMeta | undefined, niches: NicheLike[]): boolean {
+  if (meta?.niche_review) return false
+  const hasNiches = niches.some(n => (n.name ?? '').trim() !== '')
+  const hasOpp = (meta?.opportunities?.highOpportunityNiches?.length ?? 0) > 0
+  return hasNiches || hasOpp
 }
 
 type NicheLike = {
@@ -202,6 +218,14 @@ function phase3Instructions(session: Session, mode: AgentMode): string {
     chunk2bAnalyst.length + chunk2bOpportunities.length +
     chunk2bTrustSignals.length + chunk2bSitemap.length > 0
 
+  const reviewPending = isNicheReviewPending(typedMeta, niches)
+  // Appended to the chunk2b instructions: Phase 3 cannot advance until the card
+  // is submitted (the validator enforces this too — this makes the agent ask for
+  // it instead of silently hitting the internal gate).
+  const nicheReviewGate = reviewPending
+    ? `\n\nINDUSTRY REVIEW REQUIRED: Phase 3 cannot complete until the client submits the "Industry review" card shown above the message box (it writes _meta.niche_review). If it isn't submitted yet, ask the client to complete it now, and do NOT call advancePhase until it's done.`
+    : ''
+
   if (!chunk1Done) {
     if (mode === 'staff') {
       return `PHASE 3 — MBP REVIEW, PART 1 (Practical info) — staff mode
@@ -244,20 +268,23 @@ When part 1 is done, call update_session_data with the structured fields populat
 Present known data as compact tables / lists in ONE message:
 - Team — name | title (❓ if missing) | certifications
 - Services — name + one-line description
-- Niches — name + one-line ICP
+- Niches — name + one-line ICP (for reference only — see the note below)
 - Positioning options A / B / C — bold label, one-line gist each
 
 Then ask in the same message:
-- "Corrections / additions to team, services, niches?"
+- "Corrections / additions to team or services?"
 - "Missing team titles?"
 - "Pick a positioning option (A/B/C or a blend description)"
 
-Accept all answers. As soon as positioning is chosen, call update_session_data with business.positioningOption, business.positioningStatement (use the chosen option's statement verbatim from the MBP), team/service/niche updates, and "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase — ${bridgeNext} run next.`
+${INDUSTRY_REVIEW_CARD_NOTE}
+
+Accept all answers. As soon as positioning is chosen, call update_session_data with business.positioningOption, business.positioningStatement (use the chosen option's statement verbatim from the MBP), team/service updates, and "_meta": { "phase3_completed_chunks": [..., "chunk2a"] }. DO NOT advance phase — ${bridgeNext} run next.`
     }
     return `PHASE 3 — MBP REVIEW, PART 2 (Content)
 Present all of the following in one message:
-- Team members (note any with missing titles), services, industry niches
-Ask for corrections and any missing team titles.
+- Team members (note any with missing titles), services, and (for reference) the industry niches
+Ask for corrections to team and services, and any missing team titles.
+${INDUSTRY_REVIEW_CARD_NOTE}
 Then present the 3 positioning options. Format them as a markdown list, one per line — do not put all three inline in a sentence:
 - **Option A** — [summary]
 - **Option B** — [summary]
@@ -271,8 +298,13 @@ Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "
 
   if (!chunk2bDone) {
     // No decision content from the MBP — auto-complete and move on without
-    // burning a chat turn.
+    // burning a chat turn, UNLESS the industry-review card is still pending.
     if (!chunk2bHasContent) {
+      if (reviewPending) {
+        return `PHASE 3 — MBP REVIEW, PART 2b — INDUSTRY REVIEW PENDING
+
+The MBP surfaced no analyst decisions, but the client still needs to submit the "Industry review" card shown above the message box before Phase 3 can complete. Ask them to complete it now — Keep or Drop each industry. Do NOT call advancePhase until _meta.niche_review is set; once it is, call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] } and advancePhase: true to move to Phase 4. Do NOT ask about team photos — those are pulled automatically from the client's site.`
+      }
       return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — NOTHING TO DECIDE
 
 The MBP didn't surface any decisions for the client to confirm. Phase 3 is complete — immediately call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] } and advancePhase: true to move to Phase 4 (gap-filling). No message to the user is necessary. Do NOT ask about team photos — those are pulled automatically from the client's site.`
@@ -282,14 +314,14 @@ The MBP didn't surface any decisions for the client to confirm. Phase 3 is compl
       return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — staff mode
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Staff can answer in any layout (line-prefixed, key-value, comma list). Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed.
 
-When the staff member's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Do NOT ask about team photos — those are pulled automatically.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
+When the staff member's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Do NOT ask about team photos — those are pulled automatically. Note: any industries added via the Industry review card are already in schema.niches — treat high-opportunity niches as page-build decisions only, not new niches to create.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}${nicheReviewGate}`
     }
     return `PHASE 3 — MBP REVIEW, PART 2b (Decisions)
 Open with a short bridge: "Before we wrap up this section, a few quick decisions our analyst flagged. Defaults are noted next to each — just call out exceptions."
 
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Keep each ask compact. Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed. If the client agrees with the defaults wholesale, accept that and move on.
 
-When the client's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling).${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}`
+When the client's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Note: any industries the client added via the Industry review card are already in schema.niches — treat high-opportunity niches as page-build decisions only, not new niches to create.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}${nicheReviewGate}`
   }
 
   // Team photos are NOT collected in the chat. High-confidence headshots are

@@ -84,14 +84,23 @@ export function enrichSchemaFromIntelligence(
     }
   }
 
-  // ── Niches: add detected niches the AI draft didn't already capture ─────────
+  // ── Niches: add detected niches the AI draft didn't already capture, and
+  //    carry the audit's signal strength onto every detected niche (new or
+  //    already-drafted) so the Phase-3 review card can surface it. ────────────
   if (niche?.detected_niches?.length) {
     schema.niches ??= []
-    const existing = new Set(schema.niches.map((n) => n.name.toLowerCase()))
+    const byName = new Map(schema.niches.map((n) => [n.name.toLowerCase(), n]))
     for (const d of niche.detected_niches) {
-      if (d.name && !existing.has(d.name.toLowerCase())) {
-        schema.niches.push({ name: d.name, description: d.note ?? '', icp: '', painPoints: '', valueProp: '' })
-        existing.add(d.name.toLowerCase())
+      if (!d.name) continue
+      const match = byName.get(d.name.toLowerCase())
+      if (match) {
+        // Backfill signal onto a niche the AI draft already captured (don't
+        // clobber a value if one is somehow already present).
+        if (!match.signal) match.signal = d.signal
+      } else {
+        const created = { name: d.name, description: d.note ?? '', icp: '', painPoints: '', valueProp: '', signal: d.signal }
+        schema.niches.push(created)
+        byName.set(d.name.toLowerCase(), created)
       }
     }
   }

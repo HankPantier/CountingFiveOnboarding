@@ -105,6 +105,14 @@ export function buildMbpDocument(
   schema: SessionSchema,
   confirmedSitemap?: SitemapEntry[] | null
 ): MbpDocument {
+  // Read-back of the Phase-3 industry review: annotate the section title with a
+  // kept/dropped count so the operator can see the decision at a glance.
+  const droppedNicheCount = (schema.niches ?? []).filter(n => n.status === 'dropped').length
+  const nicheTitle =
+    droppedNicheCount > 0
+      ? `Niches (${(schema.niches ?? []).length - droppedNicheCount} kept · ${droppedNicheCount} dropped)`
+      : 'Niches'
+
   const sections: MbpDocumentSection[] = [
     objectSection('contact', 'Contact', schema.contact as Record<string, unknown> | undefined),
     objectSection('business', 'Business', withContentScopeDefaults(schema.business as Record<string, unknown> | undefined)),
@@ -114,7 +122,7 @@ export function buildMbpDocument(
     arraySection('locations', 'Locations', schema.locations, l => l.name || l.city || ''),
     arraySection('team', 'Team', schema.team, t => t.name || ''),
     arraySection('services', 'Services', schema.services, s => s.name || ''),
-    arraySection('niches', 'Niches', schema.niches, n => n.name || ''),
+    arraySection('niches', nicheTitle, schema.niches, n => (n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || '')),
     arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || ''),
     objectSection('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined),
     objectSection('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined),

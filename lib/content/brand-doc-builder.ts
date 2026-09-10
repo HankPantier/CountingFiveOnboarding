@@ -3,6 +3,7 @@ import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTEN
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { generateJson } from './json-generation'
+import { activeNiches } from './active-niches'
 import type { SessionSchema } from '@/types/session-schema'
 
 export type BrandDoc = {
@@ -21,7 +22,7 @@ function joinList(items: unknown): string {
 
 export function compileBrandDoc(schema: SessionSchema): BrandDoc {
   const business = schema.business ?? ({} as NonNullable<SessionSchema['business']>)
-  const niches = schema.niches ?? []
+  const niches = activeNiches(schema)
   const firstLocation = schema.locations?.[0]
   const firmName = nonEmpty(business.name) ? business.name : 'The firm'
 
