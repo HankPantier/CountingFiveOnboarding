@@ -17,7 +17,8 @@ import ClientCenterEditor from './ClientCenterEditor'
 import NewPageDialog from './NewPageDialog'
 import SiteAssistantChat from './SiteAssistantChat'
 import { parseNavJson } from '@/lib/editor/nav-config'
-import type { Move } from '@/lib/editor/nav-urls'
+import { toPathname, type Move } from '@/lib/editor/nav-urls'
+import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -226,6 +227,31 @@ export default function EditorShell({
     setInitialApplied(true)
     void select(initialPath)
   }, [initialApplied, initialPath, loadingTree, select])
+
+  // Keep nav.json content in the loaded cache so the nav-aware Pages sidebar can
+  // seed from it. Fetches once after the tree loads, and re-fetches whenever the
+  // tree's nav.json sha diverges from the cached copy (external change). Skipped
+  // for Site Owners (they use the plain page list). No selectedPath change.
+  const navFetchRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (loadingTree || viewerIsOwner) return
+    const navEntry = tree.find((e) => e.path === NAV_PATH)
+    if (!navEntry) return
+    const have = loaded.get(NAV_PATH)
+    if (have && have.sha === navEntry.sha) return
+    if (navFetchRef.current === navEntry.sha) return
+    navFetchRef.current = navEntry.sha
+    void (async () => {
+      try {
+        const res = await fetch(`/api/edit/${sessionId}/file?path=${encodeURIComponent(NAV_PATH)}`)
+        if (!res.ok) return
+        const blob = (await res.json()) as { content: string; sha: string }
+        setLoaded((prev) => new Map(prev).set(NAV_PATH, { content: blob.content, sha: blob.sha }))
+      } catch {
+        /* non-fatal — the sidebar falls back to a plain page list */
+      }
+    })()
+  }, [loadingTree, tree, loaded, viewerIsOwner, sessionId])
 
   // Force-reload a file from the server, replacing the cached content + sha and
   // clearing any dirty state — used after the AI agent commits a new version.
@@ -789,6 +815,86 @@ export default function EditorShell({
     return true
   }
 
+  // Persist an inline navigation change (reorder / nest / show-hide) from the
+  // Pages sidebar immediately — mirrors moveSelected: POST /nav (which relocates
+  // any page whose url changed + writes 301s), then refresh and reselect a
+  // relocated open page. Returns false on failure so the sidebar snaps back.
+  const commitNav = async (contents: string, moves: Move[]): Promise<boolean> => {
+    const navEntry = tree.find((e) => e.path === NAV_PATH)
+    if (!navEntry) {
+      setError('Navigation file not found.')
+      return false
+    }
+
+    // Guard: a nesting change relocates the page file. If the open page is being
+    // moved and has unsaved edits, block — the move would orphan those edits.
+    const openUrl = selectedPath ? toPathname(pagePathToUrl(selectedPath)) : null
+    const openMove =
+      openUrl && selectedPath && selectedPath.startsWith('content/pages/')
+        ? moves.find((m) => toPathname(m.from) === openUrl)
+        : undefined
+    if (openMove && selectedPath && dirty.has(selectedPath)) {
+      setError('Save or discard your edits to this page before reordering it in navigation.')
+      return false
+    }
+
+    setPageActioning(true)
+    setError(null)
+    setPublishResult(null)
+    try {
+      const res = await fetch(`/api/edit/${sessionId}/nav`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents, moves, expectedSha: navEntry.sha }),
+      })
+      if (res.status === 409) {
+        setError('Navigation changed on the server. Reload to continue.')
+        await refreshTree()
+        return false
+      }
+      if (res.status === 422) {
+        const data = (await res.json()) as { error?: string; collision?: { to: string } }
+        setError(data.error ?? `A page already exists at ${data.collision?.to ?? 'the destination'}.`)
+        return false
+      }
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string }
+        throw new Error(data.error ?? `Save failed: ${res.status}`)
+      }
+      const data = (await res.json()) as { commitSha: string; blobSha: string; moved: number }
+      setLoaded((prev) => new Map(prev).set(NAV_PATH, { content: contents, sha: data.blobSha }))
+      setNavMoves([])
+
+      if (openMove && selectedPath) {
+        // The open page was relocated — evict its stale cache and reselect the new path.
+        const oldPath = selectedPath
+        const newPath = navUrlToPagePath(openMove.to)
+        setLoaded((prev) => {
+          const m = new Map(prev)
+          m.delete(oldPath)
+          return m
+        })
+        setDirty((prev) => {
+          const m = new Map(prev)
+          m.delete(oldPath)
+          return m
+        })
+        await refreshTree()
+        await refreshStatus()
+        if (newPath) await select(newPath)
+      } else {
+        await refreshTree()
+        await refreshStatus()
+      }
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Navigation update failed')
+      return false
+    } finally {
+      setPageActioning(false)
+    }
+  }
+
   const deletePage = async () => {
     if (!selectedPath) return
     const sha = loaded.get(selectedPath)?.sha
@@ -1069,9 +1175,14 @@ export default function EditorShell({
                 : undefined
             }
             showConfiguration={!viewerIsOwner}
+            navContent={loaded.get(NAV_PATH)?.content ?? null}
+            navSha={tree.find((e) => e.path === NAV_PATH)?.sha ?? null}
+            navEditable={!viewerIsOwner}
+            navBusy={pageActioning}
             onSelect={(p) => void select(p)}
             onNewPage={() => setNewPageOpen(true)}
             onBulkMove={bulkMove}
+            onNavCommit={commitNav}
           />
         )}
         {!selectedPath ? (

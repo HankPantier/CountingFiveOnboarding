@@ -1,6 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { pageSegments, sortPages } from '@/lib/editor/page-paths'
+import type { Move } from '@/lib/editor/nav-urls'
+import SidebarPagesNav from './SidebarPagesNav'
 
 export type TreeFile = { path: string; sha: string }
 
@@ -39,30 +42,6 @@ function isDraft(path: string): boolean {
 
 function isNav(path: string): boolean {
   return path === VIRTUAL_NAV
-}
-
-// Page filenames encode URL depth with `--` (services--tax--business-tax.md
-// is /services/tax/business-tax). Surface that as indentation: parents first,
-// children indented under them with the shared prefix stripped.
-function pageSegments(path: string): string[] {
-  const base = path.split('/').pop() ?? path
-  return base.replace(/\.md$/, '').split('--')
-}
-
-function sortPages(pages: TreeFile[]): TreeFile[] {
-  // Compare segment-by-segment so "about.md" sorts before "about--our-story.md"
-  // (plain alphabetical puts the child first because '-' < '.').
-  return [...pages].sort((a, b) => {
-    const sa = pageSegments(a.path)
-    const sb = pageSegments(b.path)
-    for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
-      if (sa[i] === undefined) return -1
-      if (sb[i] === undefined) return 1
-      const cmp = sa[i].localeCompare(sb[i])
-      if (cmp !== 0) return cmp
-    }
-    return 0
-  })
 }
 
 function fileButtonClass(selected: boolean): string {
@@ -152,9 +131,14 @@ export default function FileTree({
   showEditStats = false,
   editCounts,
   showConfiguration = true,
+  navContent,
+  navSha,
+  navEditable = false,
+  navBusy = false,
   onSelect,
   onNewPage,
   onBulkMove,
+  onNavCommit,
 }: {
   entries: TreeFile[]
   selectedPath: string | null
@@ -168,6 +152,13 @@ export default function FileTree({
   // The Configuration section (Navigation + Client Center) — hidden for Site
   // Owners, who edit page/resource content only.
   showConfiguration?: boolean
+  // Raw nav.json content + its blob sha, for the nav-aware Pages tree. When
+  // navEditable is true and nav is loaded, the Pages section reorders + toggles
+  // navigation inline; the sha re-seeds the tree after each committed change.
+  navContent?: string | null
+  navSha?: string | null
+  navEditable?: boolean
+  navBusy?: boolean
   onSelect: (path: string) => void
   onNewPage: () => void
   // Bulk-relocate selected pages (multi-select). Resolves true when all moved.
@@ -175,6 +166,8 @@ export default function FileTree({
     paths: string[],
     dest: { type: 'resources' } | { type: 'under'; parentUrl: string }
   ) => Promise<boolean>
+  // Persist an inline navigation change (reorder / nest / show-hide) immediately.
+  onNavCommit?: (contents: string, moves: Move[]) => Promise<boolean>
 }) {
   const pages = sortPages(entries.filter((e) => isPage(e.path)))
   const posts = entries.filter((e) => isPost(e.path))
@@ -383,7 +376,20 @@ export default function FileTree({
           + New page
         </button>
       </div>
-      {open.pages && (
+      {open.pages &&
+        (navEditable && onNavCommit && !selectMode ? (
+          <SidebarPagesNav
+            key={`sidebarnav-${navSha ?? 'none'}`}
+            pageFiles={pages}
+            navContent={navContent ?? null}
+            selectedPath={selectedPath}
+            dirtyPaths={dirtyPaths}
+            editCounts={editCounts}
+            busy={navBusy}
+            onSelect={onSelect}
+            onNavCommit={onNavCommit}
+          />
+        ) : (
         <ul className="mb-4 pl-[18px]">
           {pages.length === 0 ? (
             <li className="text-xs text-text-muted px-2 py-1">No pages yet.</li>
@@ -441,7 +447,7 @@ export default function FileTree({
             })
           )}
         </ul>
-      )}
+        ))}
 
       {selectMode && checked.size > 0 && (
         <div className="mb-4 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 p-2">
