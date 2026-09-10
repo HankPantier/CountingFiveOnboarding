@@ -192,10 +192,10 @@ export default function FileTree({
     }
   }
 
-  // Pages is the noisy section — start it collapsed; the rest are small.
+  // Pages is the primary section — start it expanded; Resources starts collapsed.
   const [open, setOpen] = useState<Record<string, boolean>>({
-    pages: false,
-    resources: true,
+    pages: true,
+    resources: false,
     drafts: false,
     configuration: true,
     media: true,
