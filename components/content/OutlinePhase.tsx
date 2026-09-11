@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import OutlineCard from './OutlineCard'
+import { nextPendingOutlineId } from '@/lib/content/outline-review'
 import LibraryContentPanel from './LibraryContentPanel'
 import ArticleImportPanel from './ArticleImportPanel'
 import type { Json } from '@/types/database'
@@ -26,6 +27,7 @@ export default function OutlinePhase({
   contentJobId: string
 }) {
   const [outlines, setOutlines] = useState<Outline[]>([])
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [advancing, setAdvancing] = useState(false)
   const [retrying, setRetrying] = useState(false)
@@ -126,6 +128,23 @@ export default function OutlinePhase({
     setOutlines(prev => prev.map(o => o.id === updated.id ? updated : o))
   }
 
+  const handleToggleExpand = useCallback((id: string) => {
+    setExpandedId(prev => (prev === id ? null : id))
+  }, [])
+
+  // After approving a card: collapse it, or (advance) jump to the next outline
+  // that is generated and still pending, so a reviewer can walk the list.
+  const handleApproved = useCallback((id: string, advance: boolean) => {
+    if (!advance) {
+      setExpandedId(prev => (prev === id ? null : prev))
+      return
+    }
+    setOutlines(prev => {
+      setExpandedId(nextPendingOutlineId(prev, id))
+      return prev
+    })
+  }, [])
+
   const handleLibraryAck = useCallback((ack: boolean) => setLibraryAcknowledged(ack), [])
   const handleArticlesAck = useCallback((ack: boolean) => setArticlesAcknowledged(ack), [])
 
@@ -208,6 +227,10 @@ export default function OutlinePhase({
             outline={outline}
             contentJobId={contentJobId}
             onUpdate={handleUpdate}
+            expanded={expandedId === outline.id}
+            onToggleExpand={() => handleToggleExpand(outline.id)}
+            onApproved={handleApproved}
+            hasNextPending={outlines.some(o => o.id !== outline.id && o.h1 && !o.admin_approved)}
           />
         ))}
       </div>
