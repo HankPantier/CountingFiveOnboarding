@@ -38,7 +38,10 @@ export async function GET(
   // Advisory critic scores are fetched separately and best-effort: the
   // critic_review column may not exist yet (pre-migration 064), so a failure
   // here must not break the core status poll — it just omits the score chips.
-  const criticByPage = new Map<string, { overall: number; hasFlags: boolean }>()
+  const criticByPage = new Map<
+    string,
+    { overall: number; hasFlags: boolean; needsReview: boolean; regenerated: boolean }
+  >()
   try {
     const { data: criticRows, error: criticErr } = await supabase
       .from('generated_pages')

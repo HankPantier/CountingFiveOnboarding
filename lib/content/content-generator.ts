@@ -2,7 +2,14 @@ import { generateText } from 'ai'
 import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { reviewDraftQuality } from './draft-critic'
+import { scoreDraft, type DraftCriticInput } from './draft-critic'
+import {
+  criticFailsThreshold,
+  buildCriticGuidance,
+  readCriticRegenAttempts,
+  decideCriticAction,
+  type CriticReview,
+} from './critic-review'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from './block-annotation-validator'
@@ -32,21 +39,29 @@ const CONTENT_MODEL = PUBLISHED_CONTENT_MODEL
 // many attempts it stays 'error' and lands in ERRORS.md.
 export const MAX_GENERATION_ATTEMPTS = 3
 
-// Decide whether runContentGeneration should chain another invocation. Chain
-// when work is unfinished (pending/running pages remain, OR error pages still
-// under the attempt cap that we want to retry) and either this run made real
-// progress or there are retriable errors. `allDone` already treats capped-out
-// error pages as terminal, and each retry increments the page's attempt count,
-// so retriable errors drain to zero — the loop is provably finite. A single
-// transient failure self-heals on the next chained invocation instead of
-// stranding as a permanent "1 failed".
+// Decide whether runContentGeneration should chain another invocation immediately.
+// Chain when this run made real progress OR never-attempted (pending) pages remain
+// — there's productive work to do right now. But when the ONLY thing left is
+// retriable errors and this run completed nothing, that's the signature of a
+// sustained provider issue (the per-call SDK backoff of maxRetries:4 already tried
+// hard). Immediately re-chaining there would burn the 3-attempt budget in seconds
+// and strand pages as permanently failed before the outage clears. So back off:
+// return false and let the 5-minute cron sweep resume it (selectResumableContentJobs
+// still picks up retriable errors) — a natural exponential-ish backoff without a
+// schema change. `allDone` treats capped-out errors as terminal, and each real
+// attempt increments the counter, so the loop stays finite.
 export function shouldChainGeneration(args: {
   allDone: boolean
   retriableErrorCount: number
   completedThisRun: number
+  pendingCount?: number
 }): boolean {
-  const { allDone, retriableErrorCount, completedThisRun } = args
-  return !allDone && (completedThisRun > 0 || retriableErrorCount > 0)
+  const { allDone, completedThisRun, pendingCount = 0 } = args
+  if (allDone) return false
+  if (completedThisRun > 0 || pendingCount > 0) return true
+  // Only retriable errors remain and no progress this run → defer to the cron
+  // sweep so we don't hammer a struggling provider.
+  return false
 }
 
 type ResumablePageRow = {
@@ -174,7 +189,8 @@ export async function generatePageContent(
   sessionId: string,
   sitemapUrls: string[],
   angle: string | null,
-  flaggedPhrases?: string[]
+  flaggedPhrases?: string[],
+  revisionGuidance?: string
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
   const location = schema.locations?.[0]
@@ -347,10 +363,18 @@ ${ANTI_SLOP_RULES}`
     ? `\n\nPAGE ANGLE / POINT OF VIEW (highest priority — shape the whole page around this take; it is the operator's directive for what makes this page distinct):\n${angle.trim()}`
     : ''
 
+  // Editorial-review guidance from the draft critic on a targeted regeneration —
+  // the specific defects (likely-fabricated specifics, quality notes) the rewrite
+  // must fix. Kept in the per-call suffix (like flaggedPhrases) so the cached
+  // prefix is unchanged.
+  const revisionNote = revisionGuidance?.trim()
+    ? `\n\nEDITORIAL REVISION (this page was auto-flagged by the draft critic — the previous draft is being rewritten; you MUST resolve every item below):\n${revisionGuidance.trim()}`
+    : ''
+
   const dynamicSuffix = `PAGE TO WRITE:
 Title: ${pageTitle}
 URL: ${pageUrl}
-Approved outline: ${JSON.stringify(outlineSections)}${angleNote}
+Approved outline: ${JSON.stringify(outlineSections)}${angleNote}${revisionNote}
 
 KEYWORD TARGET:
 Primary: ${targetKeyword}
@@ -509,6 +533,8 @@ export type FinalizePageInput = {
   sitemapUrls: string[]
   // Optional per-page angle/POV directive captured during outline proofing.
   angle?: string | null
+  // Optional "fix these" guidance from the draft critic on a targeted rewrite.
+  revisionGuidance?: string
 }
 
 export async function generateAndFinalizePage(input: FinalizePageInput): Promise<GeneratedResult> {
@@ -529,7 +555,8 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       input.sessionId,
       input.sitemapUrls,
       input.angle ?? null,
-      flaggedPhrases
+      flaggedPhrases,
+      input.revisionGuidance
     )
 
   let result = await gen()
@@ -563,12 +590,20 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       `\`<!-- block: feature-grid | variant: 3-col -->\`. Re-emit the entire page with a block ` +
       `annotation on every "##" heading, using the catalog from the system prompt. ` +
       `Do NOT use hero, hero-split, page-header, or faq-accordion inline.`
-    result = await gen([correctionNote])
-    // Re-parse after retry; if still empty, log and store anyway.
-    const retryAnnotations = parseBlockAnnotations(result.content)
-    if (retryAnnotations.length === 0) {
+    // Zero-annotation is the worst structural failure (the whole page renders as
+    // flat prose), so give the model up to two shots to comply before shipping a
+    // page an admin must hand-annotate. Stop as soon as any annotation appears.
+    const STRUCTURAL_RETRY_MAX = 2
+    for (let attempt = 1; attempt <= STRUCTURAL_RETRY_MAX; attempt++) {
+      result = await gen([correctionNote])
+      if (parseBlockAnnotations(result.content).length > 0) break
       console.warn(
-        `[content-gen] Annotations still missing after retry on ${input.pageUrl}; storing anyway (admin must manually annotate)`
+        `[content-gen] Annotations still missing after retry ${attempt}/${STRUCTURAL_RETRY_MAX} on ${input.pageUrl}`
+      )
+    }
+    if (parseBlockAnnotations(result.content).length === 0) {
+      console.warn(
+        `[content-gen] Annotations still missing after ${STRUCTURAL_RETRY_MAX} retries on ${input.pageUrl}; storing anyway (admin must manually annotate)`
       )
     }
   } else if (!blockValidation.passed && blockValidation.errors.length > 0) {
@@ -678,6 +713,96 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   return result
 }
 
+// Background critic + one-shot auto-remediation. Scores a freshly completed page;
+// if it trips the quality threshold and still has regen budget, rewrites it once
+// with the critic's specific fixes, re-scores, then persists the final verdict
+// (flagging it for a human when it's still weak). Fail-soft throughout: any error
+// leaves the completed page untouched. It never flips generation_status or
+// admin_approved_content — the page stays complete + unapproved either way, so a
+// weak page can't reach 'live' without a human, and the regen only improves copy.
+async function reviewAndMaybeRegen(input: DraftCriticInput, outlineId: string): Promise<void> {
+  const supabase = createServerClient()
+
+  const persist = async (review: CriticReview) => {
+    const { error } = await supabase
+      .from('generated_pages')
+      .update({ critic_review: asJson(review) })
+      .eq('id', input.pageId)
+    if (error) console.warn('[draft-critic] write failed:', error.message)
+  }
+
+  // Critic regenerations already spent on this page (persisted inside the JSON).
+  const { data: existing } = await supabase
+    .from('generated_pages')
+    .select('critic_review')
+    .eq('id', input.pageId)
+    .single()
+  const priorAttempts = readCriticRegenAttempts(existing?.critic_review)
+
+  const review = await scoreDraft(input)
+  if (!review) return
+
+  // Solid page, or the regen budget is already spent → record the verdict.
+  const action = decideCriticAction(review, priorAttempts)
+  if (action !== 'regenerate') {
+    await persist({
+      ...review,
+      critic_regen_attempts: priorAttempts,
+      needs_human_review: action === 'flag',
+    })
+    return
+  }
+
+  // Weak draft with budget left: one informed rewrite, then re-score. skipCritic
+  // stops the regeneration from recursively scheduling another critic pass, and
+  // countAttempt:false keeps it out of the transient-error retry budget (a critic
+  // rewrite is not a failed attempt).
+  const guidance = buildCriticGuidance(review)
+  let regen: { status: 'complete' | 'error' | 'skipped' }
+  try {
+    regen = await generateSinglePage(input.contentJobId, outlineId, undefined, {
+      revisionGuidance: guidance,
+      skipCritic: true,
+      countAttempt: false,
+    })
+  } catch (err) {
+    console.error('[draft-critic] auto-regen failed:', err)
+    regen = { status: 'error' }
+  }
+
+  if (regen.status !== 'complete') {
+    // The rewrite didn't land — keep the original verdict but flag for a human.
+    await persist({
+      ...review,
+      regenerated: true,
+      critic_regen_attempts: priorAttempts + 1,
+      needs_human_review: true,
+    })
+    return
+  }
+
+  const { data: fresh } = await supabase
+    .from('generated_pages')
+    .select('content_markdown, target_keyword')
+    .eq('id', input.pageId)
+    .single()
+
+  const rescored = fresh?.content_markdown
+    ? await scoreDraft({
+        ...input,
+        contentMarkdown: fresh.content_markdown,
+        targetKeyword: fresh.target_keyword ?? input.targetKeyword,
+      })
+    : null
+  const finalReview = rescored ?? review
+  await persist({
+    ...finalReview,
+    regenerated: true,
+    critic_regen_attempts: priorAttempts + 1,
+    needs_human_review: criticFailsThreshold(finalReview),
+  })
+}
+
 // Generate (or regenerate) a single page from its already-approved outline.
 // Used by both the bulk runContentGeneration loop and the per-page regenerate
 // endpoint. Resets admin_approved_content to false on success so the admin
@@ -768,7 +893,13 @@ async function loadPageGenContext(
 export async function generateSinglePage(
   contentJobId: string,
   outlineId: string,
-  preloaded?: PageGenContext
+  preloaded?: PageGenContext,
+  // `revisionGuidance` feeds critic "fix these" notes into the rewrite prompt.
+  // `skipCritic` suppresses the post-completion critic (used by the critic's own
+  // auto-regen so it re-scores manually instead of recursing). `countAttempt`
+  // (default true) increments the transient-retry counter; the critic regen sets
+  // it false so a quality rewrite doesn't eat the 3-attempt error budget.
+  opts?: { revisionGuidance?: string; skipCritic?: boolean; countAttempt?: boolean }
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; pageUrl: string; error?: string }> {
   const supabase = createServerClient()
 
@@ -804,16 +935,25 @@ export async function generateSinglePage(
   // otherwise overwrite each other. Any non-running prior state can be
   // claimed for (re-)generation. Only the winner of the .neq guard writes the
   // increment, so attempts counts real tries, not races.
-  const { data: locked } = await supabase
-    .from('generated_pages')
+  const lockUpdate: {
+    generation_status: 'running'
+    generation_started_at: string
+    generation_attempts?: number
+  } = {
+    generation_status: 'running',
     // Stamp when generation actually started so the stuck-job sweep judges
     // "stuck" by this, not created_at (which is set at sitemap-confirm and made
     // the sweep falsely error healthy in-flight pages on long jobs).
-    .update({
-      generation_status: 'running',
-      generation_started_at: new Date().toISOString(),
-      generation_attempts: (genPage.generation_attempts ?? 0) + 1,
-    })
+    generation_started_at: new Date().toISOString(),
+  }
+  // A critic-driven quality rewrite (countAttempt:false) is not a failed try, so
+  // it must not consume the transient-error retry budget — leave the counter be.
+  if (opts?.countAttempt !== false) {
+    lockUpdate.generation_attempts = (genPage.generation_attempts ?? 0) + 1
+  }
+  const { data: locked } = await supabase
+    .from('generated_pages')
+    .update(lockUpdate)
     .eq('id', genPage.id)
     .neq('generation_status', 'running')
     .select('id')
@@ -849,6 +989,7 @@ export async function generateSinglePage(
       sessionId: ctx.sessionId,
       sitemapUrls,
       angle: outline.angle,
+      revisionGuidance: opts?.revisionGuidance,
     })
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
@@ -901,27 +1042,32 @@ export async function generateSinglePage(
       return { status: 'error', pageUrl: outline.page_url, error: writeErr.message }
     }
 
-    // Advisory draft-gate critic: grade the finished page in the background so it
-    // never adds latency to generation and never blocks approval/publish. Only
-    // for a clean (non-degraded) page — a broken draft isn't worth grading. The
-    // scheduling itself is wrapped so a hook failure (e.g. no request scope) can
-    // NEVER fall through to the catch below and mistakenly mark this completed
-    // page 'error'.
-    if (!degraded) {
+    // Draft-gate critic: grade the finished page in the background so it never
+    // adds latency to generation and never blocks approval/publish. It scores the
+    // page and, if it's weak, auto-regenerates once with targeted guidance before
+    // flagging whatever remains for a human. Only for a clean (non-degraded) page
+    // — a broken draft isn't worth grading. `skipCritic` is set by the critic's
+    // own regen so it re-scores manually instead of recursing. The scheduling is
+    // wrapped so a hook failure (e.g. no request scope) can NEVER fall through to
+    // the catch below and mistakenly mark this completed page 'error'.
+    if (!degraded && !opts?.skipCritic) {
       try {
         after(() =>
-          reviewDraftQuality({
-            pageId: genPage.id,
-            pageUrl: outline.page_url,
-            pageTitle: outline.page_title,
-            contentMarkdown: result.content,
-            outlineSections: outline.sections,
-            targetKeyword: result.metadata.target_keyword,
-            competitorRefs,
-            schema,
-            sessionId: ctx.sessionId,
-            contentJobId,
-          }).catch(err => console.error('[draft-critic] review failed:', err)),
+          reviewAndMaybeRegen(
+            {
+              pageId: genPage.id,
+              pageUrl: outline.page_url,
+              pageTitle: outline.page_title,
+              contentMarkdown: result.content,
+              outlineSections: outline.sections,
+              targetKeyword: result.metadata.target_keyword,
+              competitorRefs,
+              schema,
+              sessionId: ctx.sessionId,
+              contentJobId,
+            },
+            outline.id,
+          ).catch(err => console.error('[draft-critic] review failed:', err)),
         )
       } catch (hookErr) {
         console.warn('[draft-critic] could not schedule review:', hookErr)
@@ -1024,6 +1170,10 @@ export async function runContentGeneration(
 
   const completeCount = allPages?.filter(p => p.generation_status === 'complete').length ?? 0
   const errorCount = allPages?.filter(p => p.generation_status === 'error').length ?? 0
+  // Never-attempted pages (soft-deadline left them unprocessed) — these justify an
+  // immediate chain; a batch of only retriable errors does not (see backoff note
+  // in shouldChainGeneration).
+  const pendingCount = allPages?.filter(p => p.generation_status === 'pending').length ?? 0
   // An error page is retriable until it hits the attempt cap. "Done" means every
   // page is either complete or a capped-out error — so the phase can finalize.
   const retriableErrorCount = allPages?.filter(
@@ -1038,7 +1188,7 @@ export async function runContentGeneration(
   // Auto-chain when more work remains — including error pages still under the
   // retry cap — and this run made progress or there are retriable errors (see
   // shouldChainGeneration; the attempt cap keeps the loop finite).
-  if (shouldChainGeneration({ allDone, retriableErrorCount, completedThisRun })) {
+  if (shouldChainGeneration({ allDone, retriableErrorCount, completedThisRun, pendingCount })) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
     const cronSecret = process.env.CRON_SECRET
     if (!baseUrl || !cronSecret) {
@@ -1049,32 +1199,10 @@ export async function runContentGeneration(
     }
     const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
 
-    // Mid-progress email at each continuation boundary. A full site can take
-    // several chained invocations; this reassures the admin that work is still
-    // moving rather than leaving them watching a silent dashboard.
-    if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
-      try {
-        const total = allPages?.length ?? 0
-        const firmName = pageCtx.schema.business?.name ?? 'Unknown firm'
-        const { Resend } = await import('resend')
-        const resend = new Resend(process.env.RESEND_API_KEY)
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL,
-          to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-          subject: `[Revaltus] Content generation in progress — ${firmName}`,
-          html: `
-            <h2>Content Generation In Progress</h2>
-            <p><strong>${firmName}</strong></p>
-            <p>${completeCount} of ${total} pages complete${errorCount > 0 ? `, ${errorCount} errors` : ''}. Generation is continuing automatically — no action needed.</p>
-            <p><a href="${appUrl}/admin/content/${sessionId}">View progress →</a></p>
-          `,
-        })
-      } catch (emailErr) {
-        console.warn('[content-gen] Progress email failed:', emailErr)
-      }
-    }
+    // No mid-chain progress email. A full site takes several chained invocations;
+    // one email per boundary spammed the admin's inbox for a job that needs no
+    // action. The live dashboard shows progress, and the single completion email
+    // (below, on allDone) is the only notification worth sending.
 
     try {
       const res = await fetch(`${url}/api/content-jobs/${contentJobId}/generate`, {

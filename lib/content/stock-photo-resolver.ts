@@ -150,16 +150,42 @@ export async function resolveStockPhotos(
 
   const searchTotal = refsToSearch.length
   let searched = 0
-  for (const { ref, filename, subjectQuery } of refsToSearch) {
-    const finalQuery = input.styleSuffix
-      ? `${subjectQuery}, ${input.styleSuffix}`
-      : subjectQuery
 
-    // Pull the top 10 results so we can skip any that are already used
-    // elsewhere in this session. Pexels' rate cost is the same as per_page=1.
-    const candidates = await searchPexelsTop(finalQuery, input.apiKey, 10)
-    searched++
-    await input.onProgress?.({ phase: 'Finding photos', current: searched, total: searchTotal })
+  // Phase 1a (bounded PARALLEL): fetch the candidate lists. These searches are
+  // read-only — the photo SELECTION that mutates usedPexelsIds runs sequentially
+  // in Phase 1b — so parallelizing the network round-trips cuts wall-time on
+  // image-heavy sites WITHOUT changing which photo each page gets. Concurrency
+  // mirrors the download phase and stays well inside Pexels' rate limit. Each
+  // search is isolated: a failure yields [] for that one ref (best-effort per
+  // image) instead of aborting the whole run, as a thrown error previously would.
+  const SEARCH_CONCURRENCY = 8
+  const searchResults: Array<{ finalQuery: string; candidates: PexelsPhoto[] }> =
+    new Array(refsToSearch.length)
+  for (let i = 0; i < refsToSearch.length; i += SEARCH_CONCURRENCY) {
+    const slice = refsToSearch.slice(i, i + SEARCH_CONCURRENCY)
+    await Promise.all(
+      slice.map(async ({ subjectQuery }, j) => {
+        const finalQuery = input.styleSuffix ? `${subjectQuery}, ${input.styleSuffix}` : subjectQuery
+        // Pull the top 10 so selection can skip photos already used this session.
+        let candidates: PexelsPhoto[] = []
+        try {
+          candidates = await searchPexelsTop(finalQuery, input.apiKey, 10)
+        } catch (err) {
+          console.warn(`[stock-photo] Pexels search failed for query="${finalQuery}": ${err instanceof Error ? err.message : err}`)
+        }
+        searchResults[i + j] = { finalQuery, candidates }
+        searched++
+        await input.onProgress?.({ phase: 'Finding photos', current: searched, total: searchTotal })
+      })
+    )
+  }
+
+  // Phase 1b (SEQUENTIAL selection — preserves dedup determinism): pick a photo per
+  // ref in original order, mutating usedPexelsIds so no two pages claim the same
+  // photo and rebuilds stay identical.
+  for (let idx = 0; idx < refsToSearch.length; idx++) {
+    const { ref, filename, subjectQuery } = refsToSearch[idx]
+    const { finalQuery, candidates } = searchResults[idx]
     if (candidates.length === 0) {
       console.warn(`[stock-photo] No Pexels result for ${filename} (query="${finalQuery}", source=${ref.source ?? 'hero'})`)
       continue

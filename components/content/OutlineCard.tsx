@@ -41,12 +41,21 @@ export default function OutlineCard({
   outline,
   contentJobId,
   onUpdate,
+  expanded,
+  onToggleExpand,
+  onApproved,
+  hasNextPending = false,
 }: {
   outline: Outline
   contentJobId: string
   onUpdate: (updated: Outline) => void
+  expanded: boolean
+  onToggleExpand: () => void
+  // Called after a successful approve. `advance` = the operator asked to jump to
+  // the next pending outline; otherwise the parent just collapses this card.
+  onApproved: (id: string, advance: boolean) => void
+  hasNextPending?: boolean
 }) {
-  const [expanded, setExpanded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
 
@@ -114,18 +123,33 @@ export default function OutlineCard({
     onUpdate({ ...outline, cta: next as unknown as Json })
   }
 
-  const approve = async () => {
+  const approve = async (advance = false) => {
     setSaving(true)
     try {
+      // Save-then-approve in one PATCH: include the current (possibly edited but
+      // not-yet-saved) fields so the quick ✓ can never silently discard an in-flight
+      // edit. Unchanged fields are a no-op server-side; an actual edit is persisted.
+      // `sections` is omitted when it isn't a clean array (rare corrupted data) so
+      // approval still succeeds — the server rejects a non-array sections with 400.
+      const payload: Record<string, unknown> = {
+        admin_approved: true,
+        h1: outline.h1,
+        admin_notes: outline.admin_notes,
+        angle: outline.angle,
+        cta: outline.cta,
+      }
+      if (Array.isArray(outline.sections)) payload.sections = outline.sections
       const res = await fetch(`/api/content-jobs/${contentJobId}/outlines/${outline.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_approved: true }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         const data = await res.json()
         onUpdate(data.outline)
-        setExpanded(false) // collapse the approved outline to declutter the list
+        // Parent owns expansion: collapse this card, or advance to the next
+        // pending outline so the operator can review the list without hunting.
+        onApproved(outline.id, advance)
       }
     } finally {
       setSaving(false)
@@ -166,12 +190,12 @@ export default function OutlineCard({
 
   return (
     <div className={`border rounded-lg overflow-hidden ${outline.admin_approved ? 'border-success/30' : 'border-border-default'}`}>
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-subtle transition-colors"
-      >
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-subtle transition-colors">
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="flex items-center gap-3 min-w-0 flex-1 text-left"
+        >
           <svg
             aria-hidden="true"
             className={`w-4 h-4 text-text-muted transition-transform flex-shrink-0 ${expanded ? 'rotate-90' : ''}`}
@@ -183,11 +207,27 @@ export default function OutlineCard({
             <div className="text-sm font-heading font-semibold text-text-primary truncate">{outline.page_title}</div>
             <div className="text-xs font-mono text-text-muted">{outline.page_url}</div>
           </div>
+        </button>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+          {/* Inline approve so a ready outline can be signed off without expanding. */}
+          {outline.h1 && !outline.admin_approved && (
+            <button
+              type="button"
+              onClick={() => approve(false)}
+              disabled={saving}
+              className="inline-flex items-center gap-1 bg-success text-white font-heading font-semibold text-xs px-3 py-1 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg aria-hidden="true" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              {saving ? 'Saving…' : 'Approve'}
+            </button>
+          )}
+          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold ${statusBadge.cls}`}>
+            {statusBadge.label}
+          </span>
         </div>
-        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-heading font-semibold flex-shrink-0 ml-2 ${statusBadge.cls}`}>
-          {statusBadge.label}
-        </span>
-      </button>
+      </div>
 
       {expanded && outline.h1 && (
         <div className="px-4 pb-4 pt-2 border-t border-border-default space-y-3">
@@ -314,11 +354,20 @@ export default function OutlineCard({
           <div className="flex items-center gap-2 pt-1">
             {!outline.admin_approved && (
               <button
-                onClick={approve}
+                onClick={() => approve(false)}
                 disabled={saving}
                 className="bg-success text-white font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? 'Saving...' : 'Approve'}
+              </button>
+            )}
+            {!outline.admin_approved && hasNextPending && (
+              <button
+                onClick={() => approve(true)}
+                disabled={saving}
+                className="bg-brand-navy text-white font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all hover:bg-brand-cyan-dark disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : 'Approve & next →'}
               </button>
             )}
             <button

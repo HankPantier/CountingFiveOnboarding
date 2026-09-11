@@ -21,19 +21,27 @@ describe('shouldChainGeneration', () => {
     ).toBe(true)
   })
 
-  it('chains to retry a lone transient error while under the attempt cap', () => {
-    // 56 complete, 1 error still retriable → chain one more invocation to retry.
+  it('chains to retry a lone transient error while progress was made', () => {
+    // 56 complete, 1 error still retriable → progress this run, so chain and retry.
     expect(
       shouldChainGeneration({ allDone: false, retriableErrorCount: 1, completedThisRun: 56 })
     ).toBe(true)
   })
 
-  it('chains to retry a retriable error even when this run made no new completions', () => {
-    // A retry invocation that only re-ran the error page; the attempt cap (not a
-    // progress gate) is what bounds this, so it may retry again.
+  it('chains immediately when never-attempted (pending) pages remain', () => {
+    // Soft-deadline left pending work even though this batch completed nothing new.
     expect(
-      shouldChainGeneration({ allDone: false, retriableErrorCount: 1, completedThisRun: 0 })
+      shouldChainGeneration({ allDone: false, retriableErrorCount: 0, completedThisRun: 0, pendingCount: 4 })
     ).toBe(true)
+  })
+
+  it('backs off (defers to cron) when only retriable errors remain and no progress', () => {
+    // A retry invocation that only re-ran error pages and they failed again — the
+    // signature of a sustained provider outage. Don't hammer it; the 5-min cron
+    // sweep resumes it, giving the provider time to recover.
+    expect(
+      shouldChainGeneration({ allDone: false, retriableErrorCount: 1, completedThisRun: 0, pendingCount: 0 })
+    ).toBe(false)
   })
 
   it('finalizes once all remaining errors are capped out (allDone)', () => {
