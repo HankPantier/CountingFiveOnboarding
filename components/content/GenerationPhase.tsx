@@ -18,7 +18,7 @@ type PageStatus = {
   clientApproved?: boolean
   wordCountActual?: number | null
   wordCountTarget?: number | null
-  critic?: { overall: number; hasFlags: boolean } | null
+  critic?: { overall: number; hasFlags: boolean; needsReview?: boolean; regenerated?: boolean } | null
 }
 
 // Depth in the sitemap tree, capped to guard against accidental cycles.
@@ -80,23 +80,28 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
   }
 }
 
-// Advisory quality-critic chip. Green ≥8, amber 6-7, red <6; a flag marker when
-// the critic surfaced unsupported specifics to verify. Advisory only — never
-// gates approval.
+// Quality-critic chip. Green ≥8, amber 6-7, red <6; a flag marker when the critic
+// surfaced unsupported specifics to verify. When `needsReview` is set the page
+// stayed weak after the critic's one auto-rewrite, so it's forced red and labelled
+// "Review" to pull the operator's eye. Advisory only — never gates approval.
 function criticChip(
-  critic: { overall: number; hasFlags: boolean } | null | undefined,
+  critic: { overall: number; hasFlags: boolean; needsReview?: boolean; regenerated?: boolean } | null | undefined,
 ): { label: string; cls: string; title: string } | null {
   if (!critic) return null
-  const cls =
-    critic.overall >= 8
+  const cls = critic.needsReview
+    ? 'text-error bg-error/10'
+    : critic.overall >= 8
       ? 'text-success bg-success/10'
       : critic.overall >= 6
         ? 'text-warning-strong bg-warning/10'
         : 'text-error bg-error/10'
+  const regenNote = critic.regenerated ? ' Auto-rewritten once by the critic.' : ''
   return {
-    label: `Q ${critic.overall}/10${critic.hasFlags ? ' ⚑' : ''}`,
+    label: `${critic.needsReview ? 'Review ' : 'Q '}${critic.overall}/10${critic.hasFlags ? ' ⚑' : ''}`,
     cls,
-    title: `Advisory quality review: ${critic.overall}/10 overall.${critic.hasFlags ? ' Flagged unsupported claim(s) to verify — open View for detail.' : ''} This is advisory and does not gate approval.`,
+    title: critic.needsReview
+      ? `This page still looks weak (${critic.overall}/10${critic.hasFlags ? ', with unsupported claim(s)' : ''}).${regenNote} Open View and proof it closely before approving. Advisory — does not gate approval.`
+      : `Advisory quality review: ${critic.overall}/10 overall.${critic.hasFlags ? ' Flagged unsupported claim(s) to verify — open View for detail.' : ''}${regenNote} This is advisory and does not gate approval.`,
   }
 }
 
@@ -311,6 +316,13 @@ export default function GenerationPhase({
 
   const runningPages = status.pages.filter(p => p.status === 'running')
 
+  // Pages the critic still judged weak after its one auto-rewrite AND that the
+  // operator hasn't approved yet — the short list worth proofing closely, so the
+  // operator scrutinizes these instead of re-reading every page.
+  const needsReviewPages = status.pages.filter(
+    p => p.status === 'complete' && !p.approved && p.critic?.needsReview,
+  )
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -370,6 +382,33 @@ export default function GenerationPhase({
           </p>
         )}
       </div>
+
+      {needsReviewPages.length > 0 && (
+        <div className="border border-error/30 bg-error/5 rounded-lg p-3 space-y-1.5">
+          <span className="text-xs font-heading font-semibold text-error">
+            {needsReviewPages.length} page{needsReviewPages.length !== 1 ? 's need' : ' needs'} a closer look
+          </span>
+          <p className="text-xs font-body text-text-muted">
+            The quality critic auto-rewrote {needsReviewPages.length !== 1 ? 'these' : 'this'} once and still flagged {needsReviewPages.length !== 1 ? 'them' : 'it'}. Proof {needsReviewPages.length !== 1 ? 'these' : 'this'} before approving — the rest scored clean.
+          </p>
+          {needsReviewPages.map(page => {
+            const q = criticChip(page.critic)
+            return (
+              <div key={page.id} className="flex items-center gap-2 text-xs font-body border-t border-error/15 pt-1.5 first:border-t-0 first:pt-0">
+                <span className="font-semibold text-text-primary flex-1 truncate" title={page.title}>{page.title}</span>
+                {q && <span className={`font-mono px-1.5 py-0.5 rounded ${q.cls}`} title={q.title}>{q.label}</span>}
+                <button
+                  type="button"
+                  onClick={() => setPreviewPageId(page.id)}
+                  className="text-brand-cyan hover:text-brand-navy font-heading font-semibold transition-colors flex-shrink-0"
+                >
+                  View
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {staleCount > 0 && (
         <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-2">

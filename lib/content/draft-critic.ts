@@ -1,5 +1,3 @@
-import { createServerClient } from '@/lib/supabase/server'
-import { asJson } from '@/lib/supabase/json-typed'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { truncateToTokenBudget } from './truncate-to-token-budget'
@@ -21,15 +19,15 @@ export interface DraftCriticInput {
   contentJobId: string
 }
 
-// Advisory draft-gate critic (run via Next.js `after()` once a page completes).
-// Reads the finished page and grades it against the outline's promise, the
-// firm's voice/facts, and the competitor reference, then writes the score to
-// generated_pages.critic_review for the admin to see during proofing. It NEVER
-// blocks, regenerates, or mutates the content — purely informational. Fail-soft:
-// any error (generation, parse, DB) is swallowed so it can't affect the page.
-export async function reviewDraftQuality(input: DraftCriticInput): Promise<void> {
+// Draft-gate critic scorer (run via Next.js `after()` once a page completes).
+// Grades the finished page against the outline's promise, the firm's voice/facts,
+// and the competitor reference, and RETURNS the verdict (with critic_model +
+// scored_at stamped). It does not touch the DB or the content — persistence and
+// any auto-remediation are the caller's job (see reviewAndMaybeRegen in
+// content-generator). Fail-soft: any error (generation, parse) resolves to null.
+export async function scoreDraft(input: DraftCriticInput): Promise<CriticReview | null> {
   const body = input.contentMarkdown?.trim()
-  if (!body) return
+  if (!body) return null
 
   const brandVoice = buildBrandVoiceBlock(input.schema)
   const firmContext = buildFirmContext(input.schema)
@@ -82,18 +80,11 @@ Return ONLY JSON:
     { model: PUBLISHED_CONTENT_MODEL, providerOptions: GENERATION_PROVIDER_OPTIONS },
   )
 
-  if (!parsed) return
+  if (!parsed) return null
 
-  const review: CriticReview = {
+  return {
     ...parsed,
     critic_model: PUBLISHED_CONTENT_MODEL,
     scored_at: new Date().toISOString(),
   }
-
-  const supabase = createServerClient()
-  const { error } = await supabase
-    .from('generated_pages')
-    .update({ critic_review: asJson(review) })
-    .eq('id', input.pageId)
-  if (error) console.warn('[draft-critic] write failed:', error.message)
 }

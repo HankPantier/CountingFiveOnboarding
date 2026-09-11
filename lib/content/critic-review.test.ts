@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { parseCritic, summarizeCritic, criticOverall, clampScore } from './critic-review'
+import {
+  parseCritic,
+  summarizeCritic,
+  criticOverall,
+  clampScore,
+  criticFailsThreshold,
+  decideCriticAction,
+  buildCriticGuidance,
+  readCriticRegenAttempts,
+  MAX_CRITIC_REGEN,
+} from './critic-review'
 
 describe('parseCritic', () => {
   const valid = {
@@ -82,19 +92,114 @@ describe('summarizeCritic', () => {
       critic_model: 'claude-sonnet-5',
       scored_at: '2026-08-31T00:00:00.000Z',
     })
-    expect(s).toEqual({ overall: 8, hasFlags: true })
+    // claims present → hasFlags + needsReview (via threshold fallback)
+    expect(s).toEqual({ overall: 8, hasFlags: true, needsReview: true, regenerated: false })
   })
 
-  it('reports no flags when unsupported_claims is empty', () => {
+  it('reports no flags and no review needed for a clean high-scoring page', () => {
     expect(summarizeCritic({
-      evidence_specificity: 5, information_gain: 5, brand_fidelity: 5, promise_fulfillment: 5,
+      evidence_specificity: 6, information_gain: 6, brand_fidelity: 6, promise_fulfillment: 6,
       unsupported_claims: [], notes: '',
-    })).toEqual({ overall: 5, hasFlags: false })
+    })).toEqual({ overall: 6, hasFlags: false, needsReview: false, regenerated: false })
+  })
+
+  it('prefers the persisted needs_human_review flag over the live threshold', () => {
+    // Scores all pass the threshold, but the row was explicitly flagged after the
+    // auto-regen budget was spent — the persisted flag wins.
+    const s = summarizeCritic({
+      evidence_specificity: 8, information_gain: 8, brand_fidelity: 8, promise_fulfillment: 8,
+      unsupported_claims: [], notes: '', needs_human_review: true, regenerated: true,
+      critic_regen_attempts: 1,
+    })
+    expect(s).toEqual({ overall: 8, hasFlags: false, needsReview: true, regenerated: true })
   })
 
   it('returns null for a missing/malformed stored value', () => {
     expect(summarizeCritic(null)).toBeNull()
     expect(summarizeCritic({})).toBeNull()
+  })
+})
+
+describe('criticFailsThreshold', () => {
+  const strong = { evidence_specificity: 8, information_gain: 7, brand_fidelity: 9, promise_fulfillment: 8, unsupported_claims: [] as string[] }
+
+  it('passes a strong page with no unsupported claims', () => {
+    expect(criticFailsThreshold(strong)).toBe(false)
+  })
+
+  it('fails when any unsupported claim is present, even with high scores', () => {
+    expect(criticFailsThreshold({ ...strong, unsupported_claims: ['Rated #1 in the state'] })).toBe(true)
+  })
+
+  it('tolerates a single weak dimension on an otherwise-strong page (no costly rewrite)', () => {
+    expect(criticFailsThreshold({ ...strong, information_gain: 3 })).toBe(false)
+  })
+
+  it('fails when two or more dimensions are weak', () => {
+    expect(criticFailsThreshold({ ...strong, information_gain: 4, brand_fidelity: 4 })).toBe(true)
+  })
+
+  it('fails when the overall score is mediocre (all 5s → overall 5 < 6)', () => {
+    expect(criticFailsThreshold({
+      evidence_specificity: 5, information_gain: 5, brand_fidelity: 5, promise_fulfillment: 5, unsupported_claims: [],
+    })).toBe(true)
+  })
+
+  it('passes a solid page at the overall boundary (all 6s → overall 6)', () => {
+    expect(criticFailsThreshold({
+      evidence_specificity: 6, information_gain: 6, brand_fidelity: 6, promise_fulfillment: 6, unsupported_claims: [],
+    })).toBe(false)
+  })
+})
+
+describe('decideCriticAction', () => {
+  const strong = { evidence_specificity: 8, information_gain: 7, brand_fidelity: 9, promise_fulfillment: 8, unsupported_claims: [] as string[] }
+  const weak = { evidence_specificity: 4, information_gain: 4, brand_fidelity: 5, promise_fulfillment: 5, unsupported_claims: [] as string[] }
+
+  it('accepts a solid page regardless of prior attempts', () => {
+    expect(decideCriticAction(strong, 0)).toBe('accept')
+    expect(decideCriticAction(strong, MAX_CRITIC_REGEN)).toBe('accept')
+  })
+
+  it('regenerates a weak page that still has budget', () => {
+    expect(decideCriticAction(weak, 0)).toBe('regenerate')
+  })
+
+  it('flags a weak page once the regen budget is spent', () => {
+    expect(decideCriticAction(weak, MAX_CRITIC_REGEN)).toBe('flag')
+    expect(decideCriticAction(weak, MAX_CRITIC_REGEN + 3)).toBe('flag')
+  })
+})
+
+describe('buildCriticGuidance', () => {
+  it('lists unsupported claims and editor notes as fix-these guidance', () => {
+    const g = buildCriticGuidance({ unsupported_claims: ['500+ clients', '#1 rated'], notes: 'Thin on the tax section.' })
+    expect(g).toContain('500+ clients')
+    expect(g).toContain('#1 rated')
+    expect(g).toContain('Thin on the tax section.')
+  })
+
+  it('is empty when there is nothing to fix', () => {
+    expect(buildCriticGuidance({ unsupported_claims: [], notes: '' })).toBe('')
+  })
+
+  it('includes only notes when there are no claims', () => {
+    const g = buildCriticGuidance({ unsupported_claims: [], notes: 'Tighten the intro.' })
+    expect(g).toContain('Tighten the intro.')
+    expect(g).not.toContain('unsupported specifics')
+  })
+})
+
+describe('readCriticRegenAttempts', () => {
+  it('reads a persisted attempt count', () => {
+    expect(readCriticRegenAttempts({ critic_regen_attempts: 1 })).toBe(1)
+  })
+  it('defaults to 0 for legacy/absent/garbled values', () => {
+    expect(readCriticRegenAttempts(null)).toBe(0)
+    expect(readCriticRegenAttempts({})).toBe(0)
+    expect(readCriticRegenAttempts({ critic_regen_attempts: 'two' })).toBe(0)
+    expect(readCriticRegenAttempts({ critic_regen_attempts: -4 })).toBe(0)
+    expect(readCriticRegenAttempts('nope')).toBe(0)
   })
 })
 

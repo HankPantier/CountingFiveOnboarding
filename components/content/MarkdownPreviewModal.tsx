@@ -469,6 +469,12 @@ function CriticPanel({ review }: { review: unknown }) {
   const parsed = parseCritic(review)
   if (!parsed) return null
 
+  // parseCritic strips bookkeeping keys, so read the auto-remediation state off
+  // the raw stored review directly.
+  const raw = review && typeof review === 'object' ? (review as Record<string, unknown>) : {}
+  const regenerated = raw.regenerated === true
+  const needsReview = raw.needs_human_review === true
+
   const overall = criticOverall(parsed)
   const tone =
     overall >= 8 ? 'text-success bg-success/10 border-success/30'
@@ -496,6 +502,9 @@ function CriticPanel({ review }: { review: unknown }) {
           <span className="text-xs font-heading font-semibold text-text-secondary uppercase tracking-wide">
             Quality review (advisory)
           </span>
+          {needsReview && (
+            <span className="text-xs font-mono px-1.5 py-0.5 rounded text-error bg-error/10">Needs review</span>
+          )}
         </span>
         <span className="text-text-muted text-xs">{open ? '▲' : '▾'}</span>
       </button>
@@ -510,6 +519,15 @@ function CriticPanel({ review }: { review: unknown }) {
               </div>
             ))}
           </div>
+
+          {regenerated && (
+            <p className="text-text-secondary text-[11px] border-t border-border-default pt-2">
+              <span className="font-heading font-semibold">Auto-rewritten once by the critic</span>
+              {needsReview
+                ? ' — it still looks weak, so proof this page closely before approving.'
+                : ' to resolve the issues it flagged.'}
+            </p>
+          )}
 
           {parsed.notes && (
             <p className="text-text-secondary text-xs italic border-t border-border-default pt-2">{parsed.notes}</p>
