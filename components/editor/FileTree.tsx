@@ -133,6 +133,7 @@ export default function FileTree({
   showConfiguration = true,
   navContent,
   navSha,
+  navLoading = false,
   navEditable = false,
   navBusy = false,
   onSelect,
@@ -157,6 +158,9 @@ export default function FileTree({
   // navigation inline; the sha re-seeds the tree after each committed change.
   navContent?: string | null
   navSha?: string | null
+  // True while nav.json is still being fetched — lets the Pages sidebar hold the
+  // "couldn't be read" warning until we actually know it's missing/malformed.
+  navLoading?: boolean
   navEditable?: boolean
   navBusy?: boolean
   onSelect: (path: string) => void
@@ -382,6 +386,7 @@ export default function FileTree({
             key={`sidebarnav-${navSha ?? 'none'}`}
             pageFiles={pages}
             navContent={navContent ?? null}
+            navLoading={navLoading}
             selectedPath={selectedPath}
             dirtyPaths={dirtyPaths}
             editCounts={editCounts}

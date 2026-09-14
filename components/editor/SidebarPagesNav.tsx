@@ -205,6 +205,7 @@ function PlainNavRow({ r, children }: { r: RowInner; children?: ReactNode }) {
 export default function SidebarPagesNav({
   pageFiles,
   navContent,
+  navLoading = false,
   selectedPath,
   dirtyPaths,
   editCounts,
@@ -214,6 +215,7 @@ export default function SidebarPagesNav({
 }: {
   pageFiles: PageFile[]
   navContent: string | null
+  navLoading?: boolean
   selectedPath: string | null
   dirtyPaths: Set<string>
   editCounts?: Record<string, number>
@@ -278,9 +280,11 @@ export default function SidebarPagesNav({
     // operator can still open pages; structural editing needs a valid nav file.
     return (
       <div className="mb-4 pl-[18px]">
-        <p className="px-2 py-1 text-[11px] font-body text-warning-strong">
-          Navigation file couldn&apos;t be read — edit it in Configuration → Navigation.
-        </p>
+        {!navLoading && (
+          <p className="px-2 py-1 text-[11px] font-body text-warning-strong">
+            Navigation file couldn&apos;t be read — edit it in Configuration → Navigation.
+          </p>
+        )}
         <ul>
           {pageFiles.map((f) => {
             const segs = pageSegments(f.path)

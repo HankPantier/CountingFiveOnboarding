@@ -233,6 +233,7 @@ export default function EditorShell({
   // tree's nav.json sha diverges from the cached copy (external change). Skipped
   // for Site Owners (they use the plain page list). No selectedPath change.
   const navFetchRef = useRef<string | null>(null)
+  const [navFetchFailedSha, setNavFetchFailedSha] = useState<string | null>(null)
   useEffect(() => {
     if (loadingTree || viewerIsOwner) return
     const navEntry = tree.find((e) => e.path === NAV_PATH)
@@ -244,14 +245,25 @@ export default function EditorShell({
     void (async () => {
       try {
         const res = await fetch(`/api/edit/${sessionId}/file?path=${encodeURIComponent(NAV_PATH)}`)
-        if (!res.ok) return
+        if (!res.ok) {
+          setNavFetchFailedSha(navEntry.sha)
+          return
+        }
         const blob = (await res.json()) as { content: string; sha: string }
         setLoaded((prev) => new Map(prev).set(NAV_PATH, { content: blob.content, sha: blob.sha }))
+        setNavFetchFailedSha(null)
       } catch {
         /* non-fatal — the sidebar falls back to a plain page list */
+        setNavFetchFailedSha(navEntry.sha)
       }
     })()
   }, [loadingTree, tree, loaded, viewerIsOwner, sessionId])
+
+  // nav.json is fetched async after the tree loads; distinguish "still loading"
+  // from "missing/malformed" so the sidebar doesn't flash a read-error warning
+  // during the normal loading window.
+  const navSha = tree.find((e) => e.path === NAV_PATH)?.sha ?? null
+  const navLoading = navSha !== null && !loaded.has(NAV_PATH) && navFetchFailedSha !== navSha
 
   // Force-reload a file from the server, replacing the cached content + sha and
   // clearing any dirty state — used after the AI agent commits a new version.
@@ -1176,7 +1188,8 @@ export default function EditorShell({
             }
             showConfiguration={!viewerIsOwner}
             navContent={loaded.get(NAV_PATH)?.content ?? null}
-            navSha={tree.find((e) => e.path === NAV_PATH)?.sha ?? null}
+            navSha={navSha}
+            navLoading={navLoading}
             navEditable={!viewerIsOwner}
             navBusy={pageActioning}
             onSelect={(p) => void select(p)}
