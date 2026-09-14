@@ -10,6 +10,7 @@ import { GBP_URL_RE } from '@/lib/audit/social-hosts'
 import { computePhase4Gaps } from '@/lib/mbp-parser'
 import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-plan'
 import { proposeSitemap } from '@/lib/content/sitemap-proposer'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from '@/lib/content/no-go-phrases'
 import { enrichSchemaFromIntelligence } from './enrich-from-intelligence'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
@@ -343,8 +344,9 @@ export async function draftSessionFromAudit(
   )
 
   const { pages, chars } = buildCorpus(result)
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
   const model = await generateMbpJson<DraftModel>(
-    buildPrompt(pages, signals),
+    `${buildPrompt(pages, signals)}${noGoBlock ? `\n\n${noGoBlock}` : ''}`,
     validateDraftModel,
     // Adaptive thinking spends output tokens on reasoning before the large
     // draft-schema JSON answer; 16000 leaves room so it doesn't truncate under
