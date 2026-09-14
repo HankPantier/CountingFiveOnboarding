@@ -1,3 +1,5 @@
+import { findNoGoHits } from './no-go-match'
+
 const BANNED_PHRASES = [
   "in today's",
   'navigate',
@@ -79,12 +81,22 @@ function splitSentences(content: string): string[] {
   return out
 }
 
-export function validateContent(content: string): { passed: boolean; flagged: string[] } {
+export function validateContent(
+  content: string,
+  // Admin-curated global no-go phrases (lib/content/no-go-phrases.ts). Matched
+  // case-insensitively and whitespace-tolerant, additive to the built-in
+  // anti-slop BANNED_PHRASES. A hit here feeds the same flagged→retry path.
+  extraBannedPhrases: string[] = []
+): { passed: boolean; flagged: string[] } {
   const lower = content.toLowerCase()
   const flagged: string[] = []
 
   for (const phrase of BANNED_PHRASES) {
     if (lower.includes(phrase)) flagged.push(phrase)
+  }
+
+  for (const hit of findNoGoHits(content, extraBannedPhrases)) {
+    flagged.push(`No-go phrase: "${hit}"`)
   }
 
   if (SENTENCE_START_PATTERN.test(content)) {

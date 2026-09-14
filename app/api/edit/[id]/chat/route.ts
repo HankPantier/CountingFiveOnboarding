@@ -11,6 +11,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
+import { loadNoGoPhrases, buildNoGoPromptBlock, findNoGoHits } from '@/lib/content/no-go-phrases'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
@@ -122,6 +123,12 @@ export async function POST(
   const schema = rawSchema as SessionSchema
   const firmName = schema.business?.name ?? 'the firm'
 
+  // Global admin-curated no-go phrases: injected into the prompt so the model
+  // avoids them, and checked after each committed edit so we warn (never
+  // silently delete) if one gets reintroduced.
+  const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
+  const noGoBlock = buildNoGoPromptBlock(noGoPhrases)
+
   // This admin tool does NOT take the client `processing` lock (that belongs to
   // the onboarding chat); sharing it let a client conversation block admin
   // edits. useChat serializes per user.
@@ -129,7 +136,7 @@ export async function POST(
 
 ${buildBrandVoiceBlock(schema)}
 
-${buildFirmContext(schema)}
+${buildFirmContext(schema)}${noGoBlock ? `\n\n${noGoBlock}` : ''}
 
 THE FILE BEING EDITED (${path}):
 """
@@ -165,6 +172,7 @@ RULES
 - Make ONLY what the admin asks for. Never invent facts (credentials, numbers, named people, dates) not supported by the firm profile above or the existing file.
 - After a successful edit, briefly tell the admin what changed. If a tool returns an error, tell the admin plainly and try a corrected edit — do not claim success when a tool failed.
 - When remove_text returns, report its numbers honestly: state per-phrase how many you removed (\`applied\`), and note any phrase with removed 0 as "not found on this page". If \`residual\` is non-empty, that phrase is STILL on the page — say so and fix it, don't claim it's gone. If \`firmWide\` is non-empty, the phrase also lives in brand.json or the firm profile and will reappear on the next rebuild — tell the admin, and offer to flag the firm profile (MBP) so it's removed everywhere. Do NOT claim a phrase is fully removed when residual or firmWide say otherwise.
+- NO-GO PHRASES: the firm keeps a hard-banned phrase list (shown above if any). Never write one into the page. If a tool result includes \`noGoWarning\`, your edit left a banned phrase on the page — tell the admin plainly which phrase and rewrite it out; do not claim the edit is clean while a no-go phrase remains.
 
 IMPROVING THE MBP
 Watch for anything durable the admin states that should apply to ALL of this firm's content going forward — not just this file. Two kinds count:
@@ -204,7 +212,8 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             } catch (err) {
               return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
             }
-            return { success: true, replacements: res.count }
+            const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
+            return { success: true, replacements: res.count, ...(noGoWarning.length ? { noGoWarning } : {}) }
           },
         },
         set_faq: {
@@ -233,7 +242,8 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             } catch (err) {
               return { error: err instanceof Error ? err.message : 'Failed to save the FAQ.' }
             }
-            return { success: true, count: faqItems.length }
+            const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
+            return { success: true, count: faqItems.length, ...(noGoWarning.length ? { noGoWarning } : {}) }
           },
         },
         remove_text: {

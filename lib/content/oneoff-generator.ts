@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { OFF_BRAND_MARKER } from './brand-fit'
@@ -122,6 +123,7 @@ export async function generateOneOff(
     if (!job?.github_repo || !session) return await fail('Job or session not found')
 
     const schema = (session.schema_data ?? {}) as SessionSchema
+    const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
     const offBrandApproved = row.prompt.startsWith(OFF_BRAND_MARKER)
     const prompt = offBrandApproved
       ? row.prompt.slice(OFF_BRAND_MARKER.length).trim()
@@ -183,7 +185,7 @@ Produce EXACTLY 3 distinct options answering the request. Each must be fully usa
 Return ONLY a JSON array:
 [{ "label": "2-4 word angle descriptor", "text": "the option" }]
 
-${ANTI_SLOP_RULES}`
+${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
     // One model call + parse. Returns the validated options, or the raw text +
     // finishReason so the caller can retry with a larger budget. 3 full copy

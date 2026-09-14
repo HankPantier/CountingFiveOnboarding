@@ -1,6 +1,7 @@
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { activeNiches } from './active-niches'
 import { headCheckUrls, type ExternalLink } from './link-checker'
 import { checkTokenBudget } from './truncate-to-token-budget'
@@ -211,6 +212,8 @@ Extrapolate it into ${count} distinct, fully-formed ${typeSpec.articleNoun} idea
         }`
       : ''
 
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
+
   const prompt = `You are a content strategist for ${firmName}, a CPA firm in ${location}. ${task}${
     typeGuidance ? `\n\n${typeGuidance}` : ''
   }
@@ -243,7 +246,7 @@ Score honestly — spread scores realistically, do not cluster everything at 80+
 EXTERNAL SOURCES: for each idea, suggest 1-3 authoritative URLs that would validate its claims. ONLY use domains you are confident exist: irs.gov, sba.gov, state department-of-revenue sites, aicpa-cima.com, bls.gov, federalreserve.gov, established financial publications. Use real, stable URLs (section landing pages over deep links).
 
 Return ONLY a JSON array of ${count} objects:
-[{ "title": "...", "angle": "one-line hook", "target_keyword": "...", "secondary_keywords": ["...", "..."], "rationale": "why this fits the firm and audience", "suggested_external_links": [{"url": "...", "title": "..."}], "score": 0-100, "score_breakdown": {"stickiness": 0-25, "sharability": 0-25, "localRelevance": 0-25, "aioAnswerability": 0-25} }]`
+[{ "title": "...", "angle": "one-line hook", "target_keyword": "...", "secondary_keywords": ["...", "..."], "rationale": "why this fits the firm and audience", "suggested_external_links": [{"url": "...", "title": "..."}], "score": 0-100, "score_breakdown": {"stickiness": 0-25, "sharability": 0-25, "localRelevance": 0-25, "aioAnswerability": 0-25} }]${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   const parsed = await generateJson({
     model: anthropic(IDEA_MODEL),

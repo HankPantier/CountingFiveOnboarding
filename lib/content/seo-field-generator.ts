@@ -2,6 +2,7 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { extractJson } from './extract-json'
 import type { SessionSchema } from '@/types/session-schema'
@@ -111,6 +112,7 @@ export async function generateSeoField(args: {
 }): Promise<{ result: SeoFieldResult; inputTokens: number; outputTokens: number }> {
   const { field, pageTitle, pageUrl, pageContent, schema, sitemapUrls } = args
   const firmName = schema.business?.name ?? 'the firm'
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
 
   const prompt = `You are writing structured SEO metadata for ${firmName}, a CPA firm.
 
@@ -128,7 +130,7 @@ TASK: ${fieldInstruction(field, sitemapUrls, pageUrl)}
 
 Ground everything in the page content and firm profile above. NEVER invent facts — credentials, numbers, named people, or dates not supported by the profile or the page content. Output JSON only, no commentary.
 
-${ANTI_SLOP_RULES}`
+${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   const { text, usage } = await generateText({
     model: anthropic(MODEL),

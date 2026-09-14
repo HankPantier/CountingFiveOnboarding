@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { extractJson } from './extract-json'
@@ -37,6 +38,7 @@ type SocialInput = {
 // callers).
 export async function generateSocialJson(input: SocialInput): Promise<SocialJson | null> {
   const loc = firmLocation(input.schema)
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
   const prompt = `You are writing social media promotion copy for a blog post by ${input.schema.business?.name ?? 'a CPA firm'}${loc ? ` (${loc})` : ''}.
 
 ${buildBrandVoiceBlock(input.schema)}
@@ -61,7 +63,7 @@ Return ONLY a JSON object:
   "facebook": "2-4 short sentences, warm and conversational but on-brand. Lead with a concrete hook from the post, end with a clear CTA and the post URL."
 }
 
-${ANTI_SLOP_RULES}`
+${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // One model call + parse. Returns the validated SocialJson, or the raw text +
   // finishReason so the caller can retry with a larger budget. The three

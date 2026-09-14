@@ -17,6 +17,30 @@ describe('validateContent — existing rules still pass clean copy', () => {
   })
 })
 
+describe('validateContent — global no-go phrases', () => {
+  it('flags a no-go phrase (case-insensitive) when supplied', () => {
+    const { passed, flagged } = validateContent(
+      `${CLEAN}\n\nStop bringing us Receipts In A Shoebox.`,
+      ['receipts in a shoebox']
+    )
+    expect(passed).toBe(false)
+    expect(flagged.join(' ')).toMatch(/no-go phrase/i)
+    expect(flagged.join(' ')).toMatch(/receipts in a shoebox/i)
+  })
+
+  it('does not flag clean copy when no-go phrases are supplied', () => {
+    const { passed, flagged } = validateContent(CLEAN, ['receipts in a shoebox'])
+    expect(flagged).toEqual([])
+    expect(passed).toBe(true)
+  })
+
+  it('defaults to no extra phrases (back-compatible signature)', () => {
+    const { passed } = validateContent('Bring us receipts in a shoebox anytime, we sort it.')
+    // The no-go phrase is only enforced when the list is passed in.
+    expect(passed).toBe(true)
+  })
+})
+
 describe('validateContent — heading tells', () => {
   it('flags the regression heading', () => {
     const { passed, flagged } = validateContent(

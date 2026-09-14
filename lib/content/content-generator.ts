@@ -22,6 +22,7 @@ import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { countWords, targetWordCount } from './word-count-validator'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { PUBLISHED_CONTENT_MODEL, CONTENT_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -211,6 +212,11 @@ export async function generatePageContent(
     ? `\n\nIMPORTANT: A previous draft was flagged for these issues — fix all of them: ${flaggedPhrases.join(' | ')}`
     : ''
 
+  // Global admin-curated no-go phrases (same for every client, so it stays in
+  // the cached static prefix). The in-memory cache in loadNoGoPhrases keeps a
+  // 40-page job from re-querying per page.
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
+
   // Static, job-constant prefix (brand voice, firm context, output + block
   // rules, anti-slop). Marked as the Anthropic cache breakpoint by
   // buildCachedMessages so every page in a job reuses it as a cache read rather
@@ -354,7 +360,7 @@ Choose ONE hero block for the page opener:
 
 Default to "page-header" if uncertain. Use "hero" only on the homepage and high-value landing pages.
 
-${ANTI_SLOP_RULES}`
+${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // Per-page dynamic suffix — everything that varies per call. retryNote is kept
   // here (not in the prefix) so the first attempt and the anti-slop retry send an
@@ -561,7 +567,10 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
 
   let result = await gen()
 
-  const validation = validateContent(result.content)
+  // Global no-go phrases feed the existing anti-slop flagged→retry path: a hit
+  // forces one regeneration with the offending phrases named in the retry note.
+  const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
+  const validation = validateContent(result.content, noGoPhrases)
   if (!validation.passed) {
     console.warn(
       `[content-gen] Anti-slop flagged ${input.pageUrl}: ${validation.flagged.join(' | ')} — retrying`

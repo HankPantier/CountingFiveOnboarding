@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
@@ -96,6 +97,7 @@ async function generateDraftContent(args: {
   const firmName = schema.business?.name ?? 'the firm'
   const location = firmLocation(schema)
   const typeSpec = CONTENT_TYPES[contentType]
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
 
   const retryNote = args.flaggedPhrases?.length
     ? `\n\nIMPORTANT: A previous draft was flagged for these issues — fix all of them: ${args.flaggedPhrases.join(' | ')}`
@@ -137,7 +139,7 @@ OUTPUT: Return a JSON object:
   }
 }
 
-${ANTI_SLOP_RULES}`
+${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // Per-post dynamic suffix — everything that varies per idea. retryNote stays
   // here (not in the prefix) so the first attempt and the anti-slop retry share
@@ -501,7 +503,8 @@ export async function generateResourceDraft(
     })
     if (!result) throw new Error('Draft generation returned unparseable output')
 
-    const validation = validateContent(result.body)
+    const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
+    const validation = validateContent(result.body, noGoPhrases)
     if (!validation.passed) {
       console.warn(
         `[resource-draft] Anti-slop flagged "${idea.title}": ${validation.flagged.join(' | ')} — retrying`

@@ -1527,6 +1527,36 @@ export type Database = {
         }
         Relationships: []
       }
+      no_go_phrases: {
+        Row: {
+          id: string
+          phrase: string
+          phrase_normalized: string
+          note: string | null
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          phrase: string
+          phrase_normalized: string
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          phrase?: string
+          phrase_normalized?: string
+          note?: string | null
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       task_progress: {
         Row: {
           content_job_id: string | null

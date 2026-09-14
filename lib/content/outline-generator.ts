@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { derivePaletteToneSignal } from './palette-tone-signal'
 import { buildFirmContext } from './brand-voice'
+import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { activeNiches } from './active-niches'
 import { cleanHeading } from './anti-slop-validator'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
@@ -127,6 +128,8 @@ export async function generateOutlineForPage(
         .join('\n')
     : ''
 
+  const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
+
   // Static, job-constant prefix (firm context + site-wide content gaps + the
   // output/rules spec). Cache breakpoint via buildCachedMessages so every page
   // outline in a job reuses it as a cache read. Per-page inputs live in
@@ -166,7 +169,7 @@ HEADING RULES (h1 and every h2):
 - No parenthetical subtitles, e.g. "(Beyond the Buzzwords)"
 - No colon-cliché subtitles ("A Deep Dive", "A Complete/Ultimate Guide", "Everything You Need to Know")
 - Never "What X Actually Means", "Beyond the …", "The Importance of …", "A Closer Look", "Demystifying/Decoding/Unpacking", or listicle titles ("5 Reasons …")
-- No dashes (— or –) in any heading`
+- No dashes (— or –) in any heading${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // Per-page dynamic suffix — everything that varies per page, kept out of the
   // cached prefix.

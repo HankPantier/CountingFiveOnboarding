@@ -18,6 +18,7 @@ const ALL_SECTIONS: Array<CommandSection & { requires: SectionRequires }> = [
   { label: 'Batch Content', href: '/admin/blog-batch', keywords: 'batch blog resources', requires: 'manager' },
   { label: 'Audits', href: '/admin/audits', keywords: 'audits site audit seo score', requires: 'auditor' },
   { label: 'Token Usage', href: '/admin/token-usage', keywords: 'tokens ai spend billing cost', requires: 'admin' },
+  { label: 'No-go phrases', href: '/admin/no-go-phrases', keywords: 'no-go banned phrases words forbidden content policy shoebox', requires: 'admin' },
   { label: 'Users', href: '/admin/settings/users', keywords: 'users team members admins', requires: 'admin' },
 ]
 
