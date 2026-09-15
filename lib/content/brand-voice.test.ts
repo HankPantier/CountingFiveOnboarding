@@ -174,6 +174,40 @@ describe('buildFirmContext — enriched MBP fields', () => {
     expect(out).toContain('[rewrite direction: lead with fixed monthly pricing]')
   })
 
+  it('renders per-service offerings and keywords when present', () => {
+    const out = buildFirmContext(base({}, {
+      services: [{ name: 'Tax', description: 'returns', offerings: ['1040', 'sales-tax filings'], keywords: ['tax cpa', 'business tax'] }],
+    }))
+    expect(out).toContain('[offerings: 1040, sales-tax filings]')
+    expect(out).toContain('[keywords: tax cpa, business tax]')
+  })
+
+  it('renders service areas for local SEO', () => {
+    const out = buildFirmContext(base({
+      serviceAreas: [{ city: 'Bel Air', county: 'Harford County', state: 'MD' }, { city: 'Towson' }],
+    }))
+    expect(out).toContain('Service areas: Bel Air, Harford County; Towson')
+  })
+
+  it('surfaces team credentials, expertise, and niche authority (E-E-A-T)', () => {
+    const out = buildCredentials(base({}, {
+      team: [{
+        name: 'Jane Doe', title: 'Partner', certifications: ['CPA'], bio: '', specializations: [],
+        expertise: ['R&D tax credits', 'multi-state nexus'], nicheOpportunities: ['dental practices'],
+      }],
+    }))
+    expect(out).toContain('Jane Doe: CPA')
+    expect(out).toContain('expertise: R&D tax credits, multi-state nexus')
+    expect(out).toContain('can speak to: dental practices')
+  })
+
+  it('includes a team member with expertise even when they have no certifications', () => {
+    const out = buildCredentials(base({}, {
+      team: [{ name: 'Sam Roe', title: 'Advisor', certifications: [], bio: '', specializations: [], expertise: ['nonprofit audits'] }],
+    }))
+    expect(out).toContain('Sam Roe: expertise: nonprofit audits')
+  })
+
   it('merges rep target keywords with audit keyword rankings, deduped', () => {
     const out = buildFirmContext(base({ targetKeywords: ['dental cpa', 'Tax Planning'] }, {
       _meta: {

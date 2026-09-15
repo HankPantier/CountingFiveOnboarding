@@ -24,9 +24,9 @@ export interface NotesModel {
     foundingYear?: string; firmHistory?: string; idealClients?: string[]; geographicScope?: string
     customerNeeds?: string; howClientsFind?: string; pricing?: string; growthGoals?: string
     serviceAreas?: Array<{ city?: string; county?: string; state?: string }>; targetKeywords?: string[]
-    contentEmphasis?: string[]; contentExclusions?: string[]
+    contentEmphasis?: string[]; contentExclusions?: string[]; clientSuccessStories?: string[]
   }
-  services?: Array<{ name?: string; description?: string; offerings?: string[] }>
+  services?: Array<{ name?: string; description?: string; offerings?: string[]; keywords?: string[] }>
   niches?: Array<{ name?: string; description?: string; valueProp?: string; customerTrigger?: string; keywords?: string[]; revenueBand?: string; businessStage?: string; decisionMaker?: string }>
   locations?: Array<{ name?: string; street?: string; city?: string; state?: string; zip?: string; phone?: string; email?: string }>
   team?: Array<{ name?: string; title?: string; bio?: string }>
@@ -59,8 +59,9 @@ export function validateNotesModel(parsed: unknown): NotesModel | null {
       targetKeywords: asStrArr(b.targetKeywords),
       contentEmphasis: asStrArr(b.contentEmphasis),
       contentExclusions: asStrArr(b.contentExclusions),
+      clientSuccessStories: asStrArr(b.clientSuccessStories),
     },
-    services: asObjArr(p.services).map((s) => ({ name: asStr(s.name), description: asStr(s.description), offerings: asStrArr(s.offerings) })),
+    services: asObjArr(p.services).map((s) => ({ name: asStr(s.name), description: asStr(s.description), offerings: asStrArr(s.offerings), keywords: asStrArr(s.keywords) })),
     niches: asObjArr(p.niches).map((n) => ({ name: asStr(n.name), description: asStr(n.description), valueProp: asStr(n.valueProp), customerTrigger: asStr(n.customerTrigger), keywords: asStrArr(n.keywords), revenueBand: asStr(n.revenueBand), businessStage: asStr(n.businessStage), decisionMaker: asStr(n.decisionMaker) })),
     locations: asObjArr(p.locations).map((l) => ({
       name: asStr(l.name), street: asStr(l.street), city: asStr(l.city), state: asStr(l.state),
@@ -119,6 +120,7 @@ function candidates(model: NotesModel): Candidate[] {
   arr('business.targetKeywords', 'Target keywords', b.targetKeywords)
   arr('business.contentEmphasis', 'Content to emphasize', b.contentEmphasis)
   arr('business.contentExclusions', 'Content to exclude', b.contentExclusions)
+  arr('business.clientSuccessStories', 'Client success stories', b.clientSuccessStories)
 
   const serviceAreas = (b.serviceAreas ?? []).filter((a) => a.city || a.county)
   if (serviceAreas.length) {
@@ -149,7 +151,11 @@ function candidates(model: NotesModel): Candidate[] {
   arr('brand.toneToAvoid', 'Tone to avoid', br.toneToAvoid)
 
   const services = (model.services ?? []).filter((s) => s.name)
-  if (services.length) out.push({ path: 'services', label: `Services (${services.length})`, value: services.map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] })) })
+  if (services.length) out.push({ path: 'services', label: `Services (${services.length})`, value: services.map((s) => {
+    const base: Record<string, unknown> = { name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] }
+    if (s.keywords?.length) base.keywords = s.keywords
+    return base
+  }) })
   const niches = (model.niches ?? []).filter((n) => n.name)
   if (niches.length) out.push({ path: 'niches', label: `Niches (${niches.length})`, value: niches.map((n) => {
     const base: Record<string, unknown> = { name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: n.valueProp ?? '' }
@@ -227,6 +233,44 @@ function mergeNicheDepth(
   return next
 }
 
+// Blank-fill service depth (description / keywords) on services that ALREADY
+// exist in the schema, matched by name. Mirrors mergeNicheDepth: the
+// all-or-nothing `services` candidate only fires when the array is empty, so an
+// audit-seeded services list would otherwise never receive the depth the notes
+// cover. Never overwrites a set value, never touches an unmentioned service.
+function mergeServiceDepth(
+  schema: Record<string, unknown>,
+  model: NotesModel,
+  applied: AppliedField[],
+): Record<string, unknown> {
+  const schemaServices = schema.services
+  if (!Array.isArray(schemaServices) || !schemaServices.length) return schema
+  const modelServices = (model.services ?? []).filter((s) => s.name)
+  if (!modelServices.length) return schema
+
+  let next = schema
+  for (const ms of modelServices) {
+    const i = schemaServices.findIndex((ss) => normName((ss as Record<string, unknown>)?.name) === normName(ms.name))
+    if (i < 0) continue
+    const desc = asStr(ms.description)
+    if (desc && !isPathFilled(next, `services.${i}.description`)) {
+      next = deepSetPath(next, `services.${i}.description`, desc)
+      applied.push({ path: `services[${i}].description`, label: `${ms.name} — description` })
+    }
+    const kw = asStrArr(ms.keywords)
+    if (kw.length && !isPathFilled(next, `services.${i}.keywords`)) {
+      next = deepSetPath(next, `services.${i}.keywords`, kw)
+      applied.push({ path: `services[${i}].keywords`, label: `${ms.name} — keywords` })
+    }
+    const off = asStrArr(ms.offerings)
+    if (off.length && !isPathFilled(next, `services.${i}.offerings`)) {
+      next = deepSetPath(next, `services.${i}.offerings`, off)
+      applied.push({ path: `services[${i}].offerings`, label: `${ms.name} — offerings` })
+    }
+  }
+  return next
+}
+
 // Merge the model into the schema, writing only where the current value is
 // blank, then resolve any gap whose field is now filled.
 export function mergeNotesExtraction(
@@ -250,6 +294,7 @@ export function mergeNotesExtraction(
   // content-critical fields — never overwrite an existing value, never touch a
   // niche the notes don't mention.
   schema = mergeNicheDepth(schema, model, applied)
+  schema = mergeServiceDepth(schema, model, applied)
 
   // additional.otherDetails is the freeform sink for facts that fit no
   // structured field. Unlike every other candidate it is APPENDED, not
@@ -300,8 +345,8 @@ QUESTIONS THIS CALL WAS MEANT TO ANSWER (fill these where the notes cover them):
 Return a JSON object with this exact shape (omit any field/array you can't fill from the notes):
 {
   "contact": { "firstName": string, "lastName": string, "email": string, "phone": string },
-  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string, "serviceAreas": [ { "city": string, "county": string, "state": string } ], "targetKeywords": string[], "contentEmphasis": string[], "contentExclusions": string[] },
-  "services": [ { "name": string, "description": string, "offerings": string[] } ],
+  "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string, "serviceAreas": [ { "city": string, "county": string, "state": string } ], "targetKeywords": string[], "contentEmphasis": string[], "contentExclusions": string[], "clientSuccessStories": string[] },
+  "services": [ { "name": string, "description": string, "offerings": string[], "keywords": string[] } ],
   "niches": [ { "name": string, "description": string, "valueProp": string, "customerTrigger": string, "keywords": string[], "revenueBand": string, "businessStage": string, "decisionMaker": string } ],
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
   "team": [ { "name": string, "title": string, "bio": string } ],
@@ -311,7 +356,9 @@ Return a JSON object with this exact shape (omit any field/array you can't fill 
   "additionalNotes": string
 }
 - "niches" = the industries / client types the firm serves. Per niche, capture only what the notes state: "valueProp" (why this niche picks the firm), "customerTrigger" (the event that makes them start looking — e.g. "opening a second location", "got a IRS notice"), "keywords" (search terms for this niche), and "revenueBand"/"businessStage"/"decisionMaker" describing the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder").
+- "services" = what the firm offers. Per service, capture "offerings" (specific deliverables/line items) and "keywords" (search terms for that service) only when the notes state them.
 - "serviceAreas" = the specific cities/counties the firm serves or targets (local-SEO geography); "targetKeywords" = search terms the firm wants to rank for, if mentioned.
+- "clientSuccessStories" = concrete client wins the notes mention, each as one self-contained sentence carrying the client type, what the firm did, and the quantified outcome (e.g. "saved a 3-location dental group ~$40k via entity restructuring"). Anonymized is fine. Only what the notes state — never invent an outcome or number.
 - "contentEmphasis" = industries, services, or topics the notes say to FEATURE, prioritize, or lean into on the new site. "contentExclusions" = anything the notes say to AVOID, NOT include, drop, de-emphasize, or "don't cover" (industries, services, or topics). Capture each as a short phrase (e.g. "real estate", "cryptocurrency", "audit services"). Only include what the notes explicitly direct — do not infer exclusions from mere absence.
 - "clientPortals" = external tools/portals the firm's CLIENTS log into (e.g. QuickBooks Online, ShareFile/secure file upload, payroll, online bill-pay, remote support). Give each a short "category" (e.g. Documents, Payments, Support) when clear. NEVER capture passwords or credentials — links only.
 - "additionalNotes" = any material fact about the firm the notes state that does NOT fit a field above — history quirks, notable relationships, personal/operational context, stated preferences, anything useful for writing the site later. Capture it as concise prose. Omit entirely if the notes hold nothing beyond the structured fields. Never invent.

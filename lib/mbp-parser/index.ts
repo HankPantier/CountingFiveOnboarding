@@ -1115,6 +1115,10 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     { field: 'business.differentiators', label: 'Differentiators (in their own words)', phase: 4, tier: 1, resolved: false },
     { field: 'business.growthGoals', label: 'Growth Goals / Where They Want to Be in 3 Years', phase: 4, tier: 2, resolved: false },
     { field: 'business.clientMixBreakdown', label: 'Client Mix Breakdown', phase: 4, tier: 2, resolved: false },
+    // Local-SEO geography — drives geo landing pages + schema.org areaServed, and
+    // is rendered into buildFirmContext. Tier 2 (non-gating): many firms are
+    // covered by geographicScope above.
+    { field: 'business.serviceAreas', label: 'Service Areas (cities / counties served or targeted)', phase: 4, tier: 2, resolved: false },
     // Culture
     { field: 'culture.missionVisionValues', label: 'Mission, Vision & Values', phase: 4, tier: 1, resolved: false },
     { field: 'culture.teamDescription', label: 'Team Culture Description', phase: 4, tier: 1, resolved: false },
@@ -1175,6 +1179,26 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
       }
       if (!niche.nicheOrigin) {
         gaps.push({ field: `niches[${i}].nicheOrigin`, label: `${niche.name} — How did this niche start?`, phase: 4, tier: 2, resolved: false })
+      }
+    }
+  }
+
+  // Per-service depth — the sibling of per-niche depth. Service pages are the
+  // firm's money pages, and buildFirmContext renders these fields. Kept Tier 2/3
+  // (non-gating): a firm has many services and the MBP usually seeds a
+  // description, so Tier 1 here would over-gate Phase 4.
+  if (schema?.services?.length) {
+    for (let i = 0; i < schema.services.length; i++) {
+      const service = schema.services[i]
+      if (!service.name) continue
+      if (!service.description) {
+        gaps.push({ field: `services[${i}].description`, label: `${service.name} — Description (what it is, who it's for)`, phase: 4, tier: 2, resolved: false })
+      }
+      if (!service.keywords?.length) {
+        gaps.push({ field: `services[${i}].keywords`, label: `${service.name} — Target Keywords`, phase: 4, tier: 2, resolved: false })
+      }
+      if (!service.offerings?.length) {
+        gaps.push({ field: `services[${i}].offerings`, label: `${service.name} — Specific Offerings / Deliverables`, phase: 4, tier: 3, resolved: false })
       }
     }
   }

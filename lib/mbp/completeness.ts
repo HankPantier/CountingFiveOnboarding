@@ -28,6 +28,26 @@ export function computeOpenGaps(doc: MbpDocument, gaps: GapItem[]): GapItem[] {
   })
 }
 
+// Filled fields the provenance heuristic flagged 'thin' (a likely placeholder) —
+// advisory, never gates. Surfaced in the "Still needed" card as a "worth
+// strengthening" roll-up and targeted by the pre-gen enrichment pass. Skips the
+// site-map section (its fields have no provenance and aren't profile content).
+export function computeThinFields(doc: MbpDocument): Array<{ fieldPath: string; label: string }> {
+  const out: Array<{ fieldPath: string; label: string }> = []
+  for (const section of doc.sections) {
+    if (section.key === 'site_map') continue
+    for (const f of section.fields ?? []) {
+      if (!f.empty && f.provenance === 'thin') out.push({ fieldPath: f.fieldPath, label: f.label })
+    }
+    for (const item of section.items ?? []) {
+      for (const f of item.fields) {
+        if (!f.empty && f.provenance === 'thin') out.push({ fieldPath: f.fieldPath, label: `${item.heading} — ${f.label}` })
+      }
+    }
+  }
+  return out
+}
+
 export interface CompletenessResult {
   open: GapItem[]
   tier1Open: GapItem[]

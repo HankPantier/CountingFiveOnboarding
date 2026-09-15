@@ -1,5 +1,5 @@
 import MbpFillLink from '@/components/admin/mbp/MbpFillLink'
-import { computeOpenGaps, normalizeGapField } from '@/lib/mbp/completeness'
+import { computeOpenGaps, computeThinFields, normalizeGapField } from '@/lib/mbp/completeness'
 import type { GapItem } from '@/types/gap-item'
 import type { MbpDocument } from '@/types/mbp'
 
@@ -23,6 +23,7 @@ export default function MbpCompleteness({
   gaps: GapItem[]
 }) {
   const stillOpen = computeOpenGaps(doc, gaps)
+  const thin = computeThinFields(doc)
 
   const byTier = [1, 2, 3]
     .map(tier => ({ tier, items: stillOpen.filter(g => (g.tier ?? 3) === tier) }))
@@ -53,6 +54,19 @@ export default function MbpCompleteness({
               </ul>
             </div>
           ))
+        )}
+        {thin.length > 0 && (
+          <div className="pt-1 border-t border-border-default">
+            <p className="text-xs font-heading font-semibold mb-1 text-warning">Filled but thin — worth strengthening</p>
+            <ul className="space-y-0.5">
+              {thin.map(f => (
+                <li key={f.fieldPath} className="flex gap-1.5 text-sm font-body text-text-primary">
+                  <span className="text-text-muted">•</span>
+                  <MbpFillLink fieldPath={f.fieldPath} label={f.label} />
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </div>

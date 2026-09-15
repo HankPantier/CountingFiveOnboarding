@@ -154,6 +154,29 @@ describe('computePhase4Gaps — content-generation-critical capture', () => {
     }
   })
 
+  it('seeds per-service depth gaps at Tier 2/3 and a Tier-2 serviceAreas gap', () => {
+    const m = byField({
+      services: [{ name: 'Tax', description: '', offerings: [] }],
+    } as SessionSchema)
+    expect(m.get('services[0].description')?.tier).toBe(2)
+    expect(m.get('services[0].keywords')?.tier).toBe(2)
+    expect(m.get('services[0].offerings')?.tier).toBe(3)
+    // Non-gating: no per-service Tier 1.
+    expect([...m.values()].some(g => g.field.startsWith('services[') && g.tier === 1)).toBe(false)
+    expect(byField({ business: {} } as SessionSchema).get('business.serviceAreas')?.tier).toBe(2)
+  })
+
+  it('suppresses per-service gaps the schema already fills', () => {
+    const fields = new Set(
+      computePhase4Gaps({
+        services: [{ name: 'Tax', description: 'Business + personal returns', offerings: ['1040'], keywords: ['tax cpa'] }],
+      } as SessionSchema).map((g) => g.field),
+    )
+    for (const f of ['services[0].description', 'services[0].keywords', 'services[0].offerings']) {
+      expect(fields.has(f)).toBe(false)
+    }
+  })
+
   it('suppresses content-scope gaps when the MBP supplies them', () => {
     const fields = new Set(
       computePhase4Gaps({

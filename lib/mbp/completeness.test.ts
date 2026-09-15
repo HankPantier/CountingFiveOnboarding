@@ -1,10 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { computeCompleteness } from './completeness'
+import { computeCompleteness, computeThinFields } from './completeness'
+import { buildMbpDocument } from './build-document'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 
 const gap = (field: string, tier: 1 | 2 | 3, resolved = false): GapItem => ({
   field, label: field, phase: 4, tier, resolved,
+})
+
+describe('computeThinFields', () => {
+  it('lists only filled fields flagged thin in provenance', () => {
+    const schema = {
+      business: { name: 'X', differentiators: 'we are good' },
+      _meta: { field_provenance: { 'business.differentiators': 'thin', 'business.name': 'confirmed' } },
+    } as unknown as SessionSchema
+    const thin = computeThinFields(buildMbpDocument(schema))
+    expect(thin.map(f => f.fieldPath)).toContain('business.differentiators')
+    expect(thin.map(f => f.fieldPath)).not.toContain('business.name')
+  })
+
+  it('returns nothing when no field is thin', () => {
+    const schema = { business: { name: 'X' } } as unknown as SessionSchema
+    expect(computeThinFields(buildMbpDocument(schema))).toHaveLength(0)
+  })
 })
 
 describe('computeCompleteness', () => {

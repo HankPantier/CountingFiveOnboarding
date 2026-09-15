@@ -338,12 +338,14 @@ function phase4Instructions(session: Session, mode: AgentMode): string {
 Present every unresolved gap from the REMAINING GAPS section below as a single checklist in ONE message. Group by section heading:
 - Firm background
 - Clients
-- Proof (client success stories)
+- Proof (client success stories — each as: client type + action + quantified outcome)
+- Local reach (business.serviceAreas — cities/counties served or targeted)
 - Differentiators
 - Culture
 - Content scope (emphasize / never-publish)
 - Brand & Tone (incl. a voice sample — a sentence that sounds like them)
 - Per-niche depth: pain points, buying trigger, value prop, decision maker, stage, revenue band, keywords (whichever are listed)
+- Per-service depth: description, keywords, offerings (whichever are listed)
 
 Format example:
 - business.foundingYear — Founding year:
@@ -368,8 +370,10 @@ Only ask about items still in the gap list below. Anything already in COLLECTED 
 Group remaining gaps into 2–3 per exchange by topic:
 - Firm background (founding year, firm history if missing)
 - Client questions (age ranges, how they find the firm, client needs)
+- Local reach (service areas — the cities/counties they serve or want, if in the gap list)
 - Proof (client success stories — see below)
 - Per-niche audience depth (see below — only for niches still in the gap list)
+- Per-service depth (see below — only for services still in the gap list)
 - Differentiators and growth goals
 - Culture (mission/values, team description)
 - Content scope (see below)
@@ -384,7 +388,11 @@ One natural follow-up per thin answer, then move on.
 
 PER-NICHE AUDIENCE DEPTH — the gap list may carry niches[i] fields (buying trigger, value proposition, decision maker, business stage, revenue band, target keywords). Ask these grouped BY NICHE, one niche per short exchange, phrased plainly: for the buying trigger, "What usually makes a [niche] client start looking for a new accountant?"; for the decision maker, "Who typically makes the call — the owner, a CFO, an office manager?"; for keywords, the terms that niche would search. Write each answer to its niches[i] path and mark the gap resolved. If the firm truly can't speak to a niche, mark those gaps resolved rather than pressing.
 
-PROOF BLOCK — ask once, early: "Can you share 1–2 quick client success stories or wins we can use as proof — even anonymized (e.g. 'saved a dental practice ~$40k in taxes')?" Capture each to business.clientSuccessStories[]. If they have none ready, say we'll gather them later and mark the gap resolved so we don't block on it.
+PER-SERVICE DEPTH — the gap list may carry services[i] fields (description, target keywords, specific offerings). Ask these grouped BY SERVICE, briefly: for description, "In a sentence, what does [service] include and who is it for?"; for offerings, the concrete deliverables (e.g. monthly close, sales-tax filings); for keywords, the terms clients would search. Write each answer to its services[i] path and mark the gap resolved. Keep this tight — services are usually already described, so only fill what's flagged.
+
+LOCAL REACH — if business.serviceAreas is in the gap list, ask once: "Which cities or counties do you serve or most want to win clients in?" Capture to business.serviceAreas[] as { city, county?, state? } entries and mark the gap resolved (empty is fine if they work nationally).
+
+PROOF BLOCK — ask once, early: "Can you share 1–2 quick client success stories or wins we can use as proof — even anonymized (e.g. 'saved a dental practice ~$40k in taxes — include the client type, what you did, and the result')?" Capture each to business.clientSuccessStories[] as a self-contained sentence carrying the client type, the action, and the quantified outcome. If they have none ready, say we'll gather them later and mark the gap resolved so we don't block on it.
 
 CONTENT SCOPE BLOCK — ask once, before client portals: "Are there specific topics, services, or industries you'd want the new site to emphasize? And on the flip side, anything we should never write about or publish — a service you're phasing out, a client type you don't want, a topic that's off-limits?" Capture the first to business.contentEmphasis[] and the second to business.contentExclusions[]. Exclusions are a hard rule downstream — every generator is told to never mention them — so capture them verbatim. Empty is fine; mark both gaps resolved once asked.
 
@@ -403,8 +411,9 @@ If they say yes to a brand guide → tell them they can upload it in the next st
 Then ask specifically for a voice sample (this one matters — it's the single best input for matching their voice): "Is there a sentence or short paragraph you've written — from an email, your current site, a proposal — that sounds exactly like you? Even a couple of lines helps." Capture it verbatim to brand.voiceExample. If they genuinely have nothing to offer, mark the gap resolved rather than blocking.
 Save responses to brand.currentTone, brand.aspirationalTone, brand.toneAdjectives, brand.toneToAvoid, brand.primaryColors, brand.hasBrandGuide. If the client volunteers personality language ("we're more like a..."), capture it in brand.brandPersonality.
 
+Before the final catch-all, ask once for real client questions/objections (gold for FAQ and conversion copy): "What are the questions or hesitations you hear from clients most often — the things people ask before they sign on, or worry about?" Capture the answer into additional.otherDetails (append to the accumulating string, don't overwrite) prefixed "Common client questions/objections: " so the content team can turn them into FAQs.
 Close Phase 4 with: "Is there anything else about the firm that's important for us to know?"
-When all Tier 1 gaps are resolved and that question has been asked, call update_session_data with advancePhase: true.${checklist}`
+When all Tier 1 gaps are resolved and those questions have been asked, call update_session_data with advancePhase: true.${checklist}`
 }
 
 function phase5Instructions(mode: AgentMode): string {

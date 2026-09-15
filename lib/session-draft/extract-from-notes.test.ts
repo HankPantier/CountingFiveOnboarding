@@ -127,6 +127,46 @@ describe('mergeNotesExtraction — non-destructive fill', () => {
     )
   })
 
+  it('blank-fills per-service depth on EXISTING services, matched by name', () => {
+    const schema: SessionSchema = {
+      services: [
+        { name: 'Tax', description: 'existing desc', offerings: [] },
+        { name: 'Bookkeeping', description: '', offerings: [] },
+      ],
+    } as SessionSchema
+    const gaps: GapItem[] = [
+      { field: 'services[0].keywords', label: 'Tax — keywords', phase: 4, tier: 2, resolved: false },
+      { field: 'services[1].description', label: 'Bookkeeping — description', phase: 4, tier: 2, resolved: false },
+    ]
+    const { schema: merged, gaps: mergedGaps, applied } = mergeNotesExtraction(schema, gaps, {
+      services: [
+        { name: 'tax', description: 'should NOT overwrite', keywords: ['tax cpa'] },
+        { name: 'Bookkeeping', description: 'Monthly close + payroll' },
+        { name: 'Unmatched', keywords: ['ignored'] },
+      ],
+    })
+    const services = merged.services as Array<Record<string, unknown>>
+    expect(services[0].description).toBe('existing desc') // not overwritten
+    expect(services[0].keywords).toEqual(['tax cpa'])
+    expect(services[1].description).toBe('Monthly close + payroll')
+    expect(services).toHaveLength(2) // unmatched notes service adds nothing
+    expect(mergedGaps.find((g) => g.field === 'services[0].keywords')!.resolved).toBe(true)
+    expect(mergedGaps.find((g) => g.field === 'services[1].description')!.resolved).toBe(true)
+    expect(applied.map((a) => a.path)).toEqual(
+      expect.arrayContaining(['services[0].keywords', 'services[1].description']),
+    )
+  })
+
+  it('captures client success stories from the notes into the existing string[]', () => {
+    const model = validateNotesModel({
+      business: { name: 'Firm', clientSuccessStories: ['saved a dental group ~$40k', 42, ''] },
+    })
+    expect(model!.business!.clientSuccessStories).toEqual(['saved a dental group ~$40k'])
+    const { schema: merged, applied } = mergeNotesExtraction({ business: { name: 'Firm' } } as SessionSchema, [], model!)
+    expect((merged.business as Record<string, unknown>).clientSuccessStories).toEqual(['saved a dental group ~$40k'])
+    expect(applied.map((a) => a.path)).toContain('business.clientSuccessStories')
+  })
+
   it('captures content emphasis and exclusion directives from the notes', () => {
     const model = validateNotesModel({
       business: {

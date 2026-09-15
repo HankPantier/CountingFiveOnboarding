@@ -36,10 +36,19 @@ const arr = <T>(v: T[] | undefined | null): T[] => {
 export function buildCredentials(schema: SessionSchema): string {
   const creds: string[] = []
   for (const member of arr(schema.team)) {
-    const certs = arr(member.certifications)
-    if (certs.length) {
-      creds.push(`${str(member.name)}: ${certs.join(', ')}`)
-    }
+    const name = str(member.name).trim()
+    if (!name) continue
+    // Certifications + areas of expertise + which niches the member can speak to
+    // — the real-person authority that grounds E-E-A-T in authored copy, not just
+    // a credential list.
+    const bits: string[] = []
+    const certs = arr(member.certifications).map(c => str(c).trim()).filter(Boolean)
+    if (certs.length) bits.push(certs.join(', '))
+    const expertise = arr(member.expertise).map(e => str(e).trim()).filter(Boolean)
+    if (expertise.length) bits.push(`expertise: ${expertise.slice(0, 6).join(', ')}`)
+    const nicheOpps = arr(member.nicheOpportunities).map(n => str(n).trim()).filter(Boolean)
+    if (nicheOpps.length) bits.push(`can speak to: ${nicheOpps.slice(0, 6).join(', ')}`)
+    if (bits.length) creds.push(`${name}: ${bits.join(' — ')}`)
   }
   for (const aff of arr(schema.business?.affiliations)) {
     if (str(aff).trim()) creds.push(str(aff).trim())
@@ -75,6 +84,12 @@ export function buildFirmContext(schema: SessionSchema): string {
   add('Mission / vision / values', c?.missionVisionValues)
   add('Team & culture', c?.teamDescription)
   add('Geographic scope', b?.geographicScope, 160)
+  // Local-SEO service areas — the specific cities/counties for geo landing pages
+  // and areaServed. Rendered as a compact "City, County" list.
+  const serviceAreas = arr(b?.serviceAreas)
+    .map(a => [str(a?.city).trim(), str(a?.county).trim()].filter(Boolean).join(', '))
+    .filter(Boolean)
+  if (serviceAreas.length) lines.push(`Service areas: ${serviceAreas.slice(0, 20).join('; ')}`)
   list('Ideal clients', b?.idealClients)
   add('Who they serve', b?.customerDescription)
   add('Client needs / pain points', b?.customerNeeds)
@@ -93,6 +108,12 @@ export function buildFirmContext(schema: SessionSchema): string {
       // The client's stated intent for how this service's copy should change —
       // honor it directly rather than rewriting generically.
       if (dir) line += ` [rewrite direction: ${dir.slice(0, 100)}]`
+      // Per-service offerings + keywords so service pages speak to the actual
+      // deliverables and target the right search terms.
+      const offerings = arr(s.offerings).map(o => str(o).trim()).filter(Boolean)
+      if (offerings.length) line += ` [offerings: ${offerings.slice(0, 8).join(', ').slice(0, 160)}]`
+      const kw = arr(s.keywords).map(k => str(k).trim()).filter(Boolean)
+      if (kw.length) line += ` [keywords: ${kw.slice(0, 8).join(', ')}]`
       return line
     })
   if (services.length) lines.push(`Services: ${services.join('; ')}`)
