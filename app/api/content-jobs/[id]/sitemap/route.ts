@@ -46,7 +46,11 @@ export async function GET(
   const schemaData = (session?.schema_data ?? {}) as Record<string, unknown>
   const proposed = (schemaData.proposed_sitemap ?? []) as SitemapPage[]
 
-  return NextResponse.json({ pages: proposed, confirmed: false })
+  // Advisory content-readiness so the UI can warn (before confirm) that the
+  // content-critical MBP fields are thin and the copy will come out generic.
+  const readiness = assessContentReadiness((session?.schema_data ?? {}) as SessionSchema)
+
+  return NextResponse.json({ pages: proposed, confirmed: false, readiness })
 }
 
 export async function POST(

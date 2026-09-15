@@ -46,6 +46,19 @@ const REQUIRED_SCORE_KEYS = [
 const EXTENDED_SCORE_KEYS = ['outline_coverage', 'input_utilization', 'differentiation'] as const
 const ALL_SCORE_KEYS = [...REQUIRED_SCORE_KEYS, ...EXTENDED_SCORE_KEYS] as const
 
+// Every scored dimension with a display label, in presentation order. Exported so
+// the content-quality dashboard can render per-dimension averages without
+// re-declaring the key→label mapping.
+export const CRITIC_DIMENSIONS: { key: (typeof ALL_SCORE_KEYS)[number]; label: string }[] = [
+  { key: 'evidence_specificity', label: 'Evidence & specificity' },
+  { key: 'information_gain', label: 'Information gain' },
+  { key: 'brand_fidelity', label: 'Brand fidelity' },
+  { key: 'promise_fulfillment', label: 'Promise fulfillment' },
+  { key: 'outline_coverage', label: 'Outline coverage' },
+  { key: 'input_utilization', label: 'Used firm inputs' },
+  { key: 'differentiation', label: 'Differentiation' },
+]
+
 // Just the scored dimensions: the four required + any of the optional extended.
 // criticOverall needs only these.
 type ScoreDims = Pick<CriticReview, (typeof REQUIRED_SCORE_KEYS)[number]> &

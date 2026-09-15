@@ -43,6 +43,7 @@ const GROUPS: NavGroup[] = [
   {
     label: 'Admin',
     items: [
+      { href: '/admin/content-quality', label: 'Content quality', d: 'M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 12l4-3M9 15l2-2', requires: 'admin' },
       { href: '/admin/token-usage', label: 'Token usage', d: 'M4 19V5m4 14V9m4 10V7m4 12v-6m4 6V11', requires: 'admin' },
       { href: '/admin/settings/users', label: 'Users', d: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11', requires: 'admin' },
       { href: '/admin/wordpress-sites', label: 'WordPress', d: 'M4 4h16v16H4zM4 9h16M9 9v11', requires: 'admin' },

@@ -1,4 +1,5 @@
 import { generateText } from 'ai'
+import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
@@ -688,23 +689,29 @@ export async function generateResourceDraft(
 
     // Advisory draft-gate critic: grade the finished post so a weak draft surfaces
     // in the batch UI ("complete · N flagged") instead of shipping silently. The
-    // idea (title/angle/rationale) is the "promise" it's graded against. Non-fatal
-    // — a scoring failure must never regress the already-published draft.
+    // idea (title/angle/rationale) is the "promise" it's graded against. Scheduled
+    // in the background (after()) so its Sonnet call never sits on the batch's
+    // critical path (50 inline critic calls would eat the runner's soft deadline).
+    // Non-fatal + failure-isolated: a scoring error can't regress the published
+    // draft. The scheduling is wrapped so a no-request-scope context (where after()
+    // throws) degrades to skipping the critic rather than failing the draft.
     try {
-      await reviewResourceDraft({
-        pageId: idea.id,
-        pageUrl: slug,
-        pageTitle: fm.title,
-        contentMarkdown: result.body,
-        outlineSections: asJson({ title: idea.title, angle: idea.angle, rationale: idea.rationale }),
-        targetKeyword: fm.target_keyword || idea.target_keyword || '',
-        competitorRefs: [],
-        schema,
-        sessionId: idea.session_id,
-        contentJobId: idea.content_job_id,
-      })
-    } catch (err) {
-      console.error('[resource-critic] review failed:', err)
+      after(() =>
+        reviewResourceDraft({
+          pageId: idea.id,
+          pageUrl: slug,
+          pageTitle: fm.title,
+          contentMarkdown: result.body,
+          outlineSections: asJson({ title: idea.title, angle: idea.angle, rationale: idea.rationale }),
+          targetKeyword: fm.target_keyword || idea.target_keyword || '',
+          competitorRefs: [],
+          schema,
+          sessionId: idea.session_id,
+          contentJobId: idea.content_job_id,
+        }).catch((err) => console.error('[resource-critic] review failed:', err)),
+      )
+    } catch (hookErr) {
+      console.warn('[resource-critic] could not schedule review:', hookErr)
     }
 
     // Reverse-link pass: link the most relevant existing posts back to the

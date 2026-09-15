@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import SitemapSection from './SitemapSection'
+import type { ReadinessReport } from '@/lib/content/content-readiness'
 
 type SitemapPage = {
   // Stable client-only identity so rows keep focus across edits. React remounts
@@ -70,6 +71,7 @@ export default function SitemapPhase({
   contentJobId: string
 }) {
   const [pages, setPages] = useState<SitemapPage[]>([])
+  const [readiness, setReadiness] = useState<ReadinessReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [proposing, setProposing] = useState(false)
@@ -81,6 +83,7 @@ export default function SitemapPhase({
       if (!res.ok) throw new Error('Failed to load sitemap')
       const data = await res.json()
       setPages((data.pages ?? []).map((p: Omit<SitemapPage, '_key'>) => ({ ...p, _key: crypto.randomUUID() })))
+      setReadiness(data.readiness ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
     } finally {
@@ -216,6 +219,25 @@ export default function SitemapPhase({
       {error && (
         <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {error}
+        </div>
+      )}
+
+      {readiness && !readiness.ready && (
+        <div className="bg-warning/10 border border-warning/30 text-warning-strong text-sm font-body rounded-lg px-4 py-3">
+          <p className="font-heading font-semibold">
+            The profile is still thin — generating now will likely produce generic copy.
+          </p>
+          <p className="mt-1 text-text-secondary">
+            Consider enriching the MBP before continuing. Missing or thin:
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-text-secondary">
+            {readiness.missing.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          <p className="mt-1 text-text-muted text-xs">
+            You can still continue — this is a heads-up, not a block.
+          </p>
         </div>
       )}
 
