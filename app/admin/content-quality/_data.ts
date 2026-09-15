@@ -5,6 +5,7 @@ import {
   summarizeCritic,
   CRITIC_DIMENSIONS,
 } from '@/lib/content/critic-review'
+import type { SessionSchema } from '@/types/session-schema'
 
 // Read-side aggregation for the content-quality dashboard. Reads the advisory
 // critic verdicts written on generated_pages (site page bodies) and resource_ideas
@@ -28,6 +29,7 @@ export interface QualitySlice {
 
 export interface FlaggedItem {
   kind: 'Page' | 'Blog'
+  site: string | null // which client site this page/post belongs to (firm name, else host)
   label: string
   overall: number
   href: string | null
@@ -112,35 +114,74 @@ export async function loadContentQuality(): Promise<ContentQualityData> {
 
   const pageAcc = newAcc()
   const resourceAcc = newAcc()
-  const flaggedItems: FlaggedItem[] = []
+  // Interim flagged rows carry the session id + draft path so the site name and
+  // href can be resolved after sort+slice (only for the ones we actually show).
+  type FlaggedRaw = {
+    kind: 'Page' | 'Blog'
+    label: string
+    overall: number
+    scoredAt: string | null
+    sessionId: string | null
+    draftPath: string | null
+  }
+  const flaggedRaw: FlaggedRaw[] = []
 
   for (const r of pageRows) {
     const res = fold(pageAcc, r.critic_review)
     if (res?.flagged) {
-      const sessionId = sessionByJob.get(r.content_job_id)
-      flaggedItems.push({
+      flaggedRaw.push({
         kind: 'Page',
         label: r.page_url ?? '(page)',
         overall: res.overall,
-        href: sessionId ? `/admin/content/${sessionId}/edit` : null,
         scoredAt: scoredAtOf(r.critic_review),
+        sessionId: sessionByJob.get(r.content_job_id) ?? null,
+        draftPath: null,
       })
     }
   }
   for (const r of resourceRows) {
     const res = fold(resourceAcc, r.critic_review)
     if (res?.flagged) {
-      flaggedItems.push({
+      flaggedRaw.push({
         kind: 'Blog',
         label: r.title ?? '(post)',
         overall: res.overall,
-        href: r.session_id
-          ? `/admin/content/${r.session_id}/edit${r.draft_path ? `?path=${encodeURIComponent(r.draft_path)}` : ''}`
-          : null,
         scoredAt: scoredAtOf(r.critic_review),
+        sessionId: r.session_id ?? null,
+        draftPath: r.draft_path ?? null,
       })
     }
   }
+
+  // Newest flagged first; undated (legacy) rows sink to the bottom. Slice to the
+  // display set BEFORE resolving site names so we only load the sessions we show.
+  flaggedRaw.sort((a, b) => (b.scoredAt ?? '').localeCompare(a.scoredAt ?? ''))
+  const topFlagged = flaggedRaw.slice(0, 20)
+
+  const siteBySession = new Map<string, string>()
+  const flaggedSessionIds = [...new Set(topFlagged.map((f) => f.sessionId).filter((v): v is string => !!v))]
+  if (flaggedSessionIds.length) {
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('id, website_url, schema_data')
+      .in('id', flaggedSessionIds)
+    for (const s of sessions ?? []) {
+      const name = ((s.schema_data ?? {}) as SessionSchema).business?.name?.trim()
+      const host = s.website_url ? s.website_url.replace(/^https?:\/\//, '').replace(/\/+$/, '') : ''
+      siteBySession.set(s.id, name || host || '(unknown site)')
+    }
+  }
+
+  const recentFlagged: FlaggedItem[] = topFlagged.map((f) => ({
+    kind: f.kind,
+    site: f.sessionId ? siteBySession.get(f.sessionId) ?? null : null,
+    label: f.label,
+    overall: f.overall,
+    href: f.sessionId
+      ? `/admin/content/${f.sessionId}/edit${f.kind === 'Blog' && f.draftPath ? `?path=${encodeURIComponent(f.draftPath)}` : ''}`
+      : null,
+    scoredAt: f.scoredAt,
+  }))
 
   const totalScored = pageAcc.scored + resourceAcc.scored
   const totalFlagged = pageAcc.flagged + resourceAcc.flagged
@@ -159,9 +200,6 @@ export async function loadContentQuality(): Promise<ContentQualityData> {
     avgOverall: acc.scored ? round1(acc.overallSum / acc.scored) : 0,
   })
 
-  // Newest flagged first; undated (legacy) rows sink to the bottom.
-  flaggedItems.sort((a, b) => (b.scoredAt ?? '').localeCompare(a.scoredAt ?? ''))
-
   return {
     totalScored,
     totalFlagged,
@@ -169,6 +207,6 @@ export async function loadContentQuality(): Promise<ContentQualityData> {
     avgOverall: totalScored ? round1(overallSum / totalScored) : 0,
     dims,
     slices: [slice('Site pages', pageAcc), slice('Blog & resources', resourceAcc)],
-    recentFlagged: flaggedItems.slice(0, 20),
+    recentFlagged,
   }
 }

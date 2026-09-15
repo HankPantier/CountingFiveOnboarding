@@ -103,18 +103,19 @@ export default async function ContentQualityPage() {
                 <ul className="divide-y divide-border-default">
                   {data.recentFlagged.map((f, i) => (
                     <li key={`${f.label}-${i}`} className="flex items-center gap-3 px-4 py-2.5">
-                      <span className="inline-flex items-center rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy">
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-brand-navy/10 px-2 py-0.5 text-[10px] font-heading font-semibold text-brand-navy">
                         {f.kind}
                       </span>
-                      <span className="flex-1 truncate text-sm font-body text-text-primary">
+                      <span className="w-48 shrink-0 truncate text-sm font-body font-semibold text-text-primary">
                         {f.href ? (
                           <Link href={f.href} className="hover:underline">
-                            {f.label}
+                            {f.site ?? 'Unknown site'}
                           </Link>
                         ) : (
-                          f.label
+                          f.site ?? 'Unknown site'
                         )}
                       </span>
+                      <span className="flex-1 truncate text-sm font-body text-text-secondary">{f.label}</span>
                       <span className="shrink-0 font-mono text-xs text-text-muted tabular-nums">{f.overall}/10</span>
                     </li>
                   ))}
