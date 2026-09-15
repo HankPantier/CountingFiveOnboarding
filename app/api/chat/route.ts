@@ -7,6 +7,8 @@ import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { validatePhaseAdvance } from '@/lib/agent/phase-validators'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { deepMerge, isPathFilled, preserveAppendOnlyMarkers } from '@/lib/mbp/schema-write'
+import { stampProvenance } from '@/lib/mbp/provenance'
+import type { SessionSchema } from '@/types/session-schema'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { runWhoisLookup } from '@/lib/whois/lookup'
@@ -49,7 +51,7 @@ export async function POST(req: Request) {
   // mbp_content text + unused fields across the wire each time.
   const { data: session, error } = await supabase
     .from('sessions')
-    .select('id, current_phase, schema_data, gap_list, website_url, processing, status')
+    .select('id, current_phase, schema_data, gap_list, website_url, processing, status, call_notes')
     .eq('id', sessionId)
     .single()
 
@@ -321,10 +323,17 @@ async function updateSessionSchema(
   const isStaffMode = (mergedSchema._meta as { mode?: string } | undefined)?.mode === 'staff'
   if (isStaffMode && newPhase === 6) newPhase = 7
 
+  // Tag the fields the agent confirmed this turn as 'confirmed' provenance
+  // (thin answers downgrade to 'thin'). resolvedGaps carries the dotted/bracket
+  // paths; stamping is advisory metadata and never affects the phase gate above.
+  const finalSchema = resolvedGaps?.length
+    ? (stampProvenance(mergedSchema as unknown as SessionSchema, resolvedGaps, 'confirmed') as unknown as Record<string, unknown>)
+    : mergedSchema
+
   const { error: writeErr } = await supabase
     .from('sessions')
     .update({
-      schema_data: asJson(mergedSchema),
+      schema_data: asJson(finalSchema),
       gap_list: asJson(updatedGaps),
       current_phase: newPhase,
       status: statusForPhase(newPhase),

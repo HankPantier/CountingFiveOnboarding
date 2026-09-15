@@ -1,5 +1,5 @@
 export type MbpSuggestionStatus = 'pending' | 'approved' | 'dismissed' | 'superseded'
-export type MbpSuggestionOrigin = 'page_edit' | 'outline_edit' | 'sitemap_confirm' | 'resource' | 'backfill' | 'content_edit' | 'generate_content' | 'site_structure'
+export type MbpSuggestionOrigin = 'page_edit' | 'outline_edit' | 'sitemap_confirm' | 'resource' | 'backfill' | 'content_edit' | 'generate_content' | 'site_structure' | 'pre_gen_enrichment'
 
 // 'set' replaces the field with proposedValue; 'append' adds proposedValue
 // (a parsed object) as a new entry to an array field (services, locations…).
@@ -38,6 +38,9 @@ export interface MbpDocumentField {
   fieldPath: string
   value: unknown
   empty: boolean
+  // Advisory field origin from _meta.field_provenance (see lib/mbp/provenance.ts).
+  // Undefined = seed/unverified. Drives the Review-UI origin badge only.
+  provenance?: 'audit' | 'notes' | 'confirmed' | 'thin'
 }
 
 export interface MbpDocumentItem {

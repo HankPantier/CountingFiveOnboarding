@@ -110,6 +110,61 @@ describe('parseMBP — gap list is what Phase 4 needs', () => {
   })
 })
 
+describe('computePhase4Gaps — content-generation-critical capture', () => {
+  const byField = (s: SessionSchema) => new Map(computePhase4Gaps(s).map((g) => [g.field, g]))
+
+  it('seeds content-scope gaps (emphasis + exclusions) at Tier 2', () => {
+    const m = byField({ business: {} } as SessionSchema)
+    expect(m.get('business.contentEmphasis')?.tier).toBe(2)
+    expect(m.get('business.contentExclusions')?.tier).toBe(2)
+  })
+
+  it('promotes client success stories and the voice sample to Tier 1', () => {
+    const m = byField({} as SessionSchema)
+    expect(m.get('business.clientSuccessStories')?.tier).toBe(1)
+    expect(m.get('brand.voiceExample')?.tier).toBe(1)
+  })
+
+  it('seeds per-niche audience-depth gaps at the documented tiers', () => {
+    const m = byField({
+      niches: [{ name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '' }],
+    } as SessionSchema)
+    expect(m.get('niches[0].customerTrigger')?.tier).toBe(1)
+    expect(m.get('niches[0].valueProp')?.tier).toBe(1)
+    expect(m.get('niches[0].keywords')?.tier).toBe(2)
+    expect(m.get('niches[0].decisionMaker')?.tier).toBe(2)
+    expect(m.get('niches[0].businessStage')?.tier).toBe(3)
+    expect(m.get('niches[0].revenueBand')?.tier).toBe(3)
+  })
+
+  it('suppresses per-niche depth gaps the schema already fills', () => {
+    const fields = new Set(
+      computePhase4Gaps({
+        niches: [{
+          name: 'Dental', description: '', icp: '', painPoints: 'x', valueProp: 'y',
+          customerTrigger: 'z', keywords: ['a'], decisionMaker: 'owner', businessStage: 'mature', revenueBand: '$1M',
+        }],
+      } as SessionSchema).map((g) => g.field),
+    )
+    for (const f of [
+      'niches[0].customerTrigger', 'niches[0].valueProp', 'niches[0].keywords',
+      'niches[0].decisionMaker', 'niches[0].businessStage', 'niches[0].revenueBand',
+    ]) {
+      expect(fields.has(f)).toBe(false)
+    }
+  })
+
+  it('suppresses content-scope gaps when the MBP supplies them', () => {
+    const fields = new Set(
+      computePhase4Gaps({
+        business: { contentEmphasis: ['nonprofits'], contentExclusions: ['crypto'] },
+      } as SessionSchema).map((g) => g.field),
+    )
+    expect(fields.has('business.contentEmphasis')).toBe(false)
+    expect(fields.has('business.contentExclusions')).toBe(false)
+  })
+})
+
 describe('computePhase4Gaps — dropped niches', () => {
   const withNiches = (): SessionSchema =>
     ({

@@ -1,7 +1,9 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { deepSetPath } from '@/lib/mbp/schema-write'
+import { stampProvenance } from '@/lib/mbp/provenance'
 import type { GapItem } from '@/types/gap-item'
+import type { SessionSchema } from '@/types/session-schema'
 
 type Supabase = ReturnType<typeof createServerClient>
 
@@ -37,6 +39,10 @@ export async function applyMbpUpdate(
   const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
   for (const p of overridePaths) overrides[p] = true
   schema = { ...schema, _meta: { ...meta, admin_overrides: overrides } }
+
+  // An admin edit is a confirmation — tag provenance so the UI/content-gen can
+  // tell hand-verified fields from seed data (thin values downgrade to 'thin').
+  schema = stampProvenance(schema as unknown as SessionSchema, overridePaths, 'confirmed') as unknown as Record<string, unknown>
 
   const gaps = (current.gap_list as GapItem[]) ?? []
   const updatedGaps = resolvedGaps?.length

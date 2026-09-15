@@ -48,17 +48,24 @@ export function formatFieldValue(v: unknown): string {
   return String(v)
 }
 
+type ProvenanceMap = Record<string, 'audit' | 'notes' | 'confirmed' | 'thin'>
+
 function fieldsFromObject(
   obj: Record<string, unknown> | undefined,
-  basePath: string
+  basePath: string,
+  provenance?: ProvenanceMap
 ): MbpDocumentField[] {
   if (!obj) return []
-  return Object.entries(obj).map(([key, value]) => ({
-    label: LABEL_OVERRIDES[key] ?? humanize(key),
-    fieldPath: `${basePath}.${key}`,
-    value,
-    empty: isEmpty(value),
-  }))
+  return Object.entries(obj).map(([key, value]) => {
+    const fieldPath = `${basePath}.${key}`
+    return {
+      label: LABEL_OVERRIDES[key] ?? humanize(key),
+      fieldPath,
+      value,
+      empty: isEmpty(value),
+      ...(provenance?.[fieldPath] ? { provenance: provenance[fieldPath] } : {}),
+    }
+  })
 }
 
 // The content-scope directives are optional and often absent from the raw
@@ -78,20 +85,22 @@ function withContentScopeDefaults(
 function objectSection(
   key: string,
   title: string,
-  data: Record<string, unknown> | undefined
+  data: Record<string, unknown> | undefined,
+  provenance?: ProvenanceMap
 ): MbpDocumentSection {
-  return { key, title, fields: fieldsFromObject(data, key) }
+  return { key, title, fields: fieldsFromObject(data, key, provenance) }
 }
 
 function arraySection<T extends Record<string, unknown>>(
   key: string,
   title: string,
   rows: T[] | undefined,
-  heading: (row: T, i: number) => string
+  heading: (row: T, i: number) => string,
+  provenance?: ProvenanceMap
 ): MbpDocumentSection {
   const items: MbpDocumentItem[] = (rows ?? []).map((row, i) => ({
     heading: heading(row, i) || `${title} ${i + 1}`,
-    fields: fieldsFromObject(row, `${key}.${i}`),
+    fields: fieldsFromObject(row, `${key}.${i}`, provenance),
   }))
   return { key, title, items }
 }
@@ -113,21 +122,23 @@ export function buildMbpDocument(
       ? `Niches (${(schema.niches ?? []).length - droppedNicheCount} kept · ${droppedNicheCount} dropped)`
       : 'Niches'
 
+  const prov = schema._meta?.field_provenance as ProvenanceMap | undefined
+
   const sections: MbpDocumentSection[] = [
-    objectSection('contact', 'Contact', schema.contact as Record<string, unknown> | undefined),
-    objectSection('business', 'Business', withContentScopeDefaults(schema.business as Record<string, unknown> | undefined)),
-    objectSection('brand', 'Brand & Tone', schema.brand as Record<string, unknown> | undefined),
-    objectSection('culture', 'Culture', schema.culture as Record<string, unknown> | undefined),
-    objectSection('technical', 'Technical', schema.technical as Record<string, unknown> | undefined),
-    arraySection('locations', 'Locations', schema.locations, l => l.name || l.city || ''),
-    arraySection('team', 'Team', schema.team, t => t.name || ''),
-    arraySection('services', 'Services', schema.services, s => s.name || ''),
-    arraySection('niches', nicheTitle, schema.niches, n => (n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || '')),
-    arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || ''),
-    objectSection('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined),
-    objectSection('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined),
-    objectSection('assets', 'Assets', schema.assets as Record<string, unknown> | undefined),
-    objectSection('additional', 'Additional', schema.additional as Record<string, unknown> | undefined),
+    objectSection('contact', 'Contact', schema.contact as Record<string, unknown> | undefined, prov),
+    objectSection('business', 'Business', withContentScopeDefaults(schema.business as Record<string, unknown> | undefined), prov),
+    objectSection('brand', 'Brand & Tone', schema.brand as Record<string, unknown> | undefined, prov),
+    objectSection('culture', 'Culture', schema.culture as Record<string, unknown> | undefined, prov),
+    objectSection('technical', 'Technical', schema.technical as Record<string, unknown> | undefined, prov),
+    arraySection('locations', 'Locations', schema.locations, l => l.name || l.city || '', prov),
+    arraySection('team', 'Team', schema.team, t => t.name || '', prov),
+    arraySection('services', 'Services', schema.services, s => s.name || '', prov),
+    arraySection('niches', nicheTitle, schema.niches, n => (n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || ''), prov),
+    arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || '', prov),
+    objectSection('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined, prov),
+    objectSection('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined, prov),
+    objectSection('assets', 'Assets', schema.assets as Record<string, unknown> | undefined, prov),
+    objectSection('additional', 'Additional', schema.additional as Record<string, unknown> | undefined, prov),
   ]
   if (confirmedSitemap && confirmedSitemap.length > 0) {
     sections.push(arraySection('site_map', 'Site Map', confirmedSitemap, p => p.title || p.url || ''))

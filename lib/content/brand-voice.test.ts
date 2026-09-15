@@ -152,6 +152,20 @@ describe('buildFirmContext — enriched MBP fields', () => {
     expect(out).toContain('buying trigger: opening a second office')
   })
 
+  it('renders per-niche persona detail (decision maker, stage, revenue, keywords)', () => {
+    const out = buildFirmContext(base({}, {
+      niches: [{
+        name: 'Dental practices', description: '', icp: '', painPoints: '', valueProp: '',
+        decisionMaker: 'practice owner (DDS)', businessStage: 'scaling', revenueBand: '$1M–$5M',
+        keywords: ['dental cpa', 'dental practice accounting'],
+      }],
+    }))
+    expect(out).toContain('decision maker: practice owner (DDS)')
+    expect(out).toContain('stage: scaling')
+    expect(out).toContain('revenue band: $1M–$5M')
+    expect(out).toContain('keywords: dental cpa, dental practice accounting')
+  })
+
   it('appends a per-service rewrite direction when present', () => {
     const out = buildFirmContext(base({}, {
       services: [{ name: 'Bookkeeping', description: 'monthly books', offerings: [], rewriteDirection: 'lead with fixed monthly pricing' }],
@@ -218,6 +232,21 @@ describe('buildFirmContext — enriched MBP fields', () => {
     expect(injectionIdx).toBeGreaterThan(fenceIdx)
     const profileIdx = out.indexOf('FIRM PROFILE')
     if (profileIdx !== -1) expect(injectionIdx).toBeGreaterThan(profileIdx)
+  })
+
+  it('buildBrandVoiceBlock drops a voice example flagged thin, but keeps a real one', () => {
+    const thin = base({}, {
+      brand: { voiceExample: 'we are good', currentTone: 'friendly', aspirationalTone: '', toneAdjectives: [], toneToAvoid: [], brandPersonality: '', primaryColors: '', typography: '', logoStyle: '', hasBrandGuide: false },
+      _meta: { field_provenance: { 'brand.voiceExample': 'thin' } },
+    } as unknown as Partial<SessionSchema>)
+    expect(buildBrandVoiceBlock(thin)).not.toContain('VOICE EXAMPLE')
+
+    const good = base({}, {
+      brand: { voiceExample: 'We write like a trusted friend who knows tax law cold.', currentTone: 'friendly', aspirationalTone: '', toneAdjectives: [], toneToAvoid: [], brandPersonality: '', primaryColors: '', typography: '', logoStyle: '', hasBrandGuide: false },
+      _meta: { field_provenance: { 'brand.voiceExample': 'confirmed' } },
+    } as unknown as Partial<SessionSchema>)
+    expect(buildBrandVoiceBlock(good)).toContain('VOICE EXAMPLE')
+    expect(buildBrandVoiceBlock(good)).toContain('trusted friend')
   })
 
   it('buildBrandVoiceBlock does not throw on non-string brand fields', () => {

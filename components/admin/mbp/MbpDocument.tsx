@@ -7,6 +7,20 @@ import type { MbpDocument, MbpDocumentField, MbpDocumentItem } from '@/types/mbp
 const SITEMAP_KEYS = new Set(['site_map'])
 const COL_ORDER = ['Title', 'Url', 'Action', 'Status', 'New Url', 'Live', 'Parent', 'Notes']
 
+// Advisory field-origin badge (see lib/mbp/provenance.ts). 'thin' is the only
+// actionable one — it flags a likely placeholder to review. The rest are quiet.
+const PROVENANCE_BADGE: Record<string, { label: string; className: string; title: string }> = {
+  thin: { label: 'review', className: 'text-warning', title: 'Looks thin — likely a placeholder, worth reviewing' },
+  notes: { label: 'call', className: 'text-text-muted', title: 'Captured from the call notes' },
+  confirmed: { label: 'confirmed', className: 'text-success', title: 'Confirmed on the call or by an edit' },
+}
+
+function ProvenanceBadge({ provenance }: { provenance?: string }) {
+  const badge = provenance ? PROVENANCE_BADGE[provenance] : undefined
+  if (!badge) return null
+  return <span className={`ml-1 text-[10px] font-body ${badge.className}`} title={badge.title}>{badge.label}</span>
+}
+
 function FieldRow({
   field,
   overridden,
@@ -24,6 +38,7 @@ function FieldRow({
       <span className="text-text-secondary text-xs font-body w-40 flex-shrink-0 pt-0.5">
         {field.label}
         {overridden && <span className="ml-1 text-brand-cyan" title="Admin override">●</span>}
+        {!field.empty && <ProvenanceBadge provenance={field.provenance} />}
       </span>
       <div className="flex-1 min-w-0">
         {editable ? (

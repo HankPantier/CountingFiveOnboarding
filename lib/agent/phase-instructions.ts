@@ -338,21 +338,27 @@ function phase4Instructions(session: Session, mode: AgentMode): string {
 Present every unresolved gap from the REMAINING GAPS section below as a single checklist in ONE message. Group by section heading:
 - Firm background
 - Clients
+- Proof (client success stories)
 - Differentiators
 - Culture
-- Brand & Tone
-- Per-niche pain points / value props (if listed)
+- Content scope (emphasize / never-publish)
+- Brand & Tone (incl. a voice sample — a sentence that sounds like them)
+- Per-niche depth: pain points, buying trigger, value prop, decision maker, stage, revenue band, keywords (whichever are listed)
 
 Format example:
 - business.foundingYear — Founding year:
 - business.firmHistory — Firm history / origin:
+- business.clientSuccessStories — 1–2 client wins (anonymized ok):
+- business.contentExclusions — Anything to never publish:
 - culture.missionVisionValues — Mission / vision / values:
+- brand.voiceExample — A sentence in their voice:
 - brand.primaryColors — Brand colors:
+- niches[0].customerTrigger — What makes this client start looking:
 - ...
 
 Accept the staff member's answer in any layout — line-prefixed, key-value, or a long prose dump. Parse it and call update_session_data with every captured field plus resolvedGaps for those gap field paths.
 
-Tier 1 gaps MUST be answered before advancing (server-side enforced). If the staff member skips a Tier 1 item, ask for it again in a short follow-up. Tier 2 / Tier 3 may be skipped — for Tier 3, log into "_meta.phase4_flagged_for_followup".
+Tier 1 gaps MUST be answered before advancing (server-side enforced). Tier 1 now includes client success stories, a voice sample, and each kept niche's buying trigger + value prop — if the firm genuinely has nothing for one, mark that gap resolved (list it in resolvedGaps) rather than leaving it blank so the session isn't stranded. If the staff member skips a Tier 1 item they DO have, ask for it again in a short follow-up. Tier 2 / Tier 3 may be skipped — for Tier 3, log into "_meta.phase4_flagged_for_followup".
 
 When all Tier 1 gaps are resolved, call update_session_data with advancePhase: true. No closing pleasantry needed.${checklist}`
   }
@@ -362,8 +368,11 @@ Only ask about items still in the gap list below. Anything already in COLLECTED 
 Group remaining gaps into 2–3 per exchange by topic:
 - Firm background (founding year, firm history if missing)
 - Client questions (age ranges, how they find the firm, client needs)
+- Proof (client success stories — see below)
+- Per-niche audience depth (see below — only for niches still in the gap list)
 - Differentiators and growth goals
 - Culture (mission/values, team description)
+- Content scope (see below)
 - Client portals (see below)
 - Pricing page (see below)
 - Brand & Tone (see below — always last before the close)
@@ -372,6 +381,12 @@ Group remaining gaps into 2–3 per exchange by topic:
 - Tier 2: Ask unless clearly irrelevant to this firm
 - Tier 3: Ask if it's relevant; otherwise add to "_meta.phase4_flagged_for_followup" for later follow-up
 One natural follow-up per thin answer, then move on.
+
+PER-NICHE AUDIENCE DEPTH — the gap list may carry niches[i] fields (buying trigger, value proposition, decision maker, business stage, revenue band, target keywords). Ask these grouped BY NICHE, one niche per short exchange, phrased plainly: for the buying trigger, "What usually makes a [niche] client start looking for a new accountant?"; for the decision maker, "Who typically makes the call — the owner, a CFO, an office manager?"; for keywords, the terms that niche would search. Write each answer to its niches[i] path and mark the gap resolved. If the firm truly can't speak to a niche, mark those gaps resolved rather than pressing.
+
+PROOF BLOCK — ask once, early: "Can you share 1–2 quick client success stories or wins we can use as proof — even anonymized (e.g. 'saved a dental practice ~$40k in taxes')?" Capture each to business.clientSuccessStories[]. If they have none ready, say we'll gather them later and mark the gap resolved so we don't block on it.
+
+CONTENT SCOPE BLOCK — ask once, before client portals: "Are there specific topics, services, or industries you'd want the new site to emphasize? And on the flip side, anything we should never write about or publish — a service you're phasing out, a client type you don't want, a topic that's off-limits?" Capture the first to business.contentEmphasis[] and the second to business.contentExclusions[]. Exclusions are a hard rule downstream — every generator is told to never mention them — so capture them verbatim. Empty is fine; mark both gaps resolved once asked.
 
 CLIENT PORTALS BLOCK — ask once, before Brand & Tone:
 Ask: "Do your clients log into any outside tools or portals — QuickBooks Online, a secure file/document upload, payroll, online bill-pay, remote support? If so, what are they and where's the login link?"
@@ -385,7 +400,8 @@ BRAND & TONE BLOCK — ask this as the last topic, after differentiators and cul
 Ask in one exchange: "Before we wrap up, I want to capture a sense of your brand voice. How would clients describe your firm today — and how would you like them to feel after reading your new site?"
 Then follow up: "Any words or phrases that feel very 'you'? Anything you'd want to avoid? And do you have existing brand colors or a style guide we should work within?"
 If they say yes to a brand guide → tell them they can upload it in the next step.
-Save responses to brand.currentTone, brand.aspirationalTone, brand.toneAdjectives, brand.toneToAvoid, brand.primaryColors, brand.hasBrandGuide. If the client volunteers personality language ("we're more like a..."), capture it in brand.brandPersonality. If they offer a memorable phrase that captures their voice, capture it verbatim in brand.voiceExample.
+Then ask specifically for a voice sample (this one matters — it's the single best input for matching their voice): "Is there a sentence or short paragraph you've written — from an email, your current site, a proposal — that sounds exactly like you? Even a couple of lines helps." Capture it verbatim to brand.voiceExample. If they genuinely have nothing to offer, mark the gap resolved rather than blocking.
+Save responses to brand.currentTone, brand.aspirationalTone, brand.toneAdjectives, brand.toneToAvoid, brand.primaryColors, brand.hasBrandGuide. If the client volunteers personality language ("we're more like a..."), capture it in brand.brandPersonality.
 
 Close Phase 4 with: "Is there anything else about the firm that's important for us to know?"
 When all Tier 1 gaps are resolved and that question has been asked, call update_session_data with advancePhase: true.${checklist}`

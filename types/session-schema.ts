@@ -25,6 +25,14 @@ export type SessionSchema = {
       reviewedBy?: string
     }
     section11_responses?: Record<string, string>
+    // Lightweight, advisory per-field provenance keyed by dotted path (e.g.
+    // "brand.voiceExample", "niches.0.customerTrigger"). 'audit' = seeded from the
+    // site audit/draft; 'notes' = filled by call-notes extraction; 'confirmed' =
+    // entered/confirmed in chat or by an admin edit; 'thin' = present but likely a
+    // placeholder (short/low-signal). NEVER gates a phase advance — it only lets
+    // content generation down-weight thin values and the admin UI badge field
+    // origin. Absent = seed/unverified. See lib/mbp/provenance.ts.
+    field_provenance?: Record<string, 'audit' | 'notes' | 'confirmed' | 'thin'>
     trust_signals_confirmed?: string[]
     sitemap_decisions?: {
       skip_new_pages?: string[]

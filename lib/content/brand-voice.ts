@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
+import { provenanceOf } from '@/lib/mbp/provenance'
 
 // Shared brand-voice prompt fragments. Extracted from content-generator.ts so
 // the page generator and the Resources blog generators describe the firm's
@@ -110,6 +111,16 @@ export function buildFirmContext(schema: SessionSchema): string {
       if (trigger) bits.push(`buying trigger: ${trigger.slice(0, 120)}`)
       const value = str(n.valueProp).trim()
       if (value) bits.push(`value: ${value.slice(0, 120)}`)
+      // Persona detail for buyer-targeted copy — who decides, and the buyer's
+      // stage/size — so niche pages address the right reader at the right moment.
+      const decisionMaker = str(n.decisionMaker).trim()
+      if (decisionMaker) bits.push(`decision maker: ${decisionMaker.slice(0, 80)}`)
+      const stage = str(n.businessStage).trim()
+      if (stage) bits.push(`stage: ${stage.slice(0, 60)}`)
+      const revenue = str(n.revenueBand).trim()
+      if (revenue) bits.push(`revenue band: ${revenue.slice(0, 60)}`)
+      const nicheKeywords = arr(n.keywords).map(k => str(k).trim()).filter(Boolean)
+      if (nicheKeywords.length) bits.push(`keywords: ${nicheKeywords.slice(0, 8).join(', ')}`)
       return bits.join(' | ')
     })
     lines.push(`Niches served:\n  ${nicheLines.join('\n  ')}`)
@@ -218,7 +229,12 @@ export function buildContentScopeBlock(schema: SessionSchema): string {
 
 export function buildBrandVoiceBlock(schema: SessionSchema): string {
   const personality = str(schema.brand?.brandPersonality).trim()
-  const example = str(schema.brand?.voiceExample).trim()
+  // A voiceExample flagged 'thin' is a placeholder (a one-word or fragment
+  // answer) — feeding it to the model poisons voice-matching, so drop it. Better
+  // no sample than a bad one; a genuine sample is 'confirmed'/'notes'/untagged.
+  const example = provenanceOf(schema, 'brand.voiceExample') === 'thin'
+    ? ''
+    : str(schema.brand?.voiceExample).trim()
   return `BRAND VOICE:
 ${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
 Tone adjectives: ${arr(schema.brand?.toneAdjectives).map(x => str(x).trim()).filter(Boolean).join(', ')}

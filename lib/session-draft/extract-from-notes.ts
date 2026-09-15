@@ -5,6 +5,7 @@
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { deepSetPath, getByPath, isPathFilled } from '@/lib/mbp/schema-write'
+import { stampProvenance } from '@/lib/mbp/provenance'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import type { TokenContext } from '@/lib/content/token-usage'
@@ -26,7 +27,7 @@ export interface NotesModel {
     contentEmphasis?: string[]; contentExclusions?: string[]
   }
   services?: Array<{ name?: string; description?: string; offerings?: string[] }>
-  niches?: Array<{ name?: string; description?: string; revenueBand?: string; businessStage?: string; decisionMaker?: string }>
+  niches?: Array<{ name?: string; description?: string; valueProp?: string; customerTrigger?: string; keywords?: string[]; revenueBand?: string; businessStage?: string; decisionMaker?: string }>
   locations?: Array<{ name?: string; street?: string; city?: string; state?: string; zip?: string; phone?: string; email?: string }>
   team?: Array<{ name?: string; title?: string; bio?: string }>
   clientPortals?: Array<{ label?: string; url?: string; description?: string; category?: string }>
@@ -60,7 +61,7 @@ export function validateNotesModel(parsed: unknown): NotesModel | null {
       contentExclusions: asStrArr(b.contentExclusions),
     },
     services: asObjArr(p.services).map((s) => ({ name: asStr(s.name), description: asStr(s.description), offerings: asStrArr(s.offerings) })),
-    niches: asObjArr(p.niches).map((n) => ({ name: asStr(n.name), description: asStr(n.description), revenueBand: asStr(n.revenueBand), businessStage: asStr(n.businessStage), decisionMaker: asStr(n.decisionMaker) })),
+    niches: asObjArr(p.niches).map((n) => ({ name: asStr(n.name), description: asStr(n.description), valueProp: asStr(n.valueProp), customerTrigger: asStr(n.customerTrigger), keywords: asStrArr(n.keywords), revenueBand: asStr(n.revenueBand), businessStage: asStr(n.businessStage), decisionMaker: asStr(n.decisionMaker) })),
     locations: asObjArr(p.locations).map((l) => ({
       name: asStr(l.name), street: asStr(l.street), city: asStr(l.city), state: asStr(l.state),
       zip: asStr(l.zip), phone: asStr(l.phone), email: asStr(l.email),
@@ -151,7 +152,9 @@ function candidates(model: NotesModel): Candidate[] {
   if (services.length) out.push({ path: 'services', label: `Services (${services.length})`, value: services.map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] })) })
   const niches = (model.niches ?? []).filter((n) => n.name)
   if (niches.length) out.push({ path: 'niches', label: `Niches (${niches.length})`, value: niches.map((n) => {
-    const base: Record<string, unknown> = { name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: '' }
+    const base: Record<string, unknown> = { name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: n.valueProp ?? '' }
+    if (n.customerTrigger) base.customerTrigger = n.customerTrigger
+    if (n.keywords?.length) base.keywords = n.keywords
     if (n.revenueBand) base.revenueBand = n.revenueBand
     if (n.businessStage) base.businessStage = n.businessStage
     if (n.decisionMaker) base.decisionMaker = n.decisionMaker
@@ -180,6 +183,50 @@ export interface ExtractionResult {
   applied: AppliedField[]
 }
 
+const normName = (s: unknown): string => (typeof s === 'string' ? s.trim().toLowerCase() : '')
+
+// Blank-fill the content-critical audience-depth fields on niches that ALREADY
+// exist in the schema, matched by name. Scalars use asStr; keywords is an array.
+// Returns a possibly-new schema; records each write to `applied` with its
+// bracketed niches[i] path so the caller resolves the matching gap.
+function mergeNicheDepth(
+  schema: Record<string, unknown>,
+  model: NotesModel,
+  applied: AppliedField[],
+): Record<string, unknown> {
+  const schemaNiches = schema.niches
+  if (!Array.isArray(schemaNiches) || !schemaNiches.length) return schema
+  const modelNiches = (model.niches ?? []).filter((n) => n.name)
+  if (!modelNiches.length) return schema
+
+  let next = schema
+  for (const mn of modelNiches) {
+    const i = schemaNiches.findIndex((sn) => normName((sn as Record<string, unknown>)?.name) === normName(mn.name))
+    if (i < 0) continue
+    const scalars: Array<[string, string | undefined]> = [
+      ['valueProp', mn.valueProp],
+      ['customerTrigger', mn.customerTrigger],
+      ['revenueBand', mn.revenueBand],
+      ['businessStage', mn.businessStage],
+      ['decisionMaker', mn.decisionMaker],
+    ]
+    for (const [field, value] of scalars) {
+      const v = asStr(value)
+      if (!v) continue
+      const path = `niches.${i}.${field}`
+      if (isPathFilled(next, path)) continue
+      next = deepSetPath(next, path, v)
+      applied.push({ path: `niches[${i}].${field}`, label: `${mn.name} — ${field}` })
+    }
+    const kw = asStrArr(mn.keywords)
+    if (kw.length && !isPathFilled(next, `niches.${i}.keywords`)) {
+      next = deepSetPath(next, `niches.${i}.keywords`, kw)
+      applied.push({ path: `niches[${i}].keywords`, label: `${mn.name} — keywords` })
+    }
+  }
+  return next
+}
+
 // Merge the model into the schema, writing only where the current value is
 // blank, then resolve any gap whose field is now filled.
 export function mergeNotesExtraction(
@@ -195,6 +242,14 @@ export function mergeNotesExtraction(
     schema = deepSetPath(schema, cand.path, cand.value)
     applied.push({ path: cand.path, label: cand.label })
   }
+
+  // Element-wise per-niche depth blank-fill. The all-or-nothing `niches`
+  // candidate above only fires when the array is empty; once niches exist (from
+  // an audit draft), it's skipped and the audience-depth fields the notes cover
+  // would never reach them. Match by niche name and blank-fill only the empty
+  // content-critical fields — never overwrite an existing value, never touch a
+  // niche the notes don't mention.
+  schema = mergeNicheDepth(schema, model, applied)
 
   // additional.otherDetails is the freeform sink for facts that fit no
   // structured field. Unlike every other candidate it is APPENDED, not
@@ -215,7 +270,11 @@ export function mergeNotesExtraction(
     g.resolved || isPathFilled(merged, g.field) ? { ...g, resolved: true } : g,
   )
 
-  return { schema: merged, gaps, applied }
+  // Tag every field this extraction filled as 'notes' (thin values downgrade to
+  // 'thin') so content-gen and the admin UI can tell call-derived data apart.
+  const stamped = stampProvenance(merged, applied.map((a) => a.path), 'notes')
+
+  return { schema: stamped, gaps, applied }
 }
 
 function knownSummary(schema: SessionSchema): string {
@@ -243,7 +302,7 @@ Return a JSON object with this exact shape (omit any field/array you can't fill 
   "contact": { "firstName": string, "lastName": string, "email": string, "phone": string },
   "business": { "name": string, "tagline": string, "customerDescription": string, "differentiators": string, "foundingYear": string, "firmHistory": string, "idealClients": string[], "geographicScope": string, "customerNeeds": string, "howClientsFind": string, "pricing": string, "growthGoals": string, "serviceAreas": [ { "city": string, "county": string, "state": string } ], "targetKeywords": string[], "contentEmphasis": string[], "contentExclusions": string[] },
   "services": [ { "name": string, "description": string, "offerings": string[] } ],
-  "niches": [ { "name": string, "description": string, "revenueBand": string, "businessStage": string, "decisionMaker": string } ],
+  "niches": [ { "name": string, "description": string, "valueProp": string, "customerTrigger": string, "keywords": string[], "revenueBand": string, "businessStage": string, "decisionMaker": string } ],
   "locations": [ { "name": string, "street": string, "city": string, "state": string, "zip": string, "phone": string, "email": string } ],
   "team": [ { "name": string, "title": string, "bio": string } ],
   "clientPortals": [ { "label": string, "url": string, "description": string, "category": string } ],
@@ -251,7 +310,7 @@ Return a JSON object with this exact shape (omit any field/array you can't fill 
   "brand": { "currentTone": string, "aspirationalTone": string, "toneAdjectives": string[], "toneToAvoid": string[], "primaryColors": string, "voiceExample": string, "brandPersonality": string },
   "additionalNotes": string
 }
-- "niches" = the industries / client types the firm serves. Per niche, "revenueBand"/"businessStage"/"decisionMaker" describe the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder") — only when the notes state it.
+- "niches" = the industries / client types the firm serves. Per niche, capture only what the notes state: "valueProp" (why this niche picks the firm), "customerTrigger" (the event that makes them start looking — e.g. "opening a second location", "got a IRS notice"), "keywords" (search terms for this niche), and "revenueBand"/"businessStage"/"decisionMaker" describing the typical client (e.g. "$1–5M revenue", "growth-stage", "owner/founder").
 - "serviceAreas" = the specific cities/counties the firm serves or targets (local-SEO geography); "targetKeywords" = search terms the firm wants to rank for, if mentioned.
 - "contentEmphasis" = industries, services, or topics the notes say to FEATURE, prioritize, or lean into on the new site. "contentExclusions" = anything the notes say to AVOID, NOT include, drop, de-emphasize, or "don't cover" (industries, services, or topics). Capture each as a short phrase (e.g. "real estate", "cryptocurrency", "audit services"). Only include what the notes explicitly direct — do not infer exclusions from mere absence.
 - "clientPortals" = external tools/portals the firm's CLIENTS log into (e.g. QuickBooks Online, ShareFile/secure file upload, payroll, online bill-pay, remote support). Give each a short "category" (e.g. Documents, Payments, Support) when clear. NEVER capture passwords or credentials — links only.

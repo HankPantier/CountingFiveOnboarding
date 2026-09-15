@@ -8,6 +8,7 @@ import MbpDeepLinkFocus from '@/components/admin/mbp/MbpDeepLinkFocus'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
 import MbpSuggestions from '@/components/admin/mbp/MbpSuggestions'
 import MbpBackfillButton from '@/components/admin/mbp/MbpBackfillButton'
+import MbpEnrichButton from '@/components/admin/mbp/MbpEnrichButton'
 import MbpChatModal from '@/components/admin/mbp/MbpChatModal'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
@@ -83,6 +84,7 @@ export default async function MbpPage({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {isAdmin && <MbpBackfillButton sessionId={id} />}
+          {isAdmin && <MbpEnrichButton sessionId={id} />}
           {isAdmin && <MbpChatModal sessionId={id} initialMessages={initialMessages} />}
           <Link
             href={`/admin/sessions/${id}`}

@@ -88,6 +88,45 @@ describe('mergeNotesExtraction — non-destructive fill', () => {
     expect(n).toMatchObject({ name: 'Dentists', revenueBand: '$1–5M', decisionMaker: 'owner' })
   })
 
+  it('blank-fills per-niche audience depth on EXISTING niches, matched by name', () => {
+    // Audit-seeded niches (name + description only). A re-mine must reach their
+    // depth fields even though the all-or-nothing niches candidate is skipped.
+    const schema: SessionSchema = {
+      niches: [
+        { name: 'Dental practices', description: 'DDS-owned', icp: '', painPoints: '', valueProp: 'existing value' },
+        { name: 'Nonprofits', description: '', icp: '', painPoints: '', valueProp: '' },
+      ],
+    } as SessionSchema
+    const gaps: GapItem[] = [
+      { field: 'niches[0].customerTrigger', label: 'Dental — buying trigger', phase: 4, tier: 1, resolved: false },
+      { field: 'niches[0].valueProp', label: 'Dental — value prop', phase: 4, tier: 1, resolved: false },
+      { field: 'niches[1].keywords', label: 'Nonprofits — keywords', phase: 4, tier: 2, resolved: false },
+    ]
+    const { schema: merged, gaps: mergedGaps, applied } = mergeNotesExtraction(schema, gaps, {
+      niches: [
+        { name: 'dental practices', valueProp: 'should NOT overwrite', customerTrigger: 'opening a 2nd office', decisionMaker: 'owner (DDS)' },
+        { name: 'Nonprofits', keywords: ['nonprofit cpa', 'form 990'] },
+        { name: 'Unmatched niche', customerTrigger: 'ignored' },
+      ],
+    })
+    const niches = merged.niches as Array<Record<string, unknown>>
+    // Existing niche depth blank-filled, but a set value is never clobbered.
+    expect(niches[0].customerTrigger).toBe('opening a 2nd office')
+    expect(niches[0].decisionMaker).toBe('owner (DDS)')
+    expect(niches[0].valueProp).toBe('existing value') // NOT overwritten
+    expect(niches[1].keywords).toEqual(['nonprofit cpa', 'form 990'])
+    // A notes niche that matches no existing niche adds nothing (no new niche).
+    expect(niches).toHaveLength(2)
+    // Gaps resolve via the bracketed niches[i] path (a newly-filled field, and
+    // a field that was already filled, both resolve).
+    expect(mergedGaps.find((g) => g.field === 'niches[0].customerTrigger')!.resolved).toBe(true)
+    expect(mergedGaps.find((g) => g.field === 'niches[1].keywords')!.resolved).toBe(true)
+    expect(mergedGaps.find((g) => g.field === 'niches[0].valueProp')!.resolved).toBe(true)
+    expect(applied.map((a) => a.path)).toEqual(
+      expect.arrayContaining(['niches[0].customerTrigger', 'niches[0].decisionMaker', 'niches[1].keywords']),
+    )
+  })
+
   it('captures content emphasis and exclusion directives from the notes', () => {
     const model = validateNotesModel({
       business: {

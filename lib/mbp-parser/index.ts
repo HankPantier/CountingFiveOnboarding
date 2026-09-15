@@ -1100,10 +1100,17 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     { field: 'business.clientAgeRanges', label: 'Client Age Ranges', phase: 4, tier: 1, resolved: false },
     { field: 'business.customerNeeds', label: 'Client Needs & Pain Points', phase: 4, tier: 1, resolved: false },
     { field: 'business.howClientsFind', label: 'How Clients Find the Firm', phase: 4, tier: 1, resolved: false },
-    // Per flow doc Tier 2: success stories + pricing — ask only if time allows.
-    { field: 'business.clientSuccessStories', label: 'Client Success Stories (1–2 examples)', phase: 4, tier: 2, resolved: false },
+    // Client success stories are Tier 1: they gate the case-study content type
+    // (hasCaseStudyData) and are the firm's strongest proof/E-E-A-T material, so
+    // they're worth a hard ask rather than a time-permitting one.
+    { field: 'business.clientSuccessStories', label: 'Client Success Stories (1–2 examples)', phase: 4, tier: 1, resolved: false },
     { field: 'business.pricing', label: 'Pricing / Fee Structure', phase: 4, tier: 2, resolved: false },
     { field: 'business.pricingPagePreference', label: 'Pricing Page Preference (plans / calculator / both / none)', phase: 4, tier: 2, resolved: false },
+    // Content-scope directives — read by every generator via buildFirmContext /
+    // buildContentScopeBlock. Emphasis steers what to feature; exclusions are the
+    // per-client analog of the global no-go list (things to never publish).
+    { field: 'business.contentEmphasis', label: 'Content to Emphasize (topics / services / industries to feature)', phase: 4, tier: 2, resolved: false },
+    { field: 'business.contentExclusions', label: 'Content to Exclude (anything to never publish)', phase: 4, tier: 2, resolved: false },
     // Differentiators & growth
     { field: 'business.differentiators', label: 'Differentiators (in their own words)', phase: 4, tier: 1, resolved: false },
     { field: 'business.growthGoals', label: 'Growth Goals / Where They Want to Be in 3 Years', phase: 4, tier: 2, resolved: false },
@@ -1116,7 +1123,10 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     { field: 'brand.aspirationalTone',  label: 'Aspirational Voice (how they want to sound)', phase: 4, tier: 1, resolved: false },
     { field: 'brand.toneAdjectives',    label: 'Tone Adjectives (words that feel like them)', phase: 4, tier: 1, resolved: false },
     { field: 'brand.toneToAvoid',       label: 'Tone to Avoid',                            phase: 4, tier: 2, resolved: false },
-    { field: 'brand.voiceExample',      label: 'Voice Example Phrase',                     phase: 4, tier: 2, resolved: false },
+    // Voice example is Tier 1: a concrete sentence/paragraph in the firm's voice
+    // is the single highest-signal input for voice-matching (fed into
+    // buildBrandVoiceBlock), so it's promoted out of the drop-if-short tier.
+    { field: 'brand.voiceExample',      label: 'Voice Example (a sentence in their voice)', phase: 4, tier: 1, resolved: false },
     { field: 'brand.primaryColors',     label: 'Brand Colors',                             phase: 4, tier: 1, resolved: false },
     { field: 'brand.hasBrandGuide',     label: 'Has Existing Brand Guide',                 phase: 4, tier: 1, resolved: false },
     { field: 'brand.logoStyle',         label: 'Logo / Visual Style (modern, traditional, etc.)', phase: 4, tier: 2, resolved: false },
@@ -1130,9 +1140,12 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
     if (!isPopulated(schema, g.field)) gaps.push(g)
   }
 
-  // Per-niche pain points & value props — only ask when the MBP didn't fill them.
+  // Per-niche audience depth — only ask when the MBP didn't fill it. These are
+  // the fields buildFirmContext renders per niche (pain / buying trigger / value /
+  // persona), and they're what separate niche-specific copy from generic filler.
   // Iterate by real index (never filter) so kept niches keep their niches[i] gap
-  // paths; a niche the operator dropped in the Phase-3 review generates no gaps.
+  // paths; a niche the operator dropped in the Phase-3 review generates no gaps
+  // (and applyNicheReview prunes any already generated for a dropped niche).
   if (schema?.niches?.length) {
     for (let i = 0; i < schema.niches.length; i++) {
       const niche = schema.niches[i]
@@ -1140,8 +1153,25 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
       if (!niche.painPoints) {
         gaps.push({ field: `niches[${i}].painPoints`, label: `${niche.name} — Pain Points`, phase: 4, tier: 1, resolved: false })
       }
+      // Buying trigger drives conversion copy (the moment a buyer starts looking);
+      // Tier 1 alongside pain points.
+      if (!niche.customerTrigger) {
+        gaps.push({ field: `niches[${i}].customerTrigger`, label: `${niche.name} — Buying Trigger (what makes them start looking)`, phase: 4, tier: 1, resolved: false })
+      }
       if (!niche.valueProp) {
-        gaps.push({ field: `niches[${i}].valueProp`, label: `${niche.name} — Value Proposition`, phase: 4, tier: 2, resolved: false })
+        gaps.push({ field: `niches[${i}].valueProp`, label: `${niche.name} — Value Proposition`, phase: 4, tier: 1, resolved: false })
+      }
+      if (!niche.keywords?.length) {
+        gaps.push({ field: `niches[${i}].keywords`, label: `${niche.name} — Target Keywords`, phase: 4, tier: 2, resolved: false })
+      }
+      if (!niche.decisionMaker) {
+        gaps.push({ field: `niches[${i}].decisionMaker`, label: `${niche.name} — Decision Maker (who chooses the firm)`, phase: 4, tier: 2, resolved: false })
+      }
+      if (!niche.businessStage) {
+        gaps.push({ field: `niches[${i}].businessStage`, label: `${niche.name} — Business Stage (startup / scaling / established)`, phase: 4, tier: 3, resolved: false })
+      }
+      if (!niche.revenueBand) {
+        gaps.push({ field: `niches[${i}].revenueBand`, label: `${niche.name} — Typical Revenue Band`, phase: 4, tier: 3, resolved: false })
       }
       if (!niche.nicheOrigin) {
         gaps.push({ field: `niches[${i}].nicheOrigin`, label: `${niche.name} — How did this niche start?`, phase: 4, tier: 2, resolved: false })

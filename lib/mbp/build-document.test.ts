@@ -69,6 +69,25 @@ describe('buildMbpDocument', () => {
     expect(f!.empty).toBe(false)
   })
 
+  it('threads per-field provenance from _meta.field_provenance onto document fields', () => {
+    const withProv = buildMbpDocument({
+      business: { name: 'X', differentiators: 'Deep nonprofit specialization.' },
+      niches: [{ name: 'Nonprofits', customerTrigger: 'losing their bookkeeper' }],
+      _meta: {
+        field_provenance: {
+          'business.differentiators': 'confirmed',
+          'niches.0.customerTrigger': 'notes',
+        },
+      },
+    } as unknown as SessionSchema)
+    const diff = withProv.sections.find(s => s.key === 'business')!.fields!.find(f => f.fieldPath === 'business.differentiators')
+    expect(diff!.provenance).toBe('confirmed')
+    const trigger = withProv.sections.find(s => s.key === 'niches')!.items![0].fields.find(f => f.fieldPath === 'niches.0.customerTrigger')
+    expect(trigger!.provenance).toBe('notes')
+    // A field with no provenance entry carries none.
+    expect(withProv.sections.find(s => s.key === 'business')!.fields!.find(f => f.fieldPath === 'business.name')!.provenance).toBeUndefined()
+  })
+
   it('omits the Site Map section when no confirmed sitemap is given', () => {
     expect(doc.sections.find(s => s.key === 'site_map')).toBeUndefined()
   })

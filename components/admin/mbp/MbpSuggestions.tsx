@@ -53,7 +53,7 @@ function SuggestionCard({
     <div className="border border-border-default rounded-lg p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-body text-text-primary">{suggestion.summary}</p>
-        <span className="text-xs font-body text-text-muted whitespace-nowrap">{suggestion.origin.replace('_', ' ')}</span>
+        <span className="text-xs font-body text-text-muted whitespace-nowrap">{suggestion.origin.replaceAll('_', ' ')}</span>
       </div>
       {suggestion.source_ref && (
         <p className="text-xs font-body text-text-muted">from: {suggestion.source_ref}</p>
