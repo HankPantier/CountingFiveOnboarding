@@ -5,7 +5,7 @@ import { runBlogBatch } from '@/lib/content/blog-batch-runner'
 import { headCheckUrls, type ExternalLink } from '@/lib/content/link-checker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { resolveEligibility, insertBatchTargets } from '@/lib/content/blog-batch-targets'
-import { asContentType } from '@/lib/content/content-types'
+import { asContentType, CONTENT_TYPES } from '@/lib/content/content-types'
 import { asIndustry } from '@/lib/content/industries'
 import type { RefinedBlogIdea } from '@/lib/content/blog-idea-refiner'
 
@@ -68,11 +68,17 @@ export async function POST(req: Request) {
   const supabase = createServerClient()
 
   // Resolve each client's content job. Eligible = repo provisioned + phase >= 6.
-  const { eligible, ineligible } = await resolveEligibility(supabase, sessionIds)
+  // A case-study batch additionally requires a client success story on file.
+  const requireCaseData = CONTENT_TYPES[asContentType(body.contentType)].requiresCaseData
+  const { eligible, ineligible } = await resolveEligibility(supabase, sessionIds, { requireCaseData })
 
   if (eligible.length === 0) {
     return NextResponse.json(
-      { error: 'None of the selected clients have a published, repo-linked site to draft into' },
+      {
+        error: requireCaseData
+          ? 'None of the selected clients have both a published site and a client success story to base a case study on'
+          : 'None of the selected clients have a published, repo-linked site to draft into',
+      },
       { status: 400 }
     )
   }

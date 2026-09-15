@@ -3,6 +3,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { deepSetPath, getByPath } from '@/lib/mbp/schema-write'
+import { stampProvenance } from '@/lib/mbp/provenance'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpChangeOp, MbpSuggestionChanges } from '@/types/mbp'
 
@@ -16,11 +18,20 @@ const TARGET_PREFIXES = ['business.', 'culture.', 'brand.', 'niches.', 'services
 const MAX_NOTES_CHARS = 6000
 const MAX_TARGETS = 40
 
+type EnrichConfidence = 'high' | 'medium' | 'low'
+type EnrichSource = 'audit' | 'notes' | 'both' | 'profile'
+
 interface EnrichChange {
   fieldPath: string
   op: MbpChangeOp
   proposedValue: string
   rationale: string
+  // Per-change grounding. A 'high'-confidence change grounded in 'both' the audit
+  // AND the call notes is trusted enough to auto-apply to an EMPTY field; anything
+  // else is filed as a pending suggestion for admin review. Both default to the
+  // safe (never-auto-applied) value when the model omits them.
+  confidence: EnrichConfidence
+  source: EnrichSource
 }
 
 function parseEnrich(parsed: unknown): { changes: EnrichChange[] } | null {
@@ -36,18 +47,21 @@ function parseEnrich(parsed: unknown): { changes: EnrichChange[] } | null {
       op: c.op === 'append' ? 'append' : 'set',
       proposedValue: c.proposedValue as string,
       rationale: typeof c.rationale === 'string' ? c.rationale : '',
+      confidence: c.confidence === 'high' ? 'high' : c.confidence === 'medium' ? 'medium' : 'low',
+      source:
+        c.source === 'both' || c.source === 'audit' || c.source === 'notes' ? c.source : 'profile',
     }))
   return { changes }
 }
 
-export async function preGenEnrichMbp(sessionId: string): Promise<{ created: number }> {
+export async function preGenEnrichMbp(sessionId: string): Promise<{ created: number; applied: number }> {
   const supabase = createServerClient()
   const { data: session } = await supabase
     .from('sessions')
     .select('schema_data, call_notes')
     .eq('id', sessionId)
     .single()
-  if (!session) return { created: 0 }
+  if (!session) return { created: 0, applied: 0 }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
   const doc = buildMbpDocument(schema)
@@ -71,7 +85,7 @@ export async function preGenEnrichMbp(sessionId: string): Promise<{ created: num
   }
   const emptyTargets = emptyFields.filter(f => TARGET_PREFIXES.some(p => f.fieldPath.startsWith(p)))
   const thinTargets = thinFields.filter(f => TARGET_PREFIXES.some(p => f.fieldPath.startsWith(p)))
-  if (emptyTargets.length + thinTargets.length === 0) return { created: 0 }
+  if (emptyTargets.length + thinTargets.length === 0) return { created: 0, applied: 0 }
   if (emptyTargets.length + thinTargets.length > MAX_TARGETS) {
     console.warn(`[mbp-pregen] ${emptyTargets.length + thinTargets.length} target fields; capping to ${MAX_TARGETS} this run (re-run for the rest)`)
   }
@@ -79,6 +93,10 @@ export async function preGenEnrichMbp(sessionId: string): Promise<{ created: num
   const targets = emptyTargets.slice(0, MAX_TARGETS)
   const thin = thinTargets.slice(0, Math.max(0, MAX_TARGETS - targets.length))
   const targetPaths = new Set([...targets, ...thin].map(t => t.fieldPath))
+  // Only EMPTY fields are ever eligible for auto-apply — a high-confidence fill of
+  // a blank field is safe; strengthening a thin (already-populated) field always
+  // goes to review so we never overwrite existing copy without a human.
+  const emptyTargetPaths = new Set(targets.map(t => t.fieldPath))
 
   const { _meta, ...schemaForModel } = schema as Record<string, unknown>
   void _meta
@@ -101,17 +119,44 @@ For each field you can confidently fill or strengthen USING ONLY the information
 - services[i] depth (description = what the service is and who it's for; keywords; offerings = specific deliverables) should reflect the firm's actual service, grounded in the sources — do not invent line items.
 - For scalar/prose fields use op "set" with proposedValue as the derived text. For array fields (keywords, contentEmphasis, contentExclusions) use op "append" with proposedValue as a single quoted string item.
 - Keep each proposedValue CONCISE — 1-2 sentences for prose, a short phrase for list items. Keep each rationale to one short phrase.
+- For every change also report: "source" = where you grounded it ("audit" = the site-audit context, "notes" = the call notes, "both" = clearly supported by BOTH, "profile" = inferred from the existing profile only); and "confidence" = "high" only when the value is directly and unambiguously stated in the sources, "medium" if reasonably inferred, "low" if a guess. Be honest — "high"/"both" changes may be applied without review, so reserve them for facts you are certain of.
 
 Return ONLY JSON:
-{ "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "..." } ] }`,
+{ "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "...", "source": "audit" | "notes" | "both" | "profile", "confidence": "high" | "medium" | "low" } ] }`,
     parseEnrich,
     8000,
     { task: 'onboarding', stage: 'mbp', sessionId },
   )
 
-  if (!result || result.changes.length === 0) return { created: 0 }
+  if (!result || result.changes.length === 0) return { created: 0, applied: 0 }
+
+  // A change is trusted enough to apply straight to schema_data only when it is
+  // high-confidence, grounded in BOTH the audit and the call notes, and fills an
+  // EMPTY content-critical field. Everything else is filed as a pending suggestion
+  // for admin review — the same behavior as before.
+  const autoApply = (c: EnrichChange): boolean =>
+    c.confidence === 'high' && c.source === 'both' && emptyTargetPaths.has(c.fieldPath)
+
+  // Resolve a change into a concrete value against the current in-memory schema.
+  // append pushes onto the existing array (always empty here — auto-apply is
+  // empty-fields-only); set replaces. Returns null if the value can't be applied
+  // safely, so it falls through to a pending suggestion instead.
+  const resolveValue = (schemaObj: Record<string, unknown>, c: EnrichChange): unknown => {
+    if (c.op !== 'append') return c.proposedValue
+    let item: unknown = c.proposedValue
+    if (/^\s*[[{]/.test(c.proposedValue)) {
+      try { item = JSON.parse(c.proposedValue) } catch { return null }
+    }
+    const existing = getByPath(schemaObj, c.fieldPath)
+    const base = Array.isArray(existing) ? existing : []
+    return [...base, item]
+  }
 
   let created = 0
+  let applied = 0
+  let workingSchema = schema as unknown as Record<string, unknown>
+  const appliedPaths: string[] = []
+
   for (const c of result.changes) {
     if (!targetPaths.has(c.fieldPath)) continue
 
@@ -125,12 +170,38 @@ Return ONLY JSON:
       .update(`${sessionId}|pre_gen_enrichment|${keyParts}`)
       .digest('hex')
 
+    // Supersede any prior pending suggestion for the same field/value.
     await supabase
       .from('mbp_suggestions')
       .update({ status: 'superseded', resolved_at: new Date().toISOString() })
       .eq('session_id', sessionId)
       .eq('dedupe_key', dedupeKey)
       .eq('status', 'pending')
+
+    if (autoApply(c)) {
+      const value = resolveValue(workingSchema, c)
+      if (value !== null) {
+        workingSchema = deepSetPath(workingSchema, c.fieldPath, value)
+        appliedPaths.push(c.fieldPath)
+        // Record the auto-applied change as an already-resolved suggestion so it
+        // shows in the session's suggestion history (trail) rather than mutating
+        // schema_data invisibly. resolved_by is null = applied by the system.
+        const { error } = await supabase.from('mbp_suggestions').insert({
+          session_id: sessionId,
+          origin: 'pre_gen_enrichment',
+          source_ref: 'auto-applied: audit + call notes',
+          changes: asJson(changes),
+          summary: `Auto-applied: ${c.fieldPath}`,
+          status: 'approved',
+          resolved_at: new Date().toISOString(),
+          dedupe_key: dedupeKey,
+        })
+        if (error) console.error('[mbp-pregen] auto-apply trail insert failed:', error)
+        applied += 1
+        continue
+      }
+      // Fall through to a pending suggestion if the value couldn't be resolved.
+    }
 
     const { error } = await supabase.from('mbp_suggestions').insert({
       session_id: sessionId,
@@ -145,5 +216,17 @@ Return ONLY JSON:
     else created += 1
   }
 
-  return { created }
+  // Write the auto-applied fills once, stamping provenance to 'notes' (the stronger
+  // human-grounded signal of the two sources) so downstream thinness checks and the
+  // admin UI treat them as call-derived, not admin-confirmed.
+  if (appliedPaths.length) {
+    const stamped = stampProvenance(workingSchema as unknown as SessionSchema, appliedPaths, 'notes')
+    const { error } = await supabase
+      .from('sessions')
+      .update({ schema_data: asJson(stamped) })
+      .eq('id', sessionId)
+    if (error) console.error('[mbp-pregen] schema auto-apply write failed:', error)
+  }
+
+  return { created, applied }
 }

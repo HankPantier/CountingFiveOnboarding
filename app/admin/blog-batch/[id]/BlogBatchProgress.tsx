@@ -134,6 +134,7 @@ export default function BlogBatchProgress({
         {data.targetKeyword ? `Keyword: ${data.targetKeyword} · ` : ''}
         {counts.complete}/{counts.total} drafted
         {counts.error > 0 ? ` · ${counts.error} error${counts.error === 1 ? '' : 's'}` : ''}
+        {counts.flagged > 0 ? ` · ${counts.flagged} flagged for review` : ''}
         {counts.skipped > 0 ? ` · ${counts.skipped} skipped` : ''}
         {counts.inFlight > 0 ? ' · generating…' : ''}
       </p>
@@ -191,6 +192,14 @@ export default function BlogBatchProgress({
                         <span>{meta.icon}</span>
                         {meta.label}
                       </span>
+                      {t.needsReview && (
+                        <span
+                          title="The advisory critic flagged this draft as weak — proof it before publishing."
+                          className="ml-2 inline-flex items-center rounded-badge bg-warning/10 px-2 py-0.5 font-heading text-[10px] font-semibold uppercase tracking-[0.04em] text-warning-strong"
+                        >
+                          Review
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {t.status === 'complete' && (

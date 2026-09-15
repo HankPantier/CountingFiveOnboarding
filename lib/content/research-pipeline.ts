@@ -2,6 +2,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { runKeywordResearch } from './keyword-research'
 import { fetchCompetitorPages, fetchExistingContent } from './competitor-fetch'
 import { activeNiches } from './active-niches'
+import { resolvePageIntent } from './page-intent'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -76,12 +77,20 @@ export async function runResearchPipeline(
       }
 
       try {
-        // Job 1: Keyword research
+        // Job 1: Keyword research — steer it toward the page's specific niche or
+        // service audience when the URL identifies one.
         console.warn(`[Research] Starting keyword research for: ${page.title}`)
+        const intent = resolvePageIntent(page.url, page.title, schema)
+        const focus =
+          intent.niche
+            ? { label: intent.niche.name, keywords: intent.niche.keywords ?? [] }
+            : intent.service
+              ? { label: intent.service.name, keywords: intent.service.keywords ?? [] }
+              : undefined
         const keywords = await runKeywordResearch(page.title, page.url, firmContext, {
           contentJobId,
           sessionId,
-        })
+        }, focus)
 
         // Job 2: Competitor page analysis
         const competitorRefs = await fetchCompetitorPages(keywords.competitorRefs)

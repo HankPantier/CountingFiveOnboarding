@@ -19,6 +19,6 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { created } = await preGenEnrichMbp(id)
-  return NextResponse.json({ created })
+  const { created, applied } = await preGenEnrichMbp(id)
+  return NextResponse.json({ created, applied })
 }

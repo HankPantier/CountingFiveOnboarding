@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
+import { assessContentReadiness } from '@/lib/content/content-readiness'
 import { normUrl } from '@/lib/content/sitemap-proposer'
 import { toSitePath } from '@/lib/content/url-path'
 import type { SessionSchema } from '@/types/session-schema'
@@ -154,6 +155,25 @@ export async function POST(
     .eq('id', id)
     .single()
 
+  // Advisory content-readiness check: if the content-critical MBP fields are still
+  // thin, the copy will come out generic. Surface it to the operator (non-blocking
+  // — generation still proceeds) so a hollow profile is a visible warning rather
+  // than a silent quality hit.
+  let readiness: { ready: boolean; missing: string[] } = { ready: true, missing: [] }
+  if (jobData) {
+    const { data: sessionRow } = await supabase
+      .from('sessions')
+      .select('schema_data')
+      .eq('id', jobData.session_id)
+      .single()
+    readiness = assessContentReadiness((sessionRow?.schema_data ?? {}) as SessionSchema)
+    if (!readiness.ready) {
+      console.warn(
+        `[content-readiness] session=${jobData.session_id} thin before generation: ${readiness.missing.join('; ')}`
+      )
+    }
+  }
+
   // after() runs post-response with Vercel's guarantee it completes within
   // maxDuration. Plain fire-and-forget gets terminated by Vercel once the
   // response leaves the function.
@@ -176,5 +196,5 @@ export async function POST(
     )
   }
 
-  return NextResponse.json({ success: true, pageCount: pages.length })
+  return NextResponse.json({ success: true, pageCount: pages.length, readiness })
 }

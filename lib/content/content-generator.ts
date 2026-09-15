@@ -23,6 +23,15 @@ import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { countWords, targetWordCount } from './word-count-validator'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
+import { PAGE_BODY_EXEMPLAR, WRITING_EXAMPLES } from './exemplars'
+import { resolvePageIntent } from './page-intent'
+import {
+  validateHeroSubhead,
+  validateFaqAnswers,
+  capInternalLinks,
+  validateSchemaType,
+  groundEeatSignals,
+} from './output-validators'
 import { PUBLISHED_CONTENT_MODEL, CONTENT_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -360,7 +369,11 @@ Choose ONE hero block for the page opener:
 
 Default to "page-header" if uncertain. Use "hero" only on the homepage and high-value landing pages.
 
-${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
+${PAGE_BODY_EXEMPLAR}
+
+${ANTI_SLOP_RULES}
+
+${WRITING_EXAMPLES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // Per-page dynamic suffix — everything that varies per call. retryNote is kept
   // here (not in the prefix) so the first attempt and the anti-slop retry send an
@@ -368,6 +381,13 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
   const angleNote = angle?.trim()
     ? `\n\nPAGE ANGLE / POINT OF VIEW (highest priority — shape the whole page around this take; it is the operator's directive for what makes this page distinct):\n${angle.trim()}`
     : ''
+
+  // Page-intent focus block: for a niche/service/location page, restate the ONE
+  // audience/pain/proof/keywords this page is about (the cached firm context lists
+  // every niche/service — this points the writer at the right one). Empty for
+  // home/about/contact/generic pages. Kept in the per-page suffix, not the prefix.
+  const intent = resolvePageIntent(pageUrl, pageTitle, schema)
+  const focusNote = intent.focusBlock ? `\n\n${intent.focusBlock}` : ''
 
   // Editorial-review guidance from the draft critic on a targeted regeneration —
   // the specific defects (likely-fabricated specifics, quality notes) the rewrite
@@ -380,7 +400,7 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
   const dynamicSuffix = `PAGE TO WRITE:
 Title: ${pageTitle}
 URL: ${pageUrl}
-Approved outline: ${JSON.stringify(outlineSections)}${angleNote}${revisionNote}
+Approved outline: ${JSON.stringify(outlineSections)}${focusNote}${angleNote}${revisionNote}
 
 KEYWORD TARGET:
 Primary: ${targetKeyword}
@@ -565,17 +585,27 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       input.revisionGuidance
     )
 
+  // Page intent drives the deterministic coercions below (schema.org type default).
+  const intent = resolvePageIntent(input.pageUrl, input.pageTitle, input.schema)
+
   let result = await gen()
 
-  // Global no-go phrases feed the existing anti-slop flagged→retry path: a hit
-  // forces one regeneration with the offending phrases named in the retry note.
+  // Global no-go phrases + deterministic writing checks (hero subhead / FAQ answer
+  // length) all feed the existing anti-slop flagged→retry path: ONE combined
+  // regeneration with every issue named in the retry note (no extra model loops).
   const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
   const validation = validateContent(result.content, noGoPhrases)
-  if (!validation.passed) {
+  const subheadFlag = validateHeroSubhead(result.metadata.hero_subhead)
+  const writingFlags = [
+    ...(subheadFlag ? [subheadFlag] : []),
+    ...validateFaqAnswers(result.metadata.faq_block),
+  ]
+  const allFlags = [...validation.flagged, ...writingFlags]
+  if (allFlags.length) {
     console.warn(
-      `[content-gen] Anti-slop flagged ${input.pageUrl}: ${validation.flagged.join(' | ')} — retrying`
+      `[content-gen] Draft flagged ${input.pageUrl}: ${allFlags.join(' | ')} — retrying`
     )
-    result = await gen(validation.flagged)
+    result = await gen(allFlags)
   }
 
   const annotations = parseBlockAnnotations(result.content)
@@ -694,13 +724,26 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   }
 
   // Drop hallucinated internal links (typos, invented paths) at generation time
-  // rather than only warning at package time, so broken links never ship.
+  // rather than only warning at package time, so broken links never ship, then cap
+  // the survivors at 4 so a link-stuffed page never reads as spammy.
   const keptLinks = filterKnownInternalLinks(result.metadata.internal_links, input.sitemapUrls)
-  if (keptLinks.length !== result.metadata.internal_links.length) {
+  const cappedLinks = capInternalLinks(keptLinks, 4)
+  if (cappedLinks.length !== result.metadata.internal_links.length) {
     console.warn(
-      `[content-gen] Dropped ${result.metadata.internal_links.length - keptLinks.length} off-sitemap internal link(s) on ${input.pageUrl}`
+      `[content-gen] Internal links on ${input.pageUrl}: ${result.metadata.internal_links.length} → ${cappedLinks.length} (dropped off-sitemap + capped at 4)`
     )
-    result.metadata.internal_links = keptLinks
+    result.metadata.internal_links = cappedLinks
+  }
+
+  // Clamp schema.org @type to a valid value for this page type, and drop EEAT
+  // signals that make a specific quantified/award claim the firm never stated.
+  result.metadata.schema_markup_type = validateSchemaType(result.metadata.schema_markup_type, intent.type)
+  const groundedEeat = groundEeatSignals(result.metadata.eeat_signals, input.schema)
+  if (groundedEeat.length !== result.metadata.eeat_signals.length) {
+    console.warn(
+      `[content-gen] Dropped ${result.metadata.eeat_signals.length - groundedEeat.length} ungrounded EEAT signal(s) on ${input.pageUrl}`
+    )
+    result.metadata.eeat_signals = groundedEeat
   }
 
   // Deterministic dash humanizer: strip em-dashes (and word en-dashes) the model

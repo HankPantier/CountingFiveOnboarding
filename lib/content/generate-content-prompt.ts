@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
+import { SHORT_COPY_EXEMPLAR } from '@/lib/content/exemplars'
 
 interface SessionRow {
   schema_data: unknown
@@ -56,6 +57,8 @@ RULES:
 - Match the brand voice and tone adjectives; avoid the listed "avoid" tones. Never name local competitors in the copy.
 - Write like a person: specific, concrete, varied sentence rhythm. Avoid filler and hollow phrasing ("in today's fast-paced world", "we pride ourselves", "unlock", "elevate", "leverage", "seamless", "cutting-edge", "passionate about"). No em-dash-and-tricolon clichés.
 - Never ask for, collect, or store any password (including a domain registrar password). If asked, refuse and tell the operator to use a secure channel.
+
+${SHORT_COPY_EXEMPLAR}
 
 IMPROVING THE MBP:
 Watch for anything durable the operator states that should apply to ALL of this firm's content going forward — not just the piece in front of you. Two kinds count:

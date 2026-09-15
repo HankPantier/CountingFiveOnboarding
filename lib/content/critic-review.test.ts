@@ -211,3 +211,63 @@ describe('clampScore', () => {
     expect(clampScore(11)).toBe(10)
   })
 })
+
+describe('extended dimensions (outline_coverage / input_utilization / differentiation)', () => {
+  const base = {
+    evidence_specificity: 8,
+    information_gain: 7,
+    brand_fidelity: 8,
+    promise_fulfillment: 8,
+    unsupported_claims: [] as string[],
+    notes: '',
+  }
+
+  it('parses the extended dimensions and missing_sections when present', () => {
+    const r = parseCritic({
+      ...base,
+      outline_coverage: 5,
+      input_utilization: 4,
+      differentiation: 6,
+      missing_sections: ['Why contractor books break down', ''],
+    })
+    expect(r?.outline_coverage).toBe(5)
+    expect(r?.input_utilization).toBe(4)
+    expect(r?.differentiation).toBe(6)
+    expect(r?.missing_sections).toEqual(['Why contractor books break down'])
+  })
+
+  it('stays backward compatible: a legacy 4-dimension row still parses', () => {
+    const r = parseCritic(base)
+    expect(r).not.toBeNull()
+    expect(r?.outline_coverage).toBeUndefined()
+    expect(r?.missing_sections).toEqual([])
+  })
+
+  it('criticOverall averages all seven dimensions when present', () => {
+    // (8+7+8+8+2+2+2)/7 = 5.28 → 5
+    expect(criticOverall({ ...base, outline_coverage: 2, input_utilization: 2, differentiation: 2 })).toBe(5)
+  })
+
+  it('criticOverall averages only the four when the extended dimensions are absent', () => {
+    expect(criticOverall(base)).toBe(8)
+  })
+
+  it('fails the threshold when the model reports skipped outline sections', () => {
+    expect(criticFailsThreshold({ ...base, missing_sections: ['The Challenge'] })).toBe(true)
+  })
+
+  it('counts a weak extended dimension toward the two-weak-dimension rewrite trigger', () => {
+    // One weak original + one weak extended = two weak dimensions → rewrite.
+    expect(criticFailsThreshold({ ...base, information_gain: 3, differentiation: 3 })).toBe(true)
+  })
+
+  it('buildCriticGuidance lists skipped sections to rewrite', () => {
+    const g = buildCriticGuidance({
+      unsupported_claims: [],
+      notes: '',
+      missing_sections: ['The Challenge', 'Results'],
+    })
+    expect(g).toContain('The Challenge')
+    expect(g).toContain('Results')
+  })
+})

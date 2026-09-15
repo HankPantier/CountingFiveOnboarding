@@ -485,6 +485,10 @@ function CriticPanel({ review }: { review: unknown }) {
     ['Information gain', parsed.information_gain],
     ['Brand fidelity', parsed.brand_fidelity],
     ['Promise fulfillment', parsed.promise_fulfillment],
+    // Extended dimensions render only when present (legacy rows omit them).
+    ...(typeof parsed.outline_coverage === 'number' ? [['Outline coverage', parsed.outline_coverage] as [string, number]] : []),
+    ...(typeof parsed.input_utilization === 'number' ? [['Used firm inputs', parsed.input_utilization] as [string, number]] : []),
+    ...(typeof parsed.differentiation === 'number' ? [['Differentiation', parsed.differentiation] as [string, number]] : []),
   ]
 
   return (
@@ -540,6 +544,17 @@ function CriticPanel({ review }: { review: unknown }) {
               </div>
               <ul className="list-disc pl-5 text-text-secondary text-xs space-y-0.5">
                 {parsed.unsupported_claims.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {parsed.missing_sections && parsed.missing_sections.length > 0 && (
+            <div className="border-t border-border-default pt-2">
+              <div className="text-xs font-heading font-semibold text-warning-strong mb-1">
+                Outline sections skipped or thin ({parsed.missing_sections.length})
+              </div>
+              <ul className="list-disc pl-5 text-text-secondary text-xs space-y-0.5">
+                {parsed.missing_sections.map((c, i) => <li key={i}>{c}</li>)}
               </ul>
             </div>
           )}

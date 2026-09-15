@@ -29,11 +29,23 @@ export const GENERATION_PROVIDER_OPTIONS = {
 // rather than duplicated so the two can't silently drift apart.
 export const CONTENT_PROVIDER_OPTIONS = GENERATION_PROVIDER_OPTIONS
 
-// Outline generation is a small, structural JSON task — it does not need the
-// high-effort reasoning the page-body generator uses. High effort against a
-// tight output budget starved the JSON answer (truncated → parse failure →
-// single-section fallback placeholder) and made each call slow. Low effort keeps
-// the reasoning short so the full outline JSON fits and returns fast.
+// Outline generation is the structural GATE for every downstream page body — a
+// weak or placeholder outline cascades into weak copy. The outline model runs
+// high effort (like the body generator) so its section plan is genuinely
+// reasoned. The earlier truncation (high effort starving a tight budget →
+// single-section fallback) is solved the same way the body generator solved it:
+// a generous maxOutputTokens at the call site (12000) plus a low-effort retry
+// safety net, NOT by lowering effort on the primary attempt.
+export const OUTLINE_PRIMARY_PROVIDER_OPTIONS = {
+  anthropic: {
+    thinking: { type: 'adaptive', display: 'omitted' },
+    effort: 'high',
+  } satisfies AnthropicProviderOptions,
+}
+
+// Low-effort fallback for the outline retry: if the high-effort primary attempt
+// still truncates the JSON, less thinking leaves more of the budget for the
+// answer. Also reused by the page-body generator's own truncation retry.
 export const OUTLINE_PROVIDER_OPTIONS = {
   anthropic: {
     thinking: { type: 'adaptive', display: 'omitted' },

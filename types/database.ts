@@ -1313,6 +1313,7 @@ export type Database = {
           angle: string | null
           content_job_id: string
           content_type: string
+          critic_review: Json | null
           industry: string
           created_at: string
           draft_commit_sha: string | null
@@ -1340,6 +1341,7 @@ export type Database = {
           angle?: string | null
           content_job_id: string
           content_type?: string
+          critic_review?: Json | null
           industry?: string
           created_at?: string
           draft_commit_sha?: string | null
@@ -1367,6 +1369,7 @@ export type Database = {
           angle?: string | null
           content_job_id?: string
           content_type?: string
+          critic_review?: Json | null
           industry?: string
           created_at?: string
           draft_commit_sha?: string | null

@@ -15,8 +15,17 @@ export async function runKeywordResearch(
   pageTitle: string,
   pageUrl: string,
   firmContext: { name: string; location: string; services: string[]; niches: string[] },
-  ctx: { contentJobId: string; sessionId: string }
+  ctx: { contentJobId: string; sessionId: string },
+  // Page-intent focus (from resolvePageIntent): the specific niche/service this
+  // page is about + any keywords already captured for it. Steers the Haiku model
+  // toward audience-specific terms ("healthcare CPA tax planning") instead of
+  // generic firm-wide ones ("CPA near me"). Optional — omitted for generic pages.
+  focus?: { label: string; keywords: string[] }
 ): Promise<KeywordResult> {
+  const focusBlock = focus?.label
+    ? `\nTHIS PAGE IS ABOUT: ${focus.label}. Prioritize search terms a ${focus.label} client would actually type — the specific audience, not generic firm-wide terms.${focus.keywords.length ? ` Build on these known keywords: ${focus.keywords.join(', ')}.` : ''}`
+    : ''
+
   // Step 1: Claude keyword generation (Haiku — no providerOptions).
   const parsed = (await generateJson({
     model: anthropic(KEYWORD_MODEL),
@@ -27,7 +36,7 @@ FIRM: ${firmContext.name} in ${firmContext.location}
 SERVICES: ${firmContext.services.join(', ')}
 NICHES: ${firmContext.niches.join(', ')}
 
-PAGE: ${pageTitle} (${pageUrl})
+PAGE: ${pageTitle} (${pageUrl})${focusBlock}
 
 Generate realistic CPA-firm search terms a potential client in ${firmContext.location} would use.
 Prioritize local intent and service specificity over volume.

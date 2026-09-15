@@ -12,22 +12,23 @@ export default function MbpEnrichButton({ sessionId }: { sessionId: string }) {
   const router = useRouter()
 
   async function run() {
-    if (!confirm('Deepen the empty content fields (niche detail, positioning, voice) from the audit + call notes before content generation? This runs an AI pass and queues suggestions for your review.')) return
+    if (!confirm('Deepen the empty content fields (niche detail, positioning, voice) from the audit + call notes before content generation? This runs an AI pass. High-confidence fills grounded in both the audit and the call notes are applied to empty fields automatically (and logged in the suggestion history); everything else is queued for your review.')) return
     setBusy(true)
     setNote('')
     try {
       const res = await fetch(`/api/mbp/${sessionId}/enrich`, { method: 'POST' })
-      const data = (await res.json()) as { created?: number; error?: string }
+      const data = (await res.json()) as { created?: number; applied?: number; error?: string }
       if (!res.ok || data.error) {
         setNote(data.error ?? 'Failed')
         setBusy(false)
         return
       }
-      setNote(
-        data.created
-          ? `${data.created} suggestion${data.created === 1 ? '' : 's'} queued`
-          : 'Nothing new to enrich'
-      )
+      const created = data.created ?? 0
+      const applied = data.applied ?? 0
+      const parts: string[] = []
+      if (applied) parts.push(`${applied} high-confidence field${applied === 1 ? '' : 's'} auto-applied`)
+      if (created) parts.push(`${created} suggestion${created === 1 ? '' : 's'} queued`)
+      setNote(parts.length ? parts.join(', ') : 'Nothing new to enrich')
       router.refresh()
     } catch {
       setNote('Failed. Please try again.')

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { summarizeCritic } from '@/lib/content/critic-review'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
@@ -17,6 +18,9 @@ export interface BlogBatchTargetView {
   slug: string | null
   draftPath: string | null
   error: string | null
+  // Advisory critic verdict: true when the draft completed but the critic flagged
+  // it as weak (needs a human look before it's proofed/published).
+  needsReview: boolean
 }
 
 export interface BlogBatchStatusResponse {
@@ -25,7 +29,7 @@ export interface BlogBatchStatusResponse {
   targetKeyword: string | null
   status: string
   targets: BlogBatchTargetView[]
-  counts: { total: number; complete: number; error: number; skipped: number; inFlight: number }
+  counts: { total: number; complete: number; error: number; skipped: number; inFlight: number; flagged: number }
 }
 
 // Effective per-client state. The resource_ideas.draft_status is the live truth
@@ -98,6 +102,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     : { data: [] }
   const ideaById = new Map((ideas ?? []).map((i) => [i.id, i]))
 
+  // Advisory critic verdicts, fetched separately + best-effort: the critic_review
+  // column may not exist yet (pre-migration 071), so a failure here degrades to
+  // "no flags" rather than breaking the whole status endpoint.
+  const flaggedIdeaIds = new Set<string>()
+  if (ideaIds.length) {
+    const { data: criticRows, error: criticErr } = await supabase
+      .from('resource_ideas')
+      .select('id, critic_review')
+      .in('id', ideaIds)
+    if (!criticErr) {
+      for (const c of criticRows ?? []) {
+        if (summarizeCritic(c.critic_review)?.needsReview) flaggedIdeaIds.add(c.id)
+      }
+    }
+  }
+
   const sessionIds = rows.map((r) => r.session_id)
   const { data: sessions } = sessionIds.length
     ? await supabase.from('sessions').select('id, website_url, schema_data').in('id', sessionIds)
@@ -109,6 +129,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const session = sessionById.get(r.session_id)
     const firmName = ((session?.schema_data ?? {}) as SessionSchema).business?.name ?? null
     const status = effectiveStatus(r.status, idea?.draft_status)
+    // Only a completed draft can be "flagged" — the critic runs after completion.
+    const needsReview = status === 'complete' && !!r.resource_idea_id && flaggedIdeaIds.has(r.resource_idea_id)
     return {
       sessionId: r.session_id,
       firmName,
@@ -117,6 +139,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       slug: idea?.slug ?? null,
       draftPath: idea?.draft_path ?? null,
       error: status === 'error' ? idea?.draft_error ?? r.error ?? 'Generation failed' : r.error ?? null,
+      needsReview,
     }
   })
 
@@ -126,6 +149,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     error: targetViews.filter((t) => t.status === 'error').length,
     skipped: targetViews.filter((t) => t.status === 'skipped').length,
     inFlight: targetViews.filter((t) => t.status === 'pending' || t.status === 'generating').length,
+    flagged: targetViews.filter((t) => t.needsReview).length,
   }
 
   const response: BlogBatchStatusResponse = {

@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
+import { WRITING_EXAMPLES } from './exemplars'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
@@ -25,6 +26,7 @@ import { insertReverseLinks } from './reverse-linker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
+import { reviewResourceDraft } from './draft-critic'
 import { OFF_BRAND_MARKER } from './brand-fit'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import { DEFAULT_BLOG_CONFIG, resolveBlogConfig } from '@/lib/content/blog-config'
@@ -139,7 +141,9 @@ OUTPUT: Return a JSON object:
   }
 }
 
-${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
+${ANTI_SLOP_RULES}
+
+${WRITING_EXAMPLES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // Per-post dynamic suffix — everything that varies per idea. retryNote stays
   // here (not in the prefix) so the first attempt and the anti-slop retry share
@@ -680,6 +684,27 @@ export async function generateResourceDraft(
       })
     } catch (err) {
       console.error('[mbp-impact] resource draft review failed:', err)
+    }
+
+    // Advisory draft-gate critic: grade the finished post so a weak draft surfaces
+    // in the batch UI ("complete · N flagged") instead of shipping silently. The
+    // idea (title/angle/rationale) is the "promise" it's graded against. Non-fatal
+    // — a scoring failure must never regress the already-published draft.
+    try {
+      await reviewResourceDraft({
+        pageId: idea.id,
+        pageUrl: slug,
+        pageTitle: fm.title,
+        contentMarkdown: result.body,
+        outlineSections: asJson({ title: idea.title, angle: idea.angle, rationale: idea.rationale }),
+        targetKeyword: fm.target_keyword || idea.target_keyword || '',
+        competitorRefs: [],
+        schema,
+        sessionId: idea.session_id,
+        contentJobId: idea.content_job_id,
+      })
+    } catch (err) {
+      console.error('[resource-critic] review failed:', err)
     }
 
     // Reverse-link pass: link the most relevant existing posts back to the

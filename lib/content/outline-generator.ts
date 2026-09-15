@@ -6,10 +6,12 @@ import { buildFirmContext } from './brand-voice'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { activeNiches } from './active-niches'
 import { cleanHeading } from './anti-slop-validator'
+import { OUTLINE_EXEMPLAR } from './exemplars'
+import { resolvePageIntent } from './page-intent'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
-import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { OUTLINE_PRIMARY_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { OUTLINE_FALLBACK_NOTE, buildOutlineFailureNote } from './outline-fallback'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -151,7 +153,7 @@ OUTPUT FORMAT (JSON only, no prose):
 {
   "h1": "...",
   "sections": [
-    { "h2": "...", "description": "One sentence: what this section covers and why it matters for this audience.", "word_count": 150 }
+    { "h2": "...", "description": "A specific brief for the copywriter: the angle this section takes AND which concrete input it draws on — the exact niche persona/pain, the proof point or credential, or the keyword it targets.", "word_count": 150 }
   ],
   "target_keyword": "...",
   "notes": "Optional: anything the copywriter should know about tone or angle for this page."
@@ -160,9 +162,11 @@ OUTPUT FORMAT (JSON only, no prose):
 RULES:
 - 4–7 sections per page (fewer for simple pages, more for comprehensive service pages)
 - H1 must contain or closely relate to the target keyword
-- Section descriptions are for the copywriter — be specific about angle, not just topic
+- Section descriptions are a WORKING BRIEF, not a topic label. Each must name the concrete material the copywriter should use — a specific niche audience and their pain, a real credential or proof point from the firm context, or the keyword the section targets. Generic placeholders ("Add content here", "Overview of services", "Introduction to the topic") are unacceptable — every description must be specific enough that two different writers would produce the same-shaped section.
 - Word counts should total 600–1200 words for standard pages, 1500–2000 for pillar pages
 - Do not write any actual copy — structure only
+
+${OUTLINE_EXEMPLAR}
 
 HEADING RULES (h1 and every h2):
 - Specific and benefit-driven, in sentence case
@@ -172,10 +176,14 @@ HEADING RULES (h1 and every h2):
 - No dashes (— or –) in any heading${noGoBlock ? `\n\n${noGoBlock}` : ''}`
 
   // Per-page dynamic suffix — everything that varies per page, kept out of the
-  // cached prefix.
+  // cached prefix. The page-intent focus block points the model at the ONE niche
+  // or service this page is about (the cached firm context lists them all).
+  const intent = resolvePageIntent(pageUrl, pageTitle, schema)
+  const focusBlock = intent.focusBlock ? `\n${intent.focusBlock}\n` : ''
   const dynamicSuffix = `PAGE: ${pageTitle} (${pageUrl})
 TARGET KEYWORD: ${targetKeyword}
 SECONDARY KEYWORDS: ${secondaryKeywords.join(', ')}
+${focusBlock}
 
 ${existingContent ? `EXISTING CONTENT (current site — improve on this):\n${existingContent.slice(0, 800)}` : ''}
 
@@ -183,52 +191,67 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (SERP top results — differentiat
 
 ${auditHintsBlock}`
 
-  const { text, usage, finishReason } = await generateText({
-    model: anthropic(OUTLINE_MODEL),
-    messages: buildCachedMessages(staticPrefix, dynamicSuffix),
-    // Ample headroom for adaptive-thinking tokens ahead of the JSON answer. 3000
-    // truncated the answer once thinking ran, collapsing pages into the fallback.
-    maxOutputTokens: 8000,
-    providerOptions: OUTLINE_PROVIDER_OPTIONS,
-    maxRetries: 4,
-  })
+  // One outline attempt: call the model, record usage, and parse the JSON. A
+  // non-array `sections` (Claude occasionally emits the literal "[]") counts as a
+  // parse failure so the retry re-tries rather than shipping a malformed row.
+  const attempt = async (
+    maxOutputTokens: number,
+    providerOptions: Parameters<typeof generateText>[0]['providerOptions']
+  ): Promise<{ ok: true; outline: OutlineResult } | { ok: false; finishReason: string }> => {
+    const { text, usage, finishReason } = await generateText({
+      model: anthropic(OUTLINE_MODEL),
+      messages: buildCachedMessages(staticPrefix, dynamicSuffix),
+      maxOutputTokens,
+      providerOptions,
+      maxRetries: 4,
+    })
 
-  const cache = extractCacheUsage(usage)
-  console.warn(
-    `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
-  )
-  checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
-  await recordTokenUsage({
-    task: 'content',
-    contentJobId,
-    sessionId,
-    stage: 'outline',
-    pageUrl,
-    model: OUTLINE_MODEL,
-    inputTokens: usage?.inputTokens,
-    outputTokens: usage?.outputTokens,
-    cacheReadInputTokens: cache.cacheReadInputTokens,
-    cacheCreationInputTokens: cache.cacheCreationInputTokens,
-  })
+    const cache = extractCacheUsage(usage)
+    console.warn(
+      `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
+    )
+    checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
+    await recordTokenUsage({
+      task: 'content',
+      contentJobId,
+      sessionId,
+      stage: 'outline',
+      pageUrl,
+      model: OUTLINE_MODEL,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+      cacheReadInputTokens: cache.cacheReadInputTokens,
+      cacheCreationInputTokens: cache.cacheCreationInputTokens,
+    })
+
+    try {
+      const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
+      const parsed = JSON.parse(cleaned) as OutlineResult
+      if (!Array.isArray(parsed.sections)) return { ok: false, finishReason }
+      return { ok: true, outline: parsed }
+    } catch {
+      return { ok: false, finishReason }
+    }
+  }
+
+  // Primary attempt: high effort with a generous budget so the reasoned section
+  // plan and the full JSON both fit. A parse failure (usually a `length` finish =
+  // truncated JSON) retries once with low effort — less thinking leaves more of
+  // the budget for the answer — before collapsing to the review-flagged placeholder.
+  let res = await attempt(12000, OUTLINE_PRIMARY_PROVIDER_OPTIONS)
+  if (!res.ok) {
+    console.warn(
+      `[outline-gen] Outline JSON parse failed for ${pageUrl} (finish=${res.finishReason}) — retrying with low effort`
+    )
+    res = await attempt(12000, OUTLINE_PROVIDER_OPTIONS)
+  }
 
   let outline: OutlineResult
-  try {
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    outline = JSON.parse(cleaned)
-    // Claude occasionally emits sections as the literal string "[]" instead of
-    // an actual array. Coerce any non-array shape to the fallback so the row
-    // is never written with a malformed sections value.
-    if (!Array.isArray(outline.sections)) {
-      console.warn(`[outline-gen] Non-array sections for ${pageUrl} — using fallback`)
-      outline.sections = [{ h2: 'Overview', description: 'Add content here', word_count: 300 }]
-      outline.notes = OUTLINE_FALLBACK_NOTE
-    }
-  } catch (err) {
-    // A 'length' finishReason means the model hit maxOutputTokens before closing
-    // the JSON — surface it so truncation is diagnosable rather than silently
-    // collapsing into the single-section placeholder.
+  if (res.ok) {
+    outline = res.outline
+  } else {
     console.warn(
-      `[outline-gen] Failed to parse outline JSON for ${pageUrl} (finish=${finishReason}): ${err instanceof Error ? err.message : String(err)} — using fallback`
+      `[outline-gen] Failed to parse outline JSON for ${pageUrl} after retry (finish=${res.finishReason}) — using fallback`
     )
     outline = {
       h1: pageTitle,
