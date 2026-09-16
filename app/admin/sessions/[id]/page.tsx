@@ -13,6 +13,7 @@ import MarkCompleteButton from '@/components/admin/MarkCompleteButton'
 import RegenerateMbpButton from '@/components/admin/RegenerateMbpButton'
 import SendReminderButton from '@/components/admin/SendReminderButton'
 import DeleteSessionButton from '@/components/admin/DeleteSessionButton'
+import RenameSessionButton from '@/components/admin/RenameSessionButton'
 import { ReauditButton } from '@/components/admin/audit/ReauditButton'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
@@ -218,6 +219,13 @@ export default async function SessionDetailPage({
         )}
         {['pending', 'in_progress'].includes(session.status) && isAdmin && (
           <MarkCompleteButton sessionId={id} />
+        )}
+        {isAdmin && (
+          <RenameSessionButton
+            sessionId={id}
+            currentName={((session.schema_data as SessionSchema)?.business?.name ?? '').trim()}
+            currentDomain={session.website_url ?? ''}
+          />
         )}
         <DeleteSessionButton sessionId={id} />
       </div>

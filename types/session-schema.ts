@@ -4,6 +4,11 @@ export type SessionSchema = {
     phase4_resolved_tiers: { tier1_done: boolean; tier2_done: boolean }
     phase4_flagged_for_followup: string[]
     admin_overrides: Record<string, boolean>
+    // Human-readable AI synopsis of the firm (who they are + how they sound),
+    // generated on demand from the MBP so an operator can read/verify tone at a
+    // glance. Not sent back into any generation prompt (serializeSchemaFull
+    // strips _meta). See lib/mbp/generate-synopsis.ts.
+    firm_synopsis?: { text: string; generatedAt: string }
     // Dotted field paths written by an approved MBP suggestion → ISO timestamp of
     // when it was applied. The admin MBP page highlights these fields for a few
     // days (a fading "just added" cue), then the page-level recency filter drops

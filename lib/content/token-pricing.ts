@@ -18,6 +18,7 @@ export type TokenStage =
   | 'onboarding'
   | 'mbp'
   | 'mbp_edit'
+  | 'mbp_synopsis'
   | 'audit'
   | 'audit_edit'
   | 'content_edit'

@@ -5,6 +5,7 @@ import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
 import { recentlyAppliedPaths } from '@/lib/mbp/recently-applied'
 import MbpDocument from '@/components/admin/mbp/MbpDocument'
+import MbpSynopsis from '@/components/admin/mbp/MbpSynopsis'
 import MbpDeepLinkFocus from '@/components/admin/mbp/MbpDeepLinkFocus'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
 import MbpSuggestions from '@/components/admin/mbp/MbpSuggestions'
@@ -98,6 +99,12 @@ export default async function MbpPage({
           </Link>
         </div>
       </div>
+
+      <MbpSynopsis
+        sessionId={id}
+        synopsis={schema._meta?.firm_synopsis ?? null}
+        isAdmin={isAdmin}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         <MbpCompleteness doc={doc} gaps={gaps} />
