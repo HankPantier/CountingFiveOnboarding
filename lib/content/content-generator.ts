@@ -21,7 +21,7 @@ import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { countWords, targetWordCount } from './word-count-validator'
-import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext, clientAvoidPhrases } from './brand-voice'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { PAGE_BODY_EXEMPLAR, WRITING_EXAMPLES } from './exemplars'
 import { resolvePageIntent } from './page-intent'
@@ -594,7 +594,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   // length) all feed the existing anti-slop flagged→retry path: ONE combined
   // regeneration with every issue named in the retry note (no extra model loops).
   const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
-  const validation = validateContent(result.content, noGoPhrases)
+  const validation = validateContent(result.content, [...noGoPhrases, ...clientAvoidPhrases(input.schema)])
   const subheadFlag = validateHeroSubhead(result.metadata.hero_subhead)
   const writingFlags = [
     ...(subheadFlag ? [subheadFlag] : []),

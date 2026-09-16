@@ -4,6 +4,11 @@ export type SessionSchema = {
     phase4_resolved_tiers: { tier1_done: boolean; tier2_done: boolean }
     phase4_flagged_for_followup: string[]
     admin_overrides: Record<string, boolean>
+    // Dotted field paths written by an approved MBP suggestion → ISO timestamp of
+    // when it was applied. The admin MBP page highlights these fields for a few
+    // days (a fading "just added" cue), then the page-level recency filter drops
+    // them. See app/api/mbp/[id]/suggestions/[suggestionId] + build-document.
+    recently_applied?: Record<string, string>
     mode?: 'client' | 'staff'
     staff_note?: string
     review_prompts?: Record<string, string>
@@ -349,5 +354,15 @@ export type SessionSchema = {
     authorityGaps: string[]
     conversionGaps: string[]
     teamExpertiseGaps: string[]
+  }
+  // Per-client writing direction, distinct from brand.toneToAvoid (stylistic
+  // qualities) and business.contentExclusions (off-limits TOPICS). Read by
+  // buildFirmContext so it reaches every generator. `avoidPhrases` is enforced
+  // like the global no_go_phrases list (validateContent → flagged → retry);
+  // `preferredPhrases` and `generalDirection` are prompt-only guidance.
+  content_direction?: {
+    generalDirection: string
+    preferredPhrases: string[]
+    avoidPhrases: string[]
   }
 }

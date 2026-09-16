@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
+import { recentlyAppliedPaths } from '@/lib/mbp/recently-applied'
 import MbpDocument from '@/components/admin/mbp/MbpDocument'
 import MbpDeepLinkFocus from '@/components/admin/mbp/MbpDeepLinkFocus'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
@@ -68,9 +69,12 @@ export default async function MbpPage({
   const gaps = (session.gap_list as GapItem[]) ?? []
   const confirmedSitemap = (job?.confirmed_sitemap ?? null) as SessionSchema['proposed_sitemap'] | null
 
-  const doc = buildMbpDocument(schema, confirmedSitemap)
+  const doc = buildMbpDocument(schema, confirmedSitemap, { scaffold: true })
   const overrides =
     ((schema._meta?.admin_overrides as Record<string, boolean> | undefined)) ?? {}
+  // Fields written by a recently approved suggestion get a fading "just added"
+  // highlight; entries older than the window auto-expire (see helper).
+  const recentlyApplied = recentlyAppliedPaths(schema)
   const suggestions = (suggestionRows ?? []) as unknown as MbpSuggestion[]
   const initialMessages: { role: string; content: string }[] = msgs ?? []
 
@@ -114,7 +118,7 @@ export default async function MbpPage({
         </details>
       )}
 
-      <MbpDocument doc={doc} overrides={overrides} sessionId={id} editable={isAdmin} />
+      <MbpDocument doc={doc} overrides={overrides} recentlyApplied={recentlyApplied} sessionId={id} editable={isAdmin} />
     </main>
   )
 }

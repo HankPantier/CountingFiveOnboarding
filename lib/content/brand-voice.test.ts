@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildFirmContext, buildBrandVoiceBlock, buildCredentials } from './brand-voice'
+import { buildFirmContext, buildBrandVoiceBlock, buildCredentials, buildContentDirectionBlock, clientAvoidPhrases } from './brand-voice'
 import type { SessionSchema } from '@/types/session-schema'
 
 const base = (over: Partial<SessionSchema['business']> = {}, rest: Partial<SessionSchema> = {}): SessionSchema => ({
@@ -288,5 +288,31 @@ describe('buildFirmContext — enriched MBP fields', () => {
       brand: { brandPersonality: ['warm', 'precise'], voiceExample: 99, currentTone: 'friendly', toneAdjectives: [], toneToAvoid: [] },
     } as unknown as Partial<SessionSchema>)
     expect(() => buildBrandVoiceBlock(dirty)).not.toThrow()
+  })
+
+  it('buildContentDirectionBlock is empty when nothing is set and emits directives when set', () => {
+    expect(buildContentDirectionBlock(base())).toBe('')
+    const withDir = base({}, {
+      content_direction: {
+        generalDirection: 'Plain-spoken, no jargon.',
+        preferredPhrases: ['tax relief', 'peace of mind'],
+        avoidPhrases: ['world-class', 'synergy'],
+      },
+    } as unknown as Partial<SessionSchema>)
+    const block = buildContentDirectionBlock(withDir)
+    expect(block).toContain('CONTENT DIRECTION')
+    expect(block).toContain('Plain-spoken, no jargon.')
+    expect(block).toContain('"tax relief"')
+    expect(block).toContain('"world-class"')
+    // The direction block is threaded into the full firm context.
+    expect(buildFirmContext(withDir)).toContain('CONTENT DIRECTION')
+  })
+
+  it('clientAvoidPhrases coerces and trims, dropping blanks/non-strings', () => {
+    const s = base({}, {
+      content_direction: { generalDirection: '', preferredPhrases: [], avoidPhrases: [' world-class ', '', 'synergy'] },
+    } as unknown as Partial<SessionSchema>)
+    expect(clientAvoidPhrases(s)).toEqual(['world-class', 'synergy'])
+    expect(clientAvoidPhrases(base())).toEqual([])
   })
 })

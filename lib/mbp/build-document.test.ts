@@ -103,6 +103,33 @@ describe('buildMbpDocument', () => {
   })
 })
 
+describe('buildMbpDocument scaffolding', () => {
+  it('leaves an absent section empty without scaffold (default)', () => {
+    const reputation = buildMbpDocument(SCHEMA).sections.find(s => s.key === 'reputation')
+    expect(reputation!.fields ?? []).toHaveLength(0)
+  })
+
+  it('surfaces every known field as an editable blank with { scaffold: true }', () => {
+    const reputation = buildMbpDocument(SCHEMA, null, { scaffold: true }).sections.find(
+      s => s.key === 'reputation'
+    )
+    const summary = reputation!.fields!.find(f => f.fieldPath === 'reputation.reviewSummary')
+    expect(summary).toBeTruthy()
+    expect(summary!.empty).toBe(true)
+    const gaps = reputation!.fields!.find(f => f.fieldPath === 'reputation.trustSignalGaps')
+    expect(Array.isArray(gaps!.value)).toBe(true)
+  })
+
+  it('does not clobber real values when scaffolding', () => {
+    const business = buildMbpDocument(SCHEMA, null, { scaffold: true }).sections.find(
+      s => s.key === 'business'
+    )
+    const name = business!.fields!.find(f => f.fieldPath === 'business.name')
+    expect(name!.value).toBe('Korbey Lague')
+    expect(name!.empty).toBe(false)
+  })
+})
+
 describe('mbpDocumentToMarkdown', () => {
   it('renders section headings and field bullets', () => {
     const md = mbpDocumentToMarkdown(buildMbpDocument(SCHEMA))

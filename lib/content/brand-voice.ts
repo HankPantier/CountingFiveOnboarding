@@ -225,7 +225,34 @@ export function buildFirmContext(schema: SessionSchema): string {
     : ''
 
   const scope = buildContentScopeBlock(schema)
-  return [profile, auditBlock, scope].filter(Boolean).join('\n\n')
+  const direction = buildContentDirectionBlock(schema)
+  return [profile, auditBlock, scope, direction].filter(Boolean).join('\n\n')
+}
+
+// Per-client "do not use these phrases" — the hard-ban list. Fed into
+// validateContent(content, [...globalNoGo, ...here]) so it gets the same
+// flagged→retry enforcement as the global no_go_phrases list.
+export function clientAvoidPhrases(schema: SessionSchema): string[] {
+  return arr(schema.content_direction?.avoidPhrases).map(x => str(x).trim()).filter(Boolean)
+}
+
+// Per-client writing direction captured on the MBP (content_direction.*).
+// generalDirection + preferredPhrases are prompt-only guidance; avoidPhrases is
+// stated as a hard ban here AND enforced post-generation (see clientAvoidPhrases).
+export function buildContentDirectionBlock(schema: SessionSchema): string {
+  const direction = str(schema.content_direction?.generalDirection).trim()
+  const preferred = arr(schema.content_direction?.preferredPhrases).map(x => str(x).trim()).filter(Boolean)
+  const avoid = clientAvoidPhrases(schema)
+  if (!direction && !preferred.length && !avoid.length) return ''
+  const lines: string[] = ['CONTENT DIRECTION (client-specific writing directives — obey exactly):']
+  if (direction) lines.push(direction)
+  if (preferred.length) {
+    lines.push(`Favor this vocabulary where it reads naturally: ${preferred.map(p => `"${p}"`).join(', ')}.`)
+  }
+  if (avoid.length) {
+    lines.push(`Never use these exact phrases or a close variant, in any casing: ${avoid.map(p => `"${p}"`).join(', ')}.`)
+  }
+  return lines.join('\n')
 }
 
 // Hard client-set scope directives captured from the onboarding call. Emphasis

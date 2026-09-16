@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
+import { buildBrandVoiceBlock, buildFirmContext, firmLocation, clientAvoidPhrases } from './brand-voice'
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { WRITING_EXAMPLES } from './exemplars'
@@ -509,7 +509,7 @@ export async function generateResourceDraft(
     if (!result) throw new Error('Draft generation returned unparseable output')
 
     const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
-    const validation = validateContent(result.body, noGoPhrases)
+    const validation = validateContent(result.body, [...noGoPhrases, ...clientAvoidPhrases(schema)])
     if (!validation.passed) {
       console.warn(
         `[resource-draft] Anti-slop flagged "${idea.title}": ${validation.flagged.join(' | ')} — retrying`

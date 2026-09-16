@@ -5,6 +5,7 @@ import type {
   MbpDocumentItem,
   MbpDocumentSection,
 } from '@/types/mbp'
+import { OBJECT_SECTION_TEMPLATES } from '@/lib/mbp/section-templates'
 
 // Builds a complete, human-readable projection of the MBP (schema_data) for
 // the admin/manager MBP page and export. Unlike serializeSchema (which trims
@@ -18,6 +19,9 @@ import type {
 const LABEL_OVERRIDES: Record<string, string> = {
   contentEmphasis: 'Content to emphasize',
   contentExclusions: 'Content to exclude',
+  generalDirection: 'General direction',
+  preferredPhrases: 'Use these phrases',
+  avoidPhrases: 'Do not use these phrases',
 }
 
 function humanize(key: string): string {
@@ -110,10 +114,26 @@ function arraySection<T extends Record<string, unknown>>(
 // proposed_sitemap, which are stale onboarding-audit artifacts.
 type SitemapEntry = NonNullable<SessionSchema['proposed_sitemap']>[number]
 
+// When `scaffold` is on (the admin MBP page only), merge the section's canonical
+// template UNDER the real data so every known field renders as an editable blank
+// even when schema_data omits it. Off everywhere else (export, completeness,
+// enrichment, backfill) so those paths keep seeing only real data.
+function withSectionDefaults(
+  key: string,
+  data: Record<string, unknown> | undefined,
+  scaffold: boolean
+): Record<string, unknown> | undefined {
+  const template = OBJECT_SECTION_TEMPLATES[key]
+  if (!scaffold || !template) return data
+  return { ...template, ...(data ?? {}) }
+}
+
 export function buildMbpDocument(
   schema: SessionSchema,
-  confirmedSitemap?: SitemapEntry[] | null
+  confirmedSitemap?: SitemapEntry[] | null,
+  options: { scaffold?: boolean } = {}
 ): MbpDocument {
+  const scaffold = options.scaffold ?? false
   // Read-back of the Phase-3 industry review: annotate the section title with a
   // kept/dropped count so the operator can see the decision at a glance.
   const droppedNicheCount = (schema.niches ?? []).filter(n => n.status === 'dropped').length
@@ -124,21 +144,27 @@ export function buildMbpDocument(
 
   const prov = schema._meta?.field_provenance as ProvenanceMap | undefined
 
+  // business keeps its content-scope defaults in every mode; scaffolding adds
+  // the remaining known fields on top when enabled.
+  const obj = (key: string, title: string, data: Record<string, unknown> | undefined) =>
+    objectSection(key, title, withSectionDefaults(key, data, scaffold), prov)
+
   const sections: MbpDocumentSection[] = [
-    objectSection('contact', 'Contact', schema.contact as Record<string, unknown> | undefined, prov),
-    objectSection('business', 'Business', withContentScopeDefaults(schema.business as Record<string, unknown> | undefined), prov),
-    objectSection('brand', 'Brand & Tone', schema.brand as Record<string, unknown> | undefined, prov),
-    objectSection('culture', 'Culture', schema.culture as Record<string, unknown> | undefined, prov),
-    objectSection('technical', 'Technical', schema.technical as Record<string, unknown> | undefined, prov),
+    obj('contact', 'Contact', schema.contact as Record<string, unknown> | undefined),
+    obj('business', 'Business', withContentScopeDefaults(schema.business as Record<string, unknown> | undefined)),
+    obj('brand', 'Brand & Tone', schema.brand as Record<string, unknown> | undefined),
+    obj('content_direction', 'Content Direction', schema.content_direction as Record<string, unknown> | undefined),
+    obj('culture', 'Culture', schema.culture as Record<string, unknown> | undefined),
+    obj('technical', 'Technical', schema.technical as Record<string, unknown> | undefined),
     arraySection('locations', 'Locations', schema.locations, l => l.name || l.city || '', prov),
     arraySection('team', 'Team', schema.team, t => t.name || '', prov),
     arraySection('services', 'Services', schema.services, s => s.name || '', prov),
     arraySection('niches', nicheTitle, schema.niches, n => (n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || ''), prov),
     arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || '', prov),
-    objectSection('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined, prov),
-    objectSection('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined, prov),
-    objectSection('assets', 'Assets', schema.assets as Record<string, unknown> | undefined, prov),
-    objectSection('additional', 'Additional', schema.additional as Record<string, unknown> | undefined, prov),
+    obj('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined),
+    obj('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined),
+    obj('assets', 'Assets', schema.assets as Record<string, unknown> | undefined),
+    obj('additional', 'Additional', schema.additional as Record<string, unknown> | undefined),
   ]
   if (confirmedSitemap && confirmedSitemap.length > 0) {
     sections.push(arraySection('site_map', 'Site Map', confirmedSitemap, p => p.title || p.url || ''))

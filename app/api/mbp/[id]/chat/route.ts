@@ -3,8 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { buildMbpEditPrompt } from '@/lib/mbp/edit-prompt'
-import { applyMbpUpdate } from '@/lib/mbp/apply-update'
-import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
+import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
@@ -68,30 +67,44 @@ export async function POST(
     }
   }
 
-  // Track whether any MBP field actually changed this turn so we only refresh
-  // the downloadable deliverable when there's something new to render.
-  let mutated = false
+  // The chat NEVER mutates schema_data. It files pending suggestions that an
+  // admin approves from the "Suggested updates" panel — a human check before
+  // anything reaches the MBP (mirrors the content-assistant suggest flow).
+  const currentSchema = (session.schema_data as Record<string, unknown>) ?? {}
   const result = streamText({
       model: anthropic('claude-sonnet-4-6'),
       system: buildMbpEditPrompt(session),
       messages: await convertToModelMessages(trimMessages(messages)),
       tools: {
-        update_mbp: {
-          description: 'Update MBP fields directly. Use to fill missing fields or correct existing ones.',
+        suggest_mbp_update: {
+          description:
+            'Queue a pending MBP suggestion for the admin to approve. Use when the admin confirms a value to fill or correct. Does NOT change the profile — the admin approves it in the Suggested updates panel.',
           inputSchema: z.object({
-            updates: z
-              .record(z.string(), z.unknown())
-              .describe('Dotted field path → value pairs to merge into the MBP (e.g. business.tagline)'),
-            resolvedGaps: z
-              .array(z.string())
-              .optional()
-              .describe('Gap field paths now resolved'),
+            summary: z.string().describe('One-line summary of what should change'),
+            changes: z
+              .array(
+                z.object({
+                  fieldPath: z
+                    .string()
+                    .describe('Dotted MBP field path, e.g. business.tagline or team.0.certifications'),
+                  op: z
+                    .enum(['set', 'append'])
+                    .optional()
+                    .describe("'set' replaces the field; 'append' adds a new array entry (team/services/niches/locations)"),
+                  proposedValue: z.unknown().describe('The new value (or array item for append)'),
+                  rationale: z.string().describe('Why this change is warranted'),
+                })
+              )
+              .min(1),
           }),
-          execute: async ({ updates, resolvedGaps }) => {
-            const r = await applyMbpUpdate(supabase, id, updates, resolvedGaps)
-            if (r.success) mutated = true
-            return r
-          },
+          execute: async ({ summary, changes }) =>
+            insertMbpSuggestion(supabase, {
+              sessionId: id,
+              origin: 'mbp_chat',
+              summary,
+              changes,
+              schema: currentSchema,
+            }),
         },
       },
       stopWhen: stepCountIs(5),
@@ -113,8 +126,6 @@ export async function POST(
             .from('sessions')
             .update({ last_activity_at: new Date().toISOString() })
             .eq('id', id)
-          // Refresh the downloadable MBP if fields changed and the session is approved.
-          if (mutated) await regenerateMbpIfApproved(supabase, id)
         } catch (err) {
           console.error('[mbp-chat] onFinish failed:', err)
         }

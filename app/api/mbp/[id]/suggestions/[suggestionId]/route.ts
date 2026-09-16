@@ -57,6 +57,9 @@ export async function PATCH(
     const currentSchema = (sessionRow?.schema_data ?? {}) as SessionSchema
 
     const updates: Record<string, unknown> = {}
+    // Exact paths written, for the "just added" highlight. Appends resolve to the
+    // new item's index (e.g. team.3) so only the new row lights up, not the array.
+    const appliedPaths: string[] = []
     for (const [fieldPath, change] of Object.entries(changes)) {
       if (change.op === 'append') {
         let item: unknown = change.proposedValue
@@ -83,12 +86,14 @@ export async function PATCH(
           )
         }
         updates[fieldPath] = [...base, item]
+        appliedPaths.push(`${fieldPath}.${base.length}`)
       } else {
         updates[fieldPath] = change.proposedValue
+        appliedPaths.push(fieldPath)
       }
     }
 
-    const result = await applyMbpUpdate(supabase, id, updates)
+    const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths })
     if (!result.success) {
       return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })
     }

@@ -32,8 +32,8 @@ export default function MbpChat({
 
   const isLoading = status === 'submitted' || status === 'streaming'
 
-  // After each completed exchange, refresh the server component so the
-  // document + completeness panel reflect any update_mbp tool writes.
+  // After each completed exchange, refresh the server component so any newly
+  // filed suggestion shows up in the "Suggested updates" panel to approve.
   useEffect(() => {
     if (status === 'ready' && messages.length > 0) router.refresh()
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -56,7 +56,7 @@ export default function MbpChat({
       <div className="px-4 py-3 border-b border-border-default bg-surface-subtle">
         <h2 className="text-sm font-heading font-semibold text-text-primary">MBP Edit Assistant</h2>
         <p className="text-xs text-text-muted font-body mt-0.5">
-          Ask to fill or correct any field — changes apply to the profile.
+          Ask to fill or correct any field — changes become suggestions you approve.
         </p>
       </div>
 

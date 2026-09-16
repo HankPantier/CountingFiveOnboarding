@@ -1,5 +1,6 @@
 import { formatFieldValue } from '@/lib/mbp/build-document'
 import MbpEditableField from '@/components/admin/mbp/MbpEditableField'
+import MbpAddItemButton from '@/components/admin/mbp/MbpAddItemButton'
 import type { MbpDocument, MbpDocumentField, MbpDocumentItem } from '@/types/mbp'
 
 // Sitemap sections are uniformly tabular and otherwise render as tall
@@ -21,23 +22,41 @@ function ProvenanceBadge({ provenance }: { provenance?: string }) {
   return <span className={`ml-1 text-[10px] font-body ${badge.className}`} title={badge.title}>{badge.label}</span>
 }
 
+// True when this field was written by a recently approved suggestion. Exact
+// path match, or a prefix match so an appended array item (recorded as team.3)
+// lights up all of that new row's subfields (team.3.name, …).
+function isRecentlyApplied(fieldPath: string, appliedPaths: string[]): boolean {
+  return appliedPaths.some(p => fieldPath === p || fieldPath.startsWith(`${p}.`))
+}
+
 function FieldRow({
   field,
   overridden,
+  recentlyApplied,
   sessionId,
   editable,
 }: {
   field: MbpDocumentField
   overridden: boolean
+  recentlyApplied: string[]
   sessionId: string
   editable: boolean
 }) {
   const display = formatFieldValue(field.value)
+  const highlighted = isRecentlyApplied(field.fieldPath, recentlyApplied)
   return (
-    <div id={`mbp-field-${field.fieldPath}`} className="scroll-mt-6 flex items-start gap-3 py-1.5 border-b border-border-default last:border-0">
+    <div
+      id={`mbp-field-${field.fieldPath}`}
+      className={`scroll-mt-6 flex items-start gap-3 py-1.5 border-b border-border-default last:border-0${highlighted ? ' bg-brand-cyan/10 -mx-2 px-2 rounded' : ''}`}
+    >
       <span className="text-text-secondary text-xs font-body w-40 flex-shrink-0 pt-0.5">
         {field.label}
         {overridden && <span className="ml-1 text-brand-cyan" title="Admin override">●</span>}
+        {highlighted && (
+          <span className="ml-1 text-[10px] font-body text-success" title="Just applied from an approved suggestion">
+            added
+          </span>
+        )}
         {!field.empty && <ProvenanceBadge provenance={field.provenance} />}
       </span>
       <div className="flex-1 min-w-0">
@@ -101,11 +120,13 @@ function SitemapTable({ items }: { items: MbpDocumentItem[] }) {
 function SectionCard({
   section,
   overrides,
+  recentlyApplied,
   sessionId,
   editable,
 }: {
   section: MbpDocument['sections'][number]
   overrides: Record<string, boolean>
+  recentlyApplied: string[]
   sessionId: string
   editable: boolean
 }) {
@@ -117,23 +138,28 @@ function SectionCard({
       <div className="px-4 py-1">
         {section.fields && section.fields.length > 0 &&
           section.fields.map(f => (
-            <FieldRow key={f.fieldPath} field={f} overridden={!!overrides[f.fieldPath]} sessionId={sessionId} editable={editable} />
+            <FieldRow key={f.fieldPath} field={f} overridden={!!overrides[f.fieldPath]} recentlyApplied={recentlyApplied} sessionId={sessionId} editable={editable} />
           ))}
-        {section.items && (
-          SITEMAP_KEYS.has(section.key) ? (
-            <SitemapTable items={section.items} />
-          ) : section.items.length === 0 ? (
-            <p className="text-text-muted font-body text-sm italic py-2">None.</p>
-          ) : (
-            section.items.map((item, i) => (
-              <div key={i} className="py-2 border-b border-border-default last:border-0">
-                <p className="text-xs font-heading font-semibold text-text-primary mb-1">{item.heading}</p>
-                {item.fields.map(f => (
-                  <FieldRow key={f.fieldPath} field={f} overridden={!!overrides[f.fieldPath]} sessionId={sessionId} editable={editable} />
-                ))}
-              </div>
-            ))
-          ))}
+        {section.items && SITEMAP_KEYS.has(section.key) && <SitemapTable items={section.items} />}
+        {section.items && !SITEMAP_KEYS.has(section.key) && (
+          <>
+            {section.items.length === 0 ? (
+              <p className="text-text-muted font-body text-sm italic py-2">None.</p>
+            ) : (
+              section.items.map((item, i) => (
+                <div key={i} className="py-2 border-b border-border-default last:border-0">
+                  <p className="text-xs font-heading font-semibold text-text-primary mb-1">{item.heading}</p>
+                  {item.fields.map(f => (
+                    <FieldRow key={f.fieldPath} field={f} overridden={!!overrides[f.fieldPath]} recentlyApplied={recentlyApplied} sessionId={sessionId} editable={editable} />
+                  ))}
+                </div>
+              ))
+            )}
+            {editable && (
+              <MbpAddItemButton sessionId={sessionId} sectionKey={section.key} count={section.items.length} />
+            )}
+          </>
+        )}
         {(!section.fields || section.fields.length === 0) && !section.items && (
           <p className="text-text-muted font-body text-sm italic py-2">No data collected yet.</p>
         )}
@@ -145,11 +171,13 @@ function SectionCard({
 export default function MbpDocument({
   doc,
   overrides,
+  recentlyApplied = [],
   sessionId,
   editable = false,
 }: {
   doc: MbpDocument
   overrides: Record<string, boolean>
+  recentlyApplied?: string[]
   sessionId: string
   editable?: boolean
 }) {
@@ -159,7 +187,7 @@ export default function MbpDocument({
   return (
     <div className="space-y-3">
       {doc.sections.map(section => (
-        <SectionCard key={section.key} section={section} overrides={overrides} sessionId={sessionId} editable={editable} />
+        <SectionCard key={section.key} section={section} overrides={overrides} recentlyApplied={recentlyApplied} sessionId={sessionId} editable={editable} />
       ))}
     </div>
   )

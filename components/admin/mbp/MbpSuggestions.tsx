@@ -3,6 +3,14 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { MbpSuggestion } from '@/types/mbp'
 
+// Object/array values (e.g. a new team member appended to an array) would render
+// as "[object Object]" via String(); show readable JSON instead.
+function fmt(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'object') return JSON.stringify(v, null, 2)
+  return String(v)
+}
+
 function SuggestionCard({
   sessionId,
   suggestion,
@@ -65,9 +73,9 @@ function SuggestionCard({
               {change.op === 'append' ? `Add to ${fieldPath}` : fieldPath}
             </p>
             {change.op !== 'append' && change.currentValue !== undefined && change.currentValue !== null && change.currentValue !== '' && (
-              <p className="text-text-muted line-through break-words">{String(change.currentValue)}</p>
+              <p className="text-text-muted line-through break-words whitespace-pre-wrap">{fmt(change.currentValue)}</p>
             )}
-            <p className="text-text-primary break-words whitespace-pre-wrap">{String(change.proposedValue)}</p>
+            <p className="text-text-primary break-words whitespace-pre-wrap">{fmt(change.proposedValue)}</p>
             <p className="text-text-muted italic mt-0.5">{change.rationale}</p>
           </div>
         ))}

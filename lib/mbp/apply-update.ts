@@ -16,7 +16,10 @@ export async function applyMbpUpdate(
   supabase: Supabase,
   sessionId: string,
   updates: Record<string, unknown>,
-  resolvedGaps?: string[]
+  resolvedGaps?: string[],
+  // When `appliedPaths` is set (the suggestion-approve route), stamp those paths
+  // into _meta.recently_applied so the MBP page can highlight them as just-added.
+  options?: { appliedPaths?: string[] }
 ): Promise<{ success: boolean; error?: string }> {
   const { data: current } = await supabase
     .from('sessions')
@@ -43,6 +46,15 @@ export async function applyMbpUpdate(
   // An admin edit is a confirmation — tag provenance so the UI/content-gen can
   // tell hand-verified fields from seed data (thin values downgrade to 'thin').
   schema = stampProvenance(schema as unknown as SessionSchema, overridePaths, 'confirmed') as unknown as Record<string, unknown>
+
+  const appliedPaths = options?.appliedPaths ?? []
+  if (appliedPaths.length) {
+    const m = (schema._meta as Record<string, unknown>) ?? {}
+    const recent = (m.recently_applied as Record<string, string>) ?? {}
+    const now = new Date().toISOString()
+    for (const p of appliedPaths) recent[p] = now
+    schema = { ...schema, _meta: { ...m, recently_applied: recent } }
+  }
 
   const gaps = (current.gap_list as GapItem[]) ?? []
   const updatedGaps = resolvedGaps?.length
