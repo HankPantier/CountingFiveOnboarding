@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_service_status: {
+        Row: {
+          id: boolean
+          credit_exhausted_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: boolean
+          credit_exhausted_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: boolean
+          credit_exhausted_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       admins: {
         Row: {
           capabilities: string[]

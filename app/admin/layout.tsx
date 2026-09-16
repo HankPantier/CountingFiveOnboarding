@@ -1,6 +1,8 @@
 import { getCurrentUser, hasOnboardingAccess, isSiteOwner } from '@/lib/auth/access'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import AdminTopBar from '@/components/admin/AdminTopBar'
+import AiCreditBanner from '@/components/admin/AiCreditBanner'
+import { getAiCreditStatus } from '@/lib/ai/ai-service-status'
 
 // Shell for every /admin/* route. Renders the dark sidebar + sticky top bar for
 // authenticated users. Unauthenticated requests (e.g. /admin/login) render bare
@@ -15,11 +17,16 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // carries its own top bar with a sign-out control.
   if (isSiteOwner(user)) return <>{children}</>
 
+  // One proactive banner across the whole admin shell when Claude API credits have
+  // run out (a credit outage disables every AI feature at once).
+  const aiStatus = await getAiCreditStatus()
+
   return (
     <div className="flex min-h-screen bg-surface-page">
       <AdminSidebar isAdmin={user.isAdmin} capabilities={user.capabilities} userName={user.name ?? undefined} />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <AdminTopBar userName={user.name ?? undefined} searchAction={hasOnboardingAccess(user) ? '/admin/dashboard' : '/admin/content'} />
+        {aiStatus.exhausted && <AiCreditBanner isAdmin={user.isAdmin} />}
         {children}
       </div>
     </div>
