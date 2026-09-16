@@ -17,7 +17,7 @@ import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-ed
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { sanitizeGeneratedText, humanizeDashes } from '@/lib/content/anti-slop-validator'
 import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
-import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
+import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
@@ -409,15 +409,23 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
               )
               .min(1),
           }),
-          execute: async ({ summary, changes }) =>
-            insertMbpSuggestion(supabase, {
-              sessionId: sessionId,
-              origin: 'content_edit',
-              sourceRef: path,
-              summary,
-              changes,
-              schema: rawSchema,
-            }),
+          execute: async ({ summary, changes }) => {
+            try {
+              return await insertMbpSuggestion(supabase, {
+                sessionId: sessionId,
+                origin: 'content_edit',
+                sourceRef: path,
+                summary,
+                changes,
+                schema: rawSchema,
+              })
+            } catch (err) {
+              // Return the failure to the model instead of throwing — an uncaught
+              // throw here would surface to the client as the generic "hit an
+              // error" banner even though the page edit itself may have succeeded.
+              return { error: err instanceof Error ? err.message : 'Failed to file the MBP suggestion.' }
+            }
+          },
         },
       },
       // A multi-part instruction ("remove every X, Y, Z") fans out into many
@@ -446,6 +454,6 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
     // (`tool-calls` = the model was stopped while still wanting to edit) from a
     // clean stop, and report honest applied/incomplete status.
     messageMetadata: ({ part }) => (part.type === 'finish' ? { finishReason: part.finishReason } : undefined),
-    onError: (error) => aiStreamErrorMessage(error),
+    onError: (error) => logAndFormatAiStreamError('edit-page', error),
   })
 }

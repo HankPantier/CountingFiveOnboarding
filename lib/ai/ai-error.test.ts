@@ -1,14 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { APICallError } from 'ai'
-import { classifyAiError, aiStreamErrorMessage, ANTHROPIC_STATUS_URL } from './ai-error'
+import { classifyAiError, aiStreamErrorMessage, logAndFormatAiStreamError, ANTHROPIC_STATUS_URL } from './ai-error'
 
-function apiError(statusCode: number, { message = 'boom', isRetryable = false } = {}) {
+function apiError(statusCode: number, { message = 'boom', isRetryable = false, responseBody = '' } = {}) {
   return new APICallError({
     message,
     url: 'https://api.anthropic.com/v1/messages',
     requestBodyValues: {},
     statusCode,
     isRetryable,
+    responseBody,
   })
 }
 
@@ -41,6 +42,36 @@ describe('classifyAiError — Anthropic API status codes', () => {
   it('falls back to isRetryable when the status is unmapped', () => {
     expect(classifyAiError(apiError(408, { isRetryable: true })).kind).toBe('timeout')
   })
+
+  it('classifies 400/413/422 as a rejected request (not a provider outage)', () => {
+    for (const status of [400, 413, 422]) {
+      const info = classifyAiError(apiError(status))
+      expect(info.kind).toBe('bad_request')
+      // A rejected request is NOT a transient provider issue — retrying identically won't help.
+      expect(info.isProviderIssue).toBe(false)
+      expect(info.userMessage).toMatch(/too long or complex|shorter/i)
+    }
+  })
+
+  it('classifies out-of-credits as its own kind, even though it arrives as a 400', () => {
+    // Anthropic returns insufficient credits as a 400 whose body says the reason.
+    const info = classifyAiError(
+      apiError(400, {
+        message: 'Bad Request',
+        responseBody:
+          '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}',
+      })
+    )
+    expect(info.kind).toBe('credit') // NOT bad_request — must not say "shorten your request"
+    expect(info.isProviderIssue).toBe(false)
+    expect(info.userMessage).toMatch(/credits/i)
+    expect(info.userMessage).toMatch(/administrator/i)
+    expect(info.userMessage).not.toMatch(/shorter|too long/i)
+  })
+
+  it('classifies a 402 Payment Required as a credit issue', () => {
+    expect(classifyAiError(apiError(402)).kind).toBe('credit')
+  })
 })
 
 describe('classifyAiError — message + network heuristics', () => {
@@ -58,6 +89,15 @@ describe('classifyAiError — message + network heuristics', () => {
     ;(wrapped as { cause?: unknown }).cause = apiError(503)
     expect(classifyAiError(wrapped).kind).toBe('overloaded')
   })
+
+  it('detects a too-long prompt / invalid request in the message text', () => {
+    expect(classifyAiError(new Error('prompt is too long: 210000 tokens')).kind).toBe('bad_request')
+    expect(classifyAiError(new Error('invalid_request_error')).kind).toBe('bad_request')
+  })
+
+  it('detects an out-of-credits message in plain error text', () => {
+    expect(classifyAiError(new Error('Your credit balance is too low to access the Anthropic API')).kind).toBe('credit')
+  })
 })
 
 describe('classifyAiError — non-provider errors', () => {
@@ -65,6 +105,26 @@ describe('classifyAiError — non-provider errors', () => {
     const info = classifyAiError(new Error('Cannot read properties of undefined'))
     expect(info.isProviderIssue).toBe(false)
     expect(info.kind).toBe('unknown')
-    expect(aiStreamErrorMessage(new Error('boom'))).toBe('The assistant hit an error — please try again.')
+    expect(aiStreamErrorMessage(new Error('boom'))).toMatch(/unexpected error/i)
+  })
+})
+
+describe('logAndFormatAiStreamError', () => {
+  it('logs an unclassified error at error level and returns the generic message', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const msg = logAndFormatAiStreamError('edit-page', new Error('Cannot read properties of undefined'))
+    expect(msg).toMatch(/unexpected error/i)
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy.mock.calls[0][0]).toContain('[ai-error] edit-page UNCLASSIFIED')
+    spy.mockRestore()
+  })
+
+  it('logs a provider issue at warn level and returns its guidance', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const msg = logAndFormatAiStreamError('edit-page', apiError(529))
+    expect(msg).toContain(ANTHROPIC_STATUS_URL)
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy.mock.calls[0][0]).toContain('[ai-error] edit-page overloaded')
+    spy.mockRestore()
   })
 })

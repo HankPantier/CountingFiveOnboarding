@@ -10,7 +10,7 @@ import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
-import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
+import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
 import { normalizeSlug } from '../../create-page/_slug'
 import { buildStarterPage, generateNewPage } from '@/lib/content/new-page-generator'
@@ -457,6 +457,6 @@ RULES
   })
 
   return result.toUIMessageStreamResponse({
-    onError: (error) => aiStreamErrorMessage(error),
+    onError: (error) => logAndFormatAiStreamError('site-assistant', error),
   })
 }

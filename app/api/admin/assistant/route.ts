@@ -7,7 +7,7 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { buildAssistantTools } from '@/lib/admin/assistant-tools'
 import { buildAssistantPrompt } from '@/lib/admin/assistant-prompt'
-import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
+import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 
 // Node runtime: Supabase service client + Anthropic.
 export const runtime = 'nodejs'
@@ -54,6 +54,6 @@ export async function POST(req: Request) {
   })
 
   return result.toUIMessageStreamResponse({
-    onError: (error) => aiStreamErrorMessage(error),
+    onError: (error) => logAndFormatAiStreamError('admin-assistant', error),
   })
 }
