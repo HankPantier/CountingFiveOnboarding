@@ -6,6 +6,7 @@
 // the old update-only flat list.
 import { buildFirmContext } from './brand-voice'
 import { activeNiches } from './active-niches'
+import { activeServices } from './active-services'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { slugify } from './sitemap-utils'
@@ -93,7 +94,7 @@ export function buildSkeletonProposal(
       })
     }
   }
-  const services = (schema.services ?? []).filter(s => s.name?.trim())
+  const services = activeServices(schema).filter(s => s.name?.trim())
   if (services.length) {
     push({ url: '/services', title: 'Services', status: 'new', parent: '/' })
     for (const s of services) {
@@ -206,7 +207,7 @@ function buildPrompt(schema: SessionSchema, skeleton: ProposedSitemap): string {
     .filter(n => n.name?.trim())
     .map(n => `- ${n.name}: ${n.valueProp || n.painPoints || n.description || ''}`.trim())
     .join('\n')
-  const services = (schema.services ?? [])
+  const services = activeServices(schema)
     .filter(s => s.name?.trim())
     .map(s => `- ${s.name}: ${s.description || ''}`.trim())
     .join('\n')

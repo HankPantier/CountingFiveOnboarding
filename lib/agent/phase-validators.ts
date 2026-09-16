@@ -66,6 +66,21 @@ export function validatePhaseAdvance(
       if (reviewNeeded && !meta?.niche_review) {
         return 'the industry keep/drop review has not been completed — the client must submit the Industry review card (which writes _meta.niche_review) before Phase 3 can advance'
       }
+
+      // Services keep/drop review gate. The ServiceReviewCard writes
+      // _meta.services_review; block the advance until it's present. Guarded on
+      // "there is at least one service to review" so no-service sessions never stall.
+      const services = (schema.services as Array<{ name?: string }> | undefined) ?? []
+      const servicesNeedReview = services.some(s => (s?.name ?? '').trim() !== '')
+      if (servicesNeedReview && !meta?.services_review) {
+        return 'the services keep/drop review has not been completed — the client must submit the Services review card (which writes _meta.services_review) before Phase 3 can advance'
+      }
+
+      // Geographic scope review gate. Every firm makes a service-area decision, so
+      // this is unconditional — the GeographyReviewCard writes _meta.geo_review.
+      if (!meta?.geo_review) {
+        return 'the geographic scope review has not been completed — the client must submit the Service area card (which writes _meta.geo_review) before Phase 3 can advance'
+      }
       return null
     }
     case 4: {

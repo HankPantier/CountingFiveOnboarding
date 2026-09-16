@@ -19,6 +19,7 @@ import { OBJECT_SECTION_TEMPLATES } from '@/lib/mbp/section-templates'
 const LABEL_OVERRIDES: Record<string, string> = {
   contentEmphasis: 'Content to emphasize',
   contentExclusions: 'Content to exclude',
+  serviceScope: 'Service scope (local / regional / national)',
   generalDirection: 'General direction',
   preferredPhrases: 'Use these phrases',
   avoidPhrases: 'Do not use these phrases',
@@ -142,6 +143,13 @@ export function buildMbpDocument(
       ? `Niches (${(schema.niches ?? []).length - droppedNicheCount} kept · ${droppedNicheCount} dropped)`
       : 'Niches'
 
+  // Same read-back for the Phase-3 services review.
+  const droppedServiceCount = (schema.services ?? []).filter(s => s.status === 'dropped').length
+  const serviceTitle =
+    droppedServiceCount > 0
+      ? `Services (${(schema.services ?? []).length - droppedServiceCount} kept · ${droppedServiceCount} dropped)`
+      : 'Services'
+
   const prov = schema._meta?.field_provenance as ProvenanceMap | undefined
 
   // business keeps its content-scope defaults in every mode; scaffolding adds
@@ -158,7 +166,7 @@ export function buildMbpDocument(
     obj('technical', 'Technical', schema.technical as Record<string, unknown> | undefined),
     arraySection('locations', 'Locations', schema.locations, l => l.name || l.city || '', prov),
     arraySection('team', 'Team', schema.team, t => t.name || '', prov),
-    arraySection('services', 'Services', schema.services, s => s.name || '', prov),
+    arraySection('services', serviceTitle, schema.services, s => (s.status === 'dropped' ? `${s.name || ''} (DROPPED)` : s.name || ''), prov),
     arraySection('niches', nicheTitle, schema.niches, n => (n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || ''), prov),
     arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || '', prov),
     obj('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined),

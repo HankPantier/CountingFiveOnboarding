@@ -45,16 +45,20 @@ describe('validatePhaseAdvance — phase 3 → 4 chunk gate', () => {
     ).toMatch(/chunk2a/)
   })
 
+  // A geo_review marker is now an unconditional Phase-3 gate, so the "passes"
+  // cases must carry one.
+  const geoDone = { geo_review: { reviewedAt: 'x', scope: 'national', areaCount: 0 } }
+
   it('passes with chunk1 + chunk2a + chunk2b and both profiles captured', () => {
     const schema = {
       ...captured,
-      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2a', 'chunk2b'] },
+      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2a', 'chunk2b'], ...geoDone },
     }
     expect(validatePhaseAdvance(3, schema, [])).toBeNull()
   })
 
   it('accepts the legacy single "chunk2" marker in place of 2a/2b', () => {
-    const schema = { ...captured, _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'] } }
+    const schema = { ...captured, _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'], ...geoDone } }
     expect(validatePhaseAdvance(3, schema, [])).toBeNull()
   })
 
@@ -65,6 +69,41 @@ describe('validatePhaseAdvance — phase 3 → 4 chunk gate', () => {
       business: { googleBusinessProfile: { url: null } },
     }
     expect(validatePhaseAdvance(3, schema, [])).toMatch(/linkedIn\.usefulness/)
+  })
+
+  it('blocks until the services review is submitted when services exist', () => {
+    const schema = {
+      ...captured,
+      services: [{ name: 'Bookkeeping' }],
+      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'], ...geoDone },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toMatch(/services keep\/drop review/)
+  })
+
+  it('does not require a services review when there are no services', () => {
+    const schema = {
+      ...captured,
+      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'], ...geoDone },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toBeNull()
+  })
+
+  it('blocks unconditionally until the geo review is submitted', () => {
+    const schema = { ...captured, _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'] } }
+    expect(validatePhaseAdvance(3, schema, [])).toMatch(/geographic scope review/)
+  })
+
+  it('passes with services + geo reviews submitted', () => {
+    const schema = {
+      ...captured,
+      services: [{ name: 'Bookkeeping' }],
+      _meta: {
+        phase3_completed_chunks: ['chunk1', 'chunk2'],
+        services_review: { reviewedAt: 'x', kept: ['Bookkeeping'], dropped: [], added: [] },
+        ...geoDone,
+      },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toBeNull()
   })
 })
 

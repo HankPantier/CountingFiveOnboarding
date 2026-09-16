@@ -34,6 +34,27 @@ export type SessionSchema = {
       added: string[]
       reviewedBy?: string
     }
+    // Record of the Phase-3 services keep/drop review submitted via the
+    // ServiceReviewCard. Its presence is an advancement gate for Phase 3 → 4
+    // (see lib/agent/phase-validators.ts), guarded on there being services to
+    // review. Mirrors niche_review.
+    services_review?: {
+      reviewedAt: string
+      kept: string[]
+      dropped: string[]
+      added: string[]
+      reviewedBy?: string
+    }
+    // Record of the Phase-3 geographic scope review submitted via the
+    // GeographyReviewCard. Its presence is an advancement gate for Phase 3 → 4
+    // (see lib/agent/phase-validators.ts). `scope: 'national'` ⇒ areaCount 0 is
+    // valid; local/regional expect confirmed service areas.
+    geo_review?: {
+      reviewedAt: string
+      scope: 'local' | 'regional' | 'national'
+      areaCount: number
+      reviewedBy?: string
+    }
     section11_responses?: Record<string, string>
     // Lightweight, advisory per-field provenance keyed by dotted path (e.g.
     // "brand.voiceExample", "niches.0.customerTrigger"). 'audit' = seeded from the
@@ -180,6 +201,11 @@ export type SessionSchema = {
     offerings: string[]
     rewriteDirection?: string
     keywords?: string[]
+    // Operator's keep/drop decision from the Phase-3 service-review card. Absent =
+    // active/kept. A 'dropped' service is excluded from all content generation via
+    // activeServices() (lib/content/active-services.ts) but kept in the array for
+    // auditability and to preserve services[i] gap-path indexes.
+    status?: 'kept' | 'dropped'
   }>
   // Client-facing external portals (QuickBooks, ShareFile, payroll, bill-pay,
   // remote support). Rendered on the site as the "Client Center" modal. Flat and
@@ -240,6 +266,10 @@ export type SessionSchema = {
     howClientsFind: string
     pricing: string
     growthGoals: string
+    // Structured national-vs-local decision from the Phase-3 GeographyReviewCard.
+    // Drives whether content-gen builds geo landing pages ('local'/'regional') or
+    // leans national. Complements the free-text geographicScope above.
+    serviceScope?: 'local' | 'regional' | 'national'
     // Structured local-SEO targeting. serviceAreas drives geo landing pages and
     // schema.org areaServed; targetKeywords drives on-page + content targeting.
     serviceAreas?: Array<{ city: string; county?: string; state?: string; radiusMiles?: number; primary?: boolean }>

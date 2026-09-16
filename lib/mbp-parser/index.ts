@@ -1184,15 +1184,20 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
   }
 
   // Per-service depth — the sibling of per-niche depth. Service pages are the
-  // firm's money pages, and buildFirmContext renders these fields. Kept Tier 2/3
-  // (non-gating): a firm has many services and the MBP usually seeds a
-  // description, so Tier 1 here would over-gate Phase 4.
+  // firm's money pages, and buildFirmContext renders these fields. Iterate by real
+  // index (never filter) so kept services keep their services[i] gap paths; a
+  // service the operator dropped in the Phase-3 review generates no gaps (and
+  // applyServiceReview prunes any already generated for a dropped service).
   if (schema?.services?.length) {
     for (let i = 0; i < schema.services.length; i++) {
       const service = schema.services[i]
       if (!service.name) continue
+      if (service.status === 'dropped') continue
+      // Description is Tier 1: a confirmed service with no description is the exact
+      // "thin service → generic copy" failure this rework targets (parity with the
+      // niche pain/value Tier-1 gaps).
       if (!service.description) {
-        gaps.push({ field: `services[${i}].description`, label: `${service.name} — Description (what it is, who it's for)`, phase: 4, tier: 2, resolved: false })
+        gaps.push({ field: `services[${i}].description`, label: `${service.name} — Description (what it is, who it's for)`, phase: 4, tier: 1, resolved: false })
       }
       if (!service.keywords?.length) {
         gaps.push({ field: `services[${i}].keywords`, label: `${service.name} — Target Keywords`, phase: 4, tier: 2, resolved: false })

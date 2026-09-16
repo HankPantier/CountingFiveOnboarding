@@ -20,6 +20,7 @@ export const OBJECT_SECTION_TEMPLATES: Record<string, ObjectTemplate> = {
     firmHistory: '',
     idealClients: [],
     geographicScope: '',
+    serviceScope: '',
     clientAgeRanges: [],
     customerNeeds: '',
     customerDescription: '',

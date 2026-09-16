@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
+import { activeServices } from './active-services'
 
 // Resolve what a page IS — a specific niche, service, or location page vs. a
 // generic one — and produce a compact, directive focus block that names the exact
@@ -140,7 +141,7 @@ function buildLocationFocus(city: string, area?: ServiceArea): string {
 export function resolvePageIntent(pageUrl: string, pageTitle: string, schema: SessionSchema): PageIntent {
   const segs = pathSegments(pageUrl)
   const niches = activeNiches(schema)
-  const services = schema.services ?? []
+  const services = activeServices(schema)
   const areas = schema.business?.serviceAreas ?? []
 
   const findArea = (citySlug: string): ServiceArea | undefined =>

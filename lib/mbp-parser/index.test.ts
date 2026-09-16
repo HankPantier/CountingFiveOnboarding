@@ -154,16 +154,23 @@ describe('computePhase4Gaps — content-generation-critical capture', () => {
     }
   })
 
-  it('seeds per-service depth gaps at Tier 2/3 and a Tier-2 serviceAreas gap', () => {
+  it('seeds a Tier-1 service description gap, Tier 2/3 for the rest, and a Tier-2 serviceAreas gap', () => {
     const m = byField({
       services: [{ name: 'Tax', description: '', offerings: [] }],
     } as SessionSchema)
-    expect(m.get('services[0].description')?.tier).toBe(2)
+    // Description is Tier 1 (gating): a confirmed service without one is the exact
+    // thin-service → generic-copy failure the content-readiness rework targets.
+    expect(m.get('services[0].description')?.tier).toBe(1)
     expect(m.get('services[0].keywords')?.tier).toBe(2)
     expect(m.get('services[0].offerings')?.tier).toBe(3)
-    // Non-gating: no per-service Tier 1.
-    expect([...m.values()].some(g => g.field.startsWith('services[') && g.tier === 1)).toBe(false)
     expect(byField({ business: {} } as SessionSchema).get('business.serviceAreas')?.tier).toBe(2)
+  })
+
+  it('skips per-service gaps for a dropped service', () => {
+    const m = byField({
+      services: [{ name: 'Tax', description: '', offerings: [], status: 'dropped' }],
+    } as SessionSchema)
+    expect([...m.keys()].some(k => k.startsWith('services['))).toBe(false)
   })
 
   it('suppresses per-service gaps the schema already fills', () => {

@@ -7,6 +7,8 @@ import Link from 'next/link'
 import MessageBubble from './MessageBubble'
 import FileUploadButton from './FileUploadButton'
 import NicheReviewCard, { type ReviewNiche } from './NicheReviewCard'
+import ServiceReviewCard, { type ReviewService } from './ServiceReviewCard'
+import GeographyReviewCard, { type ReviewArea } from './GeographyReviewCard'
 import type { Database } from '@/types/database'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -81,6 +83,29 @@ export default function ChatInterface({
   const [reviewDone, setReviewDone] = useState(() => !!schemaData._meta?.niche_review)
   const showNicheReview =
     currentPhase === 3 && !reviewDone && (reviewNiches.length > 0 || highOpportunityNiches.length > 0)
+
+  // Phase-3 services review — mirrors the niche card. Shown once the niche review
+  // is done (sequential), only when there are services to review.
+  const reviewServices = useMemo<ReviewService[]>(
+    () =>
+      (schemaData.services ?? [])
+        .filter((s) => s?.name?.trim())
+        .map((s) => ({ name: s.name, note: s.description?.trim() || undefined })),
+    [schemaData]
+  )
+  const [servicesReviewDone, setServicesReviewDone] = useState(() => !!schemaData._meta?.services_review)
+  const showServiceReview =
+    currentPhase === 3 && !showNicheReview && !servicesReviewDone && reviewServices.length > 0
+
+  // Phase-3 geographic scope review — always shown (every firm has a service-area
+  // decision), after the niche + services reviews are done.
+  const reviewAreas = useMemo<ReviewArea[]>(
+    () => (schemaData.business?.serviceAreas ?? []).map((a) => ({ city: a.city, county: a.county, state: a.state, primary: a.primary })),
+    [schemaData]
+  )
+  const [geoReviewDone, setGeoReviewDone] = useState(() => !!schemaData._meta?.geo_review)
+  const showGeoReview =
+    currentPhase === 3 && !showNicheReview && !showServiceReview && !geoReviewDone
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/chat', body: { sessionId } }),
@@ -384,6 +409,29 @@ export default function ChatInterface({
               onReviewed={() => {
                 setReviewDone(true)
                 sendMessage({ text: '[Industry review submitted]' })
+              }}
+            />
+          )}
+
+          {showServiceReview && (
+            <ServiceReviewCard
+              sessionId={sessionId}
+              services={reviewServices}
+              onReviewed={() => {
+                setServicesReviewDone(true)
+                sendMessage({ text: '[Services review submitted]' })
+              }}
+            />
+          )}
+
+          {showGeoReview && (
+            <GeographyReviewCard
+              sessionId={sessionId}
+              initialScope={schemaData.business?.serviceScope}
+              initialAreas={reviewAreas}
+              onReviewed={() => {
+                setGeoReviewDone(true)
+                sendMessage({ text: '[Service area review submitted]' })
               }}
             />
           )}

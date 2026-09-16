@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
+import { activeServices } from './active-services'
 import { provenanceOf } from '@/lib/mbp/provenance'
 
 // Shared brand-voice prompt fragments. Extracted from content-generator.ts so
@@ -98,7 +99,7 @@ export function buildFirmContext(schema: SessionSchema): string {
   list('Client age ranges', b?.clientAgeRanges)
   add('Growth goals', b?.growthGoals)
 
-  const services = arr(schema.services)
+  const services = arr(activeServices(schema))
     .filter(s => str(s?.name).trim())
     .map(s => {
       const name = str(s.name).trim()

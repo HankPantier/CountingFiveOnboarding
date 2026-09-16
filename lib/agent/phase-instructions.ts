@@ -19,7 +19,7 @@ type SchemaMeta = {
 // _meta.niche_review), not by the chat. This note keeps the agent from also
 // asking keep/drop in prose and racing the card.
 const INDUSTRY_REVIEW_CARD_NOTE =
-  'Industry keep/drop is handled by the "Industry review" card shown above the message box — that card is the authoritative mechanism and saves its result to _meta.niche_review. Do NOT ask the client to keep, drop, or add industries in chat prose.'
+  'Industry keep/drop is handled by the "Industry review" card shown above the message box — that card is the authoritative mechanism and saves its result to _meta.niche_review. Do NOT ask the client to keep, drop, or add industries in chat prose. Services keep/drop and the geographic service-area decision are handled the same way by the "Services review" and "Service area" cards that appear next (saving to _meta.services_review and _meta.geo_review) — do NOT ask the client to keep/drop services or confirm service areas in chat prose either.'
 
 // True when the session has industries to review (detected niches or analyst
 // high-opportunity niches) and the card hasn't been submitted yet.
@@ -272,7 +272,7 @@ Present known data as compact tables / lists in ONE message:
 - Positioning options A / B / C — bold label, one-line gist each
 
 Then ask in the same message:
-- "Corrections / additions to team or services?"
+- "Corrections / additions to the team?"
 - "Missing team titles?"
 - "Pick a positioning option (A/B/C or a blend description)"
 
@@ -282,8 +282,8 @@ Accept all answers. As soon as positioning is chosen, call update_session_data w
     }
     return `PHASE 3 — MBP REVIEW, PART 2 (Content)
 Present all of the following in one message:
-- Team members (note any with missing titles), services, and (for reference) the industry niches
-Ask for corrections to team and services, and any missing team titles.
+- Team members (note any with missing titles); services and industry niches are shown for reference only (they are confirmed on the review cards, not in prose)
+Ask for corrections to the team and any missing team titles.
 ${INDUSTRY_REVIEW_CARD_NOTE}
 Then present the 3 positioning options. Format them as a markdown list, one per line — do not put all three inline in a sentence:
 - **Option A** — [summary]
@@ -390,7 +390,7 @@ PER-NICHE AUDIENCE DEPTH — the gap list may carry niches[i] fields (buying tri
 
 PER-SERVICE DEPTH — the gap list may carry services[i] fields (description, target keywords, specific offerings). Ask these grouped BY SERVICE, briefly: for description, "In a sentence, what does [service] include and who is it for?"; for offerings, the concrete deliverables (e.g. monthly close, sales-tax filings); for keywords, the terms clients would search. Write each answer to its services[i] path and mark the gap resolved. Keep this tight — services are usually already described, so only fill what's flagged.
 
-LOCAL REACH — if business.serviceAreas is in the gap list, ask once: "Which cities or counties do you serve or most want to win clients in?" Capture to business.serviceAreas[] as { city, county?, state? } entries and mark the gap resolved (empty is fine if they work nationally).
+LOCAL REACH — the geographic scope and service areas are captured in Phase 3 on the "Service area" card (business.serviceScope + business.serviceAreas, recorded in _meta.geo_review). Do NOT re-ask which cities they serve. Only if business.geographicScope is still in the gap list AND _meta.geo_review shows a non-national scope, confirm the free-text scope in one line (e.g. "So you're focused on the greater [primary market] area — anywhere else worth calling out?") and write business.geographicScope. If the scope is national, resolve the gap without asking.
 
 PROOF BLOCK — ask once, early: "Can you share 1–2 quick client success stories or wins we can use as proof — even anonymized (e.g. 'saved a dental practice ~$40k in taxes — include the client type, what you did, and the result')?" Capture each to business.clientSuccessStories[] as a self-contained sentence carrying the client type, the action, and the quantified outcome. If they have none ready, say we'll gather them later and mark the gap resolved so we don't block on it.
 

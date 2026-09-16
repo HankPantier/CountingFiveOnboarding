@@ -1,6 +1,7 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { assessThinness } from '@/lib/mbp/provenance'
 import { activeNiches } from './active-niches'
+import { activeServices } from './active-services'
 
 // A pre-generation sanity check on the content-critical MBP fields the generators
 // lean on hardest. When these are empty or placeholder-thin, the copy comes out
@@ -48,6 +49,27 @@ export function assessContentReadiness(schema: SessionSchema): ReadinessReport {
   )
   if (!hasUsableNiche) {
     missing.push('At least one industry/niche with its pain points and value proposition')
+  }
+
+  // At least one active service with a real name + description — service pages are
+  // the firm's money pages and go generic without a description to write from.
+  const services = activeServices(schema)
+  const hasUsableService = services.some(
+    (s) => !isThinOrEmpty('name', s.name) && !isThinOrEmpty('description', s.description),
+  )
+  if (!hasUsableService) {
+    missing.push('At least one service with a description (what it is, who it is for)')
+  }
+
+  // A geographic decision: an explicit national scope, OR a confirmed service area,
+  // OR a non-thin free-text geographic scope. Without one, local pages and
+  // "areas served" language come out empty or generic.
+  const hasGeoDecision =
+    b?.serviceScope === 'national' ||
+    (Array.isArray(b?.serviceAreas) && b.serviceAreas.some((a) => (a?.city ?? '').trim().length > 0)) ||
+    !isThinOrEmpty('geographicScope', b?.geographicScope)
+  if (!hasGeoDecision) {
+    missing.push('A geographic scope (service areas, or a national scope)')
   }
 
   return { ready: missing.length === 0, missing }
