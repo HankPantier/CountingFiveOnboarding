@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { validatePhaseAdvance } from '@/lib/agent/phase-validators'
 import { trimMessages } from '@/lib/agent/trim-messages'
-import { deepMerge, isPathFilled, preserveAppendOnlyMarkers } from '@/lib/mbp/schema-write'
+import { deepMerge, deepSetPath, isPathFilled, preserveAppendOnlyMarkers } from '@/lib/mbp/schema-write'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { SessionSchema } from '@/types/session-schema'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -162,7 +162,7 @@ export async function POST(req: Request) {
           inputSchema: z.object({
             updates: z
               .record(z.string(), z.unknown())
-              .describe('Field path → value pairs to merge into schema_data'),
+              .describe('Dotted/bracket field path → value pairs to merge into schema_data (e.g. "business.tagline", "niches[0].painPoints", or a nested object like "_meta")'),
             resolvedGaps: z
               .array(z.string())
               .optional()
@@ -270,11 +270,22 @@ async function updateSessionSchema(
     .single()
 
   const currentSchema = (current?.schema_data as Record<string, unknown>) ?? {}
-  // deepMerge replaces arrays wholesale; preserveAppendOnlyMarkers re-unions the
-  // Phase 3 step markers so the model can never silently re-open a cleared gate.
+  // The model sends `updates` as a field-path→value map — a MIX of dotted/bracket
+  // paths ("business.tagline", "niches[0].painPoints") and whole nested objects
+  // ("_meta": { phase3_completed_chunks: [...] }). deepMerge alone treats a dotted
+  // KEY as a literal top-level property, orphaning it off the schema the MBP UI
+  // reads. So first fold every entry into a properly-nested object via deepSetPath
+  // (which parses brackets and array indices), THEN deepMerge that — preserving
+  // deepMerge's deep-object merge (e.g. into _meta) and array-replace semantics.
+  let nestedUpdates: Record<string, unknown> = {}
+  for (const [fieldPath, value] of Object.entries(updates)) {
+    nestedUpdates = deepSetPath(nestedUpdates, fieldPath, value)
+  }
+  // preserveAppendOnlyMarkers re-unions the Phase 3 step markers so the model can
+  // never silently re-open a cleared gate.
   const mergedSchema = preserveAppendOnlyMarkers(
     currentSchema,
-    deepMerge(currentSchema, updates)
+    deepMerge(currentSchema, nestedUpdates)
   )
 
   // The authoritative website URL lives in the `website_url` column, not in

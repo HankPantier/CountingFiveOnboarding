@@ -130,6 +130,55 @@ describe('buildMbpDocument scaffolding', () => {
   })
 })
 
+describe('buildMbpDocument completeness (scaffold surfaces every top-level key)', () => {
+  const SCHEMA_EXTRA = {
+    websiteUrl: 'https://example.com',
+    socialPresence: { profiles: [{ platform: 'LinkedIn', url: 'https://linkedin.com/x' }] },
+    // stray / legacy off-schema keys that no mapped section reads:
+    whoTheyServe: 'Business owners',
+    project: { launchTimeline: 'Q3' },
+    _meta: { admin_overrides: {} },
+    proposed_sitemap: [{ title: 'Home', url: '/' }],
+    'business.tagline': 'orphan-form key should be skipped',
+  } as unknown as SessionSchema
+
+  it('promotes websiteUrl to its own section with the root fieldPath', () => {
+    const site = buildMbpDocument(SCHEMA_EXTRA, null, { scaffold: true }).sections.find(
+      s => s.key === 'websiteUrl'
+    )
+    const url = site!.fields!.find(f => f.fieldPath === 'websiteUrl')
+    expect(url!.value).toBe('https://example.com')
+    expect(url!.empty).toBe(false)
+  })
+
+  it('renders socialPresence profiles as items', () => {
+    const social = buildMbpDocument(SCHEMA_EXTRA, null, { scaffold: true }).sections.find(
+      s => s.key === 'socialPresence.profiles'
+    )
+    expect(social!.items).toHaveLength(1)
+    expect(social!.items![0].heading).toBe('LinkedIn')
+  })
+
+  it('surfaces unmapped keys in an Other section, skipping _meta/sitemaps/orphan-form', () => {
+    const other = buildMbpDocument(SCHEMA_EXTRA, null, { scaffold: true }).sections.find(
+      s => s.key === '_other'
+    )
+    const paths = other!.fields!.map(f => f.fieldPath)
+    expect(paths).toContain('whoTheyServe')
+    expect(paths).toContain('project')
+    expect(paths).not.toContain('_meta')
+    expect(paths).not.toContain('proposed_sitemap')
+    expect(paths).not.toContain('business.tagline') // orphan-form key skipped
+  })
+
+  it('adds none of these sections without scaffold', () => {
+    const keys = buildMbpDocument(SCHEMA_EXTRA).sections.map(s => s.key)
+    expect(keys).not.toContain('websiteUrl')
+    expect(keys).not.toContain('socialPresence.profiles')
+    expect(keys).not.toContain('_other')
+  })
+})
+
 describe('mbpDocumentToMarkdown', () => {
   it('renders section headings and field bullets', () => {
     const md = mbpDocumentToMarkdown(buildMbpDocument(SCHEMA))

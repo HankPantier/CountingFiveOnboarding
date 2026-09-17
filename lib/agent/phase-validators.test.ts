@@ -105,6 +105,51 @@ describe('validatePhaseAdvance — phase 3 → 4 chunk gate', () => {
     }
     expect(validatePhaseAdvance(3, schema, [])).toBeNull()
   })
+
+  // Sub-service gate. Niches carry a niche_review (set earlier in the sequence)
+  // plus sub-services, so the gate is reached after the niche/geo gates pass.
+  const nicheDone = { niche_review: { reviewedAt: 'x', kept: ['Dental'], dropped: [], added: [] } }
+
+  it('blocks when a kept niche has sub-services and no sub-service review', () => {
+    const schema = {
+      ...captured,
+      niches: [{ name: 'Dental', subCategories: [{ name: 'Implants', status: 'verify' }] }],
+      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'], ...nicheDone, ...geoDone },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toMatch(/sub-service keep\/drop review/)
+  })
+
+  it('does not require a sub-service review when no niche has sub-services', () => {
+    const schema = {
+      ...captured,
+      niches: [{ name: 'Dental', subCategories: [] }],
+      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'], ...nicheDone, ...geoDone },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toBeNull()
+  })
+
+  it('does not require a sub-service review for sub-services under a dropped niche', () => {
+    const schema = {
+      ...captured,
+      niches: [{ name: 'Dental', status: 'dropped', subCategories: [{ name: 'Implants', status: 'verify' }] }],
+      _meta: { phase3_completed_chunks: ['chunk1', 'chunk2'], ...nicheDone, ...geoDone },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toBeNull()
+  })
+
+  it('passes once the sub-service review is submitted', () => {
+    const schema = {
+      ...captured,
+      niches: [{ name: 'Dental', subCategories: [{ name: 'Implants', status: 'confirmed' }] }],
+      _meta: {
+        phase3_completed_chunks: ['chunk1', 'chunk2'],
+        ...nicheDone,
+        ...geoDone,
+        subcategories_review: { reviewedAt: 'x', confirmed: [{ niche: 'Dental', name: 'Implants' }], dropped: [] },
+      },
+    }
+    expect(validatePhaseAdvance(3, schema, [])).toBeNull()
+  })
 })
 
 describe('validatePhaseAdvance — phase 4 → 5 tier-1 gaps', () => {
