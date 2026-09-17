@@ -116,11 +116,23 @@ function arraySection<T extends Record<string, unknown>>(
   heading: (row: T, i: number) => string,
   provenance?: ProvenanceMap
 ): MbpDocumentSection {
-  const items: MbpDocumentItem[] = objectRows(rows).map((row, i) => ({
-    heading: heading(row, i) || `${title} ${i + 1}`,
-    fields: fieldsFromObject(row, `${key}.${i}`, provenance),
-  }))
-  return { key, title, items }
+  // fieldPath MUST carry the STORED array index, not the post-filter position —
+  // every downstream consumer (inline edit → deepSetPath, provenance lookup, gap
+  // matching, enrichment) keys off it as the real slot. Drop null/primitive holes
+  // from display but keep each survivor's original index; a separate 1-based
+  // counter drives only the cosmetic fallback heading.
+  let display = 0
+  const items: MbpDocumentItem[] = (Array.isArray(rows) ? rows : [])
+    .map((row, i) => ({ row, i }))
+    .filter((e): e is { row: T; i: number } => !!e.row && typeof e.row === 'object')
+    .map(({ row, i }) => {
+      display += 1
+      return {
+        heading: heading(row, i) || `${title} ${display}`,
+        fields: fieldsFromObject(row, `${key}.${i}`, provenance),
+      }
+    })
+  return { key, title, items, nextIndex: Array.isArray(rows) ? rows.length : 0 }
 }
 
 // The live site structure comes from the content job's confirmed_sitemap (what

@@ -120,6 +120,32 @@ describe('buildMbpDocument', () => {
     expect(portals!.items!.length).toBe(1)
   })
 
+  it('keeps STORED array indices in fieldPath even when earlier holes are dropped', () => {
+    // Regression: dropping null/primitive holes must NOT renumber survivors, or
+    // inline edits / provenance / gap matching / enrichment (all keyed on the
+    // fieldPath) would hit the wrong stored slot.
+    const dirty = {
+      niches: [
+        { name: 'Nonprofits', status: 'kept' },
+        null,
+        'oops-a-string',
+        { name: 'Dental', status: 'kept' },
+      ],
+      services: [null, { name: 'Tax', status: 'kept' }],
+    } as unknown as SessionSchema
+    const out = buildMbpDocument(dirty, null, { scaffold: true })
+
+    const niches = out.sections.find(s => s.key === 'niches')!
+    // Second survivor is stored at index 3, not the compacted position 1.
+    expect(niches.items![1].fields.every(f => f.fieldPath.startsWith('niches.3.'))).toBe(true)
+    // Add-item appends past the stored length so it never clobbers a real row.
+    expect(niches.nextIndex).toBe(4)
+
+    const services = out.sections.find(s => s.key === 'services')!
+    expect(services.items![0].fields.every(f => f.fieldPath.startsWith('services.1.'))).toBe(true)
+    expect(services.nextIndex).toBe(2)
+  })
+
   it('reflects dropped counts in section titles even with null rows present', () => {
     const dirty = {
       niches: [{ name: 'A', status: 'dropped' }, null, { name: 'B', status: 'kept' }],

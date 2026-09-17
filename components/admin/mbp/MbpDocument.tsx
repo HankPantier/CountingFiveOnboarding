@@ -156,7 +156,7 @@ function SectionCard({
               ))
             )}
             {editable && (
-              <MbpAddItemButton sessionId={sessionId} sectionKey={section.key} count={section.items.length} />
+              <MbpAddItemButton sessionId={sessionId} sectionKey={section.key} count={section.nextIndex ?? section.items.length} />
             )}
           </>
         )}
