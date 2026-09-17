@@ -13,13 +13,14 @@ type SchemaMeta = {
     highOpportunityNiches?: string[]
   }
   niche_review?: { reviewedAt?: string }
+  subcategories_review?: { reviewedAt?: string }
 }
 
 // The industry keep/drop review is captured by the NicheReviewCard UI (saved to
 // _meta.niche_review), not by the chat. This note keeps the agent from also
 // asking keep/drop in prose and racing the card.
 const INDUSTRY_REVIEW_CARD_NOTE =
-  'Industry keep/drop is handled by the "Industry review" card shown above the message box — that card is the authoritative mechanism and saves its result to _meta.niche_review. Do NOT ask the client to keep, drop, or add industries in chat prose. Services keep/drop and the geographic service-area decision are handled the same way by the "Services review" and "Service area" cards that appear next (saving to _meta.services_review and _meta.geo_review) — do NOT ask the client to keep/drop services or confirm service areas in chat prose either.'
+  'Industry keep/drop is handled by the "Industry review" card shown above the message box — that card is the authoritative mechanism and saves its result to _meta.niche_review. Do NOT ask the client to keep, drop, or add industries in chat prose. Services keep/drop, the geographic service-area decision, and the per-industry sub-service keep/drop are handled the same way by the "Services review", "Service area", and "Sub-service review" cards that appear next (saving to _meta.services_review, _meta.geo_review, and _meta.subcategories_review) — do NOT ask the client to keep/drop services, confirm service areas, or confirm sub-services in chat prose either.'
 
 // True when the session has industries to review (detected niches or analyst
 // high-opportunity niches) and the card hasn't been submitted yet.
@@ -32,7 +33,17 @@ function isNicheReviewPending(meta: SchemaMeta | undefined, niches: NicheLike[])
 
 type NicheLike = {
   name?: string
-  subCategories?: Array<{ name: string; status: 'confirmed' | 'likely' | 'verify' }>
+  status?: 'kept' | 'dropped'
+  subCategories?: Array<{ name: string; status: 'confirmed' | 'likely' | 'verify' | 'dropped' }>
+}
+
+// True when the session has sub-services under a kept niche and the Sub-service
+// review card hasn't been submitted yet.
+function isSubCategoryReviewPending(meta: SchemaMeta | undefined, niches: NicheLike[]): boolean {
+  if (meta?.subcategories_review) return false
+  return niches.some(
+    n => n.status !== 'dropped' && (n.subCategories ?? []).some(s => (s.name ?? '').trim() !== '')
+  )
 }
 
 export function getPhaseInstructions(
@@ -71,17 +82,6 @@ function analystPromptsBlock(meta: SchemaMeta | undefined, sectionIds: string[])
     .filter((s): s is string => s !== null)
   if (lines.length === 0) return ''
   return `\n\nANALYST-WRITTEN ASKS (read these verbatim — they're the specific questions the analyst wants asked, not generic "any corrections?"):\n${lines.join('\n')}`
-}
-
-function unconfirmedSubCategoriesBlock(niches: NicheLike[]): string {
-  const items: string[] = []
-  for (const n of niches) {
-    const verifies = (n.subCategories ?? []).filter(s => s.status === 'verify')
-    if (verifies.length === 0 || !n.name) continue
-    items.push(`${n.name}: ${verifies.map(s => s.name).join(', ')}`)
-  }
-  if (items.length === 0) return ''
-  return `\n\nUNCONFIRMED SUB-SERVICES (ask the client a quick yes/no on each — capture confirmed ones by updating niches[i].subCategories to status: "confirmed"):\n${items.join('\n')}`
 }
 
 function opportunitiesBlock(meta: SchemaMeta | undefined): string {
@@ -209,7 +209,6 @@ function phase3Instructions(session: Session, mode: AgentMode): string {
   const typedMeta = readMeta(session)
   const niches = readNiches(session)
   const chunk1Analyst = analystPromptsBlock(typedMeta, ['1', '3', '4'])
-  const chunk1SubCats = unconfirmedSubCategoriesBlock(niches)
   const chunk2bAnalyst = analystPromptsBlock(typedMeta, ['2', '5', '6', '7'])
   const chunk2bOpportunities = opportunitiesBlock(typedMeta)
   const chunk2bTrustSignals = trustSignalsBlock(readReputation(session))
@@ -219,11 +218,15 @@ function phase3Instructions(session: Session, mode: AgentMode): string {
     chunk2bTrustSignals.length + chunk2bSitemap.length > 0
 
   const reviewPending = isNicheReviewPending(typedMeta, niches)
+  const subReviewPending = isSubCategoryReviewPending(typedMeta, niches)
   // Appended to the chunk2b instructions: Phase 3 cannot advance until the card
   // is submitted (the validator enforces this too — this makes the agent ask for
   // it instead of silently hitting the internal gate).
   const nicheReviewGate = reviewPending
     ? `\n\nINDUSTRY REVIEW REQUIRED: Phase 3 cannot complete until the client submits the "Industry review" card shown above the message box (it writes _meta.niche_review). If it isn't submitted yet, ask the client to complete it now, and do NOT call advancePhase until it's done.`
+    : ''
+  const subCategoryReviewGate = subReviewPending
+    ? `\n\nSUB-SERVICE REVIEW REQUIRED: Phase 3 cannot complete until the client submits the "Sub-service review" card shown above the message box (it writes _meta.subcategories_review). If it isn't submitted yet, ask the client to complete it, and do NOT call advancePhase until it's done.`
     : ''
 
   if (!chunk1Done) {
@@ -245,7 +248,7 @@ Then, in the SAME message, ask for everything outstanding:
 - "LinkedIn URL (or 'none'); LinkedIn usefulness (low/med/high); LinkedIn roomForImprovement"
 - "GBP URL (or 'none'); GBP usefulness (low/med/high); GBP roomForImprovement"
 
-Accept everything in any format. As soon as it lands, call update_session_data with all populated fields, resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url", and "_meta": { "phase3_completed_chunks": ["chunk1"] }.${chunk1Analyst}${chunk1SubCats}`
+Accept everything in any format. As soon as it lands, call update_session_data with all populated fields, resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url", and "_meta": { "phase3_completed_chunks": ["chunk1"] }.${chunk1Analyst}`
     }
     return `PHASE 3 — MBP REVIEW, PART 1 (Practical info)
 Present all of the following in one message:
@@ -256,7 +259,7 @@ Then in one bundled follow-up exchange collect:
 - Any missing affiliations or social handles, confirm the website URL, ask about professional memberships or partnerships not listed.
 - LinkedIn: if no URL is on file, ask for it (or confirm they don't have a company page → set culture.linkedIn.url = null). If they have one, ask "Roughly how useful is your LinkedIn for attracting clients today — low, medium, or high?" → culture.linkedIn.usefulness. Then "Anything you'd want to improve about it?" → culture.linkedIn.roomForImprovement (free text; if the MBP seeded a hint, offer it back for confirmation).
 - Google Business Profile: same pattern — URL or null; usefulness if they have one; roomForImprovement (always meaningful — if no GBP, "create and verify a GBP listing" is a fine note). Save to business.googleBusinessProfile.{url, usefulness, roomForImprovement}.
-When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.${chunk1Analyst}${chunk1SubCats}`
+When part 1 is done, call update_session_data with the structured fields populated and resolvedGaps including "culture.linkedIn.url" and "business.googleBusinessProfile.url"; updates must include { "_meta": { "phase3_completed_chunks": ["chunk1"] } }.${chunk1Analyst}`
   }
 
   if (!chunk2aDone) {
@@ -298,12 +301,13 @@ Then call update_session_data with "_meta": { "phase3_completed_chunks": [..., "
 
   if (!chunk2bDone) {
     // No decision content from the MBP — auto-complete and move on without
-    // burning a chat turn, UNLESS the industry-review card is still pending.
+    // burning a chat turn, UNLESS a review card (industry or sub-service) is still
+    // pending.
     if (!chunk2bHasContent) {
-      if (reviewPending) {
-        return `PHASE 3 — MBP REVIEW, PART 2b — INDUSTRY REVIEW PENDING
+      if (reviewPending || subReviewPending) {
+        return `PHASE 3 — MBP REVIEW, PART 2b — REVIEW CARD PENDING
 
-The MBP surfaced no analyst decisions, but the client still needs to submit the "Industry review" card shown above the message box before Phase 3 can complete. Ask them to complete it now — Keep or Drop each industry. Do NOT call advancePhase until _meta.niche_review is set; once it is, call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] } and advancePhase: true to move to Phase 4. Do NOT ask about team photos — those are pulled automatically from the client's site.`
+The MBP surfaced no analyst decisions, but the client still needs to submit the review card(s) shown above the message box before Phase 3 can complete${reviewPending ? ' (the "Industry review" card, writing _meta.niche_review)' : ''}${subReviewPending ? ' (the "Sub-service review" card, writing _meta.subcategories_review)' : ''}. Ask them to complete it now. Do NOT call advancePhase until the required marker(s) are set; once they are, call update_session_data with "_meta": { "phase3_completed_chunks": [..., "chunk2b"] } and advancePhase: true to move to Phase 4. Do NOT ask about team photos — those are pulled automatically from the client's site.`
       }
       return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — NOTHING TO DECIDE
 
@@ -314,14 +318,14 @@ The MBP didn't surface any decisions for the client to confirm. Phase 3 is compl
       return `PHASE 3 — MBP REVIEW, PART 2b (Decisions) — staff mode
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Staff can answer in any layout (line-prefixed, key-value, comma list). Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed.
 
-When the staff member's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions, plus any niches[i].subCategories status updates from chunk2a follow-up), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Do NOT ask about team photos — those are pulled automatically. Note: any industries added via the Industry review card are already in schema.niches — treat high-opportunity niches as page-build decisions only, not new niches to create.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}${nicheReviewGate}`
+When the staff member's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Do NOT ask about team photos — those are pulled automatically. Note: any industries added via the Industry review card are already in schema.niches — treat high-opportunity niches as page-build decisions only, not new niches to create.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}${nicheReviewGate}${subCategoryReviewGate}`
     }
     return `PHASE 3 — MBP REVIEW, PART 2b (Decisions)
 Open with a short bridge: "Before we wrap up this section, a few quick decisions our analyst flagged. Defaults are noted next to each — just call out exceptions."
 
 Present the analyst-authored decision blocks below as ONE message, grouped under their existing labels. Keep each ask compact. Defaults: yes-to-all on opportunities and trust signals; build all proposed new pages; apply all consolidations as proposed. If the client agrees with the defaults wholesale, accept that and move on.
 
-When the client's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Note: any industries the client added via the Industry review card are already in schema.niches — treat high-opportunity niches as page-build decisions only, not new niches to create.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}${nicheReviewGate}`
+When the client's answer lands, Phase 3 is complete — call update_session_data with the captured fields (any of _meta.opportunities_confirmed, _meta.trust_signals_confirmed, _meta.sitemap_decisions), "_meta": { "phase3_completed_chunks": [..., "chunk2b"] }, and advancePhase: true to move to Phase 4 (gap-filling). Note: any industries the client added via the Industry review card are already in schema.niches — treat high-opportunity niches as page-build decisions only, not new niches to create.${chunk2bAnalyst}${chunk2bOpportunities}${chunk2bTrustSignals}${chunk2bSitemap}${nicheReviewGate}${subCategoryReviewGate}`
   }
 
   // Team photos are NOT collected in the chat. High-confidence headshots are

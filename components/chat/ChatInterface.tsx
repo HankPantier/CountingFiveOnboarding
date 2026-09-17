@@ -9,6 +9,7 @@ import FileUploadButton from './FileUploadButton'
 import NicheReviewCard, { type ReviewNiche } from './NicheReviewCard'
 import ServiceReviewCard, { type ReviewService } from './ServiceReviewCard'
 import GeographyReviewCard, { type ReviewArea } from './GeographyReviewCard'
+import SubCategoryReviewCard, { type ReviewNicheGroup } from './SubCategoryReviewCard'
 import type { Database } from '@/types/database'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -106,6 +107,31 @@ export default function ChatInterface({
   const [geoReviewDone, setGeoReviewDone] = useState(() => !!schemaData._meta?.geo_review)
   const showGeoReview =
     currentPhase === 3 && !showNicheReview && !showServiceReview && !geoReviewDone
+
+  // Phase-3 sub-service review — mirrors the niche card, one level down. Shown
+  // last (after niche + services + geo), only for kept niches that carry
+  // sub-services. Dropped niches are excluded so their sub-services never appear.
+  const reviewSubGroups = useMemo<ReviewNicheGroup[]>(
+    () =>
+      (schemaData.niches ?? [])
+        .filter((n) => n?.name?.trim() && n.status !== 'dropped')
+        .map((n) => ({
+          niche: n.name,
+          subs: (n.subCategories ?? [])
+            .filter((s) => s?.name?.trim())
+            .map((s) => ({ name: s.name, status: s.status })),
+        }))
+        .filter((g) => g.subs.length > 0),
+    [schemaData]
+  )
+  const [subReviewDone, setSubReviewDone] = useState(() => !!schemaData._meta?.subcategories_review)
+  const showSubCategoryReview =
+    currentPhase === 3 &&
+    !showNicheReview &&
+    !showServiceReview &&
+    !showGeoReview &&
+    !subReviewDone &&
+    reviewSubGroups.length > 0
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/chat', body: { sessionId } }),
@@ -432,6 +458,17 @@ export default function ChatInterface({
               onReviewed={() => {
                 setGeoReviewDone(true)
                 sendMessage({ text: '[Service area review submitted]' })
+              }}
+            />
+          )}
+
+          {showSubCategoryReview && (
+            <SubCategoryReviewCard
+              sessionId={sessionId}
+              groups={reviewSubGroups}
+              onReviewed={() => {
+                setSubReviewDone(true)
+                sendMessage({ text: '[Sub-service review submitted]' })
               }}
             />
           )}

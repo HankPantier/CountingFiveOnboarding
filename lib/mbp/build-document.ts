@@ -167,7 +167,14 @@ export function buildMbpDocument(
     arraySection('locations', 'Locations', schema.locations, l => l.name || l.city || '', prov),
     arraySection('team', 'Team', schema.team, t => t.name || '', prov),
     arraySection('services', serviceTitle, schema.services, s => (s.status === 'dropped' ? `${s.name || ''} (DROPPED)` : s.name || ''), prov),
-    arraySection('niches', nicheTitle, schema.niches, n => (n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || ''), prov),
+    arraySection('niches', nicheTitle, schema.niches, n => {
+      const base = n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || ''
+      // Read-back of the Phase-3 sub-service review: annotate with a kept/dropped
+      // count so the operator sees the decision without expanding the JSON field.
+      const subs = n.subCategories ?? []
+      const droppedSubs = subs.filter(s => s.status === 'dropped').length
+      return droppedSubs > 0 ? `${base} · ${subs.length - droppedSubs}/${subs.length} sub-services kept` : base
+    }, prov),
     arraySection('clientPortals', 'Client Portals', schema.clientPortals, p => p.label || p.url || '', prov),
     obj('reputation', 'Reputation', schema.reputation as Record<string, unknown> | undefined),
     obj('content_gaps', 'Content Gaps', schema.content_gaps as Record<string, unknown> | undefined),

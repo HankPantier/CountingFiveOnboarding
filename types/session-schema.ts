@@ -55,6 +55,17 @@ export type SessionSchema = {
       areaCount: number
       reviewedBy?: string
     }
+    // Record of the Phase-3 sub-service keep/drop review submitted via the
+    // SubCategoryReviewCard. Its presence is an advancement gate for Phase 3 → 4
+    // (see lib/agent/phase-validators.ts), guarded on there being at least one
+    // sub-service under a kept niche. `confirmed`/`dropped` carry the niche each
+    // sub-service belongs to (sub-service names are not unique across niches).
+    subcategories_review?: {
+      reviewedAt: string
+      confirmed: Array<{ niche: string; name: string }>
+      dropped: Array<{ niche: string; name: string }>
+      reviewedBy?: string
+    }
     section11_responses?: Record<string, string>
     // Lightweight, advisory per-field provenance keyed by dotted path (e.g.
     // "brand.voiceExample", "niches.0.customerTrigger"). 'audit' = seeded from the
@@ -241,9 +252,14 @@ export type SessionSchema = {
     revenueBand?: string
     businessStage?: string
     decisionMaker?: string
+    // Sub-services under this niche. `confirmed | likely | verify` come from the
+    // MBP parser's audit read; `dropped` is the operator's Phase-3 sub-service
+    // review decision (SubCategoryReviewCard → _meta.subcategories_review). A
+    // dropped sub-service stays in the array for read-back but is excluded via
+    // activeSubCategories() (lib/content/active-subcategories.ts).
     subCategories?: Array<{
       name: string
-      status: 'confirmed' | 'likely' | 'verify'
+      status: 'confirmed' | 'likely' | 'verify' | 'dropped'
       notes?: string
     }>
   }>

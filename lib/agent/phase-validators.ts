@@ -81,6 +81,21 @@ export function validatePhaseAdvance(
       if (!meta?.geo_review) {
         return 'the geographic scope review has not been completed — the client must submit the Service area card (which writes _meta.geo_review) before Phase 3 can advance'
       }
+
+      // Sub-service keep/drop review gate. The SubCategoryReviewCard writes
+      // _meta.subcategories_review; block the advance until it's present. Guarded
+      // on there being at least one sub-service under a kept niche, so sessions
+      // without sub-services never stall.
+      const nichesForSub =
+        (schema.niches as
+          | Array<{ name?: string; status?: string; subCategories?: Array<{ name?: string }> }>
+          | undefined) ?? []
+      const subReviewNeeded = nichesForSub.some(
+        n => n?.status !== 'dropped' && (n?.subCategories ?? []).some(s => (s?.name ?? '').trim() !== '')
+      )
+      if (subReviewNeeded && !meta?.subcategories_review) {
+        return 'the sub-service keep/drop review has not been completed — the client must submit the Sub-service review card (which writes _meta.subcategories_review) before Phase 3 can advance'
+      }
       return null
     }
     case 4: {
