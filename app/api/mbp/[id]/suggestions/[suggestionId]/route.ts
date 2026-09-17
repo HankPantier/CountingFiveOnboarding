@@ -9,6 +9,22 @@ import type { MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
 
 export const runtime = 'nodejs'
 
+// The valid top-level segments of SessionSchema. A suggestion whose path starts
+// outside this set can only ever create an orphaned top-level key the MBP UI
+// never renders, so we skip (and report) it rather than write invisible data.
+// With deepSetPath's bracket parsing fixed, this fires only on a model
+// hallucination, never on a legitimate array path like `niches[3].description`.
+const KNOWN_TOP_LEVEL = new Set([
+  '_meta', 'contact', 'websiteUrl', 'technical', 'locations', 'team', 'services',
+  'clientPortals', 'niches', 'business', 'culture', 'brand', 'assets', 'additional',
+  'proposed_sitemap', 'current_sitemap', 'socialPresence', 'reputation',
+  'content_gaps', 'content_direction',
+])
+
+function topSegment(fieldPath: string): string {
+  return fieldPath.split(/[.[]/)[0]
+}
+
 function valueKind(v: unknown): string {
   return v !== null && typeof v === 'object' ? 'object' : typeof v
 }
@@ -60,7 +76,13 @@ export async function PATCH(
     // Exact paths written, for the "just added" highlight. Appends resolve to the
     // new item's index (e.g. team.3) so only the new row lights up, not the array.
     const appliedPaths: string[] = []
+    // Off-schema paths are skipped (not applied) and reported — see KNOWN_TOP_LEVEL.
+    const skippedPaths: string[] = []
     for (const [fieldPath, change] of Object.entries(changes)) {
+      if (!KNOWN_TOP_LEVEL.has(topSegment(fieldPath))) {
+        skippedPaths.push(fieldPath)
+        continue
+      }
       if (change.op === 'append') {
         let item: unknown = change.proposedValue
         let parsedJson = false
@@ -93,12 +115,17 @@ export async function PATCH(
       }
     }
 
-    const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths })
-    if (!result.success) {
-      return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })
+    if (Object.keys(updates).length > 0) {
+      const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths })
+      if (!result.success) {
+        return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })
+      }
+      // Keep the downloadable MBP fresh if this session is already approved.
+      after(() => regenerateMbpIfApproved(supabase, id))
     }
-    // Keep the downloadable MBP fresh if this session is already approved.
-    after(() => regenerateMbpIfApproved(supabase, id))
+    if (skippedPaths.length > 0) {
+      console.warn(`[mbp-suggestion] skipped off-schema paths on ${id}: ${skippedPaths.join(', ')}`)
+    }
   }
 
   const { error: updateErr } = await supabase

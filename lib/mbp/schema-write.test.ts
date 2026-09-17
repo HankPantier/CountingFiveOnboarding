@@ -94,6 +94,46 @@ describe('deepSetPath', () => {
     expect(schema.team[0].name).toBe('A')
     expect((out.team as { name: string }[])[0].name).toBe('Z')
   })
+
+  it('parses bracket notation into an array index, NOT a literal top-level key', () => {
+    const out = deepSetPath({}, 'niches[3].description', 'x')
+    expect(Object.keys(out).some(k => k.includes('['))).toBe(false)
+    expect(out).toEqual({ niches: [undefined, undefined, undefined, { description: 'x' }] })
+  })
+
+  it('updates an existing array element via bracket path without clobbering siblings', () => {
+    const schema = { locations: [{ city: 'A', phone: '' }, { city: 'B', phone: '' }] }
+    const out = deepSetPath(schema, 'locations[1].phone', '555')
+    expect(out.locations).toEqual([
+      { city: 'A', phone: '' },
+      { city: 'B', phone: '555' },
+    ])
+  })
+
+  it('handles mixed bracket + nested-array paths', () => {
+    const out = deepSetPath({}, 'niches[0].subCategories[1].status', 'dropped')
+    expect(out).toEqual({
+      niches: [{ subCategories: [undefined, { status: 'dropped' }] }],
+    })
+  })
+
+  it('is immutable for bracket paths too', () => {
+    const schema = { niches: [{ name: 'A' }] }
+    const out = deepSetPath(schema, 'niches[0].name', 'Z')
+    expect(schema.niches[0].name).toBe('A')
+    expect((out.niches as { name: string }[])[0].name).toBe('Z')
+  })
+
+  it('folds a dotted-KEY update map into nested structure (no orphan key)', () => {
+    // Mirrors app/api/chat pre-splitting: applying each dotted key via deepSetPath
+    // must nest, never create a literal "business.name" property.
+    let nested: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries({ 'business.name': 'X', 'business.tagline': 'Y' })) {
+      nested = deepSetPath(nested, k, v)
+    }
+    expect(nested).toEqual({ business: { name: 'X', tagline: 'Y' } })
+    expect(Object.keys(nested)).toEqual(['business'])
+  })
 })
 
 describe('deepMerge', () => {
@@ -117,5 +157,14 @@ describe('getByPath', () => {
   it('returns undefined for missing paths', () => {
     expect(getByPath(schema, 'business.nope')).toBeUndefined()
     expect(getByPath(schema, 'team.5.title')).toBeUndefined()
+  })
+  it('reads bracket-index paths (matches how suggestions are authored)', () => {
+    const s = { niches: [{}, {}, {}, { description: 'x' }] }
+    expect(getByPath(s, 'niches[3].description')).toBe('x')
+    expect(getByPath(s, 'niches[9].description')).toBeUndefined()
+  })
+  it('resolves the array base for an append lookup via a bracket path', () => {
+    const s = { team: [{ name: 'A' }] }
+    expect(getByPath(s, 'team')).toEqual([{ name: 'A' }])
   })
 })

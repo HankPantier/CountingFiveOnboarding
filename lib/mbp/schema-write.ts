@@ -3,6 +3,16 @@
 // and the MBP edit chat / suggestion-apply path. Keeping a single copy
 // avoids divergence between the merge semantics of those call sites.
 
+// Split a field path into segments, normalizing bracket array indices to
+// dot-index form so `niches[3].description` and `niches.3.description` parse
+// identically. Without this, `split('.')` leaves `niches[3]` as one literal
+// segment and every writer creates a junk top-level key named "niches[3]"
+// instead of updating the array element. Single source of truth for all three
+// helpers below (the AI's suggestion tools emit bracket notation constantly).
+function toSegments(path: string): string[] {
+  return path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean)
+}
+
 // Set a dotted path on a nested structure, returning a new structure.
 // Numeric path segments are treated as array indices (e.g. "team.3.bio"),
 // so array entries are updated in place rather than clobbering the array.
@@ -31,14 +41,14 @@ export function deepSetPath(
   path: string,
   value: unknown
 ): Record<string, unknown> {
-  return setIn(obj, path.split('.'), value) as Record<string, unknown>
+  return setIn(obj, toSegments(path), value) as Record<string, unknown>
 }
 
 // Read a dotted path, traversing both object keys and numeric array indices
 // (e.g. "business.tagline", "team.3.title"). Returns undefined if any segment
 // is missing.
 export function getByPath(obj: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
+  return toSegments(path).reduce<unknown>((acc, key) => {
     if (acc == null || typeof acc !== 'object') return undefined
     if (Array.isArray(acc)) {
       const idx = Number(key)
@@ -54,7 +64,7 @@ export function getByPath(obj: Record<string, unknown>, path: string): unknown {
 // only via an explicit signal, never auto-fill). Accepts both `niches[0].x` and
 // `niches.0.x` forms.
 export function isPathFilled(obj: unknown, path: string): boolean {
-  const parts = path.replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean)
+  const parts = toSegments(path)
   let cur: unknown = obj
   for (const p of parts) {
     if (cur && typeof cur === 'object') cur = (cur as Record<string, unknown>)[p]
