@@ -13,7 +13,7 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { loadNoGoPhrases, buildNoGoPromptBlock, findNoGoHits } from '@/lib/content/no-go-phrases'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
-import { applyFindReplace, validatePageAnnotations } from '@/lib/editor/apply-edit'
+import { applyFindReplace, applyBatchEdits, validatePageAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { sanitizeGeneratedText, humanizeDashes } from '@/lib/content/anti-slop-validator'
 import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
@@ -33,7 +33,10 @@ import {
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+// Batched edits (apply_edits / remove_text) keep the tool-loop short, but a
+// worst-case multi-part run still makes several sequential GitHub commits —
+// 300s is the platform max and covers it.
+export const maxDuration = 300
 
 // The agent only edits markdown content files (not nav.json/config/social).
 const EDITABLE = ['content/pages/', 'content/posts/']
@@ -145,8 +148,10 @@ ${workingContent}
 
 HOW YOU EDIT
 Never introduce em-dashes or en-dashes (— –) in any copy you write; use commas, periods, or colons instead. They read as AI-written.
-You do NOT rewrite the whole file. You make small, targeted changes with these tools:
-- apply_edit({ find, replace, all? }) — replace an EXACT snippet copied verbatim from the file above (matching whitespace, punctuation, and casing) with new text. Use this for copy edits, rewrites, and LAYOUT changes. \`find\` must be long enough to match exactly ONE place; if it could match several, include more surrounding text (or set all=true to replace every occurrence, e.g. a repeated phrase). Keep every \`<!-- block: ... -->\` annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
+You do NOT rewrite the whole file. You make small, targeted changes with these tools.
+BATCH your work: a request usually implies MANY edits (rewrite several sentences, reword every mention of X, fix each section). Group them — issue ONE apply_edits call for all rewrites and ONE remove_text call for all deletions — instead of many single apply_edit calls. Batching lands them in one commit and keeps the whole request in a single run; firing edits one at a time can hit the run's step cap and stop early.
+- apply_edits({ edits: [{ find, replace, all? }] }) — apply MANY exact find/replace rewrites in ONE commit. This is the DEFAULT for any multi-part edit. Each \`find\` is an EXACT snippet copied verbatim from the file (matching whitespace, punctuation, casing); it must match exactly ONE place unless all=true. All finds are matched against the SAME current file, so don't target text that another edit in the same batch rewrites. The result lists which edits applied and which missed (re-copy an exact snippet for any miss).
+- apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Use apply_edit for LAYOUT changes to a \`<!-- block: ... -->\` annotation. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
 - remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
 - set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file above, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)
 - update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.
@@ -214,6 +219,51 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             }
             const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
             return { success: true, replacements: res.count, ...(noGoWarning.length ? { noGoWarning } : {}) }
+          },
+        },
+        apply_edits: {
+          description:
+            'Apply MANY exact find/replace rewrites to this page in ONE commit. Use for any multi-part edit instead of many apply_edit calls. Reports which edits applied and which missed. Each find is matched against the same current file.',
+          inputSchema: z.object({
+            edits: z
+              .array(
+                z.object({
+                  find: z.string().describe('Exact text to find, copied verbatim from the current file.'),
+                  replace: z.string().describe('Replacement text (may be empty to delete the snippet).'),
+                  all: z
+                    .boolean()
+                    .optional()
+                    .describe('Replace every occurrence instead of requiring a single unique match.'),
+                })
+              )
+              .min(1)
+              .describe('The rewrites to apply together, in order, against the current file.'),
+          }),
+          execute: async ({ edits }) => {
+            // Sanitize each replacement (strip AI dash-tells) at the call site,
+            // mirroring apply_edit; the pure helper stays match-only.
+            const sanitized = edits.map((e: { find: string; replace: string; all?: boolean }) => ({
+              find: e.find,
+              replace: sanitizeGeneratedText(e.replace),
+              all: e.all,
+            }))
+            const res = applyBatchEdits(workingContent, sanitized)
+            // Only commit when something actually landed; when every find missed
+            // the page is unchanged — return the misses so the model re-copies.
+            const changed = res.next !== workingContent
+            if (changed) {
+              const annotationErrors = validatePageAnnotations(res.next)
+              if (annotationErrors.length > 0) {
+                return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
+              }
+              try {
+                await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
+              } catch (err) {
+                return { error: err instanceof Error ? err.message : 'Failed to save the edits.' }
+              }
+            }
+            const noGoWarning = changed ? findNoGoHits(workingContent, noGoPhrases) : []
+            return { success: true, applied: res.applied, failed: res.failed, ...(noGoWarning.length ? { noGoWarning } : {}) }
           },
         },
         set_faq: {
@@ -429,8 +479,10 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
         },
       },
       // A multi-part instruction ("remove every X, Y, Z") fans out into many
-      // apply_edit tool-loops; a low cap silently truncates the run mid-task.
-      stopWhen: stepCountIs(16),
+      // tool-loops; a low cap silently truncates the run mid-task. apply_edits /
+      // remove_text batch most of that into single calls, so 40 is headroom the
+      // model rarely reaches rather than the primary lever.
+      stopWhen: stepCountIs(40),
       onFinish: async ({ totalUsage }) => {
         await recordTokenUsage({
           task: 'content',

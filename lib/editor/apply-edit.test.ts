@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyFindReplace, validatePageAnnotations } from './apply-edit'
+import { applyFindReplace, applyBatchEdits, validatePageAnnotations } from './apply-edit'
 
 const PAGE = `---
 title: Services
@@ -52,6 +52,56 @@ describe('applyFindReplace', () => {
 
   it('rejects an empty find', () => {
     expect(applyFindReplace(PAGE, '', 'x').ok).toBe(false)
+  })
+})
+
+describe('applyBatchEdits', () => {
+  it('applies every rewrite in one pass and folds them into next', () => {
+    const res = applyBatchEdits(PAGE, [
+      { find: 'Some prose about advisory work.', replace: 'Rewritten advisory copy.' },
+      { find: '## Tax', replace: '## Tax Prep' },
+    ])
+    expect(res.failed).toEqual([])
+    expect(res.applied).toEqual([
+      { find: 'Some prose about advisory work.', replacements: 1 },
+      { find: '## Tax', replacements: 1 },
+    ])
+    expect(res.next).toContain('Rewritten advisory copy.')
+    expect(res.next).toContain('## Tax Prep')
+  })
+
+  it('collects a missing find into failed without aborting the rest', () => {
+    const res = applyBatchEdits(PAGE, [
+      { find: 'nonexistent snippet', replace: 'x' },
+      { find: 'Some prose about advisory work.', replace: 'Rewritten.' },
+    ])
+    expect(res.applied).toEqual([{ find: 'Some prose about advisory work.', replacements: 1 }])
+    expect(res.failed).toHaveLength(1)
+    expect(res.failed[0].find).toBe('nonexistent snippet')
+    expect(res.next).toContain('Rewritten.')
+  })
+
+  it('collects an ambiguous find into failed unless all=true', () => {
+    const ambiguous = applyBatchEdits(PAGE, [{ find: '(555) 111-2222', replace: '(555) 999-0000' }])
+    expect(ambiguous.applied).toEqual([])
+    expect(ambiguous.failed).toHaveLength(1)
+
+    const all = applyBatchEdits(PAGE, [{ find: '(555) 111-2222', replace: '(555) 999-0000', all: true }])
+    expect(all.failed).toEqual([])
+    expect(all.applied).toEqual([{ find: '(555) 111-2222', replacements: 2 }])
+    expect(all.next).not.toContain('(555) 111-2222')
+  })
+
+  it('leaves content unchanged and applied empty when every find misses', () => {
+    const res = applyBatchEdits(PAGE, [{ find: 'nope', replace: 'x' }])
+    expect(res.next).toBe(PAGE)
+    expect(res.applied).toEqual([])
+    expect(res.failed).toHaveLength(1)
+  })
+
+  it('returns the original content for an empty edit list', () => {
+    const res = applyBatchEdits(PAGE, [])
+    expect(res).toEqual({ next: PAGE, applied: [], failed: [] })
   })
 })
 

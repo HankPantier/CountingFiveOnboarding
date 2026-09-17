@@ -86,4 +86,36 @@ describe('summarizeEditRun', () => {
     const parts = [{ type: 'tool-remove_text', output: { error: 'That edit would break a block annotation: ...' } }]
     expect(summarizeEditRun(parts, 'stop')).toEqual({ applied: 0, failed: 1, incomplete: false })
   })
+
+  it('counts each edit in an apply_edits batch (applied + failed per edit, not per call)', () => {
+    const parts = [
+      {
+        type: 'tool-apply_edits',
+        output: {
+          success: true,
+          applied: [
+            { find: 'a', replacements: 1 },
+            { find: 'b', replacements: 2 },
+          ],
+          failed: [{ find: 'c', reason: 'not found' }],
+        },
+      },
+    ]
+    expect(summarizeEditRun(parts, 'stop')).toEqual({ applied: 2, failed: 1, incomplete: false })
+  })
+
+  it('counts a hard-errored apply_edits (annotation break) as a single failure', () => {
+    const parts = [{ type: 'tool-apply_edits', output: { error: 'That edit would break a block annotation: ...' } }]
+    expect(summarizeEditRun(parts, 'stop')).toEqual({ applied: 0, failed: 1, incomplete: false })
+  })
+
+  it('combines apply_edits batch counts with other commit tools', () => {
+    const parts = [
+      { type: 'tool-apply_edits', output: { success: true, applied: [{ find: 'a', replacements: 1 }], failed: [] } },
+      { type: 'tool-remove_text', output: { success: true, applied: [{ find: 'X', removed: 2 }], dashesStripped: 0, residual: [], firmWide: [] } },
+    ]
+    const summary = summarizeEditRun(parts, 'stop')
+    expect(summary.applied).toBe(2)
+    expect(summary.failed).toBe(0)
+  })
 })

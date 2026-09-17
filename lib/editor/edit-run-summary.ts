@@ -28,7 +28,13 @@ export interface EditRunSummary {
 
 // Message-part types whose successful output means a file was committed to the
 // draft. Kept in sync with the tools in the editor chat route.
-const COMMIT_TOOL_TYPES = ['tool-apply_edit', 'tool-set_faq', 'tool-update_firm_contact', 'tool-remove_text']
+const COMMIT_TOOL_TYPES = [
+  'tool-apply_edit',
+  'tool-apply_edits',
+  'tool-set_faq',
+  'tool-update_firm_contact',
+  'tool-remove_text',
+]
 
 interface RemoveTextOutput {
   success?: boolean
@@ -37,6 +43,10 @@ interface RemoveTextOutput {
   dashesStripped?: number
   residual?: { find: string; remaining: number }[]
   firmWide?: { find: string; source: string; remaining: number }[]
+  // apply_edits reports per-edit outcomes; each successful rewrite counts as one
+  // applied change and each miss as one failure (so the UI's "Applied N, M
+  // failed" stays truthful for a batch).
+  failed?: { find: string; reason: string }[]
 }
 
 interface ToolPartLike {
@@ -61,6 +71,13 @@ export function summarizeEditRun(parts: ToolPartLike[] | undefined, finishReason
     if (!out) continue
     if (out.error || out.success === false) {
       failed++
+      continue
+    }
+    // A batch apply_edits commit carries many rewrites: count each landed edit
+    // as one applied change and each miss as one failure, not the batch as one.
+    if (p.type === 'tool-apply_edits') {
+      applied += out.applied?.length ?? 0
+      failed += out.failed?.length ?? 0
       continue
     }
     applied++

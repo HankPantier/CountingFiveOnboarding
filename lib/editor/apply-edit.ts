@@ -41,6 +41,41 @@ export function applyFindReplace(
   return { ok: true, next, count }
 }
 
+export interface BatchEdit {
+  find: string
+  replace: string
+  all?: boolean
+}
+
+export interface BatchEditResult {
+  next: string
+  applied: { find: string; replacements: number }[]
+  failed: { find: string; reason: string }[]
+}
+
+// Apply many find/replace rewrites against ONE snapshot, folding each success
+// into `next`, and land them in a single commit — the rewrite counterpart to
+// applyBulkRemovals. A miss (0 matches) or ambiguous find (>1 without `all`) is
+// collected into `failed` and does NOT abort the rest, so a large multi-part
+// edit converges in one pass instead of truncating on the tool-call cap. Each
+// `find` is matched against the running text, so callers must not target text a
+// prior edit in the same batch already rewrote. Pure and deterministic.
+export function applyBatchEdits(content: string, edits: BatchEdit[]): BatchEditResult {
+  let next = content
+  const applied: { find: string; replacements: number }[] = []
+  const failed: { find: string; reason: string }[] = []
+  for (const { find, replace, all } of edits) {
+    const res = applyFindReplace(next, find, replace, all ?? false)
+    if (res.ok) {
+      next = res.next
+      applied.push({ find, replacements: res.count })
+    } else {
+      failed.push({ find, reason: res.reason })
+    }
+  }
+  return { next, applied, failed }
+}
+
 // Guard a proposed edit against breaking block annotations: strip frontmatter
 // and check every `<!-- block: … -->` still has a known id + valid variant.
 // Returns [] when the page is fine to write.
