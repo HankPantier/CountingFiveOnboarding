@@ -88,6 +88,49 @@ describe('buildMbpDocument', () => {
     expect(withProv.sections.find(s => s.key === 'business')!.fields!.find(f => f.fieldPath === 'business.name')!.provenance).toBeUndefined()
   })
 
+  it('never throws on null/non-object elements inside an array field, skipping them', () => {
+    // Real corruption seen in prod: a bracket-path write (e.g. niches[10].x) to a
+    // shorter array leaves undefined slots that serialize to null in JSONB. The
+    // `?? []` guards only an ABSENT array, not null holes inside a present one.
+    const dirty = {
+      niches: [
+        { name: 'Nonprofits', status: 'kept' },
+        null,
+        'oops-a-string',
+        { name: 'Dental', status: 'dropped', subCategories: [{ name: 'Implants', status: 'dropped' }, null] },
+      ],
+      services: [null, { name: 'Tax', status: 'kept' }],
+      team: [null, { name: 'Kelsey' }],
+      locations: [null],
+      clientPortals: [null, { label: 'Portal', url: 'https://x' }],
+    } as unknown as SessionSchema
+
+    let out: ReturnType<typeof buildMbpDocument> | undefined
+    expect(() => { out = buildMbpDocument(dirty, null, { scaffold: true }) }).not.toThrow()
+
+    // Null/string rows are dropped; only real object rows survive as items.
+    const niches = out!.sections.find(s => s.key === 'niches')
+    expect(niches!.items!.length).toBe(2)
+    expect(niches!.items!.map(i => i.heading)).toEqual(['Nonprofits', 'Dental (DROPPED) · 0/1 sub-services kept'])
+    const services = out!.sections.find(s => s.key === 'services')
+    expect(services!.items!.length).toBe(1)
+    const team = out!.sections.find(s => s.key === 'team')
+    expect(team!.items!.length).toBe(1)
+    const portals = out!.sections.find(s => s.key === 'clientPortals')
+    expect(portals!.items!.length).toBe(1)
+  })
+
+  it('reflects dropped counts in section titles even with null rows present', () => {
+    const dirty = {
+      niches: [{ name: 'A', status: 'dropped' }, null, { name: 'B', status: 'kept' }],
+      services: [null, { name: 'S', status: 'dropped' }],
+    } as unknown as SessionSchema
+    const out = buildMbpDocument(dirty)
+    // 1 kept / 1 dropped for niches (null ignored), 0 kept / 1 dropped for services.
+    expect(out.sections.find(s => s.key === 'niches')!.title).toBe('Niches (1 kept · 1 dropped)')
+    expect(out.sections.find(s => s.key === 'services')!.title).toBe('Services (0 kept · 1 dropped)')
+  })
+
   it('omits the Site Map section when no confirmed sitemap is given', () => {
     expect(doc.sections.find(s => s.key === 'site_map')).toBeUndefined()
   })

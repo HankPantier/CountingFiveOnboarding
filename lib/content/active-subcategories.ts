@@ -12,5 +12,7 @@ type SubCategory = NonNullable<Niche['subCategories']>[number]
 export function activeSubCategories(niche: Pick<Niche, 'subCategories'>): SubCategory[] {
   const list = niche.subCategories
   if (!Array.isArray(list)) return []
-  return list.filter((s) => s?.status !== 'dropped')
+  // Null / non-object holes (bracket-path writes that persist as JSONB null) are
+  // dropped here too — stored indices stay stable, but no generator sees a null.
+  return list.filter((s): s is SubCategory => !!s && typeof s === 'object' && s.status !== 'dropped')
 }

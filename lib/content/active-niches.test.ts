@@ -22,4 +22,14 @@ describe('activeNiches', () => {
     expect(activeNiches({} as SessionSchema)).toEqual([])
     expect(activeNiches({ niches: 'oops' as unknown as SessionSchema['niches'] } as SessionSchema)).toEqual([])
   })
+
+  it('drops null / non-object holes so generators never see corrupt rows', () => {
+    // A bracket-path write (niches[10].x) to a shorter array leaves undefined
+    // slots that serialize to null in JSONB. The stored array keeps its indices
+    // (gap-path stability), but no generator should ever receive a null.
+    const schema = {
+      niches: [niche('Dental'), null, 'oops', niche('Legal', 'dropped'), niche('Nonprofit')],
+    } as unknown as SessionSchema
+    expect(activeNiches(schema).map(n => n.name)).toEqual(['Dental', 'Nonprofit'])
+  })
 })

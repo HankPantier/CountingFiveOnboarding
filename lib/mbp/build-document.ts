@@ -53,6 +53,19 @@ export function formatFieldValue(v: unknown): string {
   return String(v)
 }
 
+// Invariant: buildMbpDocument must NEVER throw, whatever shape schema_data is in
+// (mirrors the "MBP parser must never throw" rule and the arr() helper in
+// lib/agent/brand-voice.ts). Every array read goes through this: it drops null /
+// undefined / primitive elements so the downstream .filter/.map callbacks only
+// ever see real objects. Bracket-path writes (niches[10].x) to a shorter array
+// leave undefined slots that serialize to null in JSONB — a present array with
+// null holes, which `?? []` does not guard against.
+function objectRows<T>(v: readonly T[] | null | undefined): T[]
+function objectRows<T>(v: unknown): T[]
+function objectRows<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v.filter(r => !!r && typeof r === 'object') as T[]) : []
+}
+
 type ProvenanceMap = Record<string, 'audit' | 'notes' | 'confirmed' | 'thin'>
 
 function fieldsFromObject(
@@ -103,7 +116,7 @@ function arraySection<T extends Record<string, unknown>>(
   heading: (row: T, i: number) => string,
   provenance?: ProvenanceMap
 ): MbpDocumentSection {
-  const items: MbpDocumentItem[] = (rows ?? []).map((row, i) => ({
+  const items: MbpDocumentItem[] = objectRows(rows).map((row, i) => ({
     heading: heading(row, i) || `${title} ${i + 1}`,
     fields: fieldsFromObject(row, `${key}.${i}`, provenance),
   }))
@@ -137,17 +150,19 @@ export function buildMbpDocument(
   const scaffold = options.scaffold ?? false
   // Read-back of the Phase-3 industry review: annotate the section title with a
   // kept/dropped count so the operator can see the decision at a glance.
-  const droppedNicheCount = (schema.niches ?? []).filter(n => n.status === 'dropped').length
+  const nicheRows = objectRows(schema.niches)
+  const droppedNicheCount = nicheRows.filter(n => n.status === 'dropped').length
   const nicheTitle =
     droppedNicheCount > 0
-      ? `Niches (${(schema.niches ?? []).length - droppedNicheCount} kept · ${droppedNicheCount} dropped)`
+      ? `Niches (${nicheRows.length - droppedNicheCount} kept · ${droppedNicheCount} dropped)`
       : 'Niches'
 
   // Same read-back for the Phase-3 services review.
-  const droppedServiceCount = (schema.services ?? []).filter(s => s.status === 'dropped').length
+  const serviceRows = objectRows(schema.services)
+  const droppedServiceCount = serviceRows.filter(s => s.status === 'dropped').length
   const serviceTitle =
     droppedServiceCount > 0
-      ? `Services (${(schema.services ?? []).length - droppedServiceCount} kept · ${droppedServiceCount} dropped)`
+      ? `Services (${serviceRows.length - droppedServiceCount} kept · ${droppedServiceCount} dropped)`
       : 'Services'
 
   const prov = schema._meta?.field_provenance as ProvenanceMap | undefined
@@ -171,7 +186,7 @@ export function buildMbpDocument(
       const base = n.status === 'dropped' ? `${n.name || ''} (DROPPED)` : n.name || ''
       // Read-back of the Phase-3 sub-service review: annotate with a kept/dropped
       // count so the operator sees the decision without expanding the JSON field.
-      const subs = n.subCategories ?? []
+      const subs = objectRows(n.subCategories)
       const droppedSubs = subs.filter(s => s.status === 'dropped').length
       return droppedSubs > 0 ? `${base} · ${subs.length - droppedSubs}/${subs.length} sub-services kept` : base
     }, prov),
