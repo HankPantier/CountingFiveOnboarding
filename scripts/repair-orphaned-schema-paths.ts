@@ -171,6 +171,90 @@ function repairSchema(schema: Obj, log: string[]): boolean {
   return changed
 }
 
+// Legacy top-level keys written off-schema (by old AI drafts / imports / hand
+// edits) that map 1:1 to a canonical field. brandVoice.avoid is handled
+// specially (array union into brand.toneToAvoid). Keys with no clear canonical
+// home (project, intake_form, testimonials, fax, whoTheyServe, …) are left in
+// place — the "Other information" accordion section now surfaces them.
+const LEGACY_MAP: Record<string, string> = {
+  differentiators: 'business.differentiators',
+  affiliations: 'business.affiliations',
+}
+
+function dropKey(obj: Obj, key: string): Obj {
+  const { [key]: _omit, ...rest } = obj
+  void _omit
+  return rest
+}
+
+function rehomeLegacyKeys(schema: Obj, log: string[]): boolean {
+  let draft = schema
+  let changed = false
+
+  // brandVoice.avoid → brand.toneToAvoid (union). Avoid-rules like "em-dashes /
+  // emojis" canonically live in brand.toneToAvoid (see CLAUDE.md).
+  const bv = draft.brandVoice
+  if (isPlainObj(bv)) {
+    const avoid = Array.isArray(bv.avoid) ? (bv.avoid as unknown[]) : []
+    const otherKeys = Object.keys(bv).filter(k => k !== 'avoid')
+    if (avoid.length) {
+      const cur = getByPath(draft, 'brand.toneToAvoid')
+      const curArr = Array.isArray(cur) ? (cur as unknown[]) : cur == null || cur === '' ? [] : [cur]
+      const union = [...curArr]
+      for (const a of avoid) if (!union.some(x => eq(x, a))) union.push(a)
+      if (!eq(union, cur)) {
+        draft = deepSetPath(draft, 'brand.toneToAvoid', union)
+        changed = true
+        log.push(`  RE-HOMED (union) brandVoice.avoid → brand.toneToAvoid`)
+      } else {
+        log.push(`  ALREADY PRESENT brandVoice.avoid (subset of brand.toneToAvoid)`)
+      }
+    }
+    if (otherKeys.length === 0) {
+      draft = dropKey(draft, 'brandVoice')
+      changed = true
+      log.push(`  DELETED legacy key "brandVoice"`)
+    } else {
+      log.push(`  KEPT legacy key "brandVoice" (unmapped subkeys: ${otherKeys.join(', ')})`)
+    }
+  }
+
+  for (const [legacyKey, canonical] of Object.entries(LEGACY_MAP)) {
+    if (!(legacyKey in draft)) continue
+    const value = draft[legacyKey]
+    if (isEmpty(value)) {
+      draft = dropKey(draft, legacyKey)
+      changed = true
+      log.push(`  DROPPED empty legacy key "${legacyKey}"`)
+      continue
+    }
+    const target = getByPath(draft, canonical)
+    if (!isEmpty(target) && eq(target, value)) {
+      draft = dropKey(draft, legacyKey)
+      changed = true
+      log.push(`  ALREADY PRESENT legacy ${legacyKey} (== ${canonical})`)
+      continue
+    }
+    if (isEmpty(target)) {
+      draft = deepSetPath(draft, canonical, value)
+      draft = dropKey(draft, legacyKey)
+      changed = true
+      log.push(`  RE-HOMED (target empty) ${legacyKey} → ${canonical}`)
+      continue
+    }
+    log.push(
+      `  CONFLICT legacy ${legacyKey}: value=${JSON.stringify(value).slice(0, 70)} ` +
+        `vs existing ${canonical}=${JSON.stringify(target).slice(0, 70)} — left in place`
+    )
+  }
+
+  if (changed) {
+    for (const k of Object.keys(schema)) delete schema[k]
+    Object.assign(schema, draft)
+  }
+  return changed
+}
+
 // Ensure "emojis" is present in brand.toneToAvoid for the target session.
 function ensureEmojiRule(schema: Obj, log: string[]): boolean {
   const brand = isPlainObj(schema.brand) ? schema.brand : {}
@@ -202,6 +286,7 @@ async function main() {
     const draft = JSON.parse(JSON.stringify(original)) as Obj
 
     let changed = repairSchema(draft, log)
+    changed = rehomeLegacyKeys(draft, log) || changed
     if (row.id === EMOJI_SESSION_ID) changed = ensureEmojiRule(draft, log) || changed
 
     if (!changed && !log.length) continue

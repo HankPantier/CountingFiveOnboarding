@@ -174,6 +174,63 @@ export function buildMbpDocument(
     obj('assets', 'Assets', schema.assets as Record<string, unknown> | undefined),
     obj('additional', 'Additional', schema.additional as Record<string, unknown> | undefined),
   ]
+
+  // The admin MBP accordions (scaffold = true) must show EVERYTHING in
+  // schema_data. The sections above read a fixed set of top-level keys, so any
+  // other populated key would be invisible. Promote the two common ones
+  // (websiteUrl, the audit-derived socialPresence) to their own sections, then a
+  // catch-all for any remaining stray/legacy key so nothing is ever silently
+  // hidden. Gated on scaffold so the completeness/enrichment/backfill/export
+  // callers (which call without it) keep seeing only the mapped sections. Internal
+  // state (_meta) and the raw onboarding sitemaps (superseded by confirmedSitemap)
+  // stay hidden by design.
+  if (scaffold) {
+    sections.push({
+      key: 'websiteUrl',
+      title: 'Website',
+      fields: [
+        {
+          label: 'Website URL',
+          fieldPath: 'websiteUrl',
+          value: schema.websiteUrl,
+          empty: isEmpty(schema.websiteUrl),
+        },
+      ],
+    })
+
+    const socialProfiles =
+      ((schema.socialPresence as { profiles?: Record<string, unknown>[] } | undefined)?.profiles) ?? []
+    sections.push(
+      arraySection(
+        'socialPresence.profiles',
+        'Social Presence',
+        socialProfiles,
+        p => (p.platform as string) || (p.url as string) || '',
+        prov
+      )
+    )
+
+    const RENDERED_KEYS = new Set([
+      'contact', 'business', 'brand', 'content_direction', 'culture', 'technical',
+      'locations', 'team', 'services', 'niches', 'clientPortals', 'reputation',
+      'content_gaps', 'assets', 'additional', 'websiteUrl', 'socialPresence',
+      // internal state / superseded by confirmedSitemap — intentionally hidden:
+      '_meta', 'proposed_sitemap', 'current_sitemap',
+    ])
+    const otherFields: MbpDocumentField[] = Object.keys(schema)
+      // Skip orphan-form keys (dotted/bracket names). Those are stale data the
+      // repair script reconciles; making them editable here would let a save
+      // clobber the correct nested field via the (now bracket-aware) writer.
+      .filter(k => !RENDERED_KEYS.has(k) && !/[.[]/.test(k))
+      .map(k => {
+        const value = (schema as Record<string, unknown>)[k]
+        return { label: humanize(k), fieldPath: k, value, empty: isEmpty(value) }
+      })
+    if (otherFields.length > 0) {
+      sections.push({ key: '_other', title: 'Other information', fields: otherFields })
+    }
+  }
+
   if (confirmedSitemap && confirmedSitemap.length > 0) {
     sections.push(arraySection('site_map', 'Site Map', confirmedSitemap, p => p.title || p.url || ''))
   }
