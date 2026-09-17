@@ -16,5 +16,8 @@ type Niche = NonNullable<SessionSchema['niches']>[number]
 export function activeNiches(schema: Pick<SessionSchema, 'niches'>): Niche[] {
   const list = schema.niches
   if (!Array.isArray(list)) return []
-  return list.filter((n) => n?.status !== 'dropped')
+  // Drop null / non-object holes too: a bracket-path write to a shorter array
+  // leaves undefined slots that persist as null in JSONB. The stored array keeps
+  // its indices (gap-path stability), but a null must never reach a generator.
+  return list.filter((n): n is Niche => !!n && typeof n === 'object' && n.status !== 'dropped')
 }
