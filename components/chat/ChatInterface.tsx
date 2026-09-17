@@ -85,6 +85,14 @@ export default function ChatInterface({
   const showNicheReview =
     currentPhase === 3 && !reviewDone && (reviewNiches.length > 0 || highOpportunityNiches.length > 0)
 
+  // Niches dropped in the industry card this session aren't reflected in the
+  // static schemaData snapshot (initialSession never refreshes), so track them
+  // locally to keep just-dropped niches out of the later sub-service review.
+  // Seeded from drops already persisted (resume case, where the card won't render).
+  const [droppedNiches, setDroppedNiches] = useState<Set<string>>(
+    () => new Set((schemaData.niches ?? []).filter((n) => n?.status === 'dropped').map((n) => n.name))
+  )
+
   // Phase-3 services review — mirrors the niche card. Shown once the niche review
   // is done (sequential), only when there are services to review.
   const reviewServices = useMemo<ReviewService[]>(
@@ -114,7 +122,7 @@ export default function ChatInterface({
   const reviewSubGroups = useMemo<ReviewNicheGroup[]>(
     () =>
       (schemaData.niches ?? [])
-        .filter((n) => n?.name?.trim() && n.status !== 'dropped')
+        .filter((n) => n?.name?.trim() && n.status !== 'dropped' && !droppedNiches.has(n.name))
         .map((n) => ({
           niche: n.name,
           subs: (n.subCategories ?? [])
@@ -122,7 +130,7 @@ export default function ChatInterface({
             .map((s) => ({ name: s.name, status: s.status })),
         }))
         .filter((g) => g.subs.length > 0),
-    [schemaData]
+    [schemaData, droppedNiches]
   )
   const [subReviewDone, setSubReviewDone] = useState(() => !!schemaData._meta?.subcategories_review)
   const showSubCategoryReview =
@@ -432,7 +440,8 @@ export default function ChatInterface({
               sessionId={sessionId}
               niches={reviewNiches}
               highOpportunityNiches={highOpportunityNiches}
-              onReviewed={() => {
+              onReviewed={({ drop }) => {
+                setDroppedNiches(new Set(drop))
                 setReviewDone(true)
                 sendMessage({ text: '[Industry review submitted]' })
               }}

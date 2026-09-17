@@ -7,7 +7,7 @@ type Props = {
   sessionId: string
   niches: ReviewNiche[]
   highOpportunityNiches: string[]
-  onReviewed: () => void
+  onReviewed: (result: { drop: string[] }) => void
 }
 
 const SIGNAL_STYLES: Record<string, string> = {
@@ -65,7 +65,7 @@ export default function NicheReviewCard({ sessionId, niches, highOpportunityNich
         const b = await res.json().catch(() => ({}))
         throw new Error(b?.error ?? `HTTP ${res.status}`)
       }
-      onReviewed()
+      onReviewed({ drop })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the review')
       setSubmitting(false)
