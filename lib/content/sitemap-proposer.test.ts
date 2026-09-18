@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSkeletonProposal } from './sitemap-proposer'
+import { buildSkeletonProposal, ensureBlockParents } from './sitemap-proposer'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult } from '@/types/audit-result'
 
@@ -223,5 +223,35 @@ describe('buildSkeletonProposal', () => {
     // ...but the block items themselves still get no own page
     expect(urls).not.toContain('/services/audit-protection')
     expect(urls).not.toContain('/industries/dental')
+  })
+})
+
+describe('ensureBlockParents', () => {
+  const blockSchema = {
+    services: [{ name: 'Audit Protection', description: '', offerings: [], pageTreatment: 'block' }],
+    niches: [{ name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '', pageTreatment: 'block' }],
+  } as unknown as SessionSchema
+  const skeleton = buildSkeletonProposal(blockSchema)
+
+  it('re-adds a block-parent hub that AI enrichment dropped', () => {
+    // Enrichment returned a sitemap WITHOUT the childless hubs.
+    const enriched = [{ url: '/', title: 'Home', status: 'update' as const }]
+    const out = ensureBlockParents(blockSchema, enriched, skeleton).map(p => p.url)
+    expect(out).toContain('/services')
+    expect(out).toContain('/industries')
+  })
+
+  it('leaves the sitemap untouched when the hubs survived enrichment', () => {
+    const enriched = [
+      { url: '/services', title: 'Services', status: 'new' as const, parent: '/' },
+      { url: '/industries', title: 'Industries we serve', status: 'new' as const, parent: '/' },
+    ]
+    expect(ensureBlockParents(blockSchema, enriched, skeleton)).toHaveLength(2)
+  })
+
+  it('does nothing when there are no block items', () => {
+    const pageSchema = { services: [{ name: 'Tax', description: '', offerings: [] }] } as unknown as SessionSchema
+    const enriched = [{ url: '/services/tax', title: 'Tax', status: 'new' as const, parent: '/services' }]
+    expect(ensureBlockParents(pageSchema, enriched, buildSkeletonProposal(pageSchema))).toBe(enriched)
   })
 })

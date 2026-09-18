@@ -5,7 +5,7 @@
 // also the fallback when the AI call fails, so the proposal never regresses to
 // the old update-only flat list.
 import { buildFirmContext } from './brand-voice'
-import { partitionNiches, partitionServices, partitionSubCategories } from './page-treatment'
+import { partitionNiches, partitionServices, partitionSubCategories, resolveBlockParent } from './page-treatment'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { slugify } from './sitemap-utils'
@@ -281,7 +281,7 @@ OUTPUT FORMAT — JSON array only, no prose:
 
 RULES:
 - CONTENT SCOPE is absolute: NEVER propose a page (or nest one) for any industry, service, or topic listed under CONTENT SCOPE exclusions above — not even as an "update" to an existing page. If the live site already has such a page, drop it from the sitemap entirely.
-- CONTENT-BLOCK ITEMS are absolute too: NEVER give any item listed under CONTENT-BLOCK ITEMS its own page or URL — the operator chose to cover it as a section within a parent page. Do not emit a page for it.
+- CONTENT-BLOCK ITEMS are absolute too: NEVER give any item listed under CONTENT-BLOCK ITEMS its own page or URL — the operator chose to cover it as a section within a parent page. Do not emit a page for it. But you MUST KEEP the /services and /industries hub pages from the skeleton whenever any CONTENT-BLOCK ITEMS exist — those sections render on the hub, so never drop a hub even if it looks childless.
 - status: "update" for pages that already exist on the live site (keep their exact URL); "new" for pages to create.
 - Build a real hierarchy via "parent" (a parent page's url, or "/" for top-level). Group service pages under a /services hub and industry/niche pages under an /industries hub.
 - Propose a dedicated NEW page for each meaningful niche and core service, INCLUDING the untapped niches and team-expertise areas listed above, plus pages that fill the conversion/authority gaps.
@@ -315,5 +315,40 @@ export async function proposeSitemap(
 
   // Fall back to the deterministic skeleton on any generation/parse failure so
   // the admin never sees an empty or update-only sitemap.
-  return enriched ?? skeleton
+  return ensureBlockParents(schema, enriched ?? skeleton, skeleton)
+}
+
+// A content-block item renders as a section on its parent page and gets no URL of
+// its own — so that parent page MUST exist in the final sitemap. AI enrichment can
+// legitimately drop a childless hub (all-block category), which would strand those
+// sections. Deterministically re-add any block-parent page the enrichment removed,
+// reusing the skeleton's entry when present or synthesizing a minimal hub. Runs
+// after enrichment so the guarantee holds regardless of what the model returns.
+export function ensureBlockParents(
+  schema: SessionSchema,
+  sitemap: ProposedSitemap,
+  skeleton: ProposedSitemap,
+): ProposedSitemap {
+  const required = new Map<string, string>() // normUrl -> raw url
+  for (const s of partitionServices(schema).blockServices) {
+    if (s.name?.trim()) { const u = resolveBlockParent(s, 'service'); required.set(normUrl(u), u) }
+  }
+  for (const n of partitionNiches(schema).blockNiches) {
+    if (n.name?.trim()) { const u = resolveBlockParent(n, 'niche'); required.set(normUrl(u), u) }
+  }
+  if (!required.size) return sitemap
+
+  const present = new Set(sitemap.map(p => normUrl(p.url)))
+  const out = [...sitemap]
+  for (const [key, rawUrl] of required) {
+    if (present.has(key)) continue
+    const fromSkeleton = skeleton.find(p => normUrl(p.url) === key)
+    if (fromSkeleton) {
+      out.push(fromSkeleton)
+    } else {
+      const title = key === '/services' ? 'Services' : key === '/industries' ? 'Industries we serve' : rawUrl
+      out.push({ url: rawUrl, title, status: 'new', parent: '/' })
+    }
+  }
+  return out.slice(0, MAX_PAGES)
 }
