@@ -339,16 +339,23 @@ export function ensureBlockParents(
   if (!required.size) return sitemap
 
   const present = new Set(sitemap.map(p => normUrl(p.url)))
-  const out = [...sitemap]
+  const missing: ProposedPage[] = []
   for (const [key, rawUrl] of required) {
     if (present.has(key)) continue
     const fromSkeleton = skeleton.find(p => normUrl(p.url) === key)
     if (fromSkeleton) {
-      out.push(fromSkeleton)
+      missing.push(fromSkeleton)
     } else {
       const title = key === '/services' ? 'Services' : key === '/industries' ? 'Industries we serve' : rawUrl
-      out.push({ url: rawUrl, title, status: 'new', parent: '/' })
+      missing.push({ url: rawUrl, title, status: 'new', parent: '/' })
     }
   }
-  return out.slice(0, MAX_PAGES)
+  if (!missing.length) return sitemap
+
+  // The restored hubs are REQUIRED (block sections have nowhere else to render), so
+  // they must survive the MAX_PAGES cap. Trim from the enriched TAIL to make room —
+  // never drop a hub. (Appending then slice(0, MAX_PAGES) would cut the hubs when
+  // enrichment already filled the cap.)
+  const room = Math.max(0, MAX_PAGES - missing.length)
+  return [...sitemap.slice(0, room), ...missing]
 }

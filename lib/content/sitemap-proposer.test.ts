@@ -254,4 +254,18 @@ describe('ensureBlockParents', () => {
     const enriched = [{ url: '/services/tax', title: 'Tax', status: 'new' as const, parent: '/services' }]
     expect(ensureBlockParents(pageSchema, enriched, buildSkeletonProposal(pageSchema))).toBe(enriched)
   })
+
+  it('keeps required hubs even when enrichment already filled the 60-page cap', () => {
+    // A full 60-page enriched sitemap with neither hub present.
+    const enriched = Array.from({ length: 60 }, (_, i) => ({
+      url: `/page-${i}`, title: `Page ${i}`, status: 'new' as const, parent: '/',
+    }))
+    const out = ensureBlockParents(blockSchema, enriched, skeleton)
+    const urls = out.map(p => p.url)
+    expect(out.length).toBeLessThanOrEqual(60)
+    expect(urls).toContain('/services') // hubs survived...
+    expect(urls).toContain('/industries')
+    expect(urls).not.toContain('/page-59') // ...by trimming the enriched tail
+    expect(urls).toContain('/page-0') // ...not the head
+  })
 })
