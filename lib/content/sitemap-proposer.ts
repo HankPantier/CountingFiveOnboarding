@@ -81,9 +81,12 @@ export function buildSkeletonProposal(
 
   // Templated differentiating pages from the firm's niches + services. Only
   // PAGE-treatment items get their own URL; 'block' items are folded into a
-  // parent page's outline downstream (page-intent), not templated here.
-  const niches = partitionNiches(schema).pageNiches.filter(n => n.name?.trim())
-  if (niches.length) {
+  // parent page's outline downstream (page-intent). The hub page is created when
+  // there is EITHER a page item OR a block item in the category, so an all-block
+  // category still has a hub for its sections to render on.
+  const { pageNiches, blockNiches } = partitionNiches(schema)
+  const niches = pageNiches.filter(n => n.name?.trim())
+  if (niches.length || blockNiches.some(n => n.name?.trim())) {
     push({ url: '/industries', title: 'Industries we serve', status: 'new', parent: '/' })
     for (const n of niches) {
       const nicheUrl = `/industries/${slugify(n.name)}`
@@ -108,8 +111,9 @@ export function buildSkeletonProposal(
       }
     }
   }
-  const services = partitionServices(schema).pageServices.filter(s => s.name?.trim())
-  if (services.length) {
+  const { pageServices, blockServices } = partitionServices(schema)
+  const services = pageServices.filter(s => s.name?.trim())
+  if (services.length || blockServices.some(s => s.name?.trim())) {
     push({ url: '/services', title: 'Services', status: 'new', parent: '/' })
     for (const s of services) {
       push({
