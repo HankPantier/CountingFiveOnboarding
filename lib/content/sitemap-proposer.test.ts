@@ -268,4 +268,19 @@ describe('ensureBlockParents', () => {
     expect(urls).not.toContain('/page-59') // ...by trimming the enriched tail
     expect(urls).toContain('/page-0') // ...not the head
   })
+
+  it('never trims a required parent enrichment kept near the tail (drops a non-required one instead)', () => {
+    // Full 60-page list: /services is a REQUIRED parent sitting at the very tail;
+    // /industries is missing. Making room for /industries must not cut /services.
+    const enriched = [
+      ...Array.from({ length: 59 }, (_, i) => ({ url: `/page-${i}`, title: `Page ${i}`, status: 'new' as const, parent: '/' })),
+      { url: '/services', title: 'Services', status: 'new' as const, parent: '/' },
+    ]
+    const out = ensureBlockParents(blockSchema, enriched, skeleton)
+    const urls = out.map(p => p.url)
+    expect(out.length).toBeLessThanOrEqual(60)
+    expect(urls).toContain('/services') // present required parent at the tail preserved
+    expect(urls).toContain('/industries') // missing required parent added
+    expect(urls).not.toContain('/page-58') // a NON-required tail page dropped instead
+  })
 })
