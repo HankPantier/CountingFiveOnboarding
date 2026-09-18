@@ -222,8 +222,16 @@ export default function AuditReview({
   const excludeWeakNiches = () => {
     setNicheDec((prev) => Object.fromEntries(niches.map((n) => [n.name, n.signal === 'weak' ? { treatment: 'exclude' } : prev[n.name]])))
   }
-  const hasWeakNiche = niches.some((n) => n.signal === 'weak')
-  const hasSuggestions = services.some((s) => s.suggestion) || niches.some((n) => n.suggestion)
+  // Show a bulk button only when clicking it would actually change a decision —
+  // otherwise it reads as a dead button (e.g. everything already a page).
+  const canAcceptSuggestions =
+    services.some((s) => s.suggestion && serviceDec[s.name]?.treatment !== s.suggestion.treatment) ||
+    niches.some((n) => n.suggestion && nicheDec[n.name]?.treatment !== n.suggestion.treatment) ||
+    subGroups.some((g) => g.subs.some((s) => s.suggestion && subDec[subKey(g.niche, s.name)] !== s.suggestion.treatment))
+  const canSiteItemsToPages =
+    services.some((s) => s.origin === 'site' && serviceDec[s.name]?.treatment !== 'page') ||
+    niches.some((n) => n.origin === 'site' && nicheDec[n.name]?.treatment !== 'page')
+  const canExcludeWeak = niches.some((n) => n.signal === 'weak' && nicheDec[n.name]?.treatment !== 'exclude')
 
   return (
     <div className="space-y-8">
@@ -243,9 +251,9 @@ export default function AuditReview({
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {hasSuggestions && <BulkButton onClick={acceptAllSuggestions}>Accept all AI suggestions</BulkButton>}
-            <BulkButton onClick={allSiteItemsToPages}>Site items → own pages</BulkButton>
-            {hasWeakNiche && <BulkButton onClick={excludeWeakNiches}>Exclude weak-signal industries</BulkButton>}
+            {canAcceptSuggestions && <BulkButton onClick={acceptAllSuggestions}>Accept all AI suggestions</BulkButton>}
+            {canSiteItemsToPages && <BulkButton onClick={allSiteItemsToPages}>Site items → own pages</BulkButton>}
+            {canExcludeWeak && <BulkButton onClick={excludeWeakNiches}>Exclude weak-signal industries</BulkButton>}
           </div>
         </div>
       </div>
