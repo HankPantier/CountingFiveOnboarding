@@ -60,6 +60,45 @@ describe('applyNicheReview', () => {
     })
   })
 
+  it('stamps pageTreatment + origin on kept niches from treatments', () => {
+    const { schema } = applyNicheReview(
+      baseSchema(), gaps(),
+      { treatments: [
+        { name: 'Dental', pageTreatment: 'page', origin: 'site' },
+        { name: 'Legal', pageTreatment: 'block', parent: '/services', origin: 'site' },
+      ] },
+      AT,
+    )
+    const dental = schema.niches?.find(n => n.name === 'Dental')
+    const legal = schema.niches?.find(n => n.name === 'Legal')
+    expect(dental?.pageTreatment).toBe('page')
+    expect(dental?.origin).toBe('site')
+    expect(legal?.pageTreatment).toBe('block')
+    expect(legal?.parent).toBe('/services')
+  })
+
+  it("treats a treatment of 'exclude' exactly like a drop", () => {
+    const { schema, gaps: out } = applyNicheReview(
+      baseSchema(), gaps(),
+      { treatments: [{ name: 'Legal', pageTreatment: 'exclude' }] },
+      AT,
+    )
+    expect(schema.niches?.find(n => n.name === 'Legal')?.status).toBe('dropped')
+    expect(schema.business?.contentExclusions).toEqual(['Legal'])
+    // gap pruning happens just like a legacy drop
+    expect(out.map(g => g.field)).toEqual(['business.foundingYear', 'niches[0].painPoints'])
+  })
+
+  it('stamps treatment + origin on added (audit) niches', () => {
+    const { schema } = applyNicheReview(
+      baseSchema(), gaps(),
+      { add: ['Construction'], treatments: [{ name: 'Construction', pageTreatment: 'block', parent: '/services', origin: 'audit' }] },
+      AT,
+    )
+    const c = schema.niches?.find(n => n.name === 'Construction')
+    expect(c).toMatchObject({ status: 'kept', pageTreatment: 'block', parent: '/services', origin: 'audit' })
+  })
+
   it('does not mutate its inputs and is idempotent', () => {
     const schema = baseSchema()
     const g = gaps()

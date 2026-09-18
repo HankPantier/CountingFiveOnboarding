@@ -6,12 +6,18 @@ vi.mock('@/lib/mbp/generate-json', () => ({ generateMbpJson: vi.fn() }))
 // asserts the wiring (its return is assigned to schema.proposed_sitemap) without
 // triggering the proposer's own AI call.
 vi.mock('@/lib/content/sitemap-proposer', () => ({ proposeSitemap: vi.fn() }))
+// The AI treatment-suggestion pass also calls generateMbpJson; exercised by its
+// own test (coerceSuggestions). Mock it here so the draft test asserts the wiring
+// (its return → schema._meta.audit_suggestions) without a second real AI call.
+vi.mock('@/lib/session-draft/suggest-audit-treatments', () => ({ suggestAuditTreatments: vi.fn() }))
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { proposeSitemap } from '@/lib/content/sitemap-proposer'
+import { suggestAuditTreatments } from './suggest-audit-treatments'
 import { draftSessionFromAudit, validateDraftModel } from './draft-from-audit'
 
 const mockGen = vi.mocked(generateMbpJson)
 const mockPropose = vi.mocked(proposeSitemap)
+const mockSuggest = vi.mocked(suggestAuditTreatments)
 
 const longText = (label: string) => `${label}. ` + 'Acme provides tax planning, bookkeeping, and advisory services to small businesses across Texas. '.repeat(20)
 
@@ -121,6 +127,8 @@ describe('draftSessionFromAudit', () => {
     mockGen.mockReset()
     mockPropose.mockReset()
     mockPropose.mockResolvedValue([])
+    mockSuggest.mockReset()
+    mockSuggest.mockResolvedValue(null)
   })
 
   it('maps a model into a valid SessionSchema, merges signals, computes gaps', async () => {
@@ -203,5 +211,23 @@ describe('draftSessionFromAudit', () => {
     expect(coverage.thin).toBe(true)
     expect(coverage.hadBusinessSignals).toBe(false)
     expect(coverage.reasons).toContain('only a few pages were crawled')
+  })
+
+  it('stores AI treatment suggestions into _meta.audit_suggestions', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    mockSuggest.mockResolvedValue({
+      services: [{ name: 'Tax Planning', treatment: 'page', rationale: 'Core service.' }],
+      generatedAt: '2026-09-18T00:00:00.000Z',
+    })
+    const { schema } = await draftSessionFromAudit(auditResult())
+    expect(schema._meta?.audit_suggestions?.services?.[0]).toMatchObject({ name: 'Tax Planning', treatment: 'page' })
+  })
+
+  it('is non-fatal when the suggestion pass throws (draft still succeeds)', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    mockSuggest.mockRejectedValue(new Error('boom'))
+    const { schema } = await draftSessionFromAudit(auditResult())
+    expect(schema.business?.name).toBe('Acme Accounting')
+    expect(schema._meta?.audit_suggestions).toBeUndefined()
   })
 })

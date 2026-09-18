@@ -1,6 +1,7 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
 import { activeServices } from './active-services'
+import { blocksForPage, hasBlocks, type PageBlocks } from './page-treatment'
 
 // Resolve what a page IS — a specific niche, service, or location page vs. a
 // generic one — and produce a compact, directive focus block that names the exact
@@ -138,7 +139,36 @@ function buildLocationFocus(city: string, area?: ServiceArea): string {
   ].join('\n')
 }
 
+// A directive telling the writer to cover each block item AS A SECTION on this
+// page — never as a link to a separate page (they have no page). Keeps a
+// content-block service/niche/sub-service covered even though it got no URL.
+function buildBlockDirective(blocks: PageBlocks): string {
+  const names = [
+    ...blocks.services,
+    ...blocks.niches,
+    ...blocks.subs.map((s) => s.name),
+  ].filter((n) => n.trim())
+  if (!names.length) return ''
+  return [
+    'ALSO INCLUDE, as dedicated sections ON THIS PAGE (they do NOT get their own pages — cover them here, do not link out to a separate page):',
+    ...names.map((n) => `- ${n}`),
+  ].join('\n')
+}
+
 export function resolvePageIntent(pageUrl: string, pageTitle: string, schema: SessionSchema): PageIntent {
+  const intent = resolveBaseIntent(pageUrl, pageTitle, schema)
+  // Fold any content-block items attached to this page into its focus block so
+  // the outline covers them as sections. Applies to hub pages too (which have an
+  // otherwise-empty focus block).
+  const blocks = blocksForPage(schema, pageUrl)
+  if (hasBlocks(blocks)) {
+    const directive = buildBlockDirective(blocks)
+    intent.focusBlock = [intent.focusBlock, directive].filter(Boolean).join('\n\n')
+  }
+  return intent
+}
+
+function resolveBaseIntent(pageUrl: string, pageTitle: string, schema: SessionSchema): PageIntent {
   const segs = pathSegments(pageUrl)
   const niches = activeNiches(schema)
   const services = activeServices(schema)

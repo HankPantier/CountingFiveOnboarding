@@ -56,33 +56,34 @@ export function validatePhaseAdvance(
       if (typeof li!.url === 'string' && li!.url.trim() && !li!.usefulness) return 'culture.linkedIn.usefulness not captured'
       if (typeof gbp!.url === 'string' && gbp!.url.trim() && !gbp!.usefulness) return 'business.googleBusinessProfile.usefulness not captured'
 
-      // Industry keep/drop review gate. The NicheReviewCard writes
-      // _meta.niche_review; block the advance until it's present. Guarded on
-      // "there is something to review" so legacy / no-niche sessions never stall.
+      // Industry keep/drop review gate. The Audit Review step (first onboarding
+      // step) writes _meta.niche_review; block the advance until it's present.
+      // Guarded on "there is something to review" so legacy / no-niche sessions
+      // never stall.
       const niches = (schema.niches as Array<{ name?: string }> | undefined) ?? []
       const highOpp =
         (meta?.opportunities as { highOpportunityNiches?: string[] } | undefined)?.highOpportunityNiches ?? []
       const reviewNeeded = niches.some(n => (n?.name ?? '').trim() !== '') || highOpp.length > 0
       if (reviewNeeded && !meta?.niche_review) {
-        return 'the industry keep/drop review has not been completed — the client must submit the Industry review card (which writes _meta.niche_review) before Phase 3 can advance'
+        return 'the industry keep/drop review has not been completed — the operator must finish the Audit Review step (which writes _meta.niche_review) before Phase 3 can advance'
       }
 
-      // Services keep/drop review gate. The ServiceReviewCard writes
+      // Services keep/drop review gate. The Audit Review step writes
       // _meta.services_review; block the advance until it's present. Guarded on
       // "there is at least one service to review" so no-service sessions never stall.
       const services = (schema.services as Array<{ name?: string }> | undefined) ?? []
       const servicesNeedReview = services.some(s => (s?.name ?? '').trim() !== '')
       if (servicesNeedReview && !meta?.services_review) {
-        return 'the services keep/drop review has not been completed — the client must submit the Services review card (which writes _meta.services_review) before Phase 3 can advance'
+        return 'the services keep/drop review has not been completed — the operator must finish the Audit Review step (which writes _meta.services_review) before Phase 3 can advance'
       }
 
       // Geographic scope review gate. Every firm makes a service-area decision, so
-      // this is unconditional — the GeographyReviewCard writes _meta.geo_review.
+      // this is unconditional — the Audit Review step writes _meta.geo_review.
       if (!meta?.geo_review) {
-        return 'the geographic scope review has not been completed — the client must submit the Service area card (which writes _meta.geo_review) before Phase 3 can advance'
+        return 'the geographic scope review has not been completed — the operator must finish the Audit Review step (which writes _meta.geo_review) before Phase 3 can advance'
       }
 
-      // Sub-service keep/drop review gate. The SubCategoryReviewCard writes
+      // Sub-service keep/drop review gate. The Audit Review step writes
       // _meta.subcategories_review; block the advance until it's present. Guarded
       // on there being at least one sub-service under a kept niche, so sessions
       // without sub-services never stall.
@@ -94,8 +95,15 @@ export function validatePhaseAdvance(
         n => n?.status !== 'dropped' && (n?.subCategories ?? []).some(s => (s?.name ?? '').trim() !== '')
       )
       if (subReviewNeeded && !meta?.subcategories_review) {
-        return 'the sub-service keep/drop review has not been completed — the client must submit the Sub-service review card (which writes _meta.subcategories_review) before Phase 3 can advance'
+        return 'the sub-service keep/drop review has not been completed — the operator must finish the Audit Review step (which writes _meta.subcategories_review) before Phase 3 can advance'
       }
+
+      // NOTE: team keep/remove is captured in the admin Audit Review step
+      // (writes _meta.team_review) but is deliberately NOT a hard Phase 3→4 gate.
+      // Unlike the other four reviews it has no in-chat fallback card, so gating
+      // on it could soft-lock advancement if the chat is reached (via ?step=chat)
+      // before the Audit Review is submitted. The decision still applies to
+      // content via activeTeam(); it just doesn't block the phase.
       return null
     }
     case 4: {

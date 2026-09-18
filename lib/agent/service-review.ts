@@ -1,11 +1,28 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 
-// The operator's Phase-3 service keep/drop review. `drop` = detected-service names
-// to mark dropped; `add` = new service names to append as served services. `keep`
-// is informational (the card sends it for completeness); status is derived from
-// `drop` so the two can never disagree. Mirrors NicheReviewInput.
-export type ServiceReviewInput = { keep?: string[]; drop?: string[]; add?: string[] }
+// A per-service page-vs-block decision + audit source from the Audit Review step.
+// Mirrors NicheTreatment: 'exclude' folds into the drop set; 'page'/'block' are
+// stamped onto the kept service; `parent` records the block attachment; `origin`
+// records the two-batch source.
+export type ServiceTreatment = {
+  name: string
+  pageTreatment: 'page' | 'block' | 'exclude'
+  parent?: string
+  origin?: 'site' | 'audit'
+}
+
+// The operator's service keep/drop review. `drop` = detected-service names to
+// mark dropped; `add` = new service names to append. `keep` is informational
+// (the card sends it for completeness); status is derived from `drop` (+ any
+// 'exclude' treatments) so they can never disagree. `treatments` is the richer
+// Audit Review payload; the legacy in-chat card omits it. Mirrors NicheReviewInput.
+export type ServiceReviewInput = {
+  keep?: string[]
+  drop?: string[]
+  add?: string[]
+  treatments?: ServiceTreatment[]
+}
 
 const norm = (s: string): string => s.trim().toLowerCase()
 
@@ -24,7 +41,11 @@ export function applyServiceReview(
   reviewedBy?: string,
 ): { schema: SessionSchema; gaps: GapItem[] } {
   const next = structuredClone(schema)
+  const treatmentMap = new Map((input.treatments ?? []).map((t) => [norm(t.name), t]))
   const dropSet = new Set((input.drop ?? []).map(norm).filter(Boolean))
+  for (const t of input.treatments ?? []) {
+    if (t.pageTreatment === 'exclude') dropSet.add(norm(t.name))
+  }
 
   const services = Array.isArray(next.services) ? next.services : []
   next.services = services
@@ -33,12 +54,20 @@ export function applyServiceReview(
   const droppedIndexes = new Set<number>()
   services.forEach((s, i) => {
     if (!s?.name) return
-    if (dropSet.has(norm(s.name))) {
+    const k = norm(s.name)
+    const t = treatmentMap.get(k)
+    if (t?.origin) s.origin = t.origin
+    if (dropSet.has(k)) {
       s.status = 'dropped'
       droppedNames.push(s.name)
       droppedIndexes.add(i)
     } else {
       s.status = 'kept'
+      if (t && t.pageTreatment !== 'exclude') {
+        s.pageTreatment = t.pageTreatment
+        if (t.pageTreatment === 'block' && t.parent) s.parent = t.parent
+        else delete s.parent
+      }
     }
   })
 
@@ -49,7 +78,13 @@ export function applyServiceReview(
   for (const raw of input.add ?? []) {
     const name = raw.trim()
     if (!name || present.has(norm(name))) continue
-    services.push({ name, description: '', offerings: [], status: 'kept' })
+    const t = treatmentMap.get(norm(name))
+    services.push({
+      name, description: '', offerings: [], status: 'kept',
+      ...(t?.origin ? { origin: t.origin } : {}),
+      ...(t && t.pageTreatment !== 'exclude' ? { pageTreatment: t.pageTreatment } : {}),
+      ...(t && t.pageTreatment === 'block' && t.parent ? { parent: t.parent } : {}),
+    })
     present.add(norm(name))
     addedNames.push(name)
   }

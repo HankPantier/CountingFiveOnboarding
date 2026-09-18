@@ -18,6 +18,13 @@ describe('activeNiches', () => {
     expect(activeNiches(schema).map(n => n.name)).toEqual(['Dental', 'Nonprofit'])
   })
 
+  it('keeps content-block niches (pageTreatment is a separate dimension from status)', () => {
+    const schema = {
+      niches: [{ name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '', status: 'kept', pageTreatment: 'block' }],
+    } as SessionSchema
+    expect(activeNiches(schema).map(n => n.name)).toEqual(['Dental'])
+  })
+
   it('returns [] for a missing or non-array niches field', () => {
     expect(activeNiches({} as SessionSchema)).toEqual([])
     expect(activeNiches({ niches: 'oops' as unknown as SessionSchema['niches'] } as SessionSchema)).toEqual([])

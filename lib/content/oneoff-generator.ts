@@ -10,6 +10,7 @@ import { OFF_BRAND_MARKER } from './brand-fit'
 import { DRAFT_BRANCH, listTree, readFile } from '@/lib/github/repo-files'
 import { extractJson } from './extract-json'
 import { generateJson } from './json-generation'
+import { activeTeam } from './active-team'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -139,7 +140,7 @@ export async function generateOneOff(
     } catch (err) {
       console.warn('[oneoff] Page list failed (continuing without):', err)
     }
-    const teamNames = (schema.team ?? []).map((m) => m.name).filter(Boolean)
+    const teamNames = activeTeam(schema).map((m) => m.name).filter(Boolean)
     const context = await resolveReferences({
       prompt,
       pageUrls,
@@ -161,7 +162,7 @@ export async function generateOneOff(
     }
     let memberBlock = ''
     if (context.teamMemberName) {
-      const member = (schema.team ?? []).find((m) => m.name === context.teamMemberName)
+      const member = activeTeam(schema).find((m) => m.name === context.teamMemberName)
       if (member) {
         memberBlock = `THE TEAM MEMBER REFERENCED:\n${JSON.stringify(member, null, 2)}`
       }

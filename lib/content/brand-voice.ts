@@ -1,6 +1,7 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
 import { activeServices } from './active-services'
+import { activeTeam } from './active-team'
 import { provenanceOf } from '@/lib/mbp/provenance'
 
 // Shared brand-voice prompt fragments. Extracted from content-generator.ts so
@@ -36,7 +37,7 @@ const arr = <T>(v: T[] | undefined | null): T[] => {
 
 export function buildCredentials(schema: SessionSchema): string {
   const creds: string[] = []
-  for (const member of arr(schema.team)) {
+  for (const member of activeTeam(schema)) {
     const name = str(member.name).trim()
     if (!name) continue
     // Certifications + areas of expertise + which niches the member can speak to

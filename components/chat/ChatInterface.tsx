@@ -6,12 +6,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import MessageBubble from './MessageBubble'
 import FileUploadButton from './FileUploadButton'
-import NicheReviewCard, { type ReviewNiche } from './NicheReviewCard'
-import ServiceReviewCard, { type ReviewService } from './ServiceReviewCard'
-import GeographyReviewCard, { type ReviewArea } from './GeographyReviewCard'
-import SubCategoryReviewCard, { type ReviewNicheGroup } from './SubCategoryReviewCard'
 import type { Database } from '@/types/database'
-import type { SessionSchema } from '@/types/session-schema'
 
 type Session = Database['public']['Tables']['sessions']['Row']
 
@@ -61,85 +56,10 @@ export default function ChatInterface({
   const [lastSent, setLastSent] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Phase-3 industry review, sourced from the audit-seeded schema snapshot. The
-  // NicheReviewCard is the authoritative keep/drop mechanism; the chat agent no
-  // longer asks keep/drop in prose (see lib/agent/phase-instructions.ts).
-  const schemaData = useMemo(
-    () => (initialSession.schema_data as SessionSchema | null) ?? ({} as SessionSchema),
-    [initialSession.schema_data]
-  )
-  const reviewNiches = useMemo<ReviewNiche[]>(
-    () =>
-      (schemaData.niches ?? [])
-        .filter((n) => n?.name?.trim())
-        .map((n) => ({ name: n.name, signal: n.signal, note: n.description?.trim() || undefined })),
-    [schemaData]
-  )
-  const highOpportunityNiches = useMemo(() => {
-    const have = new Set(reviewNiches.map((n) => n.name.toLowerCase()))
-    return (schemaData._meta?.opportunities?.highOpportunityNiches ?? []).filter(
-      (name) => name?.trim() && !have.has(name.toLowerCase())
-    )
-  }, [schemaData, reviewNiches])
-  const [reviewDone, setReviewDone] = useState(() => !!schemaData._meta?.niche_review)
-  const showNicheReview =
-    currentPhase === 3 && !reviewDone && (reviewNiches.length > 0 || highOpportunityNiches.length > 0)
-
-  // Niches dropped in the industry card this session aren't reflected in the
-  // static schemaData snapshot (initialSession never refreshes), so track them
-  // locally to keep just-dropped niches out of the later sub-service review.
-  // Seeded from drops already persisted (resume case, where the card won't render).
-  const [droppedNiches, setDroppedNiches] = useState<Set<string>>(
-    () => new Set((schemaData.niches ?? []).filter((n) => n?.status === 'dropped').map((n) => n.name))
-  )
-
-  // Phase-3 services review — mirrors the niche card. Shown once the niche review
-  // is done (sequential), only when there are services to review.
-  const reviewServices = useMemo<ReviewService[]>(
-    () =>
-      (schemaData.services ?? [])
-        .filter((s) => s?.name?.trim())
-        .map((s) => ({ name: s.name, note: s.description?.trim() || undefined })),
-    [schemaData]
-  )
-  const [servicesReviewDone, setServicesReviewDone] = useState(() => !!schemaData._meta?.services_review)
-  const showServiceReview =
-    currentPhase === 3 && !showNicheReview && !servicesReviewDone && reviewServices.length > 0
-
-  // Phase-3 geographic scope review — always shown (every firm has a service-area
-  // decision), after the niche + services reviews are done.
-  const reviewAreas = useMemo<ReviewArea[]>(
-    () => (schemaData.business?.serviceAreas ?? []).map((a) => ({ city: a.city, county: a.county, state: a.state, primary: a.primary })),
-    [schemaData]
-  )
-  const [geoReviewDone, setGeoReviewDone] = useState(() => !!schemaData._meta?.geo_review)
-  const showGeoReview =
-    currentPhase === 3 && !showNicheReview && !showServiceReview && !geoReviewDone
-
-  // Phase-3 sub-service review — mirrors the niche card, one level down. Shown
-  // last (after niche + services + geo), only for kept niches that carry
-  // sub-services. Dropped niches are excluded so their sub-services never appear.
-  const reviewSubGroups = useMemo<ReviewNicheGroup[]>(
-    () =>
-      (schemaData.niches ?? [])
-        .filter((n) => n?.name?.trim() && n.status !== 'dropped' && !droppedNiches.has(n.name))
-        .map((n) => ({
-          niche: n.name,
-          subs: (n.subCategories ?? [])
-            .filter((s) => s?.name?.trim())
-            .map((s) => ({ name: s.name, status: s.status })),
-        }))
-        .filter((g) => g.subs.length > 0),
-    [schemaData, droppedNiches]
-  )
-  const [subReviewDone, setSubReviewDone] = useState(() => !!schemaData._meta?.subcategories_review)
-  const showSubCategoryReview =
-    currentPhase === 3 &&
-    !showNicheReview &&
-    !showServiceReview &&
-    !showGeoReview &&
-    !subReviewDone &&
-    reviewSubGroups.length > 0
+  // The Phase-3 keep/drop + page/block review is now handled entirely up front in
+  // the admin Audit Review step (components/admin/onboarding/AuditReview) — the
+  // chat is Q&A only. The old in-chat review cards were removed to keep a single
+  // review surface.
 
   const transport = useMemo(
     () => new DefaultChatTransport({ api: '/api/chat', body: { sessionId } }),
@@ -433,53 +353,6 @@ export default function ChatInterface({
                 <span className="text-text-muted text-xs font-body">Thinking…</span>
               </div>
             </div>
-          )}
-
-          {showNicheReview && (
-            <NicheReviewCard
-              sessionId={sessionId}
-              niches={reviewNiches}
-              highOpportunityNiches={highOpportunityNiches}
-              onReviewed={({ drop }) => {
-                setDroppedNiches(new Set(drop))
-                setReviewDone(true)
-                sendMessage({ text: '[Industry review submitted]' })
-              }}
-            />
-          )}
-
-          {showServiceReview && (
-            <ServiceReviewCard
-              sessionId={sessionId}
-              services={reviewServices}
-              onReviewed={() => {
-                setServicesReviewDone(true)
-                sendMessage({ text: '[Services review submitted]' })
-              }}
-            />
-          )}
-
-          {showGeoReview && (
-            <GeographyReviewCard
-              sessionId={sessionId}
-              initialScope={schemaData.business?.serviceScope}
-              initialAreas={reviewAreas}
-              onReviewed={() => {
-                setGeoReviewDone(true)
-                sendMessage({ text: '[Service area review submitted]' })
-              }}
-            />
-          )}
-
-          {showSubCategoryReview && (
-            <SubCategoryReviewCard
-              sessionId={sessionId}
-              groups={reviewSubGroups}
-              onReviewed={() => {
-                setSubReviewDone(true)
-                sendMessage({ text: '[Sub-service review submitted]' })
-              }}
-            />
           )}
 
           <div ref={bottomRef} />

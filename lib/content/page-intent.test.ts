@@ -92,4 +92,20 @@ describe('resolvePageIntent', () => {
   it('falls back to generic for unknown paths', () => {
     expect(resolvePageIntent('/resources/some-post', 'Post', schema).type).toBe('generic')
   })
+
+  it('folds content-block items into the parent page focus as ALSO INCLUDE sections', () => {
+    const blockSchema = {
+      services: [
+        { name: 'Tax Prep', description: '', offerings: [] },
+        { name: 'Audit Protection', description: '', offerings: [], pageTreatment: 'block' },
+      ],
+    } as unknown as SessionSchema
+    // The /services hub (otherwise a generic page) picks up its block service.
+    const hub = resolvePageIntent('/services', 'Services', blockSchema)
+    expect(hub.focusBlock).toContain('ALSO INCLUDE')
+    expect(hub.focusBlock).toContain('Audit Protection')
+    // A page whose parent isn't the block's target gets no directive.
+    const other = resolvePageIntent('/about', 'About', blockSchema)
+    expect(other.focusBlock).toBe('')
+  })
 })

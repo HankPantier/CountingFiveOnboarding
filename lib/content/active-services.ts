@@ -3,7 +3,7 @@ import type { SessionSchema } from '@/types/session-schema'
 type Service = NonNullable<SessionSchema['services']>[number]
 
 // The single choke point for "which services does content generation see." A
-// service the operator dropped in the Phase-3 review card (status === 'dropped')
+// service the operator dropped in the Audit Review step (status === 'dropped')
 // is kept in schema.services for auditability + stable services[i] gap-path
 // indexes, but must never reach any generator. Every content-gen read of
 // schema.services goes through here instead. Missing status = active (legacy

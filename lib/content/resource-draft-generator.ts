@@ -3,6 +3,7 @@ import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation, clientAvoidPhrases } from './brand-voice'
+import { activeTeam } from './active-team'
 import { validateContent, ANTI_SLOP_RULES, humanizeDashes } from './anti-slop-validator'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { WRITING_EXAMPLES } from './exemplars'
@@ -595,7 +596,7 @@ export async function generateResourceDraft(
     }
 
     const date = new Date().toISOString().slice(0, 10)
-    const author = schema.team?.[0]?.name ?? null
+    const author = activeTeam(schema)[0]?.name ?? null
     const origin = session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://')
     const canonicalUrl = `${origin}/resources/${slug}`
 

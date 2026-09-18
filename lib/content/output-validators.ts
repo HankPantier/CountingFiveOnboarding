@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { PageIntentType } from './page-intent'
+import { activeTeam } from './active-team'
 
 // Deterministic post-generation checks for page metadata. These catch the small,
 // mechanical defects a human would otherwise fix by hand — an over-long hero
@@ -101,7 +102,7 @@ function buildFirmFactCorpus(schema: SessionSchema): string {
     if (Array.isArray(b.affiliations)) parts.push(...b.affiliations)
     if (Array.isArray(b.clientSuccessStories)) parts.push(...b.clientSuccessStories)
   }
-  for (const m of schema.team ?? []) {
+  for (const m of activeTeam(schema)) {
     if (Array.isArray(m.certifications)) parts.push(...m.certifications)
     if (Array.isArray(m.specializations)) parts.push(...m.specializations)
     if (typeof m.bio === 'string') parts.push(m.bio)

@@ -12,6 +12,7 @@ import { mapAuditToContentPlan, type ContentPlanSummary } from './audit-content-
 import { proposeSitemap } from '@/lib/content/sitemap-proposer'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from '@/lib/content/no-go-phrases'
 import { enrichSchemaFromIntelligence } from './enrich-from-intelligence'
+import { suggestAuditTreatments } from './suggest-audit-treatments'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult, BusinessSignals } from '@/types/audit-result'
@@ -221,16 +222,18 @@ function mapToSchema(
     })
   if (serviceAreas.length) b.serviceAreas = serviceAreas
 
+  // origin:'site' — everything mapped here was detected on the client's CURRENT
+  // site, so it lands in the "On your current site" batch of the Audit Review step.
   schema.services = (model.services ?? [])
     .filter((s) => s.name)
-    .map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [] }))
+    .map((s) => ({ name: s.name!, description: s.description ?? '', offerings: s.offerings ?? [], origin: 'site' as const }))
 
   // The AI-draft model has no per-niche signal strength — that lives on the
   // audit's DetectedNiche and is merged on afterward by enrichSchemaFromIntelligence
   // (which runs after this mapping). Leave `signal` unset here; don't "fix" it.
   schema.niches = (model.niches ?? [])
     .filter((n) => n.name)
-    .map((n) => ({ name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: '' }))
+    .map((n) => ({ name: n.name!, description: n.description ?? '', icp: '', painPoints: '', valueProp: '', origin: 'site' as const }))
 
   schema.locations = (model.locations ?? [])
     .filter((l) => l.name || l.street || l.city)
@@ -376,6 +379,25 @@ export async function draftSessionFromAudit(
     schema.proposed_sitemap = await proposeSitemap(schema, result, { auditId })
   } catch (err) {
     console.warn('[draft-from-audit] sitemap proposal failed, keeping deterministic plan:', err)
+  }
+
+  // AI-suggested per-item treatments (Own page / Content block / Exclude + team
+  // keep/remove + geo scope) so the Audit Review step opens pre-selected. Runs
+  // after enrichment so it sees niche signal, content gaps, and competitive data.
+  // Non-fatal: on failure the review falls back to origin-based defaults.
+  try {
+    const suggestions = await suggestAuditTreatments(schema, result.intelligence, { auditId })
+    if (suggestions) {
+      const meta = (schema._meta ??= {
+        phase3_completed_chunks: [],
+        phase4_resolved_tiers: { tier1_done: false, tier2_done: false },
+        phase4_flagged_for_followup: [],
+        admin_overrides: {},
+      })
+      meta.audit_suggestions = suggestions
+    }
+  } catch (err) {
+    console.warn('[draft-from-audit] treatment suggestions failed, using defaults:', err)
   }
 
   const gaps = computePhase4Gaps(schema)

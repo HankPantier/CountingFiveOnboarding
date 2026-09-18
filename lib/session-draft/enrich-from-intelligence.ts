@@ -86,7 +86,7 @@ export function enrichSchemaFromIntelligence(
 
   // ── Niches: add detected niches the AI draft didn't already capture, and
   //    carry the audit's signal strength onto every detected niche (new or
-  //    already-drafted) so the Phase-3 review card can surface it. ────────────
+  //    already-drafted) so the Audit Review step can surface it. ──────────────
   if (niche?.detected_niches?.length) {
     schema.niches ??= []
     const byName = new Map(schema.niches.map((n) => [n.name.toLowerCase(), n]))
@@ -98,7 +98,10 @@ export function enrichSchemaFromIntelligence(
         // clobber a value if one is somehow already present).
         if (!match.signal) match.signal = d.signal
       } else {
-        const created = { name: d.name, description: d.note ?? '', icp: '', painPoints: '', valueProp: '', signal: d.signal }
+        // origin:'site' — a detected niche was found ON the current site (the
+        // audit's "recommended" niches live in content_gaps.nicheGaps /
+        // _meta.opportunities, surfaced as the 'audit' batch, not pushed here).
+        const created = { name: d.name, description: d.note ?? '', icp: '', painPoints: '', valueProp: '', signal: d.signal, origin: 'site' as const }
         schema.niches.push(created)
         byName.set(d.name.toLowerCase(), created)
       }

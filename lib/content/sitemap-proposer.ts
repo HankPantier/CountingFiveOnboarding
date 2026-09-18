@@ -5,8 +5,7 @@
 // also the fallback when the AI call fails, so the proposal never regresses to
 // the old update-only flat list.
 import { buildFirmContext } from './brand-voice'
-import { activeNiches } from './active-niches'
-import { activeServices } from './active-services'
+import { partitionNiches, partitionServices, partitionSubCategories } from './page-treatment'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { slugify } from './sitemap-utils'
@@ -80,21 +79,36 @@ export function buildSkeletonProposal(
     }
   }
 
-  // Templated differentiating pages from the firm's niches + services.
-  const niches = activeNiches(schema).filter(n => n.name?.trim())
+  // Templated differentiating pages from the firm's niches + services. Only
+  // PAGE-treatment items get their own URL; 'block' items are folded into a
+  // parent page's outline downstream (page-intent), not templated here.
+  const niches = partitionNiches(schema).pageNiches.filter(n => n.name?.trim())
   if (niches.length) {
     push({ url: '/industries', title: 'Industries we serve', status: 'new', parent: '/' })
     for (const n of niches) {
+      const nicheUrl = `/industries/${slugify(n.name)}`
       push({
-        url: `/industries/${slugify(n.name)}`,
+        url: nicheUrl,
         title: n.name,
         status: 'new',
         parent: '/industries',
         notes: n.valueProp || n.description || undefined,
       })
+      // Promoted sub-services (pageTreatment 'page') get their own page nested
+      // under the niche; block/legacy sub-services stay sections on the niche page.
+      for (const sub of partitionSubCategories(n).pageSubs) {
+        if (!sub.name?.trim()) continue
+        push({
+          url: `${nicheUrl}/${slugify(sub.name)}`,
+          title: sub.name,
+          status: 'new',
+          parent: nicheUrl,
+          notes: sub.notes || undefined,
+        })
+      }
     }
   }
-  const services = activeServices(schema).filter(s => s.name?.trim())
+  const services = partitionServices(schema).pageServices.filter(s => s.name?.trim())
   if (services.length) {
     push({ url: '/services', title: 'Services', status: 'new', parent: '/' })
     for (const s of services) {
@@ -203,13 +217,22 @@ function validateProposal(parsed: unknown): ProposedSitemap | null {
 
 // ── AI enrichment ────────────────────────────────────────────────────────────
 function buildPrompt(schema: SessionSchema, skeleton: ProposedSitemap): string {
-  const niches = activeNiches(schema)
+  // Page-treatment split: only own-page items are offered to the model as page
+  // candidates; block items are listed separately as "fold into a parent page,
+  // do NOT give them their own URL."
+  const { pageNiches, blockNiches } = partitionNiches(schema)
+  const { pageServices, blockServices } = partitionServices(schema)
+  const niches = pageNiches
     .filter(n => n.name?.trim())
     .map(n => `- ${n.name}: ${n.valueProp || n.painPoints || n.description || ''}`.trim())
     .join('\n')
-  const services = activeServices(schema)
+  const services = pageServices
     .filter(s => s.name?.trim())
     .map(s => `- ${s.name}: ${s.description || ''}`.trim())
+    .join('\n')
+  const blockItems = [...blockNiches, ...blockServices]
+    .filter(i => i.name?.trim())
+    .map(i => `- ${i.name}`)
     .join('\n')
   const serviceAreas = (schema.business?.serviceAreas ?? [])
     .filter(a => a.city?.trim())
@@ -235,6 +258,9 @@ ${niches || '(none specified)'}
 SERVICES:
 ${services || '(none specified)'}
 
+CONTENT-BLOCK ITEMS (the operator chose these as sections on a PARENT page — do NOT give them their own page/URL):
+${blockItems || '(none)'}
+
 SERVICE AREAS (local-SEO geography — the firm serves these cities):
 ${serviceAreas || '(none specified)'}
 
@@ -251,6 +277,7 @@ OUTPUT FORMAT — JSON array only, no prose:
 
 RULES:
 - CONTENT SCOPE is absolute: NEVER propose a page (or nest one) for any industry, service, or topic listed under CONTENT SCOPE exclusions above — not even as an "update" to an existing page. If the live site already has such a page, drop it from the sitemap entirely.
+- CONTENT-BLOCK ITEMS are absolute too: NEVER give any item listed under CONTENT-BLOCK ITEMS its own page or URL — the operator chose to cover it as a section within a parent page. Do not emit a page for it.
 - status: "update" for pages that already exist on the live site (keep their exact URL); "new" for pages to create.
 - Build a real hierarchy via "parent" (a parent page's url, or "/" for top-level). Group service pages under a /services hub and industry/niche pages under an /industries hub.
 - Propose a dedicated NEW page for each meaningful niche and core service, INCLUDING the untapped niches and team-expertise areas listed above, plus pages that fill the conversion/authority gaps.

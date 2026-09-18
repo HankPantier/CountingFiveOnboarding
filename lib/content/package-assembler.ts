@@ -58,6 +58,7 @@ import { generateInitialsAvatar } from '@/lib/content/initials-avatar-generator'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
 import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto } from '@/lib/content/stock-photo-resolver'
 import { collectPageImageRefs, computeImageCoverage } from '@/lib/content/image-coverage'
+import { activeTeam } from '@/lib/content/active-team'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -455,7 +456,7 @@ export async function assembleContentPackage(
   // their `photo:` lines injected. For any team member who didn't get an
   // uploaded headshot, synthesize an initials-avatar SVG and bundle it into
   // the zip alongside the uploads.
-  const teamMembers = (schema.team ?? []) as Array<{ name?: string }>
+  const teamMembers = activeTeam(schema)
   const photoMap: Record<string, string> = {}
   for (const entry of assetEntries) {
     if (entry.category === 'team-photo') {
