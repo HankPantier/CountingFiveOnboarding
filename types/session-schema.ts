@@ -66,6 +66,39 @@ export type SessionSchema = {
       dropped: Array<{ niche: string; name: string }>
       reviewedBy?: string
     }
+    // Record of the team keep/remove/add review submitted from the Audit Review
+    // step (applyTeamReview → lib/agent/team-review.ts). Its presence is a
+    // conditional Phase 3 → 4 gate (only when the firm has team members). Mirrors
+    // niche_review.
+    team_review?: {
+      reviewedAt: string
+      kept: string[]
+      removed: string[]
+      added: string[]
+      reviewedBy?: string
+    }
+    // Umbrella marker written when the operator submits the consolidated Audit
+    // Review step (POST /api/sessions/[id]/audit-review). Convenience only — the
+    // individual *_review markers above are the authoritative phase gates.
+    audit_review?: {
+      reviewedAt: string
+      reviewedBy?: string
+    }
+    // AI-suggested treatment + rationale per item, produced once at audit→seed
+    // time (lib/session-draft/suggest-audit-treatments.ts) so the Audit Review
+    // step opens with each choice pre-selected — the operator confirms instead of
+    // deciding blind. Kept SEPARATE from the human's decision (status/pageTreatment
+    // on the items) so AI-vs-human-vs-override stays distinguishable. Keyed by item
+    // name so it also covers audit-recommended items not yet in niches[]/services[].
+    // Advisory only — never gates a phase; joined into the review props by name.
+    audit_suggestions?: {
+      services?: Array<{ name: string; treatment: 'page' | 'block' | 'exclude'; parent?: string; rationale: string; confidence?: 'high' | 'medium' | 'low' }>
+      niches?: Array<{ name: string; treatment: 'page' | 'block' | 'exclude'; parent?: string; rationale: string; confidence?: 'high' | 'medium' | 'low' }>
+      subCategories?: Array<{ niche: string; name: string; treatment: 'page' | 'block' | 'exclude'; parent?: string; rationale: string; confidence?: 'high' | 'medium' | 'low' }>
+      team?: Array<{ name: string; decision: 'keep' | 'remove'; rationale: string; confidence?: 'high' | 'medium' | 'low' }>
+      geoScope?: { scope: 'local' | 'regional' | 'national'; primaryArea?: string; rationale: string; confidence?: 'high' | 'medium' | 'low' }
+      generatedAt: string
+    }
     section11_responses?: Record<string, string>
     // Lightweight, advisory per-field provenance keyed by dotted path (e.g.
     // "brand.voiceExample", "niches.0.customerTrigger"). 'audit' = seeded from the
@@ -205,6 +238,10 @@ export type SessionSchema = {
       roomForImprovement?: string
     }>
     nicheOpportunities?: string[]
+    // The operator's keep/remove decision from the Audit Review team step. Absent =
+    // kept. A 'remove'd member stays in the array for read-back but is excluded from
+    // all content generation via activeTeam() (lib/content/active-team.ts).
+    teamDecision?: 'keep' | 'remove'
   }>
   services?: Array<{
     name: string
@@ -217,6 +254,19 @@ export type SessionSchema = {
     // activeServices() (lib/content/active-services.ts) but kept in the array for
     // auditability and to preserve services[i] gap-path indexes.
     status?: 'kept' | 'dropped'
+    // Audit source: 'site' = detected on the client's current website; 'audit' =
+    // recommended by the audit as a new addition. Drives the two-batch (existing vs
+    // proposed) split in the onboarding Audit Review step. Absent ⇒ treat as 'site'.
+    origin?: 'site' | 'audit'
+    // The operator's page-vs-block decision from the Audit Review step. 'page' = its
+    // own generated page; 'block' = rendered as a section on the `parent` page, not
+    // its own URL; 'exclude' ⇒ the helper also sets status:'dropped'. Absent ⇒ own
+    // page (matches legacy behavior). Read by lib/content/page-treatment.ts.
+    pageTreatment?: 'page' | 'block' | 'exclude'
+    // When pageTreatment==='block', the parent page this item renders on — a sitemap
+    // URL ('/services') or a sibling item's name the operator picked. Absent ⇒ the
+    // category-hub default resolved by resolveBlockParent().
+    parent?: string
   }>
   // Client-facing external portals (QuickBooks, ShareFile, payroll, bill-pay,
   // remote support). Rendered on the site as the "Client Center" modal. Flat and
@@ -244,6 +294,19 @@ export type SessionSchema = {
     // activeNiches() (lib/content/active-niches.ts) but kept in the array for
     // auditability and to preserve niches[i] gap-path indexes.
     status?: 'kept' | 'dropped'
+    // Audit source: 'site' = detected on the client's current website; 'audit' =
+    // recommended by the audit as a new addition. Drives the two-batch (existing vs
+    // proposed) split in the onboarding Audit Review step. Absent ⇒ treat as 'site'.
+    origin?: 'site' | 'audit'
+    // The operator's page-vs-block decision from the Audit Review step. 'page' = its
+    // own generated page; 'block' = rendered as a section on the `parent` page, not
+    // its own URL; 'exclude' ⇒ the helper also sets status:'dropped'. Absent ⇒ own
+    // page (matches legacy behavior). Read by lib/content/page-treatment.ts.
+    pageTreatment?: 'page' | 'block' | 'exclude'
+    // When pageTreatment==='block', the parent page this item renders on — a sitemap
+    // URL ('/industries') or a sibling item's name the operator picked. Absent ⇒ the
+    // category-hub default resolved by resolveBlockParent().
+    parent?: string
     customerTrigger?: string
     typicalRevenueSize?: string
     nicheOrigin?: string
@@ -261,6 +324,16 @@ export type SessionSchema = {
       name: string
       status: 'confirmed' | 'likely' | 'verify' | 'dropped'
       notes?: string
+      // Audit source, mirroring niches[].origin. Absent ⇒ 'site'.
+      origin?: 'site' | 'audit'
+      // Page-vs-block decision from the Audit Review step. 'page' promotes the
+      // sub-service to its own page (/industries/<niche>/<sub>); 'block' keeps it as
+      // a section on the parent niche page (today's behavior); 'exclude' ⇒ status
+      // 'dropped'. Absent ⇒ block (rendered on the niche page).
+      pageTreatment?: 'page' | 'block' | 'exclude'
+      // When pageTreatment==='block', the parent page (defaults to the owning niche
+      // page). Present only when the operator overrides the default.
+      parent?: string
     }>
   }>
   business?: {

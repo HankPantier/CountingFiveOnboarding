@@ -71,4 +71,22 @@ describe('applyServiceReview', () => {
     expect(second.schema.business?.contentExclusions).toEqual(['Tax Prep'])
     expect(second.gaps).toEqual(first.gaps)
   })
+
+  it('stamps pageTreatment/parent/origin and treats exclude like a drop', () => {
+    const { schema, gaps: out } = applyServiceReview(
+      baseSchema(), gaps(),
+      { treatments: [
+        { name: 'Bookkeeping', pageTreatment: 'page', origin: 'site' },
+        { name: 'Payroll', pageTreatment: 'block', parent: '/services/bookkeeping', origin: 'site' },
+        { name: 'Tax Prep', pageTreatment: 'exclude' },
+      ] },
+      AT,
+    )
+    expect(schema.services?.find(s => s.name === 'Bookkeeping')?.pageTreatment).toBe('page')
+    const payroll = schema.services?.find(s => s.name === 'Payroll')
+    expect(payroll).toMatchObject({ status: 'kept', pageTreatment: 'block', parent: '/services/bookkeeping' })
+    expect(schema.services?.find(s => s.name === 'Tax Prep')?.status).toBe('dropped')
+    expect(schema.business?.contentExclusions).toEqual(['Tax Prep'])
+    expect(out.map(g => g.field)).toEqual(['business.foundingYear', 'services[0].description'])
+  })
 })

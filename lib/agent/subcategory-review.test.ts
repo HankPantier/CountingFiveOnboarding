@@ -120,4 +120,44 @@ describe('applySubCategoryReview', () => {
     expect(second.schema.niches).toEqual(first.schema.niches)
     expect(second.schema.business?.contentExclusions).toEqual(['Orthodontics'])
   })
+
+  it('promotes a sub-service to its own page and folds exclude into drop', () => {
+    const { schema } = applySubCategoryReview(
+      baseSchema(), gaps(),
+      { treatments: [
+        { niche: 'Dental', name: 'Implants', pageTreatment: 'page', origin: 'site' },
+        { niche: 'Dental', name: 'Orthodontics', pageTreatment: 'exclude' },
+      ] },
+      AT,
+    )
+    const dental = schema.niches?.find(n => n.name === 'Dental')
+    const implants = dental?.subCategories?.find(s => s.name === 'Implants')
+    const ortho = dental?.subCategories?.find(s => s.name === 'Orthodontics')
+    expect(implants).toMatchObject({ status: 'confirmed', pageTreatment: 'page' })
+    expect(ortho?.status).toBe('dropped')
+    expect(schema._meta?.subcategories_review?.confirmed).toEqual([{ niche: 'Dental', name: 'Implants' }])
+    expect(schema._meta?.subcategories_review?.dropped).toEqual([{ niche: 'Dental', name: 'Orthodontics' }])
+  })
+
+  it('appends an audit-proposed sub-service not already present under its niche', () => {
+    const { schema } = applySubCategoryReview(
+      baseSchema(), gaps(),
+      { treatments: [{ niche: 'Legal', name: 'Trust Administration', pageTreatment: 'block', parent: '/industries/legal', origin: 'audit' }] },
+      AT,
+    )
+    const legal = schema.niches?.find((n) => n.name === 'Legal')
+    expect(legal?.subCategories?.find((s) => s.name === 'Trust Administration')).toMatchObject({
+      status: 'confirmed', origin: 'audit', pageTreatment: 'block', parent: '/industries/legal',
+    })
+    expect(schema._meta?.subcategories_review?.confirmed).toContainEqual({ niche: 'Legal', name: 'Trust Administration' })
+  })
+
+  it('never appends an excluded proposed sub-service', () => {
+    const { schema } = applySubCategoryReview(
+      baseSchema(), gaps(),
+      { treatments: [{ niche: 'Legal', name: 'Nope', pageTreatment: 'exclude' }] },
+      AT,
+    )
+    expect(schema.niches?.find((n) => n.name === 'Legal')?.subCategories?.some((s) => s.name === 'Nope')).toBe(false)
+  })
 })

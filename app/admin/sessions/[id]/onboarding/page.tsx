@@ -3,7 +3,8 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
-import OnboardingNotes from '@/components/admin/onboarding/OnboardingNotes'
+import AuditReview from '@/components/admin/onboarding/AuditReview'
+import { buildAuditReviewProps } from '@/lib/onboarding/audit-review-props'
 import MbpDocument from '@/components/admin/mbp/MbpDocument'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
 import ChatInterface from '@/components/chat/ChatInterface'
@@ -11,11 +12,13 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 
 // Rep-driven onboarding: a live-call workflow the Revaltus rep runs.
-//   1. Notes  — capture freeform call notes (autosaved)
-//   2. Review — the agent extracts notes into the profile; rep reviews/corrects
+//   1. Audit review — confirm the audit's services/industries/geo/team and make
+//      the per-item Own page / Content block / Exclude decision (+ freeform notes)
+//   2. Review — the MBP read-back; rep reviews/corrects
 //   3. Chat   — staff-mode Q&A fills the remaining gaps
-// Stage is derived from the session's notes_extracted_at plus an optional
-// ?step override so the rep can jump back to notes or forward to the chat.
+// Stage is derived from the session's notes_extracted_at (set when the audit
+// review is submitted) plus an optional ?step override so the rep can jump back
+// to the review or forward to the chat.
 export default async function OnboardingPage({
   params,
   searchParams,
@@ -63,7 +66,7 @@ export default async function OnboardingPage({
 
   const steps = (
     <nav className="flex items-center gap-2 text-xs font-heading font-semibold" aria-label="Onboarding steps">
-      <StepPill href={`/admin/sessions/${id}/onboarding?step=notes`} active={stage === 'notes'} n={1} label="Notes" />
+      <StepPill href={`/admin/sessions/${id}/onboarding?step=notes`} active={stage === 'notes'} n={1} label="Audit review" />
       <span className="text-text-muted">→</span>
       <StepPill href={`/admin/sessions/${id}/onboarding`} active={stage === 'review'} n={2} label="Review" disabled={!extracted} />
       <span className="text-text-muted">→</span>
@@ -103,16 +106,26 @@ export default async function OnboardingPage({
   }
 
   if (stage === 'notes') {
+    const schema = (session.schema_data ?? {}) as SessionSchema
+    const props = buildAuditReviewProps(schema)
     return (
       <main className="p-8 space-y-6">
         {header}
         {steps}
         <p className="text-text-secondary font-body text-sm max-w-2xl">
-          Capture notes from the onboarding call. When you&apos;re done, analyze them — the agent pulls
-          contact, services, brand, and more into the profile (filling only blank fields), then you review
-          before the Q&A.
+          Confirm what the audit found. For each service and industry, decide whether it gets its own page,
+          rides along as a content block on a parent page, or is excluded. Existing items came from the current
+          site; recommendations came from the audit. Submitting saves everything and moves you to the profile review.
         </p>
-        <OnboardingNotes sessionId={id} initialNotes={session.call_notes ?? ''} alreadyExtracted={extracted} />
+        <AuditReview
+          sessionId={id}
+          services={props.services}
+          niches={props.niches}
+          subGroups={props.subGroups}
+          team={props.team}
+          geo={props.geo}
+          initialCallNotes={session.call_notes ?? ''}
+        />
       </main>
     )
   }

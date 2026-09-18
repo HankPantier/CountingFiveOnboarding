@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
+import { activeTeam } from '@/lib/content/active-team'
 import { SHORT_COPY_EXEMPLAR } from '@/lib/content/exemplars'
 
 interface SessionRow {
@@ -10,7 +11,7 @@ interface SessionRow {
 // bios, specializations) so "write a bio for <member>" resolves to a real
 // person. Certifications are already in buildBrandVoiceBlock's credentials block.
 function buildTeamRoster(schema: SessionSchema): string {
-  const members = (schema.team ?? []).filter(m => m.name?.trim())
+  const members = activeTeam(schema).filter(m => m.name?.trim())
   if (!members.length) return ''
   const lines = members.map(m => {
     const bits: string[] = [m.name.trim()]

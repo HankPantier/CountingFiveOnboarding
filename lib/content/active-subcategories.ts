@@ -4,7 +4,7 @@ type Niche = NonNullable<SessionSchema['niches']>[number]
 type SubCategory = NonNullable<Niche['subCategories']>[number]
 
 // The single choke point for "which sub-services content generation sees." A
-// sub-service the operator dropped in the Phase-3 review card (status ===
+// sub-service the operator dropped in the Audit Review step (status ===
 // 'dropped') stays in niche.subCategories for auditability + read-back, but must
 // never reach any generator. Missing status is treated as active (legacy
 // sessions are unaffected). No generator consumes sub-services today; this is the

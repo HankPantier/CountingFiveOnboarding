@@ -18,6 +18,13 @@ describe('activeServices', () => {
     expect(activeServices(schema).map(s => s.name)).toEqual(['Bookkeeping', 'Payroll'])
   })
 
+  it('keeps content-block services (pageTreatment is a separate dimension from status)', () => {
+    const schema = {
+      services: [{ name: 'Audit Protection', description: '', offerings: [], status: 'kept', pageTreatment: 'block' }],
+    } as SessionSchema
+    expect(activeServices(schema).map(s => s.name)).toEqual(['Audit Protection'])
+  })
+
   it('returns [] for a missing or non-array services field', () => {
     expect(activeServices({} as SessionSchema)).toEqual([])
     expect(activeServices({ services: 'oops' as unknown as SessionSchema['services'] } as SessionSchema)).toEqual([])

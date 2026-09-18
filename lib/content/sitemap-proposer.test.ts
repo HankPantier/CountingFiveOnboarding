@@ -177,4 +177,35 @@ describe('buildSkeletonProposal', () => {
     )
     expect(out.filter(p => p.url.toLowerCase().replace(/\/+$/, '').endsWith('/team')).length).toBe(1)
   })
+
+  it('omits own-page URLs for content-block services/niches and promotes page sub-services', () => {
+    const out = buildSkeletonProposal(
+      schema({
+        services: [
+          { name: 'Tax Prep', description: '', offerings: [] },
+          { name: 'Audit Protection', description: '', offerings: [], pageTreatment: 'block' },
+        ],
+        niches: [
+          {
+            name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '',
+            subCategories: [
+              { name: 'Implants', status: 'confirmed', pageTreatment: 'page' },
+              { name: 'Cleanings', status: 'confirmed' },
+            ],
+          },
+          { name: 'Legal', description: '', icp: '', painPoints: '', valueProp: '', pageTreatment: 'block' },
+        ],
+      } as unknown as Partial<SessionSchema>)
+    )
+    const urls = out.map(p => p.url)
+    // block service + block niche get NO own page
+    expect(urls).not.toContain('/services/audit-protection')
+    expect(urls).not.toContain('/industries/legal')
+    // page service + page niche still do
+    expect(urls).toContain('/services/tax-prep')
+    expect(urls).toContain('/industries/dental')
+    // promoted sub-service gets its own nested page; block sub does not
+    expect(urls).toContain('/industries/dental/implants')
+    expect(urls).not.toContain('/industries/dental/cleanings')
+  })
 })

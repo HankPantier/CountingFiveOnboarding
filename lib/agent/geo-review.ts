@@ -3,8 +3,8 @@ import type { SessionSchema } from '@/types/session-schema'
 export type GeoScope = 'local' | 'regional' | 'national'
 export type GeoAreaInput = { city: string; county?: string; state?: string; primary?: boolean }
 
-// The operator's Phase-3 geographic scope review submitted from the
-// GeographyReviewCard. `scope` is the national-vs-local decision; `areas` is the
+// The operator's geographic scope review submitted from the Audit Review step's
+// GeoScopeControl. `scope` is the national-vs-local decision; `areas` is the
 // confirmed service-area list (ignored/empty for a national scope).
 export type GeoReviewInput = { scope: GeoScope; areas?: GeoAreaInput[] }
 

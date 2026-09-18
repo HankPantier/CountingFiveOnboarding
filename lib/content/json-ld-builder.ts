@@ -2,6 +2,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { Database } from '@/types/database'
 import { parentChain, slugify } from './sitemap-utils'
 import { activeNiches } from './active-niches'
+import { activeTeam } from './active-team'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 type SitemapPage = { url: string; title: string; parent?: string; status: string }
@@ -303,7 +304,7 @@ function isTeamPage(page: GeneratedPage): boolean {
 function buildPeople(schema: SessionSchema, websiteUrl: string): Record<string, unknown>[] {
   const firmName = schema.business?.name ?? 'Firm'
   const origin = originOf(websiteUrl)
-  return (schema.team ?? [])
+  return activeTeam(schema)
     .filter(m => nonEmpty(m?.name))
     .map(m => buildPerson(m, firmName, origin))
 }

@@ -1,11 +1,29 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 
-// The operator's Phase-3 niche keep/drop review. `drop` = detected-niche names to
-// mark dropped; `add` = high-opportunity niche names to add as served niches.
-// `keep` is informational (the card sends it for completeness); status is derived
-// from `drop` so the two can never disagree.
-export type NicheReviewInput = { keep?: string[]; drop?: string[]; add?: string[] }
+// A per-niche page-vs-block decision + audit source from the Audit Review step.
+// `pageTreatment: 'exclude'` is folded into the drop set (equivalent to a legacy
+// drop); 'page'/'block' are stamped onto the kept niche; `parent` records the
+// operator-picked block attachment; `origin` records the two-batch source.
+export type NicheTreatment = {
+  name: string
+  pageTreatment: 'page' | 'block' | 'exclude'
+  parent?: string
+  origin?: 'site' | 'audit'
+}
+
+// The operator's niche keep/drop review. `drop` = detected-niche names to mark
+// dropped; `add` = high-opportunity niche names to add as served niches. `keep`
+// is informational (the card sends it for completeness); status is derived from
+// `drop` (+ any 'exclude' treatments) so they can never disagree. `treatments`
+// is the richer Audit Review payload; the legacy in-chat card omits it and this
+// stays a pure keep/drop.
+export type NicheReviewInput = {
+  keep?: string[]
+  drop?: string[]
+  add?: string[]
+  treatments?: NicheTreatment[]
+}
 
 const norm = (s: string): string => s.trim().toLowerCase()
 
@@ -24,7 +42,13 @@ export function applyNicheReview(
   reviewedBy?: string,
 ): { schema: SessionSchema; gaps: GapItem[] } {
   const next = structuredClone(schema)
+  const treatmentMap = new Map((input.treatments ?? []).map((t) => [norm(t.name), t]))
   const dropSet = new Set((input.drop ?? []).map(norm).filter(Boolean))
+  // An 'exclude' treatment is a drop — fold it in so status/gap/exclusion handling
+  // is identical to a legacy drop.
+  for (const t of input.treatments ?? []) {
+    if (t.pageTreatment === 'exclude') dropSet.add(norm(t.name))
+  }
 
   const niches = Array.isArray(next.niches) ? next.niches : []
   next.niches = niches
@@ -33,12 +57,22 @@ export function applyNicheReview(
   const droppedIndexes = new Set<number>()
   niches.forEach((n, i) => {
     if (!n?.name) return
-    if (dropSet.has(norm(n.name))) {
+    const k = norm(n.name)
+    const t = treatmentMap.get(k)
+    if (t?.origin) n.origin = t.origin
+    if (dropSet.has(k)) {
       n.status = 'dropped'
       droppedNames.push(n.name)
       droppedIndexes.add(i)
     } else {
       n.status = 'kept'
+      // Stamp the page-vs-block decision on kept niches. 'page' clears any prior
+      // block parent; 'block' records the operator-picked parent.
+      if (t && t.pageTreatment !== 'exclude') {
+        n.pageTreatment = t.pageTreatment
+        if (t.pageTreatment === 'block' && t.parent) n.parent = t.parent
+        else delete n.parent
+      }
     }
   })
 
@@ -49,7 +83,13 @@ export function applyNicheReview(
   for (const raw of input.add ?? []) {
     const name = raw.trim()
     if (!name || present.has(norm(name))) continue
-    niches.push({ name, description: '', icp: '', painPoints: '', valueProp: '', status: 'kept' })
+    const t = treatmentMap.get(norm(name))
+    niches.push({
+      name, description: '', icp: '', painPoints: '', valueProp: '', status: 'kept',
+      ...(t?.origin ? { origin: t.origin } : {}),
+      ...(t && t.pageTreatment !== 'exclude' ? { pageTreatment: t.pageTreatment } : {}),
+      ...(t && t.pageTreatment === 'block' && t.parent ? { parent: t.parent } : {}),
+    })
     present.add(norm(name))
     addedNames.push(name)
   }

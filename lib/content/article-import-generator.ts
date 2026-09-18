@@ -14,6 +14,7 @@ import { toSitePath } from './url-path'
 import { extractArticleMarkdown } from './html-to-markdown'
 import { buildPostMarkdown } from './post-markdown'
 import { updatedNavJson, updatedLlmsTxt, updatedLlmsFullTxt } from './resource-draft-generator'
+import { activeTeam } from './active-team'
 import type { AuditResult, CrawledPage } from '@/types/audit-result'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -313,7 +314,7 @@ export async function importArticleAsIs(importId: string): Promise<ImportArticle
 
     const excerpt = (extracted.extractedMetaFromHtml || firstProse(body)).slice(0, 155)
     const date = new Date().toISOString().slice(0, 10)
-    const author = schema.team?.[0]?.name ?? null
+    const author = activeTeam(schema)[0]?.name ?? null
     const canonicalUrl = `${origin}/resources/${slug}`
 
     const postMarkdown = buildPostMarkdown({

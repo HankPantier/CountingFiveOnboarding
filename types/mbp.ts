@@ -53,6 +53,9 @@ export interface MbpDocumentSection {
   title: string
   fields?: MbpDocumentField[]
   items?: MbpDocumentItem[]
+  // Stored array length — the append index for "add item", so a new row lands
+  // past the last stored slot even when the array has null holes before it.
+  nextIndex?: number
 }
 
 export interface MbpDocument {
