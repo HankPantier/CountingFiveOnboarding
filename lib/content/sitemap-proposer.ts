@@ -353,9 +353,18 @@ export function ensureBlockParents(
   if (!missing.length) return sitemap
 
   // The restored hubs are REQUIRED (block sections have nowhere else to render), so
-  // they must survive the MAX_PAGES cap. Trim from the enriched TAIL to make room —
-  // never drop a hub. (Appending then slice(0, MAX_PAGES) would cut the hubs when
-  // enrichment already filled the cap.)
-  const room = Math.max(0, MAX_PAGES - missing.length)
-  return [...sitemap.slice(0, room), ...missing]
+  // they must survive the MAX_PAGES cap. Make room by dropping only NON-required
+  // pages from the enriched tail — never a required parent, whether it's one we're
+  // adding (missing) or one enrichment already kept near the tail. (A blind
+  // slice/trim could cut a present required parent and re-strand its sections.)
+  const requiredKeys = new Set(required.keys())
+  const kept = [...sitemap]
+  let overflow = kept.length + missing.length - MAX_PAGES
+  for (let i = kept.length - 1; i >= 0 && overflow > 0; i--) {
+    if (!requiredKeys.has(normUrl(kept[i].url))) {
+      kept.splice(i, 1)
+      overflow--
+    }
+  }
+  return [...kept, ...missing]
 }
