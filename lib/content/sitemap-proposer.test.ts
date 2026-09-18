@@ -208,4 +208,20 @@ describe('buildSkeletonProposal', () => {
     expect(urls).toContain('/industries/dental/implants')
     expect(urls).not.toContain('/industries/dental/cleanings')
   })
+
+  it('still creates the category hub when EVERY item is a content block', () => {
+    const out = buildSkeletonProposal(
+      schema({
+        services: [{ name: 'Audit Protection', description: '', offerings: [], pageTreatment: 'block' }],
+        niches: [{ name: 'Dental', description: '', icp: '', painPoints: '', valueProp: '', pageTreatment: 'block' }],
+      } as unknown as Partial<SessionSchema>)
+    )
+    const urls = out.map(p => p.url)
+    // hubs exist so the block sections have a page to render on...
+    expect(urls).toContain('/services')
+    expect(urls).toContain('/industries')
+    // ...but the block items themselves still get no own page
+    expect(urls).not.toContain('/services/audit-protection')
+    expect(urls).not.toContain('/industries/dental')
+  })
 })

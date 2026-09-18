@@ -112,8 +112,9 @@ export default function AuditReview({
           ...(serviceDec[s.name]?.parent ? { parent: serviceDec[s.name]!.parent } : {}),
         })),
         subcategories: subGroups.flatMap((g) =>
-          // Skip subs whose niche the operator excluded — nothing to attach them to.
-          nicheDec[g.niche]?.treatment === 'exclude'
+          // Only submit subs for a page-treatment niche — a block/excluded industry
+          // has no page to host them, so their decisions would go nowhere.
+          nicheDec[g.niche]?.treatment !== 'page'
             ? []
             : g.subs.map((s) => ({
                 niche: g.niche,
@@ -134,7 +135,13 @@ export default function AuditReview({
         const b = await res.json().catch(() => ({}))
         throw new Error(b?.error ?? `HTTP ${res.status}`)
       }
+      // Advance to the MBP Review stage. Navigate to the base onboarding URL (no
+      // ?step) so the server derives 'review' from the now-set notes_extracted_at —
+      // a bare router.refresh() would keep the stage on 'notes' when the URL still
+      // carries ?step=notes (the Audit review pill / re-edit link), leaving the
+      // button stuck on "Saving…". refresh() invalidates the RSC cache first.
       router.refresh()
+      router.push(`/admin/sessions/${sessionId}/onboarding`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the review')
       setSubmitting(false)
@@ -187,7 +194,10 @@ export default function AuditReview({
     )
   }
 
-  const visibleSubGroups = subGroups.filter((g) => nicheDec[g.niche]?.treatment !== 'exclude' && g.subs.length > 0)
+  // Sub-services are only meaningful under an industry that gets its OWN page —
+  // a block/excluded industry is itself a section, so it can't host sub-pages or
+  // sub-sections downstream. Show (and submit) subs only for page-treatment niches.
+  const visibleSubGroups = subGroups.filter((g) => nicheDec[g.niche]?.treatment === 'page' && g.subs.length > 0)
 
   // Live consequence preview: what the current decisions produce (#4).
   const summary = useMemo(() => {
