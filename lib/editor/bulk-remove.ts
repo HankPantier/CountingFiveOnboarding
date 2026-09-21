@@ -4,6 +4,7 @@
 // in a single pass, so a "remove all references to X, Y, Z" request lands in one
 // commit instead of many brittle find/replace calls. Pure and deterministic.
 import { humanizeDashes } from '@/lib/content/anti-slop-validator'
+import { overlapSafeReplaceAll } from './replace'
 
 export interface Removal {
   find: string
@@ -38,12 +39,11 @@ export function countPhrase(text: string, find: string, caseInsensitive = false)
   return (text.match(new RegExp(escapeRegExp(find), 'gi')) || []).length
 }
 
-// Literal replace-all. `replace` is inserted verbatim (the function form of
-// String.replace avoids `$&`/`$1` being interpreted as substitution patterns).
+// Literal replace-all. Delegates to overlapSafeReplaceAll so a replacement that
+// reintroduces the find term (e.g. "service business" -> "professional service
+// business") lands once and stays idempotent instead of compounding on re-run.
 function replaceAll(text: string, find: string, replace: string, caseInsensitive: boolean): string {
-  if (!find) return text
-  if (!caseInsensitive) return text.split(find).join(replace)
-  return text.replace(new RegExp(escapeRegExp(find), 'gi'), () => replace)
+  return overlapSafeReplaceAll(text, find, replace, caseInsensitive)
 }
 
 const countDashLike = (s: string): number => (s.match(/[—–]/g) || []).length

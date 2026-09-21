@@ -189,7 +189,11 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
       model: anthropic('claude-sonnet-4-6'),
       system,
       messages: await convertToModelMessages(trimMessages(messages)),
-      maxOutputTokens: 8000,
+      // A heavy multi-part instruction (e.g. "remove every X and reword each
+      // mention of Y" across body + SEO frontmatter) can exceed a small output
+      // budget mid-run and truncate, prompting a re-run. Give the batched edits
+      // room to land in one pass.
+      maxOutputTokens: 32000,
       tools: {
         apply_edit: {
           description:

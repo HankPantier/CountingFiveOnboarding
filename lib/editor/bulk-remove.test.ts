@@ -78,6 +78,19 @@ describe('applyBulkRemovals', () => {
     expect(res.next).toContain('600–1200 sq ft')
   })
 
+  it('does not compound a self-referential replacement across re-runs (remove_text)', () => {
+    const doc = 'Farm and service business owners across the Brookings, SD area.'
+    const wrapped = 'Farm and professional service business owners across the Brookings, SD area.'
+    const first = applyBulkRemovals(doc, [{ find: 'service business', replace: 'professional service business' }])
+    expect(first.next).toBe(wrapped)
+    // Re-running the same wrapping instruction (the field bug) must stay put.
+    const second = applyBulkRemovals(first.next, [
+      { find: 'service business', replace: 'professional service business' },
+    ])
+    expect(second.next).toBe(wrapped)
+    expect((second.next.match(/professional/g) || []).length).toBe(1)
+  })
+
   it('records 0 removed for a phrase not present without inventing residuals', () => {
     const res = applyBulkRemovals(PAGE, [{ find: 'Acme LLC' }])
     expect(res.applied).toEqual([{ find: 'Acme LLC', removed: 0 }])

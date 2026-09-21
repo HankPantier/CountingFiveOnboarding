@@ -3,6 +3,7 @@
 // and silently dropped the write); instead the agent supplies an exact snippet
 // to find and its replacement, and we verify the match landed before writing.
 import { splitFile } from './frontmatter'
+import { overlapSafeReplaceAll } from './replace'
 import { validateAnnotationSyntax } from '@/lib/content/block-annotation-validator'
 
 export type FindReplaceResult =
@@ -37,7 +38,11 @@ export function applyFindReplace(
       reason: `The find text matches ${count} places. Extend it with surrounding context so it uniquely identifies one spot, or set all=true to replace every occurrence.`,
     }
   }
-  const next = all ? content.split(find).join(replace) : content.replace(find, replace)
+  // Idempotent replace: when `replace` contains `find` (a self-referential
+  // "wrapping" rule), re-applying — or the model re-issuing the same edit against
+  // the re-injected file — must not compound. The count guard above already caps
+  // a non-`all` edit to a single bare occurrence, so this affects the same span.
+  const next = overlapSafeReplaceAll(content, find, replace)
   return { ok: true, next, count }
 }
 
