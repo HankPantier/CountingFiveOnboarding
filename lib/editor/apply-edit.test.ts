@@ -53,6 +53,18 @@ describe('applyFindReplace', () => {
   it('rejects an empty find', () => {
     expect(applyFindReplace(PAGE, '', 'x').ok).toBe(false)
   })
+
+  it('does not compound a self-referential replacement on re-run (all=true)', () => {
+    const doc = 'a service business and a service business'
+    const first = applyFindReplace(doc, 'service business', 'professional service business', true)
+    expect(first.ok).toBe(true)
+    if (!first.ok) return
+    expect(first.next).toBe('a professional service business and a professional service business')
+    // Re-running the same wrapping edit must be a no-op, not add another "professional".
+    const second = applyFindReplace(first.next, 'service business', 'professional service business', true)
+    expect(second.ok).toBe(true)
+    if (second.ok) expect(second.next).toBe(first.next)
+  })
 })
 
 describe('applyBatchEdits', () => {
@@ -102,6 +114,19 @@ describe('applyBatchEdits', () => {
   it('returns the original content for an empty edit list', () => {
     const res = applyBatchEdits(PAGE, [])
     expect(res).toEqual({ next: PAGE, applied: [], failed: [] })
+  })
+
+  it('does not compound a self-referential batch rewrite across re-runs', () => {
+    const doc = 'Farm and service business owners in Brookings.'
+    const first = applyBatchEdits(doc, [
+      { find: 'service business', replace: 'professional service business', all: true },
+    ])
+    expect(first.next).toBe('Farm and professional service business owners in Brookings.')
+    const second = applyBatchEdits(first.next, [
+      { find: 'service business', replace: 'professional service business', all: true },
+    ])
+    expect(second.next).toBe(first.next)
+    expect((second.next.match(/professional/g) || []).length).toBe(1)
   })
 })
 
