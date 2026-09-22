@@ -3,37 +3,11 @@ import { activeNiches } from './active-niches'
 import { activeServices } from './active-services'
 import { activeTeam } from './active-team'
 import { provenanceOf } from '@/lib/mbp/provenance'
+import { arr, str } from './schema-coerce'
 
 // Shared brand-voice prompt fragments. Extracted from content-generator.ts so
 // the page generator and the Resources blog generators describe the firm's
 // voice identically — one source of truth for "on-brand."
-
-// Schema string fields are declared `string`, but stored schema_data can carry a
-// non-string (array/object) from an AI draft, import, or hand edit. Coerce
-// defensively so a dirty value degrades to empty/text instead of throwing:
-// calling `.trim()` on a non-string TypeError'd here and took down BOTH the
-// outline and page-body generators (they swallow it into a generic "generation
-// failed" note). Arrays are flattened to a comma list; anything else → ''.
-const str = (v: unknown): string =>
-  typeof v === 'string'
-    ? v
-    : Array.isArray(v)
-      ? v.filter((x): x is string => typeof x === 'string').join(', ')
-      : ''
-
-// Schema array fields are declared arrays, but stored schema_data can carry a
-// non-array (a string/object) from an AI draft, import, or hand edit. `?? []`
-// only guards null/undefined, so a stringy value slips through and throws on
-// .filter/.map/.join/for-of. Coerce so a dirty value degrades instead of
-// crashing outline/page generation (client 07df2372 stored an array field as a
-// string → "(t ?? []).filter is not a function" on every outline). Symmetric
-// with str() (arrays → comma string): a stray non-empty string is preserved as a
-// single element so a string[] field's content survives; anything else → [].
-const arr = <T>(v: T[] | undefined | null): T[] => {
-  if (Array.isArray(v)) return v
-  const u = v as unknown
-  return typeof u === 'string' && u.trim() ? ([u.trim()] as unknown as T[]) : []
-}
 
 export function buildCredentials(schema: SessionSchema): string {
   const creds: string[] = []

@@ -89,3 +89,19 @@ describe('groundEeatSignals', () => {
     expect(groundEeatSignals(null, schema)).toEqual([])
   })
 })
+
+describe('groundEeatSignals with dirty schema shapes', () => {
+  it('survives null holes in niches (Berg: "Cannot read properties of null")', () => {
+    const schema = {
+      business: { differentiators: 'Woodard Top 50 firm' },
+      niches: [{ name: 'Family Offices' }, null, { name: 'E-commerce' }],
+      services: [null, { name: 'Tax' }],
+    } as unknown as SessionSchema
+    expect(groundEeatSignals(['Woodard Top 50 firm'], schema)).toEqual(['Woodard Top 50 firm'])
+  })
+
+  it('survives niches stored as a string', () => {
+    const schema = { niches: 'Family Offices', services: null } as unknown as SessionSchema
+    expect(groundEeatSignals(['Licensed CPA'], schema)).toEqual(['Licensed CPA'])
+  })
+})

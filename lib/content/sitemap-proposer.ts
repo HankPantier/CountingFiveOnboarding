@@ -13,6 +13,7 @@ import { toSitePath } from './url-path'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult } from '@/types/audit-result'
 import type { TokenContext } from './token-pricing'
+import { objArr } from './schema-coerce'
 
 type ProposedSitemap = NonNullable<SessionSchema['proposed_sitemap']>
 type ProposedPage = ProposedSitemap[number]
@@ -127,7 +128,7 @@ export function buildSkeletonProposal(
   }
 
   // Local-SEO pages. Only when the firm has structured service areas.
-  const serviceAreas = (schema.business?.serviceAreas ?? []).filter(a => a.city?.trim())
+  const serviceAreas = objArr<ServiceArea>(schema.business?.serviceAreas).filter(a => a.city?.trim())
   if (serviceAreas.length) {
     // Cities that already have a physical-location page must not get a duplicate
     // hub (the location's own /locations/<slug> page already covers them).
@@ -238,7 +239,7 @@ function buildPrompt(schema: SessionSchema, skeleton: ProposedSitemap): string {
     .filter(i => i.name?.trim())
     .map(i => `- ${i.name}`)
     .join('\n')
-  const serviceAreas = (schema.business?.serviceAreas ?? [])
+  const serviceAreas = objArr<ServiceArea>(schema.business?.serviceAreas)
     .filter(a => a.city?.trim())
     .map(a => `- ${areaLabel(a)}${a.primary ? ' (primary)' : ''}`)
     .join('\n')

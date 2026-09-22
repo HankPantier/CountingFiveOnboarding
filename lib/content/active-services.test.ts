@@ -30,3 +30,10 @@ describe('activeServices', () => {
     expect(activeServices({ services: 'oops' as unknown as SessionSchema['services'] } as SessionSchema)).toEqual([])
   })
 })
+
+describe('activeServices — nameless orphan rows', () => {
+  it('drops a row that carries content but no name (stale-index orphan)', () => {
+    const input = { services: [{ name: 'Tax' }, { description: 'orphan fragment' }] } as unknown as SessionSchema
+    expect(activeServices(input).map((r) => r.name)).toEqual(['Tax'])
+  })
+})

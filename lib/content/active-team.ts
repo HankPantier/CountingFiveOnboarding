@@ -17,5 +17,13 @@ export function activeTeam(schema: Pick<SessionSchema, 'team'>): TeamMember[] {
   if (!Array.isArray(list)) return []
   // Null / non-object holes (bracket-path writes that persist as JSONB null) are
   // dropped here too — stored indices stay stable, but no generator sees a null.
-  return list.filter((t): t is TeamMember => !!t && typeof t === 'object' && t.teamDecision !== 'remove')
+  // A row with no usable name is unusable by every consumer downstream — it
+  // cannot be written about, rendered, or matched — and is what a stale-index
+  // bracket write leaves behind next to the real rows. Drop it here so the
+  // orphan can stay in the stored array for the operator to review (the MBP
+  // read-back deliberately bypasses this helper and still shows it).
+  return list.filter(
+    (t): t is TeamMember =>
+      !!t && typeof t === 'object' && t.teamDecision !== 'remove' && typeof t.name === 'string' && t.name.trim().length > 0
+  )
 }

@@ -210,3 +210,41 @@ describe('buildJsonLdForPage — team Person nodes (E-E-A-T)', () => {
     expect(nodes(scripts, 'Person')).toHaveLength(0)
   })
 })
+
+describe('buildJsonLdForPage with dirty schema shapes', () => {
+  it('survives serviceAreas stored as a string and falls back to geographicScope', () => {
+    // Berg: "p.map is not a function" on Assemble & push to draft. The string's
+    // truthy .length passed the `if (areas.length)` guard, then .map threw.
+    const schema = {
+      business: {
+        name: 'Berg Advisors',
+        serviceAreas: 'Nationwide, International',
+        geographicScope: 'Virtual firm serving clients nationwide',
+      },
+      locations: [{ name: 'Main', city: 'Newtown Square', state: 'PA', street: '18 Campus Blvd' }],
+    } as unknown as SessionSchema
+
+    const out = buildJsonLdForPage({
+      schema,
+      websiteUrl: 'https://www.bergpartners.com',
+      page: makePage({ page_url: '/', page_title: 'Home' }),
+      sitemap: [{ url: '/', title: 'Home', status: 'update' }],
+    })
+    expect(out).toContain('Virtual firm serving clients nationwide')
+    expect(out).not.toContain('"areaServed":"Nationwide, International"')
+  })
+
+  it('survives null holes in locations', () => {
+    const schema = {
+      business: { name: 'Berg Advisors' },
+      locations: [null, { name: 'Main', city: 'Newtown Square', state: 'PA' }],
+    } as unknown as SessionSchema
+    const out = buildJsonLdForPage({
+      schema,
+      websiteUrl: 'https://www.bergpartners.com',
+      page: makePage({ page_url: '/', page_title: 'Home' }),
+      sitemap: [{ url: '/', title: 'Home', status: 'update' }],
+    })
+    expect(out).toContain('Newtown Square')
+  })
+})

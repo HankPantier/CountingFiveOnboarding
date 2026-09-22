@@ -1,6 +1,7 @@
 import chroma from 'chroma-js'
 import type { PaletteData } from '@/types/palette'
 import type { SessionSchema } from '@/types/session-schema'
+import { arr, str } from './schema-coerce'
 
 /**
  * Derive a visual-style suffix to append to every Pexels search query for a
@@ -74,8 +75,8 @@ export function deriveImageStyleSuffix(
     corporate: 'corporate',
   }
 
-  const tones = (brand?.toneAdjectives ?? [])
-    .map(t => t.toLowerCase().trim())
+  const tones = arr(brand?.toneAdjectives)
+    .map(t => str(t).toLowerCase().trim())
     .filter(Boolean)
 
   const matched = new Set<string>()

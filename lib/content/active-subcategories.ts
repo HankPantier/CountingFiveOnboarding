@@ -14,5 +14,13 @@ export function activeSubCategories(niche: Pick<Niche, 'subCategories'>): SubCat
   if (!Array.isArray(list)) return []
   // Null / non-object holes (bracket-path writes that persist as JSONB null) are
   // dropped here too — stored indices stay stable, but no generator sees a null.
-  return list.filter((s): s is SubCategory => !!s && typeof s === 'object' && s.status !== 'dropped')
+  // A row with no usable name is unusable by every consumer downstream — it
+  // cannot be written about, rendered, or matched — and is what a stale-index
+  // bracket write leaves behind next to the real rows. Drop it here so the
+  // orphan can stay in the stored array for the operator to review (the MBP
+  // read-back deliberately bypasses this helper and still shows it).
+  return list.filter(
+    (s): s is SubCategory =>
+      !!s && typeof s === 'object' && s.status !== 'dropped' && typeof s.name === 'string' && s.name.trim().length > 0
+  )
 }

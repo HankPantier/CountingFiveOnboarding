@@ -3,11 +3,13 @@ import type { Database } from '@/types/database'
 import { parentChain, slugify } from './sitemap-utils'
 import { activeNiches } from './active-niches'
 import { activeTeam } from './active-team'
+import { arr, objArr } from './schema-coerce'
 
 type GeneratedPage = Database['public']['Tables']['generated_pages']['Row']
 type SitemapPage = { url: string; title: string; parent?: string; status: string }
 type Location = NonNullable<SessionSchema['locations']>[number]
 type TeamMember = NonNullable<SessionSchema['team']>[number]
+type ServiceArea = NonNullable<NonNullable<SessionSchema['business']>['serviceAreas']>[number]
 
 function nonEmpty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
@@ -38,7 +40,7 @@ function urlLeafSlug(url: string): string | null {
 
 function sameAsLinks(schema: SessionSchema): string[] {
   const links: string[] = []
-  const channels = schema.culture?.socialMediaChannels ?? []
+  const channels = arr(schema.culture?.socialMediaChannels)
   for (const entry of channels) {
     // entries are formatted "Platform: https://..."
     const url = entry.split(/:\s*/).slice(1).join(': ').trim()
@@ -105,7 +107,7 @@ function buildLocalBusinessForLocation(
 
   // Prefer structured service areas (geo landing-page targeting) over the
   // free-text geographicScope when present.
-  const areas = schema.business?.serviceAreas ?? []
+  const areas = objArr<ServiceArea>(schema.business?.serviceAreas)
   if (areas.length) {
     node.areaServed = areas
       .map(a => {
@@ -156,7 +158,7 @@ function buildLocalBusinessForLocation(
 }
 
 function buildAllLocalBusinesses(schema: SessionSchema, websiteUrl: string): Array<{ loc: Location; node: Record<string, unknown> }> {
-  const locations = schema.locations ?? []
+  const locations = objArr<Location>(schema.locations)
   const multi = locations.length > 1
   const out: Array<{ loc: Location; node: Record<string, unknown> }> = []
   for (const loc of locations) {

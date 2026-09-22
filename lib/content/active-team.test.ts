@@ -19,3 +19,10 @@ describe('activeTeam', () => {
     expect(activeTeam({} as SessionSchema)).toEqual([])
   })
 })
+
+describe('activeTeam — nameless orphan rows', () => {
+  it('drops a row that carries content but no name (stale-index orphan)', () => {
+    const input = { team: [{ name: 'Ada' }, { bio: 'orphan fragment' }] } as unknown as SessionSchema
+    expect(activeTeam(input).map((r) => r.name)).toEqual(['Ada'])
+  })
+})

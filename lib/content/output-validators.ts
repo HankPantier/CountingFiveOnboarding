@@ -1,6 +1,10 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { PageIntentType } from './page-intent'
 import { activeTeam } from './active-team'
+import { objArr } from './schema-coerce'
+
+type Niche = NonNullable<SessionSchema['niches']>[number]
+type Service = NonNullable<SessionSchema['services']>[number]
 
 // Deterministic post-generation checks for page metadata. These catch the small,
 // mechanical defects a human would otherwise fix by hand — an over-long hero
@@ -107,8 +111,8 @@ function buildFirmFactCorpus(schema: SessionSchema): string {
     if (Array.isArray(m.specializations)) parts.push(...m.specializations)
     if (typeof m.bio === 'string') parts.push(m.bio)
   }
-  for (const n of schema.niches ?? []) if (typeof n.name === 'string') parts.push(n.name)
-  for (const sv of schema.services ?? []) if (typeof sv.name === 'string') parts.push(sv.name)
+  for (const n of objArr<Niche>(schema.niches)) if (typeof n.name === 'string') parts.push(n.name)
+  for (const sv of objArr<Service>(schema.services)) if (typeof sv.name === 'string') parts.push(sv.name)
   return parts.join(' | ').toLowerCase()
 }
 

@@ -5,6 +5,7 @@ import {
   getByPath,
   isPathFilled,
   preserveAppendOnlyMarkers,
+  outOfRangeIndexPath,
 } from './schema-write'
 
 describe('preserveAppendOnlyMarkers — Phase 3 gate cannot silently re-open', () => {
@@ -58,6 +59,25 @@ describe('isPathFilled', () => {
 })
 
 describe('deepSetPath', () => {
+  it('never leaves sparse slots, which JSONB would persist as null', () => {
+    // A stale-index write (niches[7] against a 3-element array) used to extend
+    // the array with holes that Postgres stored as null, and a null element then
+    // threw "Cannot read properties of null (reading 'name')" in the generators.
+    // See the Berg Advisors session.
+    const out = deepSetPath({ niches: [{ name: 'A' }] }, 'niches[3].painPoints', ['x'])
+    const niches = out.niches as unknown[]
+    expect(niches).toHaveLength(4)
+    expect(niches.some((n) => n == null)).toBe(false)
+    expect(JSON.parse(JSON.stringify(niches))).toEqual([
+      { name: 'A' }, {}, {}, { painPoints: ['x'] },
+    ])
+  })
+
+  it('still allows appending one past the end', () => {
+    const out = deepSetPath({ niches: [{ name: 'A' }] }, 'niches[1].name', 'B')
+    expect(out.niches).toEqual([{ name: 'A' }, { name: 'B' }])
+  })
+
   it('sets a top-level scalar without touching siblings', () => {
     const out = deepSetPath({ a: 1, b: 2 }, 'a', 9)
     expect(out).toEqual({ a: 9, b: 2 })
@@ -98,7 +118,7 @@ describe('deepSetPath', () => {
   it('parses bracket notation into an array index, NOT a literal top-level key', () => {
     const out = deepSetPath({}, 'niches[3].description', 'x')
     expect(Object.keys(out).some(k => k.includes('['))).toBe(false)
-    expect(out).toEqual({ niches: [undefined, undefined, undefined, { description: 'x' }] })
+    expect(out).toEqual({ niches: [{}, {}, {}, { description: 'x' }] })
   })
 
   it('updates an existing array element via bracket path without clobbering siblings', () => {
@@ -113,7 +133,7 @@ describe('deepSetPath', () => {
   it('handles mixed bracket + nested-array paths', () => {
     const out = deepSetPath({}, 'niches[0].subCategories[1].status', 'dropped')
     expect(out).toEqual({
-      niches: [{ subCategories: [undefined, { status: 'dropped' }] }],
+      niches: [{ subCategories: [{}, { status: 'dropped' }] }],
     })
   })
 
@@ -166,5 +186,26 @@ describe('getByPath', () => {
   it('resolves the array base for an append lookup via a bracket path', () => {
     const s = { team: [{ name: 'A' }] }
     expect(getByPath(s, 'team')).toEqual([{ name: 'A' }])
+  })
+})
+
+describe('outOfRangeIndexPath', () => {
+  const schema = { niches: [{ name: 'A' }, { name: 'B' }, { name: 'C' }] }
+
+  it('flags a stale index beyond the stored array', () => {
+    expect(outOfRangeIndexPath(schema, 'niches[7].painPoints')).toBe('niches[7]')
+  })
+
+  it('allows an in-range update and a one-past-the-end append', () => {
+    expect(outOfRangeIndexPath(schema, 'niches[1].name')).toBeNull()
+    expect(outOfRangeIndexPath(schema, 'niches[3].name')).toBeNull()
+  })
+
+  it('ignores paths that never reach an array', () => {
+    expect(outOfRangeIndexPath(schema, 'business.tagline')).toBeNull()
+  })
+
+  it('does not flag an array that is not there yet', () => {
+    expect(outOfRangeIndexPath({}, 'niches[3].name')).toBeNull()
   })
 })

@@ -40,3 +40,10 @@ describe('activeNiches', () => {
     expect(activeNiches(schema).map(n => n.name)).toEqual(['Dental', 'Nonprofit'])
   })
 })
+
+describe('activeNiches — nameless orphan rows', () => {
+  it('drops a row that carries content but no name (stale-index orphan)', () => {
+    const input = { niches: [{ name: 'Dental' }, { valueProp: 'orphan fragment' }] } as unknown as SessionSchema
+    expect(activeNiches(input).map((r) => r.name)).toEqual(['Dental'])
+  })
+})

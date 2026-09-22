@@ -4,9 +4,11 @@ import type { ExternalLink } from '@/lib/content/link-checker'
 import { hasCaseStudyData, type ContentType } from '@/lib/content/content-types'
 import type { Industry } from '@/lib/content/industries'
 import { activeNiches } from '@/lib/content/active-niches'
+import { objArr } from '@/lib/content/schema-coerce'
 import type { SessionSchema } from '@/types/session-schema'
 
 type ServerClient = ReturnType<typeof createServerClient>
+type ServiceArea = NonNullable<NonNullable<SessionSchema['business']>['serviceAreas']>[number]
 
 export interface BatchIdeaFields {
   title: string
@@ -108,7 +110,7 @@ export function individualizeIdea(
     niches[0]
   const nicheName = dominant?.name?.trim()
 
-  const areas = schema.business?.serviceAreas ?? []
+  const areas = objArr<ServiceArea>(schema.business?.serviceAreas)
   const market =
     areas.find((a) => a.primary)?.city?.trim() ||
     areas[0]?.city?.trim() ||

@@ -19,5 +19,13 @@ export function activeNiches(schema: Pick<SessionSchema, 'niches'>): Niche[] {
   // Drop null / non-object holes too: a bracket-path write to a shorter array
   // leaves undefined slots that persist as null in JSONB. The stored array keeps
   // its indices (gap-path stability), but a null must never reach a generator.
-  return list.filter((n): n is Niche => !!n && typeof n === 'object' && n.status !== 'dropped')
+  // A row with no usable name is unusable by every consumer downstream — it
+  // cannot be written about, rendered, or matched — and is what a stale-index
+  // bracket write leaves behind next to the real rows. Drop it here so the
+  // orphan can stay in the stored array for the operator to review (the MBP
+  // read-back deliberately bypasses this helper and still shows it).
+  return list.filter(
+    (n): n is Niche =>
+      !!n && typeof n === 'object' && n.status !== 'dropped' && typeof n.name === 'string' && n.name.trim().length > 0
+  )
 }

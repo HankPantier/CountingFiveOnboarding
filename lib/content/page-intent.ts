@@ -2,6 +2,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
 import { activeServices } from './active-services'
 import { blocksForPage, hasBlocks, type PageBlocks } from './page-treatment'
+import { objArr } from './schema-coerce'
 
 // Resolve what a page IS — a specific niche, service, or location page vs. a
 // generic one — and produce a compact, directive focus block that names the exact
@@ -172,7 +173,7 @@ function resolveBaseIntent(pageUrl: string, pageTitle: string, schema: SessionSc
   const segs = pathSegments(pageUrl)
   const niches = activeNiches(schema)
   const services = activeServices(schema)
-  const areas = schema.business?.serviceAreas ?? []
+  const areas = objArr<ServiceArea>(schema.business?.serviceAreas)
 
   const findArea = (citySlug: string): ServiceArea | undefined =>
     areas.find((ar) => slugify(s(ar.city)) === citySlug)

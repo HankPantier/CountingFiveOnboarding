@@ -47,3 +47,23 @@ describe('individualizeIdea', () => {
     expect(per.secondaryKeywords.filter((k) => k.includes('for Construction Contractors'))).toHaveLength(0)
   })
 })
+
+describe('individualizeIdea with dirty schema shapes', () => {
+  it('survives serviceAreas stored as a string (Berg: "s.find is not a function")', () => {
+    const dirty = {
+      ...schema,
+      business: { name: 'Berg Advisors', serviceAreas: 'Nationwide, International' },
+    } as unknown as SessionSchema
+    const per = individualizeIdea(idea, dirty)
+    expect(per.angle).toContain('Berg Advisors')
+    expect(per.angle).not.toContain('Nationwide')
+  })
+
+  it('survives null holes in niches', () => {
+    const dirty = {
+      ...schema,
+      niches: [null, { name: 'Construction Contractors', signal: 'strong' }, null],
+    } as unknown as SessionSchema
+    expect(individualizeIdea(idea, dirty).angle).toContain('Construction Contractors')
+  })
+})

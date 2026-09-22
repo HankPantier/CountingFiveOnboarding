@@ -7,6 +7,9 @@
 // _meta.audit_context otherwise. Mutates the passed schema.
 import type { AuditIntelligence, SocialProfileMetrics } from '@/types/audit-result'
 import type { SessionSchema } from '@/types/session-schema'
+import { objArr } from '@/lib/content/schema-coerce'
+
+type Niche = NonNullable<SessionSchema['niches']>[number]
 
 const PRESS_TYPE_RE = /press|award|article|interview|media/i
 
@@ -88,8 +91,10 @@ export function enrichSchemaFromIntelligence(
   //    carry the audit's signal strength onto every detected niche (new or
   //    already-drafted) so the Audit Review step can surface it. ──────────────
   if (niche?.detected_niches?.length) {
-    schema.niches ??= []
-    const byName = new Map(schema.niches.map((n) => [n.name.toLowerCase(), n]))
+    schema.niches = objArr<Niche>(schema.niches)
+    const byName = new Map(
+      schema.niches.filter((n) => typeof n.name === 'string').map((n) => [n.name.toLowerCase(), n])
+    )
     for (const d of niche.detected_niches) {
       if (!d.name) continue
       const match = byName.get(d.name.toLowerCase())

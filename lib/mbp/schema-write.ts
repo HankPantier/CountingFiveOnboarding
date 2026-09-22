@@ -28,8 +28,17 @@ function setIn(node: unknown, keys: string[], value: unknown): unknown {
     : setIn(existingChild ?? (/^\d+$/.test(rest[0]) ? [] : {}), rest, value)
 
   if (Array.isArray(node)) {
+    const idx = Number(key)
     const arr = [...node]
-    arr[Number(key)] = newChild
+    arr[idx] = newChild
+    // Assigning past the end leaves SPARSE slots, which Postgres persists as
+    // JSONB `null` — and a null element later throws on `.name` deep inside a
+    // generator (the Berg Advisors session had three). Fill any gap this write
+    // opened with an empty object so the array is never holed. Callers that can
+    // tell a stale index from a legitimate one reject it up front via
+    // outOfRangeIndexPath(); setIn also builds fresh nested objects from a bare
+    // {} (app/api/chat/route.ts), where an index is not "out of range" at all.
+    for (let i = 0; i < arr.length; i++) if (!(i in arr)) arr[i] = {}
     return arr
   }
   const base = node && typeof node === 'object' ? (node as Record<string, unknown>) : {}
@@ -121,4 +130,28 @@ export function preserveAppendOnlyMarkers(
     )
   }
   return merged
+}
+
+// True-path check for writers applying a path against the stored schema: returns
+// the offending `array[index]` segment when the path addresses an array slot
+// beyond the end of the array that is actually there. That only happens when the
+// index is stale — an AI suggestion approved after the array shrank — and
+// applying it would bury an orphan row with no identity at a meaningless index
+// (the Berg Advisors session collected three that way). Appending one past the
+// end is legitimate and passes.
+export function outOfRangeIndexPath(obj: Record<string, unknown>, path: string): string | null {
+  const parts = toSegments(path)
+  let cur: unknown = obj
+  for (let i = 0; i < parts.length; i++) {
+    const seg = parts[i]
+    if (Array.isArray(cur)) {
+      const idx = Number(seg)
+      if (!Number.isInteger(idx) || idx < 0 || idx > cur.length) {
+        return `${parts.slice(0, i).join('.')}[${seg}]`
+      }
+    }
+    if (cur == null || typeof cur !== 'object') return null
+    cur = (cur as Record<string, unknown>)[seg]
+  }
+  return null
 }

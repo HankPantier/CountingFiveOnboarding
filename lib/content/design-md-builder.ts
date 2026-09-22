@@ -3,6 +3,7 @@ import type { PaletteData } from '@/types/palette'
 import type { DesignTokens, Roundness, Density } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
 import { findPairing, type TypePairingFeel } from './type-pairing-catalog'
+import { arr } from './schema-coerce'
 
 type BuilderInput = {
   firmName: string
@@ -165,7 +166,7 @@ function buildVoiceSection(input: BuilderInput): string {
   if (!brand) return ''
   const lines: string[] = []
 
-  const adjectives = (brand.toneAdjectives ?? [])
+  const adjectives = arr(brand.toneAdjectives)
     .map(a => (typeof a === 'string' ? a.trim() : ''))
     .filter(a => a.length > 0)
   if (adjectives.length) lines.push(`**Tone:** ${adjectives.join(', ')}.`)
@@ -246,7 +247,7 @@ function buildDosDontsSection(input: BuilderInput): string {
     modern: 'Keep hero copy short — let typography and whitespace carry the weight',
     editorial: 'Use serif headlines for long-form pages; reserve sans for UI chrome',
   }
-  const avoidWords = (brand?.toneToAvoid ?? [])
+  const avoidWords = arr(brand?.toneToAvoid)
     .map(w => (typeof w === 'string' ? w.trim() : ''))
     .filter(w => w.length > 0)
   const avoidLine = avoidWords.length > 0

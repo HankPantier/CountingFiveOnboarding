@@ -3,7 +3,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
-import { getByPath } from '@/lib/mbp/schema-write'
+import { getByPath, outOfRangeIndexPath } from '@/lib/mbp/schema-write'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
 
@@ -83,6 +83,15 @@ export async function PATCH(
         skippedPaths.push(fieldPath)
         continue
       }
+      // A stale array index — the suggestion was raised before the array shrank.
+      // Applying it would bury an identity-less orphan row at a meaningless
+      // index (three of those accumulated on one session's `niches`), so skip
+      // and report it the same way an off-schema path is skipped.
+      const stale = outOfRangeIndexPath(currentSchema as unknown as Record<string, unknown>, fieldPath)
+      if (stale) {
+        skippedPaths.push(`${fieldPath} (stale index ${stale})`)
+        continue
+      }
       if (change.op === 'append') {
         let item: unknown = change.proposedValue
         let parsedJson = false
@@ -124,7 +133,7 @@ export async function PATCH(
       after(() => regenerateMbpIfApproved(supabase, id))
     }
     if (skippedPaths.length > 0) {
-      console.warn(`[mbp-suggestion] skipped off-schema paths on ${id}: ${skippedPaths.join(', ')}`)
+      console.warn(`[mbp-suggestion] skipped unapplicable paths on ${id}: ${skippedPaths.join(', ')}`)
     }
   }
 

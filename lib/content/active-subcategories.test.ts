@@ -22,3 +22,10 @@ describe('activeSubCategories', () => {
     ).toEqual([])
   })
 })
+
+describe('activeSubCategories — nameless orphan rows', () => {
+  it('drops a row that carries content but no name (stale-index orphan)', () => {
+    const input = { subCategories: [{ name: 'Payroll' }, { description: 'orphan fragment' }] } as unknown as Parameters<typeof activeSubCategories>[0]
+    expect(activeSubCategories(input).map((r) => r.name)).toEqual(['Payroll'])
+  })
+})
