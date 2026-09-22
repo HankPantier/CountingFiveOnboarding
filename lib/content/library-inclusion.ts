@@ -37,9 +37,55 @@ export async function getLibrarySelectionStatus(
   const supabase = createServerClient()
   const { data } = await supabase
     .from('content_job_library_selections')
-    .select('status, error')
+    .select('id, status, error, resource_idea_id')
     .eq('content_job_id', contentJobId)
-  const rows = data ?? []
+  const selections = data ?? []
+
+  // Derive each row's EFFECTIVE status from the idea that owns the draft, not
+  // from the selection row alone.
+  //
+  // The selection table is denormalized state, and nothing guarantees it is
+  // fresh: reconciliation only happens inside runLibrarySelectionsForJob, and the
+  // sweep deliberately won't start a run while anything is still 'drafting'. So a
+  // row could sit at 'pending' for an hour next to an article that had been
+  // written and committed weeks earlier, and this gate — which is what blocks
+  // publish — had no way to know. Reading through to the idea means the gate
+  // cannot be wrong even if no runner has executed.
+  const ideaIds = selections.map((r) => r.resource_idea_id).filter((x): x is string => !!x)
+  const ideaById = new Map<string, { draft_status: string | null; draft_error: string | null }>()
+  if (ideaIds.length) {
+    const { data: ideas } = await supabase
+      .from('resource_ideas')
+      .select('id, draft_status, draft_error')
+      .in('id', ideaIds)
+    for (const i of ideas ?? []) ideaById.set(i.id, i)
+  }
+
+  const rows = selections.map((r) => {
+    const idea = r.resource_idea_id ? ideaById.get(r.resource_idea_id) : undefined
+    const settled = settleSelectionFromIdea(r.status, idea?.draft_status, idea?.draft_error)
+    return {
+      id: r.id,
+      status: settled?.status ?? r.status,
+      error: settled?.status === 'error' ? (settled.error ?? r.error) : r.error,
+      stale: !!settled && settled.status !== r.status,
+    }
+  })
+
+  // Converge the stored rows in the background so the staleness doesn't persist.
+  // Best-effort: a failure here must never fail the status read or the publish.
+  const stale = rows.filter((r) => r.stale)
+  if (stale.length) {
+    void Promise.all(
+      stale.map((r) =>
+        supabase
+          .from('content_job_library_selections')
+          .update({ status: r.status, error: r.error, updated_at: new Date().toISOString() })
+          .eq('id', r.id)
+      )
+    ).catch((err) => console.warn('[library-status] self-heal write failed:', err))
+  }
+
   const count = (s: string) => rows.filter((r) => r.status === s).length
   const pending = count('pending')
   const drafting = count('drafting')

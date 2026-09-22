@@ -93,6 +93,40 @@ export async function ensureDraftBranch(slug: string): Promise<void> {
   await ensureBranch(slug, DRAFT_BRANCH, MAIN_BRANCH)
 }
 
+// GitHub rejects a ref update whose new commit isn't a descendant of the current
+// tip: "Update is not a fast forward". Every commit helper here is a
+// read-modify-write — read the branch tip, build a tree + commit on it, update
+// the ref — so any concurrent writer that lands between the read and the update
+// causes this. It is a race, not a real conflict: retrying re-reads the new tip
+// and rebuilds the commit on top of it.
+//
+// It must NEVER be "fixed" with force:true, which would silently discard the
+// other writer's commit. (Seen in production: a library article draft lost to
+// "Update is not a fast forward" and left permanently errored.)
+function isNonFastForward(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  if (/not a fast forward/i.test(msg)) return true
+  const status = (err as { status?: number } | null)?.status
+  return status === 422 && /reference|ref/i.test(msg)
+}
+
+async function withRefRaceRetry<T>(label: string, attempt: () => Promise<T>, attempts = 4): Promise<T> {
+  let lastErr: unknown
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await attempt()
+    } catch (err) {
+      if (!isNonFastForward(err) || i === attempts) throw err
+      lastErr = err
+      // Small jittered backoff so two racing writers don't lock-step retry.
+      const delay = 250 * i + Math.floor(Math.random() * 200)
+      console.warn(`[github] ${label}: ref moved under us (attempt ${i}/${attempts}) — rebuilding on the new tip in ${delay}ms`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
+}
+
 // Overlay a set of files onto a branch in one atomic commit via the Git Data
 // API. base_tree is the branch's current tree, so files NOT in `entries` are
 // preserved (the client repo's app code stays put; only the deliverable's
@@ -108,6 +142,9 @@ export async function pushEntriesToBranch(
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
 
+  // Re-reads the tip on every attempt, so a concurrent commit is rebased onto
+  // rather than clobbered.
+  return withRefRaceRetry(`pushEntriesToBranch ${slug}#${branch}`, async () => {
   const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
   const baseCommitSha = ref.data.object.sha
   const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
@@ -160,6 +197,7 @@ export async function pushEntriesToBranch(
     })
   )
   return { commitSha: commit.data.sha, fileCount: tree.length }
+  })
 }
 
 // Commit several text files to a branch in ONE atomic commit, with optional
@@ -196,6 +234,7 @@ export async function writeFiles(
     }
   }
 
+  return withRefRaceRetry(`writeFiles ${slug}#${branch}`, async () => {
   const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
   const baseCommitSha = ref.data.object.sha
   const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
@@ -234,6 +273,7 @@ export async function writeFiles(
     octokit.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha })
   )
   return { commitSha: commit.data.sha, blobs }
+  })
 }
 
 // Full recursive tree per (repo, branch), memoized by the branch's commit sha so
