@@ -184,6 +184,28 @@ async function ensureIdeaForSelection(
   return ideaBySession.get(sessionId) ?? null
 }
 
+// How a selection row should settle given its own status and its idea's real
+// draft_status. Pure so the rule is testable without a database.
+//
+//  - Idea complete  -> the article exists and is committed. The selection is done,
+//    whatever its own row says. This is the case that used to hang publish.
+//  - Idea errored   -> only settles a 'drafting' row (which would otherwise block
+//    forever). A 'pending'/'error' row is LEFT ALONE so the runner re-drafts it —
+//    that is exactly what a retry is for.
+//  - Anything else (idea still pending/running/missing) -> leave it be.
+export function settleSelectionFromIdea(
+  selectionStatus: string,
+  ideaStatus: string | null | undefined,
+  ideaError?: string | null
+): { status: 'complete' | 'error'; error?: string } | null {
+  if (selectionStatus === 'complete') return null
+  if (ideaStatus === 'complete') return { status: 'complete' }
+  if (ideaStatus === 'error' && selectionStatus === 'drafting') {
+    return { status: 'error', error: ideaError ?? 'Generation failed' }
+  }
+  return null
+}
+
 // Draft every not-yet-complete library selection for a content job, committing
 // each as a UNIQUE article against this client's MBP to the repo draft branch.
 // Called at Deliverables (phase 6), when the repo exists. Idempotent: a re-run
@@ -192,26 +214,33 @@ async function ensureIdeaForSelection(
 export async function runLibrarySelectionsForJob(contentJobId: string): Promise<void> {
   const supabase = createServerClient()
 
-  // Reconcile any row left 'drafting' by a prior run against the idea's real
-  // draft_status, so a completed/failed draft closes out on resume. One batched
-  // read for all in-flight ideas (not a query per row).
-  const { data: inFlight } = await supabase
+  // Reconcile every NOT-YET-COMPLETE row against its idea's real draft_status.
+  //
+  // This used to cover only rows left 'drafting'. But a selection can just as
+  // easily sit at 'pending' or 'error' while its idea has already drafted and
+  // been committed — a worker that died after finishing the idea but before
+  // marking the selection, or a cron retry that reset a stale error back to
+  // pending. Those rows then never settled: the publish gate
+  // (terminal = pending + drafting === 0) stayed blocked forever on articles that
+  // were already written, and the runner re-drafted finished work to "fix" it.
+  //
+  // The idea is the source of truth — it owns the draft and its repo path.
+  const { data: openRows } = await supabase
     .from('content_job_library_selections')
-    .select('id, resource_idea_id')
+    .select('id, status, resource_idea_id')
     .eq('content_job_id', contentJobId)
-    .eq('status', 'drafting')
-  const inFlightRows = (inFlight ?? []).filter((r) => r.resource_idea_id)
-  if (inFlightRows.length) {
+    .in('status', ['pending', 'drafting', 'error'])
+  const withIdea = (openRows ?? []).filter((r) => r.resource_idea_id)
+  if (withIdea.length) {
     const { data: ideas } = await supabase
       .from('resource_ideas')
       .select('id, draft_status, draft_error')
-      .in('id', inFlightRows.map((r) => r.resource_idea_id as string))
+      .in('id', withIdea.map((r) => r.resource_idea_id as string))
     const byId = new Map((ideas ?? []).map((i) => [i.id, i]))
-    for (const row of inFlightRows) {
+    for (const row of withIdea) {
       const idea = byId.get(row.resource_idea_id as string)
-      if (idea?.draft_status === 'complete') await mark(supabase, row.id, 'complete', null)
-      else if (idea?.draft_status === 'error')
-        await mark(supabase, row.id, 'error', idea.draft_error ?? 'Generation failed')
+      const settled = settleSelectionFromIdea(row.status, idea?.draft_status, idea?.draft_error)
+      if (settled) await mark(supabase, row.id, settled.status, settled.error ?? null)
     }
   }
 

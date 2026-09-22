@@ -1,4 +1,11 @@
 import { createServerClient } from '@/lib/supabase/server'
+import { createBudget, runWithPool } from './generation-budget'
+import { resumeEndpointFor } from './resume-targets'
+
+// Must match the maxDuration on /api/content-jobs/[id]/imports/{run,retry}.
+const IMPORTS_ROUTE_MAX_DURATION_MS = 600_000
+// One import = fetch + html->md conversion + image re-hosting + a Haiku link pass.
+const IMPORTS_MIN_VIABLE_MS = 120_000
 import { importArticleAsIs } from './article-import-generator'
 
 export interface ArticleImportStatus {
@@ -72,13 +79,59 @@ export async function runArticleImportsForJob(contentJobId: string): Promise<voi
     .in('status', ['pending', 'error'])
   if (!imports?.length) return
 
-  for (const row of imports) {
-    try {
-      await importArticleAsIs(row.id)
-    } catch (err) {
-      // importArticleAsIs never throws, but guard the loop regardless so one bad
-      // row can't abort the rest.
-      console.error(`[article-import] Unexpected throw on ${row.id}:`, err)
-    }
+  // Budgeted and resumable, mirroring the library runner. Strictly sequential:
+  // every import commits to the same repo draft branch, so concurrent workers
+  // would race each other's git writes. The deadline check before each row is
+  // what this previously lacked entirely — it walked every import with no notion
+  // of elapsed time, so a long list outran the function and left the in-flight
+  // row claimed as 'drafting' until a sweep noticed.
+  const budget = createBudget({ maxDurationMs: IMPORTS_ROUTE_MAX_DURATION_MS })
+
+  const { skipped } = await runWithPool(
+    imports,
+    1,
+    budget,
+    async (row) => {
+      try {
+        await importArticleAsIs(row.id)
+      } catch (err) {
+        // importArticleAsIs never throws, but guard the loop regardless so one bad
+        // row can't abort the rest.
+        console.error(`[article-import] Unexpected throw on ${row.id}:`, err)
+      }
+    },
+    IMPORTS_MIN_VIABLE_MS
+  )
+
+  if (skipped.length) {
+    const remaining = await getArticleImportStatus(contentJobId)
+    const endpoint = resumeEndpointFor({
+      pending: remaining.pending,
+      drafting: remaining.drafting,
+      error: remaining.error,
+    })
+    console.warn(
+      `[article-import] Budget reached with ${skipped.length} import(s) left (elapsed ${budget.elapsed()}ms) — chaining via ${endpoint ?? 'none'}.`
+    )
+    if (endpoint) await chainImportsRun(contentJobId, endpoint)
+  }
+}
+
+// Self-chain over HTTP so the continuation gets a fresh function lifetime.
+async function chainImportsRun(contentJobId: string, endpoint: 'run' | 'retry'): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+  const cronSecret = process.env.CRON_SECRET
+  if (!baseUrl || !cronSecret) {
+    console.warn('[article-import] Chain skipped — NEXT_PUBLIC_APP_URL or CRON_SECRET missing.')
+    return
+  }
+  const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+  try {
+    await fetch(`${url}/api/content-jobs/${contentJobId}/imports/${endpoint}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    })
+  } catch (err) {
+    console.error('[article-import] Chain failed:', err)
   }
 }
