@@ -1,5 +1,13 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { generateResourceDraft } from './resource-draft-generator'
+import { createBudget, runWithPool } from './generation-budget'
+import { resumeEndpointFor } from './resume-targets'
+
+// Must match the maxDuration on /api/content-jobs/[id]/library/{run,retry}.
+const LIBRARY_ROUTE_MAX_DURATION_MS = 600_000
+// One selection = a resource draft (up to 2 model calls) plus an inline social
+// generation plus an MBP impact review. Don't start one without room to finish.
+const LIBRARY_MIN_VIABLE_MS = 180_000
 import { resolveEligibility, insertBatchTargets } from './blog-batch-targets'
 import { asContentType } from './content-types'
 import { asIndustry } from './industries'
@@ -233,36 +241,91 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
     return
   }
 
-  for (const sel of selections) {
-    try {
-      let ideaId = sel.resource_idea_id
-      if (!ideaId) {
-        ideaId = await ensureIdeaForSelection(supabase, sel.batch_id, sessionId, contentJobId)
-        if (!ideaId) {
-          await mark(supabase, sel.id, 'error', 'Could not create the per-client article')
-          continue
-        }
-        await supabase
-          .from('content_job_library_selections')
-          .update({ resource_idea_id: ideaId, status: 'drafting', updated_at: new Date().toISOString() })
-          .eq('id', sel.id)
-      } else {
-        await mark(supabase, sel.id, 'drafting', null)
-      }
+  // Budgeted, resumable, and still STRICTLY SEQUENTIAL: every item commits to the
+  // same repo draft branch, so concurrent workers race each other's git writes.
+  // A pool of 1 buys the thing that was actually missing — a deadline check
+  // BEFORE each item. Previously this loop walked every selection with no notion
+  // of elapsed time inside a 600s function, while each item is 1-2 Sonnet calls
+  // at 24k/32k output plus an inline social call plus an MBP impact review. A
+  // dozen items could never fit, so the function was killed and the in-flight row
+  // was left claimed as 'drafting' until a sweep noticed.
+  const budget = createBudget({ maxDurationMs: LIBRARY_ROUTE_MAX_DURATION_MS })
 
-      const result = await generateResourceDraft(ideaId)
-      if (result.status === 'complete') {
-        await mark(supabase, sel.id, 'complete', null)
-      } else if (result.status === 'error') {
-        await mark(supabase, sel.id, 'error', result.error ?? 'Generation failed')
-      } else {
-        // 'skipped' = another worker holds the idea lock; reconcile from
-        // draft_status (or leave 'drafting' — a re-run reconciles).
-        await settleFromIdeaStatus(supabase, sel.id, ideaId)
+  const { skipped } = await runWithPool(
+    selections,
+    1,
+    budget,
+    async (sel) => {
+      try {
+        let ideaId = sel.resource_idea_id
+        if (!ideaId) {
+          ideaId = await ensureIdeaForSelection(supabase, sel.batch_id, sessionId, contentJobId)
+          if (!ideaId) {
+            await mark(supabase, sel.id, 'error', 'Could not create the per-client article')
+            return
+          }
+          await supabase
+            .from('content_job_library_selections')
+            .update({ resource_idea_id: ideaId, status: 'drafting', updated_at: new Date().toISOString() })
+            .eq('id', sel.id)
+        } else {
+          await mark(supabase, sel.id, 'drafting', null)
+        }
+
+        const result = await generateResourceDraft(ideaId)
+        if (result.status === 'complete') {
+          await mark(supabase, sel.id, 'complete', null)
+        } else if (result.status === 'error') {
+          await mark(supabase, sel.id, 'error', result.error ?? 'Generation failed')
+        } else {
+          // 'skipped' = another worker holds the idea lock; reconcile from
+          // draft_status (or leave 'drafting' — a re-run reconciles).
+          await settleFromIdeaStatus(supabase, sel.id, ideaId)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        await mark(supabase, sel.id, 'error', message.slice(0, 500))
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      await mark(supabase, sel.id, 'error', message.slice(0, 500))
-    }
+    },
+    LIBRARY_MIN_VIABLE_MS
+  )
+
+  // Chain a fresh invocation for whatever didn't fit. This pipeline had no chain
+  // at all — it relied entirely on the 5-minute cron noticing. Pick the endpoint
+  // from the job's ACTUAL remaining state rather than assuming /run: leftovers can
+  // include rows still marked `error`, and /run short-circuits on a job with no
+  // pending or drafting rows, which would silently drop them (the same trap the
+  // cron fell into).
+  if (skipped.length) {
+    const remaining = await getLibrarySelectionStatus(contentJobId)
+    const endpoint = resumeEndpointFor({
+      pending: remaining.pending,
+      drafting: remaining.drafting,
+      error: remaining.error,
+    })
+    console.warn(
+      `[library-run] Budget reached with ${skipped.length} selection(s) left (elapsed ${budget.elapsed()}ms) — chaining via ${endpoint ?? 'none'}.`
+    )
+    if (endpoint) await chainLibraryRun(contentJobId, endpoint)
+  }
+}
+
+// Self-chain over HTTP so the continuation gets a fresh function lifetime, the
+// same mechanism the page pipeline uses.
+async function chainLibraryRun(contentJobId: string, endpoint: 'run' | 'retry'): Promise<void> {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+  const cronSecret = process.env.CRON_SECRET
+  if (!baseUrl || !cronSecret) {
+    console.warn('[library-run] Chain skipped — NEXT_PUBLIC_APP_URL or CRON_SECRET missing.')
+    return
+  }
+  const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+  try {
+    await fetch(`${url}/api/content-jobs/${contentJobId}/library/${endpoint}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    })
+  } catch (err) {
+    console.error('[library-run] Chain failed:', err)
   }
 }

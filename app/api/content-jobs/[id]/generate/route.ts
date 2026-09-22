@@ -4,7 +4,7 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { runContentGeneration } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 600
 
 export async function POST(
   req: Request,
@@ -44,6 +44,20 @@ export async function POST(
   // Only set when unset, to keep the first attributor across cron-chained runs.
   if (actorId && !job.created_by) {
     await supabase.from('content_jobs').update({ created_by: actorId }).eq('id', id)
+  }
+
+  // A HUMAN clicking Restart grants a fresh attempt budget to every page that
+  // hasn't finished; the internal cron/self-chain (isInternalChain) must NOT, or
+  // the cap could never be reached and a genuinely un-generatable page would be
+  // retried forever. This is the distinction that was missing: the counter was
+  // only ever incremented, so operator retries silently pushed pages past the cap
+  // instead of resetting it, and the cap became a no-op.
+  if (!isInternalChain) {
+    await supabase
+      .from('generated_pages')
+      .update({ generation_attempts: 0 })
+      .eq('content_job_id', id)
+      .neq('generation_status', 'complete')
   }
 
   const sessionId = job.session_id

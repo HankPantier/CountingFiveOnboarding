@@ -11,6 +11,7 @@ import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { RESOURCE_CALL_CAP_MS } from './generation-budget'
 import { extractJson } from './extract-json'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { resolveStockPhotos, type ImageRef } from './stock-photo-resolver'
@@ -180,6 +181,7 @@ ${args.internalTargets
     maxOutputTokens: number,
     providerOptions: Parameters<typeof generateText>[0]['providerOptions']
   ): Promise<{ ok: true; result: DraftResult } | { ok: false; finishReason: string }> => {
+    const callStartedAt = Date.now()
     const { text, usage, finishReason } = await generateText({
       model: anthropic(DRAFT_MODEL),
       messages: buildCachedMessages(staticPrefix, dynamicSuffix),
@@ -188,11 +190,15 @@ ${args.internalTargets
       // Ride out transient overload/rate-limit (529/429) on big 4-firm batches
       // with the SDK's built-in exponential backoff instead of failing the draft.
       maxRetries: 4,
+      // Hard ceiling, bounding the maxRetries backoff above too. Without it a
+      // stalled draft consumed the whole function and left its selection row
+      // claimed as 'drafting' with nobody working on it.
+      abortSignal: AbortSignal.timeout(RESOURCE_CALL_CAP_MS),
     })
 
     const cache = extractCacheUsage(usage)
     console.warn(
-      `[resource-draft] idea="${idea.title}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
+      `[resource-draft] idea="${idea.title}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason} elapsedMs=${Date.now() - callStartedAt}`
     )
     checkTokenBudget('resource-draft', idea.title, usage?.inputTokens, 5000)
     await recordTokenUsage({

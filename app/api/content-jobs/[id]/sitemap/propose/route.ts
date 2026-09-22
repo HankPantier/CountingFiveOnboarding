@@ -7,7 +7,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult } from '@/types/audit-result'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 // Regenerate the proposed sitemap with the AI proposer (template skeleton + AI
 // enrichment). Writes the result to sessions.schema_data.proposed_sitemap and

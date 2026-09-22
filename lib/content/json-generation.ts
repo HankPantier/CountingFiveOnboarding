@@ -17,6 +17,10 @@ type Usage = Awaited<ReturnType<typeof generateText>>['usage']
 //
 // IMPORTANT: pass `providerOptions` ONLY for non-Haiku models — `effort` errors on
 // Haiku 4.5. Omit it entirely for Haiku calls.
+// Every caller is an async (non-interactive) generator running inside a function
+// with a hard maxDuration; none of them previously passed a timeout of any kind.
+const DEFAULT_JSON_CALL_TIMEOUT_MS = 120_000
+
 export async function generateJson(opts: {
   model: GenTextOpts['model']
   system?: string
@@ -30,6 +34,10 @@ export async function generateJson(opts: {
   // caller can record token usage / budget checks. Its own errors are swallowed
   // and never fail the attempt.
   onAttempt?: (usage: Usage, finishReason: string) => void | Promise<void>
+  // Hard ceiling for each model call. Bounds the maxRetries backoff below too, so
+  // a stalled provider can't consume the caller's whole function budget — without
+  // it, the function is killed and whatever row the caller claimed is orphaned.
+  timeoutMs?: number
 }): Promise<unknown | null> {
   const attempt = async (
     maxOutputTokens: number,
@@ -44,6 +52,7 @@ export async function generateJson(opts: {
         // Ride out transient overload/rate-limit (529/429) via exponential backoff
         // instead of throwing out of the generator.
         maxRetries: 4,
+        abortSignal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_JSON_CALL_TIMEOUT_MS),
       }
       if (opts.system) params.system = opts.system
       if (providerOptions) params.providerOptions = providerOptions

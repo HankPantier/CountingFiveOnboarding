@@ -32,7 +32,14 @@ import {
   validateSchemaType,
   groundEeatSignals,
 } from './output-validators'
-import { PUBLISHED_CONTENT_MODEL, CONTENT_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS, providerOptionsForAttempt } from './generation-tuning'
+import {
+  createBudget,
+  runWithPool,
+  classifyGenerationError,
+  taggedError,
+  PER_CALL_CAP_MS,
+} from './generation-budget'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -47,7 +54,21 @@ const CONTENT_MODEL = PUBLISHED_CONTENT_MODEL
 // transient 529/timeout self-heals; this caps that so a genuinely
 // un-generatable page can't be retried forever and burn tokens — after this
 // many attempts it stays 'error' and lands in ERRORS.md.
-export const MAX_GENERATION_ATTEMPTS = 3
+// Raised from 3 now that a failed attempt costs a bounded ~200s and ends in a
+// clean retriable error rather than a killed function, and now that each retry
+// steps DOWN the effort ladder (so attempt 3 is materially different from
+// attempt 1, not the same expensive call repeated).
+export const MAX_GENERATION_ATTEMPTS = 5
+
+// Must match the maxDuration configured for /api/content-jobs/[id]/generate in
+// BOTH vercel.json and the route export. The maxduration-config test asserts the
+// two config sources agree; this constant is what the runner budgets against.
+export const GENERATE_ROUTE_MAX_DURATION_MS = 600_000
+
+// A page claimed as `running` for longer than this cannot still be in flight: one
+// attempt is at most the per-call cap x the 2-rung internal JSON retry, plus
+// slack for the surrounding DB work. Past it, the worker is gone.
+export const ORPHAN_RECLAIM_MS = PER_CALL_CAP_MS * 2 + 120_000
 
 // Decide whether runContentGeneration should chain another invocation immediately.
 // Chain when this run made real progress OR never-attempted (pending) pages remain
@@ -105,6 +126,37 @@ export function selectResumableContentJobs(
   return [...counts.entries()]
     .filter(([, c]) => c.running === 0 && (c.pending > 0 || c.retriableError > 0))
     .map(([jobId]) => jobId)
+}
+
+// Which approved outlines a run should actually generate. `complete` pages are
+// skipped for idempotency; so are `error` pages that have burned the attempt cap.
+//
+// That second filter is the fix for a real runaway: the cap was only ever a
+// read-side classifier, and this loop's ONLY filter was `complete`. So every
+// restart — and every 5-minute cron tick that resumed the job for some other
+// page — re-attempted terminally failed pages too, burning tokens and pushing
+// their counters far past the cap (observed at 10 and 15 against a cap of 3).
+export function selectPagesToGenerate<T extends { page_url: string }>(
+  outlines: T[],
+  pageState: ResumablePageRow2[],
+  maxAttempts: number = MAX_GENERATION_ATTEMPTS
+): T[] {
+  const skip = new Set(
+    pageState
+      .filter(
+        p =>
+          p.generation_status === 'complete' ||
+          (p.generation_status === 'error' && (p.generation_attempts ?? 0) >= maxAttempts)
+      )
+      .map(p => p.page_url)
+  )
+  return outlines.filter(o => !skip.has(o.page_url))
+}
+
+type ResumablePageRow2 = {
+  page_url: string
+  generation_status: string
+  generation_attempts?: number | null
 }
 
 // Advance a content job to phase 6 (Deliverables) once every page has reached a
@@ -200,7 +252,14 @@ export async function generatePageContent(
   sitemapUrls: string[],
   angle: string | null,
   flaggedPhrases?: string[],
-  revisionGuidance?: string
+  revisionGuidance?: string,
+  // Budget-aware knobs. `attemptNumber` (1-based) picks the effort rung — a
+  // retry steps down so it is faster and likelier to land than the attempt that
+  // just failed. `callTimeoutMs` is the hard ceiling for each model call; it
+  // bounds the AI SDK's internal maxRetries backoff too, which is what stops a
+  // stalled call from consuming the whole function and orphaning the row.
+  attemptNumber: number = 1,
+  callTimeoutMs: number = PER_CALL_CAP_MS
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
   const location = schema.locations?.[0]
@@ -422,6 +481,7 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
     maxOutputTokens: number,
     providerOptions: Parameters<typeof generateText>[0]['providerOptions']
   ): Promise<{ ok: true; result: GeneratedResult } | { ok: false; text: string; finishReason: string }> => {
+    const callStartedAt = Date.now()
     const { text, usage, finishReason } = await generateText({
       model: anthropic(CONTENT_MODEL),
       messages: buildCachedMessages(staticPrefix, dynamicSuffix),
@@ -430,11 +490,14 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
       // Ride out transient overload/rate-limit (529/429) on big batched jobs
       // with the SDK's built-in exponential backoff instead of failing the page.
       maxRetries: 4,
+      // The hard ceiling. Bounds the whole call INCLUDING the maxRetries backoff
+      // above, so a struggling provider can't quietly eat the function's budget.
+      abortSignal: AbortSignal.timeout(callTimeoutMs),
     })
 
     const cache = extractCacheUsage(usage)
     console.warn(
-      `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
+      `[content-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason} elapsedMs=${Date.now() - callStartedAt}`
     )
     checkTokenBudget('content', pageUrl, usage?.inputTokens, 5000)
     await recordTokenUsage({
@@ -494,7 +557,7 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
   // JSON both fit. A parse failure means the JSON still truncated (a `length`
   // finish confirms it) — retry once with an even larger budget and low effort
   // (less thinking → more room for the answer) before storing raw.
-  let res = await attempt(24000, CONTENT_PROVIDER_OPTIONS)
+  let res = await attempt(24000, providerOptionsForAttempt(attemptNumber))
   if (!res.ok) {
     console.warn(
       `[content-gen] JSON parse failed for ${pageUrl} (finish=${res.finishReason}) — retrying with larger budget`
@@ -561,6 +624,10 @@ export type FinalizePageInput = {
   angle?: string | null
   // Optional "fix these" guidance from the draft critic on a targeted rewrite.
   revisionGuidance?: string
+  // 1-based attempt number — selects the effort rung (see providerOptionsForAttempt).
+  attemptNumber?: number
+  // Hard per-call ceiling, shrunk to the invocation's remaining budget by the caller.
+  callTimeoutMs?: number
 }
 
 export async function generateAndFinalizePage(input: FinalizePageInput): Promise<GeneratedResult> {
@@ -582,7 +649,9 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       input.sitemapUrls,
       input.angle ?? null,
       flaggedPhrases,
-      input.revisionGuidance
+      input.revisionGuidance,
+      input.attemptNumber ?? 1,
+      input.callTimeoutMs ?? PER_CALL_CAP_MS
     )
 
   // Page intent drives the deterministic coercions below (schema.org type default).
@@ -951,7 +1020,7 @@ export async function generateSinglePage(
   // auto-regen so it re-scores manually instead of recursing). `countAttempt`
   // (default true) increments the transient-retry counter; the critic regen sets
   // it false so a quality rewrite doesn't eat the 3-attempt error budget.
-  opts?: { revisionGuidance?: string; skipCritic?: boolean; countAttempt?: boolean }
+  opts?: { revisionGuidance?: string; skipCritic?: boolean; countAttempt?: boolean; callTimeoutMs?: number }
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; pageUrl: string; error?: string }> {
   const supabase = createServerClient()
 
@@ -1000,8 +1069,10 @@ export async function generateSinglePage(
   }
   // A critic-driven quality rewrite (countAttempt:false) is not a failed try, so
   // it must not consume the transient-error retry budget — leave the counter be.
+  const attemptNo =
+    opts?.countAttempt !== false ? (genPage.generation_attempts ?? 0) + 1 : (genPage.generation_attempts ?? 0) || 1
   if (opts?.countAttempt !== false) {
-    lockUpdate.generation_attempts = (genPage.generation_attempts ?? 0) + 1
+    lockUpdate.generation_attempts = attemptNo
   }
   const { data: locked } = await supabase
     .from('generated_pages')
@@ -1042,6 +1113,9 @@ export async function generateSinglePage(
       sitemapUrls,
       angle: outline.angle,
       revisionGuidance: opts?.revisionGuidance,
+      // The claim above already incremented, so this row's count IS this attempt.
+      attemptNumber: attemptNo,
+      callTimeoutMs: opts?.callTimeoutMs ?? PER_CALL_CAP_MS,
     })
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
@@ -1133,12 +1207,20 @@ export async function generateSinglePage(
     console.warn(`[content-gen] Complete: ${outline.page_title} (${wcActual} words / target ${wcTarget})`)
     return { status: 'complete', pageUrl: outline.page_url }
   } catch (err) {
-    console.error(`[content-gen] Error on ${outline.page_url}:`, err)
+    // Tag the failure kind. Every failure used to land as one opaque string, so a
+    // hung call, a provider outage and malformed model JSON were indistinguishable
+    // without querying the database — which is exactly how this class of incident
+    // stayed invisible. The tag is a prefix on the existing column (no migration).
+    const kind = classifyGenerationError(err)
+    console.error(`[content-gen] Error on ${outline.page_url} (${kind}):`, err)
     const message = err instanceof Error ? err.message : String(err)
     await supabase
       .from('generated_pages')
       // Persist the reason (capped) so the admin UI can show why this page failed.
-      .update({ generation_status: 'error', generation_error: message.slice(0, 2000) })
+      .update({
+        generation_status: 'error',
+        generation_error: taggedError(kind, message).slice(0, 2000),
+      })
       .eq('id', genPage.id)
     return { status: 'error', pageUrl: outline.page_url, error: message }
   }
@@ -1171,47 +1253,66 @@ export async function runContentGeneration(
     return
   }
 
-  // Process in small parallel batches. Sequential generation took ~12s per
-  // page, which put 26-page jobs right at the 300s maxDuration cap and got
-  // them killed mid-run. Batch size 3 mirrors the research pipeline and stays
-  // well within Anthropic's RPM/TPM limits for Sonnet while bringing total
-  // wall time to ~100s for a 26-page job — one click finishes the lot.
-  const BATCH_SIZE = 3
-  // Soft deadline well under the 300s route maxDuration. When a batch would
-  // push elapsed time past this, we stop processing and chain to a fresh
-  // function invocation via HTTP self-call. 240s leaves ~60s for the final
-  // completion check, phase advance, email, and the self-fetch call.
-  const SOFT_DEADLINE_MS = 240_000
-  const startedAt = Date.now()
+  // Concurrency. 3 keeps us well inside Anthropic's RPM/TPM for Sonnet while
+  // giving a big job real throughput.
+  const CONCURRENCY = 3
+
+  // The budget replaces the old fixed 240s soft deadline. That deadline was
+  // checked only BETWEEN batches and asked "have I already passed it?" rather
+  // than "will the next unit finish before the cap?" — so a batch could start
+  // with a second of margin, run for three more minutes on a p95 call, and take
+  // the whole function down, orphaning every row it had claimed as `running`.
+  // The budget is checked before EVERY page and shrinks each call's own timeout,
+  // so the invocation always exits cleanly and chains instead of being killed.
+  const budget = createBudget({ maxDurationMs: GENERATE_ROUTE_MAX_DURATION_MS })
   let completedThisRun = 0
 
-  // Load already-complete pages once up front (idempotency on re-run) instead
-  // of a per-page status SELECT inside every batch. generateSinglePage's atomic
-  // claim still protects against a page completing concurrently after this read.
-  const { data: donePages } = await supabase
+  // Reclaim this job's own orphans before starting. A row claimed as `running`
+  // by a function that later died is unworkable until something resets it;
+  // waiting for the 5-minute global sweep to notice was the single biggest
+  // source of dead time (and of the operator having to click Restart). Any row
+  // past the now-bounded ceiling for one attempt cannot still be in flight.
+  const orphanCutoff = new Date(Date.now() - ORPHAN_RECLAIM_MS).toISOString()
+  const { data: reclaimed } = await supabase
     .from('generated_pages')
-    .select('page_url')
+    .update({
+      generation_status: 'error',
+      generation_error: taggedError('timeout', 'Worker stopped mid-run — reclaimed for retry'),
+    })
     .eq('content_job_id', contentJobId)
-    .eq('generation_status', 'complete')
-  const doneUrls = new Set((donePages ?? []).map(p => p.page_url))
+    .eq('generation_status', 'running')
+    .lt('generation_started_at', orphanCutoff)
+    .select('page_url')
+  if (reclaimed?.length) {
+    console.warn(`[content-gen] Reclaimed ${reclaimed.length} orphaned page(s) for job ${contentJobId}`)
+  }
 
-  for (let i = 0; i < outlines.length; i += BATCH_SIZE) {
-    if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
-      console.warn(
-        `[content-gen] Soft deadline reached after ${i} pages, chaining continuation.`
-      )
-      break
-    }
-    const batch = outlines.slice(i, i + BATCH_SIZE)
-    await Promise.all(batch.map(async (outline) => {
-      if (doneUrls.has(outline.page_url)) return
+  // Load current state once up front instead of a per-page SELECT in the loop.
+  // `complete` pages are skipped for idempotency; `error` pages that have burned
+  // the attempt cap are skipped too — previously the ONLY filter was `complete`,
+  // so every restart (and every cron tick) re-attempted terminally failed pages,
+  // burning tokens and pushing their counters far past the cap. The atomic claim
+  // in generateSinglePage still guards against a concurrent completion.
+  const { data: stateRows } = await supabase
+    .from('generated_pages')
+    .select('page_url, generation_status, generation_attempts')
+    .eq('content_job_id', contentJobId)
+  const todo = selectPagesToGenerate(outlines, stateRows ?? [])
 
-      // Only a genuine completion counts as progress for the anti-cascade
-      // guard below — an 'error'/'skipped' outcome must NOT let an all-failing
-      // job re-chain forever or send a spurious "in progress" email.
-      const res = await generateSinglePage(contentJobId, outline.id, pageCtx)
-      if (res.status === 'complete') completedThisRun += 1
-    }))
+  const { skipped } = await runWithPool(todo, CONCURRENCY, budget, async (outline) => {
+    // Only a genuine completion counts as progress for the anti-cascade guard
+    // below — an 'error'/'skipped' outcome must NOT let an all-failing job
+    // re-chain forever or send a spurious "in progress" email.
+    const res = await generateSinglePage(contentJobId, outline.id, pageCtx, {
+      callTimeoutMs: budget.callTimeout(),
+    })
+    if (res.status === 'complete') completedThisRun += 1
+  })
+
+  if (skipped.length) {
+    console.warn(
+      `[content-gen] Budget reached with ${skipped.length} page(s) left (elapsed ${budget.elapsed()}ms) — chaining continuation.`
+    )
   }
 
   // Check completion + advance phase + email notification.

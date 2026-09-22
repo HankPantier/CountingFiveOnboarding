@@ -4,7 +4,7 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { runOutlineGeneration } from '@/lib/content/outline-generator'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function POST(
   _req: Request,

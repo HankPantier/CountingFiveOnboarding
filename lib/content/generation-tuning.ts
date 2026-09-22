@@ -52,3 +52,27 @@ export const OUTLINE_PROVIDER_OPTIONS = {
     effort: 'low',
   } satisfies AnthropicProviderOptions,
 }
+
+// Effort ladder for RETRIES. A first attempt keeps today's quality exactly —
+// high effort, unchanged. What changes is what a *failed* page gets next.
+//
+// Previously every retry repeated the identical expensive high-effort call, so a
+// page that timed out at high effort timed out again the same way. Production
+// bears this out: one page finally succeeded only when it fell through to the
+// low-effort path (2,971 output tokens in ~34s, against 12–17k tokens and 80–190s
+// for the high-effort attempts that had been failing). Stepping effort DOWN per
+// attempt makes each retry both faster and likelier to land, which is the most
+// direct lever on the measured 16.7% multi-attempt rate — a finished good page
+// beats a missing perfect one.
+const EFFORT_LADDER = ['high', 'medium', 'low'] as const
+
+export function providerOptionsForAttempt(attempt: number): typeof GENERATION_PROVIDER_OPTIONS {
+  // attempt is 1-based; anything past the ladder stays at its cheapest rung.
+  const idx = Math.min(Math.max(1, attempt), EFFORT_LADDER.length) - 1
+  return {
+    anthropic: {
+      thinking: { type: 'adaptive', display: 'omitted' },
+      effort: EFFORT_LADDER[idx],
+    },
+  } as typeof GENERATION_PROVIDER_OPTIONS
+}

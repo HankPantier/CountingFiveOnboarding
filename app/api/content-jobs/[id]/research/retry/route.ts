@@ -4,7 +4,7 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 type SitemapPage = {
   url: string

@@ -11,6 +11,9 @@ const MBP_JSON_MODEL = 'claude-sonnet-5'
 // caller route (the 120s draft-session) while bounding every call. Overridable
 // per-call via `opts.timeoutMs`. On abort, generateText throws → we return null,
 // which every caller already treats as "no result".
+// Sized against the TIGHTEST caller route. Callers on a longer budget should pass
+// their own `timeoutMs` — a value tuned for a 120s route is needlessly strict for
+// one running in a 600s function.
 const GENERATION_TIMEOUT_MS = 110_000
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))

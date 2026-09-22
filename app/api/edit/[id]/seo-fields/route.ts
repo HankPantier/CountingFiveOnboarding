@@ -11,7 +11,7 @@ import { DRAFT_BRANCH, ensureDraftBranch, readFile, FileNotFoundError } from '@/
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 const EDITABLE = ['content/pages/', 'content/posts/']
 

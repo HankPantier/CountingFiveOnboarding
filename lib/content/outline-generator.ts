@@ -12,6 +12,13 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { OUTLINE_PRIMARY_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { createBudget, runWithPool, OUTLINE_CALL_CAP_MS } from './generation-budget'
+
+// Must match the maxDuration on /api/content-jobs/[id]/outlines/{generate,regenerate-all}.
+const OUTLINE_ROUTE_MAX_DURATION_MS = 300_000
+// One outline is a small call (measured output p50 881 tokens) plus its low-effort
+// retry rung; don't begin one without room for both.
+const OUTLINE_MIN_VIABLE_MS = 90_000
 import { OUTLINE_FALLBACK_NOTE, buildOutlineFailureNote } from './outline-fallback'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
@@ -198,17 +205,19 @@ ${auditHintsBlock}`
     maxOutputTokens: number,
     providerOptions: Parameters<typeof generateText>[0]['providerOptions']
   ): Promise<{ ok: true; outline: OutlineResult } | { ok: false; finishReason: string }> => {
+    const callStartedAt = Date.now()
     const { text, usage, finishReason } = await generateText({
       model: anthropic(OUTLINE_MODEL),
       messages: buildCachedMessages(staticPrefix, dynamicSuffix),
       maxOutputTokens,
       providerOptions,
       maxRetries: 4,
+      abortSignal: AbortSignal.timeout(OUTLINE_CALL_CAP_MS),
     })
 
     const cache = extractCacheUsage(usage)
     console.warn(
-      `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason}`
+      `[outline-gen] page="${pageUrl}" input=${usage?.inputTokens ?? '?'} output=${usage?.outputTokens ?? '?'} cacheRead=${cache.cacheReadInputTokens} cacheWrite=${cache.cacheCreationInputTokens} finish=${finishReason} elapsedMs=${Date.now() - callStartedAt}`
     )
     checkTokenBudget('outline', pageUrl, usage?.inputTokens, 3000)
     await recordTokenUsage({
@@ -324,9 +333,13 @@ export async function runOutlineGeneration(
   // most rows with null h1 ("still generating") and nothing to resume them. The
   // `!o.h1` filter makes this idempotent, so a chained continuation picks up
   // exactly where the prior invocation was cut off.
-  const BATCH_SIZE = 3
-  const SOFT_DEADLINE_MS = 240_000
-  const startedAt = Date.now()
+  const CONCURRENCY = 3
+  // The old fixed 240s soft deadline could NEVER fire here: vercel.json pinned
+  // this route to 120s while the route file exported 300, so the function was
+  // killed long before 240s elapsed. Both config sources now agree (and a test
+  // enforces that), and the budget is checked before every page rather than
+  // between batches.
+  const budget = createBudget({ maxDurationMs: OUTLINE_ROUTE_MAX_DURATION_MS })
   let completedThisRun = 0
 
   const auditPageByUrl = buildAuditPageIndex(auditResult)
@@ -343,13 +356,11 @@ export async function runOutlineGeneration(
   }
 
   const pending = outlines.filter(o => !o.h1)
-  for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-    if (Date.now() - startedAt > SOFT_DEADLINE_MS) {
-      console.warn(`[outline-gen] Soft deadline reached after ${i} pages, chaining continuation.`)
-      break
-    }
-    const batch = pending.slice(i, i + BATCH_SIZE)
-    await Promise.all(batch.map(async (outline) => {
+  const { skipped } = await runWithPool(
+    pending,
+    CONCURRENCY,
+    budget,
+    async (outline) => {
       try {
         await generateOutlineForPage(
           outline.id,
@@ -380,7 +391,13 @@ export async function runOutlineGeneration(
       // A fallback write still sets h1, so the row is no longer "still generating"
       // and this counts as forward progress for the chain guard below.
       completedThisRun += 1
-    }))
+    },
+    OUTLINE_MIN_VIABLE_MS
+  )
+  if (skipped.length) {
+    console.warn(
+      `[outline-gen] Budget reached with ${skipped.length} outline(s) left (elapsed ${budget.elapsed()}ms) — chaining continuation.`
+    )
   }
 
   // Re-query the true remaining count so a chained continuation reasons about the

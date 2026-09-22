@@ -4,7 +4,7 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { generateSinglePage, finalizeGenerationIfComplete } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
 // Re-run content generation for a single page from its already-approved
 // outline. Resets admin_approved_content (handled inside generateSinglePage)
@@ -39,6 +39,18 @@ export async function POST(
   if (!outline.admin_approved) {
     return NextResponse.json({ error: 'Outline must be approved before regenerating' }, { status: 400 })
   }
+
+  // An explicit operator retry grants a FRESH attempt budget. The counter is only
+  // ever incremented, never reset, so a page that had burned the cap could
+  // previously only be re-attempted by blowing straight past it — which is how
+  // pages ended up at 10 and 15 attempts against a cap of 3, and why the cap
+  // stopped meaning anything. A human choosing to retry is a deliberate act, so
+  // it starts the budget over rather than silently consuming its last try.
+  await supabase
+    .from('generated_pages')
+    .update({ generation_attempts: 0 })
+    .eq('id', pageId)
+    .neq('generation_status', 'complete')
 
   // after() gives Vercel's guarantee the work completes within maxDuration.
   // A bare fire-and-forget promise gets terminated once the response leaves the

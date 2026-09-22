@@ -1,13 +1,31 @@
 import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
+import { resumePlan } from '@/lib/content/resume-targets'
 import { runWhoisLookup } from '@/lib/whois/lookup'
-import { selectResumableContentJobs } from '@/lib/content/content-generator'
+import { selectResumableContentJobs, ORPHAN_RECLAIM_MS } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
 
+// One 15-minute threshold used to cover every table, which meant a page whose
+// worker died sat unworkable for up to 15 minutes — and since the UI warns at 4
+// minutes, the operator was the only thing that could act in the 11-minute gap.
+// Now that every model call carries a hard abort, each pipeline has a knowable
+// ceiling for a single in-flight attempt, so each table gets its own threshold
+// derived from that ceiling rather than one worst-case number for all of them.
 const STUCK_THRESHOLD_MS = 15 * 60 * 1000
+
+// Page generation: bounded by ORPHAN_RECLAIM_MS (per-call cap x the 2-rung JSON
+// retry, plus slack). Past it the worker is provably gone. The chained runner
+// also reclaims its own orphans now, so this is the backstop for a job whose
+// chain died entirely rather than the primary recovery path.
+const PAGE_STUCK_THRESHOLD_MS = ORPHAN_RECLAIM_MS
+
+// Per-item drafting (library articles, article imports): a smaller unit of work
+// than a page body (measured output p50 3,468 tokens vs 8,424), but the runner
+// walks several items per invocation, so allow a full function's worth.
+const DRAFT_STUCK_THRESHOLD_MS = 10 * 60 * 1000
 
 export async function GET(req: Request) {
   const cronSecret = process.env.CRON_SECRET
@@ -21,6 +39,8 @@ export async function GET(req: Request) {
 
   const supabase = createServerClient()
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString()
+  const pageCutoff = new Date(Date.now() - PAGE_STUCK_THRESHOLD_MS).toISOString()
+  const draftCutoff = new Date(Date.now() - DRAFT_STUCK_THRESHOLD_MS).toISOString()
 
   // research_results uses `created_at` (no updated_at column); we treat a
   // row stuck in 'running' for >15 min as orphaned. generated_pages sweeps on
@@ -51,12 +71,12 @@ export async function GET(req: Request) {
           .select('id'),
         supabase
           .from('generated_pages')
-          .update({ generation_status: 'error', generation_error: 'Generation timed out (swept by cron after >15 min running)' })
+          .update({ generation_status: 'error', generation_error: '[timeout] Generation worker stopped mid-run (swept by cron)' })
           .eq('generation_status', 'running')
           // Primary key is generation_started_at (stamped on claim). Also catch
           // rows with a NULL start (never stamped) that are old by created_at —
           // `.lt` alone never matches NULL, so those would otherwise orphan.
-          .or(`generation_started_at.lt.${cutoff},and(generation_started_at.is.null,created_at.lt.${cutoff})`)
+          .or(`generation_started_at.lt.${pageCutoff},and(generation_started_at.is.null,created_at.lt.${pageCutoff})`)
           .select('id'),
         supabase
           .from('resource_ideas')
@@ -118,9 +138,9 @@ export async function GET(req: Request) {
   // auto-resume below re-drafts them; a still-live idea is re-claimed idempotently.
   const { data: libSelections } = await supabase
     .from('content_job_library_selections')
-    .update({ status: 'error', error: 'Draft timed out (swept by cron)', updated_at: new Date().toISOString() })
+    .update({ status: 'error', error: '[timeout] Draft worker stopped mid-run (swept by cron)', updated_at: new Date().toISOString() })
     .eq('status', 'drafting')
-    .lt('updated_at', cutoff)
+    .lt('updated_at', draftCutoff)
     .select('id')
   const librarySelectionsSwept = libSelections?.length ?? 0
   if (librarySelectionsSwept) {
@@ -132,9 +152,9 @@ export async function GET(req: Request) {
   // below re-runs them; importArticleAsIs re-claims idempotently.
   const { data: articleImports } = await supabase
     .from('content_job_article_imports')
-    .update({ status: 'error', error: 'Import timed out (swept by cron)', updated_at: new Date().toISOString() })
+    .update({ status: 'error', error: '[timeout] Import worker stopped mid-run (swept by cron)', updated_at: new Date().toISOString() })
     .eq('status', 'drafting')
-    .lt('updated_at', cutoff)
+    .lt('updated_at', draftCutoff)
     .select('id')
   const articleImportsSwept = articleImports?.length ?? 0
   if (articleImportsSwept) {
@@ -217,24 +237,17 @@ export async function GET(req: Request) {
     .select('content_job_id, status')
     .in('status', ['pending', 'drafting', 'error'])
 
-  const libCounts = new Map<string, { open: number; drafting: number }>()
-  for (const s of liveSelections ?? []) {
-    const c = libCounts.get(s.content_job_id) ?? { open: 0, drafting: 0 }
-    if (s.status === 'drafting') c.drafting += 1
-    else c.open += 1 // pending | error
-    libCounts.set(s.content_job_id, c)
-  }
-  const resumableLibraryJobs = [...libCounts.entries()]
-    .filter(([, c]) => c.open > 0 && c.drafting === 0)
-    .map(([jobId]) => jobId)
-    .slice(0, 5)
+  // Route each job to /retry when it has failed items (the only path that can
+  // reset them) and /run when it only has fresh work. See resume-targets.ts —
+  // always calling /run made this whole block a silent no-op for all-error jobs.
+  const libraryPlan = resumePlan(liveSelections ?? [])
 
   let librarySelectionsResumed = 0
-  if (resumeBase && resumableLibraryJobs.length) {
+  if (resumeBase && libraryPlan.length) {
     const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
-    for (const jobId of resumableLibraryJobs) {
+    for (const { jobId, endpoint } of libraryPlan) {
       try {
-        const res = await fetch(`${url}/api/content-jobs/${jobId}/library/run`, {
+        const res = await fetch(`${url}/api/content-jobs/${jobId}/library/${endpoint}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${cronSecret}` },
         })
@@ -256,24 +269,14 @@ export async function GET(req: Request) {
     .select('content_job_id, status')
     .in('status', ['pending', 'drafting', 'error'])
 
-  const importCounts = new Map<string, { open: number; drafting: number }>()
-  for (const s of liveImports ?? []) {
-    const c = importCounts.get(s.content_job_id) ?? { open: 0, drafting: 0 }
-    if (s.status === 'drafting') c.drafting += 1
-    else c.open += 1
-    importCounts.set(s.content_job_id, c)
-  }
-  const resumableImportJobs = [...importCounts.entries()]
-    .filter(([, c]) => c.open > 0 && c.drafting === 0)
-    .map(([jobId]) => jobId)
-    .slice(0, 5)
+  const importPlan = resumePlan(liveImports ?? [])
 
   let articleImportsResumed = 0
-  if (resumeBase && resumableImportJobs.length) {
+  if (resumeBase && importPlan.length) {
     const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
-    for (const jobId of resumableImportJobs) {
+    for (const { jobId, endpoint } of importPlan) {
       try {
-        const res = await fetch(`${url}/api/content-jobs/${jobId}/imports/run`, {
+        const res = await fetch(`${url}/api/content-jobs/${jobId}/imports/${endpoint}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${cronSecret}` },
         })
