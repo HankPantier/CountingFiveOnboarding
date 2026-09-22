@@ -14,9 +14,9 @@ describe('overlapSafeReplaceAll', () => {
   it('is idempotent for a self-referential (wrapping) replacement', () => {
     // The bug: replacement contains the find term, so a naive replace-all
     // compounds every pass. Applying 1x, 2x, and 4x must all yield ONE wrap.
-    let once = overlapSafeReplaceAll(SENTENCE, FIND, REPLACE)
-    let twice = overlapSafeReplaceAll(once, FIND, REPLACE)
-    let quad = overlapSafeReplaceAll(
+    const once = overlapSafeReplaceAll(SENTENCE, FIND, REPLACE)
+    const twice = overlapSafeReplaceAll(once, FIND, REPLACE)
+    const quad = overlapSafeReplaceAll(
       overlapSafeReplaceAll(twice, FIND, REPLACE),
       FIND,
       REPLACE
