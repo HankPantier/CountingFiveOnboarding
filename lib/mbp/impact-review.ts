@@ -66,27 +66,32 @@ export async function reviewContentForMbpImpact(input: ImpactReviewInput): Promi
   const schema = (session.schema_data as Record<string, unknown>) ?? {}
   const mbpJson = serializeSchemaFull(session.schema_data ?? {})
 
-  const result = await generateMbpJson<ReviewResult>(
-    `You maintain a CPA firm's Master Business Profile (MBP) — the structured source of truth for their website.
+  // Instructions + MBP are the cached prefix: reviews fire in bursts (every
+  // draft in a blog batch, every page edit) against the same MBP, so each review
+  // after the first re-reads ~20k tokens at 0.1x. 1h TTL because batch drafts
+  // land 5-60 min apart. Only the changed content varies per call.
+  const cachePrefix = `You maintain a CPA firm's Master Business Profile (MBP) — the structured source of truth for their website.
 
 CURRENT MBP (JSON):
 ${mbpJson}
 
-A piece of content was just ${origin.replace('_', ' ')} (${sourceRef}):
-"""
-${changedText.slice(0, CHANGED_TEXT_CAP)}
-"""
-
-Decide whether this content reveals anything that should update the MBP to stay consistent — e.g. a new service, a new office/location, a shift in brand voice or positioning, a new differentiator.
+You will be shown a piece of content that was just created or edited. Decide whether it reveals anything that should update the MBP to stay consistent — e.g. a new service, a new office/location, a shift in brand voice or positioning, a new differentiator.
 - For prose/scalar fields (taglines, positioning statements, differentiators, brand tone fields, summaries): use op "set" with proposedValue as the new text.
 - For NEW entries in an array field (a new service, office/location, or niche): use op "append", fieldPath as the array name (services, locations, niches), and proposedValue as a JSON string for the new array item matching the shape of the existing entries in that array (look at the MBP above for the exact keys). Do NOT propose replacing a whole array, and do NOT append a duplicate of something already present.
 Only propose changes grounded in the content; if nothing warrants a change, return hasImpact false with an empty changes array.
 
 Return ONLY JSON:
-{ "hasImpact": boolean, "summary": "one-line summary", "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "..." } ] }`,
+{ "hasImpact": boolean, "summary": "one-line summary", "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "..." } ] }`
+
+  const result = await generateMbpJson<ReviewResult>(
+    `The content was just ${origin.replace('_', ' ')} (${sourceRef}):
+"""
+${changedText.slice(0, CHANGED_TEXT_CAP)}
+"""`,
     parseReview,
     undefined,
-    { task: 'onboarding', stage: 'mbp', sessionId }
+    { task: 'onboarding', stage: 'mbp', sessionId },
+    { cachePrefix, cacheTtl: '1h' },
   )
 
   if (!result || !result.hasImpact || result.changes.length === 0) return

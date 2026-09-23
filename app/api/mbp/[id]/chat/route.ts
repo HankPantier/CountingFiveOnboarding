@@ -5,6 +5,8 @@ import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { buildMbpEditPrompt } from '@/lib/mbp/edit-prompt'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { extractCacheUsage } from '@/lib/content/cache-control'
+import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { z } from 'zod'
@@ -72,7 +74,8 @@ export async function POST(
   // anything reaches the MBP (mirrors the content-assistant suggest flow).
   const currentSchema = (session.schema_data as Record<string, unknown>) ?? {}
   const result = streamText({
-      model: anthropic('claude-sonnet-4-6'),
+      model: anthropic(INTERACTIVE_CHAT_MODEL),
+      providerOptions: chatProviderOptions('low'),
       system: buildMbpEditPrompt(session),
       messages: await convertToModelMessages(trimMessages(messages)),
       tools: {
@@ -115,9 +118,10 @@ export async function POST(
             sessionId: id,
             createdBy: auth.user.id,
             stage: 'mbp_edit',
-            model: 'claude-sonnet-4-6',
+            model: INTERACTIVE_CHAT_MODEL,
             inputTokens: totalUsage.inputTokens,
             outputTokens: totalUsage.outputTokens,
+            ...extractCacheUsage(totalUsage),
           })
           if (text) {
             await supabase.from('mbp_messages').insert({ session_id: id, role: 'assistant', content: text })

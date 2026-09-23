@@ -3,8 +3,9 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock } from './brand-voice'
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
+import { FAST_MODEL } from './generation-tuning'
 
-const BRAND_FIT_MODEL = 'claude-haiku-4-5-20251001'
+const BRAND_FIT_MODEL = FAST_MODEL
 
 export type BrandAmendment = {
   summary: string

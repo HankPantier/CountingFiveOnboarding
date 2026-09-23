@@ -10,6 +10,8 @@ import { isSiteOwner } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { CACHE_EPHEMERAL, extractCacheUsage } from '@/lib/content/cache-control'
+import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { loadNoGoPhrases, buildNoGoPromptBlock, findNoGoHits } from '@/lib/content/no-go-phrases'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
@@ -140,16 +142,11 @@ export async function POST(
   // This admin tool does NOT take the client `processing` lock (that belongs to
   // the onboarding chat); sharing it let a client conversation block admin
   // edits. useChat serializes per user.
-  const system = `You are a website content editor for ${firmName}, a CPA firm. You edit a single markdown file on the site.
+  const systemStatic = `You are a website content editor for ${firmName}, a CPA firm. You edit a single markdown file on the site.
 
 ${buildBrandVoiceBlock(schema)}
 
 ${buildFirmContext(schema)}${noGoBlock ? `\n\n${noGoBlock}` : ''}
-
-THE FILE BEING EDITED (${path}):
-"""
-${workingContent}
-"""
 
 HOW YOU EDIT
 Never introduce em-dashes or en-dashes (— –) in any copy you write; use commas, periods, or colons instead. They read as AI-written.
@@ -158,7 +155,7 @@ BATCH your work: a request usually implies MANY edits (rewrite several sentences
 - apply_edits({ edits: [{ find, replace, all? }] }) — apply MANY exact find/replace rewrites in ONE commit. This is the DEFAULT for any multi-part edit. Each \`find\` is an EXACT snippet copied verbatim from the file (matching whitespace, punctuation, casing); it must match exactly ONE place unless all=true. All finds are matched against the SAME current file, so don't target text that another edit in the same batch rewrites. The result lists which edits applied and which missed (re-copy an exact snippet for any miss).
 - apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Use apply_edit for LAYOUT changes to a \`<!-- block: ... -->\` annotation. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
 - remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
-- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file above, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)
+- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)
 - update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.
 
 LAYOUT CHANGES (via apply_edit on the annotation comment)
@@ -189,10 +186,21 @@ Watch for anything durable the admin states that should apply to ALL of this fir
 1. Facts about the firm or team not already in the profile: a new certification, a new service, a corrected title, a real client win, a shift in positioning.
 2. Brand voice / writing rules and content constraints: a required or forbidden tone, words or formatting to avoid (e.g. "never use em-dashes or emojis"). Map avoid-rules to brand.toneToAvoid with op "append" (one concise entry per rule, e.g. "em-dashes", "emojis"); map tone shifts to the relevant brand.* field; map facts to their field.
 When such a durable rule or fact surfaces (and isn't already in the profile), FIRST honor it in the file edit, then ASK the admin whether to add it to the firm's MBP so all future content follows it — e.g. "Want me to add 'no em-dashes, no emojis' to their MBP so every future piece avoids them?". Only after the admin confirms, call the suggest_mbp_update tool. Propose only what the admin stated or confirmed — never guesses. suggest_mbp_update files a PENDING suggestion for admin review; it does NOT change the profile, so never say the MBP was updated — say you've flagged it for review.`
+  // The page is its own system block AFTER the cached one: it changes with every
+  // edit, so keeping it out of the marked prefix lets follow-up turns re-read
+  // tools + instructions + firm context from cache.
+  const systemFile = `THE FILE BEING EDITED (${path}):
+"""
+${workingContent}
+"""`
 
   const result = streamText({
-      model: anthropic('claude-sonnet-4-6'),
-      system,
+      model: anthropic(INTERACTIVE_CHAT_MODEL),
+      providerOptions: chatProviderOptions('medium'),
+      system: [
+        { role: 'system', content: systemStatic, providerOptions: CACHE_EPHEMERAL },
+        { role: 'system', content: systemFile },
+      ],
       messages: await convertToModelMessages(trimMessages(messages)),
       // A heavy multi-part instruction (e.g. "remove every X and reword each
       // mention of Y" across body + SEO frontmatter) can exceed a small output
@@ -509,9 +517,10 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
           createdBy: user.id,
           stage: 'content_edit',
           pageUrl: path,
-          model: 'claude-sonnet-4-6',
+          model: INTERACTIVE_CHAT_MODEL,
           inputTokens: totalUsage.inputTokens,
           outputTokens: totalUsage.outputTokens,
+          ...extractCacheUsage(totalUsage),
         })
         await supabase
           .from('sessions')

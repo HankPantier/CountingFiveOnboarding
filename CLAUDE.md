@@ -132,30 +132,48 @@ Log token usage in every `onFinish` callback. Flag any exchange that exceeds the
 If any exchange exceeds 5,000 input tokens, stop and investigate before continuing. `app/api/chat/route.ts` emits a `console.error` (`[token-budget] EXCEEDED ...`) when the estimated input tokens (chars/4) cross 5k — watch server logs for it.
 
 ### Model Selection
+All model ids live in `lib/content/generation-tuning.ts` — import the constant, never hardcode an id.
 Interactive chat (`/api/chat`) stays Sonnet/Haiku — never use Sonnet for phases 1, 2, 5, or 6:
 ```typescript
-const model = [3, 4].includes(session.current_phase)
-  ? anthropic('claude-sonnet-4-6')
-  : anthropic('claude-haiku-4-5-20251001')
+const modelId = [3, 4].includes(session.current_phase) ? INTERACTIVE_CHAT_MODEL : FAST_MODEL
 ```
-Tier map for everything else:
-- **Sonnet 5** (`claude-sonnet-5`) — all async content writing: the published page-body
+Tier map (reviewed 2026-09-23 against the Fable 5.1 / Opus 5.5 / Sonnet 5 / Haiku 4.5 lineup):
+- **Sonnet 5** (`PUBLISHED_CONTENT_MODEL`) — all async content writing: the published page-body
   generator (`lib/content/content-generator.ts`) and audit→session draft
-  (`lib/session-draft/draft-from-audit.ts`, via `PUBLISHED_CONTENT_MODEL`), plus outlines,
-  sitemap proposal, MBP/draft JSON & text, SEO fields, social, and resource generation. It is
-  writing-tuned and supports adaptive thinking + `effort` (intro pricing $2/$10 through
-  2026-08-31; the PRICING map carries the standard $3/$15). Replaced Opus 4.8 here on 2026-06-30.
-- **Sonnet 4.6** (`claude-sonnet-4-6`) — interactive chats only: the client intake chat
-  (`/api/chat` phases 3/4) and the admin audit/MBP/editor chats.
-- **Haiku 4.5** — phase 1/2/5/6 intake chat and classification helpers (brand-fit, keyword,
-  reverse-link, oneoff resolve).
+  (`lib/session-draft/draft-from-audit.ts`), plus outlines, sitemap proposal, MBP/draft JSON &
+  text, SEO fields, social, and resource generation. $2/$10 (the intro price became standard on
+  2026-09-01). Replaced Opus 4.8 here on 2026-06-30.
+- **Sonnet 5** (`INTERACTIVE_CHAT_MODEL`) — every interactive chat: intake phases 3/4 and the
+  audit/MBP/content-assistant/editor/site-assistant/theme/admin-assistant chats. Replaced
+  Sonnet 4.6 on 2026-09-23. Sonnet 5 enables adaptive thinking at effort `high` by default,
+  which is too slow for chat, so every chat route MUST pass `chatProviderOptions('low'|'medium')`
+  (`medium` for the page editor and site assistant, `low` elsewhere). Thinking tokens count
+  against `maxOutputTokens` — leave headroom.
+- **Opus 5.5** (`CRITIC_MODEL`) — the draft critic only (`lib/content/draft-critic.ts`). A
+  different, stronger tier than the writer avoids self-grading bias; in an A/B on 5 live pages
+  it caught 2-4x more ungrounded claims (e.g. invented service lines) and ran faster.
+  `scripts/compare-critic-models.ts` re-runs that comparison.
+- **Haiku 4.5** (`FAST_MODEL`) — phase 1/2/5/6 intake chat and classification helpers (brand-fit,
+  keyword, reverse-link, oneoff resolve, pricing seeds, article-import links, command bar).
+  Retirement "not sooner than 2026-10-15"; when it's deprecated, swap `FAST_MODEL` in one place.
+- **Fable 5.1** — not used; nothing here needs it at 5x Sonnet's price.
 
 The async generation paths use adaptive thinking + `effort` via the shared
-`GENERATION_PROVIDER_OPTIONS` in `lib/content/generation-tuning.ts`. Two hard rules:
-- **Never** send `effort` (or that provider-options object) to a Haiku call — it errors on Haiku 4.5.
+`GENERATION_PROVIDER_OPTIONS` in `lib/content/generation-tuning.ts`. Hard rules:
+- **Never** send `effort` (or any of those provider-options objects) to a Haiku call — it errors on Haiku 4.5.
 - `budget_tokens` is deprecated — use `thinking: { type: 'adaptive' }`.
+- Never set `temperature`/`top_p`/`top_k` — Sonnet 5 and Opus 5.5 return a 400 on non-default values.
+- Opus 5.5 always thinks (thinking can't be disabled) and rejects forced tool use (`toolChoice`).
+### Prompt Caching
+All caching helpers live in `lib/content/cache-control.ts`.
+- **Chats:** `chatProviderOptions()` / `FAST_CHAT_PROVIDER_OPTIONS` turn on request-level automatic caching, so tool-loop steps and follow-up turns re-read the prompt at 0.1x. Keep anything that changes per turn (e.g. the page being edited) in a LATER system block than the stable instructions, with a `CACHE_EPHEMERAL` breakpoint on the stable block — see `app/api/edit/[id]/chat/route.ts`.
+- **Background generators:** use `buildCachedMessages(staticPrefix, dynamicSuffix, ttl)` or `generateMbpJson(..., { cachePrefix, cacheTtl })`. Every per-call value goes in the suffix; one leaked id or timestamp in the prefix defeats the cache.
+- **TTL:** use `'1h'` when calls sharing a prefix land more than 5 minutes apart (cron-driven batches, impact reviews), otherwise the default `'5m'`.
+- **Cost recording:** always pass `...extractCacheUsage(usage)` to `recordTokenUsage`, plus `cacheTtl: '1h'` for 1h breakpoints. Without them the dashboard prices cached reads at full rate.
+
 Any new model id must also be added to the `PRICING` map in `lib/content/token-pricing.ts`,
-or its spend silently records as $0 on the Token Usage dashboard.
+or its spend silently records as $0 on the Token Usage dashboard. Models whose cache reads are
+not 0.1x input (e.g. Opus 5.5 at 0.05x) set `cacheRead` on their entry.
 
 ### Processing Flag Safety
 The `processing` boolean in `sessions` prevents concurrent Claude calls. It MUST be set to `false` in both:

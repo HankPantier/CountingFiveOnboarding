@@ -3,8 +3,9 @@ import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { generateJson } from './json-generation'
 import { arr, str } from './schema-coerce'
+import { FAST_MODEL } from './generation-tuning'
 
-const KEYWORD_MODEL = 'claude-haiku-4-5-20251001'
+const KEYWORD_MODEL = FAST_MODEL
 
 type KeywordResult = {
   targetKeyword: string

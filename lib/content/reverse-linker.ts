@@ -5,11 +5,12 @@ import { splitFile, serializeFile, type PageFile } from '@/lib/editor/frontmatte
 import { checkTokenBudget, truncateToTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { titleFromSlug } from './internal-link-targets'
+import { FAST_MODEL } from './generation-tuning'
 
 // Find-passage is a narrow extraction/rewrite task (return one verbatim
 // sentence plus a minimally edited copy), not content authoring — Haiku is
 // the appropriate tier.
-const REVERSE_LINK_MODEL = 'claude-haiku-4-5-20251001'
+const REVERSE_LINK_MODEL = FAST_MODEL
 const MAX_CANDIDATES = 5
 const MAX_INSERTIONS = 3
 const READ_CONCURRENCY = 5

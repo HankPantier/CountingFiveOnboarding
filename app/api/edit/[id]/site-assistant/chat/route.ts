@@ -10,6 +10,8 @@ import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { extractCacheUsage } from '@/lib/content/cache-control'
+import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
 import { normalizeSlug } from '../../create-page/_slug'
@@ -124,10 +126,13 @@ RULES
   let navShaSeen: string | null | undefined
 
   const result = streamText({
-    model: anthropic('claude-sonnet-4-6'),
+    model: anthropic(INTERACTIVE_CHAT_MODEL),
+    providerOptions: chatProviderOptions('medium'),
     system,
     messages: await convertToModelMessages(trimMessages(messages)),
-    maxOutputTokens: 4000,
+    // Adaptive-thinking tokens count against this cap, so leave headroom above
+    // the ~4k a reply + tool call needs.
+    maxOutputTokens: 8000,
     tools: {
       // list_site_pages: records the nav.json sha it showed the model (below).
       list_site_pages: {
@@ -468,9 +473,10 @@ RULES
         sessionId,
         createdBy: user.id,
         stage: 'site_structure_edit',
-        model: 'claude-sonnet-4-6',
+        model: INTERACTIVE_CHAT_MODEL,
         inputTokens: totalUsage.inputTokens,
         outputTokens: totalUsage.outputTokens,
+        ...extractCacheUsage(totalUsage),
       })
       await supabase
         .from('sessions')

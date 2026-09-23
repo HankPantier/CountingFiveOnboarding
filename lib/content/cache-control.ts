@@ -1,5 +1,6 @@
 import type { ModelMessage, LanguageModelUsage } from 'ai'
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
+import type { CacheTtl } from './token-pricing'
 
 // Shared Anthropic prompt-cache wiring for the async batch generators. Prompt
 // caching pays off when a large, identical prefix is reused across many calls in
@@ -15,18 +16,35 @@ export const CACHE_EPHEMERAL = {
   anthropic: { cacheControl: { type: 'ephemeral' } } satisfies AnthropicProviderOptions,
 }
 
+// Same breakpoint with a 1-hour TTL. Writes cost 2x input (vs 1.25x) but the
+// entry survives gaps between cron ticks, so it pays off from the second read.
+// Use for prefixes reused across a batch that runs slower than one call / 5 min.
+export const CACHE_EPHEMERAL_1H = {
+  anthropic: { cacheControl: { type: 'ephemeral', ttl: '1h' } } satisfies AnthropicProviderOptions,
+}
+
+// Request-level automatic caching for multi-turn / multi-step chats: Anthropic
+// places the breakpoint on the last cacheable block and moves it forward as the
+// conversation grows, so every tool-loop step and every follow-up turn within 5
+// minutes re-reads tools + system + history at 0.1x. Safe on Haiku (no effort).
+export const AUTO_CACHE_OPTIONS = { cacheControl: { type: 'ephemeral' } } satisfies AnthropicProviderOptions
+
 // Build a single user message split into a cacheable static prefix + a dynamic
 // suffix. The model still sees one continuous prompt. Callers MUST put only
 // job-constant text in `staticPrefix` (brand voice, firm context, format /
 // block-annotation rules, anti-slop rules) and everything per-item (the page /
 // post spec, keywords, retry notes) in `dynamicSuffix` — any per-call value that
 // leaks into the prefix makes it differ between calls and defeats the cache.
-export function buildCachedMessages(staticPrefix: string, dynamicSuffix: string): ModelMessage[] {
+export function buildCachedMessages(
+  staticPrefix: string,
+  dynamicSuffix: string,
+  ttl: CacheTtl = '5m',
+): ModelMessage[] {
   return [
     {
       role: 'user',
       content: [
-        { type: 'text', text: staticPrefix, providerOptions: CACHE_EPHEMERAL },
+        { type: 'text', text: staticPrefix, providerOptions: ttl === '1h' ? CACHE_EPHEMERAL_1H : CACHE_EPHEMERAL },
         { type: 'text', text: dynamicSuffix },
       ],
     },

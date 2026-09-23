@@ -13,8 +13,9 @@ import { generateJson } from './json-generation'
 import { normalizePricingPlansConfig } from './pricing-plans-config'
 import { DEFAULT_PLANS_CONFIG, type PricingPlansConfig } from '@/types/pricing-plans'
 import type { SessionSchema } from '@/types/session-schema'
+import { FAST_MODEL } from './generation-tuning'
 
-const SEED_MODEL = 'claude-haiku-4-5-20251001'
+const SEED_MODEL = FAST_MODEL
 
 function buildServicesBlock(schema: SessionSchema): string {
   const services = (schema.services ?? [])

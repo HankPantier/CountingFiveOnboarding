@@ -6,10 +6,11 @@ import { getCommandIndex } from '@/lib/admin/command-index'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { readJsonBody } from '@/app/api/_json'
+import { FAST_MODEL } from '@/lib/content/generation-tuning'
 
 // Lightweight nav classifier — never send `effort`/adaptive thinking to Haiku
 // (it errors), and this is a cheap intent lookup, so plain generateText is right.
-const COMMAND_MODEL = 'claude-haiku-4-5-20251001'
+const COMMAND_MODEL = FAST_MODEL
 // The box is a short nav command — cap what reaches the prompt.
 const MAX_QUERY_CHARS = 500
 const MAX_PER_HOUR = 120

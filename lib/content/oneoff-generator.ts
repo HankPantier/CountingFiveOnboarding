@@ -13,8 +13,9 @@ import { generateJson } from './json-generation'
 import { activeTeam } from './active-team'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
+import { FAST_MODEL } from './generation-tuning'
 
-const RESOLVE_MODEL = 'claude-haiku-4-5-20251001'
+const RESOLVE_MODEL = FAST_MODEL
 const ONEOFF_MODEL = 'claude-sonnet-5'
 
 export type OneOffContext = { pageUrl?: string; teamMemberName?: string }

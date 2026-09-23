@@ -3,7 +3,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { truncateToTokenBudget } from './truncate-to-token-budget'
-import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
+import { CRITIC_MODEL, GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
 import { parseCritic, criticFailsThreshold, type CriticReview, type ParsedCritic } from './critic-review'
 import type { SessionSchema } from '@/types/session-schema'
 import type { Json } from '@/types/database'
@@ -27,7 +27,10 @@ export interface DraftCriticInput {
 // scored_at stamped). It does not touch the DB or the content — persistence and
 // any auto-remediation are the caller's job (see reviewAndMaybeRegen in
 // content-generator). Fail-soft: any error (generation, parse) resolves to null.
-export async function scoreDraft(input: DraftCriticInput): Promise<CriticReview | null> {
+export async function scoreDraft(
+  input: DraftCriticInput,
+  model: string = CRITIC_MODEL,
+): Promise<CriticReview | null> {
   const body = input.contentMarkdown?.trim()
   if (!body) return null
 
@@ -84,14 +87,14 @@ Return ONLY JSON:
     parseCritic,
     8000,
     { task: 'content', stage: 'critic', sessionId: input.sessionId, contentJobId: input.contentJobId, pageUrl: input.pageUrl },
-    { model: PUBLISHED_CONTENT_MODEL, providerOptions: GENERATION_PROVIDER_OPTIONS },
+    { model, providerOptions: GENERATION_PROVIDER_OPTIONS },
   )
 
   if (!parsed) return null
 
   return {
     ...parsed,
-    critic_model: PUBLISHED_CONTENT_MODEL,
+    critic_model: model,
     scored_at: new Date().toISOString(),
   }
 }

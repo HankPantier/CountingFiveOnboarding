@@ -5,6 +5,8 @@ import { requireAuditAccess } from '@/lib/auth/access'
 import { buildAuditEditPrompt } from '@/lib/audit/edit-prompt'
 import { applyAuditEdit } from '@/lib/audit/apply-edit'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { extractCacheUsage } from '@/lib/content/cache-control'
+import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import type { AuditResult } from '@/types/audit-result'
@@ -70,7 +72,8 @@ export async function POST(
   }
 
   const result = streamText({
-    model: anthropic('claude-sonnet-4-6'),
+    model: anthropic(INTERACTIVE_CHAT_MODEL),
+    providerOptions: chatProviderOptions('low'),
     system: buildAuditEditPrompt(run.result as unknown as AuditResult),
     messages: await convertToModelMessages(trimMessages(messages)),
     tools: {
@@ -93,9 +96,10 @@ export async function POST(
           sessionId: run.session_id,
           createdBy: auth.user.id,
           stage: 'audit_edit',
-          model: 'claude-sonnet-4-6',
+          model: INTERACTIVE_CHAT_MODEL,
           inputTokens: totalUsage.inputTokens,
           outputTokens: totalUsage.outputTokens,
+          ...extractCacheUsage(totalUsage),
         })
         if (text) {
           await supabase.from('audit_messages').insert({ audit_run_id: id, role: 'assistant', content: text })

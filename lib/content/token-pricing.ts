@@ -50,23 +50,27 @@ export type TokenContext = {
 // are the published Sonnet/Haiku tier rates and may drift over time.
 // A model id missing from this map silently prices at $0, so every model used
 // anywhere in the app must have an entry here.
-const PRICING: Record<string, { input: number; output: number }> = {
+const PRICING: Record<string, { input: number; output: number; cacheRead?: number }> = {
   // Retired writing tier (kept so historical token_usage rows still price).
   'claude-opus-4-8': { input: 5, output: 25 },
-  // Sonnet 5 standard rate. Introductory pricing of $2/$10 applies through
-  // 2026-08-31 — kept at standard $3/$15 so spend never silently under-records
-  // when the intro period ends (slight over-estimate during the intro window).
-  'claude-sonnet-5': { input: 3, output: 15 },
+  // Opus 5.5 bills cache hits at 0.05x input rather than the standard 0.1x.
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.05 },
+  // $2/$10 launched as intro pricing and became the standard rate on 2026-09-01
+  // (the scheduled rise to $3/$15 was cancelled).
+  'claude-sonnet-5': { input: 2, output: 10 },
+  // Legacy interactive-chat tier (kept so historical token_usage rows still price).
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },
 }
 
 // Anthropic prompt-cache multipliers on the input rate: writing (creating) a
-// cache entry costs 1.25x, reading one costs 0.10x. `inputTokens` is the TOTAL
+// cache entry costs 1.25x (2x with a 1h TTL), reading one costs 0.10x (unless the model's PRICING
+// entry overrides cacheRead). `inputTokens` is the TOTAL
 // input the AI SDK reports (uncached + read + write), so subtract the cache
 // portions before pricing the uncached remainder. Both cache args default 0, so
 // existing 3-arg callers price exactly as before.
-const CACHE_WRITE_MULTIPLIER = 1.25
+export type CacheTtl = '5m' | '1h'
+const CACHE_WRITE_MULTIPLIER: Record<CacheTtl, number> = { '5m': 1.25, '1h': 2 }
 const CACHE_READ_MULTIPLIER = 0.1
 
 export function estimateCostUsd(
@@ -74,7 +78,8 @@ export function estimateCostUsd(
   inputTokens: number,
   outputTokens: number,
   cacheReadTokens = 0,
-  cacheCreationTokens = 0
+  cacheCreationTokens = 0,
+  cacheTtl: CacheTtl = '5m',
 ): number {
   const rate = PRICING[model]
   if (!rate) {
@@ -82,12 +87,12 @@ export function estimateCostUsd(
     // the Token Usage dashboard. Surface it so a newly-added model id can't hide.
     console.error(`[token-pricing] unknown model "${model}" — recording $0; add it to PRICING`)
   }
-  const { input, output } = rate ?? { input: 0, output: 0 }
+  const { input, output, cacheRead = CACHE_READ_MULTIPLIER } = rate ?? { input: 0, output: 0 }
   const uncachedInput = Math.max(0, inputTokens - cacheReadTokens - cacheCreationTokens)
   return (
     (uncachedInput / 1_000_000) * input +
-    (cacheCreationTokens / 1_000_000) * input * CACHE_WRITE_MULTIPLIER +
-    (cacheReadTokens / 1_000_000) * input * CACHE_READ_MULTIPLIER +
+    (cacheCreationTokens / 1_000_000) * input * CACHE_WRITE_MULTIPLIER[cacheTtl] +
+    (cacheReadTokens / 1_000_000) * input * cacheRead +
     (outputTokens / 1_000_000) * output
   )
 }

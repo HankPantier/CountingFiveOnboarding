@@ -2,6 +2,8 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { recordTokenUsage, type TokenContext } from '@/lib/content/token-usage'
 import { extractJson } from '@/lib/content/extract-json'
+import { buildCachedMessages, extractCacheUsage } from '@/lib/content/cache-control'
+import type { CacheTtl } from '@/lib/content/token-pricing'
 
 const MBP_JSON_MODEL = 'claude-sonnet-5'
 
@@ -40,6 +42,10 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 // result is retried, and the last non-null result is returned as a fallback if
 // no attempt satisfies `accept`. This is how the audit niche passes stop
 // silently dropping their content on a single transient hiccup.
+//
+// `opts.cachePrefix` is sent BEFORE `prompt` behind a prompt-cache breakpoint.
+// Put only text that repeats across calls in it (instructions + the MBP), and the
+// per-call part in `prompt` — any per-call value in the prefix defeats the cache.
 export async function generateMbpJson<T>(
   prompt: string,
   validate: (parsed: unknown) => T | null,
@@ -51,6 +57,8 @@ export async function generateMbpJson<T>(
     attempts?: number
     accept?: (result: T) => boolean
     timeoutMs?: number
+    cachePrefix?: string
+    cacheTtl?: CacheTtl
   }
 ): Promise<T | null> {
   const model = opts?.model ?? MBP_JSON_MODEL
@@ -59,7 +67,9 @@ export async function generateMbpJson<T>(
   let fallback: T | null = null
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    const result = await generateOnce<T>(model, prompt, validate, maxOutputTokens, ctx, opts?.providerOptions, timeoutMs)
+    const result = await generateOnce<T>(
+      model, prompt, validate, maxOutputTokens, ctx, opts?.providerOptions, timeoutMs, opts?.cachePrefix, opts?.cacheTtl,
+    )
     if (result !== null) {
       if (!opts?.accept || opts.accept(result)) return result
       // Validated but not complete enough — keep as fallback and try again.
@@ -80,6 +90,8 @@ async function generateOnce<T>(
   ctx: TokenContext | undefined,
   providerOptions: Parameters<typeof generateText>[0]['providerOptions'] | undefined,
   timeoutMs: number,
+  cachePrefix: string | undefined,
+  cacheTtl: CacheTtl | undefined,
 ): Promise<T | null> {
   const startedAt = Date.now()
   // One extra generation when the output isn't parseable JSON (prose wrapper,
@@ -92,7 +104,9 @@ async function generateOnce<T>(
       const res = await generateText({
         model: anthropic(model),
         system: 'You are a precise assistant for a CPA-firm marketing system. Return ONLY valid JSON — no prose, no markdown code fences.',
-        prompt,
+        ...(cachePrefix
+          ? { messages: buildCachedMessages(cachePrefix, prompt, cacheTtl) }
+          : { prompt }),
         maxOutputTokens,
         abortSignal: AbortSignal.timeout(remaining),
         ...(providerOptions ? { providerOptions } : {}),
@@ -104,6 +118,8 @@ async function generateOnce<T>(
           model,
           inputTokens: res.usage?.inputTokens,
           outputTokens: res.usage?.outputTokens,
+          ...extractCacheUsage(res.usage),
+          ...(cachePrefix ? { cacheTtl } : {}),
         })
       }
     } catch (err) {

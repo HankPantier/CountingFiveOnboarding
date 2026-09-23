@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth/access'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { extractCacheUsage } from '@/lib/content/cache-control'
+import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { buildAssistantTools } from '@/lib/admin/assistant-tools'
 import { buildAssistantPrompt } from '@/lib/admin/assistant-prompt'
@@ -38,7 +40,8 @@ export async function POST(req: Request) {
   const messages = body.messages as UIMessage[]
 
   const result = streamText({
-    model: anthropic('claude-sonnet-4-6'),
+    model: anthropic(INTERACTIVE_CHAT_MODEL),
+    providerOptions: chatProviderOptions('low'),
     system: buildAssistantPrompt(user),
     messages: await convertToModelMessages(trimMessages(messages)),
     tools: await buildAssistantTools(user),
@@ -49,9 +52,10 @@ export async function POST(req: Request) {
           task: 'onboarding',
           createdBy: user.id,
           stage: 'oneoff',
-          model: 'claude-sonnet-4-6',
+          model: INTERACTIVE_CHAT_MODEL,
           inputTokens: totalUsage.inputTokens,
           outputTokens: totalUsage.outputTokens,
+          ...extractCacheUsage(totalUsage),
         })
       } catch (err) {
         console.error('[admin-assistant] onFinish failed:', err)

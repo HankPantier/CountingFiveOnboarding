@@ -1,4 +1,5 @@
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
+import { AUTO_CACHE_OPTIONS } from './cache-control'
 
 // Model + sampling tuning shared by the async (non-interactive) generation
 // pipeline. Kept here so the published-content model and the thinking/effort
@@ -9,6 +10,39 @@ import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
 // (2026-06-30): Sonnet 5 is purpose-tuned for writing and far cheaper. It still
 // supports adaptive thinking + effort, so GENERATION_PROVIDER_OPTIONS applies.
 export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5'
+
+// The draft critic grades pages the Sonnet 5 writer produced. A different,
+// stronger tier avoids self-grading bias, and its verdict gates the one
+// auto-regeneration and the unsupported-claims (hallucination) flags. Input is
+// capped (~6k-token page) and output is small JSON, so the premium is cents/page.
+export const CRITIC_MODEL = 'claude-opus-5-5'
+
+// Interactive (streaming, operator-facing) chats. Sonnet 5 turns adaptive
+// thinking on with effort 'high' by default, which is too slow for chat — every
+// chat route must pass chatProviderOptions() to pick its effort explicitly.
+export const INTERACTIVE_CHAT_MODEL = 'claude-sonnet-5'
+
+// Fast/cheap tier for classification helpers and the lightweight intake phases.
+// One constant so a future Haiku retirement is a one-line swap. NEVER pass
+// effort/thinking provider options with this model — `effort` errors on Haiku 4.5.
+export const FAST_MODEL = 'claude-haiku-4-5-20251001'
+
+// Every chat also turns on automatic prompt caching (AUTO_CACHE_OPTIONS): tool
+// loops resend tools + system + history on each step, which is most of chat spend.
+export function chatProviderOptions(effort: 'low' | 'medium') {
+  return {
+    anthropic: {
+      thinking: { type: 'adaptive', display: 'omitted' },
+      effort,
+      ...AUTO_CACHE_OPTIONS,
+    } satisfies AnthropicProviderOptions,
+  }
+}
+
+// Haiku chat branch: caching only — never effort/thinking (errors on Haiku 4.5).
+export const FAST_CHAT_PROVIDER_OPTIONS = {
+  anthropic: { ...AUTO_CACHE_OPTIONS } satisfies AnthropicProviderOptions,
+}
 
 // Adaptive thinking + high effort raises quality on reasoning-heavy generation.
 // `display: 'omitted'` keeps the reasoning out of the response (these callers

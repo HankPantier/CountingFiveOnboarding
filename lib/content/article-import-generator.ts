@@ -17,11 +17,12 @@ import { updatedNavJson, updatedLlmsTxt, updatedLlmsFullTxt } from './resource-d
 import { activeTeam } from './active-team'
 import type { AuditResult, CrawledPage } from '@/types/audit-result'
 import type { SessionSchema } from '@/types/session-schema'
+import { FAST_MODEL } from './generation-tuning'
 
 // Find-passage-style link insertion is a narrow extraction/rewrite task, not
 // authoring — Haiku tier (and NEVER the effort/provider-options object, which
 // errors on Haiku 4.5).
-const LINK_MODEL = 'claude-haiku-4-5-20251001'
+const LINK_MODEL = FAST_MODEL
 const MAX_FORWARD_LINKS = 4
 const BODY_PROMPT_TOKENS = 6000
 const EXT_BY_MIME: Record<string, string> = {

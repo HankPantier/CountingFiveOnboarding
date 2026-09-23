@@ -11,6 +11,8 @@ import { readJsonBody } from '@/app/api/_json'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { SessionSchema } from '@/types/session-schema'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { extractCacheUsage } from '@/lib/content/cache-control'
+import { INTERACTIVE_CHAT_MODEL, FAST_MODEL, FAST_CHAT_PROVIDER_OPTIONS, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { asJson } from '@/lib/supabase/json-typed'
@@ -150,9 +152,10 @@ export async function POST(req: Request) {
     const modelMessages = await convertToModelMessages(trimmed)
 
     const modelName = [3, 4].includes(session.current_phase) ? 'sonnet' : 'haiku'
-    const model = modelName === 'sonnet'
-      ? anthropic('claude-sonnet-4-6')
-      : anthropic('claude-haiku-4-5-20251001')
+    const modelId = modelName === 'sonnet' ? INTERACTIVE_CHAT_MODEL : FAST_MODEL
+    const model = anthropic(modelId)
+    // effort/thinking options error on Haiku — the Haiku branch gets caching only.
+    const providerOptions = modelName === 'sonnet' ? chatProviderOptions('low') : FAST_CHAT_PROVIDER_OPTIONS
 
     console.warn(
       `[model] phase=${session.current_phase} model=${modelName}`,
@@ -180,6 +183,7 @@ export async function POST(req: Request) {
 
     const result = streamText({
       model,
+      providerOptions,
       system: systemPrompt,
       messages: modelMessages,
       tools: {
@@ -247,9 +251,10 @@ export async function POST(req: Request) {
             sessionId,
             createdBy: access.user.id,
             stage: 'onboarding',
-            model: modelName === 'sonnet' ? 'claude-sonnet-4-6' : 'claude-haiku-4-5-20251001',
+            model: modelId,
             inputTokens: totalUsage.inputTokens,
             outputTokens: totalUsage.outputTokens,
+            ...extractCacheUsage(totalUsage),
           })
           if (text) {
             await supabase.from('messages').insert({

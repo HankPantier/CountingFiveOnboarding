@@ -186,7 +186,9 @@ ${args.internalTargets
     const callStartedAt = Date.now()
     const { text, usage, finishReason } = await generateText({
       model: anthropic(DRAFT_MODEL),
-      messages: buildCachedMessages(staticPrefix, dynamicSuffix),
+      // 1h TTL: batch drafts are spread across 5-min cron ticks, and ~17% of
+      // calls landed 5-60 min after the previous one — a guaranteed 5m-cache miss.
+      messages: buildCachedMessages(staticPrefix, dynamicSuffix, '1h'),
       maxOutputTokens,
       providerOptions,
       // Ride out transient overload/rate-limit (529/429) on big 4-firm batches
@@ -214,6 +216,7 @@ ${args.internalTargets
       outputTokens: usage?.outputTokens,
       cacheReadInputTokens: cache.cacheReadInputTokens,
       cacheCreationInputTokens: cache.cacheCreationInputTokens,
+      cacheTtl: '1h',
     })
 
     try {

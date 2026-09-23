@@ -1,5 +1,5 @@
 import { createServerClient } from '@/lib/supabase/server'
-import { estimateCostUsd, type TokenTask, type TokenStage } from './token-pricing'
+import { estimateCostUsd, type CacheTtl, type TokenTask, type TokenStage } from './token-pricing'
 
 // Re-export the pure pricing/types so existing importers of this module keep
 // working. Client-reachable code (lib/tokens/aggregate.ts) imports from
@@ -23,12 +23,17 @@ export async function recordTokenUsage(args: {
   outputTokens?: number
   cacheReadInputTokens?: number
   cacheCreationInputTokens?: number
+  // TTL the caller's cache breakpoint used — the SDK reports one write total, and
+  // 1h writes bill at 2x input vs 1.25x for 5m.
+  cacheTtl?: CacheTtl
 }): Promise<void> {
   const inputTokens = args.inputTokens ?? 0
   const outputTokens = args.outputTokens ?? 0
   const cacheReadTokens = args.cacheReadInputTokens ?? 0
   const cacheCreationTokens = args.cacheCreationInputTokens ?? 0
-  const costUsd = estimateCostUsd(args.model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens)
+  const costUsd = estimateCostUsd(
+    args.model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, args.cacheTtl,
+  )
 
   try {
     const supabase = createServerClient()
