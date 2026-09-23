@@ -66,6 +66,16 @@ function isRequestError(err: unknown): err is RequestError {
   return err instanceof RequestError
 }
 
+// Branch-existence memo per (repo, branch). A branch, once created, is never
+// deleted by this app, so a short in-process TTL skips a getRef on nearly every
+// editor request without risking much if someone deletes it by hand.
+const BRANCH_EXISTS_TTL_MS = 5 * 60_000
+const branchExists = new Map<string, number>()
+
+function isRefAlreadyExists(err: unknown): boolean {
+  return isRequestError(err) && err.status === 422 && /already exists/i.test(err.message)
+}
+
 async function ensureBranch(
   slug: string,
   branch: string,
@@ -73,19 +83,35 @@ async function ensureBranch(
 ): Promise<void> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
+  const key = `${owner}/${repo}:${branch}`
+  const until = branchExists.get(key)
+  if (until !== undefined && until > Date.now()) return
   try {
     await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+    branchExists.set(key, Date.now() + BRANCH_EXISTS_TTL_MS)
     return
   } catch (err) {
     if (!isRequestError(err) || err.status !== 404) throw err
   }
   const base = await octokit.git.getRef({ owner, repo, ref: `heads/${fromBranch}` })
-  await octokit.git.createRef({
-    owner,
-    repo,
-    ref: `refs/heads/${branch}`,
-    sha: base.data.object.sha,
-  })
+  try {
+    await octokit.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branch}`,
+      sha: base.data.object.sha,
+    })
+  } catch (err) {
+    // Two requests raced to create the branch — the other one won, which is
+    // exactly the outcome we wanted.
+    if (!isRefAlreadyExists(err)) throw err
+  }
+  branchExists.set(key, Date.now() + BRANCH_EXISTS_TTL_MS)
+}
+
+// Test hook: forget memoized branch existence.
+export function __resetBranchMemoForTests(): void {
+  branchExists.clear()
 }
 
 // Ensure the long-lived draft branch exists, branching from main if missing.
@@ -127,33 +153,95 @@ async function withRefRaceRetry<T>(label: string, attempt: () => Promise<T>, att
   throw lastErr
 }
 
-// Overlay a set of files onto a branch in one atomic commit via the Git Data
-// API. base_tree is the branch's current tree, so files NOT in `entries` are
-// preserved (the client repo's app code stays put; only the deliverable's
-// content/ + public/ paths are added or updated). base64 blobs handle text and
-// binary (images) uniformly.
-export async function pushEntriesToBranch(
+// Blob sha of `path` as of a specific commit (not a moving branch), or null when
+// absent. Used to validate optimistic locks against the exact base tree a commit
+// is being built on, so the check and the ref update can't be separated by a
+// concurrent writer (the non-fast-forward retry re-validates on the new tip).
+async function blobShaAt(slug: string, path: string, commitSha: string): Promise<string | null> {
+  return currentSha(slug, path, commitSha)
+}
+
+type TreeWrite = { path: string; sha: string | null }
+
+// Build one commit on `branch` from a set of tree writes (sha: null = delete),
+// re-reading the tip on every attempt so a concurrent commit is rebased onto
+// rather than clobbered. `validate` runs against each attempt's base commit —
+// throw from it (StaleShaError etc.) to abort before anything is committed.
+async function commitTreeWrites(
   slug: string,
   branch: string,
-  entries: { path: string; content: string | Buffer }[],
+  label: string,
+  writes: TreeWrite[],
   message: string,
-  options: { authorName?: string; authorEmail?: string } = {}
-): Promise<{ commitSha: string; fileCount: number }> {
+  options: { authorName?: string; authorEmail?: string },
+  validate?: (baseCommitSha: string) => Promise<void>
+): Promise<string> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
+  return withRefRaceRetry(label, async () => {
+    const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
+    const baseCommitSha = ref.data.object.sha
+    const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
+    if (validate) await validate(baseCommitSha)
 
-  // Re-reads the tip on every attempt, so a concurrent commit is rebased onto
-  // rather than clobbered.
-  return withRefRaceRetry(`pushEntriesToBranch ${slug}#${branch}`, async () => {
-  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
-  const baseCommitSha = ref.data.object.sha
-  const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
+    // Explicit literal types for mode/type — Octokit's overloaded createTree
+    // signature defeats `Parameters<...>['tree']` index access.
+    const tree: { path: string; mode: '100644'; type: 'blob'; sha: string | null }[] = writes.map(
+      (w) => ({ path: w.path, mode: '100644', type: 'blob', sha: w.sha })
+    )
+    const newTree = await withRateLimitRetry(() =>
+      octokit.git.createTree({ owner, repo, base_tree: baseCommit.data.tree.sha, tree })
+    )
+    const commit = await withRateLimitRetry(() =>
+      octokit.git.createCommit({
+        owner,
+        repo,
+        message,
+        tree: newTree.data.sha,
+        parents: [baseCommitSha],
+        ...(options.authorName && options.authorEmail
+          ? { author: { name: options.authorName, email: options.authorEmail } }
+          : {}),
+      })
+    )
+    await withRateLimitRetry(() =>
+      octokit.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha })
+    )
+    return commit.data.sha
+  })
+}
 
-  // Explicit literal types for mode/type — Octokit's overloaded createTree
-  // signature defeats `Parameters<...>['tree']` index access. Upload blobs in
-  // bounded-concurrency batches with rate-limit retry so a large push (hundreds
-  // of assets) neither bursts past GitHub's secondary limit nor fails outright.
-  const tree: { path: string; mode: '100644'; type: 'blob'; sha: string }[] = []
+// Throw StaleShaError when `path`'s blob at `baseCommitSha` isn't `expected`
+// (null = must be absent). Includes the current text when asked, for conflict UIs.
+async function assertBlobSha(
+  slug: string,
+  path: string,
+  expected: string | null,
+  baseCommitSha: string,
+  withContent: boolean
+): Promise<void> {
+  const current = await blobShaAt(slug, path, baseCommitSha)
+  if (current === expected) return
+  let content = ''
+  if (withContent && current !== null) {
+    try {
+      content = (await readFile(slug, path, baseCommitSha)).content
+    } catch {
+      // Content is a UI nicety — the sha mismatch is what matters.
+    }
+  }
+  throw new StaleShaError(path, current ?? '', content)
+}
+
+// Upload blobs once (bounded concurrency, rate-limit aware), returning path→sha.
+// Done BEFORE any ref-race retry loop so a retry never re-uploads.
+async function createBlobs(
+  slug: string,
+  entries: { path: string; content: string | Buffer }[]
+): Promise<TreeWrite[]> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const out: TreeWrite[] = []
   for (let i = 0; i < entries.length; i += PUSH_BLOB_CONCURRENCY) {
     const batch = entries.slice(i, i + PUSH_BLOB_CONCURRENCY)
     const created = await Promise.all(
@@ -162,51 +250,63 @@ export async function pushEntriesToBranch(
         const blob = await withRateLimitRetry(() =>
           octokit.git.createBlob({ owner, repo, content: buf.toString('base64'), encoding: 'base64' })
         )
-        return { path: e.path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha }
+        return { path: e.path, sha: blob.data.sha }
       })
     )
-    tree.push(...created)
+    out.push(...created)
   }
+  return out
+}
 
-  const newTree = await withRateLimitRetry(() =>
-    octokit.git.createTree({
-      owner,
-      repo,
-      base_tree: baseCommit.data.tree.sha,
-      tree,
-    })
+export type PushEntry = {
+  path: string
+  content: string | Buffer
+  /** Optimistic lock: the blob sha the caller read this file at. `null` means
+   *  "must not exist yet". Omit for an unguarded overwrite. Validated against
+   *  the base tree of every commit attempt → StaleShaError on mismatch. */
+  expectedBlobSha?: string | null
+}
+
+// Overlay a set of files onto a branch in one atomic commit via the Git Data
+// API. base_tree is the branch's current tree, so files NOT in `entries` are
+// preserved (the client repo's app code stays put; only the deliverable's
+// content/ + public/ paths are added or updated). base64 blobs handle text and
+// binary (images) uniformly.
+export async function pushEntriesToBranch(
+  slug: string,
+  branch: string,
+  entries: PushEntry[],
+  message: string,
+  options: { authorName?: string; authorEmail?: string } = {}
+): Promise<{ commitSha: string; fileCount: number }> {
+  const writes = await createBlobs(slug, entries)
+  const guarded = entries.filter((e) => e.expectedBlobSha !== undefined)
+  const commitSha = await commitTreeWrites(
+    slug,
+    branch,
+    `pushEntriesToBranch ${slug}#${branch}`,
+    writes,
+    message,
+    options,
+    guarded.length === 0
+      ? undefined
+      : async (base) => {
+          for (const e of guarded) {
+            await assertBlobSha(slug, e.path, e.expectedBlobSha ?? null, base, true)
+          }
+        }
   )
-  const commit = await withRateLimitRetry(() =>
-    octokit.git.createCommit({
-      owner,
-      repo,
-      message,
-      tree: newTree.data.sha,
-      parents: [baseCommitSha],
-      ...(options.authorName && options.authorEmail
-        ? { author: { name: options.authorName, email: options.authorEmail } }
-        : {}),
-    })
-  )
-  await withRateLimitRetry(() =>
-    octokit.git.updateRef({
-      owner,
-      repo,
-      ref: `heads/${branch}`,
-      sha: commit.data.sha,
-    })
-  )
-  return { commitSha: commit.data.sha, fileCount: tree.length }
-  })
+  return { commitSha, fileCount: writes.length }
 }
 
 // Commit several text files to a branch in ONE atomic commit, with optional
 // per-file optimistic locking. Used by the theme editor, where a single change
 // touches 2–3 coupled files (brand.json + regenerated theme.css, or design.json
 // + theme.css) that must never land half-applied. Each file may carry an
-// expectedSha; if the current blob sha differs (a concurrent edit), we throw
-// StaleShaError before committing anything. Returns the new commit sha plus each
-// written path's new blob sha so a caller can advance its working shas.
+// expectedSha; if the blob sha in the commit's base tree differs (a concurrent
+// edit), we throw StaleShaError before committing anything — re-checked on every
+// ref-race retry. Returns the new commit sha plus each written path's new blob
+// sha so a caller can advance its working shas.
 export async function writeFiles(
   slug: string,
   files: { path: string; content: string; expectedSha?: string }[],
@@ -215,65 +315,24 @@ export async function writeFiles(
   options: { authorName?: string; authorEmail?: string } = {}
 ): Promise<{ commitSha: string; blobs: Record<string, string> }> {
   if (files.length === 0) throw new Error('writeFiles called with no files')
-  const octokit = getOctokit()
-  const { owner, repo } = resolveRepo(slug)
-
-  // Optimistic-lock pass: verify every guarded file still matches the sha the
-  // caller last saw. Do this before creating any blob so a stale file aborts
-  // the whole commit (all-or-nothing).
-  for (const f of files) {
-    if (f.expectedSha === undefined) continue
-    try {
-      const existing = await readFile(slug, f.path, branch)
-      if (existing.sha !== f.expectedSha) {
-        throw new StaleShaError(f.path, existing.sha, existing.content)
-      }
-    } catch (err) {
-      if (err instanceof FileNotFoundError) throw new StaleShaError(f.path, '', '')
-      throw err
-    }
-  }
-
-  return withRefRaceRetry(`writeFiles ${slug}#${branch}`, async () => {
-  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
-  const baseCommitSha = ref.data.object.sha
-  const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
-
-  const tree: { path: string; mode: '100644'; type: 'blob'; sha: string }[] = []
+  const writes = await createBlobs(slug, files)
   const blobs: Record<string, string> = {}
-  for (const f of files) {
-    const blob = await withRateLimitRetry(() =>
-      octokit.git.createBlob({
-        owner,
-        repo,
-        content: Buffer.from(f.content, 'utf-8').toString('base64'),
-        encoding: 'base64',
-      })
-    )
-    blobs[f.path] = blob.data.sha
-    tree.push({ path: f.path, mode: '100644', type: 'blob', sha: blob.data.sha })
-  }
-
-  const newTree = await withRateLimitRetry(() =>
-    octokit.git.createTree({ owner, repo, base_tree: baseCommit.data.tree.sha, tree })
+  for (const w of writes) if (w.sha) blobs[w.path] = w.sha
+  const commitSha = await commitTreeWrites(
+    slug,
+    branch,
+    `writeFiles ${slug}#${branch}`,
+    writes,
+    message,
+    options,
+    async (base) => {
+      for (const f of files) {
+        if (f.expectedSha === undefined) continue
+        await assertBlobSha(slug, f.path, f.expectedSha, base, true)
+      }
+    }
   )
-  const commit = await withRateLimitRetry(() =>
-    octokit.git.createCommit({
-      owner,
-      repo,
-      message,
-      tree: newTree.data.sha,
-      parents: [baseCommitSha],
-      ...(options.authorName && options.authorEmail
-        ? { author: { name: options.authorName, email: options.authorEmail } }
-        : {}),
-    })
-  )
-  await withRateLimitRetry(() =>
-    octokit.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha })
-  )
-  return { commitSha: commit.data.sha, blobs }
-  })
+  return { commitSha, blobs }
 }
 
 // Full recursive tree per (repo, branch), memoized by the branch's commit sha so
@@ -302,10 +361,12 @@ export async function listTree(
     entries = cached.entries
   } else {
     const commit = await conditionalGet(`commit-obj:${owner}/${repo}:${commitSha}`, (headers) =>
-      octokit.git.getCommit({ owner, repo, commit_sha: commitSha, headers })
+      octokit.git.getCommit({ owner, repo, commit_sha: commitSha, headers }),
+      { immutable: true }
     )
     const tree = await conditionalGet(`tree:${owner}/${repo}:${commit.tree.sha}`, (headers) =>
-      octokit.git.getTree({ owner, repo, tree_sha: commit.tree.sha, recursive: 'true', headers })
+      octokit.git.getTree({ owner, repo, tree_sha: commit.tree.sha, recursive: 'true', headers }),
+      { immutable: true }
     )
     const filtered = tree.tree.filter(
       (n): n is { path: string; sha: string; type: 'blob' | 'tree'; size?: number } =>
@@ -360,6 +421,38 @@ export async function readBinaryFile(
     }
     throw err
   }
+}
+
+// Read a blob's bytes directly by its sha (one getBlob call). Blobs are
+// content-addressed, so a caller that already has the sha from a tree listing
+// skips the getContent lookup entirely — and the result is immutable/cacheable.
+export async function readBlobBySha(slug: string, sha: string): Promise<Buffer> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  try {
+    const blob = await withRateLimitRetry(() => octokit.git.getBlob({ owner, repo, file_sha: sha }))
+    return Buffer.from(blob.data.content, blob.data.encoding as BufferEncoding)
+  } catch (err) {
+    if (isRequestError(err) && (err.status === 404 || err.status === 422)) {
+      throw new FileNotFoundError(sha)
+    }
+    throw err
+  }
+}
+
+const TEXT_BLOB_READ_CONCURRENCY = 4
+
+// Bulk-read text files by the blob shas a listTree() already returned: one
+// getBlob per file (vs getContent's path lookup), all through ONE bounded pool
+// of 4 so a large site stays under GitHub's secondary limit. Order preserved.
+export async function readTextBlobs(
+  slug: string,
+  entries: { path: string; sha: string }[]
+): Promise<{ path: string; content: string }[]> {
+  return mapWithConcurrency(entries, TEXT_BLOB_READ_CONCURRENCY, async (e) => ({
+    path: e.path,
+    content: (await readBlobBySha(slug, e.sha)).toString('utf-8'),
+  }))
 }
 
 // Current blob sha of a file, or null if it doesn't exist. Used to enforce
@@ -475,49 +568,30 @@ export async function moveFile(
   message: string,
   options: { authorName?: string; authorEmail?: string } = {}
 ): Promise<{ commitSha: string }> {
-  const octokit = getOctokit()
-  const { owner, repo } = resolveRepo(slug)
-
-  const existing = await currentSha(slug, fromPath, branch)
-  if (existing === null) throw new FileNotFoundError(fromPath)
-  if (existing !== expectedSha) throw new StaleShaError(fromPath, existing, '')
-  if ((await currentSha(slug, toPath, branch)) !== null) {
-    throw new AssetExistsError(toPath)
-  }
-
-  const ref = await octokit.git.getRef({ owner, repo, ref: `heads/${branch}` })
-  const baseCommitSha = ref.data.object.sha
-  const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseCommitSha })
-
   // sha: null marks a deletion in the tree; the new entry reuses the moved
-  // blob's sha so no blob upload is needed.
-  const tree: { path: string; mode: '100644'; type: 'blob'; sha: string | null }[] = [
-    { path: toPath, mode: '100644', type: 'blob', sha: existing },
-    { path: fromPath, mode: '100644', type: 'blob', sha: null },
-  ]
-  const newTree = await octokit.git.createTree({
-    owner,
-    repo,
-    base_tree: baseCommit.data.tree.sha,
-    tree,
-  })
-  const commit = await octokit.git.createCommit({
-    owner,
-    repo,
+  // blob's sha (== expectedSha, verified below) so no blob upload is needed.
+  // The checks run against each attempt's base commit, so a concurrent edit
+  // landing between the check and the ref update is caught on the retry.
+  const commitSha = await commitTreeWrites(
+    slug,
+    branch,
+    `moveFile ${slug}#${branch}`,
+    [
+      { path: toPath, sha: expectedSha },
+      { path: fromPath, sha: null },
+    ],
     message,
-    tree: newTree.data.sha,
-    parents: [baseCommitSha],
-    ...(options.authorName && options.authorEmail
-      ? { author: { name: options.authorName, email: options.authorEmail } }
-      : {}),
-  })
-  await octokit.git.updateRef({
-    owner,
-    repo,
-    ref: `heads/${branch}`,
-    sha: commit.data.sha,
-  })
-  return { commitSha: commit.data.sha }
+    options,
+    async (base) => {
+      const existing = await blobShaAt(slug, fromPath, base)
+      if (existing === null) throw new FileNotFoundError(fromPath)
+      if (existing !== expectedSha) throw new StaleShaError(fromPath, existing, '')
+      if ((await blobShaAt(slug, toPath, base)) !== null) {
+        throw new AssetExistsError(toPath)
+      }
+    }
+  )
+  return { commitSha }
 }
 
 export async function readFile(
@@ -543,9 +617,13 @@ export async function readFile(
   }
 }
 
+const WRITE_FILE_ATTEMPTS = 3
+
 // Write or create a file on the given branch. If expectedSha is supplied and
 // does not match the file's current sha on the branch, throws StaleShaError
-// with the remote content so the caller can present a conflict UI.
+// with the remote content so the caller can present a conflict UI. A 409 from
+// the Contents API is either a real sha mismatch (→ StaleShaError) or the branch
+// moving under a concurrent commit (→ retried with jitter).
 export async function writeFile(
   slug: string,
   path: string,
@@ -557,18 +635,20 @@ export async function writeFile(
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
 
-  if (options.expectedSha !== undefined) {
+  const readCurrentOrStale = async (): Promise<FileBlob> => {
     try {
-      const existing = await readFile(slug, path, branch)
-      if (existing.sha !== options.expectedSha) {
-        throw new StaleShaError(path, existing.sha, existing.content)
-      }
+      return await readFile(slug, path, branch)
     } catch (err) {
-      if (err instanceof FileNotFoundError) {
-        // File was deleted remotely; treat as stale.
-        throw new StaleShaError(path, '', '')
-      }
+      // File was deleted remotely; treat as stale.
+      if (err instanceof FileNotFoundError) throw new StaleShaError(path, '', '')
       throw err
+    }
+  }
+
+  if (options.expectedSha !== undefined) {
+    const existing = await readCurrentOrStale()
+    if (existing.sha !== options.expectedSha) {
+      throw new StaleShaError(path, existing.sha, existing.content)
     }
   }
 
@@ -585,10 +665,27 @@ export async function writeFile(
     payload.author = { name: options.authorName, email: options.authorEmail }
   }
 
-  const res = await octokit.repos.createOrUpdateFileContents(payload)
-  return {
-    commitSha: res.data.commit.sha ?? '',
-    blobSha: res.data.content?.sha ?? '',
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await octokit.repos.createOrUpdateFileContents(payload)
+      return {
+        commitSha: res.data.commit.sha ?? '',
+        blobSha: res.data.content?.sha ?? '',
+      }
+    } catch (err) {
+      if (!isRequestError(err) || err.status !== 409) throw err
+      if (options.expectedSha !== undefined) {
+        // Distinguish a real lost update from a ref race: re-read the file.
+        const existing = await readCurrentOrStale()
+        if (existing.sha !== options.expectedSha) {
+          throw new StaleShaError(path, existing.sha, existing.content)
+        }
+      }
+      if (attempt >= WRITE_FILE_ATTEMPTS) throw err
+      const delay = 250 * attempt + Math.floor(Math.random() * 250)
+      console.warn(`[github] writeFile ${slug}:${path}: 409 (attempt ${attempt}/${WRITE_FILE_ATTEMPTS}) — retrying in ${delay}ms`)
+      await new Promise((r) => setTimeout(r, delay))
+    }
   }
 }
 
@@ -893,10 +990,11 @@ export async function mergeDraftToMain(slug: string): Promise<MergeResult> {
   }
 }
 
-// Force-update draft branch to point at main's HEAD. Used after a successful
-// publish so the next round of edits starts from a clean base, and by the admin
-// "Reset draft to live" action to discard a draft that has drifted too far to
-// merge (e.g. main got direct commits the editor's draft never saw).
+// Force-update draft branch to point at main's HEAD, DISCARDING any draft-only
+// commits. Only for the explicit admin "Reset draft to live" action (discard a
+// draft that has drifted too far to merge). Never call this after a publish —
+// use fastForwardDraftToMain, which can't lose an edit that landed on draft
+// between the merge and the reset.
 export async function resetDraftToMain(slug: string): Promise<void> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
@@ -908,6 +1006,33 @@ export async function resetDraftToMain(slug: string): Promise<void> {
     sha: main.data.object.sha,
     force: true,
   })
+}
+
+// After a successful publish (main now contains draft), move draft up to main's
+// HEAD with a NON-forced update, so the next round of edits starts from the same
+// base. If someone committed to draft after the merge, the fast-forward is
+// rejected and draft is left as-is (it still contains everything published plus
+// the new edit). Returns whether draft moved; never throws on the ff rejection.
+export async function fastForwardDraftToMain(slug: string): Promise<boolean> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const main = await octokit.git.getRef({ owner, repo, ref: `heads/${MAIN_BRANCH}` })
+  try {
+    await octokit.git.updateRef({
+      owner,
+      repo,
+      ref: `heads/${DRAFT_BRANCH}`,
+      sha: main.data.object.sha,
+      force: false,
+    })
+    return true
+  } catch (err) {
+    if (isNonFastForward(err)) {
+      console.warn(`[github] fastForwardDraftToMain ${slug}: draft moved after publish — leaving it in place`)
+      return false
+    }
+    throw err
+  }
 }
 
 export type SyncResult =
@@ -1094,28 +1219,86 @@ export type ChangedFile = {
   message: string | null
 }
 
+// Per-commit changed-file list, keyed by commit sha. A commit is immutable, so
+// an entry never goes stale; bounded LRU so a warm instance can't grow it
+// forever. Shared by getDraftChanges and the edit-stats walkers.
+type CommitFiles = CommitFileStat['files']
+const COMMIT_FILES_CACHE_MAX = 2000
+const commitFilesCache = new Map<string, CommitFiles>()
+
+async function getCommitFiles(slug: string, sha: string): Promise<CommitFiles> {
+  const { owner, repo } = resolveRepo(slug)
+  const key = `${owner}/${repo}:${sha}`
+  const hit = commitFilesCache.get(key)
+  if (hit) {
+    commitFilesCache.delete(key)
+    commitFilesCache.set(key, hit)
+    return hit
+  }
+  const octokit = getOctokit()
+  const detail = await withRateLimitRetry(() => octokit.repos.getCommit({ owner, repo, ref: sha }))
+  const files: CommitFiles = (detail.data.files ?? []).map((f) => ({
+    path: f.filename,
+    additions: f.additions ?? 0,
+    deletions: f.deletions ?? 0,
+    status: f.status ?? 'modified',
+  }))
+  commitFilesCache.set(key, files)
+  while (commitFilesCache.size > COMMIT_FILES_CACHE_MAX) {
+    const oldest = commitFilesCache.keys().next().value
+    if (oldest === undefined) break
+    commitFilesCache.delete(oldest)
+  }
+  return files
+}
+
+// Map over items with at most `limit` in flight, preserving order.
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return out
+}
+
+const COMMIT_DETAIL_CONCURRENCY = 4
+
 // List every file the draft branch changed relative to live (main) — the
 // unpublished changes. compareCommits gives the per-file status + diff; we
 // attribute each file to the newest draft commit that touched it (who last
-// edited it, and when) by walking the ahead-commits newest-first. Bounded to
-// `ahead_by` getCommit calls. Mirrors getStatus()'s compareCommits usage.
+// edited it, and when) by walking the ahead-commits newest-first. Per-commit
+// file lists are fetched with bounded concurrency and cached by (immutable)
+// commit sha, so repeat opens cost only the compare call.
 export async function getDraftChanges(slug: string): Promise<{ files: ChangedFile[] }> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
-  const cmp = await octokit.repos.compareCommits({
-    owner,
-    repo,
-    base: MAIN_BRANCH,
-    head: DRAFT_BRANCH,
-  })
+  const cmp = await withRateLimitRetry(() =>
+    octokit.repos.compareCommits({
+      owner,
+      repo,
+      base: MAIN_BRANCH,
+      head: DRAFT_BRANCH,
+    })
+  )
 
   // compareCommits.commits are oldest→newest; walk in reverse so the first
   // commit we see touching a path is the most recent editor (first write wins).
   const commits = cmp.data.commits ?? []
+  const commitFiles = await mapWithConcurrency(commits, COMMIT_DETAIL_CONCURRENCY, (c) =>
+    getCommitFiles(slug, c.sha)
+  )
   const attribution = new Map<string, { author: { name: string; email: string }; date: string | null; message: string }>()
   for (let i = commits.length - 1; i >= 0; i--) {
     const c = commits[i]
-    const detail = await octokit.repos.getCommit({ owner, repo, ref: c.sha })
     const info = {
       author: {
         name: c.commit.author?.name ?? c.commit.committer?.name ?? '',
@@ -1124,8 +1307,8 @@ export async function getDraftChanges(slug: string): Promise<{ files: ChangedFil
       date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
       message: c.commit.message,
     }
-    for (const f of detail.data.files ?? []) {
-      if (!attribution.has(f.filename)) attribution.set(f.filename, info)
+    for (const f of commitFiles[i]) {
+      if (!attribution.has(f.path)) attribution.set(f.path, info)
     }
   }
 
@@ -1193,9 +1376,6 @@ export async function walkCommitFileStats(
         truncated = true
         return { headSha, commits, truncated }
       }
-      const detail = await withRateLimitRetry(() =>
-        octokit.repos.getCommit({ owner, repo, ref: c.sha })
-      )
       commits.push({
         sha: c.sha,
         message: c.commit.message ?? '',
@@ -1203,12 +1383,7 @@ export async function walkCommitFileStats(
         authorEmail: c.commit.author?.email ?? c.commit.committer?.email ?? '',
         date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
         parentCount: c.parents?.length ?? 0,
-        files: (detail.data.files ?? []).map((f) => ({
-          path: f.filename,
-          additions: f.additions ?? 0,
-          deletions: f.deletions ?? 0,
-          status: f.status ?? 'modified',
-        })),
+        files: await getCommitFiles(slug, c.sha),
       })
     }
     if (list.data.length < perPage) break
@@ -1216,13 +1391,24 @@ export async function walkCommitFileStats(
   return { headSha, commits, truncated }
 }
 
+// Thrown by walkNewCommitFileStats when the incremental fold can't be trusted:
+// the cached base is no longer an ancestor of draft (reset/force-push →
+// 'diverged'/'behind'), or the compare response truncated its commit list.
+// Callers fall back to a full walk.
+export class IncrementalWalkUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`Incremental edit-stats walk unavailable: ${reason}`)
+    this.name = 'IncrementalWalkUnavailableError'
+  }
+}
+
 // Incremental companion to walkCommitFileStats: return only the commits added to
 // the draft branch since `sinceSha` (the last-cached HEAD), newest-last, each
 // with its per-file additions/deletions. One compareCommits call + one getCommit
 // per new commit — typically a handful, versus re-walking the whole history.
-// Callers fold these into the cached aggregate. Throws a 404/422 RequestError if
-// `sinceSha` is no longer in history (draft was reset/force-pushed); the caller
-// falls back to a full walk in that case.
+// Callers fold these into the cached aggregate. Throws
+// IncrementalWalkUnavailableError (or a 404/422 RequestError when `sinceSha` is
+// gone entirely) when the fold would be wrong; the caller then does a full walk.
 export async function walkNewCommitFileStats(
   slug: string,
   sinceSha: string
@@ -1232,30 +1418,32 @@ export async function walkNewCommitFileStats(
   const cmp = await withRateLimitRetry(() =>
     octokit.repos.compareCommits({ owner, repo, base: sinceSha, head: DRAFT_BRANCH })
   )
+  const status = cmp.data.status
+  if (status === 'identical') return []
   // compareCommits.commits are the commits reachable from head but not base,
-  // ordered oldest→newest (base itself is excluded).
+  // ordered oldest→newest (base itself is excluded). Only a strict 'ahead'
+  // comparison means "history since sinceSha"; 'diverged' would silently fold in
+  // unrelated commits and double-count or miss the reset ones. The list is also
+  // capped server-side (250), so a partial list must not be folded.
   const newCommits = cmp.data.commits ?? []
-  const out: CommitFileStat[] = []
-  for (const c of newCommits) {
-    const detail = await withRateLimitRetry(() =>
-      octokit.repos.getCommit({ owner, repo, ref: c.sha })
+  if (status !== 'ahead') throw new IncrementalWalkUnavailableError(`compare status ${status}`)
+  if (cmp.data.total_commits > newCommits.length) {
+    throw new IncrementalWalkUnavailableError(
+      `compare returned ${newCommits.length} of ${cmp.data.total_commits} commits`
     )
-    out.push({
-      sha: c.sha,
-      message: c.commit.message ?? '',
-      authorName: c.commit.author?.name ?? c.commit.committer?.name ?? '',
-      authorEmail: c.commit.author?.email ?? c.commit.committer?.email ?? '',
-      date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
-      parentCount: c.parents?.length ?? 0,
-      files: (detail.data.files ?? []).map((f) => ({
-        path: f.filename,
-        additions: f.additions ?? 0,
-        deletions: f.deletions ?? 0,
-        status: f.status ?? 'modified',
-      })),
-    })
   }
-  return out
+  const files = await mapWithConcurrency(newCommits, COMMIT_DETAIL_CONCURRENCY, (c) =>
+    getCommitFiles(slug, c.sha)
+  )
+  return newCommits.map((c, i) => ({
+    sha: c.sha,
+    message: c.commit.message ?? '',
+    authorName: c.commit.author?.name ?? c.commit.committer?.name ?? '',
+    authorEmail: c.commit.author?.email ?? c.commit.committer?.email ?? '',
+    date: c.commit.author?.date ?? c.commit.committer?.date ?? null,
+    parentCount: c.parents?.length ?? 0,
+    files: files[i],
+  }))
 }
 
 export type RevertFileResult = {
@@ -1271,6 +1459,8 @@ export type RevertFileResult = {
 //   - file exists on main, not draft → re-create it on draft (was deleted)
 //   - file absent on main            → delete it from draft (was newly added,
 //                                       incl. the new-name side of a rename)
+// The restore points draft's tree entry at MAIN'S BLOB SHA (Git Data API) —
+// never a utf-8 decode/re-encode — so binary files (images) round-trip intact.
 // A concurrent edit (draft sha moved) surfaces as StaleShaError → 409.
 export async function revertFileToMain(
   slug: string,
@@ -1281,15 +1471,10 @@ export async function revertFileToMain(
   const name = path.split('/').pop() ?? path
   const attribution = options.authorEmail ? ` (${options.authorEmail})` : ''
 
-  let liveContent: string | null = null
-  try {
-    liveContent = (await readFile(slug, path, MAIN_BRANCH)).content
-  } catch (err) {
-    if (!(err instanceof FileNotFoundError)) throw err
-  }
+  const liveSha = await currentSha(slug, path, MAIN_BRANCH)
   const draftSha = await currentSha(slug, path, DRAFT_BRANCH)
 
-  if (liveContent === null) {
+  if (liveSha === null) {
     // Not on live → the draft added it → undo = remove it from draft.
     if (draftSha === null) return { reverted: true, commitSha: '', action: 'removed' }
     if (expectedSha && draftSha !== expectedSha) throw new StaleShaError(path, draftSha, '')
@@ -1304,28 +1489,24 @@ export async function revertFileToMain(
     return { reverted: true, commitSha: res.commitSha, action: 'removed' }
   }
 
-  // Live has the file → restore its content onto draft. Guard with the draft
-  // sha only when the file is still present there; if the draft deleted it,
-  // re-create without a guard (there is no draft blob to match).
-  if (draftSha === null) {
-    const res = await writeFile(
-      slug,
-      path,
-      liveContent,
-      DRAFT_BRANCH,
-      `Revert ${name} to live via admin${attribution}`,
-      { authorName: options.authorName, authorEmail: options.authorEmail }
-    )
-    return { reverted: true, commitSha: res.commitSha, action: 'restored' }
+  if (draftSha !== null && expectedSha && draftSha !== expectedSha) {
+    throw new StaleShaError(path, draftSha, '')
   }
-  if (expectedSha && draftSha !== expectedSha) throw new StaleShaError(path, draftSha, '')
-  const res = await writeFile(
+  if (draftSha === liveSha) return { reverted: true, commitSha: '', action: 'restored' }
+
+  // Live has the file → point draft's entry at live's blob. Guard against the
+  // draft state we just observed (present at draftSha, or absent) on every
+  // attempt's base tree.
+  const commitSha = await commitTreeWrites(
     slug,
-    path,
-    liveContent,
     DRAFT_BRANCH,
+    `revertFileToMain ${slug}:${path}`,
+    [{ path, sha: liveSha }],
     `Revert ${name} to live via admin${attribution}`,
-    { expectedSha: draftSha, authorName: options.authorName, authorEmail: options.authorEmail }
+    { authorName: options.authorName, authorEmail: options.authorEmail },
+    async (base) => {
+      await assertBlobSha(slug, path, draftSha, base, false)
+    }
   )
-  return { reverted: true, commitSha: res.commitSha, action: 'restored' }
+  return { reverted: true, commitSha, action: 'restored' }
 }

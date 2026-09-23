@@ -39,6 +39,11 @@ vi.mock('@/lib/supabase/server', () => {
         state.inFilter = true
         return api
       },
+      order: () => api,
+      lt: (col: string, val: unknown) => {
+        state.filters.push([col, val])
+        return api
+      },
       then: (resolve: (v: { data: unknown; error: null }) => void) => {
         if (state.op === 'update') {
           h.updates.push({ payload: state.payload, filters: state.filters })

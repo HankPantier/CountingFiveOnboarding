@@ -5,6 +5,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import type { ProgressTick } from './task-progress'
 
 type AssetRow = Database['public']['Tables']['assets']['Row']
+export type ExistingAssetRef = Pick<AssetRow, 'file_name' | 'asset_category' | 'metadata'>
 
 /**
  * Stock-photo resolver — orchestrates fetching Pexels images for pages that
@@ -74,7 +75,8 @@ export type StockResolverInput = {
   apiKey: string
   styleSuffix: string
   /** Existing session assets — used to short-circuit when an asset for this filename already exists */
-  existingAssets: AssetRow[]
+  // Only these columns are read — callers can select just them.
+  existingAssets: ExistingAssetRef[]
   imageRefs: ImageRef[]
   /** Optional progress callback — fired per photo searched, then per batch downloaded. Best-effort. */
   onProgress?: (p: ProgressTick) => void | Promise<void>
@@ -90,7 +92,7 @@ export async function resolveStockPhotos(
   }
 
   const resolved: ResolvedStockPhoto[] = []
-  const existingByName = new Map<string, AssetRow>()
+  const existingByName = new Map<string, ExistingAssetRef>()
   for (const a of input.existingAssets) existingByName.set(a.file_name, a)
 
   // Track Pexels photo IDs already chosen this run (so two pages with

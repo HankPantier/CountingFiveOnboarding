@@ -126,6 +126,8 @@ export default function GenerationPhase({
   const [restartError, setRestartError] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [showErrors, setShowErrors] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   // url→parent lookup for the page tree's indentation — memoized so it isn't
   // rebuilt on every render (was recreated inside the render IIFE below).
   const parentByUrl = useMemo(
@@ -142,8 +144,19 @@ export default function GenerationPhase({
     const poll = async () => {
       try {
         const res = await fetch(`/api/content-jobs/${contentJobId}/generation-status`)
-        if (cancelled || !res.ok) return
+        if (cancelled) return
+        if (!res.ok) {
+          setLoadError(`Couldn't load generation status (${res.status}).`)
+          setLoading(false)
+          // Auth / not-found won't recover by polling.
+          if (intervalId && (res.status === 401 || res.status === 403 || res.status === 404)) {
+            clearInterval(intervalId)
+          }
+          return
+        }
         const data = await res.json()
+        if (cancelled) return
+        setLoadError(null)
         setStatus(data)
         setLoading(false)
         const nowTs = Date.now()
@@ -181,7 +194,8 @@ export default function GenerationPhase({
           }
         }
       } catch {
-        // Retry on next poll
+        // Network blip — retry on next poll, but don't leave the spinner up.
+        if (!cancelled) setLoading(false)
       }
     }
 
@@ -202,15 +216,27 @@ export default function GenerationPhase({
     })
   }
 
+  const errorFrom = async (res: Response, fallback: string) => {
+    const data = (await res.json().catch(() => ({}))) as { error?: string }
+    return data.error ?? `${fallback} (${res.status})`
+  }
+
   const toggleApprove = async (page: PageStatus, next: boolean) => {
     setAction(`approve:${page.id}`, true)
+    setActionError(null)
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ admin_approved_content: next }),
       })
-      if (res.ok) setPollNonce(n => n + 1)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Couldn't update approval (${res.status})`)
+      }
+      setPollNonce(n => n + 1)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't update approval")
     } finally {
       setAction(`approve:${page.id}`, false)
     }
@@ -247,13 +273,17 @@ export default function GenerationPhase({
 
   const toggleClientReviewFlag = async (page: PageStatus, next: boolean) => {
     setAction(`flag:${page.id}`, true)
+    setActionError(null)
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ needs_client_review: next }),
       })
-      if (res.ok) setPollNonce(n => n + 1)
+      if (!res.ok) throw new Error(await errorFrom(res, "Couldn't update the client-review flag"))
+      setPollNonce(n => n + 1)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't update the client-review flag")
     } finally {
       setAction(`flag:${page.id}`, false)
     }
@@ -263,11 +293,15 @@ export default function GenerationPhase({
   // content" confirm since an errored page has nothing worth keeping.
   const retryPage = async (page: PageStatus) => {
     setAction(`regen:${page.id}`, true)
+    setActionError(null)
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}/regenerate`, {
         method: 'POST',
       })
-      if (res.ok) setPollNonce(n => n + 1)
+      if (!res.ok) throw new Error(await errorFrom(res, "Couldn't retry this page"))
+      setPollNonce(n => n + 1)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't retry this page")
     } finally {
       setAction(`regen:${page.id}`, false)
     }
@@ -282,11 +316,15 @@ export default function GenerationPhase({
           : `Regenerate "${page.title}"? The current draft will be replaced.`
     if (!window.confirm(warning)) return
     setAction(`regen:${page.id}`, true)
+    setActionError(null)
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/pages/${page.id}/regenerate`, {
         method: 'POST',
       })
-      if (res.ok) setPollNonce(n => n + 1)
+      if (!res.ok) throw new Error(await errorFrom(res, "Couldn't regenerate this page"))
+      setPollNonce(n => n + 1)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Couldn't regenerate this page")
     } finally {
       setAction(`regen:${page.id}`, false)
     }
@@ -296,6 +334,14 @@ export default function GenerationPhase({
     return (
       <div className="py-4 text-center">
         <div className="text-sm text-text-muted font-body">Loading generation status...</div>
+      </div>
+    )
+  }
+
+  if (!status && loadError) {
+    return (
+      <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
+        {loadError}
       </div>
     )
   }
@@ -605,6 +651,12 @@ export default function GenerationPhase({
       {restartError && (
         <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
           {restartError}
+        </div>
+      )}
+
+      {actionError && (
+        <div role="alert" className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
+          {actionError}
         </div>
       )}
 

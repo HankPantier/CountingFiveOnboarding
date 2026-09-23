@@ -12,7 +12,7 @@ type Body = { action?: 'sync' | 'reset' }
 
 // POST { action } — keep the long-lived draft branch in step with main.
 //  - 'sync':  merge live (main) into draft so a later publish doesn't conflict.
-//  - 'reset': force draft back to main, discarding unpublished draft edits.
+//  - 'reset': force draft back to main, discarding unpublished draft edits (admin-only).
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -30,6 +30,11 @@ export async function POST(
   const { action } = body
   if (action !== 'sync' && action !== 'reset') {
     return NextResponse.json({ error: "action must be 'sync' or 'reset'" }, { status: 400 })
+  }
+  // 'reset' force-discards every unpublished draft edit on the site — admin-only.
+  // Managers, editors, and Site Owners may still 'sync' (non-destructive).
+  if (action === 'reset' && !ctx.user.isAdmin) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   try {

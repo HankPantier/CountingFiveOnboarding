@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arr, objArr, str } from './schema-coerce'
+import { arr, objArr, str, isSentinelNone, realStrings } from './schema-coerce'
 
 describe('objArr', () => {
   it('degrades a stringy object-array field to empty (business.serviceAreas)', () => {
@@ -47,5 +47,18 @@ describe('str', () => {
     expect(str(['a', 'b'])).toBe('a, b')
     expect(str(42)).toBe('')
     expect(str('plain')).toBe('plain')
+  })
+})
+
+describe('isSentinelNone / realStrings', () => {
+  it('recognizes the onboarding "None" sentinel case-insensitively', () => {
+    for (const v of ['None', ' none ', 'N/A', 'n/a', 'None.']) expect(isSentinelNone(v)).toBe(true)
+    for (const v of ['Nonprofit audit win', '', 42, null]) expect(isSentinelNone(v)).toBe(false)
+  })
+
+  it('drops sentinels and blanks from string arrays (and a bare sentinel string)', () => {
+    expect(realStrings(['None'])).toEqual([])
+    expect(realStrings('None')).toEqual([])
+    expect(realStrings(['Cut a dentist\'s tax bill 20%', ' n/a ', ''])).toEqual(["Cut a dentist's tax bill 20%"])
   })
 })

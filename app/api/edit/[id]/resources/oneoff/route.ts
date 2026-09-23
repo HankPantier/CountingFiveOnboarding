@@ -24,6 +24,12 @@ export async function POST(
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+  // AI generation spends budget and writes generated content — manager-only per
+  // CLAUDE.md rule 6 (admins pass; editors/Site Owners are excluded), matching
+  // the resources/ideas/[ideaId]/draft route.
+  if (!ctx.user.isAdmin && !ctx.user.capabilities.includes('manager')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   let body: OneOffBody
   try {

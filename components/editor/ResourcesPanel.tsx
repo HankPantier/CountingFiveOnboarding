@@ -50,6 +50,9 @@ function sortIdeas(ideas: ResourceIdea[]): ResourceIdea[] {
 }
 
 const POLL_MS = 5000
+// A brainstorm that never adds rows (all duplicates, background failure) would
+// otherwise spin forever — give up waiting after this long.
+const BRAINSTORM_TIMEOUT_MS = 3 * 60 * 1000
 // The reverse-link commit + DB write lands shortly AFTER draft_status flips to
 // 'complete', so we keep polling a short grace window past completion to pick
 // up the reverse_links audit without a manual reload.
@@ -104,6 +107,7 @@ export default function ResourcesPanel({
   const [amending, setAmending] = useState(false)
   // Idea count at brainstorm start, so polling knows when new rows arrive.
   const brainstormBaseline = useRef<number | null>(null)
+  const brainstormStartedAt = useRef<number | null>(null)
   // Per-idea draft_status from the last refresh, used to detect the
   // running→complete transition that starts a reverse-link grace window.
   const prevDraftStatus = useRef<Map<string, string>>(new Map())
@@ -191,6 +195,16 @@ export default function ResourcesPanel({
           ) {
             setBrainstorming(false)
             brainstormBaseline.current = null
+            brainstormStartedAt.current = null
+          } else if (
+            brainstorming &&
+            brainstormStartedAt.current !== null &&
+            Date.now() - brainstormStartedAt.current > BRAINSTORM_TIMEOUT_MS
+          ) {
+            setBrainstorming(false)
+            brainstormBaseline.current = null
+            brainstormStartedAt.current = null
+            setError('Brainstorm is taking longer than expected and produced no new ideas yet. Refresh in a minute, or try again.')
           }
           // Clear social spinners once the path lands (success) or the row
           // reports an error — otherwise a failed backfill spins forever.
@@ -222,6 +236,7 @@ export default function ResourcesPanel({
     setBrandConflict(null)
     setBrainstorming(true)
     brainstormBaseline.current = ideas.length
+    brainstormStartedAt.current = Date.now()
     try {
       const res = await fetch(`/api/edit/${sessionId}/resources/brainstorm`, {
         method: 'POST',

@@ -3,6 +3,7 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
+import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import {
   DRAFT_BRANCH,
   StaleShaError,
@@ -11,6 +12,18 @@ import {
 } from '@/lib/github/repo-files'
 
 export const runtime = 'nodejs'
+
+// Page/post markdown the generic writer may touch. Everything else under
+// content/ is site configuration (nav.json, brand.json, design.json,
+// design-overrides.css, client-center.json, redirects.csv, …) that has its own
+// gated route (nav, theme, client-center, site-settings) — writing it raw here
+// would bypass those routes' validation and the Site Owner/editor lockdown.
+const CONTENT_MD_RE = /^content\/(?:drafts\/)?(?:pages|posts)\/[^/]+\.md$/
+
+// Admins (superusers) may still raw-edit other content/ files from the code
+// view, EXCEPT nav.json, which must go through /nav (it relocates pages + adds
+// 301s atomically with the nav change).
+const ADMIN_BLOCKED_CONFIG = new Set(['content/nav.json'])
 
 type WriteBody = {
   path?: string
@@ -42,6 +55,19 @@ export async function PATCH(
   const path = safePath(rawPath)
   if (!path) {
     return NextResponse.json({ error: 'path must be under content/' }, { status: 400 })
+  }
+  const isContentMd = CONTENT_MD_RE.test(path)
+  if (!isContentMd && (!ctx.user.isAdmin || ADMIN_BLOCKED_CONFIG.has(path))) {
+    return NextResponse.json(
+      { error: 'This file is site configuration and must be edited from its own settings panel.' },
+      { status: 403 }
+    )
+  }
+  if (path.endsWith('.md')) {
+    // Same guard the AI editor applies at commit time: invalid YAML frontmatter
+    // hard-fails the site's `next build`, so refuse it before it reaches draft.
+    const yamlError = validateFrontmatterYaml(contents)
+    if (yamlError) return NextResponse.json({ error: yamlError }, { status: 422 })
   }
 
   try {

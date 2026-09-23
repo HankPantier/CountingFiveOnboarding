@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { assetUrl } from '@/lib/editor/asset-client'
 
 // Renders a repo image by streaming it from the admin-only asset route. The
 // `version` prop is bumped by parents after a replace to defeat any in-memory
@@ -9,17 +10,23 @@ export default function AssetThumb({
   sessionId,
   assetPath,
   version = 0,
+  sha,
   className = '',
   alt = '',
 }: {
   sessionId: string
   assetPath: string
   version?: number
+  // Blob sha from the assets listing: a content-addressed URL the route serves
+  // with one GitHub call and an immutable cache, so `version` isn't needed.
+  sha?: string
   className?: string
   alt?: string
 }) {
   const [errored, setErrored] = useState(false)
-  const src = `/api/edit/${sessionId}/asset?path=${encodeURIComponent(assetPath)}&v=${version}`
+  const src = sha
+    ? assetUrl(sessionId, assetPath, sha)
+    : `${assetUrl(sessionId, assetPath)}&v=${version}`
 
   if (errored) {
     return (

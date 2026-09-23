@@ -2,7 +2,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 30
 
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { generateAndStoreMbp } from '@/lib/mbp/generate-deliverable'
 import { NextResponse } from 'next/server'
 import { readJsonBody } from '@/app/api/_json'
@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   const { sessionId } = body
   if (!sessionId) return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
 
-  const auth = await requireSessionAccess(sessionId)
+  const auth = await requireOnboardingSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()

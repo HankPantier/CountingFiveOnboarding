@@ -21,6 +21,12 @@ import { isFallbackOutline } from '@/lib/content/outline-fallback'
 import type { Json } from '@/types/database'
 
 type Section = { h2: string; description: string; word_count: number }
+
+// Client-only row ids for outline sections (never persisted). A module counter
+// keeps them unique across cards without touching refs during render.
+let sectionIdSeq = 0
+const makeIds = (n: number) => Array.from({ length: n }, () => `sec-${++sectionIdSeq}`)
+
 type Cta = { text: string; url: string }
 
 type Outline = {
@@ -48,7 +54,9 @@ export default function OutlineCard({
 }: {
   outline: Outline
   contentJobId: string
-  onUpdate: (updated: Outline) => void
+  // `localEdit` = an unsaved operator edit (parent protects it from the poll);
+  // omitted/false = the server's saved copy.
+  onUpdate: (updated: Outline, localEdit?: boolean) => void
   expanded: boolean
   onToggleExpand: () => void
   // Called after a successful approve. `advance` = the operator asked to jump to
@@ -58,6 +66,7 @@ export default function OutlineCard({
 }) {
   const [saving, setSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // Defensive: outline.sections is jsonb and has been seen as a string ("[]")
   // due to upstream model output occasionally returning sections as a string.
@@ -67,6 +76,17 @@ export default function OutlineCard({
     ? (outline.sections as Section[])
     : []
   const totalWords = sections.reduce((sum, s) => sum + (s.word_count || 0), 0)
+
+  // Stable client-side ids for section rows (sections carry no id of their
+  // own). Index keys made React/dnd-kit reuse the wrong row's DOM + focus after
+  // a reorder or delete. Kept in lockstep with `sections` by the edit helpers;
+  // if the array is replaced externally (save/regenerate/poll) with a different
+  // length, the ids are regenerated.
+  const [sectionIds, setSectionIds] = useState<string[]>(() => makeIds(sections.length))
+  if (sectionIds.length !== sections.length) {
+    setSectionIds(makeIds(sections.length))
+  }
+  const editLocal = (next: Outline) => onUpdate(next, true)
 
   // PointerSensor with a small activation distance lets the input fields inside
   // a section card still accept clicks without accidentally triggering a drag.
@@ -78,11 +98,12 @@ export default function OutlineCard({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIndex = Number(active.id)
-    const newIndex = Number(over.id)
-    if (Number.isNaN(oldIndex) || Number.isNaN(newIndex)) return
+    const oldIndex = sectionIds.indexOf(String(active.id))
+    const newIndex = sectionIds.indexOf(String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
     const newSections = arrayMove(sections, oldIndex, newIndex)
-    onUpdate({ ...outline, sections: newSections as unknown as Json })
+    setSectionIds(ids => arrayMove(ids, oldIndex, newIndex))
+    editLocal({ ...outline, sections: newSections as unknown as Json })
   }
 
   const needsReview = !outline.admin_approved && isFallbackOutline(outline.admin_notes)
@@ -97,6 +118,7 @@ export default function OutlineCard({
 
   const saveEdits = async () => {
     setSaving(true)
+    setActionError(null)
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/outlines/${outline.id}`, {
         method: 'PATCH',
@@ -109,10 +131,14 @@ export default function OutlineCard({
           cta: outline.cta,
         }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        onUpdate(data.outline)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Save failed (${res.status})`)
       }
+      const data = await res.json()
+      onUpdate(data.outline)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Save failed')
     } finally {
       setSaving(false)
     }
@@ -120,11 +146,12 @@ export default function OutlineCard({
 
   const cta = (outline.cta as Cta | null) ?? null
   const updateCta = (next: Cta | null) => {
-    onUpdate({ ...outline, cta: next as unknown as Json })
+    editLocal({ ...outline, cta: next as unknown as Json })
   }
 
   const approve = async (advance = false) => {
     setSaving(true)
+    setActionError(null)
     try {
       // Save-then-approve in one PATCH: include the current (possibly edited but
       // not-yet-saved) fields so the quick ✓ can never silently discard an in-flight
@@ -144,13 +171,17 @@ export default function OutlineCard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      if (res.ok) {
-        const data = await res.json()
-        onUpdate(data.outline)
-        // Parent owns expansion: collapse this card, or advance to the next
-        // pending outline so the operator can review the list without hunting.
-        onApproved(outline.id, advance)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Approve failed (${res.status})`)
       }
+      const data = await res.json()
+      onUpdate(data.outline)
+      // Parent owns expansion: collapse this card, or advance to the next
+      // pending outline so the operator can review the list without hunting.
+      onApproved(outline.id, advance)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Approve failed')
     } finally {
       setSaving(false)
     }
@@ -158,14 +189,19 @@ export default function OutlineCard({
 
   const regenerate = async () => {
     setRegenerating(true)
+    setActionError(null)
     try {
       const res = await fetch(`/api/content-jobs/${contentJobId}/outlines/${outline.id}/regenerate`, {
         method: 'POST',
       })
-      if (res.ok) {
-        const data = await res.json()
-        onUpdate(data.outline)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Regenerate failed (${res.status})`)
       }
+      const data = await res.json()
+      onUpdate(data.outline)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Regenerate failed')
     } finally {
       setRegenerating(false)
     }
@@ -174,15 +210,17 @@ export default function OutlineCard({
   const updateSection = (index: number, updated: Section) => {
     const newSections = [...sections]
     newSections[index] = updated
-    onUpdate({ ...outline, sections: newSections as unknown as Json })
+    editLocal({ ...outline, sections: newSections as unknown as Json })
   }
 
   const removeSection = (index: number) => {
-    onUpdate({ ...outline, sections: sections.filter((_, i) => i !== index) as unknown as Json })
+    setSectionIds(ids => ids.filter((_, i) => i !== index))
+    editLocal({ ...outline, sections: sections.filter((_, i) => i !== index) as unknown as Json })
   }
 
   const addSection = () => {
-    onUpdate({
+    setSectionIds(ids => [...ids, ...makeIds(1)])
+    editLocal({
       ...outline,
       sections: [...sections, { h2: '', description: '', word_count: 150 }] as unknown as Json,
     })
@@ -244,7 +282,7 @@ export default function OutlineCard({
             <input
               type="text"
               value={outline.h1 ?? ''}
-              onChange={e => onUpdate({ ...outline, h1: e.target.value })}
+              onChange={e => editLocal({ ...outline, h1: e.target.value })}
               className="w-full mt-1 px-3 py-2 text-sm font-body bg-surface-subtle border border-border-default rounded focus:border-brand-cyan focus:outline-none"
             />
           </div>
@@ -257,14 +295,14 @@ export default function OutlineCard({
             </div>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext
-                items={sections.map((_, i) => String(i))}
+                items={sectionIds}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="space-y-2">
                   {sections.map((section, i) => (
                     <OutlineSectionRow
-                      key={i}
-                      id={String(i)}
+                      key={sectionIds[i] ?? i}
+                      id={sectionIds[i] ?? String(i)}
                       index={i}
                       section={section}
                       onChange={updated => updateSection(i, updated)}
@@ -328,7 +366,7 @@ export default function OutlineCard({
             <label className="text-xs font-heading font-semibold text-text-secondary">Angle / point of view</label>
             <textarea
               value={outline.angle ?? ''}
-              onChange={e => onUpdate({ ...outline, angle: e.target.value })}
+              onChange={e => editLocal({ ...outline, angle: e.target.value })}
               rows={2}
               className="w-full mt-1 px-3 py-2 text-sm font-body bg-surface-subtle border border-border-default rounded focus:border-brand-cyan focus:outline-none resize-none"
               placeholder="Optional. The unique take or information-gain for this page — what it argues or emphasizes that competitors don't."
@@ -343,7 +381,7 @@ export default function OutlineCard({
             <label className="text-xs font-heading font-semibold text-text-secondary">Notes</label>
             <textarea
               value={outline.admin_notes ?? ''}
-              onChange={e => onUpdate({ ...outline, admin_notes: e.target.value })}
+              onChange={e => editLocal({ ...outline, admin_notes: e.target.value })}
               rows={2}
               className="w-full mt-1 px-3 py-2 text-sm font-body bg-surface-subtle border border-border-default rounded focus:border-brand-cyan focus:outline-none resize-none"
               placeholder="Notes for the copywriter..."
@@ -385,6 +423,11 @@ export default function OutlineCard({
               {regenerating ? 'Regenerating...' : 'Regenerate'}
             </button>
           </div>
+        </div>
+      )}
+      {actionError && (
+        <div role="alert" className="mx-4 mb-3 bg-error/10 border border-error/20 text-error text-xs font-body rounded-lg px-3 py-2">
+          {actionError}
         </div>
       )}
     </div>

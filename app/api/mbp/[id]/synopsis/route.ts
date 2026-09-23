@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { generateFirmSynopsis } from '@/lib/mbp/generate-synopsis'
 
 export const runtime = 'nodejs'
@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
   if (auth.user.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

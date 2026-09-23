@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
+import { isSiteOwner } from '@/lib/auth/access'
 import { safePath } from '../_path'
 import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
 import { lastSegment } from '@/lib/editor/nav-urls'
@@ -73,9 +74,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const navAction: NavAction = NAV_ACTIONS.includes(body.navAction as NavAction)
+  const requestedNavAction: NavAction = NAV_ACTIONS.includes(body.navAction as NavAction)
     ? (body.navAction as NavAction)
     : 'retarget'
+  // Nav config is a staff-only surface (CLAUDE.md rule 6): a Site Owner may move
+  // their own pages, but never edit nav.json through this side door.
+  const navAction: NavAction = isSiteOwner(ctx.user) ? 'none' : requestedNavAction
   if (typeof body.fromPath !== 'string' || typeof body.toUrl !== 'string') {
     return NextResponse.json({ error: 'fromPath and toUrl are required' }, { status: 400 })
   }

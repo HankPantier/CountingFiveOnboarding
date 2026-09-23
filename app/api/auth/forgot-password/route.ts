@@ -40,7 +40,11 @@ export async function POST(req: Request) {
     const { data: admin } = await supabase
       .from('admins')
       .select('email')
-      .ilike('email', email)
+      // Case-insensitive EXACT match: users created via the app are stored
+      // lowercased, but a hand-seeded first admin may not be. ILIKE's `_` / `%`
+      // wildcards are escaped so "a_b@x.com" can't match "axb@x.com" (and
+      // trigger a reset email to a different account).
+      .ilike('email', escapeLikePattern(email))
       .maybeSingle()
 
     if (admin) {
@@ -68,4 +72,9 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ success: true })
+}
+
+// Escape LIKE/ILIKE metacharacters so the pattern matches the literal string.
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`)
 }

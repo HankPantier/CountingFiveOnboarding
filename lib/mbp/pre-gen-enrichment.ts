@@ -152,10 +152,24 @@ Return ONLY JSON:
     return [...base, item]
   }
 
-  let created = 0
-  let applied = 0
-  let workingSchema = schema as unknown as Record<string, unknown>
-  const appliedPaths: string[] = []
+  // Plan every change first, then write in batches. The schema write happens on
+  // a FRESH re-read (the model call above is long — an edit made meanwhile must
+  // not be clobbered by the pre-generation snapshot), and the "approved" trail
+  // rows are only inserted once that write has succeeded.
+  type SuggestionInsert = {
+    session_id: string
+    origin: 'pre_gen_enrichment'
+    source_ref: string
+    changes: ReturnType<typeof asJson>
+    summary: string
+    status: 'approved' | 'pending'
+    resolved_at?: string
+    dedupe_key: string
+  }
+  const pendingSourceRef = audit && notes ? 'audit + call notes' : audit ? 'site audit' : notes ? 'call notes' : 'existing profile'
+  const seenKeys = new Set<string>()
+  const autoCandidates: Array<{ c: EnrichChange; row: SuggestionInsert }> = []
+  const pendingRows: SuggestionInsert[] = []
 
   for (const c of result.changes) {
     if (!targetPaths.has(c.fieldPath)) continue
@@ -169,63 +183,87 @@ Return ONLY JSON:
     const dedupeKey = createHash('sha256')
       .update(`${sessionId}|pre_gen_enrichment|${keyParts}`)
       .digest('hex')
+    // Duplicate (same field/value) in one model response — one row is enough,
+    // and two pending rows with one key would trip the unique pending index.
+    if (seenKeys.has(dedupeKey)) continue
+    seenKeys.add(dedupeKey)
 
-    // Supersede any prior pending suggestion for the same field/value.
-    await supabase
+    const base = { session_id: sessionId, origin: 'pre_gen_enrichment' as const, changes: asJson(changes), dedupe_key: dedupeKey }
+    if (autoApply(c)) {
+      autoCandidates.push({
+        c,
+        row: { ...base, source_ref: 'auto-applied: audit + call notes', summary: `Auto-applied: ${c.fieldPath}`, status: 'approved' },
+      })
+    } else {
+      pendingRows.push({ ...base, source_ref: pendingSourceRef, summary: `Enrich ${c.fieldPath}`, status: 'pending' })
+    }
+  }
+
+  // Supersede any prior pending suggestion for the same field/value (one query).
+  if (seenKeys.size) {
+    const { error } = await supabase
       .from('mbp_suggestions')
       .update({ status: 'superseded', resolved_at: new Date().toISOString() })
       .eq('session_id', sessionId)
-      .eq('dedupe_key', dedupeKey)
+      .in('dedupe_key', [...seenKeys])
       .eq('status', 'pending')
-
-    if (autoApply(c)) {
-      const value = resolveValue(workingSchema, c)
-      if (value !== null) {
-        workingSchema = deepSetPath(workingSchema, c.fieldPath, value)
-        appliedPaths.push(c.fieldPath)
-        // Record the auto-applied change as an already-resolved suggestion so it
-        // shows in the session's suggestion history (trail) rather than mutating
-        // schema_data invisibly. resolved_by is null = applied by the system.
-        const { error } = await supabase.from('mbp_suggestions').insert({
-          session_id: sessionId,
-          origin: 'pre_gen_enrichment',
-          source_ref: 'auto-applied: audit + call notes',
-          changes: asJson(changes),
-          summary: `Auto-applied: ${c.fieldPath}`,
-          status: 'approved',
-          resolved_at: new Date().toISOString(),
-          dedupe_key: dedupeKey,
-        })
-        if (error) console.error('[mbp-pregen] auto-apply trail insert failed:', error)
-        applied += 1
-        continue
-      }
-      // Fall through to a pending suggestion if the value couldn't be resolved.
-    }
-
-    const { error } = await supabase.from('mbp_suggestions').insert({
-      session_id: sessionId,
-      origin: 'pre_gen_enrichment',
-      source_ref: audit && notes ? 'audit + call notes' : audit ? 'site audit' : notes ? 'call notes' : 'existing profile',
-      changes: asJson(changes),
-      summary: `Enrich ${c.fieldPath}`,
-      status: 'pending',
-      dedupe_key: dedupeKey,
-    })
-    if (error) console.error('[mbp-pregen] insert failed:', error)
-    else created += 1
+    if (error) console.error('[mbp-pregen] supersede failed:', error)
   }
 
-  // Write the auto-applied fills once, stamping provenance to 'notes' (the stronger
-  // human-grounded signal of the two sources) so downstream thinness checks and the
-  // admin UI treat them as call-derived, not admin-confirmed.
-  if (appliedPaths.length) {
-    const stamped = stampProvenance(workingSchema as unknown as SessionSchema, appliedPaths, 'notes')
-    const { error } = await supabase
+  let applied = 0
+  const appliedTrail: SuggestionInsert[] = []
+  if (autoCandidates.length) {
+    const { data: fresh } = await supabase
       .from('sessions')
-      .update({ schema_data: asJson(stamped) })
+      .select('schema_data')
       .eq('id', sessionId)
-    if (error) console.error('[mbp-pregen] schema auto-apply write failed:', error)
+      .single()
+    // No fresh row → don't risk writing a stale snapshot; file everything.
+    let workingSchema = (fresh?.schema_data ?? {}) as unknown as Record<string, unknown>
+    const appliedPaths: string[] = []
+    for (const { c, row } of autoCandidates) {
+      // Auto-apply is empty-fields-only: if the field was filled while the model
+      // ran, a human wrote it — file for review instead of overwriting.
+      const current = getByPath(workingSchema, c.fieldPath)
+      const stillEmpty = !!fresh && (current == null || (typeof current === 'string' && !current.trim()) || (Array.isArray(current) && current.length === 0))
+      const value = stillEmpty ? resolveValue(workingSchema, c) : null
+      if (value === null) {
+        // Fall through to a pending suggestion.
+        pendingRows.push({ ...row, source_ref: pendingSourceRef, summary: `Enrich ${c.fieldPath}`, status: 'pending' })
+        continue
+      }
+      workingSchema = deepSetPath(workingSchema, c.fieldPath, value)
+      appliedPaths.push(c.fieldPath)
+      appliedTrail.push({ ...row, resolved_at: new Date().toISOString() })
+    }
+
+    // Write the auto-applied fills once, stamping provenance to 'notes' (the
+    // stronger human-grounded signal of the two sources) so downstream thinness
+    // checks and the admin UI treat them as call-derived, not admin-confirmed.
+    if (appliedPaths.length) {
+      const stamped = stampProvenance(workingSchema as unknown as SessionSchema, appliedPaths, 'notes')
+      const { error } = await supabase
+        .from('sessions')
+        .update({ schema_data: asJson(stamped) })
+        .eq('id', sessionId)
+      if (error) {
+        console.error('[mbp-pregen] schema auto-apply write failed:', error)
+      } else {
+        // Record the auto-applied changes as already-resolved suggestions so they
+        // show in the session's suggestion history (trail) rather than mutating
+        // schema_data invisibly. resolved_by null = applied by the system.
+        const { error: trailErr } = await supabase.from('mbp_suggestions').insert(appliedTrail)
+        if (trailErr) console.error('[mbp-pregen] auto-apply trail insert failed:', trailErr)
+        applied = appliedPaths.length
+      }
+    }
+  }
+
+  let created = 0
+  if (pendingRows.length) {
+    const { error } = await supabase.from('mbp_suggestions').insert(pendingRows)
+    if (error) console.error('[mbp-pregen] insert failed:', error)
+    else created = pendingRows.length
   }
 
   return { created, applied }

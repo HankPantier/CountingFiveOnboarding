@@ -73,12 +73,15 @@ export default function PageEditor({
   contents,
   websiteUrl,
   onChange,
+  isAdmin = false,
 }: {
   sessionId: string
   path: string
   contents: string
   websiteUrl: string
   onChange: (next: string) => void
+  // Server-resolved viewer role; gates the admin-only AI SEO-field generation.
+  isAdmin?: boolean
 }) {
   const urlPath = contentPathToUrl(path)
   const base = websiteUrl.replace(/\/+$/, '')
@@ -391,6 +394,7 @@ export default function PageEditor({
         onEeatChange={onEeatChange}
         initialLinks={getInternalLinks(fm)}
         onLinksChange={onLinksChange}
+        isAdmin={isAdmin}
       />
     ) : null
 

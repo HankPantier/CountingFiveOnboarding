@@ -12,6 +12,13 @@ const ThrottledOctokit = Octokit.plugin(throttling)
 
 let cached: InstanceType<typeof ThrottledOctokit> | null = null
 
+// Upper bound on how long a single GitHub call may wait out a rate limit.
+export const MAX_RATE_LIMIT_WAIT_S = 60
+
+export function shouldRetryRateLimit(retryAfterS: number, retryCount: number): boolean {
+  return retryCount < 1 && retryAfterS <= MAX_RATE_LIMIT_WAIT_S
+}
+
 // PEM private keys span multiple lines. To keep them in a single env var we
 // accept either the raw PEM (with real newlines, which is fine for some
 // hosting providers) or with literal "\n" sequences that we expand here.
@@ -59,19 +66,24 @@ export function getOctokit(): InstanceType<typeof ThrottledOctokit> {
     authStrategy: createAppAuth,
     auth: { appId, privateKey, installationId },
     throttle: {
-      // Return true to wait `retryAfter` seconds and retry; bound the retries so
-      // a genuinely stuck limit eventually surfaces rather than hanging forever.
+      // This plugin is the ONE retry layer for GitHub rate limits (withRateLimitRetry
+      // in ./rate-limit is a pass-through, so the two never stack). Retry once, and
+      // only when the wait is short: a primary-quota reset can be up to an hour
+      // away, and a request route must surface that fast rather than hang. Total
+      // wait per call is therefore bounded by MAX_RATE_LIMIT_WAIT_S (~60s).
       onRateLimit: (retryAfter, options, octokit, retryCount) => {
+        const retry = shouldRetryRateLimit(retryAfter, retryCount)
         octokit.log.warn(
-          `GitHub primary rate limit on ${options.method} ${options.url} — retry ${retryCount} in ${retryAfter}s`
+          `GitHub primary rate limit on ${options.method} ${options.url} — ${retry ? `retry ${retryCount + 1} in ${retryAfter}s` : 'giving up'}`
         )
-        return retryCount < 3
+        return retry
       },
       onSecondaryRateLimit: (retryAfter, options, octokit, retryCount) => {
+        const retry = shouldRetryRateLimit(retryAfter, retryCount)
         octokit.log.warn(
-          `GitHub secondary rate limit on ${options.method} ${options.url} — retry ${retryCount} in ${retryAfter}s`
+          `GitHub secondary rate limit on ${options.method} ${options.url} — ${retry ? `retry ${retryCount + 1} in ${retryAfter}s` : 'giving up'}`
         )
-        return retryCount < 3
+        return retry
       },
     },
   })

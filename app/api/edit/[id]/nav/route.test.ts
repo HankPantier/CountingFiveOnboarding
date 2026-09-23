@@ -5,7 +5,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => {
   class FileNotFoundError extends Error {}
   class AssetExistsError extends Error {}
-  class StaleShaError extends Error {}
+  class StaleShaError extends Error {
+    constructor(
+      public path: string,
+      public currentSha: string,
+      public currentContent: string
+    ) {
+      super(`stale ${path}`)
+    }
+  }
   return {
     // The caller resolveEditContext hands back — a non-owner by default so the
     // config-surface lockdown passes. Individual tests can reassign it.
@@ -67,6 +75,7 @@ function seed(path: string, url: string) {
 beforeEach(() => {
   h.ctxUser = { id: 'u-1', role: 'member', isAdmin: false, capabilities: ['manager'] }
   h.fs.clear()
+  h.fs.set('content/nav.json', { content: NAV, sha: 'nav-sha' })
   h.moveCalls.length = 0
   h.readFile.mockReset()
   h.writeFile.mockReset()
@@ -93,6 +102,15 @@ beforeEach(() => {
 })
 
 describe('POST /api/edit/[id]/nav — move validation', () => {
+  it('409s on a stale nav.json sha BEFORE relocating any page', async () => {
+    seed('content/pages/a.md', '/a')
+    h.fs.set('content/nav.json', { content: NAV, sha: 'someone-elses-sha' })
+    const res = await POST(req([{ from: '/a', to: '/services/a' }]), { params })
+    expect(res.status).toBe(409)
+    expect(h.moveFile).not.toHaveBeenCalled()
+    expect(h.writeFile).not.toHaveBeenCalled()
+  })
+
   it('relocates a chain (A→B, B→C) without a false collision, vacating first', async () => {
     seed('content/pages/a.md', '/a')
     seed('content/pages/b.md', '/b')

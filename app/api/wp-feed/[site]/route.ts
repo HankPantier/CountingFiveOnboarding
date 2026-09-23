@@ -24,7 +24,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ site: st
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // Log the real cause; return a generic message (this endpoint is called by
+    // external WordPress hosts — never echo internal/GitHub error detail).
+    console.error('[wp-feed] failed', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

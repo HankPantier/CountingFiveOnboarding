@@ -383,6 +383,7 @@ export type Database = {
       }
       blog_batch_targets: {
         Row: {
+          attempts: number
           batch_id: string
           content_job_id: string
           content_type: string
@@ -396,6 +397,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attempts?: number
           batch_id: string
           content_job_id: string
           content_type?: string
@@ -409,6 +411,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attempts?: number
           batch_id?: string
           content_job_id?: string
           content_type?: string
@@ -454,6 +457,7 @@ export type Database = {
       }
       content_job_article_imports: {
         Row: {
+          attempts: number
           audit_run_id: string
           content_job_id: string
           created_at: string
@@ -469,6 +473,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attempts?: number
           audit_run_id: string
           content_job_id: string
           created_at?: string
@@ -484,6 +489,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attempts?: number
           audit_run_id?: string
           content_job_id?: string
           created_at?: string
@@ -524,6 +530,7 @@ export type Database = {
       }
       content_job_library_selections: {
         Row: {
+          attempts: number
           batch_id: string
           content_job_id: string
           created_at: string
@@ -535,6 +542,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attempts?: number
           batch_id: string
           content_job_id: string
           created_at?: string
@@ -546,6 +554,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attempts?: number
           batch_id?: string
           content_job_id?: string
           created_at?: string
@@ -1043,6 +1052,7 @@ export type Database = {
           content_job_id: string
           created_at: string
           cta: Json | null
+          generation_claimed_at: string | null
           h1: string | null
           id: string
           page_title: string
@@ -1058,6 +1068,7 @@ export type Database = {
           content_job_id: string
           created_at?: string
           cta?: Json | null
+          generation_claimed_at?: string | null
           h1?: string | null
           id?: string
           page_title: string
@@ -1073,6 +1084,7 @@ export type Database = {
           content_job_id?: string
           created_at?: string
           cta?: Json | null
+          generation_claimed_at?: string | null
           h1?: string | null
           id?: string
           page_title?: string

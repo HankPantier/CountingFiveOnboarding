@@ -11,6 +11,7 @@ import {
   deleteFile,
   ensureDraftBranch,
   readBinaryFile,
+  readBlobBySha,
   writeBinaryFile,
 } from '@/lib/github/repo-files'
 
@@ -40,8 +41,13 @@ const ASSET_SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; sandbox",
 } as const
 
-// GET ?path=public/content-assets/foo.png — streams raw image bytes so the
-// admin <img> tags can render them (the bucket/repo isn't public).
+const BLOB_SHA_RE = /^[0-9a-f]{40}$/i
+
+// GET ?path=public/content-assets/foo.png[&sha=<blob sha>] — streams raw image
+// bytes so the admin <img> tags can render them (the bucket/repo isn't public).
+// With `sha` (from the assets/tree listing) the bytes are fetched in ONE getBlob
+// call instead of getContent + getBlob, and — since a blob sha is content-
+// addressed — the response is cached immutably by the browser.
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -59,9 +65,20 @@ export async function GET(
     return NextResponse.json({ error: 'path must be under public/content-assets/' }, { status: 400 })
   }
 
+  const rawSha = new URL(req.url).searchParams.get('sha')
+  if (rawSha !== null && !BLOB_SHA_RE.test(rawSha)) {
+    return NextResponse.json({ error: 'sha must be a 40-char blob sha' }, { status: 400 })
+  }
+  const blobSha = rawSha
+
   try {
-    await ensureDraftBranch(ctx.githubRepo)
-    const blob = await readBinaryFile(ctx.githubRepo, path, DRAFT_BRANCH)
+    let blob: { content: Buffer }
+    if (blobSha) {
+      blob = { content: await readBlobBySha(ctx.githubRepo, blobSha) }
+    } else {
+      await ensureDraftBranch(ctx.githubRepo)
+      blob = await readBinaryFile(ctx.githubRepo, path, DRAFT_BRANCH)
+    }
     const sniffed = await fileTypeFromBuffer(blob.content)
 
     // Only serve a content type we can stand behind. Verified raster bytes get
@@ -93,8 +110,9 @@ export async function GET(
       headers: {
         'Content-Type': contentType,
         'Content-Length': String(body.byteLength),
-        // Private to the admin; never cache across the draft→publish reset.
-        'Cache-Control': 'private, no-store',
+        // Private to the admin. A path-addressed read must never be cached (the
+        // file can change on draft); a sha-addressed read is immutable forever.
+        'Cache-Control': blobSha ? 'private, max-age=31536000, immutable' : 'private, no-store',
         ...ASSET_SECURITY_HEADERS,
       },
     })

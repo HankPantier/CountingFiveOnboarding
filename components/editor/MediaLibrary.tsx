@@ -179,6 +179,7 @@ function MediaCard({
       <AssetThumb
         sessionId={sessionId}
         assetPath={entry.path}
+        sha={entry.sha}
         version={version}
         alt={filename}
         className="w-full aspect-square"

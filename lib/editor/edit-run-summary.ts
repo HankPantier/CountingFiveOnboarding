@@ -18,6 +18,9 @@ export interface EditRunDetails {
 export interface EditRunSummary {
   applied: number
   failed: number
+  // Edits that matched but changed nothing (already applied) — not saved, and
+  // not counted as applied.
+  unchanged?: number
   // The model was stopped while still issuing tool calls (hit the step cap),
   // so more edits were likely intended than were applied.
   incomplete: boolean
@@ -47,6 +50,10 @@ interface RemoveTextOutput {
   // applied change and each miss as one failure (so the UI's "Applied N, M
   // failed" stays truthful for a batch).
   failed?: { find: string; reason: string }[]
+  unchanged?: { find: string; reason: string }[]
+  // A tool call that committed nothing because the file was already in the
+  // requested state.
+  noChange?: boolean
 }
 
 interface ToolPartLike {
@@ -58,6 +65,7 @@ interface ToolPartLike {
 export function summarizeEditRun(parts: ToolPartLike[] | undefined, finishReason?: string): EditRunSummary {
   let applied = 0
   let failed = 0
+  let unchanged = 0
   const removedByFind = new Map<string, number>()
   let dashesStripped = 0
   const residual: EditRunDetails['residual'] = []
@@ -78,9 +86,11 @@ export function summarizeEditRun(parts: ToolPartLike[] | undefined, finishReason
     if (p.type === 'tool-apply_edits') {
       applied += out.applied?.length ?? 0
       failed += out.failed?.length ?? 0
+      unchanged += out.unchanged?.length ?? 0
       continue
     }
-    applied++
+    if (out.noChange) unchanged++
+    else applied++
     if (p.type === 'tool-remove_text') {
       sawRemoveText = true
       for (const a of out.applied ?? []) {
@@ -93,6 +103,7 @@ export function summarizeEditRun(parts: ToolPartLike[] | undefined, finishReason
   }
 
   const summary: EditRunSummary = { applied, failed, incomplete: finishReason === 'tool-calls' }
+  if (unchanged > 0) summary.unchanged = unchanged
   if (sawRemoveText) {
     summary.details = {
       removed: [...removedByFind.entries()].map(([find, removed]) => ({ find, removed })),

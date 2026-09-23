@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { getCurrentUser, hasOnboardingAccess, requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { fileTypeFromBuffer } from 'file-type'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -12,6 +12,7 @@ export const maxDuration = 60
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_BYTES = 25 * 1024 * 1024
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * Replace an existing stock-photo asset's storage object + metadata atomically
@@ -28,12 +29,23 @@ const MAX_BYTES = 25 * 1024 * 1024
  * failure, the existing storage object is left untouched.
  */
 export async function POST(req: Request) {
-  const form = await req.formData()
+  // Authenticate before buffering a (up to 25MB) multipart body. The
+  // session-scoped check runs again below once the asset's session is known.
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasOnboardingAccess(user)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  let form: FormData
+  try {
+    form = await req.formData()
+  } catch {
+    return NextResponse.json({ error: 'Invalid form data' }, { status: 400 })
+  }
   const assetId = form.get('assetId')
   const file = form.get('file')
 
-  if (typeof assetId !== 'string' || !assetId) {
-    return NextResponse.json({ error: 'assetId required' }, { status: 400 })
+  if (typeof assetId !== 'string' || !UUID_RE.test(assetId)) {
+    return NextResponse.json({ error: 'Valid assetId required' }, { status: 400 })
   }
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'file required' }, { status: 400 })
@@ -53,7 +65,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
   }
 
-  const access = await requireSessionAccess(asset.session_id)
+  const access = await requireOnboardingSessionAccess(asset.session_id)
   if (access instanceof NextResponse) return access
 
   if (asset.asset_category !== 'stock-photo') {

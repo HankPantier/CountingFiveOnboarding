@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { requireSessionAccess } from '@/lib/auth/access'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { readJsonBody } from '@/app/api/_json'
+import { sanitizeUploadFileName } from '../_filename'
 
 // image/svg+xml is allowed here so the admin logo flow can presign an SVG; the
 // bytes are validated/sanitized at its own confirm step (the generic
@@ -25,29 +26,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
+  // Every upload requires an authenticated admin / assigned content user —
+  // the private bucket is never writable by an anonymous session link.
+  const auth = await requireSessionAccess(sessionId)
+  if (auth instanceof NextResponse) return auth
+
   const supabase = createServerClient()
 
   const { data: session } = await supabase
     .from('sessions')
-    .select('id, current_phase')
+    .select('id')
     .eq('id', sessionId)
-    .single()
+    .maybeSingle()
 
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  if (session.current_phase < 5) {
-    // The phase gate exists for the client-facing chat flow (uploads unlock
-    // at agent phase 5). Admins manage team photos from the dashboard at any
-    // phase — let an authenticated admin through.
-    const auth = await requireSessionAccess(sessionId)
-    if (auth instanceof NextResponse) {
-      return NextResponse.json({ error: 'File uploads not available yet' }, { status: 403 })
-    }
-  } else {
-    // Phase >= 5 is unauthenticated (client flow) — bound presigns per session
-    // so a leaked session URL can't flood the private bucket.
-    if (!(await checkRateLimit(`presign:${sessionId}`, 60, 60 * 60 * 1000))) {
-      return NextResponse.json({ error: 'Upload limit reached — please wait a bit' }, { status: 429 })
-    }
+
+  // Bound presigns per session so a compromised account can't flood the bucket.
+  if (!(await checkRateLimit(`presign:${sessionId}`, 200, 60 * 60 * 1000))) {
+    return NextResponse.json({ error: 'Upload limit reached — please wait a bit' }, { status: 429 })
   }
 
   if (!ALLOWED_MIMES.includes(mimeType)) {
@@ -59,7 +55,7 @@ export async function POST(req: Request) {
   }
 
   const uuid = crypto.randomUUID()
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_')
+  const safeName = sanitizeUploadFileName(String(fileName))
   const storagePath = `sessions/${sessionId}/${uuid}-${safeName}`
 
   const { data, error } = await supabase.storage

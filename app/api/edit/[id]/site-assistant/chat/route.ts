@@ -6,7 +6,6 @@ import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
 import { safePath } from '../../_path'
 import { readJsonBody } from '@/app/api/_json'
-import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -60,8 +59,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   // resolveEditContext admits assigned managers; site-structure editing (deletes
   // + content generation) is admin-only, mirroring Theme Studio.
-  const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  const user = ctx.user
+  if (!user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -121,12 +120,18 @@ RULES
 - When audiences (target industries/niches) change, once the page work is confirmed, OFFER to file an MBP suggestion so the profile stays in sync — but only after asking, and make clear it's a pending suggestion an admin approves.
 - Keep replies short and concrete.`
 
+  // Blob sha of the nav.json list_site_pages last showed the model: a string,
+  // null (nav.json absent), or undefined (never listed this run). set_nav locks
+  // against it so a whole-nav replace can't clobber changes the model never saw.
+  let navShaSeen: string | null | undefined
+
   const result = streamText({
     model: anthropic('claude-sonnet-4-6'),
     system,
     messages: await convertToModelMessages(trimMessages(messages)),
     maxOutputTokens: 4000,
     tools: {
+      // list_site_pages: records the nav.json sha it showed the model (below).
       list_site_pages: {
         description:
           'List the site\'s current pages (path, url, whether it is in the nav) and the current navigation tree. Read-only — call before planning any change.',
@@ -139,8 +144,11 @@ RULES
             ])
             let nav: NavJson | null = null
             try {
-              nav = parseNavJson((await readFile(githubRepo, NAV_PATH, DRAFT_BRANCH)).content)
-            } catch {
+              const navBlob = await readFile(githubRepo, NAV_PATH, DRAFT_BRANCH)
+              navShaSeen = navBlob.sha
+              nav = parseNavJson(navBlob.content)
+            } catch (err) {
+              if (err instanceof FileNotFoundError) navShaSeen = null
               /* nav absent/unparseable — report pages only */
             }
             const entries = [...pages, ...posts]
@@ -354,14 +362,29 @@ RULES
           } catch (err) {
             return { error: err instanceof Error ? err.message : 'Invalid nav.json.' }
           }
+          // set_nav replaces the WHOLE nav, so it must be based on the tree the
+          // model actually saw. Lock against the sha list_site_pages captured —
+          // not a fresh read, which would silently overwrite a concurrent editor
+          // save (or this run's own create/move nav changes) made since.
+          if (navShaSeen === undefined) {
+            return { error: 'Call list_site_pages first so the new navigation is based on the current tree.' }
+          }
           try {
             let expectedSha: string | undefined
+            let currentSha: string | null = null
             try {
-              expectedSha = (await readFile(githubRepo, NAV_PATH, DRAFT_BRANCH)).sha
+              currentSha = (await readFile(githubRepo, NAV_PATH, DRAFT_BRANCH)).sha
             } catch (err) {
               if (!(err instanceof FileNotFoundError)) throw err
             }
-            await writeFile(
+            if (currentSha !== navShaSeen) {
+              return {
+                error:
+                  'The navigation changed since you last listed it (another editor, or your own create/move/delete). Call list_site_pages again and rebuild set_nav from the fresh tree.',
+              }
+            }
+            if (navShaSeen !== null) expectedSha = navShaSeen
+            const written = await writeFile(
               githubRepo,
               NAV_PATH,
               serializeNavJson(parsed),
@@ -369,6 +392,8 @@ RULES
               `Edit nav.json via AI (${adminEmail ?? 'admin'})`,
               { expectedSha, ...commitAuthor }
             )
+            // Our own write is now the baseline for a follow-up set_nav.
+            navShaSeen = written.blobSha
             return { success: true }
           } catch (err) {
             if (err instanceof StaleShaError) {
@@ -443,7 +468,7 @@ RULES
       await recordTokenUsage({
         task: 'content',
         sessionId,
-        createdBy: user?.id ?? null,
+        createdBy: user.id,
         stage: 'site_structure_edit',
         model: 'claude-sonnet-4-6',
         inputTokens: totalUsage.inputTokens,

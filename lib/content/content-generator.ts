@@ -18,6 +18,7 @@ import { filterKnownInternalLinks } from './link-validator'
 import { buildCrossLinkIndex } from './internal-link-targets'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { extractJson } from './extract-json'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { promoteAuditGroupByDomain } from '@/lib/audit/audit-group'
 import { countWords, targetWordCount } from './word-count-validator'
@@ -39,7 +40,10 @@ import {
   classifyGenerationError,
   taggedError,
   PER_CALL_CAP_MS,
+  MIN_VIABLE_MS,
+  RESERVE_MS,
 } from './generation-budget'
+import { summarizeGenerationState } from './generation-state'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -65,10 +69,39 @@ export const MAX_GENERATION_ATTEMPTS = 5
 // two config sources agree; this constant is what the runner budgets against.
 export const GENERATE_ROUTE_MAX_DURATION_MS = 600_000
 
-// A page claimed as `running` for longer than this cannot still be in flight: one
-// attempt is at most the per-call cap x the 2-rung internal JSON retry, plus
-// slack for the surrounding DB work. Past it, the worker is gone.
-export const ORPHAN_RECLAIM_MS = PER_CALL_CAP_MS * 2 + 120_000
+// Default wall-clock budget for ONE page (all of its model calls: first draft,
+// JSON retry, anti-slop / block-annotation retries). Every call's timeout is
+// min(per-call cap, deadline - now), and optional retries are skipped when the
+// deadline is near, so a page can never outlive the invocation that claimed it.
+// Lone callers (regenerate / create-page routes) run with maxDuration 600 too.
+export const PAGE_DEADLINE_DEFAULT_MS = GENERATE_ROUTE_MAX_DURATION_MS - RESERVE_MS
+
+// Don't start an OPTIONAL retry (JSON re-parse, anti-slop, block-annotation fix,
+// critic rewrite) with less than this left before the page deadline — it would
+// be aborted mid-flight, costing tokens for nothing.
+export const MIN_RETRY_MS = 90_000
+
+// A page claimed as `running` for longer than this cannot still be in flight.
+// Every worker that claims a page runs inside a function capped at
+// GENERATE_ROUTE_MAX_DURATION_MS (generate, regenerate, create-page, and the
+// critic's after() rewrite all share their invocation's cap), and the claim is
+// stamped after that invocation starts — so past cap + slack, the worker is
+// provably dead. (The old per-call-derived figure, 520s, was BELOW the real
+// worst case once a page chains several retries, so a live page could be
+// reclaimed and double-written.)
+export const ORPHAN_RECLAIM_MS = GENERATE_ROUTE_MAX_DURATION_MS + 60_000
+
+/** Timeout for one model call: the cap, shrunk to what's left before `deadlineAt`. */
+export function callTimeoutFor(deadlineAt: number | undefined, capMs: number = PER_CALL_CAP_MS, now: number = Date.now()): number {
+  if (deadlineAt === undefined) return capMs
+  return Math.max(1, Math.min(capMs, deadlineAt - now))
+}
+
+/** Enough time left before `deadlineAt` for an optional retry? */
+export function hasTimeForRetry(deadlineAt: number | undefined, now: number = Date.now(), minMs: number = MIN_RETRY_MS): boolean {
+  if (deadlineAt === undefined) return true
+  return deadlineAt - now > minMs
+}
 
 // Decide whether runContentGeneration should chain another invocation immediately.
 // Chain when this run made real progress OR never-attempted (pending) pages remain
@@ -172,15 +205,19 @@ export async function finalizeGenerationIfComplete(
 ): Promise<boolean> {
   const { data: allPages } = await supabase
     .from('generated_pages')
-    .select('generation_status, generation_attempts')
+    .select('page_url, generation_status, generation_attempts')
     .eq('content_job_id', contentJobId)
 
   if (!allPages?.length) return false
-  const allDone = allPages.every(
-    p =>
-      p.generation_status === 'complete' ||
-      (p.generation_status === 'error' && (p.generation_attempts ?? 0) >= MAX_GENERATION_ATTEMPTS)
-  )
+  // Scope to approved outlines (pending rows for unapproved outlines never
+  // move). If the outline read fails, fall back to judging every page.
+  const { data: approved } = await supabase
+    .from('page_outlines')
+    .select('page_url')
+    .eq('content_job_id', contentJobId)
+    .eq('admin_approved', true)
+  const approvedUrls = approved ? new Set(approved.map(o => o.page_url)) : null
+  const { allDone } = summarizeGenerationState(allPages, approvedUrls, MAX_GENERATION_ATTEMPTS)
   if (!allDone) return false
 
   const { data: job } = await supabase
@@ -188,7 +225,8 @@ export async function finalizeGenerationIfComplete(
     .select('phase')
     .eq('id', contentJobId)
     .single()
-  if ((job?.phase ?? 0) >= 6) return false
+  // Only a job in generation (phase 5) finalizes to Deliverables.
+  if ((job?.phase ?? 0) !== 5) return false
 
   await supabase
     .from('content_jobs')
@@ -225,6 +263,12 @@ type GeneratedResult = {
   degraded?: boolean
 }
 
+// Shape of the model's page JSON (every field optional — the parser defaults each).
+type ParsedPageJson = {
+  content?: string
+  metadata?: Partial<GeneratedResult['metadata']>
+}
+
 function normalizeCta(raw: unknown): Cta {
   if (raw && typeof raw === 'object') {
     const r = raw as Record<string, unknown>
@@ -259,7 +303,10 @@ export async function generatePageContent(
   // bounds the AI SDK's internal maxRetries backoff too, which is what stops a
   // stalled call from consuming the whole function and orphaning the row.
   attemptNumber: number = 1,
-  callTimeoutMs: number = PER_CALL_CAP_MS
+  callTimeoutMs: number = PER_CALL_CAP_MS,
+  // Absolute page deadline (epoch ms). When set, each call's timeout is clipped
+  // to it and the internal JSON retry is skipped if too little time remains.
+  deadlineAt?: number
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
   const location = schema.locations?.[0]
@@ -492,7 +539,7 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
       maxRetries: 4,
       // The hard ceiling. Bounds the whole call INCLUDING the maxRetries backoff
       // above, so a struggling provider can't quietly eat the function's budget.
-      abortSignal: AbortSignal.timeout(callTimeoutMs),
+      abortSignal: AbortSignal.timeout(Math.max(1, Math.min(callTimeoutMs, callTimeoutFor(deadlineAt)))),
     })
 
     const cache = extractCacheUsage(usage)
@@ -514,8 +561,8 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
     })
 
     try {
-      const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-      const parsed = JSON.parse(cleaned)
+      const parsed = extractJson(text) as ParsedPageJson | null
+      if (!parsed || typeof parsed !== 'object') return { ok: false, text, finishReason }
       return {
         ok: true,
         result: {
@@ -558,11 +605,13 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
   // finish confirms it) — retry once with an even larger budget and low effort
   // (less thinking → more room for the answer) before storing raw.
   let res = await attempt(24000, providerOptionsForAttempt(attemptNumber))
-  if (!res.ok) {
+  if (!res.ok && hasTimeForRetry(deadlineAt)) {
     console.warn(
       `[content-gen] JSON parse failed for ${pageUrl} (finish=${res.finishReason}) — retrying with larger budget`
     )
     res = await attempt(32000, OUTLINE_PROVIDER_OPTIONS)
+  } else if (!res.ok) {
+    console.warn(`[content-gen] JSON parse failed for ${pageUrl} — page deadline too close for a retry`)
   }
   if (res.ok) return res.result
 
@@ -628,6 +677,9 @@ export type FinalizePageInput = {
   attemptNumber?: number
   // Hard per-call ceiling, shrunk to the invocation's remaining budget by the caller.
   callTimeoutMs?: number
+  // Absolute deadline (epoch ms) for the WHOLE page — every call (first draft and
+  // all retries) is clipped to it and optional retries are skipped near it.
+  deadlineAt?: number
 }
 
 export async function generateAndFinalizePage(input: FinalizePageInput): Promise<GeneratedResult> {
@@ -651,8 +703,10 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       flaggedPhrases,
       input.revisionGuidance,
       input.attemptNumber ?? 1,
-      input.callTimeoutMs ?? PER_CALL_CAP_MS
+      input.callTimeoutMs ?? PER_CALL_CAP_MS,
+      input.deadlineAt
     )
+  const canRetry = () => hasTimeForRetry(input.deadlineAt)
 
   // Page intent drives the deterministic coercions below (schema.org type default).
   const intent = resolvePageIntent(input.pageUrl, input.pageTitle, input.schema)
@@ -670,7 +724,9 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
     ...validateFaqAnswers(result.metadata.faq_block),
   ]
   const allFlags = [...validation.flagged, ...writingFlags]
-  if (allFlags.length) {
+  if (allFlags.length && !canRetry()) {
+    console.warn(`[content-gen] Draft flagged ${input.pageUrl} but page deadline too close — keeping draft`)
+  } else if (allFlags.length) {
     console.warn(
       `[content-gen] Draft flagged ${input.pageUrl}: ${allFlags.join(' | ')} — retrying`
     )
@@ -703,6 +759,10 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
     // page an admin must hand-annotate. Stop as soon as any annotation appears.
     const STRUCTURAL_RETRY_MAX = 2
     for (let attempt = 1; attempt <= STRUCTURAL_RETRY_MAX; attempt++) {
+      if (!canRetry()) {
+        console.warn(`[content-gen] Page deadline too close for structural retry on ${input.pageUrl}`)
+        break
+      }
       result = await gen([correctionNote])
       if (parseBlockAnnotations(result.content).length > 0) break
       console.warn(
@@ -714,7 +774,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
         `[content-gen] Annotations still missing after ${STRUCTURAL_RETRY_MAX} retries on ${input.pageUrl}; storing anyway (admin must manually annotate)`
       )
     }
-  } else if (!blockValidation.passed && blockValidation.errors.length > 0) {
+  } else if (!blockValidation.passed && blockValidation.errors.length > 0 && canRetry()) {
     console.warn(
       `[content-gen] Block validation errors on ${input.pageUrl}:`,
       blockValidation.errors.map(e => `[section ${e.position}] ${e.reason}`).join(' | ')
@@ -841,7 +901,13 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
 // leaves the completed page untouched. It never flips generation_status or
 // admin_approved_content — the page stays complete + unapproved either way, so a
 // weak page can't reach 'live' without a human, and the regen only improves copy.
-async function reviewAndMaybeRegen(input: DraftCriticInput, outlineId: string): Promise<void> {
+async function reviewAndMaybeRegen(
+  input: DraftCriticInput,
+  outlineId: string,
+  // Absolute deadline of the invocation the critic runs in (after() shares the
+  // function's maxDuration). The rewrite only runs if a full page still fits.
+  deadlineAt: number
+): Promise<void> {
   const supabase = createServerClient()
 
   const persist = async (review: CriticReview) => {
@@ -864,7 +930,13 @@ async function reviewAndMaybeRegen(input: DraftCriticInput, outlineId: string): 
   if (!review) return
 
   // Solid page, or the regen budget is already spent → record the verdict.
-  const action = decideCriticAction(review, priorAttempts)
+  // A rewrite that can't fit before the invocation's deadline would be killed
+  // mid-flight and orphan the row — flag it for a human instead.
+  let action = decideCriticAction(review, priorAttempts)
+  if (action === 'regenerate' && Date.now() + MIN_VIABLE_MS > deadlineAt) {
+    console.warn(`[draft-critic] not enough budget left to rewrite ${input.pageUrl} — flagging for human review`)
+    action = 'flag'
+  }
   if (action !== 'regenerate') {
     await persist({
       ...review,
@@ -885,6 +957,7 @@ async function reviewAndMaybeRegen(input: DraftCriticInput, outlineId: string): 
       revisionGuidance: guidance,
       skipCritic: true,
       countAttempt: false,
+      deadlineAt,
     })
   } catch (err) {
     console.error('[draft-critic] auto-regen failed:', err)
@@ -1020,9 +1093,19 @@ export async function generateSinglePage(
   // auto-regen so it re-scores manually instead of recursing). `countAttempt`
   // (default true) increments the transient-retry counter; the critic regen sets
   // it false so a quality rewrite doesn't eat the 3-attempt error budget.
-  opts?: { revisionGuidance?: string; skipCritic?: boolean; countAttempt?: boolean; callTimeoutMs?: number }
+  // `deadlineAt` is the absolute (epoch ms) deadline for this page: every model
+  // call is clipped to it and optional retries are skipped near it. Defaults to
+  // PAGE_DEADLINE_DEFAULT_MS from now for lone callers.
+  opts?: {
+    revisionGuidance?: string
+    skipCritic?: boolean
+    countAttempt?: boolean
+    callTimeoutMs?: number
+    deadlineAt?: number
+  }
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; pageUrl: string; error?: string }> {
   const supabase = createServerClient()
+  const deadlineAt = opts?.deadlineAt ?? Date.now() + PAGE_DEADLINE_DEFAULT_MS
 
   const { data: outline, error: outlineErr } = await supabase
     .from('page_outlines')
@@ -1056,6 +1139,11 @@ export async function generateSinglePage(
   // otherwise overwrite each other. Any non-running prior state can be
   // claimed for (re-)generation. Only the winner of the .neq guard writes the
   // increment, so attempts counts real tries, not races.
+  // The claim stamp doubles as this worker's fencing token: the final write and
+  // the error write are conditional on it, so a worker whose row was reclaimed
+  // (sweep / orphan reclaim) and re-claimed by someone else can't clobber the
+  // newer run's result.
+  const claimStamp = new Date().toISOString()
   const lockUpdate: {
     generation_status: 'running'
     generation_started_at: string
@@ -1065,7 +1153,7 @@ export async function generateSinglePage(
     // Stamp when generation actually started so the stuck-job sweep judges
     // "stuck" by this, not created_at (which is set at sitemap-confirm and made
     // the sweep falsely error healthy in-flight pages on long jobs).
-    generation_started_at: new Date().toISOString(),
+    generation_started_at: claimStamp,
   }
   // A critic-driven quality rewrite (countAttempt:false) is not a failed try, so
   // it must not consume the transient-error retry budget — leave the counter be.
@@ -1115,7 +1203,8 @@ export async function generateSinglePage(
       revisionGuidance: opts?.revisionGuidance,
       // The claim above already incremented, so this row's count IS this attempt.
       attemptNumber: attemptNo,
-      callTimeoutMs: opts?.callTimeoutMs ?? PER_CALL_CAP_MS,
+      callTimeoutMs: callTimeoutFor(deadlineAt, opts?.callTimeoutMs ?? PER_CALL_CAP_MS),
+      deadlineAt,
     })
 
     const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
@@ -1129,7 +1218,7 @@ export async function generateSinglePage(
     const degradedReason =
       'Content JSON failed to parse or came back empty after retries — raw draft saved for salvage; will auto-retry.'
 
-    const { error: writeErr } = await supabase
+    const { data: written, error: writeErr } = await supabase
       .from('generated_pages')
       .update({
         content_markdown: result.content,
@@ -1158,6 +1247,11 @@ export async function generateSinglePage(
         generation_error: degraded ? degradedReason : null,  // clear prior failure on a clean (re)generation
       })
       .eq('id', genPage.id)
+      // Fenced: only if this worker still owns the claim. A reclaimed row (swept
+      // to error, maybe re-claimed by a newer run) must not be overwritten.
+      .eq('generation_status', 'running')
+      .eq('generation_started_at', claimStamp)
+      .select('id')
 
     // A non-throwing write error (constraint/client failure) would otherwise
     // leave the row 'running' while we report 'complete' — the content is
@@ -1166,6 +1260,10 @@ export async function generateSinglePage(
     if (writeErr) {
       console.error(`[content-gen] DB write failed for ${outline.page_url}: ${writeErr.message}`)
       return { status: 'error', pageUrl: outline.page_url, error: writeErr.message }
+    }
+    if (!written?.length) {
+      console.warn(`[content-gen] Claim lost for ${outline.page_url} (row reclaimed mid-run) — result discarded`)
+      return { status: 'skipped', pageUrl: outline.page_url, error: 'Claim lost — page was reclaimed by another worker' }
     }
 
     // Draft-gate critic: grade the finished page in the background so it never
@@ -1193,6 +1291,7 @@ export async function generateSinglePage(
               contentJobId,
             },
             outline.id,
+            deadlineAt,
           ).catch(err => console.error('[draft-critic] review failed:', err)),
         )
       } catch (hookErr) {
@@ -1222,6 +1321,8 @@ export async function generateSinglePage(
         generation_error: taggedError(kind, message).slice(0, 2000),
       })
       .eq('id', genPage.id)
+      .eq('generation_status', 'running')
+      .eq('generation_started_at', claimStamp)
     return { status: 'error', pageUrl: outline.page_url, error: message }
   }
 }
@@ -1303,8 +1404,11 @@ export async function runContentGeneration(
     // Only a genuine completion counts as progress for the anti-cascade guard
     // below — an 'error'/'skipped' outcome must NOT let an all-failing job
     // re-chain forever or send a spurious "in progress" email.
+    // The page's deadline is the invocation's budget deadline: every call it
+    // makes (incl. retries) is clipped to it, so it can't outlive the function.
     const res = await generateSinglePage(contentJobId, outline.id, pageCtx, {
       callTimeoutMs: budget.callTimeout(),
+      deadlineAt: Date.now() + budget.remaining(),
     })
     if (res.status === 'complete') completedThisRun += 1
   })
@@ -1318,25 +1422,19 @@ export async function runContentGeneration(
   // Check completion + advance phase + email notification.
   const { data: allPages } = await supabase
     .from('generated_pages')
-    .select('generation_status, generation_attempts')
+    .select('page_url, generation_status, generation_attempts')
     .eq('content_job_id', contentJobId)
 
-  const completeCount = allPages?.filter(p => p.generation_status === 'complete').length ?? 0
-  const errorCount = allPages?.filter(p => p.generation_status === 'error').length ?? 0
-  // Never-attempted pages (soft-deadline left them unprocessed) — these justify an
-  // immediate chain; a batch of only retriable errors does not (see backoff note
-  // in shouldChainGeneration).
-  const pendingCount = allPages?.filter(p => p.generation_status === 'pending').length ?? 0
-  // An error page is retriable until it hits the attempt cap. "Done" means every
-  // page is either complete or a capped-out error — so the phase can finalize.
-  const retriableErrorCount = allPages?.filter(
-    p => p.generation_status === 'error' && (p.generation_attempts ?? 0) < MAX_GENERATION_ATTEMPTS
-  ).length ?? 0
-  const allDone = allPages?.every(
-    p =>
-      p.generation_status === 'complete' ||
-      (p.generation_status === 'error' && (p.generation_attempts ?? 0) >= MAX_GENERATION_ATTEMPTS)
-  ) ?? false
+  // Scope every count to pages whose outline is APPROVED. generated_pages rows
+  // are seeded for the whole sitemap at confirm time; a `pending` row for an
+  // unapproved outline will never be generated, and counting it made the chain
+  // loop forever with completed=0 and the job never finalize. Never-attempted
+  // (pending) approved pages justify an immediate chain; retriable errors alone
+  // do not (see backoff note in shouldChainGeneration). "Done" = every approved
+  // page is complete or a capped-out error — so the phase can finalize.
+  const approvedUrls = new Set(outlines.map(o => o.page_url))
+  const { completeCount, errorCount, pendingCount, retriableErrorCount, allDone } =
+    summarizeGenerationState(allPages ?? [], approvedUrls, MAX_GENERATION_ATTEMPTS)
 
   // Auto-chain when more work remains — including error pages still under the
   // retry cap — and this run made progress or there are retriable errors (see
@@ -1372,10 +1470,13 @@ export async function runContentGeneration(
   }
 
   if (allDone) {
+    // Only advance a job that is actually in generation (phase 5) — a restart
+    // at another phase must not jump it forward.
     await supabase
       .from('content_jobs')
       .update({ phase: 6, updated_at: new Date().toISOString() })
       .eq('id', contentJobId)
+      .eq('phase', 5)
 
     console.warn(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
 

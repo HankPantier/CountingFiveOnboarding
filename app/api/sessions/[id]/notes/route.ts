@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -20,7 +20,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
 
   let callNotes: string

@@ -1,6 +1,6 @@
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { NextResponse } from 'next/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
 
 export const runtime = 'nodejs'
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing sessionId or domain' }, { status: 400 })
   }
 
-  const auth = await requireSessionAccess(sessionId)
+  const auth = await requireOnboardingSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
 
   await runWhoisLookup(sessionId, domain)

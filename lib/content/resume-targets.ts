@@ -21,16 +21,24 @@ export function resumeEndpointFor(counts: ItemCounts): 'run' | 'retry' | null {
 }
 
 // Group raw status rows into per-job counts, then pick each job's endpoint.
+//
+// `error` rows only count while under `maxAttempts` — a capped-out row is
+// terminal for automation, so it no longer drives an endless /retry every tick.
+// Jobs are planned in the order their rows first appear: callers pass rows
+// sorted oldest-`updated_at`-first, so the `limit` rotates across jobs instead
+// of always picking the same first five.
 export function resumePlan(
-  rows: Array<{ content_job_id: string; status: string }>,
-  limit = 5
+  rows: Array<{ content_job_id: string; status: string; attempts?: number | null }>,
+  limit = 5,
+  maxAttempts = Number.POSITIVE_INFINITY
 ): Array<{ jobId: string; endpoint: 'run' | 'retry' }> {
   const counts = new Map<string, ItemCounts>()
   for (const r of rows) {
     const c = counts.get(r.content_job_id) ?? { pending: 0, drafting: 0, error: 0 }
     if (r.status === 'drafting') c.drafting += 1
-    else if (r.status === 'error') c.error += 1
-    else if (r.status === 'pending') c.pending += 1
+    else if (r.status === 'error') {
+      if ((r.attempts ?? 0) < maxAttempts) c.error += 1
+    } else if (r.status === 'pending') c.pending += 1
     counts.set(r.content_job_id, c)
   }
   const plan: Array<{ jobId: string; endpoint: 'run' | 'retry' }> = []

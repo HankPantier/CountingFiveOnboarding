@@ -1,10 +1,11 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// Must match BLOG_BATCH_ROUTE_MAX_DURATION_MS (the runner budgets against it).
+export const maxDuration = 600
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -25,6 +26,9 @@ interface RetryBody {
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Re-drafting spends generation budget — a manager power, like batch create /
+  // refine (admins pass implicitly).
+  if (!hasCapability(user, 'manager')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Invalid batch id' }, { status: 400 })
@@ -78,7 +82,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   await supabase
     .from('blog_batch_targets')
-    .update({ status: 'pending', error: null, updated_at: new Date().toISOString() })
+    // A human retry grants a fresh auto-retry budget (attempts → 0).
+    .update({ status: 'pending', error: null, attempts: 0, updated_at: new Date().toISOString() })
     .in(
       'id',
       targets.map((t) => t.id)

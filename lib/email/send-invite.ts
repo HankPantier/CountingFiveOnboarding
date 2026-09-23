@@ -18,10 +18,13 @@ export async function sendInviteEmail({ to, name, role, capabilities, inviteUrl 
   const html = await render(
     InviteUserEmail({ name, label: roleLabel(role, capabilities), inviteUrl })
   )
-  await resend.emails.send({
+  // Resend reports failures as `{ error }` rather than throwing — surface it
+  // so callers' try/catch actually sees a failed send.
+  const { error } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL!,
     to,
     subject: 'Your Revaltus admin invitation',
     html,
   })
+  if (error) throw new Error(`Resend invite email failed: ${error.message}`)
 }

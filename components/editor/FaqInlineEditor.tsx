@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { FaqItem } from '@/lib/editor/structured-fields'
+import { faqSignature, isExternalFaqChange } from '@/lib/ui/faq-sync'
 
 // Inline Q&A editor for a faq-accordion block. FAQ's live source of truth is
 // frontmatter `faq_block`, so this does NOT edit the body segment directly —
@@ -27,6 +28,14 @@ export default function FaqInlineEditor({
   onChange: (items: FaqItem[]) => void
 }) {
   const [faq, setFaq] = useState<FaqItem[]>(items)
+  // Reseed the buffer when `items` changes from OUTSIDE (AI edit reload,
+  // source-mode edit, conflict resolution). Our own echo — the buffer minus
+  // blank rows — is recognized and ignored, so typing isn't disturbed.
+  const [seenSig, setSeenSig] = useState(() => faqSignature(items))
+  if (faqSignature(items) !== seenSig) {
+    setSeenSig(faqSignature(items))
+    if (isExternalFaqChange(items, seenSig, faq)) setFaq(items)
+  }
 
   const commit = (next: FaqItem[]) => {
     setFaq(next)

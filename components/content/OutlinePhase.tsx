@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import OutlineCard from './OutlineCard'
 import { nextPendingOutlineId } from '@/lib/content/outline-review'
+import { mergePolledOutlines } from '@/lib/ui/outline-poll-merge'
 import LibraryContentPanel from './LibraryContentPanel'
 import ArticleImportPanel from './ArticleImportPanel'
 import type { Json } from '@/types/database'
@@ -42,6 +43,10 @@ export default function OutlinePhase({
   // Defaults acknowledged — a session with no discovered articles auto-clears via
   // the panel, and the server gate is the real enforcement.
   const [articlesAcknowledged, setArticlesAcknowledged] = useState(true)
+  // Outline ids with unsaved local edits. The poll below must not overwrite
+  // these rows (it would silently discard what the operator is typing); a ref
+  // so the long-lived poll closure always sees the current set.
+  const dirtyIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -49,10 +54,19 @@ export default function OutlinePhase({
     const poll = async () => {
       try {
         const res = await fetch(`/api/content-jobs/${contentJobId}/outlines`)
-        if (cancelled || !res.ok) return
+        if (cancelled) return
+        if (!res.ok) {
+          setError(`Failed to load outlines (${res.status})`)
+          setLoading(false)
+          // Auth/not-found won't fix itself — stop hammering the route.
+          if (res.status === 401 || res.status === 403 || res.status === 404) clearInterval(intervalId)
+          return
+        }
         const data = await res.json()
-        const current = data.outlines ?? []
-        setOutlines(current)
+        const current: Outline[] = data.outlines ?? []
+        // Keep local copies of rows with unsaved edits; adopt everything else
+        // (new rows, generated H1s, approval status) from the server.
+        setOutlines(prev => mergePolledOutlines(prev, current, dirtyIdsRef.current, ['admin_approved']))
         setLoading(false)
         // Stop polling once all outlines have h1 (generation done)
         if (current.length > 0 && current.every((o: Outline) => o.h1)) {
@@ -115,6 +129,8 @@ export default function OutlinePhase({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error ?? 'Regenerate all failed')
       }
+      // Every outline was rebuilt server-side — local edits no longer apply.
+      dirtyIdsRef.current.clear()
       // Re-mount polling to track the rebuilding outlines.
       setRetryNonce(n => n + 1)
     } catch (err) {
@@ -124,7 +140,11 @@ export default function OutlinePhase({
     }
   }
 
-  const handleUpdate = (updated: Outline) => {
+  // `localEdit` = the operator changed a field (unsaved); otherwise `updated`
+  // is the server's copy after a save/approve/regenerate and the row is clean.
+  const handleUpdate = (updated: Outline, localEdit = false) => {
+    if (localEdit) dirtyIdsRef.current.add(updated.id)
+    else dirtyIdsRef.current.delete(updated.id)
     setOutlines(prev => prev.map(o => o.id === updated.id ? updated : o))
   }
 

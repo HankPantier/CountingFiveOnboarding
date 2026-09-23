@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { summarizeEditRun } from './edit-run-summary'
 
 describe('summarizeEditRun', () => {
+  it('does not count a no-op (already applied) edit as applied', () => {
+    const parts = [
+      { type: 'tool-apply_edit', output: { success: true, noChange: true, message: 'Already applied' } },
+      { type: 'tool-apply_edits', output: { success: true, applied: [{ find: 'a', replacements: 1 }], failed: [], unchanged: [{ find: 'b', reason: 'x' }] } },
+    ]
+    expect(summarizeEditRun(parts, 'stop')).toEqual({ applied: 1, failed: 0, unchanged: 2, incomplete: false })
+  })
+
   it('counts every successful commit tool as applied', () => {
     const parts = [
       { type: 'text' },

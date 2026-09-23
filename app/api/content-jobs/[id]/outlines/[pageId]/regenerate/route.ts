@@ -54,7 +54,7 @@ export async function POST(
   // Clear existing and regenerate
   await supabase
     .from('page_outlines')
-    .update({ h1: null, sections: '[]', admin_approved: false, admin_notes: null, updated_at: new Date().toISOString() })
+    .update({ h1: null, generation_claimed_at: null, sections: '[]', admin_approved: false, admin_notes: null, updated_at: new Date().toISOString() })
     .eq('id', pageId)
 
   try {

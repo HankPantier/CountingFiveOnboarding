@@ -69,3 +69,25 @@ describe('applyGeoReview', () => {
     expect(schema.business?.geographicScope).toContain('Nashua')
   })
 })
+
+describe('applyGeoReview — primary after dedup', () => {
+  it('keeps the operator-picked primary when duplicates/blank rows precede it', () => {
+    const out = applyGeoReview(
+      { business: { name: 'A' } } as unknown as SessionSchema,
+      {
+        scope: 'local',
+        areas: [
+          { city: 'Austin', state: 'TX' },
+          { city: 'austin', state: 'tx' },
+          { city: '' },
+          { city: 'Dallas', state: 'TX', primary: true },
+        ],
+      },
+      '2026-09-22T00:00:00.000Z',
+    )
+    const areas = out.business?.serviceAreas ?? []
+    expect(areas.map((a) => a.city)).toEqual(['Austin', 'Dallas'])
+    expect(areas.find((a) => a.primary)?.city).toBe('Dallas')
+    expect(areas.filter((a) => a.primary)).toHaveLength(1)
+  })
+})

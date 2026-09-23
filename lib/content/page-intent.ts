@@ -2,7 +2,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import { activeNiches } from './active-niches'
 import { activeServices } from './active-services'
 import { blocksForPage, hasBlocks, type PageBlocks } from './page-treatment'
-import { objArr } from './schema-coerce'
+import { objArr, realStrings } from './schema-coerce'
 
 // Resolve what a page IS — a specific niche, service, or location page vs. a
 // generic one — and produce a compact, directive focus block that names the exact
@@ -75,7 +75,7 @@ function matchBySlug<T>(items: T[], slug: string, nameOf: (item: T) => string): 
 // niche name/ICP. Returns null when nothing clearly relates — better to cite no
 // proof than to force an unrelated story (the firm context already lists them all).
 function pickRelevantStory(niche: Niche, schema: SessionSchema): string | null {
-  const stories = a(schema.business?.clientSuccessStories)
+  const stories = realStrings(schema.business?.clientSuccessStories)
   if (!stories.length) return null
   const needleWords = new Set(
     `${s(niche.name)} ${s(niche.icp)}`

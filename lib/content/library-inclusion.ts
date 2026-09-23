@@ -8,6 +8,10 @@ const LIBRARY_ROUTE_MAX_DURATION_MS = 600_000
 // One selection = a resource draft (up to 2 model calls) plus an inline social
 // generation plus an MBP impact review. Don't start one without room to finish.
 const LIBRARY_MIN_VIABLE_MS = 180_000
+// Auto-retry cap: a selection that has failed this many draft attempts is left
+// `error` for a human "Retry failed" (which resets the counter) instead of being
+// re-drafted by the cron/chain every 5 minutes forever, burning tokens.
+export const MAX_LIBRARY_ATTEMPTS = 3
 import { resolveEligibility, insertBatchTargets } from './blog-batch-targets'
 import { asContentType } from './content-types'
 import { asIndustry } from './industries'
@@ -21,6 +25,8 @@ export interface LibrarySelectionStatus {
   drafting: number
   complete: number
   error: number
+  // Failed selections still under the auto-retry cap.
+  retriableError: number
   // Distinct error messages across failed selections, so the UI can show WHY
   // (e.g. "API usage limit reached") instead of a bare "N failed".
   errorSamples: string[]
@@ -37,7 +43,7 @@ export async function getLibrarySelectionStatus(
   const supabase = createServerClient()
   const { data } = await supabase
     .from('content_job_library_selections')
-    .select('id, status, error, resource_idea_id')
+    .select('id, status, error, resource_idea_id, attempts')
     .eq('content_job_id', contentJobId)
   const selections = data ?? []
 
@@ -68,22 +74,29 @@ export async function getLibrarySelectionStatus(
       id: r.id,
       status: settled?.status ?? r.status,
       error: settled?.status === 'error' ? (settled.error ?? r.error) : r.error,
+      attempts: r.attempts ?? 0,
       stale: !!settled && settled.status !== r.status,
     }
   })
 
   // Converge the stored rows in the background so the staleness doesn't persist.
   // Best-effort: a failure here must never fail the status read or the publish.
+  // Awaited (not fire-and-forget): a dangling write can be cut off when the
+  // serverless function returns, and an unobserved rejection is lost.
   const stale = rows.filter((r) => r.stale)
   if (stale.length) {
-    void Promise.all(
-      stale.map((r) =>
-        supabase
-          .from('content_job_library_selections')
-          .update({ status: r.status, error: r.error, updated_at: new Date().toISOString() })
-          .eq('id', r.id)
+    try {
+      await Promise.all(
+        stale.map((r) =>
+          supabase
+            .from('content_job_library_selections')
+            .update({ status: r.status, error: r.error, updated_at: new Date().toISOString() })
+            .eq('id', r.id)
+        )
       )
-    ).catch((err) => console.warn('[library-status] self-heal write failed:', err))
+    } catch (err) {
+      console.warn('[library-status] self-heal write failed:', err)
+    }
   }
 
   const count = (s: string) => rows.filter((r) => r.status === s).length
@@ -102,6 +115,7 @@ export async function getLibrarySelectionStatus(
     drafting,
     complete: count('complete'),
     error: count('error'),
+    retriableError: rows.filter((r) => r.status === 'error' && r.attempts < MAX_LIBRARY_ATTEMPTS).length,
     errorSamples,
     terminal: pending + drafting === 0,
   }
@@ -112,14 +126,27 @@ export async function getLibrarySelectionStatus(
 // (every row complete/error) is skipped by /library/run's terminal guard and the
 // cron — so a genuinely-failed article (API limit, timeout, unparseable output)
 // has no other path back into drafting. Returns how many rows were reset.
-export async function resetFailedLibrarySelections(contentJobId: string): Promise<number> {
+//
+// `manual` (a human clicked Retry) resets every failed row AND its attempt
+// counter; an automatic caller (cron / self-chain) only resets rows still under
+// MAX_LIBRARY_ATTEMPTS, so a permanently-failing draft stops being retried.
+export async function resetFailedLibrarySelections(
+  contentJobId: string,
+  opts: { manual: boolean } = { manual: false }
+): Promise<number> {
   const supabase = createServerClient()
-  const { data } = await supabase
+  let query = supabase
     .from('content_job_library_selections')
-    .update({ status: 'pending', error: null, updated_at: new Date().toISOString() })
+    .update({
+      status: 'pending',
+      error: null,
+      ...(opts.manual ? { attempts: 0 } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq('content_job_id', contentJobId)
     .eq('status', 'error')
-    .select('id')
+  if (!opts.manual) query = query.lt('attempts', MAX_LIBRARY_ATTEMPTS)
+  const { data } = await query.select('id')
   return data?.length ?? 0
 }
 
@@ -290,12 +317,17 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
     }
   }
 
-  const { data: selections } = await supabase
+  const { data: openSelections } = await supabase
     .from('content_job_library_selections')
-    .select('id, session_id, batch_id, resource_idea_id')
+    .select('id, session_id, batch_id, resource_idea_id, status, attempts')
     .eq('content_job_id', contentJobId)
     .in('status', ['pending', 'error'])
-  if (!selections?.length) return
+    .order('updated_at', { ascending: true })
+  // Capped-out errors are terminal for automation (see MAX_LIBRARY_ATTEMPTS).
+  const selections = (openSelections ?? []).filter(
+    (s) => s.status === 'pending' || (s.attempts ?? 0) < MAX_LIBRARY_ATTEMPTS
+  )
+  if (!selections.length) return
 
   const sessionId = selections[0].session_id
   const { eligible } = await resolveEligibility(supabase, [sessionId])
@@ -341,10 +373,18 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
           }
           await supabase
             .from('content_job_library_selections')
-            .update({ resource_idea_id: ideaId, status: 'drafting', updated_at: new Date().toISOString() })
+            .update({
+              resource_idea_id: ideaId,
+              status: 'drafting',
+              attempts: (sel.attempts ?? 0) + 1,
+              updated_at: new Date().toISOString(),
+            })
             .eq('id', sel.id)
         } else {
-          await mark(supabase, sel.id, 'drafting', null)
+          await supabase
+            .from('content_job_library_selections')
+            .update({ status: 'drafting', error: null, attempts: (sel.attempts ?? 0) + 1, updated_at: new Date().toISOString() })
+            .eq('id', sel.id)
         }
 
         const result = await generateResourceDraft(ideaId)
@@ -376,7 +416,7 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
     const endpoint = resumeEndpointFor({
       pending: remaining.pending,
       drafting: remaining.drafting,
-      error: remaining.error,
+      error: remaining.retriableError,
     })
     console.warn(
       `[library-run] Budget reached with ${skipped.length} selection(s) left (elapsed ${budget.elapsed()}ms) — chaining via ${endpoint ?? 'none'}.`

@@ -114,3 +114,15 @@ describe('hasCaseStudyData', () => {
     expect(hasCaseStudyData(blankStories, null)).toBe(false)
   })
 })
+
+describe('hasCaseStudyData — dirty schema', () => {
+  it('does not throw when clientSuccessStories is stored as a bare string', () => {
+    const schema = { business: { clientSuccessStories: 'Helped a dental group cut tax 20%' } } as unknown as Parameters<typeof hasCaseStudyData>[0]
+    expect(hasCaseStudyData(schema, null)).toBe(true)
+  })
+
+  it('keeps the gate closed when the only story is the onboarding "None" sentinel', () => {
+    const schema = { business: { clientSuccessStories: ['None'] } } as unknown as Parameters<typeof hasCaseStudyData>[0]
+    expect(hasCaseStudyData(schema, null)).toBe(false)
+  })
+})

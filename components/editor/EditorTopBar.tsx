@@ -67,7 +67,9 @@ function OverflowMenu({
   isOwner: boolean
   onRollback: () => void
   onSyncDraft: () => void
-  onResetDraft: () => void
+  // Admin-only (the draft route rejects reset for everyone else); omitted →
+  // the "Reset draft to live" item is hidden.
+  onResetDraft?: () => void
   onRepullDone?: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -236,6 +238,7 @@ function OverflowMenu({
               >
                 Add / edit pricing calculator →
               </Link>
+              {canPublishLive && (
               <Link
                 href={`/admin/content/${sessionId}/blog-landing`}
                 role="menuitem"
@@ -245,6 +248,7 @@ function OverflowMenu({
               >
                 Blog landing settings →
               </Link>
+              )}
             </>
           )}
           <div className="border-t border-border-default my-1" />
@@ -318,6 +322,7 @@ function OverflowMenu({
               Update draft from live ({status.draftBehind})
             </button>
           )}
+          {onResetDraft && (
           <button
             type="button"
             role="menuitem"
@@ -331,6 +336,7 @@ function OverflowMenu({
           >
             Reset draft to live
           </button>
+          )}
           {status.canRevertPublish && canPublishLive && (
             <>
               <div className="border-t border-border-default my-1" />
@@ -393,7 +399,9 @@ export default function EditorTopBar({
   onPublish: () => void
   onRollback: () => void
   onSyncDraft: () => void
-  onResetDraft: () => void
+  // Admin-only (the draft route rejects reset for everyone else); omitted →
+  // the "Reset draft to live" item is hidden.
+  onResetDraft?: () => void
   onRepullDone?: () => void
 }) {
   const pill = statusPill(status, dirtyCount)

@@ -1,6 +1,5 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { getAccessibleSessionIds, getAccessibleAuditScope, type CurrentUser } from '@/lib/auth/access'
-import type { SessionSchema } from '@/types/session-schema'
 
 export interface ClientEntry {
   id: string
@@ -25,8 +24,13 @@ export interface CommandIndex {
 // Best display name for a client: the documented business name, falling back to
 // the website's hostname so the palette always has something searchable.
 // Exported so the home assistant tools resolve clients with the same label.
-export function clientName(schema: SessionSchema | null, websiteUrl: string): string {
-  const business = schema?.business?.name?.trim()
+// Accepts the full schema or just the slice it reads (list queries select only
+// `schema_data->business->>name`, never the whole JSONB blob).
+export type ClientNameSource = { business?: { name?: string | null } | null } | null
+
+export function clientName(schema: ClientNameSource, websiteUrl: string): string {
+  const raw = schema?.business?.name
+  const business = typeof raw === 'string' ? raw.trim() : ''
   if (business) return business
   try {
     return new URL(websiteUrl).hostname.replace(/^www\./, '')
@@ -45,7 +49,7 @@ export async function getCommandIndex(user: CurrentUser): Promise<CommandIndex> 
 
   let sessionQuery = supabase
     .from('sessions')
-    .select('id, website_url, status, schema_data, last_activity_at')
+    .select('id, website_url, status, last_activity_at, business_name:schema_data->business->>name')
     .neq('status', 'archived')
     .order('last_activity_at', { ascending: false })
   if (allowedSessionIds !== null) sessionQuery = sessionQuery.in('id', allowedSessionIds)
@@ -70,7 +74,7 @@ export async function getCommandIndex(user: CurrentUser): Promise<CommandIndex> 
 
   const clients: ClientEntry[] = (sessions ?? []).map(s => ({
     id: s.id,
-    name: clientName(s.schema_data as SessionSchema | null, s.website_url),
+    name: clientName({ business: { name: s.business_name } }, s.website_url),
     websiteUrl: s.website_url,
     status: s.status,
     hasSite: withSite.has(s.id),

@@ -102,6 +102,14 @@ export default function DeliverablesPhase({
   // 5s for the whole ~10-min drafting window. A ref (not state) so the stable
   // interval reads the live value without a dependency that would tear it down.
   const libraryRunningRef = useRef(false)
+  // The long client-side wait loops below (deploy confirm, library/import
+  // drafting) must stop when the operator navigates away — otherwise they keep
+  // polling for minutes and a one-click publish could still push live.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   // Verbatim article imports (the client's own existing posts, brought in as-is).
   // Same status shape + lifecycle as included library articles.
   const [importStatus, setImportStatus] = useState<LibrarySelectionStatus | null>(null)
@@ -201,6 +209,7 @@ export default function DeliverablesPhase({
     const MAX_POLLS = 25
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise((r) => setTimeout(r, 8000))
+      if (!mountedRef.current) return false
       try {
         const res = await fetch(`/api/content-jobs/${contentJobId}/deploy-status`)
         if (!res.ok) continue
@@ -233,6 +242,7 @@ export default function DeliverablesPhase({
       const MAX_POLLS = 120 // ~10 min at 5s
       for (let i = 0; i < MAX_POLLS; i++) {
         await new Promise((r) => setTimeout(r, 5000))
+        if (!mountedRef.current) return false
         try {
           const s = await fetch(`/api/content-jobs/${contentJobId}/library/status`)
           if (!s.ok) continue
@@ -264,6 +274,7 @@ export default function DeliverablesPhase({
       const MAX_POLLS = 120 // ~10 min at 5s
       for (let i = 0; i < MAX_POLLS; i++) {
         await new Promise((r) => setTimeout(r, 5000))
+        if (!mountedRef.current) return false
         try {
           const s = await fetch(`/api/content-jobs/${contentJobId}/imports/status`)
           if (!s.ok) continue

@@ -44,3 +44,14 @@ describe('applyTeamReview', () => {
     expect(second.team).toEqual(first.team)
   })
 })
+
+describe('applyTeamReview — partial resubmit', () => {
+  it('keeps an earlier remove for a member the resubmit does not mention', () => {
+    const s0 = { team: [{ name: 'Ann' }, { name: 'Bob' }] } as unknown as SessionSchema
+    const first = applyTeamReview(s0, { remove: ['Bob'] }, '2026-09-22T00:00:00.000Z')
+    const second = applyTeamReview(first, { keep: ['Ann'] }, '2026-09-22T00:00:00.000Z')
+    expect(second.team?.find((m) => m.name === 'Bob')?.teamDecision).toBe('remove')
+    const third = applyTeamReview(second, { keep: ['Bob'] }, '2026-09-22T00:00:00.000Z')
+    expect(third.team?.find((m) => m.name === 'Bob')?.teamDecision).toBe('keep')
+  })
+})

@@ -8,6 +8,31 @@ import { normalizeGapField } from '@/lib/mbp/completeness'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { GapItem } from '@/types/gap-item'
 
+type StorageBucket = ReturnType<ReturnType<typeof createServerClient>['storage']['from']>
+
+// Every object path under `prefix`, following pagination and sub-folders
+// (folder entries come back with a null id). Throws on a list error so the
+// caller never proceeds on a partial listing.
+async function listAllFiles(bucket: StorageBucket, prefix: string, depth = 0): Promise<string[]> {
+  const out: string[] = []
+  const PAGE = 1000
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await bucket.list(prefix, { limit: PAGE, offset })
+    if (error) throw error
+    const entries = data ?? []
+    for (const entry of entries) {
+      const path = `${prefix}/${entry.name}`
+      if (entry.id === null) {
+        if (depth < 5) out.push(...(await listAllFiles(bucket, path, depth + 1)))
+      } else {
+        out.push(path)
+      }
+    }
+    if (entries.length < PAGE) break
+  }
+  return out
+}
+
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -21,26 +46,46 @@ export async function DELETE(
   const { data: session } = await supabase.from('sessions').select('id').eq('id', id).single()
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Remove uploaded files and generated PDFs/MDs from storage
-  const [{ data: sessionFiles }, { data: pdfFiles }] = await Promise.all([
-    supabase.storage.from('session-assets').list(`sessions/${id}`),
-    supabase.storage.from('session-assets').list(`pdfs/${id}`),
-  ])
-  const filesToRemove = [
-    ...(sessionFiles ?? []).map(f => `sessions/${id}/${f.name}`),
-    ...(pdfFiles ?? []).map(f => `pdfs/${id}/${f.name}`),
-  ]
-  if (filesToRemove.length > 0) {
-    await supabase.storage.from('session-assets').remove(filesToRemove)
+  // Remove uploaded files, generated PDFs/MDs, and assembled content packages
+  // from storage. Listing is paginated + recursive (list() caps at 100 by
+  // default and doesn't descend into sub-folders).
+  const bucket = supabase.storage.from('session-assets')
+  let filesToRemove: string[]
+  try {
+    const lists = await Promise.all([
+      listAllFiles(bucket, `sessions/${id}`),
+      listAllFiles(bucket, `pdfs/${id}`),
+      listAllFiles(bucket, `content-packages/${id}`),
+    ])
+    filesToRemove = lists.flat()
+  } catch (err) {
+    console.error('[DELETE session] storage list failed:', err)
+    return NextResponse.json({ error: 'Failed to list session files' }, { status: 500 })
+  }
+  for (let i = 0; i < filesToRemove.length; i += 1000) {
+    const { error: removeErr } = await bucket.remove(filesToRemove.slice(i, i + 1000))
+    if (removeErr) {
+      console.error('[DELETE session] storage remove failed:', removeErr)
+      return NextResponse.json({ error: 'Failed to remove session files' }, { status: 500 })
+    }
   }
 
   // Delete related records then the session itself
-  await Promise.all([
+  const related = await Promise.all([
     supabase.from('messages').delete().eq('session_id', id),
     supabase.from('assets').delete().eq('session_id', id),
     supabase.from('reminders').delete().eq('session_id', id),
   ])
-  await supabase.from('sessions').delete().eq('id', id)
+  const relatedErr = related.find(r => r.error)?.error
+  if (relatedErr) {
+    console.error('[DELETE session] related-row delete failed:', relatedErr)
+    return NextResponse.json({ error: 'Failed to delete session records' }, { status: 500 })
+  }
+  const { error: sessionErr } = await supabase.from('sessions').delete().eq('id', id)
+  if (sessionErr) {
+    console.error('[DELETE session] session delete failed:', sessionErr)
+    return NextResponse.json({ error: 'Failed to delete session' }, { status: 500 })
+  }
 
   return NextResponse.json({ success: true })
 }

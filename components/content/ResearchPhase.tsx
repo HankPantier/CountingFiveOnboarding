@@ -50,23 +50,38 @@ export default function ResearchPhase({
   const [retryError, setRetryError] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
   const [restartError, setRestartError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    // Research rows are seeded when the sitemap is confirmed, so an empty set
+    // that stays empty for a few polls means there's nothing to wait for.
+    let emptyPolls = 0
 
     const poll = async () => {
       try {
         const res = await fetch(`/api/content-jobs/${contentJobId}/research-status`)
-        if (cancelled || !res.ok) return
-        const data = await res.json()
+        if (cancelled) return
+        if (!res.ok) {
+          setLoadError(`Couldn't load research status (${res.status}).`)
+          setLoading(false)
+          // Auth / not-found won't recover by polling.
+          if (res.status === 401 || res.status === 403 || res.status === 404) clearInterval(intervalId)
+          return
+        }
+        const data = (await res.json()) as ResearchStatus
+        if (cancelled) return
+        setLoadError(null)
         setStatus(data)
         setLoading(false)
         // Self-terminate when all pages are done
         if (data.total > 0 && data.complete + data.error >= data.total) {
           clearInterval(intervalId)
         }
+        if (data.total === 0 && ++emptyPolls >= 3) clearInterval(intervalId)
       } catch {
-        // Retry on next poll
+        // Network blip — retry on next poll, but don't leave the spinner up.
+        if (!cancelled) setLoading(false)
       }
     }
 
@@ -114,6 +129,14 @@ export default function ResearchPhase({
     return (
       <div className="py-4 text-center">
         <div className="text-sm text-text-muted font-body">Loading research status...</div>
+      </div>
+    )
+  }
+
+  if (!status && loadError) {
+    return (
+      <div className="bg-error/10 border border-error/20 text-error text-sm font-body rounded-lg px-4 py-2">
+        {loadError}
       </div>
     )
   }

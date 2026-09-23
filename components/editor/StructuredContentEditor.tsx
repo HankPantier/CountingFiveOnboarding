@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
 
 type SeoField = 'faq' | 'answer' | 'eeat' | 'links'
@@ -49,6 +49,7 @@ export default function StructuredContentEditor({
   onEeatChange,
   initialLinks,
   onLinksChange,
+  isAdmin = false,
 }: {
   sessionId: string
   path: string
@@ -60,6 +61,8 @@ export default function StructuredContentEditor({
   onEeatChange: (signals: string[]) => void
   initialLinks: InternalLink[]
   onLinksChange: (links: InternalLink[]) => void
+  // Server-resolved (passed down from the editor page) — AI generation is admin-only.
+  isAdmin?: boolean
 }) {
   // Local editing buffer so in-progress blank rows persist in the UI; the parent
   // persists a cleaned (blank-stripped) copy to frontmatter on every change. The
@@ -93,22 +96,8 @@ export default function StructuredContentEditor({
     commitLinks(links.map((l, idx) => (idx === i ? { ...l, ...patch } : l)))
 
   // AI generation is admin-only, mirroring the AI content editor.
-  const [isAdmin, setIsAdmin] = useState(false)
   const [generating, setGenerating] = useState<SeoField | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((d: { role?: string }) => {
-        if (!cancelled && d.role === 'admin') setIsAdmin(true)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const generate = async (field: SeoField, isEmpty: boolean) => {
     if (!isEmpty && !window.confirm('Replace the current content with AI-generated content?')) {

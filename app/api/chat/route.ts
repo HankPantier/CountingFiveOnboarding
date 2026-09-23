@@ -1,12 +1,13 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
 import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/agent/system-prompt'
 import { validatePhaseAdvance } from '@/lib/agent/phase-validators'
 import { trimMessages } from '@/lib/agent/trim-messages'
-import { deepMerge, deepSetPath, isPathFilled, preserveAppendOnlyMarkers } from '@/lib/mbp/schema-write'
+import { applyChatUpdates, resolveGapsAfterUpdate, sanitizeChatUpdates } from '@/lib/agent/chat-updates'
+import { readJsonBody } from '@/app/api/_json'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { SessionSchema } from '@/types/session-schema'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -32,17 +33,39 @@ const PHASE_INPUT_BUDGET: Record<number, number> = { 1: 1000, 2: 1000, 3: 3500, 
 // Anthropic budget. 60 user messages/hour is far above any real conversation.
 const MAX_MESSAGES_PER_HOUR = 60
 
-export async function POST(req: Request) {
-  const { messages, sessionId }: { messages: UIMessage[]; sessionId: string } = await req.json()
+interface ChatRequestBody {
+  messages: UIMessage[]
+  sessionId: string
+}
 
-  if (!sessionId || !UUID_RE.test(sessionId)) {
-    return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
+// Shape check for the chat body. Runs BEFORE the processing lock is taken so a
+// malformed request can never strand the lock.
+function isChatRequestBody(body: unknown): body is ChatRequestBody {
+  if (!body || typeof body !== 'object') return false
+  const b = body as { messages?: unknown; sessionId?: unknown }
+  if (typeof b.sessionId !== 'string' || !UUID_RE.test(b.sessionId)) return false
+  if (!Array.isArray(b.messages)) return false
+  return b.messages.every(
+    (m: unknown) =>
+      !!m && typeof m === 'object' &&
+      typeof (m as { role?: unknown }).role === 'string' &&
+      Array.isArray((m as { parts?: unknown }).parts)
+  )
+}
+
+export async function POST(req: Request) {
+  const body = await readJsonBody<unknown>(req)
+  if (body instanceof NextResponse) return body
+  if (!isChatRequestBody(body)) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
+  const { messages, sessionId } = body
 
   // Onboarding is rep-driven and internal-only — the client self-serve chat is
   // retired. Every chat turn must come from an authenticated rep with access to
-  // this session (admins pass; managers only for an assigned client).
-  const access = await requireSessionAccess(sessionId)
+  // this session (admins pass; managers only for an assigned client — editors
+  // and Site Owners are content-only and never reach onboarding).
+  const access = await requireOnboardingSessionAccess(sessionId)
   if (access instanceof NextResponse) return access
 
   const supabase = createServerClient()
@@ -104,21 +127,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Already processing' }, { status: 429 })
   }
 
-  // Save incoming user message — skip the __init__ trigger
-  const lastMsg = messages[messages.length - 1]
-  if (lastMsg?.role === 'user') {
-    const textPart = lastMsg.parts.find((p): p is TextUIPart => p.type === 'text')
-    const userText = textPart?.text ?? ''
-    if (userText && userText !== '__init__') {
-      await supabase.from('messages').insert({
-        session_id: sessionId,
-        role: 'user',
-        content: userText,
-      })
-    }
-  }
-
   try {
+    // Save incoming user message — skip the __init__ trigger. Inside the try so
+    // a failure here still releases the lock (catch below).
+    const lastMsg = messages[messages.length - 1]
+    if (lastMsg?.role === 'user') {
+      const textPart = lastMsg.parts.find((p): p is TextUIPart => p.type === 'text')
+      const userText = textPart?.text ?? ''
+      if (userText && userText !== '__init__') {
+        const { error: insertErr } = await supabase.from('messages').insert({
+          session_id: sessionId,
+          role: 'user',
+          content: userText,
+        })
+        if (insertErr) console.error('[chat] user message insert failed:', insertErr)
+      }
+    }
+
     const systemPrompt = buildSystemPrompt(session)
     const trimmed = trimMessages(messages)
     const modelMessages = await convertToModelMessages(trimmed)
@@ -201,15 +226,19 @@ export async function POST(req: Request) {
           console.error('[chat] onError unlock failed:', err)
         }
       },
-      onFinish: async ({ text, totalUsage }) => {
+      onFinish: async ({ text, totalUsage, steps }) => {
         try {
           console.warn(
             `[tokens] session=${sessionId} input=${totalUsage.inputTokens} output=${totalUsage.outputTokens}`
           )
+          // The budget is per request to the model: totalUsage sums every tool
+          // step (each re-sends the full prompt), so compare the largest single
+          // step's input instead.
           const budget = PHASE_INPUT_BUDGET[session.current_phase]
-          if (budget && typeof totalUsage.inputTokens === 'number' && totalUsage.inputTokens > budget) {
+          const maxStepInput = maxStepInputTokens(steps)
+          if (budget && maxStepInput !== null && maxStepInput > budget) {
             console.error(
-              `[token-budget] phase=${session.current_phase} input=${totalUsage.inputTokens} exceeds target=${budget}`
+              `[token-budget] phase=${session.current_phase} input=${maxStepInput} exceeds target=${budget}`
             )
           }
           await recordTokenUsage({
@@ -258,35 +287,38 @@ async function updateSessionSchema(
   supabase: Supabase,
   sessionId: string,
   originalSession: Pick<Session, 'website_url'>,
-  updates: Record<string, unknown>,
+  rawUpdates: Record<string, unknown>,
   resolvedGaps?: string[],
   advancePhase?: boolean
 ): Promise<{ success: boolean; phaseAdvanced: boolean; blocked?: string }> {
-  // Reload for latest state (multi-step tool calls)
+  // Reload for latest state (multi-step tool calls, and any concurrent write
+  // made while the model was generating) — the diff below is applied onto this
+  // fresh copy right before the write.
   const { data: current } = await supabase
     .from('sessions')
     .select('schema_data, gap_list, current_phase, status, website_url')
     .eq('id', sessionId)
     .single()
 
+  // An approved session is frozen: the chat must never rewrite its data or
+  // demote its status. Report it back so the model stops calling the tool.
+  if (current?.status === 'approved') {
+    return {
+      success: false,
+      phaseAdvanced: false,
+      blocked: '[INTERNAL diagnostic — do NOT repeat to the user] This session is already approved; nothing was saved. Do not call update_session_data again.',
+    }
+  }
+
   const currentSchema = (current?.schema_data as Record<string, unknown>) ?? {}
   // The model sends `updates` as a field-path→value map — a MIX of dotted/bracket
   // paths ("business.tagline", "niches[0].painPoints") and whole nested objects
-  // ("_meta": { phase3_completed_chunks: [...] }). deepMerge alone treats a dotted
-  // KEY as a literal top-level property, orphaning it off the schema the MBP UI
-  // reads. So first fold every entry into a properly-nested object via deepSetPath
-  // (which parses brackets and array indices), THEN deepMerge that — preserving
-  // deepMerge's deep-object merge (e.g. into _meta) and array-replace semantics.
-  let nestedUpdates: Record<string, unknown> = {}
-  for (const [fieldPath, value] of Object.entries(updates)) {
-    nestedUpdates = deepSetPath(nestedUpdates, fieldPath, value)
-  }
-  // preserveAppendOnlyMarkers re-unions the Phase 3 step markers so the model can
-  // never silently re-open a cleared gate.
-  const mergedSchema = preserveAppendOnlyMarkers(
-    currentSchema,
-    deepMerge(currentSchema, nestedUpdates)
-  )
+  // ("_meta": { phase3_completed_chunks: [...] }). sanitizeChatUpdates drops
+  // server-owned `_meta` keys (review markers, mode); applyChatUpdates writes
+  // each path directly onto the current schema so array siblings survive, and
+  // re-unions the append-only Phase 3 step markers.
+  const updates = sanitizeChatUpdates(rawUpdates)
+  const mergedSchema = applyChatUpdates(currentSchema, updates)
 
   // The authoritative website URL lives in the `website_url` column, not in
   // schema_data. The phase-1 client agent collects contact info but never sets
@@ -298,16 +330,11 @@ async function updateSessionSchema(
   }
 
   const currentGaps = (current?.gap_list as GapItem[]) ?? []
-  const explicit = new Set(resolvedGaps ?? [])
-  // Resolve a gap when the model explicitly says so OR when its field is now
-  // filled in the merged schema. The field-filled path is robust to the model
-  // not echoing the exact gap path — notably positional niche paths
-  // (niches[2].painPoints) that drift if niches are reordered mid-chat.
-  const updatedGaps = currentGaps.map(g =>
-    g.resolved || explicit.has(g.field) || isPathFilled(mergedSchema, g.field)
-      ? { ...g, resolved: true }
-      : g
-  )
+  // A gap resolves only when its field is actually filled in the merged schema
+  // (robust to the model not echoing the exact path — positional niche paths
+  // drift if niches are reordered). An explicit resolvedGaps entry for an
+  // still-empty field is tagged model_skip and does NOT satisfy the gate.
+  const updatedGaps = resolveGapsAfterUpdate(currentGaps, mergedSchema, resolvedGaps)
 
   const currentPhase = current?.current_phase ?? 0
   let newPhase = currentPhase
@@ -341,16 +368,24 @@ async function updateSessionSchema(
     ? (stampProvenance(mergedSchema as unknown as SessionSchema, resolvedGaps, 'confirmed') as unknown as Record<string, unknown>)
     : mergedSchema
 
+  // status / completed_at are only rewritten on an actual phase change — an
+  // incidental field write must not reset them.
+  const phaseChanged = newPhase !== currentPhase
   const { error: writeErr } = await supabase
     .from('sessions')
     .update({
       schema_data: asJson(finalSchema),
       gap_list: asJson(updatedGaps),
-      current_phase: newPhase,
-      status: statusForPhase(newPhase),
-      completed_at: newPhase === 7 ? new Date().toISOString() : undefined,
+      ...(phaseChanged
+        ? {
+            current_phase: newPhase,
+            status: statusForPhase(newPhase),
+            ...(newPhase === 7 ? { completed_at: new Date().toISOString() } : {}),
+          }
+        : {}),
     })
     .eq('id', sessionId)
+    .neq('status', 'approved')
 
   // A failed write must not throw out of the tool's execute (that crashes the
   // stream). Report it back as a blocked result so the model tells the rep to
@@ -396,4 +431,14 @@ function statusForPhase(phase: number): string {
   if (phase === 0) return 'pending'
   if (phase === 7) return 'completed'
   return 'in_progress'
+}
+
+// Largest single-step input token count, or null when no step reported one.
+function maxStepInputTokens(steps: ReadonlyArray<{ usage: { inputTokens?: number } }>): number | null {
+  let max: number | null = null
+  for (const step of steps) {
+    const n = step.usage.inputTokens
+    if (typeof n === 'number' && (max === null || n > max)) max = n
+  }
+  return max
 }

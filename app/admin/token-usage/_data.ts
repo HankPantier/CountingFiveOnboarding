@@ -10,9 +10,10 @@ import {
   type AuditMeta,
 } from '@/lib/tokens/aggregate'
 import { resolveDateRange, type DateRangeParams } from '@/lib/tokens/date-range'
+import { fetchAllPages } from '@/lib/admin/paginate'
 
 // Shared loader for every Token Usage page (overview + by-user + by-user-client).
-// Each page is force-dynamic and re-runs this; at current volume the single 50k
+// Each page is force-dynamic and re-runs this; at current volume a paginated
 // fetch + in-memory aggregation is fine (a DB-side aggregate view is the scale
 // path). Centralized so the three pages stay consistent. The date range (from
 // the URL) is resolved here and pushed into the query so every aggregate — tiles,
@@ -21,34 +22,45 @@ export async function loadTokenUsage(params: DateRangeParams = {}) {
   const supabase = createServerClient()
   const range = resolveDateRange(params, Date.now())
 
-  let usageQuery = supabase
-    .from('token_usage')
-    .select('task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at')
-    .order('created_at', { ascending: false })
-    .range(0, 49999)
-  if (range.fromISO) usageQuery = usageQuery.gte('created_at', range.fromISO)
-  if (range.toISO) usageQuery = usageQuery.lte('created_at', range.toISO)
+  // Paginated in 1000-row pages: PostgREST caps each response at the project's
+  // max-rows, so the old single `.range(0, 49999)` silently truncated at 1000.
+  const usageRows = fetchAllPages<UsageRow>((from, to) => {
+    let q = supabase
+      .from('token_usage')
+      .select('task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at')
+    if (range.fromISO) q = q.gte('created_at', range.fromISO)
+    if (range.toISO) q = q.lte('created_at', range.toISO)
+    return q
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(from, to)
+  })
 
-  const [{ data: usage }, { data: sessions }, { data: auditRuns }, { data: admins }] = await Promise.all([
-    usageQuery,
-    supabase.from('sessions').select('id, website_url'),
-    supabase.from('audit_runs').select('id, session_id, site_name, domain'),
-    supabase.from('admins').select('id, name, email'),
+  const [rows, sessions, auditRuns, admins] = await Promise.all([
+    usageRows,
+    fetchAllPages<{ id: string; website_url: string | null }>((from, to) =>
+      supabase.from('sessions').select('id, website_url').order('id').range(from, to)
+    ),
+    fetchAllPages<{ id: string; session_id: string | null; site_name: string | null; domain: string }>(
+      (from, to) =>
+        supabase.from('audit_runs').select('id, session_id, site_name, domain').order('id').range(from, to)
+    ),
+    fetchAllPages<{ id: string; name: string | null; email: string | null }>((from, to) =>
+      supabase.from('admins').select('id, name, email').order('id').range(from, to)
+    ),
   ])
 
-  const rows: UsageRow[] = usage ?? []
-
   const labels: Record<string, string> = {}
-  for (const s of sessions ?? []) labels[s.id] = s.website_url ?? s.id
+  for (const s of sessions) labels[s.id] = s.website_url ?? s.id
 
   const audits: Record<string, AuditMeta> = {}
-  for (const a of auditRuns ?? []) {
+  for (const a of auditRuns) {
     audits[a.id] = { sessionId: a.session_id, siteName: a.site_name, domain: a.domain }
   }
 
   // admins.id → display label (name, else email, else raw id) for the by-user views.
   const userLabels: Record<string, string> = {}
-  for (const a of admins ?? []) userLabels[a.id] = a.name || a.email || a.id
+  for (const a of admins) userLabels[a.id] = a.name || a.email || a.id
 
   const summary = summarize(rows, Date.now())
 

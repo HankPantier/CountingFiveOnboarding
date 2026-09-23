@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
-import { Vibrant } from 'node-vibrant/node'
-import { derivePalette, NEUTRAL_PALETTE } from '@/lib/content/derive-palette'
+import sharp from 'sharp'
+import { derivePalette, NEUTRAL_PALETTE, pickRasterBrandColors } from '@/lib/content/derive-palette'
 import { extractSvgColors, pickBrandColors } from '@/lib/content/svg-colors'
 
 export const runtime = 'nodejs'
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Missing or invalid sessionId' }, { status: 400 })
   }
 
-  const auth = await requireSessionAccess(sessionId)
+  const auth = await requireOnboardingSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()
@@ -61,10 +61,17 @@ export async function POST(req: Request) {
   // Raster: sample the dominant colors. Decode failure degrades to defaults
   // rather than erroring out the step.
   try {
-    const vibrant = await Vibrant.from(buffer).getPalette()
-    const primary = vibrant.Vibrant?.hex ?? NEUTRAL_PALETTE.primary.hex
-    const secondary = vibrant.DarkVibrant?.hex ?? vibrant.Muted?.hex ?? NEUTRAL_PALETTE.secondary.hex
-    return NextResponse.json({ palette: derivePalette(primary, secondary), fromLogo: true })
+    // Downscale first — color ranking needs a sample, not every pixel.
+    const { data, info } = await sharp(buffer, { limitInputPixels: 50_000_000 })
+      .resize(128, 128, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const picked = pickRasterBrandColors(data, info.channels)
+    if (!picked) {
+      return NextResponse.json({ palette: NEUTRAL_PALETTE, fromLogo: false })
+    }
+    return NextResponse.json({ palette: derivePalette(picked.primary, picked.secondary), fromLogo: true })
   } catch (err) {
     console.warn('[palette] raster extraction failed, using defaults:', err)
     return NextResponse.json({ palette: NEUTRAL_PALETTE, fromLogo: false })

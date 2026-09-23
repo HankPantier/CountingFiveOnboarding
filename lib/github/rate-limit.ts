@@ -17,22 +17,12 @@ export function isRateLimited(err: unknown): err is RequestError {
   )
 }
 
-// Wrap a GitHub call so a rate-limit response is waited out and retried rather
-// than aborting. Honors the server's retry-after header when present, else
-// backs off exponentially. Non-rate-limit errors propagate immediately.
+// Marks a GitHub call as rate-limit-sensitive. Retrying is owned by ONE layer:
+// the Octokit throttling plugin configured in ./app-client (bounded to a single
+// retry of at most MAX_RATE_LIMIT_WAIT_S). This wrapper used to retry up to 6
+// times with backoff ON TOP of the plugin's own retries, so one call could stall
+// for many minutes; it now passes straight through and lets a limit that the
+// plugin gave up on surface (callers like edit-stats degrade softly on it).
 export async function withRateLimitRetry<T>(fn: () => Promise<T>): Promise<T> {
-  const MAX_ATTEMPTS = 6
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      if (attempt >= MAX_ATTEMPTS || !isRateLimited(err)) throw err
-      const retryAfter = Number(err.response?.headers?.['retry-after'])
-      const waitMs =
-        Number.isFinite(retryAfter) && retryAfter > 0
-          ? (retryAfter + 1) * 1000
-          : Math.min(60_000, 1000 * 2 ** attempt)
-      await sleep(waitMs)
-    }
-  }
+  return fn()
 }

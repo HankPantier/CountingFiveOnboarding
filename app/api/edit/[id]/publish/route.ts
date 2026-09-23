@@ -7,12 +7,12 @@ import { getDraftImageCoverage } from '@/lib/content/repull-images'
 import {
   ensureDraftBranch,
   mergeDraftToMain,
-  resetDraftToMain,
+  fastForwardDraftToMain,
 } from '@/lib/github/repo-files'
 
 export const runtime = 'nodejs'
 // Publishing makes 3–4 sequential GitHub round-trips (ensureDraftBranch →
-// mergeDraftToMain → resetDraftToMain). Without this the Vercel default (~10s)
+// mergeDraftToMain → fastForwardDraftToMain). Without this the Vercel default (~10s)
 // can 504 mid-merge, leaving the operator unsure whether main advanced.
 export const maxDuration = 60
 
@@ -85,13 +85,15 @@ export async function POST(
     await ensureDraftBranch(ctx.githubRepo)
     const result = await mergeDraftToMain(ctx.githubRepo)
     if (result.merged) {
-      // The publish (draft→main) already succeeded. Resetting draft back to the
-      // new main is housekeeping — a failure here is non-fatal (the editor
-      // self-heals a behind draft on next load), so don't 500 a live publish.
+      // The publish (draft→main) already succeeded. Moving draft up to the new
+      // main is housekeeping, and it is a NON-forced fast-forward: an edit that
+      // landed on draft after the merge makes it fail, and draft is simply left
+      // in place (a force reset here used to silently discard that edit). A
+      // failure is non-fatal — don't 500 a live publish.
       try {
-        await resetDraftToMain(ctx.githubRepo)
-      } catch (resetErr) {
-        console.error('[publish] draft reset after merge failed (non-fatal):', resetErr)
+        await fastForwardDraftToMain(ctx.githubRepo)
+      } catch (ffErr) {
+        console.error('[publish] draft fast-forward after merge failed (non-fatal):', ffErr)
       }
     }
     return NextResponse.json(result)

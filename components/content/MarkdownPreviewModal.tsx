@@ -103,17 +103,22 @@ export default function MarkdownPreviewModal({
   const toggleApproval = async (next: boolean) => {
     if (!page) return
     setSavingApproval(true)
+    setError(null)
     try {
       const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [approvalField]: next }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        setPage(data.page)
-        onApprovalChange?.(next)
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? `Couldn't update approval (${res.status})`)
       }
+      const data = await res.json()
+      setPage(data.page)
+      onApprovalChange?.(next)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update approval")
     } finally {
       setSavingApproval(false)
     }

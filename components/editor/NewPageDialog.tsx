@@ -61,6 +61,14 @@ export default function NewPageDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+  // "Run in background" unmounts the dialog while the poll keeps going, so the
+  // poll must still reach onGenerated; only this dialog's own state updates
+  // are skipped once it's gone.
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   useEffect(() => {
     titleRef.current?.focus()
@@ -92,10 +100,11 @@ export default function NewPageDialog({
       const status = data.generation?.status
       if (status === 'complete') {
         onGenerated(path)
-        onClose()
+        if (mountedRef.current) onClose()
         return
       }
       if (status === 'error') {
+        if (!mountedRef.current) return
         setPhase('error')
         setError(
           data.generation?.error ??
@@ -105,6 +114,7 @@ export default function NewPageDialog({
       }
     }
     // Timed out waiting — leave the starter in place; the admin can reload.
+    if (!mountedRef.current) return
     setPhase('error')
     setError('The AI draft is taking longer than expected. Check back shortly, or edit the page directly.')
   }

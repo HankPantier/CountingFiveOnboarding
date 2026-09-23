@@ -22,6 +22,7 @@ import {
   readFile,
   removeStaleStaticSitemap,
   FileNotFoundError,
+  StaleShaError,
 } from '@/lib/github/repo-files'
 import { buildCrossLinkIndex, type InternalLinkTarget } from './internal-link-targets'
 import { buildPostMarkdown } from './post-markdown'
@@ -44,6 +45,7 @@ import type { NavJson } from '@/types/nav-json'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { ExternalLink } from './link-checker'
+import { arr } from './schema-coerce'
 
 const DRAFT_MODEL = 'claude-sonnet-5'
 
@@ -423,14 +425,40 @@ function warnUnknownInternalLinks(
   }
 }
 
-export async function generateResourceDraft(
+// Slug for a (re)draft. A re-draft reuses the idea's existing slug — the
+// cross-link index already contains that slug (it's this idea's own post), so
+// treating it as "taken" minted `slug-2` and left a duplicate post behind. Only
+// OTHER posts' slugs count as collisions.
+export function pickPostSlug(args: {
+  title: string
   ideaId: string
+  existingSlug: string | null
+  takenSlugs: Iterable<string>
+}): string {
+  const taken = new Set(args.takenSlugs)
+  if (args.existingSlug) return args.existingSlug
+  const base = kebabSlug(args.title) || `post-${args.ideaId.slice(0, 8)}`
+  let slug = base
+  let suffix = 2
+  while (taken.has(slug)) {
+    slug = `${base}-${suffix}`
+    suffix += 1
+  }
+  return slug
+}
+
+export async function generateResourceDraft(
+  ideaId: string,
+  // `force` re-drafts an idea whose draft already completed (an explicit
+  // operator "Re-draft"). Without it a `complete` idea is never re-claimed —
+  // background runners (batch / library) re-entering on a finished idea skip.
+  opts?: { force?: boolean }
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; slug?: string; error?: string }> {
   const supabase = createServerClient()
 
   const { data: idea } = await supabase
     .from('resource_ideas')
-    .select('id, content_job_id, session_id, title, angle, target_keyword, secondary_keywords, rationale, external_links, status, draft_notes, content_type')
+    .select('id, content_job_id, session_id, title, angle, target_keyword, secondary_keywords, rationale, external_links, status, draft_notes, content_type, slug')
     .eq('id', ideaId)
     .single()
   if (!idea) return { status: 'error', error: 'Idea not found' }
@@ -453,34 +481,41 @@ export async function generateResourceDraft(
 
   // Atomic lock — same pattern as generated_pages.generation_status. A second
   // caller racing on the same idea gets zero rows back and skips.
-  const { data: locked } = await supabase
+  // A `complete` idea is only re-claimed on an explicit force (operator
+  // re-draft); otherwise a runner re-entering on a finished idea would redraft it.
+  let lockQuery = supabase
     .from('resource_ideas')
     .update({ draft_status: 'running', updated_at: new Date().toISOString() })
     .eq('id', ideaId)
     .neq('draft_status', 'running')
-    .select('id')
+  if (!opts?.force) lockQuery = lockQuery.neq('draft_status', 'complete')
+  const { data: locked } = await lockQuery.select('id')
   if (!locked?.length) {
-    return { status: 'skipped', error: 'Another worker is already drafting this idea' }
+    return { status: 'skipped', error: 'Another worker is already drafting this idea, or it is already drafted' }
   }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
-  const externalLinks = (idea.external_links as ExternalLink[]) ?? []
-  const secondaryKeywords = (idea.secondary_keywords as string[]) ?? []
 
-  // Case-study data gate (backstop; the draft API route gates first for instant
-  // UI feedback, but batch runs reach this path directly). A case study without
-  // a real client story to ground it must fail rather than fabricate one.
-  if (CONTENT_TYPES[contentType].requiresCaseData && !hasCaseStudyData(schema, idea.draft_notes)) {
-    const message =
-      'Case study needs client details — add a client success story to the MBP, or provide the client, challenge, actions, and results in the draft notes.'
-    await supabase
-      .from('resource_ideas')
-      .update({ draft_status: 'error', draft_error: message, updated_at: new Date().toISOString() })
-      .eq('id', ideaId)
-    return { status: 'error', error: message }
-  }
-
+  // Everything after the lock runs inside the try so ANY throw (a dirty schema
+  // field in the case-study gate, a malformed JSON column) lands in the catch
+  // and releases the lock as 'error' instead of stranding the idea 'running'.
   try {
+    const externalLinks = arr(idea.external_links as ExternalLink[] | null)
+    const secondaryKeywords = arr(idea.secondary_keywords as string[] | null)
+
+    // Case-study data gate (backstop; the draft API route gates first for instant
+    // UI feedback, but batch runs reach this path directly). A case study without
+    // a real client story to ground it must fail rather than fabricate one.
+    if (CONTENT_TYPES[contentType].requiresCaseData && !hasCaseStudyData(schema, idea.draft_notes)) {
+      const message =
+        'Case study needs client details — add a client success story to the MBP, or provide the client, challenge, actions, and results in the draft notes.'
+      await supabase
+        .from('resource_ideas')
+        .update({ draft_status: 'error', draft_error: message, updated_at: new Date().toISOString() })
+        .eq('id', ideaId)
+      return { status: 'error', error: message }
+    }
+
     await ensureDraftBranch(job.github_repo)
     // Self-heal: drop a stale static sitemap a prior package left behind so the
     // template's dynamic route (which includes this new post) takes over.
@@ -493,14 +528,14 @@ export async function generateResourceDraft(
     // post links back to the client's live corpus, not just this batch's drafts.
     const { targets, postSlugs } = await buildCrossLinkIndex(job.github_repo)
 
-    // Slug: derive from the idea title, dodge collisions with existing posts.
-    let slug = kebabSlug(idea.title) || `post-${ideaId.slice(0, 8)}`
-    const taken = new Set(postSlugs)
-    let suffix = 2
-    while (taken.has(slug)) {
-      slug = `${kebabSlug(idea.title)}-${suffix}`
-      suffix += 1
-    }
+    // Slug: reuse this idea's slug on a re-draft (overwrite its own post);
+    // otherwise derive from the title and dodge OTHER posts' slugs.
+    const slug = pickPostSlug({
+      title: idea.title,
+      ideaId,
+      existingSlug: idea.slug,
+      takenSlugs: postSlugs,
+    })
 
     let result = await generateDraftContent({
       idea,
@@ -570,7 +605,7 @@ export async function generateResourceDraft(
       const styleSuffix = deriveImageStyleSuffix(palette, schema.brand)
       const { data: existingAssets } = await supabase
         .from('assets')
-        .select('*')
+        .select('file_name, asset_category, metadata')
         .eq('session_id', idea.session_id)
       const imageRefs: ImageRef[] = [
         { pageUrl: `/resources/${slug}`, filename: fm.hero_image, subjectQuery: fm.hero_image_query, source: 'hero' },
@@ -661,7 +696,7 @@ export async function generateResourceDraft(
       {}
     )
 
-    await supabase
+    const { error: completeErr } = await supabase
       .from('resource_ideas')
       .update({
         status: 'drafted',
@@ -677,6 +712,9 @@ export async function generateResourceDraft(
         updated_at: new Date().toISOString(),
       })
       .eq('id', ideaId)
+    // The commit landed but the row didn't record it — throw so the catch marks
+    // the idea 'error' (retriable) rather than leaving it 'running' forever.
+    if (completeErr) throw new Error(`Draft committed (${commitSha.slice(0, 7)}) but status write failed: ${completeErr.message}`)
 
     console.warn(`[resource-draft] Complete: "${fm.title}" → content/posts/${slug}.md (${commitSha.slice(0, 7)})`)
 
@@ -762,7 +800,14 @@ export async function generateResourceDraft(
         console.warn(`[reverse-link] Linked ${results.length} existing post(s) to ${slug}`)
       }
     } catch (err) {
-      console.warn(`[reverse-link] Pass failed for ${slug} (draft already published):`, err)
+      // A StaleShaError means a linked post changed after we read it — the
+      // entries are fenced on the read sha, so the reverse-link commit is
+      // refused rather than clobbering that edit. Skip the links; never fail.
+      if (err instanceof StaleShaError) {
+        console.warn(`[reverse-link] ${err.path} changed since it was read — skipping reverse links for ${slug}`)
+      } else {
+        console.warn(`[reverse-link] Pass failed for ${slug} (draft already published):`, err)
+      }
     }
 
     return { status: 'complete', slug }

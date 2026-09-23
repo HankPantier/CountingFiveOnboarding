@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
+import { refreshPhase4Gaps } from '@/lib/agent/gap-tiering'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { extractNotesModel, mergeNotesExtraction } from '@/lib/session-draft/extract-from-notes'
@@ -22,7 +23,7 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()
@@ -54,7 +55,23 @@ export async function POST(
     return NextResponse.json({ error: 'Extraction failed — please try again' }, { status: 502 })
   }
 
-  const { schema: mergedSchema, gaps: mergedGaps, applied } = mergeNotesExtraction(schema, gaps, model)
+  // The extraction call is long; re-read right before the write and apply the
+  // (blank-fill-only) merge onto the FRESH row so an edit made meanwhile — a
+  // chat turn, an inline field edit — isn't overwritten by the stale snapshot.
+  const { data: fresh, error: freshErr } = await supabase
+    .from('sessions')
+    .select('schema_data, gap_list')
+    .eq('id', id)
+    .single()
+  if (freshErr || !fresh) {
+    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+  }
+  const freshSchema = (fresh.schema_data as SessionSchema | null) ?? {}
+  const freshGaps = (fresh.gap_list as GapItem[] | null) ?? []
+
+  const { schema: mergedSchema, gaps: extractedGaps, applied } = mergeNotesExtraction(freshSchema, freshGaps, model)
+  // Notes can add niches/services — give them their Phase-4 depth gaps.
+  const mergedGaps = refreshPhase4Gaps(mergedSchema, extractedGaps)
 
   const { error: writeErr } = await supabase
     .from('sessions')

@@ -10,7 +10,7 @@
 
 import { splitFile, type Frontmatter } from '@/lib/editor/frontmatter'
 import { markdownToHtml } from '@/lib/content/divi/markdown'
-import { listTree, readFile, MAIN_BRANCH } from '@/lib/github/repo-files'
+import { listTree, readTextBlobs, MAIN_BRANCH } from '@/lib/github/repo-files'
 import { assetUrlFor, type HeroImage } from './assets'
 
 export type WpFeedPost = {
@@ -30,7 +30,6 @@ export type WpFeedPost = {
 }
 
 const POSTS_PREFIX = 'content/posts/'
-const READ_CONCURRENCY = 4
 // buildPostMarkdown appends an inline "## SEO & AIO Metadata" block to the body;
 // it carries no block annotation, so strip from the marker to end of file before
 // converting to HTML (mirrors lib/content/divi/from-frontmatter.ts).
@@ -145,28 +144,23 @@ export function postFromRepoFile(
   }
 }
 
-// List and read every published post from `main`, batched to stay under
-// GitHub's secondary rate limit (mirrors the export-divi reader).
+// List and read every published post from `main`. Each post is fetched by the
+// blob sha the tree listing already returned (one getBlob, no path lookup)
+// through a single bounded pool to stay under GitHub's secondary rate limit.
 export async function buildFeed(
   githubRepo: string,
   siteKey: string,
   origin: string
 ): Promise<WpFeedPost[]> {
   const tree = await listTree(githubRepo, MAIN_BRANCH, POSTS_PREFIX)
-  const paths = tree
-    .filter((e) => e.type === 'blob' && e.path.startsWith(POSTS_PREFIX) && e.path.endsWith('.md'))
-    .map((e) => e.path)
+  const entries = tree.filter(
+    (e) => e.type === 'blob' && e.path.startsWith(POSTS_PREFIX) && e.path.endsWith('.md')
+  )
 
   const posts: WpFeedPost[] = []
-  for (let i = 0; i < paths.length; i += READ_CONCURRENCY) {
-    const batch = paths.slice(i, i + READ_CONCURRENCY)
-    const read = await Promise.all(
-      batch.map(async (path) => ({ path, content: (await readFile(githubRepo, path, MAIN_BRANCH)).content }))
-    )
-    for (const f of read) {
-      const post = postFromRepoFile(f.path, f.content, { siteKey, origin })
-      if (post) posts.push(post)
-    }
+  for (const f of await readTextBlobs(githubRepo, entries)) {
+    const post = postFromRepoFile(f.path, f.content, { siteKey, origin })
+    if (post) posts.push(post)
   }
   return posts
 }

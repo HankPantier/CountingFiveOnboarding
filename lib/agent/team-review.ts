@@ -29,15 +29,18 @@ export function applyTeamReview(
   const team = Array.isArray(next.team) ? next.team : []
   next.team = team
 
+  const keepSet = new Set((input.keep ?? []).map(norm).filter(Boolean))
+
   const removedNames: string[] = []
   team.forEach((m) => {
     if (!m?.name) return
-    if (removeSet.has(norm(m.name))) {
-      m.teamDecision = 'remove'
-      removedNames.push(m.name)
-    } else {
-      m.teamDecision = 'keep'
-    }
+    const k = norm(m.name)
+    if (removeSet.has(k)) m.teamDecision = 'remove'
+    // A member the review doesn't mention keeps an earlier decision — a partial
+    // resubmit must not silently re-keep someone removed before. A never-reviewed
+    // member defaults to keep.
+    else if (keepSet.has(k) || m.teamDecision !== 'remove') m.teamDecision = 'keep'
+    if (m.teamDecision === 'remove') removedNames.push(m.name)
   })
 
   // Append net-new members the operator added, skipping any already present (by

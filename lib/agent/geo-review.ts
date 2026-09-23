@@ -34,20 +34,27 @@ export function applyGeoReview(
   } else {
     // Dedup by city+state, keep the first-seen entry, force a single primary.
     const seen = new Set<string>()
+    const areaKey = (raw: GeoAreaInput): string =>
+      `${clean(raw.city).toLowerCase()}|${clean(raw.state).toLowerCase()}`
     const areas: NonNullable<SessionSchema['business']>['serviceAreas'] = []
+    const keys: string[] = []
     for (const raw of input.areas ?? []) {
       const city = clean(raw.city)
       if (!city) continue
-      const key = `${city.toLowerCase()}|${clean(raw.state).toLowerCase()}`
+      const key = areaKey(raw)
       if (seen.has(key)) continue
       seen.add(key)
+      keys.push(key)
       const entry: NonNullable<NonNullable<SessionSchema['business']>['serviceAreas']>[number] = { city }
       if (clean(raw.county)) entry.county = clean(raw.county)
       if (clean(raw.state)) entry.state = clean(raw.state)
       areas.push(entry)
     }
-    const primaryIdx = (input.areas ?? []).findIndex((a) => a.primary && clean(a.city))
-    if (areas.length) areas[primaryIdx >= 0 ? Math.min(primaryIdx, areas.length - 1) : 0].primary = true
+    // Map the operator's primary pick by city+state key onto the DEDUPED list —
+    // its raw index is wrong once duplicates / blank rows before it are dropped.
+    const primaryRaw = (input.areas ?? []).find((a) => a.primary && clean(a.city))
+    const primaryIdx = primaryRaw ? keys.indexOf(areaKey(primaryRaw)) : -1
+    if (areas.length) areas[primaryIdx >= 0 ? primaryIdx : 0].primary = true
     business.serviceAreas = areas
 
     if (!clean(business.geographicScope)) {

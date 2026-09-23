@@ -2,6 +2,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { generateJson } from './json-generation'
+import { arr, str } from './schema-coerce'
 
 const KEYWORD_MODEL = 'claude-haiku-4-5-20251001'
 
@@ -22,8 +23,10 @@ export async function runKeywordResearch(
   // generic firm-wide ones ("CPA near me"). Optional — omitted for generic pages.
   focus?: { label: string; keywords: string[] }
 ): Promise<KeywordResult> {
+  // arr(): niche/service keywords can be stored as a bare string in a dirty MBP.
+  const focusKeywords = arr(focus?.keywords).map(k => str(k).trim()).filter(Boolean)
   const focusBlock = focus?.label
-    ? `\nTHIS PAGE IS ABOUT: ${focus.label}. Prioritize search terms a ${focus.label} client would actually type — the specific audience, not generic firm-wide terms.${focus.keywords.length ? ` Build on these known keywords: ${focus.keywords.join(', ')}.` : ''}`
+    ? `\nTHIS PAGE IS ABOUT: ${focus.label}. Prioritize search terms a ${focus.label} client would actually type — the specific audience, not generic firm-wide terms.${focusKeywords.length ? ` Build on these known keywords: ${focusKeywords.join(', ')}.` : ''}`
     : ''
 
   // Step 1: Claude keyword generation (Haiku — no providerOptions).
@@ -76,6 +79,9 @@ Return JSON: { "primary": "keyword phrase", "secondary": ["kw1", "kw2", "kw3"] }
     try {
       const res = await fetch('https://google.serper.dev/search', {
         method: 'POST',
+        // A hung Serper call used to stall the whole research page (and its
+        // batch) until the function was killed.
+        signal: AbortSignal.timeout(15_000),
         headers: {
           'X-API-KEY': process.env.SERPER_API_KEY,
           'Content-Type': 'application/json',

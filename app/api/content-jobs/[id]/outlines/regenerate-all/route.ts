@@ -36,6 +36,8 @@ export async function POST(
       sections: '[]',
       admin_approved: false,
       admin_notes: null,
+      // Release any per-row claim so the fresh run can re-claim every outline.
+      generation_claimed_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('content_job_id', id)

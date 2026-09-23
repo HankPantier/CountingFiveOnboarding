@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth/access', () => ({
   getCurrentUser: vi.fn(async () => ({ id: 'u', isAdmin: true })),
   getAccessibleSessionIds: vi.fn(async () => h.allowed),
+  hasCapability: vi.fn((u: { isAdmin?: boolean }) => !!u.isAdmin),
 }))
 vi.mock('@/lib/content/blog-batch-runner', () => ({
   runBlogBatch: (...a: unknown[]) => h.runBlogBatch(...a),

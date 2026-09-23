@@ -1,10 +1,11 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// Must match BLOG_BATCH_ROUTE_MAX_DURATION_MS (the runner budgets against it).
+export const maxDuration = 600
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -27,6 +28,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!isInternalChain) {
     const user = await getCurrentUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Generation spends budget — manager capability required (admins pass).
+    if (!hasCapability(user, 'manager')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     const allowed = await getAccessibleSessionIds(user)
     if (allowed !== null) {

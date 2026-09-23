@@ -8,6 +8,7 @@ import { trimMessages } from '@/lib/agent/trim-messages'
 import { buildAssistantTools } from '@/lib/admin/assistant-tools'
 import { buildAssistantPrompt } from '@/lib/admin/assistant-prompt'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
+import { readJsonBody } from '@/app/api/_json'
 
 // Node runtime: Supabase service client + Anthropic.
 export const runtime = 'nodejs'
@@ -29,7 +30,12 @@ export async function POST(req: Request) {
     )
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  const body = await readJsonBody<{ messages?: unknown }>(req)
+  if (body instanceof NextResponse) return body
+  if (!Array.isArray(body?.messages)) {
+    return NextResponse.json({ error: 'messages must be an array' }, { status: 400 })
+  }
+  const messages = body.messages as UIMessage[]
 
   const result = streamText({
     model: anthropic('claude-sonnet-4-6'),

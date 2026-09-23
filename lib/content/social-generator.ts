@@ -1,5 +1,5 @@
 import { generateText } from 'ai'
-import { anthropic, type AnthropicProviderOptions } from '@ai-sdk/anthropic'
+import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
@@ -71,7 +71,7 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
   // mid-object (a `length` finish confirms it) — hence the factored retry.
   const attempt = async (
     maxOutputTokens: number,
-    providerOptions: { anthropic: AnthropicProviderOptions }
+    providerOptions: typeof GENERATION_PROVIDER_OPTIONS | typeof OUTLINE_PROVIDER_OPTIONS
   ): Promise<SocialJson | { failed: true; text: string; finishReason: string }> => {
     const { text, usage, finishReason } = await generateText({
       model: anthropic(SOCIAL_MODEL),

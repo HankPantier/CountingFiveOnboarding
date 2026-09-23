@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
-import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { generateSeoField, isSeoField, SEO_MODEL } from '@/lib/content/seo-field-generator'
@@ -26,8 +25,8 @@ export async function POST(
   if (ctx instanceof NextResponse) return ctx
 
   // AI generation is admin-only, mirroring the AI content editor (ContentChatModal).
-  const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  const user = ctx.user
+  if (!user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -88,7 +87,7 @@ export async function POST(
       task: 'content',
       sessionId: ctx.sessionId,
       contentJobId: ctx.jobId,
-      createdBy: user?.id ?? null,
+      createdBy: user.id,
       stage: 'seo_fields',
       pageUrl: path,
       model: SEO_MODEL,

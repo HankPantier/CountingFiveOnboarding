@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { loadNoGoPhrases, findNoGoHits } from '@/lib/content/no-go-phrases'
+import { fetchAllPages, DEFAULT_PAGE_SIZE } from '@/lib/admin/paginate'
 import type { NoGoScanHit, NoGoScanResponse } from '@/types/no-go-phrases'
 
 export const runtime = 'nodejs'
@@ -20,28 +21,46 @@ export async function GET() {
   }
 
   const supabase = createServerClient()
-  const { data, error } = await supabase
-    .from('generated_pages')
-    .select('page_title, page_url, content_markdown, meta_title, meta_description, answer_block, content_job_id')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Resolve each page's owning session via its content job (job → session_id).
-  const rows = data ?? []
-  const { data: jobs } = await supabase.from('content_jobs').select('id, session_id')
-  const sessionByJob = new Map((jobs ?? []).map(j => [j.id, j.session_id]))
-
-  const hits: NoGoScanHit[] = []
-  for (const row of rows) {
-    const sessionId = sessionByJob.get(row.content_job_id)
-    if (!sessionId) continue
-    const haystack = [row.content_markdown, row.meta_title, row.meta_description, row.answer_block]
-      .filter(Boolean)
-      .join('\n')
-    const matchedPhrases = findNoGoHits(haystack, phrases)
-    if (matchedPhrases.length) {
-      hits.push({ sessionId, pageTitle: row.page_title, pageUrl: row.page_url, matchedPhrases })
-    }
+  let sessionByJob: Map<string, string>
+  try {
+    const jobs = await fetchAllPages<{ id: string; session_id: string }>((from, to) =>
+      supabase.from('content_jobs').select('id, session_id').order('id').range(from, to)
+    )
+    sessionByJob = new Map(jobs.map(j => [j.id, j.session_id]))
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Scan failed' }, { status: 500 })
   }
 
-  return NextResponse.json<NoGoScanResponse>({ scanned: rows.length, hits })
+  // Page through generated_pages (PostgREST caps each response at 1000 rows —
+  // a single select silently skipped everything past that) and scan each page
+  // as it arrives so page bodies are never all held in memory at once.
+  const hits: NoGoScanHit[] = []
+  let scanned = 0
+  for (let from = 0; ; from += DEFAULT_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('generated_pages')
+      .select('page_title, page_url, content_markdown, meta_title, meta_description, answer_block, content_job_id')
+      .order('id')
+      .range(from, from + DEFAULT_PAGE_SIZE - 1)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const rows = data ?? []
+    scanned += rows.length
+
+    for (const row of rows) {
+      const sessionId = sessionByJob.get(row.content_job_id)
+      if (!sessionId) continue
+      const haystack = [row.content_markdown, row.meta_title, row.meta_description, row.answer_block]
+        .filter(Boolean)
+        .join('\n')
+      const matchedPhrases = findNoGoHits(haystack, phrases)
+      if (matchedPhrases.length) {
+        hits.push({ sessionId, pageTitle: row.page_title, pageUrl: row.page_url, matchedPhrases })
+      }
+    }
+    if (rows.length < DEFAULT_PAGE_SIZE) break
+  }
+
+  return NextResponse.json<NoGoScanResponse>({ scanned, hits })
 }

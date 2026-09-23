@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { fileTypeFromBuffer } from 'file-type'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -21,12 +21,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
-  const access = await requireSessionAccess(id)
+  const access = await requireOnboardingSessionAccess(id)
   if (access instanceof NextResponse) return access
 
   const body = await req.json().catch(() => null) as { storagePath?: unknown; fileName?: unknown } | null
   const storagePath = body?.storagePath
-  const fileName = typeof body?.fileName === 'string' && body.fileName.trim() ? body.fileName.trim() : 'logo'
+  // Display name only, but it later becomes a repo file name at packaging —
+  // strip path separators / traversal so it can never be read as a path.
+  const rawName = typeof body?.fileName === 'string' ? body.fileName : ''
+  const fileName = rawName.replace(/[\\/]/g, '_').replace(/\.{2,}/g, '.').replace(/[\x00-\x1f]/g, '').trim().slice(0, 200) || 'logo'
   // Bind the path to this session — never let a request claim another's file.
   // Decode before the prefix check (security rule 8): a percent-encoded
   // traversal like sessions/{id}/..%2F..%2Fsessions/{other}/logo.png passes a
@@ -49,6 +52,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const supabase = createServerClient()
+
+  // Only a freshly uploaded object may be confirmed. A path that already backs
+  // an `assets` row (a client upload, team photo, or the current logo) is
+  // refused — otherwise a failed validation below would DELETE that file, and a
+  // sanitized-SVG re-upload would overwrite it.
+  const { data: existingAsset, error: existingErr } = await supabase
+    .from('assets')
+    .select('id')
+    .eq('storage_path', storagePath)
+    .limit(1)
+    .maybeSingle()
+  if (existingErr) {
+    console.error('[logo] existing-asset check failed:', existingErr)
+    return NextResponse.json({ error: 'Could not verify upload' }, { status: 500 })
+  }
+  if (existingAsset) {
+    return NextResponse.json({ error: 'That file is already in use — upload the logo again' }, { status: 409 })
+  }
 
   const { data: fileData, error: downloadError } = await supabase.storage
     .from('session-assets')

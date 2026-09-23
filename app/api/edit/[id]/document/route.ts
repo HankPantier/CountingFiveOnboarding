@@ -6,6 +6,7 @@ import {
   ensureDraftBranch,
   listTree,
   readFile,
+  readTextBlobs,
 } from '@/lib/github/repo-files'
 import { splitFile, type Frontmatter } from '@/lib/editor/frontmatter'
 import { parseNavJson } from '@/lib/editor/nav-config'
@@ -25,7 +26,6 @@ const NAV_PATH = 'content/nav.json'
 // Bound concurrent GitHub reads so a large site (dozens of pages) neither
 // serializes slowly nor bursts past GitHub's secondary rate limit. Mirrors
 // PUSH_BLOB_CONCURRENCY in repo-files.ts.
-const READ_CONCURRENCY = 4
 
 // Unwrap a frontmatter scalar. Values are written as JSON-quoted strings
 // (title: "Foo | Bar") or bare tokens; JSON.parse handles proper unescaping,
@@ -197,21 +197,6 @@ function orderPages(pages: SiteDocPage[], nav: NavJson | null): SiteDocPage[] {
   return [...site, ...posts]
 }
 
-async function readInBatches(
-  repo: string,
-  paths: string[]
-): Promise<{ path: string; content: string }[]> {
-  const out: { path: string; content: string }[] = []
-  for (let i = 0; i < paths.length; i += READ_CONCURRENCY) {
-    const batch = paths.slice(i, i + READ_CONCURRENCY)
-    const read = await Promise.all(
-      batch.map(async (path) => ({ path, content: (await readFile(repo, path, DRAFT_BRANCH)).content }))
-    )
-    out.push(...read)
-  }
-  return out
-}
-
 type SchemaLocation = NonNullable<SessionSchema['locations']>[number]
 
 // Single-line address from a location's parts, skipping empties.
@@ -264,22 +249,19 @@ export async function GET(
     await ensureDraftBranch(ctx.githubRepo)
     const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
 
-    const pagePaths = tree
-      .filter((e) => e.type === 'blob' && e.path.startsWith('content/pages/') && e.path.endsWith('.md'))
-      .map((e) => e.path)
-    const postPaths = tree
-      .filter((e) => e.type === 'blob' && e.path.startsWith('content/posts/') && e.path.endsWith('.md'))
-      .map((e) => e.path)
+    // Read every page + post by the blob sha the tree listing already gave us
+    // (one getBlob each) through a single bounded pool of 4.
+    const mdEntries = tree.filter(
+      (e) =>
+        e.type === 'blob' &&
+        e.path.endsWith('.md') &&
+        (e.path.startsWith('content/pages/') || e.path.startsWith('content/posts/'))
+    )
+    const files = await readTextBlobs(ctx.githubRepo, mdEntries)
 
-    const [pageFiles, postFiles] = await Promise.all([
-      readInBatches(ctx.githubRepo, pagePaths),
-      readInBatches(ctx.githubRepo, postPaths),
-    ])
-
-    const pages: SiteDocPage[] = [
-      ...pageFiles.map((f) => toSiteDocPage(f.path, f.content, false)),
-      ...postFiles.map((f) => toSiteDocPage(f.path, f.content, true)),
-    ]
+    const pages: SiteDocPage[] = files.map((f) =>
+      toSiteDocPage(f.path, f.content, f.path.startsWith('content/posts/'))
+    )
 
     let nav: NavJson | null = null
     if (tree.some((e) => e.path === NAV_PATH)) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ThemePreview from './ThemePreview'
 import ThemeChat from './ThemeChat'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
@@ -142,9 +142,15 @@ export default function ThemeStudio({
 
   // Commit a palette/typography change to the draft branch (+ MBP sync) via the
   // direct PATCH endpoint, then reconcile with the server's canonical sources.
-  const commitTheme = useCallback(
-    async (patch: { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string>; flags?: FlagsPatch }) => {
-      setSaving(true)
+  //
+  // PATCHes are serialized through a promise queue: each one commits to the
+  // draft branch, so two in flight at once (quick color + font change) raced
+  // on the branch ref and the loser failed or clobbered the other.
+  type ThemePatch = { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string>; flags?: FlagsPatch }
+  const commitQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const pendingCommitsRef = useRef(0)
+  const commitThemeNow = useCallback(
+    async (patch: ThemePatch) => {
       setSaveError(null)
       try {
         const res = await fetch(`/api/edit/${sessionId}/theme`, {
@@ -163,10 +169,21 @@ export default function ThemeStudio({
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : 'Failed to save theme change')
       } finally {
-        setSaving(false)
+        pendingCommitsRef.current -= 1
+        if (pendingCommitsRef.current === 0) setSaving(false)
       }
     },
     [sessionId, loadSources, onCommitted]
+  )
+  const commitTheme = useCallback(
+    (patch: ThemePatch) => {
+      pendingCommitsRef.current += 1
+      setSaving(true)
+      const run = commitQueueRef.current.then(() => commitThemeNow(patch))
+      commitQueueRef.current = run.catch(() => {})
+      return run
+    },
+    [commitThemeNow]
   )
 
   // Live (local) preview while dragging the picker — regenerate theme.css from

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireContentJobAccess } from '@/lib/auth/access'
+import { requireAdminUser } from '@/lib/auth/access'
+import { resolveRepo } from '@/lib/github/app-client'
 
 export const runtime = 'nodejs'
 
@@ -9,12 +10,25 @@ export const runtime = 'nodejs'
 // `acmetax-site` (defaults to GITHUB_ORG) or `countingfive/acmetax-site`.
 const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)?$/
 
+// Canonical `owner/name`, lowercased (GitHub slugs are case-insensitive). Bare
+// `name` resolves against GITHUB_ORG, so `acme-site` and `org/Acme-Site` are the
+// same repo and must collide. Null for a value that can't be resolved.
+function canonicalRepo(slug: string): string | null {
+  try {
+    const { owner, repo } = resolveRepo(slug)
+    return `${owner}/${repo}`.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: _jobId } = await params
-  const auth = await requireContentJobAccess(_jobId)
+  // Linking a repo points the whole publish pipeline (commits, deploys) at it —
+  // admin-only.
+  const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
@@ -27,7 +41,7 @@ export async function PATCH(
 
   const raw = body.githubRepo
   const trimmed = typeof raw === 'string' ? raw.trim() : ''
-  const nextValue: string | null = trimmed === '' ? null : trimmed
+  let nextValue: string | null = trimmed === '' ? null : trimmed
 
   if (nextValue !== null && !SLUG_RE.test(nextValue)) {
     return NextResponse.json(
@@ -39,17 +53,23 @@ export async function PATCH(
     return NextResponse.json({ error: 'Repo slug too long' }, { status: 400 })
   }
 
+  if (nextValue !== null) {
+    const canonical = canonicalRepo(nextValue)
+    if (!canonical) return NextResponse.json({ error: 'Invalid repo slug' }, { status: 400 })
+    nextValue = canonical
+  }
+
   const supabase = createServerClient()
 
-  // Enforce uniqueness at the API layer too so we can surface a clean
-  // error message before Postgres's partial unique index does it.
+  // Enforce uniqueness on the CANONICAL form: a raw `.eq` let `Acme-Site`,
+  // `acme-site` and `org/acme-site` all link the same repo to different jobs.
   if (nextValue !== null) {
-    const { data: existing } = await supabase
+    const { data: others } = await supabase
       .from('content_jobs')
-      .select('id')
-      .eq('github_repo', nextValue)
+      .select('id, github_repo')
+      .not('github_repo', 'is', null)
       .neq('id', id)
-      .maybeSingle()
+    const existing = (others ?? []).find((j) => j.github_repo && canonicalRepo(j.github_repo) === nextValue)
     if (existing) {
       return NextResponse.json(
         { error: `Repo "${nextValue}" is already linked to another content job.` },

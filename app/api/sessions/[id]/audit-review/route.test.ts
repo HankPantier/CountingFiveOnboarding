@@ -8,7 +8,7 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/auth/access', () => ({
-  requireSessionAccess: vi.fn(async () => ({ user: { id: 'u-1' } })),
+  requireOnboardingSessionAccess: vi.fn(async () => ({ user: { id: 'u-1' } })),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({

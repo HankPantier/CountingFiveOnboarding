@@ -6,7 +6,12 @@ import { resumeEndpointFor } from './resume-targets'
 const IMPORTS_ROUTE_MAX_DURATION_MS = 600_000
 // One import = fetch + html->md conversion + image re-hosting + a Haiku link pass.
 const IMPORTS_MIN_VIABLE_MS = 120_000
-import { importArticleAsIs } from './article-import-generator'
+import { importArticleAsIs, type AuditPagesCache } from './article-import-generator'
+
+// Auto-retry cap: an import that has failed this many attempts is left `error`
+// for a human "Retry failed" (which resets the counter) instead of being
+// re-attempted by the cron/chain every 5 minutes forever.
+export const MAX_IMPORT_ATTEMPTS = 3
 
 export interface ArticleImportStatus {
   total: number
@@ -14,6 +19,8 @@ export interface ArticleImportStatus {
   drafting: number
   complete: number
   error: number
+  // Failed imports still under the auto-retry cap.
+  retriableError: number
   // Distinct error messages across failed imports, so the UI can show WHY.
   errorSamples: string[]
   // True when nothing is left to wait on. The publish gate reads this.
@@ -26,7 +33,7 @@ export async function getArticleImportStatus(contentJobId: string): Promise<Arti
   const supabase = createServerClient()
   const { data } = await supabase
     .from('content_job_article_imports')
-    .select('status, error')
+    .select('status, error, attempts')
     .eq('content_job_id', contentJobId)
   const rows = data ?? []
   const count = (s: string) => rows.filter((r) => r.status === s).length
@@ -45,6 +52,7 @@ export async function getArticleImportStatus(contentJobId: string): Promise<Arti
     drafting,
     complete: count('complete'),
     error: count('error'),
+    retriableError: rows.filter((r) => r.status === 'error' && (r.attempts ?? 0) < MAX_IMPORT_ATTEMPTS).length,
     errorSamples,
     terminal: pending + drafting === 0,
   }
@@ -53,14 +61,27 @@ export async function getArticleImportStatus(contentJobId: string): Promise<Arti
 // Reset every errored import back to 'pending' so a subsequent run retries it.
 // Needed because an all-terminal job is skipped by the run route's guard + the
 // cron, so a genuinely-failed import has no other path back into drafting.
-export async function resetFailedArticleImports(contentJobId: string): Promise<number> {
+//
+// `manual` (a human clicked Retry) resets every failed row AND its attempt
+// counter; an automatic caller (cron / self-chain) only resets rows still under
+// MAX_IMPORT_ATTEMPTS, so a permanently-broken import stops being retried.
+export async function resetFailedArticleImports(
+  contentJobId: string,
+  opts: { manual: boolean } = { manual: false }
+): Promise<number> {
   const supabase = createServerClient()
-  const { data } = await supabase
+  let query = supabase
     .from('content_job_article_imports')
-    .update({ status: 'pending', error: null, updated_at: new Date().toISOString() })
+    .update({
+      status: 'pending',
+      error: null,
+      ...(opts.manual ? { attempts: 0 } : {}),
+      updated_at: new Date().toISOString(),
+    })
     .eq('content_job_id', contentJobId)
     .eq('status', 'error')
-    .select('id')
+  if (!opts.manual) query = query.lt('attempts', MAX_IMPORT_ATTEMPTS)
+  const { data } = await query.select('id')
   return data?.length ?? 0
 }
 
@@ -72,12 +93,19 @@ export async function resetFailedArticleImports(contentJobId: string): Promise<n
 export async function runArticleImportsForJob(contentJobId: string): Promise<void> {
   const supabase = createServerClient()
 
-  const { data: imports } = await supabase
+  const { data: rawImports } = await supabase
     .from('content_job_article_imports')
-    .select('id')
+    .select('id, status, attempts')
     .eq('content_job_id', contentJobId)
     .in('status', ['pending', 'error'])
-  if (!imports?.length) return
+    .order('updated_at', { ascending: true })
+  // Capped-out errors are terminal for automation (see MAX_IMPORT_ATTEMPTS).
+  const imports = (rawImports ?? []).filter(
+    (r) => r.status === 'pending' || (r.attempts ?? 0) < MAX_IMPORT_ATTEMPTS
+  )
+  if (!imports.length) return
+  // One audit-result read per audit for the whole run (was one per import).
+  const auditPages: AuditPagesCache = new Map()
 
   // Budgeted and resumable, mirroring the library runner. Strictly sequential:
   // every import commits to the same repo draft branch, so concurrent workers
@@ -93,7 +121,7 @@ export async function runArticleImportsForJob(contentJobId: string): Promise<voi
     budget,
     async (row) => {
       try {
-        await importArticleAsIs(row.id)
+        await importArticleAsIs(row.id, { priorAttempts: row.attempts ?? 0, auditPages })
       } catch (err) {
         // importArticleAsIs never throws, but guard the loop regardless so one bad
         // row can't abort the rest.
@@ -108,7 +136,7 @@ export async function runArticleImportsForJob(contentJobId: string): Promise<voi
     const endpoint = resumeEndpointFor({
       pending: remaining.pending,
       drafting: remaining.drafting,
-      error: remaining.error,
+      error: remaining.retriableError,
     })
     console.warn(
       `[article-import] Budget reached with ${skipped.length} import(s) left (elapsed ${budget.elapsed()}ms) — chaining via ${endpoint ?? 'none'}.`

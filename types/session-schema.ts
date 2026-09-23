@@ -24,6 +24,10 @@ export type SessionSchema = {
       highOpportunityNiches: string[]
     }
     opportunities_confirmed?: string[]
+    // business.contentExclusions entries that the Audit Review mirrored in from
+    // dropped niches/services (lib/agent/review-exclusions.ts). Tracked so a
+    // later re-keep removes them; operator-typed exclusions are never listed.
+    review_exclusions?: string[]
     // Record of the Phase-3 niche keep/drop review submitted via the
     // NicheReviewCard. Its presence is the advancement gate for Phase 3 → 4
     // (see lib/agent/phase-validators.ts) and drives the admin/MBP read-back.

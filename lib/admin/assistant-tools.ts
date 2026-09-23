@@ -6,9 +6,10 @@ import {
   type CurrentUser,
 } from '@/lib/auth/access'
 import { clientName } from '@/lib/admin/command-index'
+import { fetchAllPages } from '@/lib/admin/paginate'
 import { TERMINAL_AUDIT_STATUSES } from '@/lib/admin/home-stats'
 import { summarize, byClient, type UsageRow, type AuditMeta } from '@/lib/tokens/aggregate'
-import type { SessionSchema } from '@/types/session-schema'
+import type { Json } from '@/types/database'
 
 // Mirrors the badge labels on /admin/content — kept local so the tools file
 // doesn't import from a page component.
@@ -39,10 +40,30 @@ export function fuzzyIncludes(haystack: string, query: string): boolean {
 
 // ── find_person: pure matcher ────────────────────────────────────────────────
 
+// Only the slices find_person reads (the query selects schema_data->team and
+// schema_data->business->>name, never the whole blob). A full SessionSchema
+// is structurally assignable.
+export interface PersonTeamMember {
+  name?: unknown
+  bio?: unknown
+}
+
 export interface PersonSessionRow {
   id: string
   website_url: string
-  schema_data: SessionSchema | null
+  schema_data: {
+    team?: ReadonlyArray<PersonTeamMember | null | undefined> | null
+    business?: { name?: string | null } | null
+  } | null
+}
+
+// Narrow a raw JSONB `team` value to member-shaped objects.
+export function teamFromJson(value: Json | null | undefined): PersonTeamMember[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (m): m is { [key: string]: Json | undefined } =>
+      !!m && typeof m === 'object' && !Array.isArray(m)
+  )
 }
 
 export interface PersonMatch {
@@ -67,7 +88,9 @@ export function pickBestPerson(sessions: PersonSessionRow[], name: string): Pers
   for (const s of sessions) {
     const team = s.schema_data?.team ?? []
     for (let i = 0; i < team.length; i++) {
-      const memberName = (team[i]?.name ?? '').trim()
+      const rawName = team[i]?.name
+      const memberName = typeof rawName === 'string' ? rawName.trim() : ''
+      const rawBio = team[i]?.bio
       if (!memberName) continue
       const lower = memberName.toLowerCase()
 
@@ -84,7 +107,7 @@ export function pickBestPerson(sessions: PersonSessionRow[], name: string): Pers
           teamIndex: i,
           displayName: memberName,
           clientName: clientName(s.schema_data, s.website_url),
-          bioEmpty: (team[i]?.bio ?? '').trim().length === 0,
+          bioEmpty: (typeof rawBio === 'string' ? rawBio : '').trim().length === 0,
         }
       }
     }
@@ -147,7 +170,7 @@ export async function buildAssistantTools(user: CurrentUser) {
         const supabase = createServerClient()
         let q = supabase
           .from('sessions')
-          .select('id, website_url, schema_data')
+          .select('id, website_url, business_name:schema_data->business->>name, team:schema_data->team')
           .neq('status', 'archived')
         if (allowedSessionIds !== null) q = q.in('id', allowedSessionIds)
         const { data } = await q
@@ -155,7 +178,7 @@ export async function buildAssistantTools(user: CurrentUser) {
         const rows: PersonSessionRow[] = (data ?? []).map(s => ({
           id: s.id,
           website_url: s.website_url,
-          schema_data: s.schema_data as SessionSchema | null,
+          schema_data: { team: teamFromJson(s.team), business: { name: s.business_name } },
         }))
         const match = pickBestPerson(rows, name)
         if (!match) return { found: false as const }
@@ -228,7 +251,7 @@ export async function buildAssistantTools(user: CurrentUser) {
         const supabase = createServerClient()
         let sq = supabase
           .from('sessions')
-          .select('id, website_url, schema_data')
+          .select('id, website_url, business_name:schema_data->business->>name')
           .neq('status', 'archived')
         if (allowedSessionIds !== null) sq = sq.in('id', allowedSessionIds)
         const { data: sessions } = await sq
@@ -236,7 +259,7 @@ export async function buildAssistantTools(user: CurrentUser) {
         const resolved = (sessions ?? [])
           .map(s => ({
             id: s.id,
-            label: clientName(s.schema_data as SessionSchema | null, s.website_url),
+            label: clientName({ business: { name: s.business_name } }, s.website_url),
           }))
           .find(s => fuzzyIncludes(s.label, name))
         if (!resolved) return { found: false as const }
@@ -289,19 +312,29 @@ export async function buildAssistantTools(user: CurrentUser) {
       }) => {
         if (!user.isAdmin) return { error: 'not_authorized' as const }
         const supabase = createServerClient()
-        const [{ data: usage }, { data: sessions }, { data: auditRuns }] = await Promise.all([
-          supabase
-            .from('token_usage')
-            .select(
-              'task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at'
-            )
-            .order('created_at', { ascending: false })
-            .range(0, 49999),
-          supabase.from('sessions').select('id, website_url'),
-          supabase.from('audit_runs').select('id, session_id, site_name, domain'),
+        // Paginated: PostgREST caps each response at 1000 rows, so a single
+        // select silently under-reported spend once usage passed 1000 calls.
+        const [usage, sessions, auditRuns] = await Promise.all([
+          fetchAllPages<UsageRow>((from, to) =>
+            supabase
+              .from('token_usage')
+              .select(
+                'task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at'
+              )
+              .order('created_at', { ascending: false })
+              .order('id', { ascending: true })
+              .range(from, to)
+          ),
+          fetchAllPages<{ id: string; website_url: string | null }>((from, to) =>
+            supabase.from('sessions').select('id, website_url').order('id').range(from, to)
+          ),
+          fetchAllPages<{ id: string; session_id: string | null; site_name: string | null; domain: string }>(
+            (from, to) =>
+              supabase.from('audit_runs').select('id, session_id, site_name, domain').order('id').range(from, to)
+          ),
         ])
 
-        const rows = (usage ?? []) as UsageRow[]
+        const rows = usage
         const labels: Record<string, string> = {}
         for (const s of sessions ?? []) labels[s.id] = s.website_url ?? s.id
         const audits: Record<string, AuditMeta> = {}
@@ -356,10 +389,10 @@ export async function buildAssistantTools(user: CurrentUser) {
         if (sessionIds.length) {
           const { data: sess } = await supabase
             .from('sessions')
-            .select('id, website_url, schema_data')
+            .select('id, website_url, business_name:schema_data->business->>name')
             .in('id', sessionIds)
           for (const s of sess ?? []) {
-            labelMap.set(s.id, clientName(s.schema_data as SessionSchema | null, s.website_url))
+            labelMap.set(s.id, clientName({ business: { name: s.business_name } }, s.website_url))
           }
         }
 

@@ -64,6 +64,7 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
   const [data, setData] = useState<AuditBatchStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [retrying, setRetrying] = useState<Record<string, boolean>>({})
   // Bumped after a retry to restart polling (the interval self-stops at rest).
@@ -77,14 +78,20 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
       try {
         const res = await fetch(`/api/audit-batches/${batchId}/status`)
         if (!res.ok) {
-          if (res.status === 404 || res.status === 403) {
+          if (res.status === 404 || res.status === 403 || res.status === 401) {
             if (active) setNotFound(true)
             if (intervalId) clearInterval(intervalId)
+          } else if (active) {
+            // Server error — surface it instead of an endless "Loading…";
+            // the next tick retries and clears it on success.
+            setLoadError(`Couldn't load batch status (${res.status}). Retrying…`)
+            setLoading(false)
           }
           return
         }
         const json = (await res.json()) as AuditBatchStatusResponse
         if (!active) return
+        setLoadError(null)
         setData(json)
         setLoading(false)
         if (json.counts.queued === 0 && json.counts.running === 0 && intervalId) clearInterval(intervalId)
@@ -123,6 +130,14 @@ export default function AuditBatchProgress({ batchId }: { batchId: string }) {
         <Link href="/admin/audits" className="mt-4 inline-block text-sm text-brand-cyan hover:underline">
           &larr; Back to audits
         </Link>
+      </main>
+    )
+  }
+
+  if (!data && loadError) {
+    return (
+      <main className="p-8">
+        <p className="rounded-card bg-error/10 px-3 py-2 font-body text-sm text-error">{loadError}</p>
       </main>
     )
   }

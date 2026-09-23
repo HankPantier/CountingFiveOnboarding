@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { SessionSchema } from '@/types/session-schema'
@@ -23,7 +23,7 @@ const chip = 'inline-flex items-center rounded-full bg-surface-subtle px-2.5 py-
 export function StartSessionForm({ auditId }: { auditId: string }) {
   const router = useRouter()
   const [draft, setDraft] = useState<DraftResponse | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [existingSessionId, setExistingSessionId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -31,37 +31,45 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
   const [biz, setBiz] = useState({ name: '', tagline: '', customerDescription: '' })
   const [contact, setContact] = useState({ firstName: '', lastName: '', email: '', phone: '' })
 
-  useEffect(() => {
-    let cancelled = false
-    const draftSession = async () => {
-      try {
-        const res = await fetch(`/api/audits/${auditId}/draft-session`, { method: 'POST' })
-        if (!res.ok) {
-          const b = await res.json().catch(() => ({}))
-          throw new Error(b.error ?? 'Could not draft the session')
-        }
-        const data: DraftResponse = await res.json()
-        if (cancelled) return
-        setDraft(data)
-        setBiz({
-          name: data.schemaData.business?.name ?? '',
-          tagline: data.schemaData.business?.tagline ?? '',
-          customerDescription: data.schemaData.business?.customerDescription ?? '',
-        })
-        setContact({ firstName: '', lastName: '', email: data.contact?.email ?? '', phone: data.contact?.phone ?? '' })
-        setLoading(false)
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : 'Could not draft the session')
-          setLoading(false)
-        }
+  // Drafting is an explicit action (it's an AI call that bills tokens) rather
+  // than an auto-POST on mount, which re-fired on every remount/refresh. The
+  // ref guards a double click; the controller aborts on unmount.
+  const inFlight = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  const draftSession = async () => {
+    if (inFlight.current) return
+    inFlight.current = true
+    const controller = new AbortController()
+    abortRef.current = controller
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/audits/${auditId}/draft-session`, { method: 'POST', signal: controller.signal })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(b.error ?? 'Could not draft the session')
       }
+      const data: DraftResponse = await res.json()
+      if (controller.signal.aborted) return
+      setDraft(data)
+      setBiz({
+        name: data.schemaData.business?.name ?? '',
+        tagline: data.schemaData.business?.tagline ?? '',
+        customerDescription: data.schemaData.business?.customerDescription ?? '',
+      })
+      setContact({ firstName: '', lastName: '', email: data.contact?.email ?? '', phone: data.contact?.phone ?? '' })
+      setLoading(false)
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        setError(e instanceof Error ? e.message : 'Could not draft the session')
+        setLoading(false)
+      }
+    } finally {
+      inFlight.current = false
     }
-    draftSession()
-    return () => {
-      cancelled = true
-    }
-  }, [auditId])
+  }
 
   const rerun = async () => {
     await fetch(`/api/audits/${auditId}/run`, { method: 'POST' }).catch(() => {})
@@ -122,14 +130,31 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
     return (
       <div className={cardClass}>
         <p className="font-body text-sm text-error">{error}</p>
-        <button onClick={() => router.refresh()} className="mt-4 font-body text-sm text-brand-cyan hover:underline">
+        <button
+          onClick={() => void draftSession()}
+          className="mt-4 rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse hover:bg-brand-cyan-dark"
+        >
           Try again
         </button>
       </div>
     )
   }
 
-  if (!draft) return null
+  if (!draft) {
+    return (
+      <div className={cardClass}>
+        <p className="font-body text-sm text-text-secondary">
+          Draft a business profile from this audit with AI. You&apos;ll review and edit it before the session is created.
+        </p>
+        <button
+          onClick={() => void draftSession()}
+          className="mt-4 rounded-pill bg-brand-cyan px-3.5 py-1.5 font-heading text-xs font-semibold text-text-inverse hover:bg-brand-cyan-dark"
+        >
+          Draft session
+        </button>
+      </div>
+    )
+  }
   const s = draft.schemaData
   const { coverage } = draft
 

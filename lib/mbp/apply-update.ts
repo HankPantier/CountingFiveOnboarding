@@ -7,6 +7,14 @@ import type { SessionSchema } from '@/types/session-schema'
 
 type Supabase = ReturnType<typeof createServerClient>
 
+// The MBP page keys field rows (admin-override badge, "just added" highlight) by
+// the dotted `niches.3.description` form, but the AI suggestion tools emit
+// bracket paths (`niches[3].description`). Normalize before using a path as a
+// _meta key so the badge/highlight actually matches.
+export function toDottedPath(path: string): string {
+  return path.replace(/\[(\d+)\]/g, '.$1')
+}
+
 // Single write path for MBP edits — used by the MBP edit chat tool and the
 // suggestion-approve route. Applies each dotted fieldPath to schema_data,
 // stamps _meta.admin_overrides for every path (so the UI can badge admin
@@ -40,7 +48,7 @@ export async function applyMbpUpdate(
   // Stamp admin_overrides for each edited path.
   const meta = (schema._meta as Record<string, unknown>) ?? {}
   const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
-  for (const p of overridePaths) overrides[p] = true
+  for (const p of overridePaths) overrides[toDottedPath(p)] = true
   schema = { ...schema, _meta: { ...meta, admin_overrides: overrides } }
 
   // An admin edit is a confirmation — tag provenance so the UI/content-gen can
@@ -52,7 +60,7 @@ export async function applyMbpUpdate(
     const m = (schema._meta as Record<string, unknown>) ?? {}
     const recent = (m.recently_applied as Record<string, string>) ?? {}
     const now = new Date().toISOString()
-    for (const p of appliedPaths) recent[p] = now
+    for (const p of appliedPaths) recent[toDottedPath(p)] = now
     schema = { ...schema, _meta: { ...m, recently_applied: recent } }
   }
 

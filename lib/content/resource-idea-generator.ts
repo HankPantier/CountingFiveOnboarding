@@ -11,6 +11,7 @@ import { listTree, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { asJson } from '@/lib/supabase/json-typed'
 import { CONTENT_TYPES, asContentType, type ContentType } from './content-types'
 import { inferSessionIndustry } from './infer-industry'
+import { objArr, str, realStrings } from './schema-coerce'
 import type { SessionSchema } from '@/types/session-schema'
 
 // Per-type framing for the brainstorm prompt. Ideas suit the type the operator
@@ -142,9 +143,9 @@ export async function generateResourceIdeas(
 
   const schema = (session.schema_data ?? {}) as SessionSchema
   const industry = inferSessionIndustry(schema)
-  const firmName = schema.business?.name ?? 'the firm'
+  const firmName = str(schema.business?.name) || 'the firm'
   const location = firmLocation(schema)
-  const services = (schema.services ?? []).map((s) => s.name).filter(Boolean)
+  const services = objArr<{ name?: unknown }>(schema.services).map((s) => str(s.name)).filter(Boolean)
   const niches = activeNiches(schema).map((n) => n.name).filter(Boolean)
 
   // Serper research — up to 3 queries. Seeded runs research the seed itself;
@@ -200,9 +201,7 @@ Extrapolate it into ${count} distinct, fully-formed ${typeSpec.articleNoun} idea
       }`
     : `Brainstorm ${count} ${typeSpec.articleNoun} ideas for the firm's "Resources" section.`
 
-  const successStories = (schema.business?.clientSuccessStories ?? [])
-    .map((s) => (typeof s === 'string' ? s.trim() : ''))
-    .filter(Boolean)
+  const successStories = realStrings(schema.business?.clientSuccessStories)
   const caseStudyBlock =
     contentType === 'case-study'
       ? `\n\nCLIENT SUCCESS STORIES — base every case-study idea on one of these; do not invent clients or outcomes:\n${

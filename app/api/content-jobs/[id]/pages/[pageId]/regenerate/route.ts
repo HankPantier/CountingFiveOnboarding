@@ -1,10 +1,12 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
-import { generateSinglePage, finalizeGenerationIfComplete } from '@/lib/content/content-generator'
+import { generateSinglePage, finalizeGenerationIfComplete, PAGE_DEADLINE_DEFAULT_MS } from '@/lib/content/content-generator'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// Must stay >= GENERATE_ROUTE_MAX_DURATION_MS: the page deadline below is
+// derived from it, and ORPHAN_RECLAIM_MS assumes no worker outlives it.
+export const maxDuration = 600
 
 // Re-run content generation for a single page from its already-approved
 // outline. Resets admin_approved_content (handled inside generateSinglePage)
@@ -19,6 +21,9 @@ export async function POST(
 
   const { id, pageId } = await params
   const supabase = createServerClient()
+  // Budget-derived deadline, fixed at request start (after() shares this
+  // invocation's maxDuration).
+  const deadlineAt = Date.now() + PAGE_DEADLINE_DEFAULT_MS
 
   // pageId is the generated_pages id; map to its outline.
   const { data: genPage } = await supabase
@@ -58,7 +63,7 @@ export async function POST(
   // polls for the resulting status change.
   after(async () => {
     try {
-      await generateSinglePage(id, outline.id)
+      await generateSinglePage(id, outline.id, undefined, { deadlineAt })
       // Retrying the last stranded page can be what finally makes every page
       // terminal — advance to Deliverables so the job doesn't stay locked at
       // phase 5 just because completion happened outside the batch runner.

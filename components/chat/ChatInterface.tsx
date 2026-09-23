@@ -8,7 +8,9 @@ import MessageBubble from './MessageBubble'
 import FileUploadButton from './FileUploadButton'
 import type { Database } from '@/types/database'
 
-type Session = Database['public']['Tables']['sessions']['Row']
+// Only the fields the chat actually reads — the parent server component passes
+// just these instead of the whole sessions row (schema_data, gap_list, …).
+type Session = Pick<Database['public']['Tables']['sessions']['Row'], 'current_phase'>
 
 const PHASE_LABELS: Record<number, string> = {
   0: 'Getting started',
@@ -37,15 +39,18 @@ export default function ChatInterface({
   initialSession,
   initialMessages,
   initialIsStaffMode = false,
+  viewerIsAdmin,
 }: {
   sessionId: string
   initialSession: Session
   initialMessages: { role: string; content: string }[]
   initialIsStaffMode?: boolean
+  // Server-resolved viewer role. When provided, skips the /api/auth/me probe.
+  viewerIsAdmin?: boolean
 }) {
   const [input, setInput] = useState('')
   const [currentPhase, setCurrentPhase] = useState(initialSession.current_phase)
-  const [isAdmin, setIsAdmin] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(viewerIsAdmin ?? false)
   const [isStaffMode, setIsStaffMode] = useState(initialIsStaffMode)
   const [staffPanelOpen, setStaffPanelOpen] = useState(false)
   const [staffNote, setStaffNote] = useState('')
@@ -113,6 +118,7 @@ export default function ChatInterface({
   // Admin detection runs on mount. Non-admin visitors quietly get { isAdmin: false }
   // (no console errors), so the staff toggle simply never renders for them.
   useEffect(() => {
+    if (viewerIsAdmin !== undefined) return
     let cancelled = false
     fetch('/api/auth/me')
       .then(r => r.json())
@@ -121,7 +127,7 @@ export default function ChatInterface({
       })
       .catch(() => { /* unauthenticated; ignore */ })
     return () => { cancelled = true }
-  }, [])
+  }, [viewerIsAdmin])
 
   // Refresh phase after each assistant exchange
   useEffect(() => {

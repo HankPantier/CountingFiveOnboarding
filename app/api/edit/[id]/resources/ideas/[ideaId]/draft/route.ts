@@ -133,7 +133,7 @@ export async function POST(
 
   after(async () => {
     try {
-      await generateResourceDraft(ideaId)
+      await generateResourceDraft(ideaId, { force: true })
     } catch (err) {
       console.error('[resource-draft] Trigger failed:', err)
     }

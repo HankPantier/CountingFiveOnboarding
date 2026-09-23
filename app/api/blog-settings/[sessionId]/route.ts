@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireSessionAccess, canPublish } from '@/lib/auth/access'
+import { requireSessionAccess, canPublish, denySiteOwnerConfig } from '@/lib/auth/access'
 import { resolveBlogConfig } from '@/lib/content/blog-config'
 import {
   loadBlogSettingsForSession,
@@ -42,7 +42,8 @@ export async function GET(
 }
 
 // Save blog config to the repo draft branch. Writing to draft feeds a live
-// publish, so this is gated to publishers (admin, manager, owner) — editors 403.
+// publish, and it is site config (not page content), so it is gated to staff
+// publishers (admin, manager) — editors and Site Owners 403.
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ sessionId: string }> }
@@ -53,6 +54,8 @@ export async function PUT(
   }
   const auth = await requireSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
+  const ownerDenied = denySiteOwnerConfig(auth.user)
+  if (ownerDenied) return ownerDenied
   if (!canPublish(auth.user)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

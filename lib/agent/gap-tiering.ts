@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
+import { computePhase4Gaps } from '@/lib/mbp-parser'
 
 // Content-BLOCK items render as a short section on a parent page, not their own
 // URL — so the deep, page-grade gaps below are dropped for them, keeping the
@@ -26,4 +27,16 @@ export function tierGapsByTreatment(schema: SessionSchema, gaps: GapItem[]): Gap
     if (s && blockService.has(Number(s[1])) && SERVICE_PAGE_ONLY.has(s[2])) return false
     return true
   })
+}
+
+const normField = (f: string): string => f.replace(/\[(\d+)\]/g, '.$1')
+
+// Gaps are computed once at session creation, so a niche/service added later
+// (Audit Review, notes extraction) never got its Phase-4 depth gaps. Append the
+// freshly computed gaps whose field isn't already tracked (resolved or not),
+// then re-apply the page/block tiering. Pure.
+export function refreshPhase4Gaps(schema: SessionSchema, gaps: GapItem[]): GapItem[] {
+  const tracked = new Set(gaps.map((g) => normField(g.field)))
+  const additions = computePhase4Gaps(schema).filter((g) => !tracked.has(normField(g.field)))
+  return tierGapsByTreatment(schema, additions.length ? [...gaps, ...additions] : gaps)
 }

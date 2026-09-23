@@ -40,17 +40,21 @@ Write a concise, human-readable synopsis (2 short paragraphs, ~120-180 words tot
 Ground every statement in the profile — never invent facts. If something central is missing, say so plainly (e.g. "No brand voice captured yet"). Plain prose only: no headings, no bullet lists, no markdown, no preamble.`
 
   let text: string
+  let finishReason: string | undefined
   let usage: { inputTokens?: number; outputTokens?: number } | undefined
   try {
     const res = await generateText({
       model: anthropic(SYNOPSIS_MODEL),
       system: 'You are an internal analyst for a CPA-firm marketing agency. Be accurate, specific, and concise. Return prose only.',
       prompt,
-      maxOutputTokens: 900,
+      // Adaptive thinking at high effort shares this budget with the visible
+      // text — 900 left the synopsis truncated mid-sentence.
+      maxOutputTokens: 4000,
       providerOptions: GENERATION_PROVIDER_OPTIONS,
       maxRetries: 2,
     })
     text = res.text
+    finishReason = res.finishReason
     usage = res.usage
   } catch (err) {
     console.error('[mbp-synopsis] generation failed:', err)
@@ -66,10 +70,21 @@ Ground every statement in the profile — never invent facts. If something centr
     outputTokens: usage?.outputTokens,
   })
 
+  if (finishReason === 'length') {
+    return { error: 'Synopsis was cut off before it finished. Please try again.' }
+  }
   const clean = text.trim()
   if (!clean) return { error: 'Synopsis came back empty. Please try again.' }
 
-  const schema = schemaData as Record<string, unknown>
+  // Re-read right before the write: the generation takes a while, and writing
+  // back the pre-generation snapshot would clobber any edit made meanwhile.
+  const { data: fresh } = await supabase
+    .from('sessions')
+    .select('schema_data')
+    .eq('id', sessionId)
+    .single()
+  if (!fresh) return { error: 'Session not found' }
+  const schema = (fresh.schema_data ?? {}) as Record<string, unknown>
   const meta = (schema._meta as Record<string, unknown>) ?? {}
   const updated = {
     ...schema,

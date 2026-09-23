@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   job: {
+    phase: 4,
     session_id: 'sess-1',
     library_reviewed_at: '2026-08-27T00:00:00Z',
     articles_reviewed_at: '2026-08-27T00:00:00Z',
   } as {
+    phase: number
     session_id: string
     library_reviewed_at: string | null
     articles_reviewed_at: string | null
   },
+  outlines: [{ admin_approved: true }] as Array<{ admin_approved: boolean }>,
   firmName: 'Acme CPA' as string | null,
   importableArticles: [] as Array<{ url: string }>,
   after: vi.fn(),
@@ -34,6 +37,8 @@ vi.mock('@/lib/supabase/server', () => ({
     from: (table: string) => ({
       select: () => ({
         eq: () => ({
+          // page_outlines is awaited directly after .eq(); the others call .single().
+          then: (resolve: (v: unknown) => void) => resolve({ data: h.outlines, error: null }),
           single: async () =>
             table === 'sessions'
               ? { data: { schema_data: { business: { name: h.firmName } } } }
@@ -56,7 +61,9 @@ const patchPhase5 = () =>
   PATCH(new Request('http://test', { method: 'PATCH', body: JSON.stringify({ phase: 5 }) }), { params })
 
 beforeEach(() => {
+  h.outlines = [{ admin_approved: true }]
   h.job = {
+    phase: 4,
     session_id: 'sess-1',
     library_reviewed_at: '2026-08-27T00:00:00Z',
     articles_reviewed_at: '2026-08-27T00:00:00Z',
@@ -107,5 +114,29 @@ describe('PATCH /api/content-jobs/[id] — phase 5 gates', () => {
     const res = await patchPhase5()
     expect(res.status).toBe(200)
     expect(h.after).toHaveBeenCalledOnce()
+  })
+
+  it('blocks (422) crossing into phase 5 while any outline is unapproved', async () => {
+    h.outlines = [{ admin_approved: true }, { admin_approved: false }]
+    const res = await patchPhase5()
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toMatch(/Approve every outline/i)
+    expect(h.after).not.toHaveBeenCalled()
+  })
+
+  it('refuses (409) a phase jump that skips steps', async () => {
+    h.job.phase = 2
+    const res = await patchPhase5()
+    expect(res.status).toBe(409)
+    expect(h.after).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed nav_config (400)', async () => {
+    const res = await PATCH(
+      new Request('http://test', { method: 'PATCH', body: JSON.stringify({ nav_config: { primary: 'nope' } }) }),
+      { params },
+    )
+    expect(res.status).toBe(400)
   })
 })

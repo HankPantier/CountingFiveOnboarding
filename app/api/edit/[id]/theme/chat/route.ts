@@ -4,7 +4,6 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
-import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -16,6 +15,7 @@ import {
   readFile,
   writeFiles,
   FileNotFoundError,
+  StaleShaError,
 } from '@/lib/github/repo-files'
 import { generateThemeCss, checkThemeContrast } from '@/lib/content/theme-css-generator'
 import {
@@ -43,8 +43,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { githubRepo, sessionId, adminEmail, adminName } = ctx
 
   // resolveEditContext allows assigned managers; theme editing is admin-only.
-  const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  const user = ctx.user
+  if (!user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -101,7 +101,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       content: c.content,
       expectedSha: files[c.path].sha || undefined,
     }))
-    const res = await writeFiles(githubRepo, payload, DRAFT_BRANCH, message, commitAuthor)
+    let res: Awaited<ReturnType<typeof writeFiles>>
+    try {
+      res = await writeFiles(githubRepo, payload, DRAFT_BRANCH, message, commitAuthor)
+    } catch (err) {
+      // Surface a concurrent edit as a clear conflict the model relays verbatim
+      // (tool executors return err.message), instead of a raw sha error.
+      if (err instanceof StaleShaError) {
+        throw new Error(
+          `${err.path} was changed in another window since this chat loaded it (conflict). Ask the admin to reload the Theme Studio before retrying.`
+        )
+      }
+      throw err
+    }
     for (const c of changes) {
       files[c.path] = { content: c.content, sha: res.blobs[c.path] ?? files[c.path].sha }
     }
@@ -270,7 +282,7 @@ RULES
       await recordTokenUsage({
         task: 'content',
         sessionId,
-        createdBy: user?.id ?? null,
+        createdBy: user.id,
         stage: 'theme_edit',
         model: 'claude-sonnet-4-6',
         inputTokens: totalUsage.inputTokens,

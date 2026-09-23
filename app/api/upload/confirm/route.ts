@@ -2,6 +2,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { fileTypeFromBuffer } from 'file-type'
 import { readJsonBody } from '@/app/api/_json'
+import { requireSessionAccess } from '@/lib/auth/access'
+import { fileNameFromStoragePath, isSessionStoragePath, sanitizeUploadFileName } from '../_filename'
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/tiff', 'application/pdf']
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -27,26 +29,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid metadata — must be an object' }, { status: 400 })
   }
 
+  const auth = await requireSessionAccess(sessionId)
+  if (auth instanceof NextResponse) return auth
+
   // Validate storagePath belongs to this session — prevent cross-session file
   // claiming. Decode before checking (security rule 8) so percent-encoded
   // traversal can't pass the prefix check, and reject dot segments outright.
-  if (typeof storagePath !== 'string') {
+  if (typeof storagePath !== 'string' || !isSessionStoragePath(storagePath, sessionId)) {
     return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
   }
-  let decodedPath: string
-  try {
-    decodedPath = decodeURIComponent(storagePath)
-  } catch {
-    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
-  }
-  const expectedPrefix = `sessions/${sessionId}/`
-  if (
-    decodedPath !== storagePath ||
-    !decodedPath.startsWith(expectedPrefix) ||
-    decodedPath.split('/').some(s => s === '' || s === '.' || s === '..')
-  ) {
-    return NextResponse.json({ error: 'Invalid storage path' }, { status: 400 })
-  }
+  // Never trust the client's display name — derive it from the server-issued
+  // storage path (falls back to the sanitized client name if the path has no
+  // usable basename).
+  const safeFileName = fileNameFromStoragePath(storagePath) || sanitizeUploadFileName(String(fileName))
 
   const supabase = createServerClient()
 
@@ -102,7 +97,7 @@ export async function POST(req: Request) {
     .from('assets')
     .insert({
       session_id: sessionId,
-      file_name: fileName,
+      file_name: safeFileName,
       storage_path: storagePath,
       public_url: null,
       mime_type: detected?.mime ?? mimeType,

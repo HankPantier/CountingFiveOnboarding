@@ -1,7 +1,7 @@
 import { anthropic } from '@ai-sdk/anthropic'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { createServerClient } from '@/lib/supabase/server'
-import { generateAndFinalizePage, type Cta } from './content-generator'
+import { generateAndFinalizePage, PAGE_DEADLINE_DEFAULT_MS, type Cta } from './content-generator'
 import { buildPageMarkdown, type PageMarkdownInput, type CtaInfo } from './deliverable-builder'
 import { generateJson } from './json-generation'
 import { PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
@@ -253,6 +253,10 @@ export async function generateNewPage(
   generationId: string
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; error?: string }> {
   const supabase = createServerClient()
+  // Page deadline derived from the create-page route's budget (maxDuration 600
+  // minus the reserve): every model call is clipped to it and optional retries
+  // are skipped near it, so the after() worker can't be killed mid-write.
+  const deadlineAt = Date.now() + PAGE_DEADLINE_DEFAULT_MS
 
   const { data: row } = await supabase
     .from('new_page_generations')
@@ -265,9 +269,11 @@ export async function generateNewPage(
     .from('new_page_generations')
     .update({ status: 'running', updated_at: new Date().toISOString() })
     .eq('id', generationId)
-    .neq('status', 'running')
+    // Never re-claim a finished (or in-flight) generation — a duplicate trigger
+    // would overwrite a page the operator may already be editing.
+    .in('status', ['pending', 'error'])
     .select('id')
-  if (!locked?.length) return { status: 'skipped', error: 'Generation already running' }
+  if (!locked?.length) return { status: 'skipped', error: 'Generation already running or complete' }
 
   const fail = async (message: string) => {
     await supabase
@@ -334,6 +340,7 @@ export async function generateNewPage(
       contentJobId: row.content_job_id,
       sessionId: row.session_id,
       sitemapUrls,
+      deadlineAt,
     })
 
     const markdown = buildPageMarkdown(

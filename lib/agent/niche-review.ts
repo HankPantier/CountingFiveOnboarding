@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
+import { syncReviewExclusions } from './review-exclusions'
 
 // A per-niche page-vs-block decision + audit source from the Audit Review step.
 // `pageTreatment: 'exclude'` is folded into the drop set (equivalent to a legacy
@@ -44,6 +45,7 @@ export function applyNicheReview(
   const next = structuredClone(schema)
   const treatmentMap = new Map((input.treatments ?? []).map((t) => [norm(t.name), t]))
   const dropSet = new Set((input.drop ?? []).map(norm).filter(Boolean))
+  const keepSet = new Set((input.keep ?? []).map(norm).filter(Boolean))
   // An 'exclude' treatment is a drop — fold it in so status/gap/exclusion handling
   // is identical to a legacy drop.
   for (const t of input.treatments ?? []) {
@@ -60,19 +62,25 @@ export function applyNicheReview(
     const k = norm(n.name)
     const t = treatmentMap.get(k)
     if (t?.origin) n.origin = t.origin
+    // An item the review doesn't mention (not dropped, not kept, no treatment)
+    // keeps its existing decision — a partial resubmit must not silently re-keep
+    // something dropped earlier. A never-reviewed item defaults to kept.
+    const explicitKeep = keepSet.has(k) || (!!t && t.pageTreatment !== 'exclude')
     if (dropSet.has(k)) {
       n.status = 'dropped'
-      droppedNames.push(n.name)
-      droppedIndexes.add(i)
-    } else {
+    } else if (explicitKeep || n.status !== 'dropped') {
       n.status = 'kept'
-      // Stamp the page-vs-block decision on kept niches. 'page' clears any prior
+      // Stamp the page-vs-block decision on kept items. 'page' clears any prior
       // block parent; 'block' records the operator-picked parent.
       if (t && t.pageTreatment !== 'exclude') {
         n.pageTreatment = t.pageTreatment
         if (t.pageTreatment === 'block' && t.parent) n.parent = t.parent
         else delete n.parent
       }
+    }
+    if (n.status === 'dropped') {
+      droppedNames.push(n.name)
+      droppedIndexes.add(i)
     }
   })
 
@@ -94,14 +102,10 @@ export function applyNicheReview(
     addedNames.push(name)
   }
 
-  // Mirror dropped names into contentExclusions (dedup). Only when a business
-  // object exists — the status filter is the primary exclusion mechanism.
-  if (next.business && droppedNames.length) {
-    const existing = next.business.contentExclusions ?? []
-    const seen = new Set(existing.map(norm))
-    const additions = droppedNames.filter((n) => !seen.has(norm(n)))
-    if (additions.length) next.business.contentExclusions = [...existing, ...additions]
-  }
+  // Mirror dropped niche/service names into contentExclusions, recomputed from
+  // the current statuses so a re-kept item's review-added exclusion is removed
+  // (see syncReviewExclusions). The status filter is the primary mechanism.
+  syncReviewExclusions(next)
 
   // Prune Phase-4 gaps belonging to a dropped niche (niches[i].*). Index stays
   // stable because dropped niches remain in the array.

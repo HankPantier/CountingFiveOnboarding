@@ -25,7 +25,7 @@ export function buildSystemPrompt(session: Session): string {
   const phase = session.current_phase
   const mode = getMode(session)
 
-  const sparseSchema = serializeSchema(schema)
+  const sparseSchema = serializeSchema(schema, phase)
   const phaseInstructions = getPhaseInstructions(phase, session, mode)
   const gapInstructions = phase >= 4 ? buildGapListInstructions(gaps) : ''
   // Audit intelligence (narrative/tech/competitive) is reference context for the
@@ -153,17 +153,38 @@ function buildCallNotesBlock(callNotes: string | null): string {
 // content-gen field, sitemaps, reputation, and content_gaps. The opposite of
 // serializeSchema, which trims aggressively to fit the per-phase token budget.
 export function serializeSchemaFull(schema: Json): string {
-  const obj = schema as Record<string, unknown>
+  const obj = (schema ?? {}) as Record<string, unknown>
   const { _meta, ...rest } = obj
   void _meta
-  const sparse = deepOmitEmpty(rest)
-  return JSON.stringify(sparse, null, 2)
+  const sparse = deepOmitEmpty(stripRegistrarSecrets(rest))
+  // deepOmitEmpty returns undefined for an all-empty object, and
+  // JSON.stringify(undefined) is undefined (not a string).
+  return sparse === undefined ? '{}' : JSON.stringify(sparse, null, 2)
 }
 
-function serializeSchema(schema: Json): string {
-  const obj = schema as Record<string, unknown>
-  const { _meta, proposed_sitemap, current_sitemap, reputation, content_gaps, ...rest } = obj
+// Registrar account details (username / PIN / the password reminder note) never
+// belong in any model context (CLAUDE.md security rule 5). The registrar's NAME
+// (`technical.registrar`) is not a credential and is kept.
+function stripRegistrarSecrets(obj: Record<string, unknown>): Record<string, unknown> {
+  const technical = obj.technical
+  if (!technical || typeof technical !== 'object' || Array.isArray(technical)) return obj
+  const cleaned = Object.fromEntries(
+    Object.entries(technical as Record<string, unknown>).filter(([k]) => !/^registrar.+/.test(k))
+  )
+  return { ...obj, technical: cleaned }
+}
+
+// Phases 0–2 only collect contact info + the website URL, so only those are
+// serialized there — the rest of a seeded profile would blow the ~1k budget.
+function serializeSchema(schema: Json, phase: number): string {
+  const obj = (schema ?? {}) as Record<string, unknown>
+  if (phase <= 2) {
+    const early = deepOmitEmpty({ contact: obj.contact, websiteUrl: obj.websiteUrl })
+    return early === undefined ? '(nothing captured yet)' : JSON.stringify(early, null, 2)
+  }
+  const { _meta, proposed_sitemap, current_sitemap, reputation, content_gaps, ...unsafeRest } = obj
   void _meta; void proposed_sitemap; void current_sitemap; void reputation; void content_gaps
+  const rest = stripRegistrarSecrets(unsafeRest)
 
   // Trim heavy content-gen-only fields out of the chat context. The agent
   // doesn't need them while talking to the client; content generation reads

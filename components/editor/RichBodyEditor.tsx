@@ -354,7 +354,8 @@ export default function RichBodyEditor({
         {parts.map((part, pi) => {
           // FAQ dual-writes frontmatter via the parent, so each keystroke round-
           // trips the whole body and bumps resetKey. A stable key keeps its
-          // buffer + focus across that (it reseeds on tab switch / file change).
+          // buffer + focus across that; the editor itself reseeds its buffer
+          // when `items` changes externally (see lib/ui/faq-sync.ts).
           if (onFaqChange && FAQ_BLOCK_RE.test(part)) {
             return (
               <FaqInlineEditor

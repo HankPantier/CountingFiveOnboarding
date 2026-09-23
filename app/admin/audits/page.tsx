@@ -73,14 +73,6 @@ export default async function AuditsListPage({
     const { count } = await q
     return count ?? 0
   }
-  const [prospectCount, workingCount, clientCount] = await Promise.all(FOLDERS.map(countFor))
-  const folderCounts: Record<Folder | 'all', number> = {
-    prospect: prospectCount,
-    working: workingCount,
-    client: clientCount,
-    all: prospectCount + workingCount + clientCount,
-  }
-
   let query = supabase
     .from('audit_runs')
     .select(
@@ -92,15 +84,37 @@ export default async function AuditsListPage({
   if (folder !== 'all') query = query.eq('audit_group', folder)
   if (runByFilter) query = query.eq('created_by', runByFilter)
   if (batchFilter) query = query.eq('audit_batch_id', batchFilter)
-  const { data } = await query
+
+  // Filter-selector options. Run by is admin-only (auditor scope already pins to
+  // self); batches are scoped the same way the batch list API scopes them.
+  let batchQuery = supabase
+    .from('audit_batches')
+    .select('id, label, created_at')
+    .order('created_at', { ascending: false })
+    .limit(100)
+  if (scope) batchQuery = batchQuery.eq('created_by', scope.createdBy)
+
+  // Folder counts, the page of runs, and both filter-option lists are
+  // independent — fetch them in one round of parallel queries.
+  const [counts, { data }, adminList, { data: batchList }] = await Promise.all([
+    Promise.all(FOLDERS.map(countFor)),
+    query,
+    user?.isAdmin
+      ? supabase.from('admins').select('id, name, email').then((r) => r.data ?? [])
+      : Promise.resolve([] as { id: string; name: string | null; email: string }[]),
+    batchQuery,
+  ])
+  const [prospectCount, workingCount, clientCount] = counts
+  const folderCounts: Record<Folder | 'all', number> = {
+    prospect: prospectCount,
+    working: workingCount,
+    client: clientCount,
+    all: prospectCount + workingCount + clientCount,
+  }
 
   // Resolve batch labels for any runs that belong to a batch (scoped rows only,
   // so no cross-owner exposure). Runs share created_by with their batch.
   const batchIds = [...new Set((data ?? []).map((r) => r.audit_batch_id).filter((v): v is string => !!v))]
-  const { data: batches } = batchIds.length
-    ? await supabase.from('audit_batches').select('id, label').in('id', batchIds)
-    : { data: [] }
-  const labelByBatch = new Map((batches ?? []).map((b) => [b.id, b.label]))
 
   // Resolve who ran each audit (created_by → admin display name). Include the
   // active runBy filter so its chip name resolves even if the folder+runBy
@@ -108,26 +122,21 @@ export default async function AuditsListPage({
   const creatorIdSet = new Set((data ?? []).map((r) => r.created_by).filter((v): v is string => !!v))
   if (runByFilter) creatorIdSet.add(runByFilter)
   const creatorIds = [...creatorIdSet]
-  const { data: creators } = creatorIds.length
-    ? await supabase.from('admins').select('id, name, email').in('id', creatorIds)
-    : { data: [] }
+  const [{ data: batches }, { data: creators }] = await Promise.all([
+    batchIds.length
+      ? supabase.from('audit_batches').select('id, label').in('id', batchIds)
+      : Promise.resolve({ data: [] as { id: string; label: string | null }[] }),
+    creatorIds.length
+      ? supabase.from('admins').select('id, name, email').in('id', creatorIds)
+      : Promise.resolve({ data: [] as { id: string; name: string | null; email: string }[] }),
+  ])
+  const labelByBatch = new Map((batches ?? []).map((b) => [b.id, b.label]))
   const nameByCreator = new Map((creators ?? []).map((a) => [a.id, a.name || a.email]))
   const runByName = runByFilter ? nameByCreator.get(runByFilter) ?? 'Unknown user' : null
 
-  // Filter-selector options. Run by is admin-only (auditor scope already pins to
-  // self); batches are scoped the same way the batch list API scopes them.
-  const runnerOptions = user?.isAdmin
-    ? ((await supabase.from('admins').select('id, name, email')).data ?? [])
-        .map((a) => ({ id: a.id, label: a.name || a.email }))
-        .sort((x, y) => x.label.localeCompare(y.label))
-    : []
-  let batchQuery = supabase
-    .from('audit_batches')
-    .select('id, label, created_at')
-    .order('created_at', { ascending: false })
-    .limit(100)
-  if (scope) batchQuery = batchQuery.eq('created_by', scope.createdBy)
-  const { data: batchList } = await batchQuery
+  const runnerOptions = adminList
+    .map((a) => ({ id: a.id, label: a.name || a.email }))
+    .sort((x, y) => x.label.localeCompare(y.label))
   const batchOptions = (batchList ?? []).map((b) => ({ id: b.id, label: b.label || 'Untitled batch' }))
   const batchName = batchFilter
     ? batchOptions.find((b) => b.id === batchFilter)?.label ?? labelByBatch.get(batchFilter) ?? 'Selected batch'

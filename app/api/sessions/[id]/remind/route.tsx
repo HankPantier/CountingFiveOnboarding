@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { render } from '@react-email/render'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import ClientReminderEmail from '@/emails/ClientReminderEmail'
 import AdminReminderEmail from '@/emails/AdminReminderEmail'
 
@@ -14,7 +14,7 @@ export async function POST(
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? ''
 
   const { id } = await params
-  const access = await requireSessionAccess(id)
+  const access = await requireOnboardingSessionAccess(id)
   if (access instanceof NextResponse) return access
 
   const supabase = createServerClient()

@@ -3,10 +3,16 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { getCurrentUser, hasCapability, type CurrentUser } from '@/lib/auth/access'
 import { getCommandIndex } from '@/lib/admin/command-index'
+import { checkRateLimit } from '@/lib/auth/rate-limit'
+import { recordTokenUsage } from '@/lib/content/token-usage'
+import { readJsonBody } from '@/app/api/_json'
 
 // Lightweight nav classifier — never send `effort`/adaptive thinking to Haiku
 // (it errors), and this is a cheap intent lookup, so plain generateText is right.
 const COMMAND_MODEL = 'claude-haiku-4-5-20251001'
+// The box is a short nav command — cap what reaches the prompt.
+const MAX_QUERY_CHARS = 500
+const MAX_PER_HOUR = 120
 
 interface CommandResult {
   href: string | null
@@ -75,11 +81,19 @@ Return ONLY JSON:
 
 Rules: match a client/audit only when the command clearly names one from the lists above (fuzzy names are fine, e.g. "korbey" → "Korbey Lague"). If nothing matches, use type "none". Never invent an id.`
 
-  const { text } = await generateText({
+  const { text, usage } = await generateText({
     model: anthropic(COMMAND_MODEL),
     system: 'You are a precise navigation router. Return JSON only, no prose.',
-    prompt,
+    prompt: `${prompt}\n\nCOMMAND:\n${query}`,
     maxOutputTokens: 200,
+  })
+  await recordTokenUsage({
+    task: 'onboarding',
+    createdBy: user.id,
+    stage: 'oneoff',
+    model: COMMAND_MODEL,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
   })
 
   const parsed = parseJson(text)
@@ -108,9 +122,17 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = (await req.json().catch(() => null)) as { query?: unknown } | null
+  const body = await readJsonBody<{ query?: unknown } | null>(req)
+  if (body instanceof NextResponse) return body
   const query = typeof body?.query === 'string' ? body.query.trim() : ''
   if (!query) return NextResponse.json({ error: 'Missing query' }, { status: 400 })
+  if (query.length > MAX_QUERY_CHARS) {
+    return NextResponse.json({ error: `Query too long (max ${MAX_QUERY_CHARS} characters)` }, { status: 400 })
+  }
+
+  if (!(await checkRateLimit(`admin-command:${user.id}`, MAX_PER_HOUR, 60 * 60 * 1000))) {
+    return NextResponse.json({ error: 'Too many commands — please wait a bit.' }, { status: 429 })
+  }
 
   try {
     const result = await resolve(query, user)

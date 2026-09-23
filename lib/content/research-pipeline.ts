@@ -5,6 +5,14 @@ import { activeNiches } from './active-niches'
 import { resolvePageIntent } from './page-intent'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
+import { createBudget, runWithPool } from './generation-budget'
+import { objArr, str } from './schema-coerce'
+
+// Must match the maxDuration of every route that runs runResearchPipeline
+// (sitemap confirm, research/retry, research/restart, research/continue).
+export const RESEARCH_ROUTE_MAX_DURATION_MS = 300_000
+// One page = Serper keyword research + a model call + competitor/existing fetch.
+const RESEARCH_MIN_VIABLE_MS = 60_000
 
 type SitemapPage = {
   url: string
@@ -32,23 +40,32 @@ export async function runResearchPipeline(
     return
   }
 
-  const schema = session.schema_data as SessionSchema
+  const schema = (session.schema_data ?? {}) as SessionSchema
+  // Coerced reads: a dirty stored shape (string where an array is declared, a
+  // null hole in locations) threw here and killed the whole research run.
+  const firstLocation = objArr<{ city?: unknown; state?: unknown }>(schema.locations)[0]
   const firmContext = {
-    name: schema.business?.name ?? '',
-    location: schema.locations?.[0]
-      ? `${schema.locations[0].city}, ${schema.locations[0].state}`
-      : '',
-    services: schema.services?.map(s => s.name) ?? [],
+    name: str(schema.business?.name),
+    location: firstLocation ? `${str(firstLocation.city)}, ${str(firstLocation.state)}` : '',
+    services: objArr<{ name?: unknown }>(schema.services).map(s => str(s.name)).filter(Boolean),
     niches: activeNiches(schema).map(n => n.name),
   }
   const currentSitemap = schema.current_sitemap
 
-  // Process pages in batches of 3
-  const BATCH_SIZE = 3
-  for (let i = 0; i < pages.length; i += BATCH_SIZE) {
-    const batch = pages.slice(i, i + BATCH_SIZE)
+  // Budgeted pool of 3 (was unbounded batches inside a route with no
+  // maxDuration). Pages that don't fit are left 'pending' and the run
+  // self-chains to /research/continue; already-complete pages are skipped so a
+  // continuation or re-trigger is idempotent.
+  const { data: doneRows } = await supabase
+    .from('research_results')
+    .select('page_url')
+    .eq('content_job_id', contentJobId)
+    .eq('research_status', 'complete')
+  const doneUrls = new Set((doneRows ?? []).map(r => r.page_url))
+  const todo = pages.filter(p => !doneUrls.has(p.url))
+  const budget = createBudget({ maxDurationMs: RESEARCH_ROUTE_MAX_DURATION_MS, reserveMs: 45_000 })
 
-    await Promise.all(batch.map(async (page) => {
+  const { skipped } = await runWithPool(todo, 3, budget, async (page) => {
       // Find the research_results row for this page
       const { data: researchRow } = await supabase
         .from('research_results')
@@ -129,7 +146,24 @@ export async function runResearchPipeline(
           })
           .eq('id', researchRow.id)
       }
-    }))
+  }, RESEARCH_MIN_VIABLE_MS)
+
+  if (skipped.length) {
+    console.warn(`[Research] Budget reached with ${skipped.length} page(s) left — chaining continuation.`)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
+    const cronSecret = process.env.CRON_SECRET
+    if (baseUrl && cronSecret) {
+      const url = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`
+      try {
+        await fetch(`${url}/api/content-jobs/${contentJobId}/research/continue`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+      } catch (err) {
+        console.error('[Research] Chain failed (cron will resume):', err)
+      }
+    }
+    return
   }
 
   // Check if all done — advance phase
@@ -143,10 +177,15 @@ export async function runResearchPipeline(
   const errorCount = allResults?.filter(r => r.research_status === 'error').length ?? 0
 
   if (allDone) {
-    await supabase
+    // Only a job still in research advances (a concurrent/late run must not
+    // pull a job back to phase 4 from later phases).
+    const { data: advanced } = await supabase
       .from('content_jobs')
       .update({ phase: 4, updated_at: new Date().toISOString() })
       .eq('id', contentJobId)
+      .eq('phase', 3)
+      .select('id')
+    if (!advanced?.length) return
 
     console.warn(`[content-job] phase 3→4 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
 

@@ -11,6 +11,7 @@ import { resolvePageIntent } from './page-intent'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
+import { extractJson } from './extract-json'
 import { OUTLINE_PRIMARY_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { createBudget, runWithPool, OUTLINE_CALL_CAP_MS } from './generation-budget'
 
@@ -234,9 +235,10 @@ ${auditHintsBlock}`
     })
 
     try {
-      const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-      const parsed = JSON.parse(cleaned) as OutlineResult
-      if (!Array.isArray(parsed.sections)) return { ok: false, finishReason }
+      // extractJson tolerates fences / surrounding prose (a naive fence-strip +
+      // JSON.parse failed on any preamble and burned the retry).
+      const parsed = extractJson(text) as OutlineResult | null
+      if (!parsed || !Array.isArray(parsed.sections)) return { ok: false, finishReason }
       return { ok: true, outline: parsed }
     } catch {
       return { ok: false, finishReason }
@@ -302,11 +304,15 @@ export async function runOutlineGeneration(
   const [{ data: session }, { data: job }, { data: auditRun, error: auditErr }] = await Promise.all([
     supabase.from('sessions').select('schema_data').eq('id', sessionId).single(),
     supabase.from('content_jobs').select('palette').eq('id', contentJobId).single(),
+    // A session can have several complete audits linked (re-runs); maybeSingle()
+    // errored on >1 row and silently dropped ALL audit context. Take the newest.
     supabase
       .from('audit_runs')
       .select('result')
       .eq('session_id', sessionId)
       .eq('audit_status', 'complete')
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 
@@ -361,6 +367,19 @@ export async function runOutlineGeneration(
     CONCURRENCY,
     budget,
     async (outline) => {
+      // Atomic per-row claim: a chained continuation and a cron/human re-trigger
+      // can overlap; without a claim both generated (and paid for) the same
+      // outline. Only a still-unwritten row with no live claim is taken; a claim
+      // older than the route's max duration is from a dead worker.
+      const staleClaim = new Date(Date.now() - OUTLINE_ROUTE_MAX_DURATION_MS - 60_000).toISOString()
+      const { data: claimed } = await supabase
+        .from('page_outlines')
+        .update({ generation_claimed_at: new Date().toISOString() })
+        .eq('id', outline.id)
+        .is('h1', null)
+        .or(`generation_claimed_at.is.null,generation_claimed_at.lt.${staleClaim}`)
+        .select('id')
+      if (!claimed?.length) return
       try {
         await generateOutlineForPage(
           outline.id,

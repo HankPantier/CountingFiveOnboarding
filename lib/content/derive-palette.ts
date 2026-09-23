@@ -1,5 +1,6 @@
 import chroma from 'chroma-js'
 import type { PaletteData } from '@/types/palette'
+import { pickBrandColors } from '@/lib/content/svg-colors'
 
 // Neutral brand defaults used when there is no logo, or extraction fails.
 export const NEUTRAL_PALETTE: PaletteData = {
@@ -27,7 +28,7 @@ export function ensureContrast(dark: string, light: string): { dark: string; lig
 // Builds the full 6-swatch palette from a primary + secondary brand color,
 // deriving complementary (opposite hue), action (saturated/brightened), and
 // WCAG-AA-safe near-black / near-white neutrals. Shared by the raster
-// (node-vibrant) and SVG-markup extraction paths.
+// (sharp pixel sampling) and SVG-markup extraction paths.
 export function derivePalette(primaryInput: string, secondaryInput: string): PaletteData {
   const primary = chroma.valid(primaryInput) ? chroma(primaryInput).hex() : NEUTRAL_PALETTE.primary.hex
   const secondary = chroma.valid(secondaryInput) ? chroma(secondaryInput).hex() : NEUTRAL_PALETTE.secondary.hex
@@ -51,4 +52,58 @@ export function derivePalette(primaryInput: string, secondaryInput: string): Pal
     nearBlack:     { hex: nearBlack, name: 'Text / Dark' },
     nearWhite:     { hex: nearWhite, name: 'Background / Light' },
   }
+}
+
+// ── Raster logo sampling (pure) ─────────────────────────────────────────────
+// The palette route decodes a raster logo with sharp into raw RGBA pixels
+// (downscaled) and hands them here. Replaces node-vibrant.
+
+// Bits kept per channel when bucketing. 4 bits → 4096 buckets: coarse enough
+// to merge anti-aliasing noise into its parent color, fine enough to keep
+// distinct brand colors apart.
+const QUANT_BITS = 4
+const ALPHA_MIN = 128
+
+// Rank the colors in a raw pixel buffer by frequency. Pixels are bucketed by
+// their top QUANT_BITS per channel; each bucket reports the AVERAGE of its
+// pixels (not the bucket corner), so the returned hex is a real logo color.
+// Mostly-transparent pixels are skipped. `channels` is 3 (RGB) or 4 (RGBA).
+export function rankPixelColors(pixels: Uint8Array, channels: number): string[] {
+  if (channels !== 3 && channels !== 4) return []
+  const shift = 8 - QUANT_BITS
+  const buckets = new Map<number, { n: number; r: number; g: number; b: number }>()
+  for (let i = 0; i + channels <= pixels.length; i += channels) {
+    if (channels === 4 && pixels[i + 3] < ALPHA_MIN) continue
+    const r = pixels[i]
+    const g = pixels[i + 1]
+    const b = pixels[i + 2]
+    const key = ((r >> shift) << (QUANT_BITS * 2)) | ((g >> shift) << QUANT_BITS) | (b >> shift)
+    const bucket = buckets.get(key)
+    if (bucket) {
+      bucket.n++
+      bucket.r += r
+      bucket.g += g
+      bucket.b += b
+    } else {
+      buckets.set(key, { n: 1, r, g, b })
+    }
+  }
+  return [...buckets.values()]
+    .sort((a, b) => b.n - a.n)
+    .map((c) => chroma(Math.round(c.r / c.n), Math.round(c.g / c.n), Math.round(c.b / c.n)).hex().toLowerCase())
+}
+
+// Primary + secondary brand colors from raw pixels, or null when the image has
+// no opaque pixels. Uses the same saturated/hue-distinct picker as the SVG
+// path; a single-color logo gets a darkened primary as its secondary (the old
+// DarkVibrant fallback).
+export function pickRasterBrandColors(
+  pixels: Uint8Array,
+  channels: number
+): { primary: string; secondary: string } | null {
+  const picked = pickBrandColors(rankPixelColors(pixels, channels))
+  if (!picked) return null
+  const secondary =
+    picked.secondary === picked.primary ? chroma(picked.primary).darken(1.5).hex() : picked.secondary
+  return { primary: picked.primary, secondary }
 }

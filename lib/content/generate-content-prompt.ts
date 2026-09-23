@@ -1,6 +1,7 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { activeTeam } from '@/lib/content/active-team'
+import { arr, str } from '@/lib/content/schema-coerce'
 import { SHORT_COPY_EXEMPLAR } from '@/lib/content/exemplars'
 
 interface SessionRow {
@@ -11,17 +12,19 @@ interface SessionRow {
 // bios, specializations) so "write a bio for <member>" resolves to a real
 // person. Certifications are already in buildBrandVoiceBlock's credentials block.
 function buildTeamRoster(schema: SessionSchema): string {
-  const members = activeTeam(schema).filter(m => m.name?.trim())
+  const members = activeTeam(schema).filter(m => str(m.name).trim())
   if (!members.length) return ''
   const lines = members.map(m => {
-    const bits: string[] = [m.name.trim()]
-    if (m.title?.trim()) bits.push(m.title.trim())
-    if (m.certifications?.length) bits.push(m.certifications.join(', '))
+    const bits: string[] = [str(m.name).trim()]
+    if (str(m.title).trim()) bits.push(str(m.title).trim())
+    const certs = arr(m.certifications).map(c => str(c).trim()).filter(Boolean)
+    if (certs.length) bits.push(certs.join(', '))
     const head = bits.join(' — ')
     const detail: string[] = []
-    if (m.bio?.trim()) detail.push(`bio: ${m.bio.trim().slice(0, 400)}`)
-    if (m.specializations?.length) detail.push(`specializations: ${m.specializations.join(', ')}`)
-    if (m.education?.trim()) detail.push(`education: ${m.education.trim().slice(0, 120)}`)
+    if (str(m.bio).trim()) detail.push(`bio: ${str(m.bio).trim().slice(0, 400)}`)
+    const specs = arr(m.specializations).map(x => str(x).trim()).filter(Boolean)
+    if (specs.length) detail.push(`specializations: ${specs.join(', ')}`)
+    if (str(m.education).trim()) detail.push(`education: ${str(m.education).trim().slice(0, 120)}`)
     return detail.length ? `- ${head}\n    ${detail.join('\n    ')}` : `- ${head}`
   })
   return `TEAM ROSTER (use real people, real credentials — never invent members or titles):\n${lines.join('\n')}`

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
 import { searchPexels, downloadPexelsImage } from '@/lib/content/pexels-fetcher'
 import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
@@ -8,6 +8,8 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 
 export const runtime = 'nodejs'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * Regenerate a stock-photo asset for a session.
@@ -34,8 +36,8 @@ export async function POST(req: Request) {
   const body = await readJsonBody<{ assetId?: string; query?: string }>(req)
   if (body instanceof NextResponse) return body
   const { assetId, query } = body
-  if (!assetId || typeof assetId !== 'string') {
-    return NextResponse.json({ error: 'assetId required' }, { status: 400 })
+  if (typeof assetId !== 'string' || !UUID_RE.test(assetId)) {
+    return NextResponse.json({ error: 'Valid assetId required' }, { status: 400 })
   }
 
   const apiKey = process.env.PEXELS_API_KEY
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
   }
 
-  const access = await requireSessionAccess(asset.session_id)
+  const access = await requireOnboardingSessionAccess(asset.session_id)
   if (access instanceof NextResponse) return access
 
   if (asset.asset_category !== 'stock-photo') {

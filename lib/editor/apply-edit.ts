@@ -8,7 +8,13 @@ import { validateAnnotationSyntax } from '@/lib/content/block-annotation-validat
 
 export type FindReplaceResult =
   | { ok: true; next: string; count: number }
-  | { ok: false; count: number; reason: string }
+  // `noop` — the find matched but replacing it leaves the file byte-identical
+  // (the edit is already applied, or find === replace). Callers must NOT commit
+  // or report it as a successful change.
+  | { ok: false; count: number; reason: string; noop?: true }
+
+export const NO_CHANGE_REASON =
+  'Already applied: that replacement leaves the file unchanged, so nothing was saved. Re-read the current file before issuing another edit.'
 
 // Literal (non-regex) find-and-replace over the file text. By default the
 // `find` snippet must occur EXACTLY once — 0 matches means the anchor is wrong,
@@ -43,6 +49,7 @@ export function applyFindReplace(
   // the re-injected file — must not compound. The count guard above already caps
   // a non-`all` edit to a single bare occurrence, so this affects the same span.
   const next = overlapSafeReplaceAll(content, find, replace)
+  if (next === content) return { ok: false, count, reason: NO_CHANGE_REASON, noop: true }
   return { ok: true, next, count }
 }
 
@@ -56,6 +63,9 @@ export interface BatchEditResult {
   next: string
   applied: { find: string; replacements: number }[]
   failed: { find: string; reason: string }[]
+  // Edits whose find matched but changed nothing (already applied) — neither a
+  // landed change nor a miss the model should retry.
+  unchanged: { find: string; reason: string }[]
 }
 
 // Apply many find/replace rewrites against ONE snapshot, folding each success
@@ -69,16 +79,19 @@ export function applyBatchEdits(content: string, edits: BatchEdit[]): BatchEditR
   let next = content
   const applied: { find: string; replacements: number }[] = []
   const failed: { find: string; reason: string }[] = []
+  const unchanged: { find: string; reason: string }[] = []
   for (const { find, replace, all } of edits) {
     const res = applyFindReplace(next, find, replace, all ?? false)
     if (res.ok) {
       next = res.next
       applied.push({ find, replacements: res.count })
+    } else if (res.noop) {
+      unchanged.push({ find, reason: res.reason })
     } else {
       failed.push({ find, reason: res.reason })
     }
   }
-  return { next, applied, failed }
+  return { next, applied, failed, unchanged }
 }
 
 // Guard a proposed edit against breaking block annotations: strip frontmatter

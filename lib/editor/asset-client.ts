@@ -4,6 +4,14 @@
 
 export type AssetEntry = { path: string; sha: string; size: number | null }
 
+// URL for an editor asset thumbnail. Pass the blob `sha` from the assets/tree
+// listing whenever it's known: the route then serves it with ONE GitHub call and
+// an immutable browser cache (a new upload has a new sha → a new URL).
+export function assetUrl(sessionId: string, assetPath: string, sha?: string | null): string {
+  const base = `/api/edit/${sessionId}/asset?path=${encodeURIComponent(assetPath)}`
+  return sha ? `${base}&sha=${encodeURIComponent(sha)}` : base
+}
+
 async function errorMessage(res: Response): Promise<string> {
   const data = (await res.json().catch(() => ({}))) as { error?: string }
   return data.error ?? `Request failed: ${res.status}`

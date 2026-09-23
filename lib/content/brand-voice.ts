@@ -3,7 +3,7 @@ import { activeNiches } from './active-niches'
 import { activeServices } from './active-services'
 import { activeTeam } from './active-team'
 import { provenanceOf } from '@/lib/mbp/provenance'
-import { arr, str } from './schema-coerce'
+import { arr, str, isSentinelNone, realStrings } from './schema-coerce'
 
 // Shared brand-voice prompt fragments. Extracted from content-generator.ts so
 // the page generator and the Resources blog generators describe the firm's
@@ -124,7 +124,7 @@ export function buildFirmContext(schema: SessionSchema): string {
   }
 
   // Client success stories — proof/E-E-A-T material for testimonials & stats.
-  const stories = arr(b?.clientSuccessStories).map(s => str(s).trim()).filter(Boolean).slice(0, 3).map(s => s.slice(0, 200))
+  const stories = realStrings(b?.clientSuccessStories).slice(0, 3).map(s => s.slice(0, 200))
   if (stories.length) lines.push(`Client success stories (use as proof, don't fabricate specifics): ${stories.join(' | ')}`)
 
   // Reputation & trust signals (ratings, review themes, press).
@@ -256,9 +256,11 @@ export function buildBrandVoiceBlock(schema: SessionSchema): string {
   // A voiceExample flagged 'thin' is a placeholder (a one-word or fragment
   // answer) — feeding it to the model poisons voice-matching, so drop it. Better
   // no sample than a bad one; a genuine sample is 'confirmed'/'notes'/untagged.
-  const example = provenanceOf(schema, 'brand.voiceExample') === 'thin'
+  // The onboarding "None" sentinel means "no sample" — never quote it as one.
+  const rawExample = str(schema.brand?.voiceExample).trim()
+  const example = provenanceOf(schema, 'brand.voiceExample') === 'thin' || isSentinelNone(rawExample)
     ? ''
-    : str(schema.brand?.voiceExample).trim()
+    : rawExample
   return `BRAND VOICE:
 ${schema.brand?.currentTone ?? 'Professional and approachable'} | Aspirational: ${schema.brand?.aspirationalTone ?? ''}
 Tone adjectives: ${arr(schema.brand?.toneAdjectives).map(x => str(x).trim()).filter(Boolean).join(', ')}

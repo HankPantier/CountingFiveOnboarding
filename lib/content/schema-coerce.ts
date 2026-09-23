@@ -36,3 +36,18 @@ export const arr = <T>(v: T[] | undefined | null): T[] => {
 // structured fields, so it degrades to [].
 export const objArr = <T>(v: unknown): T[] =>
   Array.isArray(v) ? v.filter((x): x is T => !!x && typeof x === 'object') : []
+
+// The onboarding chat writes an explicit sentinel ("None", or ["None"]) into a
+// field when the firm genuinely has nothing for it, so the gap counts as
+// answered. That sentinel must never reach a prompt as real content (a "None"
+// success story would pass the case-study gate and get quoted as proof).
+const SENTINEL_NONE = new Set(['none', 'n/a', 'na', 'not applicable', 'nothing', 'none yet'])
+export const isSentinelNone = (v: unknown): boolean =>
+  typeof v === 'string' && SENTINEL_NONE.has(v.trim().toLowerCase().replace(/[.!]+$/, ''))
+
+// arr() + str() with sentinel entries and blanks dropped — for string-array
+// fields that feed prompts (success stories, keywords...).
+export const realStrings = (v: unknown): string[] =>
+  arr(v as unknown[] | null | undefined)
+    .map((x) => str(x).trim())
+    .filter((x) => x.length > 0 && !isSentinelNone(x))

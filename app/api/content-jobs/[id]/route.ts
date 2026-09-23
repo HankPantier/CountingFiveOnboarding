@@ -5,6 +5,12 @@ import { readJsonBody } from '@/app/api/_json'
 import { runContentGeneration } from '@/lib/content/content-generator'
 import { discoverImportableArticles } from '@/lib/content/article-import-discovery'
 import type { SessionSchema } from '@/types/session-schema'
+import {
+  validateContentJobPatch,
+  checkPhaseTransition,
+  crossesIntoGeneration,
+  type ContentJobPatchBody,
+} from './_validate'
 
 export const runtime = 'nodejs'
 // Routes that trigger content generation need a long maxDuration because the
@@ -22,16 +28,11 @@ export async function PATCH(
   if (auth instanceof NextResponse) return auth
 
   const { id } = await params
-  const body = await readJsonBody<{
-    palette?: unknown
-    design_tokens?: unknown
-    confirmed_sitemap?: unknown
-    nav_config?: unknown
-    phase?: number
-    status?: string
-    error_message?: unknown
-  }>(req)
+  const body = await readJsonBody<ContentJobPatchBody>(req)
   if (body instanceof NextResponse) return body
+
+  const shapeError = validateContentJobPatch(body)
+  if (shapeError) return NextResponse.json({ error: shapeError }, { status: 400 })
 
   const supabase = createServerClient()
 
@@ -41,14 +42,6 @@ export async function PATCH(
   if (body.design_tokens !== undefined) updates.design_tokens = body.design_tokens
   if (body.confirmed_sitemap !== undefined) updates.confirmed_sitemap = body.confirmed_sitemap
   if (body.nav_config !== undefined) updates.nav_config = body.nav_config
-  if (body.phase !== undefined) {
-    // Content-job phases run 1–6 (see PhaseStepper). Phase 5 auto-triggers
-    // generation below, so reject out-of-range values rather than write them.
-    if (!Number.isInteger(body.phase) || body.phase < 1 || body.phase > 6) {
-      return NextResponse.json({ error: 'Invalid phase' }, { status: 400 })
-    }
-    updates.phase = body.phase
-  }
   if (body.status !== undefined) {
     const validStatuses = ['active', 'complete', 'error']
     if (!validStatuses.includes(body.status)) {
@@ -58,51 +51,85 @@ export async function PATCH(
   }
   if (body.error_message !== undefined) updates.error_message = body.error_message
 
-  // Completeness gates before content generation (phase 5 trigger).
-  if (body.phase === 5) {
+  // Phase moves: forward one step at a time (so no gate can be skipped by a
+  // direct PATCH), or backward. Crossing into phase 5 from below runs every
+  // generation gate, regardless of the requested target.
+  let currentPhase: number | null = null
+  if (body.phase !== undefined) {
+    if (typeof body.phase !== 'number' || !Number.isInteger(body.phase) || body.phase < 1 || body.phase > 6) {
+      return NextResponse.json({ error: 'Invalid phase' }, { status: 400 })
+    }
     const { data: job } = await supabase
       .from('content_jobs')
-      .select('session_id, library_reviewed_at, articles_reviewed_at')
+      .select('phase, session_id, library_reviewed_at, articles_reviewed_at')
       .eq('id', id)
       .single()
+    if (!job) return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
+    currentPhase = job.phase
 
-    // The operator must make an explicit library-content inclusion choice (select
-    // + save, or save none) at outline proofing. The OutlinePhase UI gates on
-    // this; enforcing it here stops a direct PATCH from skipping the review.
-    if (job && !job.library_reviewed_at) {
-      return NextResponse.json(
-        { error: 'Confirm your library-content choice on the outline step before starting content generation.' },
-        { status: 422 },
-      )
-    }
+    const transitionError = checkPhaseTransition(job.phase, body.phase)
+    if (transitionError) return NextResponse.json({ error: transitionError }, { status: 409 })
+    updates.phase = body.phase
 
-    // Same gate for verbatim article imports — but only when the audit actually
-    // surfaced importable articles. A session with no blog (or no audit) has an
-    // empty panel and must never deadlock, so auto-stamp and proceed.
-    if (job && !job.articles_reviewed_at) {
-      const { articles } = await discoverImportableArticles(id)
-      if (articles.length > 0) {
+    if (crossesIntoGeneration(job.phase, body.phase)) {
+      // Every outline must be approved. generated_pages rows exist for the whole
+      // sitemap, but the runner only generates approved outlines — starting with
+      // unapproved ones left `pending` rows that never move.
+      const { data: outlines, error: outlineErr } = await supabase
+        .from('page_outlines')
+        .select('admin_approved')
+        .eq('content_job_id', id)
+      if (outlineErr) return NextResponse.json({ error: outlineErr.message }, { status: 500 })
+      const unapproved = (outlines ?? []).filter(o => !o.admin_approved).length
+      if (!outlines?.length || unapproved > 0) {
         return NextResponse.json(
-          { error: 'Confirm your existing-article import choice on the outline step before starting content generation.' },
+          {
+            error: outlines?.length
+              ? `Approve every outline before starting content generation (${unapproved} still unapproved).`
+              : 'No outlines to generate from — confirm the sitemap and generate outlines first.',
+          },
           { status: 422 },
         )
       }
-      await supabase
-        .from('content_jobs')
-        .update({ articles_reviewed_at: new Date().toISOString() })
-        .eq('id', id)
-    }
 
-    // Without a firm name the generator falls back to "the firm"/"Unknown firm"
-    // everywhere, producing unusable content. Block the advance instead.
-    if (job?.session_id) {
-      const { data: sess } = await supabase.from('sessions').select('schema_data').eq('id', job.session_id).single()
-      const name = (sess?.schema_data as SessionSchema | null)?.business?.name
-      if (!name || !name.trim()) {
+      // The operator must make an explicit library-content inclusion choice (select
+      // + save, or save none) at outline proofing. The OutlinePhase UI gates on
+      // this; enforcing it here stops a direct PATCH from skipping the review.
+      if (!job.library_reviewed_at) {
         return NextResponse.json(
-          { error: 'Cannot start content generation: the MBP has no firm name. Add it on the MBP page first.' },
+          { error: 'Confirm your library-content choice on the outline step before starting content generation.' },
           { status: 422 },
         )
+      }
+
+      // Same gate for verbatim article imports — but only when the audit actually
+      // surfaced importable articles. A session with no blog (or no audit) has an
+      // empty panel and must never deadlock, so auto-stamp and proceed.
+      if (!job.articles_reviewed_at) {
+        const { articles } = await discoverImportableArticles(id)
+        if (articles.length > 0) {
+          return NextResponse.json(
+            { error: 'Confirm your existing-article import choice on the outline step before starting content generation.' },
+            { status: 422 },
+          )
+        }
+        await supabase
+          .from('content_jobs')
+          .update({ articles_reviewed_at: new Date().toISOString() })
+          .eq('id', id)
+      }
+
+      // Without a firm name the generator falls back to "the firm"/"Unknown firm"
+      // everywhere, producing unusable content. Block the advance instead.
+      if (job.session_id) {
+        const { data: sess } = await supabase.from('sessions').select('schema_data').eq('id', job.session_id).single()
+        const name = (sess?.schema_data as SessionSchema | null)?.business?.name
+        if (typeof name !== 'string' || !name.trim()) {
+          return NextResponse.json(
+            { error: 'Cannot start content generation: the MBP has no firm name. Add it on the MBP page first.' },
+            { status: 422 },
+          )
+        }
       }
     }
   }
@@ -121,7 +148,7 @@ export async function PATCH(
   // Auto-trigger content generation when advancing to phase 5.
   // after() guarantees the work runs within maxDuration on Vercel; plain
   // fire-and-forget gets terminated once the response leaves the function.
-  if (body.phase === 5 && data.session_id) {
+  if (body.phase === 5 && currentPhase !== 5 && data.session_id) {
     const sessionId = data.session_id
     after(async () => {
       try {

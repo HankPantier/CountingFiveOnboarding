@@ -21,7 +21,8 @@ export default async function ContentHubPage() {
 
   let sessionsQuery = supabase
     .from('sessions')
-    .select('id, website_url, schema_data, approved_at, content_generation_phase')
+    // Only the firm name out of schema_data — the full JSONB blob is large.
+    .select('id, website_url, firm_name:schema_data->business->>name, approved_at')
     .eq('status', 'approved')
     .order('approved_at', { ascending: false })
     .limit(100)
@@ -44,8 +45,8 @@ export default async function ContentHubPage() {
 
   const rows: ContentRow[] = (sessions ?? []).map((session) => {
     const job = jobBySession.get(session.id)
-    const firmName = (session.schema_data as Record<string, unknown>)?.business
-      ? ((session.schema_data as Record<string, Record<string, unknown>>).business?.name as string)
+    const firmName = typeof session.firm_name === 'string' && session.firm_name.trim()
+      ? session.firm_name
       : null
     return {
       id: session.id,
@@ -89,7 +90,7 @@ export default async function ContentHubPage() {
           No approved sessions yet. Approve a completed session to begin content generation.
         </div>
       ) : (
-        <ContentTable rows={rows} />
+        <ContentTable rows={rows} canOnboard={canOnboard} />
       )}
     </main>
   )

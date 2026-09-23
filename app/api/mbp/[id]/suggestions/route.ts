@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import type { MbpSuggestion } from '@/types/mbp'
 
 export const runtime = 'nodejs'
@@ -12,7 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
 
   const supabase = createServerClient()

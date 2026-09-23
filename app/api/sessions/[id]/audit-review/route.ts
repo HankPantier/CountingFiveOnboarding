@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { readJsonBody } from '@/app/api/_json'
@@ -8,7 +8,7 @@ import { applyServiceReview, type ServiceTreatment } from '@/lib/agent/service-r
 import { applySubCategoryReview, type SubCategoryTreatment } from '@/lib/agent/subcategory-review'
 import { applyGeoReview, type GeoAreaInput, type GeoScope } from '@/lib/agent/geo-review'
 import { applyTeamReview, type TeamAddition } from '@/lib/agent/team-review'
-import { tierGapsByTreatment } from '@/lib/agent/gap-tiering'
+import { refreshPhase4Gaps } from '@/lib/agent/gap-tiering'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 
@@ -120,7 +120,7 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
 
   const body = await readJsonBody<AuditReviewBody>(req)
@@ -160,11 +160,14 @@ export async function POST(
   ;({ schema, gaps } = applySubCategoryReview(schema, gaps, { treatments: subTreatments }, now, by))
 
   if (geo) schema = applyGeoReview(schema, geo, now, by)
-  schema = applyTeamReview(schema, team, now, by)
+  // A resubmit without a team section leaves the earlier team decision intact.
+  if (body.team !== undefined) schema = applyTeamReview(schema, team, now, by)
 
-  // Tier gaps by page treatment: a content-block item is a section, not a page, so
-  // its deep page-only gaps are dropped to keep the downstream Q&A focused (#3).
-  gaps = tierGapsByTreatment(schema, gaps)
+  // Add Phase-4 gaps for any niche/service this review added (gaps are otherwise
+  // only computed at session creation), then tier by page treatment: a
+  // content-block item is a section, not a page, so its deep page-only gaps are
+  // dropped to keep the downstream Q&A focused.
+  gaps = refreshPhase4Gaps(schema, gaps)
 
   // Umbrella marker (convenience — the individual *_review markers are the gates).
   schema._meta = {

@@ -39,3 +39,47 @@ describe('frontmatter parser — complex value safety', () => {
     expect(serializeFile(parsed)).toBe(file)
   })
 })
+
+describe('frontmatter parser — multi-line YAML passthrough', () => {
+  it('round-trips a block list (tags:\\n  - a) byte-identically', () => {
+    const file = `---\ntitle: Post\ntags:\n  - a\n  - b\nurl: /resources/post\n---\nBody`
+    const parsed = splitFile(file)
+    expect(parsed.frontmatter?.fields['title']).toBe('Post')
+    expect(parsed.frontmatter?.fields['url']).toBe('/resources/post')
+    // Continuation lines are not mis-read as keys.
+    expect(parsed.frontmatter?.order).toEqual(['title', 'tags', 'url'])
+    expect(serializeFile(parsed)).toBe(file)
+  })
+
+  it('round-trips a folded block scalar with an interior blank line', () => {
+    const file = `---\ndescription: >-\n  First line\n\n  second para\ntitle: T\n---\nBody`
+    const parsed = splitFile(file)
+    expect(serializeFile(parsed)).toBe(file)
+  })
+
+  it('keeps block lines when another field is edited', () => {
+    const file = `---\ntitle: Old\ntags:\n  - a\n---\nBody`
+    const parsed = splitFile(file)
+    parsed.frontmatter!.fields['title'] = 'New'
+    expect(serializeFile(parsed)).toBe(`---\ntitle: New\ntags:\n  - a\n---\nBody`)
+  })
+
+  it('drops the stale block when the editor replaces that key with a scalar', () => {
+    const file = `---\ntags:\n  - a\n  - b\n---\nBody`
+    const parsed = splitFile(file)
+    parsed.frontmatter!.fields['tags'] = 'x'
+    expect(serializeFile(parsed)).toBe(`---\ntags: x\n---\nBody`)
+  })
+
+  it('preserves leading comment lines', () => {
+    const file = `---\n# generated\ntitle: T\n---\nBody`
+    expect(serializeFile(splitFile(file))).toBe(file)
+  })
+
+  it('does not treat an indented "key: value" as a top-level field', () => {
+    const file = `---\nauthor:\n  name: Jane\n  role: CPA\ntitle: T\n---\nB`
+    const parsed = splitFile(file)
+    expect(parsed.frontmatter?.fields['name']).toBeUndefined()
+    expect(serializeFile(parsed)).toBe(file)
+  })
+})

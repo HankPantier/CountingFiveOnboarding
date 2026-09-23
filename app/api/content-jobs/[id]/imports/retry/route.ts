@@ -24,7 +24,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (ctx instanceof NextResponse) return ctx
   }
 
-  const reset = await resetFailedArticleImports(id)
+  // Refuse while a runner is in flight — resetting + starting another would put
+  // two runners on the same repo draft branch.
+  const current = await getArticleImportStatus(id)
+  if (current.drafting > 0) {
+    return NextResponse.json({ retried: 0, alreadyRunning: true, status: current })
+  }
+
+  // A human retry resets the attempt counters too; the cron/self-chain only
+  // resets rows still under the auto-retry cap.
+  const reset = await resetFailedArticleImports(id, { manual: !isInternalChain })
   if (reset === 0) {
     return NextResponse.json({ retried: 0, status: await getArticleImportStatus(id) })
   }

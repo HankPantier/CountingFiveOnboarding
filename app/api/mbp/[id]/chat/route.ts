@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { buildMbpEditPrompt } from '@/lib/mbp/edit-prompt'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -23,7 +23,7 @@ export async function POST(
   }
 
   // Admins + assigned managers pass the session gate, but only admins may edit.
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
   if (auth.user.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

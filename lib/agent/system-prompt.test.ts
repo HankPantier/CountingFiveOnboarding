@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSystemPrompt } from './system-prompt'
+import { buildSystemPrompt, serializeSchemaFull } from './system-prompt'
 import type { Database } from '@/types/database'
 
 type Session = Pick<
@@ -42,5 +42,41 @@ describe('buildSystemPrompt — call-notes grounding', () => {
     // Capped to ~2000 chars + ellipsis, not the full 5000.
     expect(out).not.toContain('x'.repeat(2500))
     expect(out).toContain('…')
+  })
+})
+
+describe('buildSystemPrompt — schema serialization scope', () => {
+  const schema = {
+    _meta: { mode: 'staff' },
+    contact: { firstName: 'Ann', email: 'ann@x.com' },
+    websiteUrl: 'https://x.com',
+    business: { name: 'Secret Firm Name' },
+    technical: { registrar: 'GoDaddy', registrarUsername: 'annuser', registrarPin: '9911', registrarPasswordNote: 'note' },
+  }
+
+  it('serializes only contact + websiteUrl in phases <= 2', () => {
+    const out = buildSystemPrompt(session({ current_phase: 1, schema_data: schema }))
+    expect(out).toContain('ann@x.com')
+    expect(out).toContain('https://x.com')
+    expect(out).not.toContain('Secret Firm Name')
+    expect(out).not.toContain('GoDaddy')
+  })
+
+  it('strips registrar credentials from later-phase serialization', () => {
+    const out = buildSystemPrompt(session({ current_phase: 4, schema_data: schema }))
+    expect(out).toContain('Secret Firm Name')
+    expect(out).toContain('GoDaddy')
+    expect(out).not.toContain('annuser')
+    expect(out).not.toContain('9911')
+  })
+})
+
+describe('serializeSchemaFull', () => {
+  it('returns "{}" for an empty schema and strips registrar credentials', () => {
+    expect(serializeSchemaFull({})).toBe('{}')
+    expect(serializeSchemaFull({ _meta: { a: 1 } })).toBe('{}')
+    const out = serializeSchemaFull({ technical: { registrar: 'NameCheap', registrarPin: '4455' } })
+    expect(out).toContain('NameCheap')
+    expect(out).not.toContain('4455')
   })
 })

@@ -380,7 +380,9 @@ export async function extractNotesModel(
   return generateMbpJson<NotesModel>(
     buildPrompt(notes, schema, gaps),
     validateNotesModel,
-    4000,
+    // Headroom for the thinking budget + a long notes dump: 4000 truncated the
+    // JSON on dense notes (finishReason 'length' → unparseable).
+    12000,
     ctx,
     { model: PUBLISHED_CONTENT_MODEL, providerOptions: OUTLINE_PROVIDER_OPTIONS },
   )

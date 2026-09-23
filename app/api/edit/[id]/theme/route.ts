@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
-import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import {
   DRAFT_BRANCH,
@@ -9,6 +8,7 @@ import {
   readFile,
   writeFiles,
   FileNotFoundError,
+  StaleShaError,
 } from '@/lib/github/repo-files'
 import {
   patchBrandPalette,
@@ -55,8 +55,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (ctx instanceof NextResponse) return ctx
   const { githubRepo } = ctx
 
-  const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  const user = ctx.user
+  if (!user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -135,8 +135,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (ctx instanceof NextResponse) return ctx
   const { githubRepo, sessionId, jobId, adminEmail, adminName } = ctx
 
-  const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  const user = ctx.user
+  if (!user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -258,6 +258,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ),
     })
   } catch (err) {
+    // A concurrent theme edit (another tab / the theme chat) moved one of the
+    // files since we read it — a conflict, not a server error.
+    if (err instanceof StaleShaError) {
+      return NextResponse.json(
+        {
+          error: 'The theme changed in another window. Reload the Theme Studio and try again.',
+          stale: true,
+          path: err.path,
+        },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to save theme changes' },
       { status: 500 }

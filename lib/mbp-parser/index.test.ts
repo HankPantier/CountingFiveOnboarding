@@ -212,3 +212,16 @@ describe('computePhase4Gaps — dropped niches', () => {
     expect(fields.has('niches[2].painPoints')).toBe(true) // Nonprofit keeps index 2
   })
 })
+
+describe('computePhase4Gaps — never throws on dirty rows', () => {
+  it('skips null niche/service holes instead of throwing', () => {
+    const schema = {
+      niches: [null, { name: 'Dental' }],
+      services: [null, 'oops', { name: 'Tax' }],
+    } as unknown as SessionSchema
+    const gaps = computePhase4Gaps(schema)
+    expect(gaps.some((g) => g.field === 'niches[1].painPoints')).toBe(true)
+    expect(gaps.some((g) => g.field.startsWith('niches[0]'))).toBe(false)
+    expect(gaps.some((g) => g.field === 'services[2].description')).toBe(true)
+  })
+})

@@ -97,6 +97,21 @@ export async function POST(
   try {
     await ensureDraftBranch(ctx.githubRepo)
 
+    // Optimistic lock on nav.json FIRST: if someone else saved the nav since this
+    // editor loaded it, bail before relocating any page. Checking only at the
+    // final nav write left pages moved + 301s added under a nav that then 409'd.
+    // (The final writeFile still re-checks, closing the remaining window.)
+    let currentNav: Awaited<ReturnType<typeof readFile>>
+    try {
+      currentNav = await readFile(ctx.githubRepo, NAV_PATH, DRAFT_BRANCH)
+    } catch (err) {
+      if (err instanceof FileNotFoundError) throw new StaleShaError(NAV_PATH, '', '')
+      throw err
+    }
+    if (currentNav.sha !== expectedSha) {
+      throw new StaleShaError(NAV_PATH, currentNav.sha, currentNav.content)
+    }
+
     // Resolve the page behind each move. Moves whose source page doesn't exist
     // are nav-only edits — skipped. Kept in orderedMoves order so a vacated slot
     // is freed before the move that reuses it.

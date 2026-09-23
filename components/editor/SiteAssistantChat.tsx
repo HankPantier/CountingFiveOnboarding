@@ -33,6 +33,12 @@ export default function SiteAssistantChat({
 
   const [gens, setGens] = useState<Record<string, { url: string; status: GenStatus }>>({})
   const pollingRef = useRef<Set<string>>(new Set())
+  // Stops the create-page status loops when the drawer closes (unmounts).
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   // Did the latest assistant turn commit a structural change? Only refresh the
   // parent tree/status on a real edit (not on read-only list_site_pages turns).
@@ -58,6 +64,7 @@ export default function SiteAssistantChat({
     const poll = async (genId: string, url: string) => {
       for (let i = 0; i < 100; i++) {
         await new Promise((r) => setTimeout(r, 3000))
+        if (!mountedRef.current) return
         try {
           const res = await fetch(`/api/edit/${sessionId}/create-page/${genId}`)
           if (!res.ok) continue
@@ -76,7 +83,7 @@ export default function SiteAssistantChat({
           /* transient — keep polling */
         }
       }
-      setGens((g) => ({ ...g, [genId]: { url, status: 'error' } }))
+      if (mountedRef.current) setGens((g) => ({ ...g, [genId]: { url, status: 'error' } }))
     }
 
     for (const m of messages) {

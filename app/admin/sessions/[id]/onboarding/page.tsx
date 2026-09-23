@@ -31,18 +31,31 @@ export default async function OnboardingPage({
 
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-  if (user.role !== 'admin') {
+  if (!user.isAdmin) {
     const allowed = await getAccessibleSessionIds(user)
     if (!allowed?.includes(id)) notFound()
   }
-  const isAdmin = user.role === 'admin'
+  const isAdmin = user.isAdmin
 
   const supabase = createServerClient()
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('id, website_url, schema_data, gap_list, call_notes, notes_extracted_at, current_phase, status')
-    .eq('id', id)
-    .single()
+  // One session read (it already carries current_phase for the chat) plus the
+  // transcript in parallel. Messages are only needed on the chat step, but the
+  // stage isn't known until the session loads — skip them otherwise.
+  const wantsChat = step === 'chat'
+  const [{ data: session }, messagesRes] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('id, website_url, schema_data, gap_list, call_notes, notes_extracted_at, current_phase, status')
+      .eq('id', id)
+      .single(),
+    wantsChat
+      ? supabase
+          .from('messages')
+          .select('role, content')
+          .eq('session_id', id)
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: null }),
+  ])
   if (!session) notFound()
 
   const extracted = !!session.notes_extracted_at
@@ -75,15 +88,7 @@ export default async function OnboardingPage({
   )
 
   if (stage === 'chat') {
-    const { data: dbMessages } = await supabase
-      .from('messages')
-      .select('role, content')
-      .eq('session_id', id)
-      .order('created_at', { ascending: true })
-
-    // Full session row for the chat component (mirrors the retired public page).
-    const { data: fullSession } = await supabase.from('sessions').select('*').eq('id', id).single()
-    if (!fullSession) notFound()
+    const dbMessages = messagesRes.data
 
     return (
       <main className="p-8 space-y-4">
@@ -96,9 +101,10 @@ export default async function OnboardingPage({
         <div className="border border-border-default rounded-xl overflow-hidden h-[calc(100vh-16rem)]">
           <ChatInterface
             sessionId={id}
-            initialSession={fullSession}
+            initialSession={{ current_phase: session.current_phase }}
             initialMessages={dbMessages ?? []}
             initialIsStaffMode
+            viewerIsAdmin={isAdmin}
           />
         </div>
       </main>

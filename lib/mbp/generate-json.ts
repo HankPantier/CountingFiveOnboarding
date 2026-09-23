@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { recordTokenUsage, type TokenContext } from '@/lib/content/token-usage'
+import { extractJson } from '@/lib/content/extract-json'
 
 const MBP_JSON_MODEL = 'claude-sonnet-5'
 
@@ -80,28 +81,50 @@ async function generateOnce<T>(
   providerOptions: Parameters<typeof generateText>[0]['providerOptions'] | undefined,
   timeoutMs: number,
 ): Promise<T | null> {
-  try {
-    const { text, usage } = await generateText({
-      model: anthropic(model),
-      system: 'You are a precise assistant for a CPA-firm marketing system. Return ONLY valid JSON — no prose, no markdown code fences.',
-      prompt,
-      maxOutputTokens,
-      abortSignal: AbortSignal.timeout(timeoutMs),
-      ...(providerOptions ? { providerOptions } : {}),
-    })
-    if (ctx) {
-      await recordTokenUsage({
-        ...ctx,
-        model,
-        inputTokens: usage?.inputTokens,
-        outputTokens: usage?.outputTokens,
+  const startedAt = Date.now()
+  // One extra generation when the output isn't parseable JSON (prose wrapper,
+  // truncation) — but only while at least half the timeout budget remains, so a
+  // retry can't push a caller on a tight route past its maxDuration.
+  for (let parseAttempt = 1; parseAttempt <= 2; parseAttempt++) {
+    const remaining = timeoutMs - (Date.now() - startedAt)
+    let text: string
+    try {
+      const res = await generateText({
+        model: anthropic(model),
+        system: 'You are a precise assistant for a CPA-firm marketing system. Return ONLY valid JSON — no prose, no markdown code fences.',
+        prompt,
+        maxOutputTokens,
+        abortSignal: AbortSignal.timeout(remaining),
+        ...(providerOptions ? { providerOptions } : {}),
       })
+      text = res.text
+      if (ctx) {
+        await recordTokenUsage({
+          ...ctx,
+          model,
+          inputTokens: res.usage?.inputTokens,
+          outputTokens: res.usage?.outputTokens,
+        })
+      }
+    } catch (err) {
+      console.error('[mbp-json] generation failed:', err)
+      return null
     }
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed: unknown = JSON.parse(cleaned)
-    return validate(parsed)
-  } catch (err) {
-    console.error('[mbp-json] generation/parse failed:', err)
-    return null
+    let parsed: unknown
+    try {
+      parsed = extractJson(text)
+    } catch (err) {
+      const canRetry = parseAttempt === 1 && Date.now() - startedAt < timeoutMs / 2
+      console.error(`[mbp-json] parse failed${canRetry ? ' — retrying once' : ''}:`, err)
+      if (canRetry) continue
+      return null
+    }
+    try {
+      return validate(parsed)
+    } catch (err) {
+      console.error('[mbp-json] validate failed:', err)
+      return null
+    }
   }
+  return null
 }

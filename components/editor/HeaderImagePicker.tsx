@@ -140,6 +140,7 @@ export default function HeaderImagePicker({
                   <AssetThumb
                     sessionId={sessionId}
                     assetPath={a.path}
+                    sha={a.sha}
                     version={0}
                     alt={filename}
                     className="w-full h-14 object-cover"

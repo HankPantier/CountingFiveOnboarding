@@ -112,14 +112,20 @@ describe('selectResumableContentJobs', () => {
 // from().update().eq() records the write, from().select().eq().single() for the
 // phase read. Enough to exercise finalizeGenerationIfComplete's branches.
 function makeSupabaseStub(opts: {
-  pages: Array<{ generation_status: string; generation_attempts?: number }>
+  pages: Array<{ page_url?: string; generation_status: string; generation_attempts?: number }>
   phase: number
+  approvedUrls?: string[]
 }) {
   const updates: Array<Record<string, unknown>> = []
   const supabase = {
     from(table: string) {
       if (table === 'generated_pages') {
         return { select: () => ({ eq: () => Promise.resolve({ data: opts.pages }) }) }
+      }
+      if (table === 'page_outlines') {
+        // null → the outline read "failed" and finalize judges every page.
+        const data = opts.approvedUrls ? opts.approvedUrls.map(page_url => ({ page_url })) : null
+        return { select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data }) }) }) }
       }
       // content_jobs
       return {
@@ -181,6 +187,29 @@ describe('finalizeGenerationIfComplete', () => {
 
   it('does not advance a job with no pages', async () => {
     const { supabase, updates } = makeSupabaseStub({ pages: [], phase: 5 })
+    expect(await finalizeGenerationIfComplete(supabase, 'job-1')).toBe(false)
+    expect(updates).toHaveLength(0)
+  })
+
+  it('ignores pending rows for UNAPPROVED outlines (they are never generated)', async () => {
+    const { supabase, updates } = makeSupabaseStub({
+      pages: [
+        { page_url: '/a', generation_status: 'complete' },
+        { page_url: '/never-approved', generation_status: 'pending' },
+      ],
+      phase: 5,
+      approvedUrls: ['/a'],
+    })
+    expect(await finalizeGenerationIfComplete(supabase, 'job-1')).toBe(true)
+    expect(updates[0]).toMatchObject({ phase: 6 })
+  })
+
+  it('does not finalize a job that is not in generation (phase < 5)', async () => {
+    const { supabase, updates } = makeSupabaseStub({
+      pages: [{ page_url: '/a', generation_status: 'complete' }],
+      phase: 4,
+      approvedUrls: ['/a'],
+    })
     expect(await finalizeGenerationIfComplete(supabase, 'job-1')).toBe(false)
     expect(updates).toHaveLength(0)
   })

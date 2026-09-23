@@ -172,6 +172,20 @@ export async function requireSessionAccess(
 // Content-job-scoped gate. Resolves the job's session_id (the documented
 // content-job → session mapping) then applies the session access check.
 // 404s when the job doesn't exist.
+// Session-scoped gate for onboarding/MBP surfaces and AI generation routes:
+// requireSessionAccess plus the manager tier. Editors and Site Owners hold a
+// content capability but are intentionally excluded (CLAUDE.md rule 6).
+export async function requireOnboardingSessionAccess(
+  sessionId: string
+): Promise<{ user: CurrentUser } | NextResponse> {
+  const gate = await requireSessionAccess(sessionId)
+  if (gate instanceof NextResponse) return gate
+  if (!hasOnboardingAccess(gate.user)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+  return gate
+}
+
 export async function requireContentJobAccess(
   contentJobId: string
 ): Promise<{ user: CurrentUser; sessionId: string } | NextResponse> {

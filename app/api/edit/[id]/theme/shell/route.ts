@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
-import { getCurrentUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
@@ -18,8 +17,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (ctx instanceof NextResponse) return ctx
   const { githubRepo } = ctx
 
-  const user = await getCurrentUser()
-  if (!user || !user.isAdmin) {
+  const user = ctx.user
+  if (!user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

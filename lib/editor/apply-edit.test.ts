@@ -62,8 +62,24 @@ describe('applyFindReplace', () => {
     expect(first.next).toBe('a professional service business and a professional service business')
     // Re-running the same wrapping edit must be a no-op, not add another "professional".
     const second = applyFindReplace(first.next, 'service business', 'professional service business', true)
-    expect(second.ok).toBe(true)
-    if (second.ok) expect(second.next).toBe(first.next)
+    // Now reported as an explicit no-op (not a successful change to commit).
+    expect(second.ok).toBe(false)
+    if (!second.ok) expect(second.noop).toBe(true)
+  })
+
+  it('reports an already-applied edit as a no-op, not success', () => {
+    const res = applyFindReplace(PAGE, 'Advisory', 'Advisory')
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.noop).toBe(true)
+      expect(res.reason).toMatch(/already applied/i)
+    }
+  })
+
+  it('a genuine miss is not flagged noop', () => {
+    const res = applyFindReplace(PAGE, 'nope', 'x')
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.noop).toBeUndefined()
   })
 })
 
@@ -113,7 +129,7 @@ describe('applyBatchEdits', () => {
 
   it('returns the original content for an empty edit list', () => {
     const res = applyBatchEdits(PAGE, [])
-    expect(res).toEqual({ next: PAGE, applied: [], failed: [] })
+    expect(res).toEqual({ next: PAGE, applied: [], failed: [], unchanged: [] })
   })
 
   it('does not compound a self-referential batch rewrite across re-runs', () => {
@@ -127,6 +143,10 @@ describe('applyBatchEdits', () => {
     ])
     expect(second.next).toBe(first.next)
     expect((second.next.match(/professional/g) || []).length).toBe(1)
+    // The re-run is reported as unchanged, not as an applied edit.
+    expect(second.applied).toEqual([])
+    expect(second.failed).toEqual([])
+    expect(second.unchanged).toHaveLength(1)
   })
 })
 

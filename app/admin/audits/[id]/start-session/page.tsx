@@ -1,12 +1,18 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/auth/access'
 import { StartSessionForm } from '@/components/admin/audit/StartSessionForm'
 
 export const runtime = 'nodejs'
 
 export default async function StartSessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // Creating a session from an audit is admin-only (the draft-session and
+  // start-session routes use requireAdminUser) — auditors never see this form.
+  const user = await getCurrentUser()
+  if (!user) redirect('/admin/login')
+  if (!user.isAdmin) notFound()
   const supabase = createServerClient()
 
   const { data: run } = await supabase

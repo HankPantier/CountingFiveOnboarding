@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getSiteOwnerSessionId, isSiteOwner } from '@/lib/auth/access'
+import { canPublish, getAccessibleSessionIds, getCurrentUser, getSiteOwnerSessionId, isSiteOwner } from '@/lib/auth/access'
 import EditorShell from '@/components/editor/EditorShell'
 import type { SessionSchema } from '@/types/session-schema'
 
@@ -21,12 +21,18 @@ export default async function EditPage({
   // fetches the target firm's name/URL below — from rendering another site at all,
   // and sends an owner with no assignment yet to their "no site" home.)
   const user = await getCurrentUser()
-  const viewerIsOwner = !!user && isSiteOwner(user)
+  if (!user) notFound()
+  const viewerIsOwner = isSiteOwner(user)
   if (viewerIsOwner) {
     const ownedSessionId = await getSiteOwnerSessionId(user)
     if (ownedSessionId !== id) {
       redirect(ownedSessionId ? `/admin/content/${ownedSessionId}/edit` : '/admin/home')
     }
+  } else if (!user.isAdmin) {
+    // Managers/editors may only open the editor for sessions assigned to them
+    // (the /api/edit routes 403 otherwise; don't render another firm's shell).
+    const accessible = await getAccessibleSessionIds(user)
+    if (accessible !== null && !accessible.includes(id)) notFound()
   }
 
   // Optional deep-link to a specific file (Batch Content "Open draft"). The file
@@ -65,6 +71,8 @@ export default async function EditPage({
       websiteUrl={websiteUrl}
       initialPath={initialPath}
       viewerIsOwner={viewerIsOwner}
+      viewerIsAdmin={user.isAdmin}
+      viewerCanPublish={canPublish(user)}
     />
   )
 }

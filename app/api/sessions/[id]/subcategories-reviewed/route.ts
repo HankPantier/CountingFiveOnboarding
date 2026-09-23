@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { readJsonBody } from '@/app/api/_json'
@@ -37,7 +37,7 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid sessionId' }, { status: 400 })
   }
 
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
 
   const body = await readJsonBody<Partial<SubCategoryReviewInput>>(req)

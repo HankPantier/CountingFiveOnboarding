@@ -3,7 +3,7 @@ import type { PaletteData } from '@/types/palette'
 import type { DesignTokens, Roundness, Density } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
 import { findPairing, type TypePairingFeel } from './type-pairing-catalog'
-import { arr } from './schema-coerce'
+import { arr, isSentinelNone } from './schema-coerce'
 
 type BuilderInput = {
   firmName: string
@@ -179,8 +179,8 @@ function buildVoiceSection(input: BuilderInput): string {
     lines.push(`**Current voice:** ${current}.`)
   }
 
-  const example = brand.voiceExample?.trim()
-  if (example) lines.push(`**In their words:** "${example.replace(/"/g, '\\"')}"`)
+  const example = typeof brand.voiceExample === 'string' ? brand.voiceExample.trim() : ''
+  if (example && !isSentinelNone(example)) lines.push(`**In their words:** "${example.replace(/"/g, '\\"')}"`)
 
   if (!lines.length) return ''
   return `## Voice & Tone\n\n${lines.join('\n\n')}`

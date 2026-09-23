@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireSessionAccess, canPublish, denySiteOwnerConfig } from '@/lib/auth/access'
 import { saveSiteSettings } from '@/lib/content/site-settings'
 import {
   loadSiteSettingsForSession,
@@ -49,6 +49,13 @@ export async function PUT(
   }
   const auth = await requireSessionAccess(sessionId)
   if (auth instanceof NextResponse) return auth
+  // Site config (booking) is staff-only: Site Owners and editors may read it
+  // (GET) but not change it — it patches the live repo's site.config.
+  const ownerDenied = denySiteOwnerConfig(auth.user)
+  if (ownerDenied) return ownerDenied
+  if (!canPublish(auth.user)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   let body: PutBody
   try {

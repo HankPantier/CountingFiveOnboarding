@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { canPublish, getCurrentUser, getAccessibleSessionIds, isSiteOwner } from '@/lib/auth/access'
 import { loadBlogSettingsForSession } from '@/lib/content/blog-settings-repo-sync'
 import BlogLandingEditor from '@/components/content/BlogLandingEditor'
 import type { SessionSchema } from '@/types/session-schema'
@@ -15,6 +15,10 @@ export default async function BlogLandingPage({
 
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
+  // Site-wide config is staff-only: Site Owners are locked out of config
+  // surfaces (CLAUDE.md rule 6) and editors can't push it (the settings PUT
+  // route denies both), so don't render an editor whose Save would 403.
+  if (isSiteOwner(user) || !canPublish(user)) notFound()
   if (user.role !== 'admin') {
     const allowed = await getAccessibleSessionIds(user)
     if (!allowed?.includes(id)) notFound()

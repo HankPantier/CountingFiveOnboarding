@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
+import { getCurrentUser, getAccessibleSessionIds, hasOnboardingAccess } from '@/lib/auth/access'
 import PhaseStepper from '@/components/content/PhaseStepper'
 import PackageDownloadBar from '@/components/content/PackageDownloadBar'
 import GithubRepoConnector from '@/components/admin/GithubRepoConnector'
@@ -16,30 +16,52 @@ export default async function ContentWorkflowPage({
 }) {
   const { id } = await params
 
+  // The content workflow (palette → sitemap → research → outlines → generation)
+  // is manager/admin-only; editors and Site Owners work in the draft editor.
   // Managers may only open clients assigned to them.
   const user = await getCurrentUser()
   if (!user) redirect('/admin/login')
-  if (user.role !== 'admin') {
+  if (!hasOnboardingAccess(user)) notFound()
+  if (!user.isAdmin) {
     const allowed = await getAccessibleSessionIds(user)
     if (!allowed?.includes(id)) notFound()
   }
 
   const supabase = createServerClient()
 
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('id, website_url, schema_data, status, approved_at')
-    .eq('id', id)
-    .single()
+  // Independent loads in parallel. The logo + package listing are cheap and
+  // only used if the session turns out to be approved.
+  const [sessionRes, jobRes, logoRes, packageRes] = await Promise.all([
+    supabase
+      .from('sessions')
+      .select('id, website_url, schema_data, status, approved_at')
+      .eq('id', id)
+      .single(),
+    supabase
+      .from('content_jobs')
+      .select('*')
+      .eq('session_id', id)
+      .maybeSingle(),
+    supabase
+      .from('assets')
+      .select('storage_path')
+      .eq('session_id', id)
+      .eq('asset_category', 'logo')
+      .order('uploaded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // A persistent download bar shows at the top once a package has been
+    // assembled. Detect what's in the session's package folder so we only offer
+    // the plain-file buttons when those objects actually exist (packages built
+    // before the plain-content feature won't have them until re-assembled).
+    supabase.storage.from('session-assets').list(`content-packages/${id}`),
+  ])
 
+  const session = sessionRes.data
   if (!session || session.status !== 'approved') notFound()
 
   // Load or create content_job
-  let { data: contentJob } = await supabase
-    .from('content_jobs')
-    .select('*')
-    .eq('session_id', id)
-    .single()
+  let contentJob = jobRes.data
 
   if (!contentJob) {
     const { data: newJob, error: insertErr } = await supabase
@@ -65,23 +87,28 @@ export default async function ContentWorkflowPage({
   const contentJobId = contentJob?.id ?? ''
 
   // Cumulative API cost for this job (estimated at insert time per model rates).
-  const usageRows = contentJobId
-    ? (await supabase
+  // Paged: PostgREST caps a response at 1000 rows and busy jobs exceed that.
+  const usage = { cost: 0, tokens: 0, calls: 0, byStage: {} as Record<string, number> }
+  if (contentJobId) {
+    const PAGE = 1000
+    for (let from = 0; ; from += PAGE) {
+      const { data: rows, error: usageErr } = await supabase
         .from('token_usage')
-        .select('stage, input_tokens, output_tokens, cost_usd')
-        .eq('content_job_id', contentJobId)).data ?? []
-    : []
-  const usage = usageRows.reduce(
-    (acc, r) => {
-      const cost = Number(r.cost_usd) || 0
-      acc.cost += cost
-      acc.tokens += (r.input_tokens || 0) + (r.output_tokens || 0)
-      acc.calls += 1
-      acc.byStage[r.stage] = (acc.byStage[r.stage] ?? 0) + cost
-      return acc
-    },
-    { cost: 0, tokens: 0, calls: 0, byStage: {} as Record<string, number> }
-  )
+        .select('id, stage, input_tokens, output_tokens, cost_usd')
+        .eq('content_job_id', contentJobId)
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (usageErr || !rows) break
+      for (const r of rows) {
+        const cost = Number(r.cost_usd) || 0
+        usage.cost += cost
+        usage.tokens += (r.input_tokens || 0) + (r.output_tokens || 0)
+        usage.calls += 1
+        usage.byStage[r.stage] = (usage.byStage[r.stage] ?? 0) + cost
+      }
+      if (rows.length < PAGE) break
+    }
+  }
   const existingPalette = (contentJob?.palette ?? null) as import('@/types/palette').PaletteData | null
   const existingTokens = (contentJob?.design_tokens ?? null) as DesignTokens | null
   const brand = (session.schema_data as SessionSchema | null)?.brand
@@ -91,14 +118,7 @@ export default async function ContentWorkflowPage({
 
   // Current logo (if any) for the palette step's preview — signed since the
   // session-assets bucket is private.
-  const { data: logoAsset } = await supabase
-    .from('assets')
-    .select('storage_path')
-    .eq('session_id', id)
-    .eq('asset_category', 'logo')
-    .order('uploaded_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const logoAsset = logoRes.data
   let logoUrl: string | null = null
   if (logoAsset?.storage_path) {
     const { data: signed } = await supabase.storage
@@ -107,14 +127,7 @@ export default async function ContentWorkflowPage({
     logoUrl = signed?.signedUrl ?? null
   }
 
-  // A persistent download bar shows at the top once a package has been
-  // assembled. Detect what's in the session's package folder so we only offer
-  // the plain-file buttons when those objects actually exist (packages built
-  // before the plain-content feature won't have them until re-assembled).
-  const { data: packageFiles } = await supabase.storage
-    .from('session-assets')
-    .list(`content-packages/${id}`)
-  const packageFileNames = new Set((packageFiles ?? []).map((f) => f.name))
+  const packageFileNames = new Set((packageRes.data ?? []).map((f) => f.name))
   const hasPackage = packageFileNames.has('content-package.zip')
   const hasPlainFiles =
     packageFileNames.has('content-plain.txt') && packageFileNames.has('content-plain.docx')

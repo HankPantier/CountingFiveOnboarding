@@ -15,6 +15,9 @@ const MAX_INSERTIONS = 3
 const READ_CONCURRENCY = 5
 const CANDIDATE_BODY_TOKENS = 2400
 
+// A post edit ready for pushEntriesToBranch, fenced on the sha that was read.
+export type ReverseLinkEntry = { path: string; content: string; expectedBlobSha?: string | null }
+
 export type ReverseLinkResult = {
   slug: string
   path: string
@@ -57,6 +60,9 @@ export type Candidate = {
   path: string
   file: PageFile
   score: number
+  // Blob sha of the post as read — the commit is fenced on it so a concurrent
+  // edit to this post is never silently overwritten (lost update).
+  sha: string
 }
 
 // Exported for diagnostics (scripts/test-reverse-linker.ts prints scores).
@@ -102,7 +108,7 @@ export async function loadCandidates(
 
           const score = sharedTags * 3 + keywordOverlap * 2 + titleOverlap
           if (score <= 0) return null
-          return { slug, path, file, score }
+          return { slug, path, file, score, sha: blob.sha }
         } catch (err) {
           console.warn(`[reverse-link] Skipping unreadable post ${path}:`, err)
           return null
@@ -201,7 +207,10 @@ export function applyReverseLink(args: {
   path: string
   newSlug: string
   response: FindPassageResponse
-}): { entry: { path: string; content: string }; result: ReverseLinkResult } | null {
+  // Sha of the blob `file` was parsed from; carried onto the entry as the
+  // push's expectedBlobSha (undefined = unguarded, for callers without one).
+  blobSha?: string
+}): { entry: ReverseLinkEntry; result: ReverseLinkResult } | null {
   const { file, response, newSlug } = args
   if (!response.match) return null
   const linkMarker = `](/resources/${newSlug})`
@@ -232,6 +241,7 @@ export function applyReverseLink(args: {
     entry: {
       path: args.path,
       content: serializeFile({ frontmatter: file.frontmatter, body: newBody }),
+      ...(args.blobSha !== undefined ? { expectedBlobSha: args.blobSha } : {}),
     },
     result: {
       slug: args.slug,
@@ -254,11 +264,11 @@ export async function insertReverseLinks(args: {
   sessionId: string
 }): Promise<{
   results: ReverseLinkResult[]
-  entries: Array<{ path: string; content: string }>
+  entries: ReverseLinkEntry[]
 }> {
   const { githubRepo, newPost } = args
   const results: ReverseLinkResult[] = []
-  const entries: Array<{ path: string; content: string }> = []
+  const entries: ReverseLinkEntry[] = []
 
   const candidates = await loadCandidates(githubRepo, newPost)
 
@@ -285,6 +295,7 @@ export async function insertReverseLinks(args: {
       path: candidate.path,
       newSlug: newPost.slug,
       response,
+      blobSha: candidate.sha,
     })
     if (!applied) continue
     entries.push(applied.entry)

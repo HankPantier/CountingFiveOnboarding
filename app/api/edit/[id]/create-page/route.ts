@@ -18,8 +18,9 @@ import type { SessionSchema } from '@/types/session-schema'
 export const runtime = 'nodejs'
 // The AI first-draft runs in an after() callback (outline + page generation +
 // Pexels image fetch/push) — give it the same headroom as the one-off route so
-// generation isn't truncated by the function timeout.
-export const maxDuration = 300
+// generation isn't truncated by the function timeout. Must stay >= the page
+// deadline generateNewPage budgets against (PAGE_DEADLINE_DEFAULT_MS + reserve).
+export const maxDuration = 600
 
 const MAX_TITLE = 120
 const MAX_BRIEF = 500
@@ -41,6 +42,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+  // AI generation spends budget and writes generated content — manager-only per
+  // CLAUDE.md rule 6 (admins pass; editors/Site Owners are excluded), matching
+  // the resources/ideas/[ideaId]/draft route.
+  if (!ctx.user.isAdmin && !ctx.user.capabilities.includes('manager')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   let body: CreatePageBody
   try {

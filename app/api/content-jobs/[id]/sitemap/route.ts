@@ -12,6 +12,11 @@ import { asJson } from '@/lib/supabase/json-typed'
 
 type SitemapPage = NonNullable<SessionSchema['proposed_sitemap']>[number]
 
+export const runtime = 'nodejs'
+// POST runs the research pipeline in after(); it budgets against
+// RESEARCH_ROUTE_MAX_DURATION_MS and self-chains past it. Must match.
+export const maxDuration = 300
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -99,24 +104,55 @@ export async function POST(
 
   const supabase = createServerClient()
 
+  // Confirm is only valid from the sitemap step (phase ≤ 2). A re-confirm while
+  // the job is already in research/outlines/generation would wipe live pipeline
+  // rows under a running worker — use "unapprove sitemap" to go back first.
+  // The conditional update below doubles as the concurrency guard: two
+  // simultaneous confirms both pass a read-check, but only one flips the job.
+  const { data: jobRow } = await supabase
+    .from('content_jobs')
+    .select('phase, updated_at')
+    .eq('id', id)
+    .single()
+  if (!jobRow) return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
+  if (jobRow.phase > 2) {
+    return NextResponse.json(
+      { error: 'The sitemap is already confirmed. Unapprove it before confirming a new one.' },
+      { status: 409 }
+    )
+  }
+
   // Persist the confirmed sitemap first — the seeds depend on it being current.
-  const { error: sitemapErr } = await supabase
+  // Fenced on the updated_at we read: a concurrent confirm that already wrote
+  // makes this match zero rows → 409 instead of a second, interleaved reseed.
+  const { data: claimed, error: sitemapErr } = await supabase
     .from('content_jobs')
     .update({
       confirmed_sitemap: asJson(pages),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
+    .eq('updated_at', jobRow.updated_at)
+    .select('id')
   if (sitemapErr) {
     return NextResponse.json({ error: sitemapErr.message }, { status: 500 })
   }
+  if (!claimed?.length) {
+    return NextResponse.json({ error: 'Sitemap was confirmed concurrently — reload and try again.' }, { status: 409 })
+  }
 
-  // Clear any existing rows from a previous confirmation.
-  await Promise.all([
+  // Clear any existing rows from a previous confirmation. Every delete must
+  // succeed, or the reseed below would duplicate/collide with leftovers.
+  const deletes = await Promise.all([
     supabase.from('research_results').delete().eq('content_job_id', id),
     supabase.from('page_outlines').delete().eq('content_job_id', id),
     supabase.from('generated_pages').delete().eq('content_job_id', id),
   ])
+  const deleteErr = deletes.find((d) => d.error)?.error
+  if (deleteErr) {
+    console.error('[sitemap] Clearing previous pipeline rows failed:', deleteErr)
+    return NextResponse.json({ error: 'Failed to clear previous pipeline rows; retry' }, { status: 500 })
+  }
 
   // Seed research_results, page_outlines, generated_pages for each page.
   const seedRows = pages.map(p => ({
@@ -133,6 +169,14 @@ export async function POST(
 
   if (r1.error || r2.error || r3.error) {
     console.error('[sitemap] Seed errors:', r1.error, r2.error, r3.error)
+    // 23505 = UNIQUE(content_job_id, page_url) (migration 076): a concurrent
+    // confirm seeded the same pages. Conflict, not a server fault.
+    if ([r1.error, r2.error, r3.error].some((e) => e?.code === '23505')) {
+      return NextResponse.json(
+        { error: 'Pipeline rows already exist for this sitemap (concurrent confirm) — reload.' },
+        { status: 409 }
+      )
+    }
     // Don't advance phase if seeds failed — admin can retry without ending up
     // at phase 3 with nothing for the pipeline to process.
     return NextResponse.json(

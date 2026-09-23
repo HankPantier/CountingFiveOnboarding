@@ -17,6 +17,8 @@ vi.mock('@/lib/supabase/server', () => {
       },
       eq: () => api,
       in: () => api,
+      lt: () => api,
+      order: () => api,
       then: (resolve: (v: { data: unknown; error: null }) => void) => {
         if (state.op === 'update') return resolve({ data: h.reset, error: null })
         return resolve({ data: h.rows, error: null })
@@ -65,5 +67,10 @@ describe('resetFailedArticleImports', () => {
   it('returns how many error rows it reset', async () => {
     h.reset = [{ id: 'a' }, { id: 'b' }]
     expect(await resetFailedArticleImports('job-1')).toBe(2)
+  })
+
+  it('a manual (human) retry resets regardless of the attempt cap', async () => {
+    h.reset = [{ id: 'a' }]
+    expect(await resetFailedArticleImports('job-1', { manual: true })).toBe(1)
   })
 })

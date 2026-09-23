@@ -23,6 +23,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const status = await getArticleImportStatus(id)
   if (status.terminal) return NextResponse.json({ started: false, status })
+  // A runner is already in flight (a row is 'drafting'). Starting a second one
+  // would race the first's git commits on the same draft branch; the in-flight
+  // runner self-chains for anything it can't finish.
+  if (status.drafting > 0) {
+    return NextResponse.json({ started: false, alreadyRunning: true, status })
+  }
 
   after(async () => {
     try {

@@ -62,6 +62,7 @@ import { activeTeam } from '@/lib/content/active-team'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
+import { selectUnfinishedPages } from './generation-state'
 
 const OG_IMAGES_README = `# OG Images
 
@@ -99,7 +100,15 @@ export type PushOutcome =
   | { ok: false; error: string }
 
 export type PackageResult =
-  | { ok: false; status: 400 | 404 | 500; error: string; unapproved?: PageRef[]; awaitingClient?: PageRef[] }
+  | {
+      ok: false
+      status: 400 | 404 | 409 | 500
+      error: string
+      unapproved?: PageRef[]
+      awaitingClient?: PageRef[]
+      // Pages still pending/running — they'd otherwise be silently missing from the package.
+      notReady?: PageRef[]
+    }
   | {
       ok: true
       storagePath: string
@@ -159,6 +168,26 @@ export async function assembleContentPackage(
 
   if (!pages?.length) {
     return { ok: false, status: 404, error: 'No generated pages found' }
+  }
+
+  // In-flight gate: a page still pending (with an approved outline) or running
+  // is work the generator hasn't finished. The filters below only ship
+  // `complete` pages, so packaging now would silently drop it from the site.
+  // Refuse instead; the operator waits for generation (or retries it).
+  const { data: approvedOutlines } = await supabase
+    .from('page_outlines')
+    .select('page_url')
+    .eq('content_job_id', id)
+    .eq('admin_approved', true)
+  const notReady = selectUnfinishedPages(pages, new Set((approvedOutlines ?? []).map(o => o.page_url)))
+    .map(p => ({ id: p.id, page_url: p.page_url, page_title: p.page_title }))
+  if (notReady.length > 0) {
+    return {
+      ok: false,
+      status: 409,
+      error: `${notReady.length} page(s) are still generating — wait for generation to finish before packaging.`,
+      notReady,
+    }
   }
 
   // Nothing-to-ship gate: if not a single page generated successfully (all
@@ -305,13 +334,16 @@ export async function assembleContentPackage(
       if (!item) continue
       const { asset, buffer } = item
 
-      // Use the original file_name. On collision, append a numeric suffix.
-      let cleanName = asset.file_name
+      // Use the original file_name reduced to a basename (a stored name like
+      // `../../app/x.ts` must never escape public/content-assets/). On
+      // collision, append a numeric suffix.
+      const baseName = (asset.file_name.split(/[\\/]/).pop() ?? '').replace(/^\.+/, '') || `asset-${asset.id}`
+      let cleanName = baseName
       let counter = 1
       while (seenFilenames.has(cleanName)) {
-        const dotIdx = asset.file_name.lastIndexOf('.')
-        const stem = dotIdx > 0 ? asset.file_name.slice(0, dotIdx) : asset.file_name
-        const ext = dotIdx > 0 ? asset.file_name.slice(dotIdx) : ''
+        const dotIdx = baseName.lastIndexOf('.')
+        const stem = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName
+        const ext = dotIdx > 0 ? baseName.slice(dotIdx) : ''
         cleanName = `${stem}-${counter}${ext}`
         counter++
       }
@@ -688,9 +720,15 @@ export async function assembleContentPackage(
     const siteSettings = await getSiteSettings(job.session_id)
     deploy = {
       githubRepo: job.github_repo,
-      entries: entries.filter(
-        (e) => e.path.startsWith('content/') || e.path.startsWith('public/')
-      ),
+      entries: entries.filter((e) => {
+        // Decode + normalize before the prefix check (CLAUDE.md rule 8): a
+        // `public/../x` or `public/..%2Fx` path must never reach the repo.
+        let decoded: string
+        try { decoded = decodeURIComponent(e.path) } catch { return false }
+        if (decoded.includes('\\')) return false
+        if (decoded.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')) return false
+        return decoded.startsWith('content/') || decoded.startsWith('public/')
+      }),
       siteUrl: session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://'),
       booking: { provider: siteSettings.bookingProvider, url: siteSettings.bookingUrl },
       author: { authorName: actor.name, authorEmail: actor.email ?? DEFAULT_COMMIT_AUTHOR.email },

@@ -3,6 +3,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { serializeSchemaFull } from '@/lib/agent/system-prompt'
+import type { Json } from '@/types/database'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpChangeOp, MbpSuggestionChanges } from '@/types/mbp'
 
@@ -100,14 +102,18 @@ export async function backfillMbpFromProfile(
       .slice(0, MAX_PAGE_CHARS)
   }
 
-  const { _meta, ...schemaForModel } = schema as Record<string, unknown>
-  void _meta
+  // Sparse serialization (no _meta, no empties, no registrar credentials) and
+  // without the bulky sitemap / content-gap artifacts, which carry nothing the
+  // granular MBP fields can be derived from.
+  const { proposed_sitemap, current_sitemap, content_gaps, ...schemaForModel } = schema as Record<string, unknown>
+  void proposed_sitemap; void current_sitemap; void content_gaps
+  const profileJson = serializeSchemaFull(schemaForModel as Json)
 
   const result = await generateMbpJson<{ changes: BackfillChange[] }>(
     `You are completing a CPA firm's Master Business Profile (MBP). Rich detail already exists in some profile fields (positioning statement, niches, services, tagline, team) and in the website copy already produced for this firm. Several granular MBP fields are still empty.
 
 CURRENT PROFILE (JSON):
-${JSON.stringify(schemaForModel, null, 2)}
+${profileJson}
 
 ${producedContent ? `PRODUCED WEBSITE CONTENT (the latest, best articulation of this firm — prefer this when it conflicts with the older profile):\n"""\n${producedContent}\n"""\n` : ''}
 EMPTY FIELDS TO TRY TO FILL (fieldPath — label):

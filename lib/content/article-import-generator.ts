@@ -6,7 +6,7 @@ import { isUrlPubliclyFetchable } from '@/lib/audit/ssrf-guard'
 import { safeGetBinary } from '@/lib/audit/crawl'
 import { checkTokenBudget, truncateToTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
-import { DRAFT_BRANCH, pushEntriesToBranch } from '@/lib/github/repo-files'
+import { DRAFT_BRANCH, pushEntriesToBranch, StaleShaError } from '@/lib/github/repo-files'
 import { buildCrossLinkIndex, type InternalLinkTarget } from './internal-link-targets'
 import { insertReverseLinks } from './reverse-linker'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
@@ -233,15 +233,46 @@ async function mark(
 // body is the client's own prose converted verbatim (no LLM rewrite), wrapped
 // with generated frontmatter, with images re-hosted and internal links injected.
 // Atomic status lock so a concurrent run/cron doesn't double-draft. Never throws.
-export async function importArticleAsIs(importId: string): Promise<ImportArticleResult> {
+// Load (and memoize per job run) the crawled pages of an audit. The audit
+// `result` JSONB is large; the runner used to re-read it once PER import.
+export type AuditPagesCache = Map<string, Promise<CrawledPage[]>>
+
+export function loadAuditPages(
+  supabase: ReturnType<typeof createServerClient>,
+  auditRunId: string,
+  cache?: AuditPagesCache
+): Promise<CrawledPage[]> {
+  const hit = cache?.get(auditRunId)
+  if (hit) return hit
+  const load = (async () => {
+    const { data: run } = await supabase
+      .from('audit_runs')
+      .select('result')
+      .eq('id', auditRunId)
+      .single()
+    return (run?.result as unknown as AuditResult | null)?.raw?.pages ?? []
+  })()
+  cache?.set(auditRunId, load)
+  return load
+}
+
+export async function importArticleAsIs(
+  importId: string,
+  // `priorAttempts` is the row's attempts count as the runner read it; the claim
+  // stamps priorAttempts + 1 so the auto-retry cap can stop a row that keeps
+  // failing. `auditPages` shares one audit-result read across a whole job run.
+  opts?: { priorAttempts?: number; auditPages?: AuditPagesCache }
+): Promise<ImportArticleResult> {
   const supabase = createServerClient()
+  const priorAttempts = opts?.priorAttempts ?? 0
 
   // Atomic claim: flip pending/error → drafting; a losing racer gets no row.
+  // Never re-claims a `complete` (or in-flight) import.
   const { data: claimed } = await supabase
     .from('content_job_article_imports')
-    .update({ status: 'drafting', error: null, updated_at: new Date().toISOString() })
+    .update({ status: 'drafting', error: null, attempts: priorAttempts + 1, updated_at: new Date().toISOString() })
     .eq('id', importId)
-    .neq('status', 'drafting')
+    .in('status', ['pending', 'error'])
     .select('id, content_job_id, session_id, audit_run_id, source_url, source_title')
     .maybeSingle()
   if (!claimed) return { status: 'skipped' }
@@ -256,7 +287,8 @@ export async function importArticleAsIs(importId: string): Promise<ImportArticle
     // Repo not provisioned yet (repos are seeded at phase 6). Transient, not a
     // failure — leave PENDING so the publish chain + cron auto-resume it.
     if (!job?.github_repo) {
-      await mark(supabase, importId, { status: 'pending', error: null })
+      // Waiting on the repo isn't a failed attempt — give the claim's attempt back.
+      await mark(supabase, importId, { status: 'pending', error: null, attempts: priorAttempts })
       return { status: 'skipped' }
     }
     const githubRepo = job.github_repo
@@ -270,12 +302,7 @@ export async function importArticleAsIs(importId: string): Promise<ImportArticle
     const schema = (session.schema_data ?? {}) as SessionSchema
 
     // Re-read the verbatim HTML from the audit result (not stored on the row).
-    const { data: run } = await supabase
-      .from('audit_runs')
-      .select('result')
-      .eq('id', claimed.audit_run_id)
-      .single()
-    const pages: CrawledPage[] = (run?.result as unknown as AuditResult | null)?.raw?.pages ?? []
+    const pages = await loadAuditPages(supabase, claimed.audit_run_id, opts?.auditPages)
     const page = pages.find((p) => p.url === claimed.source_url)
     if (!page?.html) throw new Error('Source article is no longer in the audit crawl')
 
@@ -388,7 +415,13 @@ export async function importArticleAsIs(importId: string): Promise<ImportArticle
         await pushEntriesToBranch(githubRepo, DRAFT_BRANCH, reverseEntries, `Add reverse links to: ${title}`, {})
       }
     } catch (err) {
-      console.warn(`[article-import] Reverse-link pass failed for ${slug} (draft already committed):`, err)
+      // StaleShaError: a linked post changed after it was read — skip the links
+      // (the fenced commit refuses to clobber it); never fail the import.
+      if (err instanceof StaleShaError) {
+        console.warn(`[article-import] ${err.path} changed since it was read — skipping reverse links for ${slug}`)
+      } else {
+        console.warn(`[article-import] Reverse-link pass failed for ${slug} (draft already committed):`, err)
+      }
     }
 
     return { status: 'complete', slug }

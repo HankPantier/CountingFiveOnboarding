@@ -19,6 +19,7 @@ import SiteAssistantChat from './SiteAssistantChat'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import { toPathname, type Move } from '@/lib/editor/nav-urls'
 import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
+import { reconcileDirtyAfterSave } from '@/lib/ui/dirty-buffers'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -30,6 +31,8 @@ export default function EditorShell({
   websiteUrl,
   initialPath,
   viewerIsOwner = false,
+  viewerIsAdmin = false,
+  viewerCanPublish = false,
 }: {
   sessionId: string
   firmName: string
@@ -41,12 +44,17 @@ export default function EditorShell({
   // no theme, no site-wide assistant, no nav/config editing; they publish and
   // use per-page AI edit. Known server-side to avoid a flash of the full chrome.
   viewerIsOwner?: boolean
+  // Resolved server-side by the page (no client /api/auth/me round-trip):
+  // admin gates Theme Studio / edit stats / Site Assistant; canPublish gates
+  // the publish + rollback affordances (the routes enforce both regardless).
+  viewerIsAdmin?: boolean
+  viewerCanPublish?: boolean
 }) {
   const [tree, setTree] = useState<TreeFile[]>([])
   const [status, setStatus] = useState<EditorStatus | null>(null)
   // Theme Studio is admin-only; managers and owners never see the entry (the
   // route also 403s them).
-  const [isAdmin, setIsAdmin] = useState(false)
+  const isAdmin = viewerIsAdmin
   // Admin-only edit-activity stats (git-history derived). Fetched once the caller
   // is known to be an admin; drives the Edit Activity panel + per-file tree badges.
   const [editStats, setEditStats] = useState<EditStatsResponse | null>(null)
@@ -55,7 +63,7 @@ export default function EditorShell({
   // Publishing to live is denied to editors — the publish/rollback routes 403
   // them, so hide those affordances. Admins, managers, and site owners may
   // publish (owner is known server-side, so seed the state true for them).
-  const [publishAllowed, setPublishAllowed] = useState(viewerIsOwner)
+  const publishAllowed = viewerCanPublish || viewerIsOwner
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<Map<string, LoadedFile>>(new Map())
   const [dirty, setDirty] = useState<Map<string, string>>(new Map())
@@ -145,26 +153,6 @@ export default function EditorShell({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshEditStats()
   }, [isAdmin, refreshEditStats])
-
-  // Resolve the caller's role + capabilities: gate the Theme Studio entry
-  // (admin-only) and the publish/rollback affordances (admin or manager).
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((d: { role?: string; capabilities?: string[] }) => {
-        if (cancelled) return
-        const admin = d.role === 'admin'
-        if (admin) setIsAdmin(true)
-        if (admin || (d.capabilities ?? []).includes('manager')) setPublishAllowed(true)
-      })
-      .catch(() => {
-        /* ignore — entries stay hidden */
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   // Warn admin when navigating away with unsaved edits.
   useEffect(() => {
@@ -380,14 +368,13 @@ export default function EditorShell({
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
       const data = (await res.json()) as { commitSha: string; blobSha: string }
+      // Always adopt the new blob sha (the saved content is now the base), but
+      // only clear the dirty buffer if it still equals what we sent — typing
+      // that happened while the save was in flight stays dirty.
       setLoaded((prev) =>
         new Map(prev).set(selectedPath, { content: next, sha: data.blobSha })
       )
-      setDirty((prev) => {
-        const m = new Map(prev)
-        m.delete(selectedPath)
-        return m
-      })
+      setDirty((prev) => reconcileDirtyAfterSave(prev, selectedPath, next))
       if (isNavSave) {
         setNavMoves([])
         // Pages were relocated on the draft branch — refresh the tree so the
@@ -486,11 +473,7 @@ export default function EditorShell({
       }
       const data = (await res.json()) as { commitSha: string; blobSha: string }
       setLoaded((prev) => new Map(prev).set(conflict.path, { content: mine, sha: data.blobSha }))
-      setDirty((prev) => {
-        const m = new Map(prev)
-        m.delete(conflict.path)
-        return m
-      })
+      setDirty((prev) => reconcileDirtyAfterSave(prev, conflict.path, mine))
       setConflict(null)
       if (isNavConflict) {
         setNavMoves([])
@@ -1016,7 +999,7 @@ export default function EditorShell({
         onPublish={publish}
         onRollback={rollback}
         onSyncDraft={syncDraft}
-        onResetDraft={resetDraft}
+        onResetDraft={isAdmin ? resetDraft : undefined}
         onRepullDone={() => void refreshStatus()}
       />
       {(isLivePage || isDraftPage) && selectedPath && (
@@ -1263,7 +1246,7 @@ export default function EditorShell({
             onMovesChange={setNavMoves}
           />
         ) : (
-          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} />
+          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} isAdmin={isAdmin} />
         )}
       </div>
       {publishResult && (

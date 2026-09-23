@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
-import { getDraftHeadSha, walkCommitFileStats, walkNewCommitFileStats } from '@/lib/github/repo-files'
+import {
+  IncrementalWalkUnavailableError,
+  getDraftHeadSha,
+  walkCommitFileStats,
+  walkNewCommitFileStats,
+} from '@/lib/github/repo-files'
 import { isRateLimited } from '@/lib/github/rate-limit'
 import { RequestError } from '@octokit/request-error'
 import {
@@ -90,8 +95,12 @@ export async function GET(
           computed_at: new Date().toISOString(),
         })
       } catch (err) {
-        // Cached base sha no longer in history (draft reset/force-push) → full walk.
-        if (err instanceof RequestError && (err.status === 404 || err.status === 422)) {
+        // Cached base sha no longer in history (draft reset/force-push), or the
+        // compare wasn't a clean 'ahead' with its full commit list → full walk.
+        if (
+          err instanceof IncrementalWalkUnavailableError ||
+          (err instanceof RequestError && (err.status === 404 || err.status === 422))
+        ) {
           aggregate = await fullWalk()
         } else {
           throw err

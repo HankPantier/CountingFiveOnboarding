@@ -1,4 +1,5 @@
 import type { SessionSchema } from '@/types/session-schema'
+import { realStrings } from './schema-coerce'
 
 // The kinds of long-form content the resource pipeline can produce. Both the
 // single-client workflow (ResourcesPanel → brainstorm → draft) and the batch
@@ -120,8 +121,12 @@ export function buildFormatRules(type: ContentType, location: string): string {
 // details in the draft notes. Without either, the drafter must refuse rather
 // than fabricate a client, per CLAUDE.md's anti-hallucination rules.
 export function hasCaseStudyData(schema: SessionSchema, notes: string | null): boolean {
-  const stories = schema.business?.clientSuccessStories ?? []
-  const hasStory = stories.some((s) => typeof s === 'string' && s.trim().length > 0)
+  // arr(): a hand-edited / AI-drafted MBP can store this as a bare string, and
+  // `.some` on a string threw inside the drafter's lock (stranding the idea).
+  // realStrings also drops the onboarding "None" sentinel — a firm that said it
+  // has no stories must keep the gate CLOSED.
+  const stories = realStrings(schema.business?.clientSuccessStories)
+  const hasStory = stories.length > 0
   const hasNotes = typeof notes === 'string' && notes.trim().length > 0
   return hasStory || hasNotes
 }

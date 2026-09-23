@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { readJsonBody } from '@/app/api/_json'
-import { getCurrentUser, isSiteOwner } from '@/lib/auth/access'
+import { isSiteOwner } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -58,8 +58,8 @@ export async function POST(
   // resolveEditContext already enforced session access (incl. owners). The
   // per-page AI editor is limited to staff admins and Site Owners (who edit
   // their own site) — managers/editors don't get it.
-  const user = await getCurrentUser()
-  if (!user || !(user.isAdmin || isSiteOwner(user))) {
+  const user = ctx.user
+  if (!(user.isAdmin || isSiteOwner(user))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -98,11 +98,16 @@ export async function POST(
   // Write the new file to draft and advance the working copy + sha. Throws on a
   // GitHub failure or a stale sha; callers convert that into a tool error.
   async function commitWorking(next: string, message: string): Promise<void> {
-    // Auto-scrub em/en dashes across the WHOLE file on every edit (code fences
-    // and `<!-- block -->` annotations are protected; numeric ranges kept). Kept
-    // here so apply_edit, set_faq, and remove_text all leave the page dash-clean
-    // without each tool remembering to do it. Idempotent.
-    const scrubbed = humanizeDashes(next)
+    // Auto-scrub em/en dashes in the page BODY on every edit (code fences and
+    // `<!-- block -->` annotations are protected; numeric ranges kept). Kept here
+    // so apply_edit, set_faq, and remove_text all leave the prose dash-clean
+    // without each tool remembering to do it. Idempotent. Frontmatter is left
+    // byte-for-byte alone: it holds URLs, JSON blobs (faq_block, internal_links)
+    // and quoted YAML that a blind text rewrite can corrupt — remove_text's
+    // explicit stripDashes handles SEO fields when asked.
+    const { body: nextBody } = splitFile(next)
+    const head = next.slice(0, next.length - nextBody.length)
+    const scrubbed = head + humanizeDashes(nextBody)
     // Reject any edit that would leave the file with invalid YAML frontmatter
     // before it lands in the draft — otherwise it surfaces as a broken `next
     // build` at deploy time. The tool executors catch this throw and return the
@@ -211,6 +216,8 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             // lands in live content. humanizeDashes protects code fences and
             // block annotations, so layout edits stay intact.
             const res = applyFindReplace(workingContent, find, sanitizeGeneratedText(replace), all ?? false)
+            // Already applied → nothing to commit; report it as a no-op, not a save.
+            if (!res.ok && res.noop) return { success: true, noChange: true, message: res.reason }
             if (!res.ok) return { error: res.reason }
             const annotationErrors = validatePageAnnotations(res.next)
             if (annotationErrors.length > 0) {
@@ -267,7 +274,14 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
               }
             }
             const noGoWarning = changed ? findNoGoHits(workingContent, noGoPhrases) : []
-            return { success: true, applied: res.applied, failed: res.failed, ...(noGoWarning.length ? { noGoWarning } : {}) }
+            return {
+              success: true,
+              applied: res.applied,
+              failed: res.failed,
+              ...(res.unchanged.length ? { unchanged: res.unchanged } : {}),
+              ...(changed ? {} : { noChange: true }),
+              ...(noGoWarning.length ? { noGoWarning } : {}),
+            }
           },
         },
         set_faq: {
@@ -362,6 +376,7 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
             }
             return {
               success: true,
+              ...(changed ? {} : { noChange: true }),
               applied: res.applied,
               dashesStripped: res.dashesStripped,
               residual: res.residual,
@@ -491,7 +506,7 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
         await recordTokenUsage({
           task: 'content',
           sessionId: sessionId,
-          createdBy: user?.id ?? null,
+          createdBy: user.id,
           stage: 'content_edit',
           pageUrl: path,
           model: 'claude-sonnet-4-6',

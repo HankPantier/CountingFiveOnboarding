@@ -39,24 +39,66 @@ export class DestinationOccupiedError extends Error {
   }
 }
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-// Swap the trailing `from` path with `to` in the page's `url:`/`canonical_url:`
-// frontmatter lines, preserving any host prefix. Keeps the canonical correct
-// after the page moves.
-export function swapFrontmatterUrl(content: string, from: string, to: string): string {
-  return content.replace(
-    new RegExp('^((?:url|canonical_url):.*?)' + escapeRe(from) + '\\s*$', 'gm'),
-    `$1${to}`
-  )
+// Unquote a single-line YAML scalar: "double" (JSON-compatible escapes) or
+// 'single' ('' → '). Returns the bare value plus whether it was quoted.
+export function unquoteYamlScalar(raw: string): { value: string; quoted: boolean } {
+  const v = raw.trim()
+  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(v)
+      if (typeof parsed === 'string') return { value: parsed, quoted: true }
+    } catch {
+      // Not JSON-compatible — fall back to stripping the quotes.
+    }
+    return { value: v.slice(1, -1), quoted: true }
+  }
+  if (v.length >= 2 && v.startsWith("'") && v.endsWith("'")) {
+    return { value: v.slice(1, -1).replace(/''/g, "'"), quoted: true }
+  }
+  return { value: v, quoted: false }
 }
 
-// The page's own url from its frontmatter (`url:` preferred, else `canonical_url:`).
-// Used to recognise a destination file that is already the page we're moving —
-// e.g. relocated by an earlier save — so we skip it instead of flagging a collision.
+// End index (exclusive) of the frontmatter block's inner text, or -1 when the
+// file has no `---` fenced frontmatter. Rewrites are confined to this region so
+// a body line that happens to start with `url:` is never touched.
+function frontmatterEnd(content: string): number {
+  if (!content.startsWith('---\n') && !content.startsWith('---\r\n')) return -1
+  const afterOpen = content.indexOf('\n') + 1
+  return content.indexOf('\n---', afterOpen - 1)
+}
+
+const URL_LINE_RE = /^(url|canonical_url):[ \t]*(.*?)[ \t]*$/gm
+const HOST_PREFIX_RE = /^(?:https?:\/\/[^/\s]+)?$/
+
+// Swap the `from` path with `to` in the page's `url:`/`canonical_url:`
+// frontmatter lines, preserving any host prefix (https://example.com). Handles
+// bare, "double-quoted" and 'single-quoted' values; a quoted value is written
+// back as a JSON-quoted string (valid YAML). Keeps the canonical correct after
+// the page moves.
+export function swapFrontmatterUrl(content: string, from: string, to: string): string {
+  // Fence-less file: fall back to scanning the whole text (legacy behavior).
+  const end = frontmatterEnd(content) < 0 ? content.length : frontmatterEnd(content)
+  const head = content.slice(0, end)
+  const rewritten = head.replace(URL_LINE_RE, (line: string, key: string, rawValue: string) => {
+    const { value, quoted } = unquoteYamlScalar(rawValue)
+    if (!value.endsWith(from)) return line
+    const prefix = value.slice(0, value.length - from.length)
+    if (!HOST_PREFIX_RE.test(prefix)) return line
+    const next = prefix + to
+    return `${key}: ${quoted ? JSON.stringify(next) : next}`
+  })
+  return rewritten + content.slice(end)
+}
+
+// The page's own url from its frontmatter (`url:` preferred, else `canonical_url:`),
+// unquoted. Used to recognise a destination file that is already the page we're
+// moving — e.g. relocated by an earlier save — so we skip it instead of flagging
+// a collision.
 export function frontmatterUrl(content: string): string | null {
   const m = /^(?:url|canonical_url):\s*(.+?)\s*$/m.exec(content)
-  return m ? m[1] : null
+  if (!m) return null
+  const { value } = unquoteYamlScalar(m[1])
+  return value || null
 }
 
 // Append 301 redirect rows to content/redirects.csv (creating it if absent),

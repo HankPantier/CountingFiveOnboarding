@@ -3,7 +3,10 @@ import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 import { resumePlan } from '@/lib/content/resume-targets'
 import { runWhoisLookup } from '@/lib/whois/lookup'
-import { selectResumableContentJobs, ORPHAN_RECLAIM_MS } from '@/lib/content/content-generator'
+import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS } from '@/lib/content/content-generator'
+import { reconcileStuckTarget } from '@/lib/content/blog-batch-runner'
+import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
+import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -16,8 +19,8 @@ export const maxDuration = 300
 // derived from that ceiling rather than one worst-case number for all of them.
 const STUCK_THRESHOLD_MS = 15 * 60 * 1000
 
-// Page generation: bounded by ORPHAN_RECLAIM_MS (per-call cap x the 2-rung JSON
-// retry, plus slack). Past it the worker is provably gone. The chained runner
+// Page generation: bounded by ORPHAN_RECLAIM_MS (the generate/regenerate
+// function cap plus slack). Past it the worker is provably gone. The chained runner
 // also reclaims its own orphans now, so this is the backstop for a job whose
 // chain died entirely rather than the primary recovery path.
 const PAGE_STUCK_THRESHOLD_MS = ORPHAN_RECLAIM_MS
@@ -104,16 +107,6 @@ export async function GET(req: Request) {
           .in('audit_status', RUNNING_AUDIT_STATES)
           .lt('started_at', cutoff)
           .select('id'),
-        // blog_batch_targets stuck at 'generating' (worker died between claim and
-        // terminal write) are invisible to future chained runs, which only select
-        // 'pending' — so the parent batch never completes. Reset them to 'pending'
-        // for the next chain to re-attempt.
-        supabase
-          .from('blog_batch_targets')
-          .update({ status: 'pending' })
-          .eq('status', 'generating')
-          .lt('updated_at', cutoff)
-          .select('id'),
         // new_page_generations: same 'pending'-never-claimed risk as oneoffs.
         // generateNewPage writes a terminal 'error' on any throw, so the only
         // way a row stays non-terminal is the after() worker never firing.
@@ -129,8 +122,48 @@ export async function GET(req: Request) {
       return null
     }
   })()
-  const [research, pages, ideas, socials, oneoffs, audits, batchTargets, newPages] =
-    sweep ?? [null, null, null, null, null, null, null, null]
+  const [research, pages, ideas, socials, oneoffs, audits, newPages] =
+    sweep ?? [null, null, null, null, null, null, null]
+
+  // blog_batch_targets stuck at 'generating' (worker died between claim and
+  // terminal write) are invisible to future chained runs, which only select
+  // 'pending' — so the parent batch never completes. Settle each against its
+  // idea's REAL draft_status instead of blindly resetting to 'pending': a
+  // target whose article was actually drafted is complete (a blind reset
+  // re-drafted it), one whose idea is still running is left alone, and the
+  // rest retry only while under the attempts cap (else error — no endless loop).
+  let batchTargetsSwept = 0
+  const { data: stuckTargets } = await supabase
+    .from('blog_batch_targets')
+    .select('id, resource_idea_id, attempts')
+    .eq('status', 'generating')
+    .lt('updated_at', cutoff)
+    .limit(200)
+  if (stuckTargets?.length) {
+    const ideaIds = stuckTargets.map((t) => t.resource_idea_id).filter((x): x is string => !!x)
+    const { data: stuckIdeas } = ideaIds.length
+      ? await supabase.from('resource_ideas').select('id, draft_status').in('id', ideaIds)
+      : { data: [] }
+    const ideaStatus = new Map((stuckIdeas ?? []).map((i) => [i.id, i.draft_status]))
+    for (const t of stuckTargets) {
+      const next = reconcileStuckTarget(
+        t.resource_idea_id ? ideaStatus.get(t.resource_idea_id) : null,
+        t.attempts ?? 0
+      )
+      if (next === 'leave') continue
+      const { data: moved } = await supabase
+        .from('blog_batch_targets')
+        .update({
+          status: next,
+          ...(next === 'error' ? { error: 'Draft worker stopped mid-run repeatedly — gave up (retry manually)' } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', t.id)
+        .eq('status', 'generating')
+        .select('id')
+      batchTargetsSwept += moved?.length ?? 0
+    }
+  }
 
   // content_job_library_selections stuck at 'drafting' (worker died mid-draft —
   // the resource_ideas sweep above already reset the underlying idea to error)
@@ -168,6 +201,13 @@ export async function GET(req: Request) {
     .delete()
     .lt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
 
+  // Prune task_progress rows older than 7 days — they only back a live progress
+  // bar while an operation is in flight; nothing reads them afterward.
+  await supabase
+    .from('task_progress')
+    .delete()
+    .lt('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+
   // Sessions stranded at Phase 2: the WHOIS after()-task never completed (cold
   // kill, network drop). Re-run the lookup — it advances them to Phase 3 (and is
   // a no-op for any that have since moved on). Bounded to keep the cron quick.
@@ -201,10 +241,30 @@ export async function GET(req: Request) {
   // and Deliverables never unlocks. Capped-out errors are excluded so the loop
   // stays finite. The atomic per-page claim + complete-skip keep re-triggers
   // idempotent for healthy runs.
-  const { data: liveGen } = await supabase
-    .from('generated_pages')
-    .select('content_job_id, generation_status, generation_attempts')
-    .in('generation_status', ['pending', 'running', 'error'])
+  //
+  // Only jobs actually IN generation (content_jobs.phase = 5) are candidates:
+  // generated_pages rows are seeded as `pending` at sitemap confirm, so a
+  // phase-3/4 job (outlines still being proofed) looked resumable and got
+  // /generate fired at it every 5 minutes. Scoping to phase-5 jobs first also
+  // bounds the page query (was an unbounded table scan). Capped-out errors are
+  // filtered in SQL so they never inflate the result.
+  const { data: genJobs } = await supabase
+    .from('content_jobs')
+    .select('id')
+    .eq('phase', 5)
+    .order('updated_at', { ascending: true })
+    .limit(50)
+  const genJobIds = (genJobs ?? []).map((j) => j.id)
+  const { data: liveGen } = genJobIds.length
+    ? await supabase
+        .from('generated_pages')
+        .select('content_job_id, generation_status, generation_attempts')
+        .in('content_job_id', genJobIds)
+        .or(
+          `generation_status.in.(pending,running),and(generation_status.eq.error,generation_attempts.lt.${MAX_GENERATION_ATTEMPTS})`
+        )
+        .limit(5000)
+    : { data: [] }
 
   const resumableJobs = selectResumableContentJobs(liveGen ?? []).slice(0, 5)
 
@@ -228,19 +288,65 @@ export async function GET(req: Request) {
     }
   }
 
+  // Research: a phase-3 job with pending/error research rows, nothing running,
+  // and no activity for 10+ minutes has lost its worker (the pipeline's chain
+  // died or the function was killed). Re-trigger /research/continue.
+  const { data: researchJobs } = await supabase
+    .from('content_jobs')
+    .select('id')
+    .eq('phase', 3)
+    .lt('updated_at', draftCutoff)
+    .limit(20)
+  let researchResumed = 0
+  if (resumeBase && researchJobs?.length) {
+    const ids = researchJobs.map((j) => j.id)
+    const { data: rRows } = await supabase
+      .from('research_results')
+      .select('content_job_id, research_status, updated_at')
+      .in('content_job_id', ids)
+      .in('research_status', ['pending', 'running', 'error'])
+    const byJob = new Map<string, { open: number; running: number; fresh: boolean }>()
+    for (const r of rRows ?? []) {
+      const c = byJob.get(r.content_job_id) ?? { open: 0, running: 0, fresh: false }
+      if (r.research_status === 'running') c.running += 1
+      else c.open += 1
+      if (r.updated_at > draftCutoff) c.fresh = true
+      byJob.set(r.content_job_id, c)
+    }
+    const url = resumeBase.startsWith('http') ? resumeBase : `https://${resumeBase}`
+    for (const [jobId, c] of byJob) {
+      if (c.open === 0 || c.running > 0 || c.fresh) continue
+      if (researchResumed >= 5) break
+      try {
+        const res = await fetch(`${url}/api/content-jobs/${jobId}/research/continue`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${cronSecret}` },
+        })
+        if (res.ok) researchResumed += 1
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] research auto-resume failed for', jobId, err)
+      }
+    }
+    if (researchResumed) console.warn(`[sweep-stuck-jobs] research auto-resumed jobs=${researchResumed}`)
+  }
+
   // Library selections: a job with non-terminal selections (pending/error) and
   // none currently drafting has no worker coming back for it — re-trigger
   // /library/run (idempotent: it reconciles in-flight rows and retries the rest).
   // Without this a stalled library draft blocks publish permanently.
+  // Oldest-updated first so the 5-job limit rotates across jobs; capped-out
+  // errors (MAX_LIBRARY_ATTEMPTS) no longer drive an endless /retry every tick.
   const { data: liveSelections } = await supabase
     .from('content_job_library_selections')
-    .select('content_job_id, status')
+    .select('content_job_id, status, attempts')
     .in('status', ['pending', 'drafting', 'error'])
+    .order('updated_at', { ascending: true })
+    .limit(2000)
 
   // Route each job to /retry when it has failed items (the only path that can
   // reset them) and /run when it only has fresh work. See resume-targets.ts —
   // always calling /run made this whole block a silent no-op for all-error jobs.
-  const libraryPlan = resumePlan(liveSelections ?? [])
+  const libraryPlan = resumePlan(liveSelections ?? [], 5, MAX_LIBRARY_ATTEMPTS)
 
   let librarySelectionsResumed = 0
   if (resumeBase && libraryPlan.length) {
@@ -266,10 +372,12 @@ export async function GET(req: Request) {
   // /imports/run (idempotent). Without this a stalled import blocks publish.
   const { data: liveImports } = await supabase
     .from('content_job_article_imports')
-    .select('content_job_id, status')
+    .select('content_job_id, status, attempts')
     .in('status', ['pending', 'drafting', 'error'])
+    .order('updated_at', { ascending: true })
+    .limit(2000)
 
-  const importPlan = resumePlan(liveImports ?? [])
+  const importPlan = resumePlan(liveImports ?? [], 5, MAX_IMPORT_ATTEMPTS)
 
   let articleImportsResumed = 0
   if (resumeBase && importPlan.length) {
@@ -297,6 +405,8 @@ export async function GET(req: Request) {
     .from('blog_batch_targets')
     .select('batch_id, status')
     .in('status', ['pending', 'generating'])
+    .order('updated_at', { ascending: true })
+    .limit(2000)
 
   const batchCounts = new Map<string, { pending: number; generating: number }>()
   for (const t of liveBatchTargets ?? []) {
@@ -337,6 +447,7 @@ export async function GET(req: Request) {
     .from('audit_batches')
     .select('id')
     .eq('status', 'running')
+    .limit(50)
 
   let auditBatchesResumed = 0
   if (resumeBase && runningBatches?.length) {
@@ -383,7 +494,6 @@ export async function GET(req: Request) {
   const socialsSwept = socials?.data?.length ?? 0
   const oneoffsSwept = oneoffs?.data?.length ?? 0
   const auditsSwept = audits?.data?.length ?? 0
-  const batchTargetsSwept = batchTargets?.data?.length ?? 0
   const newPagesSwept = newPages?.data?.length ?? 0
   if (batchTargetsSwept) {
     console.warn(`[sweep-stuck-jobs] blog-batch-targets reset to pending=${batchTargetsSwept}`)
@@ -431,5 +541,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed, researchResumed, cutoff })
 }

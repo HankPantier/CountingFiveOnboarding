@@ -1,7 +1,10 @@
 import type { GapItem } from '@/types/gap-item'
 
 export function buildGapListInstructions(gaps: GapItem[]): string {
-  const unresolved = gaps.filter(g => !g.resolved)
+  // A Tier 2/3 gap the model already chose to skip (resolvedBy 'model_skip')
+  // isn't re-listed, so it isn't asked again. Tier 1 skips stay listed — they
+  // gate Phase 4 and need a real answer (or the "None" sentinel).
+  const unresolved = gaps.filter(g => !g.resolved && !(g.resolvedBy === 'model_skip' && g.tier !== 1))
   const tier1 = unresolved.filter(g => g.tier === 1)
   const tier2 = unresolved.filter(g => g.tier === 2)
   const tier3 = unresolved.filter(g => g.tier === 3)

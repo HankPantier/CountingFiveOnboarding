@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { getByPath, outOfRangeIndexPath } from '@/lib/mbp/schema-write'
@@ -37,7 +37,7 @@ export async function PATCH(
 ) {
   const { id, suggestionId } = await params
 
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
   if (auth.user.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

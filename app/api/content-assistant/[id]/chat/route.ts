@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { requireSessionAccess } from '@/lib/auth/access'
+import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { buildGenerateContentPrompt } from '@/lib/content/generate-content-prompt'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { recordTokenUsage } from '@/lib/content/token-usage'
@@ -24,7 +24,7 @@ export async function POST(
   }
 
   // Admins + assigned managers may generate content for their client.
-  const auth = await requireSessionAccess(id)
+  const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
 
   // Content is ephemeral (no message table to count against), so throttle via

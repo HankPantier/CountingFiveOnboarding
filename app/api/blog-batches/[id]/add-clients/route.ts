@@ -8,7 +8,8 @@ import { asIndustry } from '@/lib/content/industries'
 import type { ExternalLink } from '@/lib/content/link-checker'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// Must match BLOG_BATCH_ROUTE_MAX_DURATION_MS (the runner budgets against it).
+export const maxDuration = 600
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_CLIENTS = 50

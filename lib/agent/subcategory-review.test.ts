@@ -81,14 +81,14 @@ describe('applySubCategoryReview', () => {
     expect(schema._meta?.subcategories_review?.dropped).toEqual([])
   })
 
-  it('mirrors dropped sub-service names into contentExclusions (dedup)', () => {
+  it('does NOT mirror niche-scoped sub-service names into the firm-wide contentExclusions', () => {
     const { schema } = applySubCategoryReview(
       baseSchema(),
       gaps(),
       { drop: [sub('Dental', 'Orthodontics')] },
       AT,
     )
-    expect(schema.business?.contentExclusions).toEqual(['Orthodontics'])
+    expect(schema.business?.contentExclusions).toEqual([])
   })
 
   it('records the review with confirmed/dropped pairs + reviewedBy', () => {
@@ -118,7 +118,7 @@ describe('applySubCategoryReview', () => {
     // re-applying the same review over the result is a no-op beyond timestamp
     const second = applySubCategoryReview(first.schema, first.gaps, { drop: [sub('Dental', 'Orthodontics')] }, AT)
     expect(second.schema.niches).toEqual(first.schema.niches)
-    expect(second.schema.business?.contentExclusions).toEqual(['Orthodontics'])
+    expect(second.schema.business?.contentExclusions).toEqual([])
   })
 
   it('promotes a sub-service to its own page and folds exclude into drop', () => {

@@ -7,8 +7,18 @@ import { slugify } from '@/lib/content/sitemap-utils'
 // sessions so the agent collects the same things regardless of the seed source.
 export function computePhase4Gaps(schema: SessionSchema): GapItem[] {
   const gaps: GapItem[] = []
-  addPhase4Gaps(gaps, schema)
+  safeAddPhase4Gaps(gaps, schema)
   return gaps
+}
+
+// The parser must never throw (CLAUDE.md) — a malformed row in stored/AI-drafted
+// schema data degrades to a partial gap list rather than failing the caller.
+function safeAddPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
+  try {
+    addPhase4Gaps(gaps, schema)
+  } catch (err) {
+    console.warn('[MBP Parser] Phase 4 gaps failed — returning partial result:', err)
+  }
 }
 
 export function parseMBP(markdown: string): { schema: SessionSchema; gaps: GapItem[] } {
@@ -82,7 +92,7 @@ export function parseMBP(markdown: string): { schema: SessionSchema; gaps: GapIt
     }
   }
 
-  addPhase4Gaps(gaps, schema)
+  safeAddPhase4Gaps(gaps, schema)
   return { schema, gaps }
 }
 
@@ -1150,9 +1160,11 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
   // Iterate by real index (never filter) so kept niches keep their niches[i] gap
   // paths; a niche the operator dropped in the Phase-3 review generates no gaps
   // (and applyNicheReview prunes any already generated for a dropped niche).
-  if (schema?.niches?.length) {
+  if (Array.isArray(schema?.niches) && schema.niches.length) {
     for (let i = 0; i < schema.niches.length; i++) {
       const niche = schema.niches[i]
+      // Null / primitive holes (sparse-array writes persist as JSONB null).
+      if (!niche || typeof niche !== 'object') continue
       if (niche.status === 'dropped') continue
       if (!niche.painPoints) {
         gaps.push({ field: `niches[${i}].painPoints`, label: `${niche.name} — Pain Points`, phase: 4, tier: 1, resolved: false })
@@ -1188,10 +1200,10 @@ function addPhase4Gaps(gaps: GapItem[], schema?: SessionSchema): void {
   // index (never filter) so kept services keep their services[i] gap paths; a
   // service the operator dropped in the Phase-3 review generates no gaps (and
   // applyServiceReview prunes any already generated for a dropped service).
-  if (schema?.services?.length) {
+  if (Array.isArray(schema?.services) && schema.services.length) {
     for (let i = 0; i < schema.services.length; i++) {
       const service = schema.services[i]
-      if (!service.name) continue
+      if (!service || typeof service !== 'object' || !service.name) continue
       if (service.status === 'dropped') continue
       // Description is Tier 1: a confirmed service with no description is the exact
       // "thin service → generic copy" failure this rework targets (parity with the

@@ -45,7 +45,15 @@ function ContentPhaseBadge({ phase }: { phase: number | null }) {
   )
 }
 
-export default function ContentTable({ rows }: { rows: ContentRow[] }) {
+export default function ContentTable({
+  rows,
+  canOnboard = true,
+}: {
+  rows: ContentRow[]
+  // False for editors: the content workflow + Generate Content assistant are
+  // manager/admin-only (their pages/routes 404/403), so hide those entry points.
+  canOnboard?: boolean
+}) {
   const [query, setQuery] = useState('')
 
   const filteredRows = useMemo(() => {
@@ -108,7 +116,9 @@ export default function ContentTable({ rows }: { rows: ContentRow[] }) {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-3">
-                    <GenerateContentModal sessionId={row.id} contentComplete={row.phase === 6} />
+                    {canOnboard && (
+                      <GenerateContentModal sessionId={row.id} contentComplete={row.phase === 6} />
+                    )}
                     {row.phase === 6 && (
                       row.canEditContent ? (
                         <Link
@@ -118,7 +128,7 @@ export default function ContentTable({ rows }: { rows: ContentRow[] }) {
                         >
                           Edit content ↗
                         </Link>
-                      ) : (
+                      ) : canOnboard ? (
                         <Link
                           href={`/admin/content/${row.id}`}
                           className="text-text-muted hover:text-brand-cyan font-heading font-semibold text-xs transition-colors"
@@ -126,8 +136,9 @@ export default function ContentTable({ rows }: { rows: ContentRow[] }) {
                         >
                           Connect repo →
                         </Link>
-                      )
+                      ) : null
                     )}
+                    {canOnboard && (
                     <Link
                       href={`/admin/content/${row.id}`}
                       className={`inline-flex items-center font-heading font-semibold text-xs px-3.5 py-1.5 rounded-pill transition-all ${
@@ -139,6 +150,7 @@ export default function ContentTable({ rows }: { rows: ContentRow[] }) {
                       {row.phase === 6 ? 'Download' : row.phase !== null ? 'Continue' : 'Start'}
                       {row.phase !== null && row.phase !== 6 && <span className="ml-1">&rarr;</span>}
                     </Link>
+                    )}
                   </div>
                 </td>
               </tr>
