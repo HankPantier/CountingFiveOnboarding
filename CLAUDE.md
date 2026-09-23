@@ -88,7 +88,9 @@ Any route that accepts a file path in a query param or JSON body MUST decode-the
 ### API Route Patterns
 - All routes that touch Supabase session data use the service role client (`lib/supabase/server.ts`)
 - Admin API routes must gate as the first step with the helpers in `lib/auth/access.ts`: `requireAdminUser()` for admin-only routes, `requireSessionAccess(sessionId)` for routes a content-capable member (manager, editor, or owner) may also use (add a `canPublish(user)` check for any route that pushes to live), `requireContentJobAccess(jobId)` for manager-only content-job routes, `requireAuditorCapability()` / `requireAuditAccess(auditId)` for audit routes an auditor may use (all return 401 unauthenticated, 403 unauthorized). See security rule 6.
-- Client-facing routes (e.g., `/api/chat`, `/api/upload/*`) validate the session ID but do not require admin auth
+- The client self-serve flow is retired (`app/session/[id]` is a static notice). `/api/chat` now requires `requireOnboardingSessionAccess`, and `/api/upload/*` requires `requireSessionAccess`. No session-data route is unauthenticated.
+- 5xx responses never carry raw Supabase, GitHub or Storage error text. Use `internalError(context, err, publicMessage)` from `lib/api/errors.ts`. Typed domain errors (stale sha, not-found, validation) keep their deliberate 4xx messages.
+- Every read-modify-write of `sessions.schema_data` or `gap_list` goes through `updateSessionWithCas()` (`lib/session/schema-cas.ts`). Keep its compute callback a pure function of the row it's given, and do any AI call or other slow work before calling it.
 - Always return typed error responses: `{ error: string }` with appropriate HTTP status codes
 
 ### Database Access
@@ -266,6 +268,19 @@ types/              # database.ts (generated), session-schema.ts, gap-item.ts
    - `grep -rn "console\.log" ./app ./lib --include="*.ts" --include="*.tsx" --exclude="*.test.ts" --exclude="*.test.tsx"` (expect zero matches outside `scripts/`; test fixtures may carry the literal string as data)
 5. Test against the Korbey Lague MBP fixture for any changes to the parser or agent logic
 6. Use the Supabase SQL Editor to verify DB state after any session-modifying operation
+
+### Full re-audit cadence
+
+A **full re-audit** (parallel read-only reviewers covering security/auth + RLS, the content pipeline + cron, agent/chat/MBP, editor/GitHub, UI, and the DB layer; every finding verified in code before it's reported or fixed) is due when **any** threshold in `.audit/last-full-audit.json` is crossed since the last one:
+- **30 days**, or
+- **150 commits**, or
+- **15,000 lines changed** (excluding `package-lock.json` and `types/database.ts`).
+
+- A SessionStart hook (`.claude/settings.json` → `node scripts/audit-due.mjs --hook`) flags when it's due. When it fires, tell the user at the start of the session and offer to run the audit before starting other large work. Don't start one unprompted.
+- Check status at any time with `node scripts/audit-due.mjs`.
+- After a full audit's fixes ship, run `node scripts/audit-due.mjs --mark "<one-line summary>"` and commit `.audit/last-full-audit.json`.
+- Also run one before any major migration, such as the infra account move, and after any change to auth or RLS larger than a single route.
+- Thresholds live in the marker file; change them there, not in the script.
 
 ---
 

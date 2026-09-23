@@ -45,8 +45,9 @@ export async function GET(req: Request) {
   const pageCutoff = new Date(Date.now() - PAGE_STUCK_THRESHOLD_MS).toISOString()
   const draftCutoff = new Date(Date.now() - DRAFT_STUCK_THRESHOLD_MS).toISOString()
 
-  // research_results uses `created_at` (no updated_at column); we treat a
-  // row stuck in 'running' for >15 min as orphaned. generated_pages sweeps on
+  // research_results sweeps on `updated_at` (stamped when a runner claims the
+  // row) — created_at is set at sitemap-confirm, so it would falsely error a
+  // healthy run on any job confirmed >15 min before research started. generated_pages sweeps on
   // `generation_started_at` (stamped when the page is claimed) — NOT created_at,
   // which is set at sitemap-confirm and made long jobs falsely error their
   // healthy in-flight pages every cron tick.
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
           .from('research_results')
           .update({ research_status: 'error' })
           .eq('research_status', 'running')
-          .lt('created_at', cutoff)
+          .lt('updated_at', cutoff)
           .select('id'),
         supabase
           .from('generated_pages')

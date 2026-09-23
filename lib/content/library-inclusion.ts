@@ -364,6 +364,18 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
     budget,
     async (sel) => {
       try {
+        // Claim atomically BEFORE any work: only a row still pending/error can be
+        // taken, so two runners started together can't both draft it (or both
+        // create a per-client idea for it). Losing the race → skip quietly.
+        const { data: claimed, error: claimErr } = await supabase
+          .from('content_job_library_selections')
+          .update({ status: 'drafting', error: null, attempts: (sel.attempts ?? 0) + 1, updated_at: new Date().toISOString() })
+          .eq('id', sel.id)
+          .in('status', ['pending', 'error'])
+          .select('id')
+        if (claimErr) throw claimErr
+        if (!claimed?.length) return
+
         let ideaId = sel.resource_idea_id
         if (!ideaId) {
           ideaId = await ensureIdeaForSelection(supabase, sel.batch_id, sessionId, contentJobId)
@@ -373,17 +385,7 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
           }
           await supabase
             .from('content_job_library_selections')
-            .update({
-              resource_idea_id: ideaId,
-              status: 'drafting',
-              attempts: (sel.attempts ?? 0) + 1,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', sel.id)
-        } else {
-          await supabase
-            .from('content_job_library_selections')
-            .update({ status: 'drafting', error: null, attempts: (sel.attempts ?? 0) + 1, updated_at: new Date().toISOString() })
+            .update({ resource_idea_id: ideaId, updated_at: new Date().toISOString() })
             .eq('id', sel.id)
         }
 

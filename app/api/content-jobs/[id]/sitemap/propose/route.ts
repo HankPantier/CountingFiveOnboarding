@@ -40,6 +40,10 @@ export async function POST(
       .select('result')
       .eq('session_id', sessionId)
       .eq('audit_status', 'complete')
+      // Re-audited sessions have several complete runs; take the newest rather
+      // than letting maybeSingle() error and silently drop all audit context.
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle(),
   ])
 

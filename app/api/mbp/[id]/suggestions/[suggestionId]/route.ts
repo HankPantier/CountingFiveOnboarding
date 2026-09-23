@@ -65,7 +65,9 @@ export async function PATCH(
   if (body.action === 'approve') {
     const changes = suggestion.changes as MbpSuggestionChanges
 
-    // For append ops we need the current array to push onto.
+    // Snapshot used only to VALIDATE (stale indexes, append shape). The writes
+    // themselves — including array appends — are applied to the fresh row inside
+    // applyMbpUpdate's compare-and-swap.
     const { data: sessionRow } = await supabase
       .from('sessions')
       .select('schema_data')
@@ -74,8 +76,9 @@ export async function PATCH(
     const currentSchema = (sessionRow?.schema_data ?? {}) as SessionSchema
 
     const updates: Record<string, unknown> = {}
-    // Exact paths written, for the "just added" highlight. Appends resolve to the
-    // new item's index (e.g. team.3) so only the new row lights up, not the array.
+    const appends: Record<string, unknown> = {}
+    // Exact paths written, for the "just added" highlight (applyMbpUpdate adds the
+    // new row's index for appends, e.g. team.3, so only that row lights up).
     const appliedPaths: string[] = []
     // Off-schema paths are skipped (not applied) and reported — see KNOWN_TOP_LEVEL.
     const skippedPaths: string[] = []
@@ -117,16 +120,15 @@ export async function PATCH(
             { status: 422 }
           )
         }
-        updates[fieldPath] = [...base, item]
-        appliedPaths.push(`${fieldPath}.${base.length}`)
+        appends[fieldPath] = item
       } else {
         updates[fieldPath] = change.proposedValue
         appliedPaths.push(fieldPath)
       }
     }
 
-    if (Object.keys(updates).length > 0) {
-      const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths })
+    if (Object.keys(updates).length > 0 || Object.keys(appends).length > 0) {
+      const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths, appends })
       if (!result.success) {
         return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })
       }

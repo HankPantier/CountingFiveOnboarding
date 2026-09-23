@@ -41,7 +41,7 @@ export default async function SessionDetailPage({
       supabase.from('sessions').select('*').eq('id', id).single(),
       supabase.from('messages').select('*').eq('session_id', id).order('created_at', { ascending: true }),
       supabase.from('assets').select('*').eq('session_id', id).order('uploaded_at', { ascending: true }),
-      supabase.from('audit_runs').select('id, domain, url').eq('session_id', id).maybeSingle(),
+      supabase.from('audit_runs').select('id, domain, url').eq('session_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('content_jobs').select('phase').eq('session_id', id).maybeSingle(),
     ])
 

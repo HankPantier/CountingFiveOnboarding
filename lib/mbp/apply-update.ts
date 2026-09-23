@@ -1,6 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
-import { deepSetPath } from '@/lib/mbp/schema-write'
+import { deepSetPath, getByPath } from '@/lib/mbp/schema-write'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
@@ -28,7 +28,10 @@ export async function applyMbpUpdate(
   resolvedGaps?: string[],
   // When `appliedPaths` is set (the suggestion-approve route), stamp those paths
   // into _meta.recently_applied so the MBP page can highlight them as just-added.
-  options?: { appliedPaths?: string[] }
+  // `appends` pushes one item onto the array at each path. The push happens on
+  // the FRESH row inside the compare-and-swap, so two approvals appending to the
+  // same array both land instead of the second overwriting the first.
+  options?: { appliedPaths?: string[]; appends?: Record<string, unknown> }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     await updateSessionWithCas(supabase, sessionId, current => {
@@ -38,6 +41,16 @@ export async function applyMbpUpdate(
       for (const [fieldPath, value] of Object.entries(updates)) {
         schema = deepSetPath(schema, fieldPath, value)
         overridePaths.push(fieldPath)
+      }
+
+      const appendedPaths: string[] = []
+      for (const [fieldPath, item] of Object.entries(options?.appends ?? {})) {
+        const existing = getByPath(schema, fieldPath)
+        const base = Array.isArray(existing) ? existing : []
+        schema = deepSetPath(schema, fieldPath, [...base, item])
+        overridePaths.push(fieldPath)
+        // Highlight only the new row (e.g. team.3), not the whole array.
+        appendedPaths.push(`${fieldPath}.${base.length}`)
       }
 
       // Stamp admin_overrides for each edited path.
@@ -50,7 +63,7 @@ export async function applyMbpUpdate(
       // tell hand-verified fields from seed data (thin values downgrade to 'thin').
       schema = stampProvenance(schema as unknown as SessionSchema, overridePaths, 'confirmed') as unknown as Record<string, unknown>
 
-      const appliedPaths = options?.appliedPaths ?? []
+      const appliedPaths = [...(options?.appliedPaths ?? []), ...appendedPaths]
       if (appliedPaths.length) {
         const m = (schema._meta as Record<string, unknown>) ?? {}
         const recent = (m.recently_applied as Record<string, string>) ?? {}

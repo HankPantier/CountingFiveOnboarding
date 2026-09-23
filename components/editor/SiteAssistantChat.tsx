@@ -64,19 +64,20 @@ export default function SiteAssistantChat({
     const poll = async (genId: string, url: string) => {
       for (let i = 0; i < 100; i++) {
         await new Promise((r) => setTimeout(r, 3000))
-        if (!mountedRef.current) return
+        // Keep polling after the drawer closes so the parent still refreshes
+        // when the draft lands; only this component's own state is skipped.
         try {
           const res = await fetch(`/api/edit/${sessionId}/create-page/${genId}`)
           if (!res.ok) continue
           const data = (await res.json()) as { generation?: { status: string } }
           const s = data.generation?.status
           if (s === 'complete') {
-            setGens((g) => ({ ...g, [genId]: { url, status: 'complete' } }))
+            if (mountedRef.current) setGens((g) => ({ ...g, [genId]: { url, status: 'complete' } }))
             onEdited()
             return
           }
           if (s === 'error') {
-            setGens((g) => ({ ...g, [genId]: { url, status: 'error' } }))
+            if (mountedRef.current) setGens((g) => ({ ...g, [genId]: { url, status: 'error' } }))
             return
           }
         } catch {

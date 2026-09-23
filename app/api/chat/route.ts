@@ -436,6 +436,7 @@ async function updateSessionSchema(
         .from('sessions')
         .update({ current_phase: 3, status: 'in_progress' })
         .eq('id', sessionId)
+        .eq('current_phase', 2)
       if (skipErr) console.error('[chat] phase-2→3 skip update failed:', skipErr)
     }
   }
