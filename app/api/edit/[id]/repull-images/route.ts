@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { repullJobImages } from '@/lib/content/repull-images'
@@ -39,9 +40,7 @@ export async function POST(
       { force, taskId }
     )
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Image re-pull failed'
-    console.error('[repull] Unhandled error:', err)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('repull', err, 'Image re-pull failed')
   }
 
   if (!result.ok) {

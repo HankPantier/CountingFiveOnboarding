@@ -1,6 +1,7 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 
 // Admin override to force a session to the completed state. Needed when the chat
 // agent never fired the final advancePhase tool call (model behavior), leaving a
@@ -44,8 +45,7 @@ export async function POST(
     .eq('id', id)
 
   if (error) {
-    console.error('[Complete]', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('Complete', error, "Couldn't complete the session")
   }
 
   return NextResponse.json({ success: true })

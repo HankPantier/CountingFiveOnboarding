@@ -5,6 +5,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { withStaffMode } from '@/lib/session/seed-mode'
 import type { SessionSchema } from '@/types/session-schema'
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 
 export async function POST(req: Request) {
   const auth = await requireAdminUser()
@@ -52,8 +53,7 @@ export async function POST(req: Request) {
     .single()
 
   if (error) {
-    console.error('[POST /api/sessions]', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('POST /api/sessions', error, "Couldn't create the session")
   }
 
   return NextResponse.json({ sessionId: data.id })

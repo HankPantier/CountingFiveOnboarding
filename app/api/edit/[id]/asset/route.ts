@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { fileTypeFromBuffer } from 'file-type'
 import { resolveEditContext } from '../_helpers'
@@ -120,8 +121,7 @@ export async function GET(
     if (err instanceof FileNotFoundError) {
       return NextResponse.json({ error: err.message }, { status: 404 })
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:asset:get', err, "Couldn't load the asset")
   }
 }
 
@@ -213,8 +213,7 @@ export async function PUT(
         { status: 409 }
       )
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:asset:put', err, "Couldn't save the asset")
   }
 }
 
@@ -259,7 +258,6 @@ export async function DELETE(
         { status: 409 }
       )
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:asset:delete', err, "Couldn't delete the asset")
   }
 }

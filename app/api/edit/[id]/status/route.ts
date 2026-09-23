@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { ensureDraftBranch, getStatus } from '@/lib/github/repo-files'
 
@@ -21,7 +22,6 @@ export async function GET(
       repoUrl: `https://github.com/${ctx.githubRepo.includes('/') ? ctx.githubRepo : `${process.env.GITHUB_ORG}/${ctx.githubRepo}`}`,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:status', err, "Couldn't load publish status")
   }
 }

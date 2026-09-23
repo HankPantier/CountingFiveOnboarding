@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { createServerClient } from '@/lib/supabase/server'
@@ -97,7 +98,6 @@ export async function POST(
 
     return NextResponse.json(result)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Generation failed'
-    return NextResponse.json({ error: message }, { status: 502 })
+    return internalError('edit:seo-fields', err, 'Generation failed', 502)
   }
 }

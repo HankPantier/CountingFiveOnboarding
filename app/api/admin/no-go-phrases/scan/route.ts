@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { loadNoGoPhrases, findNoGoHits } from '@/lib/content/no-go-phrases'
@@ -30,7 +31,7 @@ export async function GET() {
     )
     sessionByJob = new Map(jobs.map(j => [j.id, j.session_id]))
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Scan failed' }, { status: 500 })
+    return internalError('no-go-phrases:scan', err, 'Scan failed')
   }
 
   // Page through generated_pages (PostgREST caps each response at 1000 rows —
@@ -44,7 +45,7 @@ export async function GET() {
       .select('page_title, page_url, content_markdown, meta_title, meta_description, answer_block, content_job_id')
       .order('id')
       .range(from, from + DEFAULT_PAGE_SIZE - 1)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return internalError('no-go-phrases:scan', error, 'Scan failed')
     const rows = data ?? []
     scanned += rows.length
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess, canPublish, denySiteOwnerConfig } from '@/lib/auth/access'
 import { saveSiteSettings } from '@/lib/content/site-settings'
@@ -68,8 +69,7 @@ export async function PUT(
   try {
     settings = await saveSiteSettings(sessionId, body, auth.user.id)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to save'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('site-settings:put', err, "Couldn't save site settings")
   }
 
   const supabase = createServerClient()

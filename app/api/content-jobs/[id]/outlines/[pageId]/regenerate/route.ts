@@ -92,7 +92,7 @@ export async function POST(
       .select('*')
       .single()
     return NextResponse.json(
-      { error: 'Regeneration failed', detail: err instanceof Error ? err.message : String(err), outline: recovered },
+      { error: 'Regeneration failed', outline: recovered },
       { status: 500 },
     )
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import {
   ensureDraftBranch,
@@ -46,7 +47,6 @@ export async function POST(
     const result = await syncMainIntoDraft(ctx.githubRepo)
     return NextResponse.json({ action: 'sync', ...result })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:draft', err, "Couldn't update the draft branch")
   }
 }

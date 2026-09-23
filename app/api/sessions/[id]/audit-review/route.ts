@@ -11,6 +11,7 @@ import { applyTeamReview, type TeamAddition } from '@/lib/agent/team-review'
 import { refreshPhase4Gaps } from '@/lib/agent/gap-tiering'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
+import { updateSessionWithCas, SessionNotFoundError, type CasSessionUpdate } from '@/lib/session/schema-cas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_NOTES = 20000
@@ -134,62 +135,59 @@ export async function POST(
   const callNotes = typeof body.callNotes === 'string' ? body.callNotes.slice(0, MAX_NOTES) : null
 
   const supabase = createServerClient()
-  const { data: session, error: readErr } = await supabase
-    .from('sessions')
-    .select('schema_data, gap_list')
-    .eq('id', id)
-    .single()
-  if (readErr || !session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
+  let schema: SessionSchema
+  try {
+    schema = await updateSessionWithCas(supabase, id, row => {
+      let schema = (row.schema_data as SessionSchema | null) ?? {}
+      let gaps = (row.gap_list as GapItem[] | null) ?? []
+      const now = new Date().toISOString()
+      const by = auth.user.id
 
-  let schema = (session.schema_data as SessionSchema | null) ?? {}
-  let gaps = (session.gap_list as GapItem[] | null) ?? []
-  const now = new Date().toISOString()
-  const by = auth.user.id
+      // Niches: treatments carry page/block/exclude + origin; add = every non-excluded
+      // name (applyNicheReview's add loop dedups names already in the array).
+      const nicheAdd = nicheTreatments.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
+      ;({ schema, gaps } = applyNicheReview(schema, gaps, { treatments: nicheTreatments, add: nicheAdd }, now, by))
 
-  // Niches: treatments carry page/block/exclude + origin; add = every non-excluded
-  // name (applyNicheReview's add loop dedups names already in the array).
-  const nicheAdd = nicheTreatments.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
-  ;({ schema, gaps } = applyNicheReview(schema, gaps, { treatments: nicheTreatments, add: nicheAdd }, now, by))
+      const serviceAdd = serviceTreatments.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
+      ;({ schema, gaps } = applyServiceReview(schema, gaps, { treatments: serviceTreatments, add: serviceAdd }, now, by))
 
-  const serviceAdd = serviceTreatments.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
-  ;({ schema, gaps } = applyServiceReview(schema, gaps, { treatments: serviceTreatments, add: serviceAdd }, now, by))
+      // Sub-services after niches (applySubCategoryReview skips dropped niches).
+      ;({ schema, gaps } = applySubCategoryReview(schema, gaps, { treatments: subTreatments }, now, by))
 
-  // Sub-services after niches (applySubCategoryReview skips dropped niches).
-  ;({ schema, gaps } = applySubCategoryReview(schema, gaps, { treatments: subTreatments }, now, by))
+      if (geo) schema = applyGeoReview(schema, geo, now, by)
+      // A resubmit without a team section leaves the earlier team decision intact.
+      if (body.team !== undefined) schema = applyTeamReview(schema, team, now, by)
 
-  if (geo) schema = applyGeoReview(schema, geo, now, by)
-  // A resubmit without a team section leaves the earlier team decision intact.
-  if (body.team !== undefined) schema = applyTeamReview(schema, team, now, by)
+      // Add Phase-4 gaps for any niche/service this review added (gaps are otherwise
+      // only computed at session creation), then tier by page treatment: a
+      // content-block item is a section, not a page, so its deep page-only gaps are
+      // dropped to keep the downstream Q&A focused.
+      gaps = refreshPhase4Gaps(schema, gaps)
 
-  // Add Phase-4 gaps for any niche/service this review added (gaps are otherwise
-  // only computed at session creation), then tier by page treatment: a
-  // content-block item is a section, not a page, so its deep page-only gaps are
-  // dropped to keep the downstream Q&A focused.
-  gaps = refreshPhase4Gaps(schema, gaps)
+      // Umbrella marker (convenience — the individual *_review markers are the gates).
+      schema._meta = {
+        ...(schema._meta ?? {
+          phase3_completed_chunks: [],
+          phase4_resolved_tiers: { tier1_done: false, tier2_done: false },
+          phase4_flagged_for_followup: [],
+          admin_overrides: {},
+        }),
+        audit_review: { reviewedAt: now, reviewedBy: by },
+      }
 
-  // Umbrella marker (convenience — the individual *_review markers are the gates).
-  schema._meta = {
-    ...(schema._meta ?? {
-      phase3_completed_chunks: [],
-      phase4_resolved_tiers: { tier1_done: false, tier2_done: false },
-      phase4_flagged_for_followup: [],
-      admin_overrides: {},
-    }),
-    audit_review: { reviewedAt: now, reviewedBy: by },
-  }
-
-  const update: Record<string, unknown> = {
-    schema_data: asJson(schema),
-    gap_list: asJson(gaps),
-    notes_extracted_at: now,
-  }
-  if (callNotes !== null) update.call_notes = callNotes
-
-  const { error: writeErr } = await supabase.from('sessions').update(update).eq('id', id)
-  if (writeErr) {
-    console.error('[audit-review] write failed:', writeErr)
+      const update: CasSessionUpdate = {
+        schema_data: asJson(schema),
+        gap_list: asJson(gaps),
+        notes_extracted_at: now,
+      }
+      if (callNotes !== null) update.call_notes = callNotes
+      return { update, result: schema }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[audit-review] write failed:', err)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 

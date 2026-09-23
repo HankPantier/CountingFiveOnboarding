@@ -5,6 +5,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { readJsonBody } from '@/app/api/_json'
 import { applyGeoReview, type GeoReviewInput, type GeoAreaInput, type GeoScope } from '@/lib/agent/geo-review'
 import type { SessionSchema } from '@/types/session-schema'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -52,27 +53,20 @@ export async function POST(
 
   const supabase = createServerClient()
 
-  const { data: session, error: readErr } = await supabase
-    .from('sessions')
-    .select('schema_data')
-    .eq('id', id)
-    .single()
+  let nextSchema: SessionSchema
+  try {
+    nextSchema = await updateSessionWithCas(supabase, id, session => {
+      const schema = (session.schema_data as SessionSchema | null) ?? {}
 
-  if (readErr || !session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
+      const nextSchema = applyGeoReview(schema, input, new Date().toISOString(), auth.user.id)
 
-  const schema = (session.schema_data as SessionSchema | null) ?? {}
-
-  const nextSchema = applyGeoReview(schema, input, new Date().toISOString(), auth.user.id)
-
-  const { error: writeErr } = await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(nextSchema) })
-    .eq('id', id)
-
-  if (writeErr) {
-    console.error('[geo-reviewed] write failed:', writeErr)
+      return { update: { schema_data: asJson(nextSchema) }, result: nextSchema }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[geo-reviewed] write failed:', err)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 

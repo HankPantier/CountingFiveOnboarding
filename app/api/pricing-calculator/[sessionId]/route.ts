@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireSessionAccess, denySiteOwnerConfig } from '@/lib/auth/access'
 import { savePricingCalculator } from '@/lib/content/pricing-calculator-config'
@@ -68,8 +69,7 @@ export async function PUT(
   try {
     config = await savePricingCalculator(sessionId, body.config, enabled, auth.user.id)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to save'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('pricing-calculator:put', err, "Couldn't save the pricing calculator")
   }
 
   // Push to the repo for published clients so the change reaches the site.

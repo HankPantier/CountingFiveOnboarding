@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
@@ -25,6 +26,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import type { PaletteData } from '@/types/palette'
+import { updateSessionWithCas } from '@/lib/session/schema-cas'
 import {
   BRAND_PATH,
   DESIGN_PATH,
@@ -98,10 +100,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
     return NextResponse.json(sources)
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to load theme sources' },
-      { status: 500 }
-    )
+    return internalError('theme:get', err, 'Failed to load theme sources')
   }
 }
 
@@ -225,16 +224,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     // MBP sync: keep the profile in step with the site.
     const supabase = createServerClient()
-    const { data: session } = await supabase
-      .from('sessions')
-      .select('schema_data')
-      .eq('id', sessionId)
-      .single()
-    if (session) {
-      let schema = (session.schema_data ?? {}) as Record<string, unknown>
-      if (brandChanged) schema = deepSetPath(schema, 'brand.primaryColors', paletteSummary(brand.palette))
-      if (designChanged) schema = deepSetPath(schema, 'brand.typography', typographySummary(normalizeTypography(design.typography)))
-      await supabase.from('sessions').update({ schema_data: asJson(schema) }).eq('id', sessionId)
+    if (brandChanged || designChanged) {
+      try {
+        await updateSessionWithCas(supabase, sessionId, session => {
+          let schema = (session.schema_data ?? {}) as Record<string, unknown>
+          if (brandChanged) schema = deepSetPath(schema, 'brand.primaryColors', paletteSummary(brand.palette))
+          if (designChanged) schema = deepSetPath(schema, 'brand.typography', typographySummary(normalizeTypography(design.typography)))
+          return { update: { schema_data: asJson(schema) }, result: null }
+        })
+      } catch (err) {
+        // The repo commit already landed; the MBP mirror is best-effort.
+        console.warn('[theme] MBP sync failed (theme saved):', err)
+      }
     }
     if (brandChanged) {
       const { data: job } = await supabase
@@ -270,9 +271,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         { status: 409 }
       )
     }
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to save theme changes' },
-      { status: 500 }
-    )
+    return internalError('theme:patch', err, 'Failed to save theme changes')
   }
 }

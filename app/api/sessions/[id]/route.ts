@@ -7,6 +7,7 @@ import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { normalizeGapField } from '@/lib/mbp/completeness'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { GapItem } from '@/types/gap-item'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 type StorageBucket = ReturnType<ReturnType<typeof createServerClient>['storage']['from']>
 
@@ -110,42 +111,44 @@ export async function PATCH(
 
   const supabase = createServerClient()
 
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('schema_data, gap_list')
-    .eq('id', id)
-    .single()
+  try {
+    await updateSessionWithCas(supabase, id, session => {
+      const schema = (session.schema_data as Record<string, unknown>) ?? {}
+      let updated = deepSetPath(schema, fieldPath, value)
 
-  if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      if (isAdminOverride) {
+        const meta = (updated._meta as Record<string, unknown>) ?? {}
+        const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
+        updated = {
+          ...updated,
+          _meta: { ...meta, admin_overrides: { ...overrides, [fieldPath]: true } },
+        }
+      }
 
-  const schema = (session.schema_data as Record<string, unknown>) ?? {}
-  let updated = deepSetPath(schema, fieldPath, value)
+      // Mark the matching gap resolved when the field is now filled, so gap_list
+      // stays honest for any consumer not going through computeOpenGaps. Gap fields
+      // use bracket form (niches[0].x); the editor sends dot form — normalize to match.
+      const gaps = (session.gap_list as GapItem[] | null) ?? null
+      const filledGaps =
+        gaps && isPathFilled(updated, fieldPath)
+          ? gaps.map(g => (!g.resolved && normalizeGapField(g.field) === fieldPath ? { ...g, resolved: true } : g))
+          : gaps
 
-  if (isAdminOverride) {
-    const meta = (updated._meta as Record<string, unknown>) ?? {}
-    const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
-    updated = {
-      ...updated,
-      _meta: { ...meta, admin_overrides: { ...overrides, [fieldPath]: true } },
-    }
-  }
-
-  // Mark the matching gap resolved when the field is now filled, so gap_list
-  // stays honest for any consumer not going through computeOpenGaps. Gap fields
-  // use bracket form (niches[0].x); the editor sends dot form — normalize to match.
-  const gaps = (session.gap_list as GapItem[] | null) ?? null
-  const filledGaps =
-    gaps && isPathFilled(updated, fieldPath)
-      ? gaps.map(g => (!g.resolved && normalizeGapField(g.field) === fieldPath ? { ...g, resolved: true } : g))
-      : gaps
-
-  await supabase
-    .from('sessions')
-    .update({
-      schema_data: asJson(updated),
-      ...(filledGaps ? { gap_list: asJson(filledGaps) } : {}),
+      return {
+        update: {
+          schema_data: asJson(updated),
+          ...(filledGaps ? { gap_list: asJson(filledGaps) } : {}),
+        },
+        result: null,
+      }
     })
-    .eq('id', id)
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    console.error('[sessions PATCH] write failed:', err)
+    return NextResponse.json({ error: 'Save failed' }, { status: 500 })
+  }
 
   // Refresh the downloadable MBP if this session is already approved.
   after(() => regenerateMbpIfApproved(supabase, id))

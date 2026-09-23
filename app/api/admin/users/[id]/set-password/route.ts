@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { generatePassword } from '@/lib/auth/generate-password'
@@ -29,7 +30,7 @@ export async function POST(
   const password = generatePassword()
   const { error } = await supabase.auth.admin.updateUserById(id, { password })
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('admin-users:set-password', error, "Couldn't set the password")
   }
 
   return NextResponse.json<SetPasswordResponse>({ password })

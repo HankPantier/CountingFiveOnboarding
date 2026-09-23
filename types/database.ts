@@ -1462,6 +1462,7 @@ export type Database = {
           processing: boolean
           reminder_count: number
           schema_data: Json
+          schema_version: number
           status: string
           website_url: string
         }
@@ -1486,6 +1487,7 @@ export type Database = {
           processing?: boolean
           reminder_count?: number
           schema_data?: Json
+          schema_version?: number
           status?: string
           website_url: string
         }
@@ -1510,6 +1512,7 @@ export type Database = {
           processing?: boolean
           reminder_count?: number
           schema_data?: Json
+          schema_version?: number
           status?: string
           website_url?: string
         }

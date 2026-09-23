@@ -5,6 +5,7 @@ import { proposeSitemap } from '@/lib/content/sitemap-proposer'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult } from '@/types/audit-result'
+import { updateSessionWithCas } from '@/lib/session/schema-cas'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -47,13 +48,18 @@ export async function POST(
 
   const pages = await proposeSitemap(schema, auditResult, { sessionId, contentJobId: id })
 
-  const updatedSchema: SessionSchema = { ...schema, proposed_sitemap: pages }
-  const { error: schemaErr } = await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(updatedSchema) })
-    .eq('id', sessionId)
-  if (schemaErr) {
-    return NextResponse.json({ error: schemaErr.message }, { status: 500 })
+  // proposeSitemap is a long AI call: write the proposal onto the FRESH schema
+  // (compare-and-swap) so edits made meanwhile aren't overwritten.
+  try {
+    await updateSessionWithCas(supabase, sessionId, fresh => ({
+      update: {
+        schema_data: asJson({ ...((fresh.schema_data ?? {}) as SessionSchema), proposed_sitemap: pages }),
+      },
+      result: null,
+    }))
+  } catch (err) {
+    console.error('[sitemap/propose] schema write failed:', err)
+    return NextResponse.json({ error: "Couldn't save the proposed sitemap" }, { status: 500 })
   }
 
   // Drop any prior confirmation so GET serves the new proposal for re-review.

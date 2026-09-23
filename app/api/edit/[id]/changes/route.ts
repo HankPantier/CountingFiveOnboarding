@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { getDraftChanges } from '@/lib/github/repo-files'
 
@@ -18,7 +19,6 @@ export async function GET(
     const { files } = await getDraftChanges(ctx.githubRepo)
     return NextResponse.json({ files })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:changes', err, "Couldn't load pending changes")
   }
 }

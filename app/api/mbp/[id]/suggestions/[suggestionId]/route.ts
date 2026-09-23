@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
@@ -146,7 +147,7 @@ export async function PATCH(
     })
     .eq('id', suggestionId)
 
-  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+  if (updateErr) return internalError('mbp-suggestions:patch', updateErr, "Couldn't update the suggestion")
 
   return NextResponse.json({ success: true })
 }

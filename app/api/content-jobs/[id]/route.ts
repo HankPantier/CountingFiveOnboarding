@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
@@ -79,7 +80,7 @@ export async function PATCH(
         .from('page_outlines')
         .select('admin_approved')
         .eq('content_job_id', id)
-      if (outlineErr) return NextResponse.json({ error: outlineErr.message }, { status: 500 })
+      if (outlineErr) return internalError('content-jobs:patch', outlineErr, "Couldn't load outlines")
       const unapproved = (outlines ?? []).filter(o => !o.admin_approved).length
       if (!outlines?.length || unapproved > 0) {
         return NextResponse.json(
@@ -142,7 +143,7 @@ export async function PATCH(
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('content-jobs:patch', error, "Couldn't update the content job")
   }
 
   // Auto-trigger content generation when advancing to phase 5.

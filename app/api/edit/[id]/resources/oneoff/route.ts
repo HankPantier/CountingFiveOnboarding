@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateOneOff } from '@/lib/content/oneoff-generator'
@@ -80,7 +81,7 @@ export async function POST(
     .select('id')
     .single()
   if (error || !row) {
-    return NextResponse.json({ error: error?.message ?? 'Failed to create generation' }, { status: 500 })
+    return internalError('oneoff:post', error ?? 'insert returned no row', 'Failed to create generation')
   }
 
   after(async () => {
@@ -118,7 +119,7 @@ export async function GET(
     .order('created_at', { ascending: false })
     .limit(HISTORY_LIMIT)
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('oneoff:get', error, "Couldn't load generation history")
   }
   return NextResponse.json({ generations: data ?? [] })
 }

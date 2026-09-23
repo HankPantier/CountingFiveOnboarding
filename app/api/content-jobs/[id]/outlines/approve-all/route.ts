@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 
@@ -23,7 +24,7 @@ export async function POST(
     .select('id')
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('outlines:approve-all', error, "Couldn't approve outlines")
   }
 
   return NextResponse.json({ approved: data?.length ?? 0 })

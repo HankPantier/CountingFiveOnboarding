@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 
@@ -42,6 +43,6 @@ export async function POST(
         : 'in_progress'
 
   const { error } = await supabase.from('sessions').update({ status }).eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('sessions:archive', error, "Couldn't update the session status")
   return NextResponse.json({ success: true, status })
 }

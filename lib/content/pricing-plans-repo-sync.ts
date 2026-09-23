@@ -176,6 +176,6 @@ export async function syncPricingPlansToRepo(args: {
     return { ok: true }
   } catch (err) {
     console.error('[plans-sync] repo sync failed:', err)
-    return { ok: false, error: err instanceof Error ? err.message : 'Repo sync failed' }
+    return { ok: false, error: "Couldn't update the site repo. Please try again." }
   }
 }

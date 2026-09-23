@@ -4,6 +4,7 @@ import { deepSetPath } from '@/lib/mbp/schema-write'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 type Supabase = ReturnType<typeof createServerClient>
 
@@ -29,51 +30,46 @@ export async function applyMbpUpdate(
   // into _meta.recently_applied so the MBP page can highlight them as just-added.
   options?: { appliedPaths?: string[] }
 ): Promise<{ success: boolean; error?: string }> {
-  const { data: current } = await supabase
-    .from('sessions')
-    .select('schema_data, gap_list')
-    .eq('id', sessionId)
-    .single()
+  try {
+    await updateSessionWithCas(supabase, sessionId, current => {
+      let schema = (current.schema_data as Record<string, unknown>) ?? {}
+      const overridePaths: string[] = []
 
-  if (!current) return { success: false, error: 'Session not found' }
+      for (const [fieldPath, value] of Object.entries(updates)) {
+        schema = deepSetPath(schema, fieldPath, value)
+        overridePaths.push(fieldPath)
+      }
 
-  let schema = (current.schema_data as Record<string, unknown>) ?? {}
-  const overridePaths: string[] = []
+      // Stamp admin_overrides for each edited path.
+      const meta = (schema._meta as Record<string, unknown>) ?? {}
+      const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
+      for (const p of overridePaths) overrides[toDottedPath(p)] = true
+      schema = { ...schema, _meta: { ...meta, admin_overrides: overrides } }
 
-  for (const [fieldPath, value] of Object.entries(updates)) {
-    schema = deepSetPath(schema, fieldPath, value)
-    overridePaths.push(fieldPath)
+      // An admin edit is a confirmation — tag provenance so the UI/content-gen can
+      // tell hand-verified fields from seed data (thin values downgrade to 'thin').
+      schema = stampProvenance(schema as unknown as SessionSchema, overridePaths, 'confirmed') as unknown as Record<string, unknown>
+
+      const appliedPaths = options?.appliedPaths ?? []
+      if (appliedPaths.length) {
+        const m = (schema._meta as Record<string, unknown>) ?? {}
+        const recent = (m.recently_applied as Record<string, string>) ?? {}
+        const now = new Date().toISOString()
+        for (const p of appliedPaths) recent[toDottedPath(p)] = now
+        schema = { ...schema, _meta: { ...m, recently_applied: recent } }
+      }
+
+      const gaps = (current.gap_list as GapItem[]) ?? []
+      const updatedGaps = resolvedGaps?.length
+        ? gaps.map(g => (resolvedGaps.includes(g.field) ? { ...g, resolved: true } : g))
+        : gaps
+
+      return { update: { schema_data: asJson(schema), gap_list: asJson(updatedGaps) }, result: null }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) return { success: false, error: 'Session not found' }
+    console.error('[applyMbpUpdate] write failed:', err)
+    return { success: false, error: "Couldn't save the change" }
   }
-
-  // Stamp admin_overrides for each edited path.
-  const meta = (schema._meta as Record<string, unknown>) ?? {}
-  const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
-  for (const p of overridePaths) overrides[toDottedPath(p)] = true
-  schema = { ...schema, _meta: { ...meta, admin_overrides: overrides } }
-
-  // An admin edit is a confirmation — tag provenance so the UI/content-gen can
-  // tell hand-verified fields from seed data (thin values downgrade to 'thin').
-  schema = stampProvenance(schema as unknown as SessionSchema, overridePaths, 'confirmed') as unknown as Record<string, unknown>
-
-  const appliedPaths = options?.appliedPaths ?? []
-  if (appliedPaths.length) {
-    const m = (schema._meta as Record<string, unknown>) ?? {}
-    const recent = (m.recently_applied as Record<string, string>) ?? {}
-    const now = new Date().toISOString()
-    for (const p of appliedPaths) recent[toDottedPath(p)] = now
-    schema = { ...schema, _meta: { ...m, recently_applied: recent } }
-  }
-
-  const gaps = (current.gap_list as GapItem[]) ?? []
-  const updatedGaps = resolvedGaps?.length
-    ? gaps.map(g => (resolvedGaps.includes(g.field) ? { ...g, resolved: true } : g))
-    : gaps
-
-  const { error } = await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(schema), gap_list: asJson(updatedGaps) })
-    .eq('id', sessionId)
-
-  if (error) return { success: false, error: error.message }
   return { success: true }
 }

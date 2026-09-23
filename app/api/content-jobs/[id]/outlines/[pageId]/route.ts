@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
@@ -30,7 +31,9 @@ export async function PATCH(
     .eq('content_job_id', _jobId)
     .single()
   if (loadErr || !existing) {
-    return NextResponse.json({ error: loadErr?.message ?? 'Outline not found' }, { status: 404 })
+    return loadErr
+      ? internalError('outline:patch', loadErr, 'Outline not found', 404)
+      : NextResponse.json({ error: 'Outline not found' }, { status: 404 })
   }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
@@ -87,7 +90,7 @@ export async function PATCH(
     .single()
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('outline:patch', error, "Couldn't update the outline")
   }
 
   if (materialChanged) {

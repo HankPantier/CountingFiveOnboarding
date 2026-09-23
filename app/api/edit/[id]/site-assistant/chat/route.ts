@@ -2,6 +2,7 @@ import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
 import { safePath } from '../../_path'
@@ -72,10 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     await ensureDraftBranch(githubRepo)
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to prepare the draft branch' },
-      { status: 500 }
-    )
+    return internalError('site-assistant:chat', err, 'Failed to prepare the draft branch')
   }
 
   const commitAuthor = {

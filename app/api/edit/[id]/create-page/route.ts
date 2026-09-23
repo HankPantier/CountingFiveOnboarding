@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { normalizeSlug } from './_slug'
@@ -128,8 +129,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         .single()
       if (error || !row) {
         // The page exists; only the AI draft couldn't be scheduled.
+        console.error('[create-page] scheduling AI draft failed:', error)
         return NextResponse.json(
-          { path, url, generationError: error?.message ?? 'Failed to schedule AI draft' },
+          { path, url, generationError: 'Failed to schedule AI draft' },
           { status: 200 }
         )
       }
@@ -148,7 +150,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (err instanceof StaleShaError) {
       return NextResponse.json({ error: 'This page changed on the server. Reload to continue.' }, { status: 409 })
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:create-page', err, "Couldn't create the page")
   }
 }

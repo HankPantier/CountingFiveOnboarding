@@ -10,6 +10,7 @@ import { computeCompleteness } from '@/lib/mbp/completeness'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 
 export async function POST(
   req: Request,
@@ -72,7 +73,7 @@ export async function POST(
       pdfStoragePath = res.pdfStoragePath
     } catch (err) {
       console.error('[Approve] MBP generation failed (non-fatal):', err)
-      deliverableError = err instanceof Error ? err.message : 'MBP generation failed'
+      deliverableError = 'MBP generation failed'
     }
 
     // Atomic guard: only flip a not-yet-approved row. A concurrent approval that
@@ -97,8 +98,6 @@ export async function POST(
 
     return NextResponse.json({ success: true, deliverableError })
   } catch (err) {
-    console.error('[Approve]', err)
-    const message = err instanceof Error ? err.message : 'Approval failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('Approve', err, 'Approval failed')
   }
 }

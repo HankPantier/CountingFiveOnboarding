@@ -8,6 +8,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { scrapeTeamHeadshots, matchHeadshotsToMembers } from './scrape-headshots'
 import { pullHeadshotForMember } from './pull-headshot'
 import type { SessionSchema } from '@/types/session-schema'
+import { updateSessionWithCas } from '@/lib/session/schema-cas'
 
 /**
  * @param nowIso ISO timestamp for the snapshot — passed in (not `new Date()`)
@@ -54,30 +55,26 @@ export async function autoPullTeamHeadshots(
     }
 
     // Persist the snapshot so the UI can surface suggestions for the members we
-    // didn't auto-pull. Re-read schema_data right before writing to avoid
-    // clobbering any concurrent edit (only touches the _meta sub-key).
-    const { data: fresh } = await supabase
-      .from('sessions')
-      .select('schema_data')
-      .eq('id', sessionId)
-      .single()
-    const current = (fresh?.schema_data as SessionSchema | null) ?? schema
-    // Merge into _meta without asserting its full (phase-state) shape — mirrors
-    // lib/mbp/apply-update.ts. teamPhotoDiscovery is the only key we touch.
-    const meta = (current._meta as Record<string, unknown>) ?? {}
+    // didn't auto-pull. Compare-and-swap onto the fresh row so a concurrent edit
+    // isn't clobbered (only the _meta.teamPhotoDiscovery sub-key changes).
     const teamPhotoDiscovery: NonNullable<SessionSchema['_meta']>['teamPhotoDiscovery'] = {
       scannedPages,
       suggestions: matches,
       candidates,
       at: nowIso,
     }
-    const nextSchema = { ...current, _meta: { ...meta, teamPhotoDiscovery } } as SessionSchema
-
-    const { error: updateErr } = await supabase
-      .from('sessions')
-      .update({ schema_data: asJson(nextSchema) })
-      .eq('id', sessionId)
-    if (updateErr) console.warn('[team-photos/auto-pull] snapshot write failed:', updateErr.message)
+    try {
+      await updateSessionWithCas(supabase, sessionId, fresh => {
+        const current = (fresh.schema_data as SessionSchema | null) ?? schema
+        // Merge into _meta without asserting its full (phase-state) shape — mirrors
+        // lib/mbp/apply-update.ts. teamPhotoDiscovery is the only key we touch.
+        const meta = (current._meta as Record<string, unknown>) ?? {}
+        const nextSchema = { ...current, _meta: { ...meta, teamPhotoDiscovery } } as SessionSchema
+        return { update: { schema_data: asJson(nextSchema) }, result: null }
+      })
+    } catch (err) {
+      console.warn('[team-photos/auto-pull] snapshot write failed:', err)
+    }
   } catch (err) {
     console.error('[team-photos/auto-pull] failed:', err)
   }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -25,34 +26,26 @@ export async function POST(
 
   const supabase = createServerClient()
 
-  const { data: session, error: readErr } = await supabase
-    .from('sessions')
-    .select('schema_data')
-    .eq('id', id)
-    .single()
+  try {
+    await updateSessionWithCas(supabase, id, session => {
+      const schema = (session.schema_data as Record<string, unknown> | null) ?? {}
+      const meta = (schema._meta as Record<string, unknown> | undefined) ?? {}
+      const merged = {
+        ...schema,
+        _meta: {
+          ...meta,
+          mode: 'staff' as const,
+          ...(note ? { staff_note: note } : {}),
+        },
+      }
 
-  if (readErr || !session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
-
-  const schema = (session.schema_data as Record<string, unknown> | null) ?? {}
-  const meta = (schema._meta as Record<string, unknown> | undefined) ?? {}
-  const merged = {
-    ...schema,
-    _meta: {
-      ...meta,
-      mode: 'staff' as const,
-      ...(note ? { staff_note: note } : {}),
-    },
-  }
-
-  const { error: writeErr } = await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(merged) })
-    .eq('id', id)
-
-  if (writeErr) {
-    console.error('[staff-mode] write failed:', writeErr)
+      return { update: { schema_data: asJson(merged) }, result: null }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[staff-mode] write failed:', err)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 

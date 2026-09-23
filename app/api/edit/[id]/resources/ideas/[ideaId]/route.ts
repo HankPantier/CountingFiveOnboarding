@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { isContentType } from '@/lib/content/content-types'
@@ -73,7 +74,7 @@ export async function PATCH(
 
   const { error } = await supabase.from('resource_ideas').update(patch).eq('id', ideaId)
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('ideas:patch', error, "Couldn't update the idea")
   }
   return NextResponse.json({ success: true })
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
 import {
@@ -36,7 +37,6 @@ export async function GET(
     if (err instanceof FileNotFoundError) {
       return NextResponse.json({ error: err.message }, { status: 404 })
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:file', err, "Couldn't load the file")
   }
 }

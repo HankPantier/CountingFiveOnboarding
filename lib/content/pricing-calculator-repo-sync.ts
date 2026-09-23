@@ -176,6 +176,6 @@ export async function syncPricingCalculatorToRepo(args: {
     return { ok: true }
   } catch (err) {
     console.error('[pricing-sync] repo sync failed:', err)
-    return { ok: false, error: err instanceof Error ? err.message : 'Repo sync failed' }
+    return { ok: false, error: "Couldn't update the site repo. Please try again." }
   }
 }

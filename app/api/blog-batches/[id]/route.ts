@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { requireAdminUser, getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { isContentType } from '@/lib/content/content-types'
@@ -65,7 +66,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     .from('blog_batches')
     .update({ content_type: contentType, updated_at: now })
     .eq('id', id)
-  if (batchErr) return NextResponse.json({ error: batchErr.message }, { status: 500 })
+  if (batchErr) return internalError('blog-batches:patch', batchErr, "Couldn't update the batch")
 
   // Cascade to the batch's targets and their linked ideas — the ideas are what
   // generateResourceDraft reads at draft time, so this is what actually changes

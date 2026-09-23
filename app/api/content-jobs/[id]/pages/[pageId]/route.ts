@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
@@ -21,7 +22,7 @@ export async function GET(
     .eq('content_job_id', id)
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('pages:get', error, "Couldn't load the page")
   if (!data) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
 
   return NextResponse.json({ page: data })
@@ -113,7 +114,7 @@ export async function PATCH(
     .select('*')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('pages:patch', error, "Couldn't update the page")
   if (!data) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
 
   if (contentEdited && typeof data.content_markdown === 'string') {

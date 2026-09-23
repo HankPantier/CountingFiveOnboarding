@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
@@ -122,7 +123,7 @@ export async function PATCH(
   }
 
   const { error } = await supabase.from('admins').update(update).eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('admin-users:patch', error, "Couldn't update the user")
 
   // Per-client assignments only mean something for a member holding a content
   // capability (manager or editor) — clear them once the user is an admin or
@@ -171,7 +172,7 @@ export async function DELETE(
   }
 
   const { error: delErr } = await supabase.from('admins').delete().eq('id', id)
-  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+  if (delErr) return internalError('admin-users:delete', delErr, "Couldn't remove the user")
 
   return NextResponse.json({ success: true })
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { readJsonBody } from '@/app/api/_json'
@@ -20,7 +21,7 @@ export async function GET() {
     .from('no_go_phrases')
     .select('id, phrase, note, created_at')
     .order('created_at', { ascending: true })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('no-go-phrases:get', error, "Couldn't load phrases")
 
   return NextResponse.json<ListNoGoPhrasesResponse>({ phrases: data ?? [] })
 }
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     if (error.code === '23505') {
       return NextResponse.json({ error: 'That phrase is already on the list.' }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('no-go-phrases:post', error, "Couldn't add the phrase")
   }
 
   clearNoGoCache()

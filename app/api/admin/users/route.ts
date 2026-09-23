@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser, type Role, type Capability } from '@/lib/auth/access'
 import { buildConfirmLink } from '@/lib/auth/confirm-link'
@@ -44,8 +45,7 @@ export async function GET() {
   ])
 
   if (error) {
-    console.error('[GET /api/admin/users]', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('GET /api/admin/users', error, "Couldn't load users")
   }
 
   const countByManager = new Map<string, number>()
@@ -117,8 +117,10 @@ export async function POST(req: Request) {
   })
 
   if (linkErr || !linkData?.user || !linkData.properties?.hashed_token) {
-    const message = linkErr?.message ?? 'Failed to create user'
-    return NextResponse.json({ error: message }, { status: 400 })
+    if (linkErr?.code === 'email_exists' || linkErr?.code === 'user_already_exists') {
+      return NextResponse.json({ error: 'A user with this email address already exists.' }, { status: 400 })
+    }
+    return internalError('POST /api/admin/users', linkErr ?? 'missing invite link data', 'Failed to create user', 400)
   }
 
   const userId = linkData.user.id
@@ -131,8 +133,7 @@ export async function POST(req: Request) {
   if (insertErr) {
     // Roll back the orphaned auth user so a retry can re-create cleanly.
     await supabase.auth.admin.deleteUser(userId)
-    console.error('[POST /api/admin/users] admins insert failed', insertErr)
-    return NextResponse.json({ error: insertErr.message }, { status: 500 })
+    return internalError('POST /api/admin/users', insertErr, "Couldn't create the user")
   }
 
   if (isContentUser && sessionIds.length > 0) {

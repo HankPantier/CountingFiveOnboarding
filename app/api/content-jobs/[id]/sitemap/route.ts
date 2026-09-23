@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
@@ -135,7 +136,7 @@ export async function POST(
     .eq('updated_at', jobRow.updated_at)
     .select('id')
   if (sitemapErr) {
-    return NextResponse.json({ error: sitemapErr.message }, { status: 500 })
+    return internalError('sitemap', sitemapErr, "Couldn't save the sitemap")
   }
   if (!claimed?.length) {
     return NextResponse.json({ error: 'Sitemap was confirmed concurrently — reload and try again.' }, { status: 409 })
@@ -191,7 +192,7 @@ export async function POST(
     .update({ phase: 3, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (phaseErr) {
-    return NextResponse.json({ error: phaseErr.message }, { status: 500 })
+    return internalError('sitemap:approve', phaseErr, "Couldn't approve the sitemap")
   }
 
   console.warn(`[content-job] phase 2→3 session=${id} pages=${pages.length}`)

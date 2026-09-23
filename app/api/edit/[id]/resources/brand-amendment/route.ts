@@ -7,6 +7,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { DRAFT_BRANCH, readFile, writeFile, FileNotFoundError } from '@/lib/github/repo-files'
 import type { SessionSchema } from '@/types/session-schema'
 import type { BrandAmendment } from '@/lib/content/brand-fit'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 export const runtime = 'nodejs'
 
@@ -51,41 +52,36 @@ export async function POST(
   }
 
   const supabase = createServerClient()
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('schema_data')
-    .eq('id', ctx.sessionId)
-    .single()
-  if (!session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
+  let brand: NonNullable<SessionSchema['brand']>
+  try {
+    brand = await updateSessionWithCas(supabase, ctx.sessionId, session => {
+      // Read-merge-write on schema_data.brand (compare-and-swap; see lib/session/schema-cas.ts).
+      const schema = (session.schema_data ?? {}) as SessionSchema
+      const brand = { ...(schema.brand ?? {}) } as NonNullable<SessionSchema['brand']>
 
-  // Read-merge-write on schema_data.brand (pattern: app/api/sessions/[id]).
-  const schema = (session.schema_data ?? {}) as SessionSchema
-  const brand = { ...(schema.brand ?? {}) } as NonNullable<SessionSchema['brand']>
+      const adjectives = new Set((brand.toneAdjectives ?? []).map((a) => a.trim()).filter(Boolean))
+      for (const add of amendment.toneAdjectivesAdd) adjectives.add(add)
+      brand.toneAdjectives = [...adjectives]
 
-  const adjectives = new Set((brand.toneAdjectives ?? []).map((a) => a.trim()).filter(Boolean))
-  for (const add of amendment.toneAdjectivesAdd) adjectives.add(add)
-  brand.toneAdjectives = [...adjectives]
+      if (amendment.toneToAvoidRemove.length) {
+        const removeSet = new Set(amendment.toneToAvoidRemove.map((t) => t.toLowerCase()))
+        brand.toneToAvoid = (brand.toneToAvoid ?? []).filter((t) => !removeSet.has(t.toLowerCase()))
+      }
 
-  if (amendment.toneToAvoidRemove.length) {
-    const removeSet = new Set(amendment.toneToAvoidRemove.map((t) => t.toLowerCase()))
-    brand.toneToAvoid = (brand.toneToAvoid ?? []).filter((t) => !removeSet.has(t.toLowerCase()))
-  }
+      if (amendment.aspirationalToneAppend) {
+        brand.aspirationalTone = [brand.aspirationalTone, amendment.aspirationalToneAppend]
+          .filter(Boolean)
+          .join(' ')
+      }
 
-  if (amendment.aspirationalToneAppend) {
-    brand.aspirationalTone = [brand.aspirationalTone, amendment.aspirationalToneAppend]
-      .filter(Boolean)
-      .join(' ')
-  }
-
-  const updatedSchema = { ...schema, brand }
-  const { error: updateErr } = await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(updatedSchema) })
-    .eq('id', ctx.sessionId)
-  if (updateErr) {
-    return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      return { update: { schema_data: asJson({ ...schema, brand }) }, result: brand }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[brand-amendment] write failed:', err)
+    return NextResponse.json({ error: "Couldn't save the brand amendment" }, { status: 500 })
   }
 
   // Best-effort repo record: dated bullet under "## Voice Amendments".

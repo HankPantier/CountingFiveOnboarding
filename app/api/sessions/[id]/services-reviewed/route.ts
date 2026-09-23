@@ -6,6 +6,7 @@ import { readJsonBody } from '@/app/api/_json'
 import { applyServiceReview, type ServiceReviewInput } from '@/lib/agent/service-review'
 import type { SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -38,34 +39,27 @@ export async function POST(
 
   const supabase = createServerClient()
 
-  const { data: session, error: readErr } = await supabase
-    .from('sessions')
-    .select('schema_data, gap_list')
-    .eq('id', id)
-    .single()
+  let nextSchema: SessionSchema
+  try {
+    nextSchema = await updateSessionWithCas(supabase, id, session => {
+      const schema = (session.schema_data as SessionSchema | null) ?? {}
+      const gaps = (session.gap_list as GapItem[] | null) ?? []
 
-  if (readErr || !session) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
+      const { schema: nextSchema, gaps: nextGaps } = applyServiceReview(
+        schema,
+        gaps,
+        input,
+        new Date().toISOString(),
+        auth.user.id,
+      )
 
-  const schema = (session.schema_data as SessionSchema | null) ?? {}
-  const gaps = (session.gap_list as GapItem[] | null) ?? []
-
-  const { schema: nextSchema, gaps: nextGaps } = applyServiceReview(
-    schema,
-    gaps,
-    input,
-    new Date().toISOString(),
-    auth.user.id,
-  )
-
-  const { error: writeErr } = await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(nextSchema), gap_list: asJson(nextGaps) })
-    .eq('id', id)
-
-  if (writeErr) {
-    console.error('[services-reviewed] write failed:', writeErr)
+      return { update: { schema_data: asJson(nextSchema), gap_list: asJson(nextGaps) }, result: nextSchema }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[services-reviewed] write failed:', err)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 

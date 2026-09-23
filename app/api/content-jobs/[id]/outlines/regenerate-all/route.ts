@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { runOutlineGeneration } from '@/lib/content/outline-generator'
@@ -43,7 +44,7 @@ export async function POST(
     .eq('content_job_id', id)
 
   if (resetErr) {
-    return NextResponse.json({ error: resetErr.message }, { status: 500 })
+    return internalError('outlines:regenerate-all', resetErr, "Couldn't reset outlines for regeneration")
   }
 
   // after() guarantees the work runs to completion within maxDuration on

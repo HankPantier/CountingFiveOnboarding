@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { assembleContentPackage, pushAssembledDeliverable } from '@/lib/content/package-assembler'
@@ -25,8 +26,8 @@ export async function POST(
 
   // Surface real failures. Without this, a thrown exception becomes a bodyless
   // 500 and the client can only show its generic "Failed to assemble package"
-  // — undiagnosable. This route is admin-gated, so returning the message is
-  // safe and expected. (A hard Vercel maxDuration timeout still can't be caught
+  // — undiagnosable. The real error is logged server-side ([package] in the
+  // logs); the client gets a JSON body with a safe message. (A hard Vercel maxDuration timeout still can't be caught
   // here — that's addressed by bounding the assembler's I/O.)
   let result
   try {
@@ -35,9 +36,7 @@ export async function POST(
       email: auth.user.email ?? null,
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Package assembly failed'
-    console.error('[package] Unhandled assembly error:', err)
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('package', err, 'Package assembly failed')
   }
 
   if (!result.ok) {

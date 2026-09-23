@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { summarizeCritic } from '@/lib/content/critic-review'
@@ -29,7 +30,7 @@ export async function GET(
   ])
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('generation-status', error, "Couldn't load generation status")
   }
 
   const sitemap = (job?.confirmed_sitemap ?? []) as Array<{ url: string; parent?: string }>

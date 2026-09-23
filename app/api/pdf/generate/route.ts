@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { generateAndStoreMbp } from '@/lib/mbp/generate-deliverable'
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
 
 export async function POST(req: Request) {
@@ -22,8 +23,6 @@ export async function POST(req: Request) {
     const { pdfStoragePath, mdStoragePath } = await generateAndStoreMbp(supabase, sessionId)
     return NextResponse.json({ pdfStoragePath, mdStoragePath })
   } catch (err) {
-    console.error('[MBP Generation]', err)
-    const message = err instanceof Error ? err.message : 'Generation failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('MBP Generation', err, 'Generation failed')
   }
 }

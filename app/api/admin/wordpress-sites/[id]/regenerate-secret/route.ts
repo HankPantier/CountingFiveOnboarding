@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { generateSiteSecret } from '@/lib/wordpress/sites'
@@ -23,7 +24,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .select('id')
     .maybeSingle()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('wordpress-sites:regenerate-secret', error, "Couldn't regenerate the secret")
   if (!data) return NextResponse.json({ error: 'Site not found' }, { status: 404 })
 
   return NextResponse.json<RegenerateSecretResponse>({ secret })

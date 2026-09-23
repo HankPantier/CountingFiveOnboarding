@@ -1,6 +1,7 @@
 import { whoisDomain, firstResult } from 'whoiser'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
+import { updateSessionWithCas } from '@/lib/session/schema-cas'
 
 export async function runWhoisLookup(sessionId: string, domain: string): Promise<void> {
   const supabase = createServerClient()
@@ -32,18 +33,34 @@ export async function runWhoisLookup(sessionId: string, domain: string): Promise
     // Non-fatal — advance to Phase 3 with empty technical fields
   }
 
-  const { data: session, error: fetchErr } = await supabase
-    .from('sessions')
-    .select('schema_data, current_phase')
-    .eq('id', sessionId)
-    .single()
+  // Compare-and-swap onto the fresh row. Only a session still on Phase 2 is
+  // advanced: if it has moved on (a concurrent run, a manual advance), this
+  // lookup is stale — don't clobber the phase or overwrite newer schema_data.
+  let advanced: boolean
+  try {
+    advanced = await updateSessionWithCas(supabase, sessionId, session => {
+      if (session.current_phase !== 2) return { skip: true, result: false }
 
-  // A re-fetch failure (DB/network transient) is non-fatal — CLAUDE.md requires
-  // WHOIS to advance to Phase 3 regardless. But we can't safely merge into a
-  // schema we couldn't read, so advance the phase alone and leave schema_data
-  // untouched (the phase guard keeps it a no-op if the row already moved on).
-  if (fetchErr || !session) {
-    console.warn('[WHOIS] Session re-fetch failed — advancing phase without schema write:', fetchErr)
+      const currentSchema = (session.schema_data as Record<string, unknown>) ?? {}
+      const currentTechnical = (currentSchema.technical as Record<string, unknown>) ?? {}
+
+      // Only fill WHOIS fields that came back non-empty so an empty lookup doesn't
+      // wipe values the audit draft already seeded (registrationDate, hosting).
+      const mergedTechnical = { ...currentTechnical }
+      for (const [k, v] of Object.entries(technicalData)) {
+        if (Array.isArray(v) ? v.length > 0 : v) mergedTechnical[k] = v
+      }
+
+      return {
+        update: { schema_data: asJson({ ...currentSchema, technical: mergedTechnical }), current_phase: 3 },
+        result: true,
+      }
+    })
+  } catch (err) {
+    // CLAUDE.md requires WHOIS to advance to Phase 3 regardless. We couldn't
+    // safely merge the schema, so advance the phase alone (the phase guard keeps
+    // it a no-op if the row already moved on).
+    console.warn('[WHOIS] Schema write failed — advancing phase without schema write:', err)
     await supabase
       .from('sessions')
       .update({ current_phase: 3 })
@@ -52,36 +69,9 @@ export async function runWhoisLookup(sessionId: string, domain: string): Promise
     return
   }
 
-  // Only advance a session that is still on Phase 2. If it has moved on (a
-  // concurrent run, a manual advance), this lookup is stale — don't clobber
-  // the phase or overwrite newer schema_data.
-  if (session.current_phase !== 2) {
+  if (!advanced) {
     console.warn('[WHOIS] Session', sessionId, 'no longer on Phase 2 — skipping write')
     return
   }
-
-  const currentSchema = (session?.schema_data as Record<string, unknown>) ?? {}
-  const currentTechnical = (currentSchema.technical as Record<string, unknown>) ?? {}
-
-  // Only fill WHOIS fields that came back non-empty so an empty lookup doesn't
-  // wipe values the audit draft already seeded (registrationDate, hosting).
-  const mergedTechnical = { ...currentTechnical }
-  for (const [k, v] of Object.entries(technicalData)) {
-    if (Array.isArray(v) ? v.length > 0 : v) mergedTechnical[k] = v
-  }
-
-  const updatedSchema: Record<string, unknown> = {
-    ...currentSchema,
-    technical: mergedTechnical,
-  }
-
-  // Atomic-ish guard: the .eq('current_phase', 2) means a concurrent advance
-  // past Phase 2 makes this write a no-op rather than a clobber.
-  await supabase
-    .from('sessions')
-    .update({ schema_data: asJson(updatedSchema), current_phase: 3 })
-    .eq('id', sessionId)
-    .eq('current_phase', 2)
-
   console.warn('[WHOIS] Done for session', sessionId, '— advanced to Phase 3')
 }

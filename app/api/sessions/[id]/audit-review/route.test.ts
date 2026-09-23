@@ -16,12 +16,17 @@ vi.mock('@/lib/supabase/server', () => ({
     from: () => {
       let kind: 'select' | 'update' = 'select'
       const builder: Record<string, unknown> = {
-        select() { kind = 'select'; return builder },
+        // A select after update is the CAS write's `.select('id')` — keep kind.
+        select() { if (kind !== 'update') kind = 'select'; return builder },
         update(payload: Record<string, unknown>) { kind = 'update'; h.updates.push(payload); return builder },
         eq() { return builder },
         single: async () => ({ data: { schema_data: h.schema, gap_list: h.gaps }, error: null }),
+        maybeSingle: async () => ({
+          data: { id: 's-1', schema_data: h.schema, gap_list: h.gaps, schema_version: 0 },
+          error: null,
+        }),
         then(resolve: (v: unknown) => void) {
-          if (kind === 'update') resolve({ error: null })
+          if (kind === 'update') resolve({ data: [{ id: 's-1' }], error: null })
           else resolve({ data: { schema_data: h.schema, gap_list: h.gaps }, error: null })
         },
       }

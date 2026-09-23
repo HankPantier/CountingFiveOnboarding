@@ -2,6 +2,7 @@ import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
@@ -82,10 +83,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     files[THEME_CSS_PATH] = (await loadFile(THEME_CSS_PATH, true))!
     files[OVERRIDES_PATH] = (await loadFile(OVERRIDES_PATH, true))!
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to load theme files' },
-      { status: 500 }
-    )
+    return internalError('theme:chat', err, 'Failed to load theme files')
   }
 
   const commitAuthor = {

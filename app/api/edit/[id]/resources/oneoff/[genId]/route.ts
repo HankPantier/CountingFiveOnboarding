@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -25,7 +26,7 @@ export async function DELETE(
     .eq('id', genId)
     .eq('content_job_id', ctx.jobId)
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('oneoff:delete', error, "Couldn't delete the generation")
   }
   return NextResponse.json({ success: true })
 }

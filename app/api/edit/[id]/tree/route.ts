@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { DRAFT_BRANCH, ensureDraftBranch, listTree } from '@/lib/github/repo-files'
 
@@ -21,7 +22,6 @@ export async function GET(
       entries: entries.filter((e) => e.type === 'blob'),
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:tree', err, "Couldn't load the page list")
   }
 }

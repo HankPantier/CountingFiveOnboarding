@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { DRAFT_BRANCH, ensureDraftBranch, listAssets } from '@/lib/github/repo-files'
 
@@ -21,7 +22,6 @@ export async function GET(
       assets: entries.map((e) => ({ path: e.path, sha: e.sha, size: e.size ?? null })),
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:assets', err, "Couldn't load assets")
   }
 }

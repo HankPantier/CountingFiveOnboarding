@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 
@@ -26,7 +27,7 @@ export async function GET(
   ])
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('research-status', error, "Couldn't load research status")
   }
 
   const sitemap = (job?.confirmed_sitemap ?? []) as Array<{ url: string; parent?: string }>

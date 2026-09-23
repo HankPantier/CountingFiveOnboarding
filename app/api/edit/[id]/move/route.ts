@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
+import { InvalidNavJsonError } from '@/lib/editor/nav-config'
 import { resolveEditContext } from '../_helpers'
 import { isSiteOwner } from '@/lib/auth/access'
 import { safePath } from '../_path'
@@ -160,6 +162,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         { status: 422 }
       )
     }
+    if (err instanceof InvalidNavJsonError) {
+      return NextResponse.json({ error: `nav.json is invalid: ${err.message}` }, { status: 500 })
+    }
     if (err instanceof StaleShaError) {
       return NextResponse.json(
         {
@@ -171,7 +176,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         { status: 409 }
       )
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:move', err, "Couldn't move the page")
   }
 }

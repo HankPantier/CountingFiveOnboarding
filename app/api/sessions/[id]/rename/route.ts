@@ -6,6 +6,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { hostOf } from '@/lib/session/domain-rewrite'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -40,37 +41,37 @@ export async function POST(
   }
 
   const supabase = createServerClient()
-  const { data: session } = await supabase
-    .from('sessions')
-    .select('schema_data, website_url')
-    .eq('id', id)
-    .single()
-  if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-
-  const oldHost = hostOf(session.website_url)
-  const newHost = hostOf(newUrl ?? session.website_url)
-  const domainChanged = !!newUrl && newHost !== oldHost
-
-  const schema = (session.schema_data as Record<string, unknown>) ?? {}
-  if (firmName) {
-    const business = (schema.business as Record<string, unknown>) ?? {}
-    business.name = firmName
-    schema.business = business
-    const meta = (schema._meta as Record<string, unknown>) ?? {}
-    const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
-    overrides['business.name'] = true
-    schema._meta = { ...meta, admin_overrides: overrides }
+  let oldHost: string
+  let newHost: string
+  try {
+    ;({ oldHost, newHost } = await updateSessionWithCas(supabase, id, session => {
+      const schema = (session.schema_data as Record<string, unknown>) ?? {}
+      if (firmName) {
+        const business = (schema.business as Record<string, unknown>) ?? {}
+        business.name = firmName
+        schema.business = business
+        const meta = (schema._meta as Record<string, unknown>) ?? {}
+        const overrides = (meta.admin_overrides as Record<string, boolean>) ?? {}
+        overrides['business.name'] = true
+        schema._meta = { ...meta, admin_overrides: overrides }
+      }
+      if (newUrl) schema.websiteUrl = newUrl
+      return {
+        update: {
+          schema_data: asJson(schema),
+          ...(newUrl ? { website_url: newUrl } : {}),
+        },
+        result: { oldHost: hostOf(session.website_url), newHost: hostOf(newUrl ?? session.website_url) },
+      }
+    }))
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[rename] write failed:', err)
+    return NextResponse.json({ error: "Couldn't rename the session" }, { status: 500 })
   }
-  if (newUrl) schema.websiteUrl = newUrl
-
-  const { error: updateErr } = await supabase
-    .from('sessions')
-    .update({
-      schema_data: asJson(schema),
-      ...(newUrl ? { website_url: newUrl } : {}),
-    })
-    .eq('id', id)
-  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+  const domainChanged = !!newUrl && newHost !== oldHost
 
   // Downstream content that still points at the old host — surfaced so the
   // operator can decide whether to patch it (a separate, explicit step).

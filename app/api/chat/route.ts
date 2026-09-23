@@ -18,6 +18,7 @@ import { z } from 'zod'
 import { NextResponse } from 'next/server'
 import type { Database } from '@/types/database'
 import type { GapItem } from '@/types/gap-item'
+import { updateSessionWithCas } from '@/lib/session/schema-cas'
 
 type Session = Database['public']['Tables']['sessions']['Row']
 type Supabase = ReturnType<typeof createServerClient>
@@ -291,118 +292,133 @@ async function updateSessionSchema(
   resolvedGaps?: string[],
   advancePhase?: boolean
 ): Promise<{ success: boolean; phaseAdvanced: boolean; blocked?: string }> {
-  // Reload for latest state (multi-step tool calls, and any concurrent write
-  // made while the model was generating) — the diff below is applied onto this
-  // fresh copy right before the write.
-  const { data: current } = await supabase
-    .from('sessions')
-    .select('schema_data, gap_list, current_phase, status, website_url')
-    .eq('id', sessionId)
-    .single()
+  // The diff is applied inside a compare-and-swap: if anything else writes the
+  // session between our read and our write (another tool step, an operator's
+  // inline edit), the row is re-read and the same updates re-applied onto it.
+  type Computed = {
+    blocked?: string
+    frozen?: boolean
+    currentPhase: number
+    newPhase: number
+    websiteUrl: string | null
+    columnUrl: string | null
+  }
+  let outcome: Computed
+  try {
+    outcome = await updateSessionWithCas<Computed>(supabase, sessionId, current => {
+      // An approved session is frozen: the chat must never rewrite its data or
+      // demote its status. Report it back so the model stops calling the tool.
+      if (current.status === 'approved') {
+        return {
+          skip: true,
+          result: { frozen: true, currentPhase: current.current_phase, newPhase: current.current_phase, websiteUrl: null, columnUrl: current.website_url },
+        }
+      }
 
-  // An approved session is frozen: the chat must never rewrite its data or
-  // demote its status. Report it back so the model stops calling the tool.
-  if (current?.status === 'approved') {
+      const currentSchema = (current.schema_data as Record<string, unknown>) ?? {}
+      // The model sends `updates` as a field-path→value map — a MIX of dotted/bracket
+      // paths ("business.tagline", "niches[0].painPoints") and whole nested objects
+      // ("_meta": { phase3_completed_chunks: [...] }). sanitizeChatUpdates drops
+      // server-owned `_meta` keys (review markers, mode); applyChatUpdates writes
+      // each path directly onto the current schema so array siblings survive, and
+      // re-unions the append-only Phase 3 step markers.
+      const updates = sanitizeChatUpdates(rawUpdates)
+      const mergedSchema = applyChatUpdates(currentSchema, updates)
+
+      // The authoritative website URL lives in the `website_url` column, not in
+      // schema_data. The phase-1 client agent collects contact info but never sets
+      // schema.websiteUrl, so backfill it from the column — otherwise the phase-1
+      // advance is silently blocked (and WHOIS below has no domain to look up).
+      if (!mergedSchema.websiteUrl) {
+        const columnUrl = current.website_url ?? originalSession.website_url
+        if (columnUrl) mergedSchema.websiteUrl = columnUrl
+      }
+
+      const currentGaps = (current.gap_list as GapItem[]) ?? []
+      // A gap resolves only when its field is actually filled in the merged schema
+      // (robust to the model not echoing the exact path — positional niche paths
+      // drift if niches are reordered). An explicit resolvedGaps entry for an
+      // still-empty field is tagged model_skip and does NOT satisfy the gate.
+      const updatedGaps = resolveGapsAfterUpdate(currentGaps, mergedSchema, resolvedGaps)
+
+      const currentPhase = current.current_phase ?? 0
+      let newPhase = currentPhase
+      let blocked: string | undefined
+
+      if (advancePhase) {
+        const validationError = validatePhaseAdvance(currentPhase, mergedSchema, updatedGaps)
+        if (validationError) {
+          console.warn(`[phase-advance] Blocked phase ${currentPhase}→${currentPhase + 1}: ${validationError}`)
+          // Don't advance — return the reason so the model knows it did NOT advance
+          // and what to do next. This is an INTERNAL diagnostic: the framing tells
+          // the model to act on it silently, never to echo the wording (or the step
+          // marker tokens inside it) back to the user.
+          blocked = `[INTERNAL diagnostic — do NOT repeat or paraphrase to the user] The phase did NOT advance: ${validationError}. Resolve it silently, then retry.`
+        } else {
+          newPhase = Math.min(currentPhase + 1, 7)
+        }
+      }
+
+      // Staff onboarding has no separate wrap-up/thank-you phase — the rep reviews
+      // and approves on the session page, and the chat surfaces a completion card.
+      // Collapse Phase 6 so finishing assets (Phase 5) completes the session in one
+      // step instead of stranding it at 6 waiting for turns that never come.
+      const isStaffMode = (mergedSchema._meta as { mode?: string } | undefined)?.mode === 'staff'
+      if (isStaffMode && newPhase === 6) newPhase = 7
+
+      // Tag the fields the agent confirmed this turn as 'confirmed' provenance
+      // (thin answers downgrade to 'thin'). resolvedGaps carries the dotted/bracket
+      // paths; stamping is advisory metadata and never affects the phase gate above.
+      const finalSchema = resolvedGaps?.length
+        ? (stampProvenance(mergedSchema as unknown as SessionSchema, resolvedGaps, 'confirmed') as unknown as Record<string, unknown>)
+        : mergedSchema
+
+      // status / completed_at are only rewritten on an actual phase change — an
+      // incidental field write must not reset them.
+      const phaseChanged = newPhase !== currentPhase
+      return {
+        update: {
+          schema_data: asJson(finalSchema),
+          gap_list: asJson(updatedGaps),
+          ...(phaseChanged
+            ? {
+                current_phase: newPhase,
+                status: statusForPhase(newPhase),
+                ...(newPhase === 7 ? { completed_at: new Date().toISOString() } : {}),
+              }
+            : {}),
+        },
+        result: {
+          blocked,
+          currentPhase,
+          newPhase,
+          websiteUrl: typeof mergedSchema.websiteUrl === 'string' ? mergedSchema.websiteUrl : null,
+          columnUrl: current.website_url,
+        },
+      }
+    })
+  } catch (writeErr) {
+    // A failed write must not throw out of the tool's execute (that crashes the
+    // stream). Report it back as a blocked result so the model tells the rep to
+    // resend rather than the session silently losing the answer.
+    console.error('[chat] session update failed:', writeErr)
+    return { success: false, phaseAdvanced: false, blocked: 'Could not save — please resend.' }
+  }
+
+  if (outcome.frozen) {
     return {
       success: false,
       phaseAdvanced: false,
       blocked: '[INTERNAL diagnostic — do NOT repeat to the user] This session is already approved; nothing was saved. Do not call update_session_data again.',
     }
   }
-
-  const currentSchema = (current?.schema_data as Record<string, unknown>) ?? {}
-  // The model sends `updates` as a field-path→value map — a MIX of dotted/bracket
-  // paths ("business.tagline", "niches[0].painPoints") and whole nested objects
-  // ("_meta": { phase3_completed_chunks: [...] }). sanitizeChatUpdates drops
-  // server-owned `_meta` keys (review markers, mode); applyChatUpdates writes
-  // each path directly onto the current schema so array siblings survive, and
-  // re-unions the append-only Phase 3 step markers.
-  const updates = sanitizeChatUpdates(rawUpdates)
-  const mergedSchema = applyChatUpdates(currentSchema, updates)
-
-  // The authoritative website URL lives in the `website_url` column, not in
-  // schema_data. The phase-1 client agent collects contact info but never sets
-  // schema.websiteUrl, so backfill it from the column — otherwise the phase-1
-  // advance is silently blocked (and WHOIS below has no domain to look up).
-  if (!mergedSchema.websiteUrl) {
-    const columnUrl = current?.website_url ?? originalSession.website_url
-    if (columnUrl) mergedSchema.websiteUrl = columnUrl
-  }
-
-  const currentGaps = (current?.gap_list as GapItem[]) ?? []
-  // A gap resolves only when its field is actually filled in the merged schema
-  // (robust to the model not echoing the exact path — positional niche paths
-  // drift if niches are reordered). An explicit resolvedGaps entry for an
-  // still-empty field is tagged model_skip and does NOT satisfy the gate.
-  const updatedGaps = resolveGapsAfterUpdate(currentGaps, mergedSchema, resolvedGaps)
-
-  const currentPhase = current?.current_phase ?? 0
-  let newPhase = currentPhase
-  let blocked: string | undefined
-
-  if (advancePhase) {
-    const validationError = validatePhaseAdvance(currentPhase, mergedSchema, updatedGaps)
-    if (validationError) {
-      console.warn(`[phase-advance] Blocked phase ${currentPhase}→${currentPhase + 1}: ${validationError}`)
-      // Don't advance — return the reason so the model knows it did NOT advance
-      // and what to do next. This is an INTERNAL diagnostic: the framing tells
-      // the model to act on it silently, never to echo the wording (or the step
-      // marker tokens inside it) back to the user.
-      blocked = `[INTERNAL diagnostic — do NOT repeat or paraphrase to the user] The phase did NOT advance: ${validationError}. Resolve it silently, then retry.`
-    } else {
-      newPhase = Math.min(currentPhase + 1, 7)
-    }
-  }
-
-  // Staff onboarding has no separate wrap-up/thank-you phase — the rep reviews
-  // and approves on the session page, and the chat surfaces a completion card.
-  // Collapse Phase 6 so finishing assets (Phase 5) completes the session in one
-  // step instead of stranding it at 6 waiting for turns that never come.
-  const isStaffMode = (mergedSchema._meta as { mode?: string } | undefined)?.mode === 'staff'
-  if (isStaffMode && newPhase === 6) newPhase = 7
-
-  // Tag the fields the agent confirmed this turn as 'confirmed' provenance
-  // (thin answers downgrade to 'thin'). resolvedGaps carries the dotted/bracket
-  // paths; stamping is advisory metadata and never affects the phase gate above.
-  const finalSchema = resolvedGaps?.length
-    ? (stampProvenance(mergedSchema as unknown as SessionSchema, resolvedGaps, 'confirmed') as unknown as Record<string, unknown>)
-    : mergedSchema
-
-  // status / completed_at are only rewritten on an actual phase change — an
-  // incidental field write must not reset them.
-  const phaseChanged = newPhase !== currentPhase
-  const { error: writeErr } = await supabase
-    .from('sessions')
-    .update({
-      schema_data: asJson(finalSchema),
-      gap_list: asJson(updatedGaps),
-      ...(phaseChanged
-        ? {
-            current_phase: newPhase,
-            status: statusForPhase(newPhase),
-            ...(newPhase === 7 ? { completed_at: new Date().toISOString() } : {}),
-          }
-        : {}),
-    })
-    .eq('id', sessionId)
-    .neq('status', 'approved')
-
-  // A failed write must not throw out of the tool's execute (that crashes the
-  // stream). Report it back as a blocked result so the model tells the rep to
-  // resend rather than the session silently losing the answer.
-  if (writeErr) {
-    console.error('[chat] session update failed:', writeErr)
-    return { success: false, phaseAdvanced: false, blocked: 'Could not save — please resend.' }
-  }
+  const { currentPhase, newPhase, blocked } = outcome
 
   // Trigger WHOIS automatically when ADVANCING to Phase 2. Guarding on the
   // transition (not just newPhase === 2) prevents re-dispatching a lookup every
   // time the model writes incidental fields while the session sits at phase 2.
   if (newPhase === 2 && currentPhase < 2) {
-    const domain =
-      (mergedSchema.websiteUrl as string) ??
-      (current?.website_url as string) ??
-      (originalSession.website_url as string)
+    const domain = outcome.websiteUrl ?? outcome.columnUrl ?? originalSession.website_url
 
     if (domain) {
       // after() runs the lookup post-response but within maxDuration — a bare

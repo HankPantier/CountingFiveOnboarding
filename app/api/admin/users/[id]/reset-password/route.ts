@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAdminUser } from '@/lib/auth/access'
 import { buildConfirmLink } from '@/lib/auth/confirm-link'
@@ -34,8 +35,7 @@ export async function POST(
   })
 
   if (linkErr || !linkData?.properties?.hashed_token) {
-    const message = linkErr?.message ?? 'Failed to generate reset link'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('admin-users:reset-password', linkErr ?? 'missing hashed_token', 'Failed to generate reset link')
   }
 
   const link = buildConfirmLink(linkData.properties.hashed_token, 'recovery')

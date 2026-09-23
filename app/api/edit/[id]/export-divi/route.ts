@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { DRAFT_BRANCH, ensureDraftBranch, listTree, readFile } from '@/lib/github/repo-files'
@@ -189,7 +190,6 @@ export async function GET(
       },
     })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:export-divi', err, 'Divi export failed')
   }
 }

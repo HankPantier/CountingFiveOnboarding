@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { canPublish } from '@/lib/auth/access'
 import { revertLastPublish } from '@/lib/github/repo-files'
@@ -31,7 +32,6 @@ export async function POST(
     }
     return NextResponse.json(result)
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:rollback', err, 'Rollback failed')
   }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { denySiteOwnerConfig } from '@/lib/auth/access'
@@ -58,8 +59,7 @@ export async function GET(
     if (err instanceof FileNotFoundError) {
       return NextResponse.json({ config: EMPTY, sha: null })
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:client-center:get', err, "Couldn't load client-center settings")
   }
 }
 
@@ -122,7 +122,6 @@ export async function POST(
         { status: 409 }
       )
     }
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:client-center:post', err, "Couldn't save client-center settings")
   }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../_helpers'
 import { denySiteOwnerConfig } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
@@ -78,7 +79,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!sync.ok) return NextResponse.json({ error: sync.error ?? 'Failed to add the calculator page' }, { status: 502 })
     return NextResponse.json({ url: PRICING_CALCULATOR_URL, editorPath: `/admin/content/${id}/pricing-calculator` })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:create-pricing-page', err, "Couldn't add the pricing page")
   }
 }

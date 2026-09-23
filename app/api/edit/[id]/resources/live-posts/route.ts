@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../../_helpers'
 import { MAIN_BRANCH, listTree } from '@/lib/github/repo-files'
 
@@ -22,7 +23,6 @@ export async function GET(
       .map((e) => e.path)
     return NextResponse.json({ paths }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return internalError('edit:live-posts', err, "Couldn't load live posts")
   }
 }

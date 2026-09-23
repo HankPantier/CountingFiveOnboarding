@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, hasOnboardingAccess, requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { fileTypeFromBuffer } from 'file-type'
@@ -89,7 +90,7 @@ export async function POST(req: Request) {
       upsert: true,
     })
   if (uploadErr) {
-    return NextResponse.json({ error: `Storage upload failed: ${uploadErr.message}` }, { status: 500 })
+    return internalError('stock-photos', uploadErr, 'Storage upload failed')
   }
 
   // Update the row metadata to reflect the override and current bytes
@@ -107,7 +108,7 @@ export async function POST(req: Request) {
     })
     .eq('id', assetId)
   if (updateErr) {
-    return NextResponse.json({ error: `Asset update failed: ${updateErr.message}` }, { status: 500 })
+    return internalError('stock-photos', updateErr, 'Asset update failed')
   }
 
   return NextResponse.json({

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { readJsonBody } from '@/app/api/_json'
@@ -39,7 +40,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (error.code === '23505') {
       return NextResponse.json({ error: 'That phrase is already on the list.' }, { status: 409 })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('no-go-phrases:patch', error, "Couldn't update the phrase")
   }
 
   clearNoGoCache()
@@ -53,7 +54,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const supabase = createServerClient()
   const { error } = await supabase.from('no_go_phrases').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('no-go-phrases:delete', error, "Couldn't delete the phrase")
 
   clearNoGoCache()
   return NextResponse.json({ success: true })

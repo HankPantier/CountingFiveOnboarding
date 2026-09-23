@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { requireAdminUser } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { readJsonBody } from '@/app/api/_json'
@@ -26,7 +27,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const supabase = createServerClient()
   const { error } = await supabase.from('wordpress_sites').update(patch).eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('wordpress-sites:patch', error, "Couldn't update the WordPress site")
 
   return NextResponse.json({ success: true })
 }
@@ -38,7 +39,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const supabase = createServerClient()
   const { error } = await supabase.from('wordpress_sites').delete().eq('id', id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return internalError('wordpress-sites:delete', error, "Couldn't delete the WordPress site")
 
   return NextResponse.json({ success: true })
 }

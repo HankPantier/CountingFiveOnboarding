@@ -5,6 +5,7 @@ import { serializeSchemaFull } from '@/lib/agent/system-prompt'
 import { GENERATION_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { asJson } from '@/lib/supabase/json-typed'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 // Sonnet 5 (writing-tuned) — a short, infrequent, admin-triggered summary where
 // capturing the firm's tone accurately matters more than shaving a few cents.
@@ -76,22 +77,23 @@ Ground every statement in the profile — never invent facts. If something centr
   const clean = text.trim()
   if (!clean) return { error: 'Synopsis came back empty. Please try again.' }
 
-  // Re-read right before the write: the generation takes a while, and writing
-  // back the pre-generation snapshot would clobber any edit made meanwhile.
-  const { data: fresh } = await supabase
-    .from('sessions')
-    .select('schema_data')
-    .eq('id', sessionId)
-    .single()
-  if (!fresh) return { error: 'Session not found' }
-  const schema = (fresh.schema_data ?? {}) as Record<string, unknown>
-  const meta = (schema._meta as Record<string, unknown>) ?? {}
-  const updated = {
-    ...schema,
-    _meta: { ...meta, firm_synopsis: { text: clean, generatedAt: new Date().toISOString() } },
+  // The generation takes a while: write onto the FRESH row with a
+  // compare-and-swap so an edit made meanwhile is kept, not clobbered.
+  try {
+    await updateSessionWithCas(supabase, sessionId, fresh => {
+      const schema = (fresh.schema_data ?? {}) as Record<string, unknown>
+      const meta = (schema._meta as Record<string, unknown>) ?? {}
+      const updated = {
+        ...schema,
+        _meta: { ...meta, firm_synopsis: { text: clean, generatedAt: new Date().toISOString() } },
+      }
+      return { update: { schema_data: asJson(updated) }, result: null }
+    })
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) return { error: 'Session not found' }
+    console.error('[mbp-synopsis] write failed:', err)
+    return { error: "Couldn't save the synopsis. Please try again." }
   }
-  const { error } = await supabase.from('sessions').update({ schema_data: asJson(updated) }).eq('id', sessionId)
-  if (error) return { error: error.message }
 
   return { text: clean }
 }

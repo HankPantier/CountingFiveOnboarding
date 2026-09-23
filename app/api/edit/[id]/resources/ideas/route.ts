@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { resolveEditContext } from '../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 
@@ -23,7 +24,7 @@ export async function GET(
     .order('created_at', { ascending: false })
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return internalError('ideas:get', error, "Couldn't load ideas")
   }
   // Polled live for draft/social status — never let a proxy serve a stale list.
   return NextResponse.json(

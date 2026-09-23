@@ -7,6 +7,7 @@ import { deepSetPath, getByPath } from '@/lib/mbp/schema-write'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpChangeOp, MbpSuggestionChanges } from '@/types/mbp'
+import { updateSessionWithCas } from '@/lib/session/schema-cas'
 
 // The inverse of backfill/impact-review: run BEFORE the first content generation
 // to deepen the content-critical fields the generators lean on most, grounding
@@ -211,50 +212,54 @@ Return ONLY JSON:
   }
 
   let applied = 0
-  const appliedTrail: SuggestionInsert[] = []
   if (autoCandidates.length) {
-    const { data: fresh } = await supabase
-      .from('sessions')
-      .select('schema_data')
-      .eq('id', sessionId)
-      .single()
-    // No fresh row → don't risk writing a stale snapshot; file everything.
-    let workingSchema = (fresh?.schema_data ?? {}) as unknown as Record<string, unknown>
-    const appliedPaths: string[] = []
-    for (const { c, row } of autoCandidates) {
-      // Auto-apply is empty-fields-only: if the field was filled while the model
-      // ran, a human wrote it — file for review instead of overwriting.
-      const current = getByPath(workingSchema, c.fieldPath)
-      const stillEmpty = !!fresh && (current == null || (typeof current === 'string' && !current.trim()) || (Array.isArray(current) && current.length === 0))
-      const value = stillEmpty ? resolveValue(workingSchema, c) : null
-      if (value === null) {
-        // Fall through to a pending suggestion.
-        pendingRows.push({ ...row, source_ref: pendingSourceRef, summary: `Enrich ${c.fieldPath}`, status: 'pending' })
-        continue
-      }
-      workingSchema = deepSetPath(workingSchema, c.fieldPath, value)
-      appliedPaths.push(c.fieldPath)
-      appliedTrail.push({ ...row, resolved_at: new Date().toISOString() })
+    // Compare-and-swap onto the fresh row: the fill decisions are recomputed on
+    // every attempt, so a field a human filled while the model ran (or between
+    // our read and write) is filed for review instead of overwritten.
+    type Plan = { appliedPaths: string[]; trail: SuggestionInsert[]; fallback: SuggestionInsert[] }
+    let plan: Plan | null = null
+    try {
+      plan = await updateSessionWithCas<Plan>(supabase, sessionId, fresh => {
+        let workingSchema = (fresh.schema_data ?? {}) as unknown as Record<string, unknown>
+        const next: Plan = { appliedPaths: [], trail: [], fallback: [] }
+        for (const { c, row } of autoCandidates) {
+          // Auto-apply is empty-fields-only.
+          const current = getByPath(workingSchema, c.fieldPath)
+          const stillEmpty = current == null || (typeof current === 'string' && !current.trim()) || (Array.isArray(current) && current.length === 0)
+          const value = stillEmpty ? resolveValue(workingSchema, c) : null
+          if (value === null) {
+            next.fallback.push({ ...row, source_ref: pendingSourceRef, summary: `Enrich ${c.fieldPath}`, status: 'pending' })
+            continue
+          }
+          workingSchema = deepSetPath(workingSchema, c.fieldPath, value)
+          next.appliedPaths.push(c.fieldPath)
+          next.trail.push({ ...row, resolved_at: new Date().toISOString() })
+        }
+        if (!next.appliedPaths.length) return { skip: true, result: next }
+        // Stamp provenance 'notes' (the stronger human-grounded signal of the two
+        // sources) so thinness checks and the admin UI treat these fills as
+        // call-derived, not admin-confirmed.
+        const stamped = stampProvenance(workingSchema as unknown as SessionSchema, next.appliedPaths, 'notes')
+        return { update: { schema_data: asJson(stamped) }, result: next }
+      })
+    } catch (err) {
+      console.error('[mbp-pregen] schema auto-apply write failed:', err)
     }
 
-    // Write the auto-applied fills once, stamping provenance to 'notes' (the
-    // stronger human-grounded signal of the two sources) so downstream thinness
-    // checks and the admin UI treat them as call-derived, not admin-confirmed.
-    if (appliedPaths.length) {
-      const stamped = stampProvenance(workingSchema as unknown as SessionSchema, appliedPaths, 'notes')
-      const { error } = await supabase
-        .from('sessions')
-        .update({ schema_data: asJson(stamped) })
-        .eq('id', sessionId)
-      if (error) {
-        console.error('[mbp-pregen] schema auto-apply write failed:', error)
-      } else {
+    if (!plan) {
+      // Couldn't write: don't lose the candidates — file them all for review.
+      for (const { c, row } of autoCandidates) {
+        pendingRows.push({ ...row, source_ref: pendingSourceRef, summary: `Enrich ${c.fieldPath}`, status: 'pending' })
+      }
+    } else {
+      pendingRows.push(...plan.fallback)
+      if (plan.appliedPaths.length) {
         // Record the auto-applied changes as already-resolved suggestions so they
         // show in the session's suggestion history (trail) rather than mutating
         // schema_data invisibly. resolved_by null = applied by the system.
-        const { error: trailErr } = await supabase.from('mbp_suggestions').insert(appliedTrail)
+        const { error: trailErr } = await supabase.from('mbp_suggestions').insert(plan.trail)
         if (trailErr) console.error('[mbp-pregen] auto-apply trail insert failed:', trailErr)
-        applied = appliedPaths.length
+        applied = plan.appliedPaths.length
       }
     }
   }

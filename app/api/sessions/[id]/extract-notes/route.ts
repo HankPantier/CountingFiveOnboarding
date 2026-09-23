@@ -6,6 +6,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { extractNotesModel, mergeNotesExtraction } from '@/lib/session-draft/extract-from-notes'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
+import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 export const runtime = 'nodejs'
 
@@ -55,35 +56,31 @@ export async function POST(
     return NextResponse.json({ error: 'Extraction failed — please try again' }, { status: 502 })
   }
 
-  // The extraction call is long; re-read right before the write and apply the
-  // (blank-fill-only) merge onto the FRESH row so an edit made meanwhile — a
-  // chat turn, an inline field edit — isn't overwritten by the stale snapshot.
-  const { data: fresh, error: freshErr } = await supabase
-    .from('sessions')
-    .select('schema_data, gap_list')
-    .eq('id', id)
-    .single()
-  if (freshErr || !fresh) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-  }
-  const freshSchema = (fresh.schema_data as SessionSchema | null) ?? {}
-  const freshGaps = (fresh.gap_list as GapItem[] | null) ?? []
-
-  const { schema: mergedSchema, gaps: extractedGaps, applied } = mergeNotesExtraction(freshSchema, freshGaps, model)
-  // Notes can add niches/services — give them their Phase-4 depth gaps.
-  const mergedGaps = refreshPhase4Gaps(mergedSchema, extractedGaps)
-
-  const { error: writeErr } = await supabase
-    .from('sessions')
-    .update({
-      schema_data: asJson(mergedSchema),
-      gap_list: asJson(mergedGaps),
-      notes_extracted_at: new Date().toISOString(),
+  // The extraction call is long; the (blank-fill-only) merge is applied inside a
+  // compare-and-swap onto the FRESH row, so an edit made meanwhile — a chat
+  // turn, an inline field edit — is re-read and kept, never overwritten.
+  let applied: ReturnType<typeof mergeNotesExtraction>['applied']
+  try {
+    applied = await updateSessionWithCas(supabase, id, fresh => {
+      const freshSchema = (fresh.schema_data as SessionSchema | null) ?? {}
+      const freshGaps = (fresh.gap_list as GapItem[] | null) ?? []
+      const merged = mergeNotesExtraction(freshSchema, freshGaps, model)
+      // Notes can add niches/services — give them their Phase-4 depth gaps.
+      const mergedGaps = refreshPhase4Gaps(merged.schema, merged.gaps)
+      return {
+        update: {
+          schema_data: asJson(merged.schema),
+          gap_list: asJson(mergedGaps),
+          notes_extracted_at: new Date().toISOString(),
+        },
+        result: merged.applied,
+      }
     })
-    .eq('id', id)
-
-  if (writeErr) {
-    console.error('[extract-notes] write failed:', writeErr)
+  } catch (err) {
+    if (err instanceof SessionNotFoundError) {
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    }
+    console.error('[extract-notes] write failed:', err)
     return NextResponse.json({ error: 'Save failed' }, { status: 500 })
   }
 

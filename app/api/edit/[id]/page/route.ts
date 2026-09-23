@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
@@ -149,6 +150,5 @@ function mapError(err: unknown): NextResponse {
       { status: 409 }
     )
   }
-  const message = err instanceof Error ? err.message : 'Unknown error'
-  return NextResponse.json({ error: message }, { status: 500 })
+  return internalError('edit:page', err, "Couldn't update the page")
 }
