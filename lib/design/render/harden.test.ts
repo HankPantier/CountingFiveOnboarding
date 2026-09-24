@@ -22,6 +22,62 @@ describe('hardenForRender', () => {
   })
 })
 
+describe('hardenForRender structural hardening', () => {
+  it('does not let an HTML comment divert the CSP away from the real <head>', () => {
+    const html = `<html><!-- remember to update <head> block --><head><title>x</title></head><body>hi</body></html>`
+    const out = hardenForRender(html)
+    expect(out).toContain(`<head><meta http-equiv="Content-Security-Policy" content="${RENDER_CSP}">`)
+    expect(out).not.toContain('<!--')
+  })
+
+  it('does not inject the CSP into a <header> element', () => {
+    const html = `<html><header>nav</header><head><title>x</title></head><body>hi</body></html>`
+    const out = hardenForRender(html)
+    expect(out).toContain(`<head><meta http-equiv="Content-Security-Policy" content="${RENDER_CSP}">`)
+    expect(out).not.toContain(`<header><meta http-equiv="Content-Security-Policy"`)
+  })
+
+  it('injects the CSP into an uppercase <HEAD>', () => {
+    const html = `<HTML><HEAD><TITLE>x</TITLE></HEAD><BODY>hi</BODY></HTML>`
+    const out = hardenForRender(html)
+    expect(out).toContain(`<HEAD><meta http-equiv="Content-Security-Policy" content="${RENDER_CSP}">`)
+  })
+
+  it('strips inline event-handler attributes', () => {
+    const html = `<html><head></head><body onload="alert(1)"><img src="x" onerror="fetch('//evil')"></body></html>`
+    const out = hardenForRender(html)
+    expect(out).not.toMatch(/onerror/i)
+    expect(out).not.toMatch(/onload/i)
+  })
+
+  it('strips meta-refresh redirects in any quoting/case', () => {
+    const variants = [
+      `<meta http-equiv="refresh" content="0;url=https://evil.test">`,
+      `<meta http-equiv='refresh' content='0;url=https://evil.test'>`,
+      `<META HTTP-EQUIV="REFRESH" CONTENT="0;url=https://evil.test">`,
+    ]
+    for (const tag of variants) {
+      const out = hardenForRender(`<html><head>${tag}</head><body>x</body></html>`)
+      expect(out.toLowerCase()).not.toContain('refresh')
+    }
+  })
+
+  it('guarantees exactly one CSP meta when there is no <head> element', () => {
+    for (const html of [`<html><body>x</body></html>`, `<p>x</p>`]) {
+      const out = hardenForRender(html)
+      const matches = out.match(/Content-Security-Policy/g) ?? []
+      expect(matches.length).toBe(1)
+    }
+  })
+
+  it('injects the CSP exactly once for normal input', () => {
+    const html = `<!doctype html><html><head><title>x</title></head><body>hi</body></html>`
+    const out = hardenForRender(html)
+    const matches = out.match(/Content-Security-Policy/g) ?? []
+    expect(matches.length).toBe(1)
+  })
+})
+
 describe('isAllowedRenderRequest', () => {
   it.each([
     ['same origin asset', 'https://bblcpa.vercel.app/_next/static/css/app.css', true],
