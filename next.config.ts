@@ -25,7 +25,11 @@ const nextConfig: NextConfig = {
     ],
     // @sparticuz/chromium ships its brotli-compressed Chromium in bin/, which it
     // loads by path at runtime — tracing can't see it, so force-include it.
-    '/api/edit/\\[id\\]/design/render': ['./node_modules/@sparticuz/chromium/bin/**'],
+    // playwright-core's own coreBundle.js also requires browsers.json (and the
+    // rest of its lib/) dynamically by path — untraced, that surfaces on
+    // Vercel as "Cannot find module '.../node_modules/playwright-core/browsers.json'"
+    // at cold start, which crashes the whole route module (an untyped 500).
+    '/api/edit/\\[id\\]/design/render': ['./node_modules/@sparticuz/chromium/bin/**', './node_modules/playwright-core/**'],
   },
   async headers() {
     return [

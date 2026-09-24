@@ -88,4 +88,34 @@ describe('POST /design/render', () => {
     const res = await POST(req({}), params)
     expect(res.status).toBe(503)
   })
+
+  it('rejects a non-object JSON body with 400', async () => {
+    const res = await POST(req(null), params)
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBe('Invalid JSON body.')
+    expect(render).not.toHaveBeenCalled()
+  })
+
+  it('maps a renderer module load failure to a typed 503', async () => {
+    // Simulate the dynamic import() of render-composed itself rejecting (e.g. a
+    // trace gap surfacing as "Cannot find module .../browsers.json" at cold
+    // start) by re-mocking it to throw, then re-importing the route fresh so
+    // its internal `await import(...)` resolves against the new mock.
+    vi.resetModules()
+    vi.doMock('@/lib/design/render/render-composed', () => {
+      throw new Error('Cannot find module playwright-core/browsers.json')
+    })
+    try {
+      const { POST: freshPost } = await import('./route')
+      const res = await freshPost(req({}), params)
+      expect(res.status).toBe(503)
+      const body = await res.json()
+      expect(body.error).toBe('The renderer is unavailable right now.')
+      expect(render).not.toHaveBeenCalled()
+    } finally {
+      vi.doUnmock('@/lib/design/render/render-composed')
+      vi.resetModules()
+    }
+  })
 })

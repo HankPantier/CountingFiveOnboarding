@@ -7,8 +7,6 @@ import { resolvePreviewPageUrl } from '@/lib/theme-preview/page-path'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
 import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { loadDraftThemeSources } from '@/lib/design/theme-sources'
-import { renderComposed } from '@/lib/design/render/render-composed'
-import { RendererUnavailableError } from '@/lib/design/render/browser'
 import type { ViewportKey } from '@/lib/design/render/harden'
 import { toWebp, designStoragePath, storeDesignImage, signDesignPaths } from '@/lib/design/storage'
 import { requireDesignAdmin } from '../_design'
@@ -32,10 +30,39 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const ctx = await requireDesignAdmin(id)
   if (ctx instanceof NextResponse) return ctx
 
-  const body = (await req.json().catch(() => ({}))) as RenderRequestBody
+  let body: RenderRequestBody
+  try {
+    const parsed: unknown = await req.json()
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+    }
+    body = parsed as RenderRequestBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+  }
+
   const viewport = (body.viewport ?? 'desktop') as ViewportKey
   if (viewport !== 'desktop' && viewport !== 'mobile') {
     return NextResponse.json({ error: 'viewport must be desktop or mobile.' }, { status: 400 })
+  }
+
+  // Loaded lazily (not at module top-level): the renderer pulls in
+  // playwright-core / @sparticuz/chromium, both native/traced-by-path
+  // dependencies. A module-load failure here (e.g. an untraced file) fails
+  // ONE request with a typed 503 instead of crashing the whole route module
+  // at cold start, which Vercel surfaces as an untyped 500 with no JSON body.
+  let renderComposed: (typeof import('@/lib/design/render/render-composed'))['renderComposed']
+  let RendererUnavailableError: (typeof import('@/lib/design/render/browser'))['RendererUnavailableError']
+  try {
+    const [renderModule, browserModule] = await Promise.all([
+      import('@/lib/design/render/render-composed'),
+      import('@/lib/design/render/browser'),
+    ])
+    renderComposed = renderModule.renderComposed
+    RendererUnavailableError = browserModule.RendererUnavailableError
+  } catch (err) {
+    console.error('[design-render] failed to load the renderer', err)
+    return NextResponse.json({ error: 'The renderer is unavailable right now.' }, { status: 503 })
   }
 
   try {
