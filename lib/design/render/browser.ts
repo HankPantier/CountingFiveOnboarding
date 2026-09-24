@@ -26,15 +26,34 @@ async function launch(): Promise<Browser> {
 }
 
 export async function getBrowser(): Promise<Browser> {
-  if (browserPromise) {
-    const existing = await browserPromise.catch(() => null)
+  // Snapshot the promise we're evaluating so we can tell, after awaiting it,
+  // whether another concurrent caller has already replaced it — the whole
+  // point of single-flight relaunch is that only ONE of N concurrent callers
+  // who observe a disconnected browser actually launches a new one; the rest
+  // piggyback on that same in-flight promise instead of each starting their
+  // own Chromium process (which would leak N-1 orphaned browsers).
+  const current = browserPromise
+  if (current) {
+    const existing = await current.catch(() => null)
     if (existing?.isConnected()) return existing
+    // Stale or failed — best-effort close so it doesn't linger as an orphan
+    // process; failure to close a browser that's already dead is expected.
+    await existing?.close().catch(() => {})
+    if (browserPromise !== current) {
+      // Another caller already noticed the same thing and is relaunching
+      // (or has already relaunched) — recurse to observe THEIR promise
+      // rather than racing a second launch.
+      return getBrowser()
+    }
   }
-  browserPromise = launch()
+  const p = launch()
+  browserPromise = p
   try {
-    return await browserPromise
+    return await p
   } catch (err) {
-    browserPromise = null
+    // Only clear if nobody else has already moved browserPromise on (e.g. a
+    // later caller's own launch attempt) — never clobber a newer promise.
+    if (browserPromise === p) browserPromise = null
     throw err
   }
 }

@@ -34,6 +34,10 @@ describe.skipIf(!HAS_CHROME)('renderComposed (real Chromium)', () => {
   }, 60_000)
 
   it('reuses the warm browser (second launch is near-instant)', async () => {
+    // Self-warming: don't rely on a prior test in this file having already
+    // launched the browser — render once first so this test is meaningful
+    // in isolation (e.g. `vitest run -t "reuses the warm browser"`).
+    await renderComposed({ html: HTML, shellOrigin: 'https://example.invalid/', viewport: 'mobile' })
     const r = await renderComposed({ html: HTML, shellOrigin: 'https://example.invalid/', viewport: 'mobile' })
     expect(r.timings.launchMs).toBeLessThan(200)
   }, 60_000)

@@ -4,7 +4,22 @@
 // strip scripts again, pin a restrictive CSP, and only let the browser fetch
 // the shell's own origin, Google Fonts, and data: URIs.
 
-export const RENDER_CSP = "script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'"
+// Full per-origin allowlist, not just a script/connect/frame/object block —
+// Playwright's route handler only sees the FIRST url of a redirect chain, so
+// a shell-origin URL that later 302s elsewhere would otherwise load
+// unchecked. The CSP is what Chromium enforces on every redirect hop, so
+// img-src/style-src/font-src/media-src are scoped to the shell's own origin
+// (plus Google Fonts for style/font) rather than left to fall through to a
+// permissive default.
+export function buildRenderCsp(shellOrigin: string): string {
+  const origin = new URL(shellOrigin).origin
+  return (
+    "default-src 'none'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; " +
+    `base-uri ${origin}; form-action 'none'; img-src ${origin} data:; ` +
+    `style-src ${origin} https://fonts.googleapis.com 'unsafe-inline'; ` +
+    `font-src ${origin} https://fonts.gstatic.com data:; media-src ${origin}`
+  )
+}
 
 export const VIEWPORTS = {
   desktop: { width: 1440, height: 900, deviceScaleFactor: 1 },
@@ -31,7 +46,11 @@ const FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com'])
 const HEAD_OPEN_RE = /<head(?=[\s>])[^>]*>/i
 const HTML_OPEN_RE = /<html(?=[\s>])[^>]*>/i
 
-export function hardenForRender(html: string): string {
+export function hardenForRender(html: string, shellOrigin: string): string {
+  // Callers always pass the shell origin; an invalid one is a caller bug, not
+  // a recoverable condition — fail loudly rather than render with no CSP.
+  const csp = buildRenderCsp(shellOrigin)
+
   // Strip HTML comments FIRST — otherwise an attacker can hide a decoy
   // `<head>` inside a comment ahead of the real one and divert the CSP meta
   // into dead markup, leaving the real <head> unprotected.
@@ -61,7 +80,7 @@ export function hardenForRender(html: string): string {
 
   out = out.replace(/\bloading\s*=\s*(["']?)lazy\1/gi, 'loading="eager"')
 
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${RENDER_CSP}">`
+  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`
   if (HEAD_OPEN_RE.test(out)) {
     out = out.replace(HEAD_OPEN_RE, (m) => `${m}${cspMeta}`)
   } else if (HTML_OPEN_RE.test(out)) {
