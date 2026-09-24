@@ -142,3 +142,171 @@ describe('sanitizeDesignCss — rejects', () => {
     expect(errs('   ')).toMatch(/empty/i)
   })
 })
+
+// Regression tests for task-3-findings-r1.md (task review round 1) — every
+// bypass the review found accepted must now be rejected (or, for the forged
+// comment-in-raws case, accepted but stripped so the marker can't survive).
+describe('sanitizeDesignCss — round 1 findings (bypasses closed)', () => {
+  it.each([
+    ['comment hiding in a declaration raw', '[data-block="hero"] { color: red /* /theme-editor:hero */; }', '/theme-editor:hero'],
+    ['comment hiding in a selector raw', '[data-block="hero"] /* theme-editor:faq-accordion */ h1 { color: red; }', 'theme-editor:faq-accordion'],
+    ['comment hiding in an at-rule raw', '@media /* theme-editor:faq-accordion */ (min-width:1px) { [data-block="hero"] { color: red; } }', 'theme-editor:faq-accordion'],
+  ])('strips a forged managed-region marker hidden in raws: %s', (_label, css, marker) => {
+    const out = ok(css)
+    expect(out).not.toContain(marker)
+    expect(out).not.toContain('/*')
+    expect(out).not.toContain('*/')
+  })
+
+  it.each([
+    ['top-level sibling combinator (~)', '[data-block="hero"] ~ [data-block="faq-accordion"] { color: red; }'],
+    ['nested sibling combinator (~)', '[data-block="hero"] { & ~ * { color: red; } }'],
+    ['top-level adjacent-sibling combinator (+)', '[data-block="hero"] + [data-block="faq-accordion"] { color: red; }'],
+  ])('rejects the ~ / + combinator: %s', (_label, css) => {
+    expect(errs(css)).toMatch(/combinator/i)
+  })
+
+  it('rejects a nested rule under :root even in global scope', () => {
+    expect(errs(':root { h1, body { color: red; } }', GLOBAL)).toMatch(/root/i)
+  })
+
+  it.each([
+    ['display none via escaped n', 'display: n\\one'],
+    ['display property name escaped', 'displ\\ay: none'],
+    ['position fixed via escape', 'position: fix\\ed'],
+    ['escaped url() bypass', 'background-image: \\75 rl(https://evil.test/x.png)'],
+  ])('rejects any backslash escape: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toContain('escapes')
+  })
+
+  it.each([
+    ['unitless zero', 'font-size: 0'],
+    ['unitless number', 'font-size: 10'],
+    ['calc()', 'font-size: calc(1px)'],
+  ])('rejects a font-size hiding bypass: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/not allowed/i)
+  })
+
+  it('rejects a font-size percentage below 75%', () => {
+    expect(errs('[data-block="hero"] { font-size: 50%; }')).toMatch(/too small/i)
+  })
+
+  it('accepts font-size keywords/functions it cannot statically evaluate', () => {
+    ok('[data-block="hero"] { font-size: clamp(1rem, 2vw, 3rem); }')
+    ok('[data-block="hero"] { font-size: var(--x); }')
+    ok('[data-block="hero"] { font-size: 100%; }')
+  })
+
+  it('rejects opacity set via calc()/var() outside keyframes', () => {
+    expect(errs('[data-block="hero"] { opacity: calc(0); }')).toMatch(/plain number or percentage/i)
+    expect(errs('[data-block="hero"] { opacity: var(--x); }')).toMatch(/plain number or percentage/i)
+  })
+
+  it.each([
+    ['modern rgb zero alpha', 'color: rgb(0 0 0 / 0)'],
+    ['modern hsl zero alpha percent', 'color: hsl(200 50% 50% / 0%)'],
+    ['legacy rgba zero alpha', 'color: rgba(0,0,0,0)'],
+    ['legacy hsla zero alpha', 'color: hsla(0,0%,0%,0)'],
+    ['webkit text fill color zero alpha', '-webkit-text-fill-color: rgba(0,0,0,0)'],
+  ])('rejects a zero-alpha color hiding trick: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/hides text/i)
+  })
+
+  it('accepts a fully-opaque color (not a false positive)', () => {
+    ok('[data-block="hero"] { color: rgb(0 0 0 / 100%); }')
+    ok('[data-block="hero"] { color: rgba(10, 20, 30, 1); }')
+  })
+
+  it('rejects animation forwards/both fill modes (can hide content permanently)', () => {
+    expect(
+      errs(
+        '@keyframes c5-h { to { opacity: 0; } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h 1ms forwards; } }'
+      )
+    ).toContain('forwards/both')
+    expect(errs('[data-block="hero"] { animation-fill-mode: both; }')).toContain('forwards/both')
+  })
+
+  it('rejects content unless the whole value is a plain literal or counter()', () => {
+    expect(errs('[data-block="hero"] { content: counter(x) "Call now 555"; }')).toContain('content')
+  })
+
+  it('accepts a bare counter() content value', () => {
+    ok('[data-block="hero"] { content: counter(x); }')
+  })
+
+  it('rejects injected text via list-style / list-style-type', () => {
+    expect(errs('[data-block="hero"] { list-style-type: "CALL NOW "; }')).toMatch(/list marker/i)
+    expect(errs('[data-block="hero"] { list-style: "CALL NOW "; }')).toMatch(/list marker/i)
+  })
+
+  it.each([
+    ['image-set()', 'background-image: image-set("https://evil.test/x.png" 1x)'],
+    ['-webkit-image-set()', 'background-image: -webkit-image-set("https://evil.test/x.png" 1x)'],
+    ['src()', 'background: src("https://evil.test/x.png")'],
+    ['image()', 'background: image("https://evil.test/x.png")'],
+  ])('rejects the remote-fetch function %s even without url()', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/remote fetch/i)
+  })
+
+  it.each([
+    ['theme() in a declaration value', 'color: theme(--color-nope)'],
+    ['--theme() in a declaration value', 'color: --theme(--color-nope)'],
+    ['--spacing() in a declaration value', 'margin: --spacing(4)'],
+    ['--alpha() in a declaration value', 'color: --alpha(red 50%)'],
+  ])('rejects the Tailwind-only function: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/tailwind-only/i)
+  })
+
+  it('rejects theme()/--spacing()/--alpha() in at-rule params too', () => {
+    expect(errs('@media (min-width: theme(--breakpoint-sm)) { [data-block="hero"] { color: red; } }')).toMatch(/tailwind-only/i)
+  })
+
+  it('rejects a reduced-motion gate with `not` or a comma (always-true escape)', () => {
+    expect(errs('@media not (prefers-reduced-motion: no-preference) { [data-block="hero"] h1 { animation: c5-r 1s; } }')).toContain(
+      'prefers-reduced-motion'
+    )
+    expect(
+      errs(
+        '@media (prefers-reduced-motion: no-preference), (max-width: 10px) { [data-block="hero"] h1 { animation: c5-r 1s; } }'
+      )
+    ).toContain('prefers-reduced-motion')
+  })
+
+  it('accepts a nested @media inside a rule (declaration has an ancestor rule, just not a direct parent)', () => {
+    const out = ok('[data-block="hero"] { @media (min-width: 768px) { color: red; } }')
+    expect(out).toContain('color: red')
+  })
+
+  it('accepts animation: none / animation-name: none without a reduced-motion gate', () => {
+    ok('[data-block="hero"] { animation-name: none; }')
+    ok('[data-block="hero"] { animation: none; }')
+  })
+
+  it('names only the matching attribute in the "must be scoped to" clause (not both)', () => {
+    const blockErr = errs('[data-component="hero"] { color: red; }', HERO)
+    const blockScopedTo = blockErr.split('must be scoped to')[1]
+    expect(blockScopedTo).toContain('[data-block="hero"]')
+    expect(blockScopedTo).not.toContain('data-component')
+
+    const componentErr = errs('[data-block="navbar"] { color: red; }', { kind: 'target', target: 'navbar' })
+    const componentScopedTo = componentErr.split('must be scoped to')[1]
+    expect(componentScopedTo).toContain('[data-component="navbar"]')
+    expect(componentScopedTo).not.toContain('data-block')
+  })
+
+  it('rejects [data-block="navbar"] even though "navbar" matches the scope target string', () => {
+    expect(errs('[data-block="navbar"] { color: red; }', { kind: 'target', target: 'navbar' })).toMatch(/selector/i)
+  })
+
+  it('rejects a non-from/to/percentage keyframe step selector', () => {
+    expect(errs('@keyframes c5-x { 0% { opacity: 0; } foo { opacity: 1; } }')).toMatch(/keyframe selector/i)
+  })
+
+  it('accepts a comma-separated percentage list keyframe step', () => {
+    ok(
+      '@keyframes c5-p { 0%, 50% { opacity: .5; } 100% { opacity: 1; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-p 1s; } }'
+    )
+  })
+})
