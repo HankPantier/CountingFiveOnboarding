@@ -63,8 +63,33 @@ const SCREENSHOT_TIMEOUT_MS = 10_000
 const CONTEXT_CLOSE_TIMEOUT_MS = 2_000
 const DEFAULT_DEADLINE_MS = 45_000
 
+// Races `promise` against a timer, clearing the timer as soon as EITHER side
+// settles — a plain `Promise.race([p, timerPromise])` would leave the loser's
+// timer scheduled (still holding its closure, still able to fire later and
+// try to settle an already-settled promise) for as long as its own delay,
+// which adds up across many renders in one warm, reused function instance.
+function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => T | Error): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const fallback = onTimeout()
+      if (fallback instanceof Error) reject(fallback)
+      else resolve(fallback)
+    }, ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
 function boundedEvaluate<T>(promise: Promise<T>, fallback: T): Promise<T> {
-  return Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), EVAL_TIMEOUT_MS))])
+  return withTimeout(promise, EVAL_TIMEOUT_MS, () => fallback)
 }
 
 export async function renderComposed(args: {
@@ -178,15 +203,11 @@ export async function renderComposed(args: {
   }
 
   try {
-    return await Promise.race([
+    return await withTimeout(
       body(),
-      new Promise<never>((_, reject) => {
-        setTimeout(
-          () => reject(new RenderTimeoutError(`Render timed out during step "${currentStep}" after ${deadlineMs}ms`)),
-          deadlineMs
-        )
-      }),
-    ])
+      deadlineMs,
+      () => new RenderTimeoutError(`Render timed out during step "${currentStep}" after ${deadlineMs}ms`)
+    )
   } catch (err) {
     // Operational warning (not a debug log) — no secrets, just step names and durations.
     console.warn('[design-render] step timings', { step: currentStep, steps })
@@ -199,10 +220,7 @@ export async function renderComposed(args: {
     const finishedContext = context as BrowserContext | null
     const disconnected = finishedBrowser != null && !finishedBrowser.isConnected()
     if (finishedContext) {
-      await Promise.race([
-        finishedContext.close().catch(() => {}),
-        new Promise<void>((resolve) => setTimeout(resolve, CONTEXT_CLOSE_TIMEOUT_MS)),
-      ])
+      await withTimeout(finishedContext.close().catch(() => {}), CONTEXT_CLOSE_TIMEOUT_MS, () => undefined)
     }
     if (isTimeout || disconnected) await recycleBrowser()
     throw err

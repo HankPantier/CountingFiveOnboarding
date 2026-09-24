@@ -89,10 +89,17 @@ export async function recycleBrowser(): Promise<void> {
   if (browserPromise === current) browserPromise = null
   const existing = await current.catch(() => null)
   if (!existing) return
-  await Promise.race([
-    existing.close().catch(() => {}),
-    new Promise<void>((resolve) => setTimeout(resolve, RECYCLE_CLOSE_TIMEOUT_MS)),
-  ])
+  // Clear the timer as soon as either side settles — an unbounded
+  // `Promise.race` timer would otherwise stay scheduled (and able to fire
+  // later, though harmlessly, against an already-settled promise) for the
+  // full RECYCLE_CLOSE_TIMEOUT_MS on every recycle.
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, RECYCLE_CLOSE_TIMEOUT_MS)
+    existing.close().catch(() => {}).finally(() => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
 }
 
 // Test-only: close the shared browser so vitest can exit cleanly.
