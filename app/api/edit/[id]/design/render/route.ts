@@ -102,13 +102,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       renderId,
       path: page.path,
       viewport,
-      timings: { ...result.timings, totalMs: Date.now() - started },
+      timings: { ...result.timings, totalMs: Date.now() - started, steps: result.steps },
       blockedRequests: result.blockedRequests,
       shots: stored.map(({ path, ...rest }) => ({ ...rest, url: signed[path] })),
     })
   } catch (err) {
     if (err instanceof RendererUnavailableError) {
       return NextResponse.json({ error: 'The renderer is unavailable right now.' }, { status: 503 })
+    }
+    // Checked by name, not `instanceof RenderTimeoutError` — that class isn't
+    // imported here at all (the renderer module above is loaded lazily, and
+    // a name check avoids needing yet another lazily-loaded symbol just for
+    // this comparison; see lib/design/render/browser.ts).
+    if (err instanceof Error && err.name === 'RenderTimeoutError') {
+      return NextResponse.json({ error: 'The render timed out.' }, { status: 504 })
     }
     return internalError('design:render', err, 'Failed to render the page')
   }

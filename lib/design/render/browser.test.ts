@@ -114,4 +114,40 @@ describe('getBrowser (mocked playwright-core)', () => {
     expect(fulfilled).toHaveLength(1)
     expect(launchMock).toHaveBeenCalledTimes(3)
   })
+
+  it('recycleBrowser clears the cached browser so the next getBrowser() relaunches exactly once', async () => {
+    const first = fakeBrowser(true)
+    const second = fakeBrowser(true)
+    launchMock.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    const { getBrowser, recycleBrowser } = await import('./browser')
+
+    const b1 = await getBrowser()
+    expect(b1).toBe(first)
+    expect(launchMock).toHaveBeenCalledTimes(1)
+
+    await recycleBrowser()
+    expect(first.close).toHaveBeenCalled()
+
+    // Even though `first` still reports isConnected() === true, recycling
+    // must force a fresh launch rather than reusing it — a browser that just
+    // served a timed-out render can't be trusted by that heuristic alone.
+    const b2 = await getBrowser()
+    expect(b2).toBe(second)
+    expect(launchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('recycleBrowser is a no-op when no browser has ever been launched', async () => {
+    const { recycleBrowser } = await import('./browser')
+    await expect(recycleBrowser()).resolves.toBeUndefined()
+    expect(launchMock).not.toHaveBeenCalled()
+  })
+
+  it('recycleBrowser does not hang if close() never resolves (bounded best-effort)', async () => {
+    const stuck = { isConnected: vi.fn(() => true), close: vi.fn(() => new Promise(() => {})) }
+    launchMock.mockResolvedValueOnce(stuck)
+    const { getBrowser, recycleBrowser } = await import('./browser')
+
+    await getBrowser()
+    await expect(recycleBrowser()).resolves.toBeUndefined()
+  })
 })

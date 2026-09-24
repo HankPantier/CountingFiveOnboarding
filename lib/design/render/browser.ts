@@ -12,7 +12,21 @@ export class RendererUnavailableError extends Error {
   }
 }
 
+// Thrown by renderComposed() when the overall render deadline elapses. Lives
+// here (next to RendererUnavailableError) even though the deadline race lives
+// in render-composed.ts, so both renderer-error types have one home. The
+// render route checks this by `err.name` rather than `instanceof` — the
+// module is lazily `import()`-ed there, and a name check is robust either way.
+export class RenderTimeoutError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RenderTimeoutError'
+  }
+}
+
 let browserPromise: Promise<Browser> | null = null
+
+const RECYCLE_CLOSE_TIMEOUT_MS = 3_000
 
 async function launch(): Promise<Browser> {
   const localPath = process.env.CHROMIUM_EXECUTABLE_PATH
@@ -56,6 +70,29 @@ export async function getBrowser(): Promise<Browser> {
     if (browserPromise === p) browserPromise = null
     throw err
   }
+}
+
+// Force the next getBrowser() call to launch a fresh Chromium process,
+// regardless of what the current one reports via isConnected(). A browser
+// that just timed out a render (e.g. wedged under @sparticuz/chromium's
+// --single-process mode, which is known to be fragile across repeated
+// contexts) may still self-report as "connected" even though it can no
+// longer be trusted to serve another render — callers that know a render
+// just timed out or errored on a disconnected browser call this explicitly
+// rather than relying on getBrowser()'s own isConnected() heuristic.
+export async function recycleBrowser(): Promise<void> {
+  const current = browserPromise
+  if (!current) return
+  // Clear synchronously — no `await` between reading `current` and this
+  // check — so we never clobber a promise a concurrent getBrowser() call has
+  // already moved browserPromise on to (same identity discipline as above).
+  if (browserPromise === current) browserPromise = null
+  const existing = await current.catch(() => null)
+  if (!existing) return
+  await Promise.race([
+    existing.close().catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, RECYCLE_CLOSE_TIMEOUT_MS)),
+  ])
 }
 
 // Test-only: close the shared browser so vitest can exit cleanly.

@@ -46,7 +46,12 @@ beforeEach(() => {
   render.mockReset()
   store.mockClear()
   gate.mockResolvedValue({ sessionId: SID, jobId: 'j', githubRepo: 'o/r', user: { isAdmin: true } })
-  render.mockResolvedValue({ shots: [{ kind: 'fold', png: Buffer.from('p') }], timings: { launchMs: 5, renderMs: 900 }, blockedRequests: 2 })
+  render.mockResolvedValue({
+    shots: [{ kind: 'fold', png: Buffer.from('p') }],
+    timings: { launchMs: 5, renderMs: 900 },
+    blockedRequests: 2,
+    steps: { newContext: 3, route: 1, newPage: 2, setContent: 400, settle: 50, fonts: 30, fold: 80 },
+  })
 })
 
 describe('POST /design/render', () => {
@@ -81,12 +86,27 @@ describe('POST /design/render', () => {
     expect(body.shots[0].url).toMatch(new RegExp(`^https://signed/design/${SID}/renders/`))
     expect(body.path).toBe('/services')
     expect(body.timings.renderMs).toBe(900)
+    expect(body.timings.steps).toEqual({ newContext: 3, route: 1, newPage: 2, setContent: 400, settle: 50, fonts: 30, fold: 80 })
   })
 
   it('maps RendererUnavailableError to 503', async () => {
     render.mockRejectedValue(new RendererUnavailableError('no chromium'))
     const res = await POST(req({}), params)
     expect(res.status).toBe(503)
+  })
+
+  it('maps RenderTimeoutError to 504', async () => {
+    class RenderTimeoutError extends Error {
+      constructor(message: string) {
+        super(message)
+        this.name = 'RenderTimeoutError'
+      }
+    }
+    render.mockRejectedValue(new RenderTimeoutError('Render timed out during step "fold" after 45000ms'))
+    const res = await POST(req({}), params)
+    expect(res.status).toBe(504)
+    const body = await res.json()
+    expect(body.error).toBe('The render timed out.')
   })
 
   it('rejects a non-object JSON body with 400', async () => {
