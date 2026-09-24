@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
-import { createServerClient } from '@/lib/supabase/server'
-import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
+import { getPreviewSiteUrl } from '@/lib/theme-preview/site-url'
+import { resolvePreviewPageUrl } from '@/lib/theme-preview/page-path'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -22,15 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // Prefer the operator's preview-URL override (e.g. a Vercel preview deploy
-  // before DNS cutover); fall back to the canonical site.config.ts siteUrl.
-  const supabase = createServerClient()
-  const { data: job } = await supabase
-    .from('content_jobs')
-    .select('preview_url')
-    .eq('id', ctx.jobId)
-    .single()
-  const siteUrl = job?.preview_url ?? (await readSiteConfigSiteUrl(githubRepo, MAIN_BRANCH))
+  const siteUrl = await getPreviewSiteUrl({ jobId: ctx.jobId, githubRepo })
   if (!siteUrl) {
     return NextResponse.json(
       { error: 'No preview URL is set for this client. Add one above to preview the site.' },
@@ -38,9 +30,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     )
   }
 
-  const shell = await buildPreviewShell(siteUrl)
+  // Optional ?path= previews another page of the same site (Design Studio
+  // multi-page preview). Decoded + same-origin checked before any fetch.
+  const page = resolvePreviewPageUrl(siteUrl, new URL(req.url).searchParams.get('path'))
+  if (!page.ok) return NextResponse.json({ error: page.reason }, { status: 400 })
+
+  const shell = await buildPreviewShell(page.url)
   if (!shell.ok) {
     return NextResponse.json({ error: shell.reason }, { status: 502 })
   }
-  return NextResponse.json({ origin: shell.origin, shellHtml: shell.shellHtml })
+  return NextResponse.json({ origin: shell.origin, shellHtml: shell.shellHtml, path: page.path })
 }
