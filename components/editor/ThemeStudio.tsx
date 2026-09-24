@@ -219,8 +219,9 @@ export default function ThemeStudio({
   )
 
   // Treatment flags (headline/eyebrow/dark sections). Update the local display
-  // immediately and commit to design.json. The preview iframe can't reflect
-  // these until the site rebuilds on the updated template (see ThemeControls
+  // immediately and commit to design.json. Headline/eyebrow preview instantly
+  // (ThemePreview rewrites the <html> data-attributes); dark sections only
+  // show after the site rebuilds on the updated template (see ThemeControls
   // note), so no client-side theme.css rebuild is needed here.
   const changeFlags = useCallback(
     (patch: FlagsPatch) => {

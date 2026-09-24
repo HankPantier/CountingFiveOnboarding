@@ -156,7 +156,10 @@ Tier map (reviewed 2026-09-23 against the Fable 5.1 / Opus 5.5 / Sonnet 5 / Haik
 - **Haiku 4.5** (`FAST_MODEL`) — phase 1/2/5/6 intake chat and classification helpers (brand-fit,
   keyword, reverse-link, oneoff resolve, pricing seeds, article-import links, command bar).
   Retirement "not sooner than 2026-10-15"; when it's deprecated, swap `FAST_MODEL` in one place.
-- **Fable 5.1** — not used; nothing here needs it at 5x Sonnet's price.
+- **Opus 5.5** (`DESIGN_MODEL`) — Design Studio concept generation + vision critique (admin-only,
+  a few runs per client). Defined in P0; no route calls it yet.
+- **Fable 5.1** (`DESIGN_AB_CHALLENGER_MODEL`) — only the Design Studio A/B script
+  (`scripts/compare-design-models.ts`, P7); never a production route at 5x Sonnet's price.
 
 The async generation paths use adaptive thinking + `effort` via the shared
 `GENERATION_PROVIDER_OPTIONS` in `lib/content/generation-tuning.ts`. Hard rules:

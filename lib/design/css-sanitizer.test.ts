@@ -723,3 +723,20 @@ describe('sanitizeDesignCss — final review (nested scope escape, z-index, colo
     ok('[data-block="hero"] { box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); background-color: rgba(0, 0, 0, 0.05); }')
   })
 })
+
+describe('sanitizeDesignCss — handoff review hiding gaps', () => {
+  it.each([
+    ['content-visibility: hidden', 'content-visibility: hidden'],
+    ['filter opacity(0)', 'filter: opacity(0)'],
+    ['backdrop-filter opacity()', 'backdrop-filter: blur(4px) opacity(0.1)'],
+    ['zoom', 'zoom: 0'],
+    ['scale 0', 'scale: 0'],
+    ['scale 10%', 'scale: 1 10%'],
+  ])('rejects %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/not allowed/)
+  })
+
+  it('still accepts a normal scale and filter', () => {
+    ok('[data-block="hero"] img { scale: 1.02; filter: saturate(1.1) blur(0); }')
+  })
+})

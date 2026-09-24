@@ -26,7 +26,11 @@
 //   - transform: scale(0) (or a near-zero scale);
 //   - height/max-height: 0 combined with overflow: hidden;
 //   - text-indent pushing text off-screen (e.g. -9999px);
-//   - clip-path clipping the element away (e.g. inset(50%)).
+//   - clip-path clipping the element away (e.g. inset(50%));
+//   - off-screen positioning (large negative margins, an absolute overlay
+//     sized to the viewport covering other content).
+// (content-visibility:hidden, filter opacity(), zoom, and scale < 0.2 ARE
+// rejected — closed in the pre-merge handoff review.)
 import postcss, {
   type AtRule,
   type ChildNode,
@@ -445,6 +449,17 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
   if (/expression\(|javascript:/.test(value)) errors.push(`${prop}: ${decl.value} is not allowed.`)
   if (prop === 'display' && value === 'none') errors.push('display: none is not allowed (it hides content).')
   if (prop === 'visibility' && (value === 'hidden' || value === 'collapse')) errors.push(`visibility: ${value} is not allowed.`)
+  if (prop === 'content-visibility' && value === 'hidden') errors.push('content-visibility: hidden is not allowed (it hides content).')
+  if ((prop === 'filter' || prop === 'backdrop-filter') && /\bopacity\(/.test(value)) errors.push(`${prop}: opacity() is not allowed.`)
+  if (prop === 'zoom') errors.push('zoom is not allowed.')
+  if (prop === 'scale') {
+    const tooSmall = value.split(/\s+/).some((v) => {
+      if (!/^[\d.]+%?$/.test(v)) return false
+      const n = v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v)
+      return n < 0.2
+    })
+    if (tooSmall) errors.push(`scale: ${decl.value} is not allowed (below 0.2 hides content).`)
+  }
   if (prop === 'opacity' && !inKeyframes) {
     if (!/^[\d.]+%?$/.test(value)) {
       errors.push(`opacity: ${decl.value} is not allowed (must be a plain number or percentage).`)

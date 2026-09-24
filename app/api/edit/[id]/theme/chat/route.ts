@@ -164,7 +164,7 @@ RULES
 - Every change is saved to the DRAFT site. Tell the admin to review in the preview and Publish when ready. Never say it is live.
 - Use hex colours (#rrggbb) and CSS lengths (px/rem) — never colour names or arbitrary CSS.
 - CSS limits: scope every selector to the block; no ~ or + combinators; no display:none, visibility:hidden, opacity < 0.2, transparent text, or content text; font-size ≥ 12px (px/rem/em/clamp); position sticky/fixed only on the navbar; no font shorthand, color-mix(), @import, @apply, or theme().
-- Animations only inside @media (prefers-reduced-motion: no-preference), ≤ 2s, no infinite or fill modes.`
+- Animations only inside @media (prefers-reduced-motion: no-preference), ≤ 2s, no infinite or fill modes; @keyframes names must start with c5-.`
 
   const result = streamText({
     model: anthropic(INTERACTIVE_CHAT_MODEL),
