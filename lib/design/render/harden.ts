@@ -36,6 +36,11 @@ export function hardenForRender(html: string): string {
   // `<head>` inside a comment ahead of the real one and divert the CSP meta
   // into dead markup, leaving the real <head> unprotected.
   let out = html.replace(/<!--[\s\S]*?-->/g, '')
+  // An UNTERMINATED comment (no closing "-->") isn't touched by the pass
+  // above. A browser swallows everything after it — including any real
+  // <head> — so we drop from the marker to the end of the string too; the
+  // no-<head> CSP fallback below still guarantees exactly one CSP meta.
+  out = out.replace(/<!--[\s\S]*$/, '')
 
   // Strip scripts (both block and unclosed/self-closing forms), now that any
   // comment-hidden scripts have also been exposed and removed above.
@@ -47,7 +52,12 @@ export function hardenForRender(html: string): string {
 
   // Strip inline event-handler attributes (onerror, onload, etc.) — CSP's
   // script-src blocks <script> execution but not attribute-based handlers.
-  out = out.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+  // The separator before "on…" may be whitespace OR a stray "/" (a
+  // self-closing-style separator some markup uses between attributes, e.g.
+  // `<img src=x/onerror=...>` or `<svg/onload=...>`); requiring at least one
+  // of those chars immediately before "on" still leaves `data-onload="x"` /
+  // `aria-*` untouched since "-" is not in that separator class.
+  out = out.replace(/[\s/]+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
 
   out = out.replace(/\bloading\s*=\s*(["']?)lazy\1/gi, 'loading="eager"')
 

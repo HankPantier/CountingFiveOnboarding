@@ -50,6 +50,38 @@ describe('hardenForRender structural hardening', () => {
     expect(out).not.toMatch(/onload/i)
   })
 
+  it('strips the literal unquoted handler from <body onload=alert(1)>', () => {
+    const out = hardenForRender(`<html><head></head><body onload=alert(1)>hi</body></html>`)
+    expect(out).toContain('<body>hi</body>')
+    expect(out).not.toMatch(/onload/i)
+  })
+
+  it('strips slash-separated event handlers', () => {
+    for (const html of [
+      `<html><head></head><body><img src=x /onerror=alert(1)></body></html>`,
+      `<html><head></head><body><img src=x/onerror=alert(1)></body></html>`,
+      `<html><head></head><body><svg/onload=alert(1)></body></html>`,
+    ]) {
+      const out = hardenForRender(html)
+      expect(out).not.toMatch(/onerror/i)
+      expect(out).not.toMatch(/onload/i)
+    }
+  })
+
+  it('does not strip data-onload or other non-handler attributes', () => {
+    const out = hardenForRender(`<html><head></head><body><div data-onload="keep" aria-onload="keep">x</div></body></html>`)
+    expect(out).toContain('data-onload="keep"')
+    expect(out).toContain('aria-onload="keep"')
+  })
+
+  it('drops an unterminated HTML comment (no closing "-->") to end of string', () => {
+    const html = `<html><!-- oops <head><title>x</title></head><body>hi</body></html>`
+    const out = hardenForRender(html)
+    expect(out).not.toContain('<!--')
+    const matches = out.match(/Content-Security-Policy/g) ?? []
+    expect(matches.length).toBe(1)
+  })
+
   it('strips meta-refresh redirects in any quoting/case', () => {
     const variants = [
       `<meta http-equiv="refresh" content="0;url=https://evil.test">`,
