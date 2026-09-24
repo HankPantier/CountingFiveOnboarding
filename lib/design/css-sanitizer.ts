@@ -18,11 +18,15 @@
 // shape, animation's duration/delay/iteration-count limits) over another
 // denylist pattern — it's harder to bypass with an unanticipated variant.
 // Treat any new bypass class the same way: add a regression test, then close
-// it here. Known residual limit (parked, not fixed here — round 3 ruling):
-// var() indirection in font-size/colour (e.g. `font-size: var(--x, 0px)` where
-// --x is later set to 0px in :root) can't be statically evaluated; the spec's
-// P4 render gate (hidden-block / axe contrast metrics on the rendered page)
-// is the intended defense in depth for that gap.
+// it here. Known residual hiding vectors (parked, not fixed here — round 3
+// and final-review rulings), all deferred to the spec's P4 render gate
+// (hidden-block / axe contrast metrics on the rendered page):
+//   - var() indirection in font-size/colour (e.g. `font-size: var(--x, 0px)`
+//     where --x is later set to 0px in :root) — can't be statically evaluated;
+//   - transform: scale(0) (or a near-zero scale);
+//   - height/max-height: 0 combined with overflow: hidden;
+//   - text-indent pushing text off-screen (e.g. -9999px);
+//   - clip-path clipping the element away (e.g. inset(50%)).
 import postcss, {
   type AtRule,
   type ChildNode,
@@ -98,6 +102,41 @@ function targetAllowed(t: LeadTarget, scope: CssScope): boolean {
   return (CHROME_COMPONENTS as readonly string[]).includes(t.id)
 }
 
+// True when the selector list contains a nesting (`&`) node with a pseudo
+// (:is/:where/:has/:not/:matches/… — any pseudo taking a selector argument)
+// among its ancestors in the selector AST.
+function hasNestingInsidePseudo(parsed: selectorParser.Root): boolean {
+  let found = false
+  parsed.walkNesting((n) => {
+    let p: selectorParser.Container | undefined = n.parent
+    while (p && p.type !== 'root') {
+      if (p.type === 'pseudo') {
+        found = true
+        return false
+      }
+      p = p.parent
+    }
+  })
+  return found
+}
+
+function selectorHasNesting(sel: selectorParser.Selector): boolean {
+  let found = false
+  sel.walkNesting(() => {
+    found = true
+    return false
+  })
+  return found
+}
+
+// A selector whose first compound starts with html, body, or :root.
+function leadsWithPageAnchor(sel: selectorParser.Selector): boolean {
+  const first = sel.nodes[0]
+  if (!first) return false
+  if (first.type === 'tag') return ['html', 'body'].includes(first.value.toLowerCase())
+  return first.type === 'pseudo' && first.value.toLowerCase() === ':root'
+}
+
 function hasAncestor(node: ChildNode, pred: (n: Container) => boolean): boolean {
   let p: Node | undefined = node.parent
   while (p && p.type !== 'root' && p.type !== 'document') {
@@ -162,12 +201,14 @@ function checkUrls(value: string, errors: string[]) {
   }
 }
 
-// A colour function's alpha channel must be a plain, strictly-positive number
-// or percentage (round 2 ruling; round 3 fix: a bare leading dot — `.9`, not
-// just `0.9` — is a plain number too and must be accepted). No alpha channel
-// at all means fully opaque — fine. calc()/var()/negative/zero/zero% either
-// can't be statically proven non-zero or resolve to exactly zero, and either
-// way could hide text.
+// A colour function's alpha channel must be a plain number or percentage
+// (round 2 ruling; round 3 fix: a bare leading dot — `.9`, not just `0.9` — is
+// a plain number too and must be accepted) of at least MIN_TEXT_ALPHA (final
+// review: the same 0.2 floor as opacity — near-invisible text is hidden text).
+// No alpha channel at all means fully opaque — fine. calc()/var() can't be
+// statically proven above the floor, so they're rejected too. Only called for
+// color / -webkit-text-fill-color; shadows and backgrounds are unaffected.
+const MIN_TEXT_ALPHA = 0.2
 const ALPHA_NUMBER_RE = /^(?:\d+(?:\.\d+)?|\.\d+)%?$/
 function hasInvalidAlpha(value: string): boolean {
   const re = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^)]*)\)/gi
@@ -185,7 +226,7 @@ function hasInvalidAlpha(value: string): boolean {
     if (!alphaStr) continue
     if (!ALPHA_NUMBER_RE.test(alphaStr)) return true
     const n = alphaStr.endsWith('%') ? parseFloat(alphaStr) / 100 : parseFloat(alphaStr)
-    if (n <= 0) return true
+    if (n < MIN_TEXT_ALPHA) return true
   }
   return false
 }
@@ -309,14 +350,15 @@ function checkAnimationValue(prop: string, rawValue: string, value: string, erro
 }
 
 // 4-digit (#rgba) and 8-digit (#rrggbbaa) hex colours carry alpha as their
-// last nibble/byte; #rgb and #rrggbb have no alpha channel and are fine.
-function hasZeroAlphaHex(value: string): boolean {
+// last nibble/byte; #rgb and #rrggbb have no alpha channel and are fine. The
+// alpha must meet the same MIN_TEXT_ALPHA floor as colour functions.
+function hasLowAlphaHex(value: string): boolean {
   const re = /#([0-9a-f]{3,8})\b/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(value))) {
     const hex = m[1]
-    if (hex.length === 4 && hex[3] === '0') return true
-    if (hex.length === 8 && hex.slice(6) === '00') return true
+    if (hex.length === 4 && parseInt(hex[3], 16) / 15 < MIN_TEXT_ALPHA) return true
+    if (hex.length === 8 && parseInt(hex.slice(6), 16) / 255 < MIN_TEXT_ALPHA) return true
   }
   return false
 }
@@ -437,7 +479,7 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
       value.includes('color-mix(') ||
       /\(from\s/.test(value) ||
       hasInvalidAlpha(value) ||
-      hasZeroAlphaHex(value)
+      hasLowAlphaHex(value)
     ) {
       errors.push(`${prop}: ${decl.value} is not allowed (it hides text).`)
     }
@@ -447,8 +489,13 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
     if (err) errors.push(err)
   }
   if (prop === 'z-index') {
-    const n = parseInt(value, 10)
-    if (!Number.isNaN(n) && n > 50) errors.push(`z-index: ${decl.value} is too high (max 50).`)
+    // Final review: structural allowlist — a plain (optionally negative)
+    // integer ≤ 50, or `auto`. `1e9`, `calc(1000)`, `var(--z)`, `+10`, `1.5`
+    // are all rejected rather than parsed.
+    if (value !== 'auto') {
+      if (!/^-?\d+$/.test(value)) errors.push(`z-index: ${decl.value} is not allowed (must be a plain integer ≤ 50, or auto).`)
+      else if (parseInt(value, 10) > 50) errors.push(`z-index: ${decl.value} is too high (max 50).`)
+    }
   }
   if (prop === 'pointer-events' && value === 'none') errors.push('pointer-events: none is not allowed.')
   if ((prop === 'animation' || prop === 'animation-fill-mode') && /\b(?:forwards|backwards|both)\b/.test(value)) {
@@ -597,11 +644,28 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
       return
     }
 
+    // Final review: `&` inside a pseudo-class argument (`:is(body, &) p`,
+    // `html:has(&) body`, `:not(&)`) no longer anchors the selector to the
+    // block — the pseudo can match via its OTHER arguments or an ancestor, so
+    // the rule escapes its scope. Rejected anywhere a selector appears.
+    if (hasNestingInsidePseudo(parsed)) {
+      errors.push(`Selector "${rule.selector}" may not use & inside a pseudo-class argument (it un-scopes the rule).`)
+      return
+    }
+
     if (hasAncestor(rule, isRule)) {
-      // A nested rule (e.g. `& h1`, `&:hover`) inherits its parent's target
-      // scope via `&` — it doesn't need to (and can't) redeclare its own
-      // [data-block]/[data-component] lead. The combinator/root-nesting bans
-      // above still apply to it.
+      // A nested rule (e.g. `& h1`, `&:hover`, `body &`, or the implicit
+      // descendant form `h1`) inherits its parent's target scope via `&` — it
+      // doesn't need to (and can't) redeclare its own
+      // [data-block]/[data-component] lead. The combinator/root-nesting/
+      // pseudo-& bans above still apply to it. A branch WITHOUT `&` that leads
+      // with an explicit page-level anchor (html/body/:root) is refused: it
+      // reads as page-wide styling, whatever the nesting spec makes of it.
+      parsed.each((sel) => {
+        if (!selectorHasNesting(sel) && leadsWithPageAnchor(sel)) {
+          errors.push(`Nested selector "${sel.toString().trim()}" may not lead with html/body/:root — start it with & or a descendant of the block.`)
+        }
+      })
       return
     }
 

@@ -634,3 +634,92 @@ describe('sanitizeDesignCss — round 5 findings (animation function allowlist)'
     ok(gated(decl))
   })
 })
+
+// Final whole-branch review: `&` inside a pseudo-class argument un-scopes a
+// nested rule (`:is(body, &) p` also matches every <p> under <body>), and a
+// nested selector without `&` could lead with html/body/:root. Plus z-index
+// and colour-alpha floors.
+describe('sanitizeDesignCss — final review (nested scope escape, z-index, colour alpha)', () => {
+  it.each([
+    [':is(body, &) inside the block rule', '[data-block="hero"] { :is(body, &) p { color: red; } }'],
+    ['html:has(&) inside the block rule', '[data-block="hero"] { html:has(&) body { background: red; } }'],
+    [':where(&, body)', '[data-block="hero"] { :where(&, body) p { color: red; } }'],
+    [':not(&) ', '[data-block="hero"] { :not(&) p { color: red; } }'],
+    ['& in a pseudo arg of a later compound', '[data-block="hero"] { & h1, body :is(&) p { color: red; } }'],
+    [
+      ':is(body, &) inside a nested @media',
+      '[data-block="hero"] { @media (min-width: 768px) { :is(body, &) p { color: red; } } }',
+    ],
+    [
+      'html:has(&) inside a nested @media',
+      '[data-block="hero"] { @media (min-width: 768px) { html:has(&) body { background: red; } } }',
+    ],
+    ['doubly-nested :is(body, &)', '[data-block="hero"] { & p { :is(body, &) a { color: red; } } }'],
+  ])('rejects `&` inside a pseudo-class argument: %s', (_label, css) => {
+    expect(errs(css)).toMatch(/& inside a pseudo-class/i)
+  })
+
+  it.each([
+    ['body p', '[data-block="hero"] { body p { color: red; } }'],
+    ['html body', '[data-block="hero"] { html body { color: red; } }'],
+    [':root p', '[data-block="hero"] { :root p { color: red; } }'],
+    ['body in a nested @media', '[data-block="hero"] { @media (min-width: 768px) { body p { color: red; } } }'],
+    ['one branch of a comma list', '[data-block="hero"] { & h1, body p { color: red; } }'],
+  ])('rejects a nested selector without & that leads with html/body/:root: %s', (_label, css) => {
+    expect(errs(css)).toMatch(/html\/body\/:root/i)
+  })
+
+  it.each([
+    ['leading & descendant', '[data-block="hero"] { & h1 { color: var(--color-primary); } }'],
+    ['& > child', '[data-block="hero"] { & > div { padding: 1rem; } }'],
+    ['&:hover', '[data-block="hero"] { &:hover { color: #112233; } }'],
+    ['body & (still scoped to the block)', '[data-block="hero"] { body & { color: #112233; } }'],
+    ['implicit descendant', '[data-block="hero"] { h1 { color: #112233; } }'],
+    ['implicit descendant with pseudo arg (no &)', '[data-block="hero"] { a:not(.btn) { color: #112233; } }'],
+    ['nested in @media', '[data-block="hero"] { @media (min-width: 768px) { & h1 { font-size: 3rem; } } }'],
+  ])('still accepts scoped nesting: %s', (_label, css) => {
+    ok(css)
+  })
+
+  it.each([
+    ['exponent', 'z-index: 1e9'],
+    ['calc()', 'z-index: calc(1000)'],
+    ['over 50', 'z-index: 51'],
+    ['decimal', 'z-index: 1.5'],
+    ['plus sign', 'z-index: +10'],
+    ['var()', 'z-index: var(--z)'],
+  ])('rejects z-index: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/z-index/)
+  })
+
+  it.each(['z-index: 10', 'z-index: 50', 'z-index: 0', 'z-index: -1', 'z-index: auto'])('accepts %s', (decl) => {
+    ok(`[data-block="hero"] { ${decl}; }`)
+  })
+
+  it.each([
+    ['rgb / 0.1', 'color: rgb(0 0 0 / 0.1)'],
+    ['rgba 0.19', 'color: rgba(0, 0, 0, 0.19)'],
+    ['hsl / 10%', 'color: hsl(0 0% 0% / 10%)'],
+    ['oklch / .05', 'color: oklch(0.5 0.1 200 / .05)'],
+    ['text-fill 0.1', '-webkit-text-fill-color: rgb(0 0 0 / 0.1)'],
+    ['#rrggbbaa at ~10%', 'color: #0000001a'],
+    ['#rgba at ~13%', 'color: #0002'],
+  ])('rejects a colour alpha below 0.2: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/hides text/)
+  })
+
+  it.each([
+    'color: rgb(0 0 0 / 0.2)',
+    'color: rgba(0, 0, 0, 0.5)',
+    'color: hsl(0 0% 0% / 20%)',
+    'color: oklch(0.5 0.1 200 / .9)',
+    'color: #00000080',
+    'color: #000c',
+  ])('accepts a colour alpha ≥ 0.2: %s', (decl) => {
+    ok(`[data-block="hero"] { ${decl}; }`)
+  })
+
+  it('leaves shadow/background alpha unaffected', () => {
+    ok('[data-block="hero"] { box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); background-color: rgba(0, 0, 0, 0.05); }')
+  })
+})

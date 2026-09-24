@@ -84,6 +84,7 @@ describe('applyBundleToDraft', () => {
     const bad = { ...VALID, css: { blocks: { hero: 'body { display: none; }' } } }
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: bad, removeLegacy: false, message: 'm', author: AUTHOR })
     expect(r).toMatchObject({ ok: false, status: 422 })
+    expect(writeFiles).not.toHaveBeenCalled()
   })
 
   it('returns 422 without committing when design-overrides.css has malformed design-studio markers and removeLegacy is false', async () => {
