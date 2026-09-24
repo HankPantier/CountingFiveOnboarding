@@ -46,14 +46,17 @@ function fakeBrowser() {
 
 vi.mock('./browser', () => ({
   getBrowser: vi.fn(async () => fakeBrowser()),
+  currentBrowserPromise: vi.fn(() => null),
   recycleBrowser: recycleMock,
+  recycleIfStill: vi.fn(async () => undefined),
   RenderTimeoutError: FakeRenderTimeoutError,
 }))
 
 import { renderComposed } from './render-composed'
+import { getBrowser, currentBrowserPromise, recycleIfStill } from './browser'
 
 describe('renderComposed deadline (mocked browser, no real Chromium)', () => {
-  it('throws RenderTimeoutError within ~deadlineMs when a step hangs, and recycles the browser', async () => {
+  it('throws RenderTimeoutError within ~deadlineMs when a step hangs, and recycles the browser it was using', async () => {
     recycleMock.mockClear()
     const t0 = Date.now()
 
@@ -76,6 +79,38 @@ describe('renderComposed deadline (mocked browser, no real Chromium)', () => {
     // Comfortably under the 45s default deadline — proves the SHORT
     // deadlineMs actually governs, not the fallback.
     expect(elapsed).toBeLessThan(5_000)
+    // getBrowser() resolved fine here (the hang is in setContent), so the
+    // resolved-Browser path (recycleBrowser(target)) is what fires — not
+    // the snapshot fallback below.
     expect(recycleMock).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(recycleIfStill)).not.toHaveBeenCalled()
+  }, 10_000)
+
+  it('reports a hang inside getBrowser() itself as step "launch" and recycles via the snapshot (no resolved browser to hand recycleBrowser)', async () => {
+    recycleMock.mockClear()
+    vi.mocked(recycleIfStill).mockClear()
+    // This render's getBrowser() call never resolves at all — e.g. a wedged
+    // Chromium launch — so `browser` in renderComposed stays null the whole
+    // time and there's nothing to pass to recycleBrowser(target).
+    vi.mocked(getBrowser).mockImplementationOnce(() => new Promise(() => {}))
+    const snapshotToken = Symbol('snapshot') as unknown as ReturnType<typeof currentBrowserPromise>
+    vi.mocked(currentBrowserPromise).mockReturnValueOnce(snapshotToken)
+
+    let caught: unknown
+    try {
+      await renderComposed({
+        html: '<html></html>',
+        shellOrigin: 'https://example.invalid/',
+        viewport: 'desktop',
+        deadlineMs: 200,
+      })
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(FakeRenderTimeoutError)
+    expect((caught as Error).message).toContain('"launch"')
+    expect(vi.mocked(recycleIfStill)).toHaveBeenCalledWith(snapshotToken)
+    expect(recycleMock).not.toHaveBeenCalled()
   }, 10_000)
 })

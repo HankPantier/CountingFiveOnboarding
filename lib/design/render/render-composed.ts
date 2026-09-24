@@ -31,7 +31,7 @@ import {
   isAllowedRenderRequest,
   type ViewportKey,
 } from './harden'
-import { getBrowser, recycleBrowser, RenderTimeoutError } from './browser'
+import { getBrowser, currentBrowserPromise, recycleBrowser, recycleIfStill, RenderTimeoutError } from './browser'
 import type { Browser, BrowserContext } from 'playwright-core'
 
 export type RenderShot = { kind: 'fold' | 'next' | 'block'; selector?: string; png: Buffer }
@@ -105,9 +105,12 @@ export async function renderComposed(args: {
   // Step tracking: `mark(next)` records how long the step we're LEAVING took,
   // then starts the clock for `next`. `currentStep` is read directly (not
   // through `steps`) by the timeout/error handler below, since the step in
-  // progress at that moment never got a chance to call mark() itself.
+  // progress at that moment never got a chance to call mark() itself. Starts
+  // at 'launch' (not 'newContext') so a deadline that fires while still
+  // inside `await getBrowser()` itself — e.g. a wedged launch — is reported
+  // accurately rather than misattributed to the step that hasn't started yet.
   const steps: Record<string, number> = {}
-  let currentStep = 'newContext'
+  let currentStep = 'launch'
   let stepStart = t0
   const mark = (next: string) => {
     steps[currentStep] = Date.now() - stepStart
@@ -117,14 +120,19 @@ export async function renderComposed(args: {
 
   let browser: Browser | null = null
   let context: BrowserContext | null = null
+  // Captured right after calling getBrowser() (before awaiting it) so that,
+  // if the deadline fires before getBrowser() itself ever resolves, the
+  // timeout handler can ask browser.ts's recycleIfStill() to clear the cache
+  // ONLY if it still holds this exact promise — see currentBrowserPromise()'s
+  // doc comment in browser.ts for why this specific capture point matters.
+  let browserSnapshot: Promise<Browser> | null = null
 
   const body = async (): Promise<RenderResult> => {
-    browser = await getBrowser()
+    const browserCall = getBrowser()
+    browserSnapshot = currentBrowserPromise()
+    browser = await browserCall
     const launchMs = Date.now() - t0
-    // Reset the clock here (not at t0) so the 'newContext' step's recorded
-    // duration is just the newContext() call, not also the browser-launch
-    // wait already captured separately in `launchMs`.
-    stepStart = Date.now()
+    mark('newContext')
 
     const vp = VIEWPORTS[args.viewport]
     context = await browser.newContext({
@@ -222,7 +230,19 @@ export async function renderComposed(args: {
     if (finishedContext) {
       await withTimeout(finishedContext.close().catch(() => {}), CONTEXT_CLOSE_TIMEOUT_MS, () => undefined)
     }
-    if (isTimeout || disconnected) await recycleBrowser()
+    if (finishedBrowser) {
+      // Scoped to THIS render's own browser — recycleBrowser() only clears
+      // the shared cache if it still holds this exact instance, so a late
+      // recycle here can never close a different, already-relaunched,
+      // healthy browser another concurrent request is now relying on.
+      if (isTimeout || disconnected) await recycleBrowser(finishedBrowser)
+    } else if (isTimeout) {
+      // The deadline fired before getBrowser() itself ever resolved (no
+      // Browser to hand recycleBrowser() above) — fall back to the
+      // snapshot-scoped variant, which is equally careful not to clobber a
+      // newer promise some other request has already moved the cache to.
+      await recycleIfStill(browserSnapshot)
+    }
     throw err
   }
 }

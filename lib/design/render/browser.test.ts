@@ -3,6 +3,7 @@
 // we can control exactly when each "launch" settles and assert how many
 // times it was actually called under concurrent callers.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Browser } from 'playwright-core'
 
 const launchMock = vi.fn()
 
@@ -12,11 +13,19 @@ vi.mock('playwright-core', () => ({
   },
 }))
 
+// Kept untyped (not cast to Browser) so call sites can still reach the mock
+// methods directly (e.g. `.isConnected.mockReturnValue(...)`); cast with
+// `asBrowser()` below only at the call sites that hand one to a
+// Browser-typed parameter (recycleBrowser's `target`).
 function fakeBrowser(connected: boolean) {
   return {
     isConnected: vi.fn(() => connected),
     close: vi.fn(() => Promise.resolve()),
   }
+}
+
+function asBrowser(fake: ReturnType<typeof fakeBrowser>): Browser {
+  return fake as unknown as Browser
 }
 
 function deferred<T>() {
@@ -115,7 +124,7 @@ describe('getBrowser (mocked playwright-core)', () => {
     expect(launchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('recycleBrowser clears the cached browser so the next getBrowser() relaunches exactly once', async () => {
+  it('recycleBrowser(target) clears the cached browser so the next getBrowser() relaunches exactly once', async () => {
     const first = fakeBrowser(true)
     const second = fakeBrowser(true)
     launchMock.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
@@ -125,7 +134,7 @@ describe('getBrowser (mocked playwright-core)', () => {
     expect(b1).toBe(first)
     expect(launchMock).toHaveBeenCalledTimes(1)
 
-    await recycleBrowser()
+    await recycleBrowser(asBrowser(first))
     expect(first.close).toHaveBeenCalled()
 
     // Even though `first` still reports isConnected() === true, recycling
@@ -136,18 +145,95 @@ describe('getBrowser (mocked playwright-core)', () => {
     expect(launchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('recycleBrowser is a no-op when no browser has ever been launched', async () => {
-    const { recycleBrowser } = await import('./browser')
-    await expect(recycleBrowser()).resolves.toBeUndefined()
-    expect(launchMock).not.toHaveBeenCalled()
-  })
-
-  it('recycleBrowser does not hang if close() never resolves (bounded best-effort)', async () => {
-    const stuck = { isConnected: vi.fn(() => true), close: vi.fn(() => new Promise(() => {})) }
-    launchMock.mockResolvedValueOnce(stuck)
+  it('recycleBrowser() with no target is a no-op (never clears or closes anything)', async () => {
+    const first = fakeBrowser(true)
+    launchMock.mockResolvedValueOnce(first)
     const { getBrowser, recycleBrowser } = await import('./browser')
 
     await getBrowser()
     await expect(recycleBrowser()).resolves.toBeUndefined()
+    expect(first.close).not.toHaveBeenCalled()
+
+    // The cache is untouched — a second getBrowser() reuses `first`, no relaunch.
+    const b2 = await getBrowser()
+    expect(b2).toBe(first)
+    expect(launchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('recycleBrowser(target) does not hang if close() never resolves (bounded best-effort)', async () => {
+    const stuck = { isConnected: vi.fn(() => true), close: vi.fn(() => new Promise(() => {})) }
+    launchMock.mockResolvedValueOnce(stuck)
+    const { getBrowser, recycleBrowser } = await import('./browser')
+
+    const b = await getBrowser()
+    await expect(recycleBrowser(b)).resolves.toBeUndefined()
+  })
+
+  it('recycleBrowser(X) after the cache moved to Y: Y stays cached and is not closed, X is closed', async () => {
+    // The exact concurrency bug this round fixes: a late recycle call for a
+    // FAILED render's own browser (X) must not touch a DIFFERENT, healthy
+    // browser (Y) some other concurrent request has since cached.
+    const x = fakeBrowser(false) // X went stale/disconnected from request A's point of view
+    const y = fakeBrowser(true) // request B already relaunched to Y in the meantime
+    launchMock.mockResolvedValueOnce(x).mockResolvedValueOnce(y)
+    const { getBrowser, recycleBrowser } = await import('./browser')
+
+    await getBrowser() // caches X
+    // Simulate request B's own relaunch (X disconnected ⇒ getBrowser() relaunches to Y).
+    const b = await getBrowser()
+    expect(b).toBe(y)
+    expect(launchMock).toHaveBeenCalledTimes(2)
+
+    // Request A's late recycle call, still holding its OWN reference to X.
+    await recycleBrowser(asBrowser(x))
+
+    expect(x.close).toHaveBeenCalled()
+    expect(y.close).not.toHaveBeenCalled()
+    // The cache must still hold Y — a subsequent getBrowser() must NOT relaunch.
+    const stillY = await getBrowser()
+    expect(stillY).toBe(y)
+    expect(launchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('recycleIfStill(snapshot) with a stale snapshot leaves the cache untouched', async () => {
+    const stale = fakeBrowser(true)
+    const fresh = fakeBrowser(true)
+    launchMock.mockResolvedValueOnce(stale).mockResolvedValueOnce(fresh)
+    const { getBrowser, currentBrowserPromise, recycleIfStill } = await import('./browser')
+
+    expect(currentBrowserPromise()).toBeNull() // nothing launched yet
+
+    await getBrowser() // caches `stale`
+    const snapshotFromFirstLaunch = currentBrowserPromise()
+
+    // Force a relaunch (simulating a DIFFERENT, later request's own getBrowser()
+    // call moving the cache on to `fresh`) — the snapshot above is now stale.
+    stale.isConnected.mockReturnValue(false)
+    const b = await getBrowser()
+    expect(b).toBe(fresh)
+    expect(launchMock).toHaveBeenCalledTimes(2)
+
+    // recycleIfStill with the OLD snapshot (from before the relaunch) must
+    // be a no-op — it must not clear the cache out from under `fresh`.
+    await recycleIfStill(snapshotFromFirstLaunch)
+    const stillFresh = await getBrowser()
+    expect(stillFresh).toBe(fresh)
+    expect(launchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('recycleIfStill(snapshot) clears the cache when it still holds that exact promise', async () => {
+    const first = fakeBrowser(true)
+    const second = fakeBrowser(true)
+    launchMock.mockResolvedValueOnce(first).mockResolvedValueOnce(second)
+    const { getBrowser, currentBrowserPromise, recycleIfStill } = await import('./browser')
+
+    const call = getBrowser()
+    const snapshot = currentBrowserPromise()
+    await call
+
+    await recycleIfStill(snapshot)
+    const b = await getBrowser()
+    expect(b).toBe(second)
+    expect(launchMock).toHaveBeenCalledTimes(2)
   })
 })
