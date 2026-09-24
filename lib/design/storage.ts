@@ -11,9 +11,14 @@ const BUCKET = 'session-assets'
 const SIGNED_URL_TTL = 3600
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SEGMENT_RE = /^[a-z0-9][a-z0-9._-]*$/i
+// A 1440×900@2x screenshot is ~5M px; 40M leaves headroom while bounding
+// decode memory against a maliciously huge image.
+const MAX_INPUT_PIXELS = 40_000_000
+const MAX_SEGMENT_LENGTH = 200
+const MAX_SEGMENTS = 8
 
 export async function toWebp(image: Buffer): Promise<{ webp: Buffer; width: number; height: number }> {
-  const { data, info } = await sharp(image)
+  const { data, info } = await sharp(image, { limitInputPixels: MAX_INPUT_PIXELS })
     .resize({ width: SCREENSHOT_MAX_EDGE, height: SCREENSHOT_MAX_EDGE, fit: 'inside', withoutEnlargement: true })
     .webp({ quality: 80 })
     .toBuffer({ resolveWithObject: true })
@@ -22,7 +27,11 @@ export async function toWebp(image: Buffer): Promise<{ webp: Buffer; width: numb
 
 export function designStoragePath(sessionId: string, ...segments: string[]): string {
   if (!UUID_RE.test(sessionId)) throw new Error('designStoragePath: invalid session id')
-  if (segments.length === 0 || segments.some((s) => !SEGMENT_RE.test(s) || s.includes('..'))) {
+  if (
+    segments.length === 0 ||
+    segments.length > MAX_SEGMENTS ||
+    segments.some((s) => !SEGMENT_RE.test(s) || s.includes('..') || s.length > MAX_SEGMENT_LENGTH)
+  ) {
     throw new Error('designStoragePath: invalid path segment')
   }
   return `design/${sessionId}/${segments.join('/')}`

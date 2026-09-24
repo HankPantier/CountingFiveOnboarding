@@ -19,6 +19,10 @@ describe('toWebp', () => {
     const r = await toWebp(await png(390, 844))
     expect([r.width, r.height]).toEqual([390, 844])
   })
+  it('rejects an image above the 40M-pixel decode limit', async () => {
+    const huge = await png(8000, 6000) // 48M px > 40M limit
+    await expect(toWebp(huge)).rejects.toThrow()
+  })
 })
 
 describe('designStoragePath', () => {
@@ -31,9 +35,19 @@ describe('designStoragePath', () => {
     ['slash inside a segment', [SID, 'a/b.webp']],
     ['empty segment', [SID, '', 'x.webp']],
     ['leading dot', [SID, '.hidden']],
+    ['segment over 200 chars', [SID, 'a'.repeat(201)]],
+    ['more than 8 segments', [SID, ...Array.from({ length: 9 }, (_, i) => `seg${i}`)]],
   ])('rejects %s', (_l, args) => {
     const [sid, ...segs] = args as [string, ...string[]]
     expect(() => designStoragePath(sid, ...segs)).toThrow()
+  })
+  it('allows exactly 8 segments', () => {
+    const segs = Array.from({ length: 8 }, (_, i) => `seg${i}`)
+    expect(designStoragePath(SID, ...segs)).toBe(`design/${SID}/${segs.join('/')}`)
+  })
+  it('allows a segment at exactly 200 chars', () => {
+    const seg = 'a'.repeat(200)
+    expect(designStoragePath(SID, seg)).toBe(`design/${SID}/${seg}`)
   })
 })
 

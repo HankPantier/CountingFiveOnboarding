@@ -74,4 +74,35 @@ describe('captureExternalScreenshot', () => {
     const r = await captureExternalScreenshot('https://x.example.com/')
     expect(r).toEqual({ ok: false, reason: 'Screenshot capture is not configured.' })
   })
+
+  it('rejects when Content-Length exceeds the 10MB cap without reading the body', async () => {
+    const spies: ReturnType<typeof vi.spyOn>[] = []
+    function oversizedResponse() {
+      const stream = new ReadableStream<Uint8Array>({ start() {} })
+      spies.push(vi.spyOn(stream, 'getReader'))
+      return new Response(stream, { status: 200, headers: { 'content-length': String(11 * 1024 * 1024) } })
+    }
+    const f = stubFetch(oversizedResponse(), oversizedResponse())
+    const r = await captureExternalScreenshot('https://big.example.com/')
+    expect(r.ok).toBe(false)
+    expect(f).toHaveBeenCalledTimes(2)
+    for (const spy of spies) expect(spy).not.toHaveBeenCalled()
+  })
+
+  it('rejects a streamed body over the 10MB cap with no Content-Length header', async () => {
+    function bigStreamResponse() {
+      const bytes = new Uint8Array(11 * 1024 * 1024)
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes)
+          controller.close()
+        },
+      })
+      return new Response(stream, { status: 200 })
+    }
+    const f = stubFetch(bigStreamResponse(), bigStreamResponse())
+    const r = await captureExternalScreenshot('https://huge.example.com/')
+    expect(r.ok).toBe(false)
+    expect(f).toHaveBeenCalledTimes(2)
+  })
 })

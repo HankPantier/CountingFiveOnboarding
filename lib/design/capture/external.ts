@@ -13,6 +13,48 @@ const SCRAPINGBEE_API = 'https://app.scrapingbee.com/api/v1/'
 const TIMEOUT_MS = 45_000
 const MAX_URL_LENGTH = 300
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+// A screenshot response should be a few MB at most; cap so a hostile or
+// misbehaving upstream can't stream unbounded data into memory. Mirrors
+// lib/audit/crawl.ts's MAX_BINARY_BYTES stream-and-abort convention.
+const MAX_CAPTURE_BYTES = 10 * 1024 * 1024
+
+// Reads a fetch Response body up to MAX_CAPTURE_BYTES, aborting the stream as
+// soon as the cap is exceeded. Checks Content-Length first so an oversized
+// response never gets its body read at all. `url` is the target site's URL
+// (never the ScrapingBee request URL, which carries the API key) — safe to log.
+async function readCappedBody(res: Response, url: string): Promise<Buffer | null> {
+  const contentLength = res.headers.get('content-length')
+  if (contentLength && Number(contentLength) > MAX_CAPTURE_BYTES) {
+    console.warn(`[design-capture] ScrapingBee screenshot response too large for ${url}`)
+    return null
+  }
+  const reader = res.body?.getReader()
+  if (!reader) {
+    const ab = await res.arrayBuffer().catch(() => null)
+    if (!ab || ab.byteLength > MAX_CAPTURE_BYTES) return null
+    return Buffer.from(ab)
+  }
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (value) {
+        total += value.byteLength
+        if (total > MAX_CAPTURE_BYTES) {
+          await reader.cancel().catch(() => {})
+          console.warn(`[design-capture] ScrapingBee screenshot response too large for ${url}`)
+          return null
+        }
+        chunks.push(value)
+      }
+    }
+  } catch {
+    return null
+  }
+  return Buffer.concat(chunks)
+}
 
 async function attempt(key: string, url: string, stealth: boolean): Promise<Buffer | null> {
   const params = new URLSearchParams({
@@ -32,7 +74,7 @@ async function attempt(key: string, url: string, stealth: boolean): Promise<Buff
       console.warn(`[design-capture] ScrapingBee screenshot failed for ${url}: HTTP ${res.status}${stealth ? ' (stealth)' : ''}`)
       return null
     }
-    return Buffer.from(await res.arrayBuffer())
+    return await readCappedBody(res, url)
   } catch (err) {
     console.warn(`[design-capture] ScrapingBee screenshot error for ${url}:`, err)
     return null
