@@ -5,6 +5,7 @@ import {
   REGION_BEGIN,
   REGION_END,
   MANAGED_HEADER,
+  MALFORMED_REGION_ERROR,
   readRegion,
   removeRegion,
   composeRegion,
@@ -27,8 +28,9 @@ describe('managed region', () => {
     expect(region.indexOf('design-studio:global')).toBeLessThan(region.indexOf('design-studio:hero'))
     expect(region.indexOf('design-studio:hero')).toBeLessThan(region.indexOf('design-studio:footer'))
     const back = readRegion(`${LEGACY}\n${region}`)
-    expect(back.global).toBe(':root { --c5-gap: 4rem; }')
-    expect(back.blocks.hero).toBe('[data-block="hero"] { color: red; }')
+    if (!back.ok) throw new Error('expected a well-formed region')
+    expect(back.css.global).toBe(':root { --c5-gap: 4rem; }')
+    expect(back.css.blocks.hero).toBe('[data-block="hero"] { color: red; }')
   })
 
   it('is empty when there are no fragments', () => {
@@ -117,5 +119,98 @@ describe('bundleToRepoFiles', () => {
   it('rejects invalid brand.json text', () => {
     const r = bundleToRepoFiles(VALID, { brandText: '{nope', designText, overridesCss: '' }, { removeLegacy: false })
     expect(r.ok).toBe(false)
+  })
+})
+
+// Fix round 1: region-marker edge cases that could silently drop hand-written
+// CSS (findings task-5-findings-r1.md). RULING: exactly (1,1) begin-before-end
+// is the only well-formed case; zero of each means no region; anything else
+// is refused (fail closed) rather than guessed at.
+describe('managed region — malformed marker hardening', () => {
+  it('fails closed on a stray extra begin marker before the real region', () => {
+    // Old buggy regionBounds spanned first-begin -> first-end, silently
+    // swallowing the "orphaned, no matching end" text as part of the region.
+    const strayBegin = `${REGION_BEGIN}\n/* orphaned, no matching end for this one */\n`
+    const composed = composeRegion({ blocks: { hero: '[data-block="hero"] { color: red; }' } })
+    const malformed = `${strayBegin}${composed}`
+
+    expect(readRegion(malformed).ok).toBe(false)
+
+    const r = bundleFromRepoFiles({ brandText, designText, overridesCss: malformed }, { name: 'x', source: 'baseline' })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.join(' ')).toContain(MALFORMED_REGION_ERROR)
+  })
+
+  it('fails closed when the file has two separate regions', () => {
+    const region1 = composeRegion({ blocks: { hero: '[data-block="hero"] { color: red; }' } })
+    const region2 = composeRegion({ blocks: { footer: '[data-component="footer"] { padding: 1rem; }' } })
+    const twoRegions = `${region1}\n${region2}`
+
+    expect(readRegion(twoRegions).ok).toBe(false)
+
+    const r = bundleToRepoFiles(VALID, { brandText, designText, overridesCss: twoRegions }, { removeLegacy: false })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.join(' ')).toContain(MALFORMED_REGION_ERROR)
+  })
+
+  it('fails closed on an orphan begin marker with no matching end', () => {
+    const orphan = `${REGION_BEGIN}\n/* design-studio:hero */\n[data-block="hero"] { color: red; }\n/* /design-studio:hero */\n`
+    expect(readRegion(orphan).ok).toBe(false)
+    const r = bundleFromRepoFiles({ brandText, designText, overridesCss: orphan }, { name: 'x', source: 'baseline' })
+    expect(r.ok).toBe(false)
+  })
+
+  it('fails closed on an orphan end marker with no matching begin', () => {
+    const orphan = `/* design-studio:hero */\n[data-block="hero"] { color: red; }\n/* /design-studio:hero */\n${REGION_END}\n`
+    expect(readRegion(orphan).ok).toBe(false)
+    const r = bundleFromRepoFiles({ brandText, designText, overridesCss: orphan }, { name: 'x', source: 'baseline' })
+    expect(r.ok).toBe(false)
+  })
+
+  it('removeLegacy:true still proceeds even when the existing overrides file is malformed', () => {
+    // removeLegacy discards everything outside the region anyway, so there is
+    // nothing to guess at — the malformed gate only applies when keeping legacy CSS.
+    const malformed = `${REGION_BEGIN}\n${REGION_BEGIN}\nstray\n${REGION_END}\n`
+    const r = bundleToRepoFiles(VALID, { brandText, designText, overridesCss: malformed }, { removeLegacy: true })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.files.overridesCss.startsWith(MANAGED_HEADER.trimEnd())).toBe(true)
+  })
+
+  it('normalizes CRLF before parsing so a CRLF-saved overrides file still reads back (read path)', () => {
+    const region = composeRegion({ blocks: { hero: '[data-block="hero"] { color: red; }' } })
+    const crlf = region.replace(/\n/g, '\r\n')
+    const r = readRegion(crlf)
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.css.blocks.hero).toBe('[data-block="hero"] { color: red; }')
+  })
+
+  it('normalizes CRLF in the existing overrides file on the write path too', () => {
+    const crlfLegacy = LEGACY.replace(/\n/g, '\r\n')
+    const r = bundleToRepoFiles(VALID, { brandText, designText, overridesCss: crlfLegacy }, { removeLegacy: false })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(r.files.overridesCss).not.toContain('\r')
+    expect(r.files.overridesCss).toContain('theme-editor:hero')
+  })
+
+  it('returns the sanitized canonical css, and reading it back yields the same css', () => {
+    const r = bundleToRepoFiles(VALID, { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    const back = bundleFromRepoFiles(
+      { brandText: r.files.brandText, designText: r.files.designText, overridesCss: r.files.overridesCss },
+      { name: 'x', source: 'baseline' }
+    )
+    if (!back.ok) throw new Error(back.errors.join(' | '))
+    expect(back.bundle.css).toEqual(r.css)
+  })
+
+  it('collapses to at most one blank line when removing a region from the middle of the file', () => {
+    const before = '/* before */\nhtml { color: black; }'
+    const after = 'html { color: white; }\n/* after */\n'
+    const region = composeRegion({ blocks: { hero: '[data-block="hero"] { color: red; }' } })
+    const css = `${before}\n\n\n${region}\n\n\n${after}`
+
+    const result = removeRegion(css)
+    expect(result).not.toMatch(/\n{3,}/)
+    expect(result).toBe(`${before}\n\n${after}`.trimEnd())
   })
 })

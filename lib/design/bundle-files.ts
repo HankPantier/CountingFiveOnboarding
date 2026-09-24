@@ -20,24 +20,59 @@ export const MANAGED_HEADER =
 
 export type RepoThemeFiles = { brandText: string; designText: string; overridesCss: string }
 export type RenderedThemeFiles = { brandText: string; designText: string; themeCss: string; overridesCss: string }
+// readRegion's throw-free signal: `ok: false` means the file's design-studio
+// markers are malformed (never guessed at — see regionStatus below).
+export type ReadRegionResult = { ok: true; css: DesignBundle['css'] } | { ok: false }
+
+export const MALFORMED_REGION_ERROR =
+  'content/design-overrides.css has malformed design-studio region markers — fix by hand or apply with removeLegacy.'
 
 const serialize = (obj: unknown): string => JSON.stringify(obj, null, 2) + '\n'
 const fragStart = (key: string) => `/* design-studio:${key} */`
 const fragEnd = (key: string) => `/* /design-studio:${key} */`
 
-function regionBounds(css: string): { start: number; end: number } | null {
-  const start = css.indexOf(REGION_BEGIN)
-  if (start === -1) return null
-  const endIdx = css.indexOf(REGION_END, start)
-  if (endIdx === -1) return null
-  return { start, end: endIdx + REGION_END.length }
+// Repos may have been saved with CRLF line endings (Windows editors, some git
+// autocrlf configs). Normalize before any marker/region parsing so a CRLF
+// round-trip never looks malformed and never leaks \r into rewritten files.
+const normalizeNewlines = (css: string): string => css.replace(/\r\n/g, '\n')
+
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0
+  let from = 0
+  for (;;) {
+    const idx = haystack.indexOf(needle, from)
+    if (idx === -1) return count
+    count++
+    from = idx + needle.length
+  }
 }
 
-export function readRegion(overridesCss: string): DesignBundle['css'] {
+type RegionStatus = { kind: 'none' } | { kind: 'valid'; start: number; end: number } | { kind: 'malformed' }
+
+// A well-formed overrides file has either no markers at all, or exactly one
+// begin and one end with the begin first. Anything else (a stray extra begin,
+// two separate regions, an orphaned begin or end) is refused rather than
+// guessed at — guessing which begin/end pair is "the real one" is exactly
+// what silently drops hand-written CSS.
+function regionStatus(normalizedCss: string): RegionStatus {
+  const begins = countOccurrences(normalizedCss, REGION_BEGIN)
+  const ends = countOccurrences(normalizedCss, REGION_END)
+  if (begins === 0 && ends === 0) return { kind: 'none' }
+  if (begins === 1 && ends === 1) {
+    const start = normalizedCss.indexOf(REGION_BEGIN)
+    const end = normalizedCss.indexOf(REGION_END)
+    if (start < end) return { kind: 'valid', start, end: end + REGION_END.length }
+  }
+  return { kind: 'malformed' }
+}
+
+export function readRegion(overridesCss: string): ReadRegionResult {
+  const css = normalizeNewlines(overridesCss)
+  const status = regionStatus(css)
+  if (status.kind === 'malformed') return { ok: false }
   const out: DesignBundle['css'] = { blocks: {} }
-  const b = regionBounds(overridesCss)
-  if (!b) return out
-  const region = overridesCss.slice(b.start, b.end)
+  if (status.kind === 'none') return { ok: true, css: out }
+  const region = css.slice(status.start, status.end)
   const re = /\/\* design-studio:([a-z-]+) \*\/\n([\s\S]*?)\n\/\* \/design-studio:\1 \*\//g
   let m: RegExpExecArray | null
   while ((m = re.exec(region))) {
@@ -45,13 +80,22 @@ export function readRegion(overridesCss: string): DesignBundle['css'] {
     if (key === 'global') out.global = body
     else if (isCssTarget(key)) out.blocks[key] = body
   }
-  return out
+  return { ok: true, css: out }
 }
 
 export function removeRegion(overridesCss: string): string {
-  const b = regionBounds(overridesCss)
-  if (!b) return overridesCss.trimEnd()
-  return (overridesCss.slice(0, b.start) + overridesCss.slice(b.end)).trimEnd()
+  const css = normalizeNewlines(overridesCss)
+  const status = regionStatus(css)
+  // Malformed input is left untouched rather than guessed at — callers that
+  // must write (bundleToRepoFiles) gate on regionStatus themselves and never
+  // reach here with malformed text unless removeLegacy discards it anyway.
+  if (status.kind !== 'valid') return css.trimEnd()
+  // Collapse the join so removing a mid-file region leaves at most one blank
+  // line, instead of stacking the region's own surrounding blank lines.
+  const before = css.slice(0, status.start).replace(/\n+$/, '')
+  const after = css.slice(status.end).replace(/^\n+/, '')
+  const joined = before && after ? `${before}\n\n${after}` : before || after
+  return joined.trimEnd()
 }
 
 export function composeRegion(css: DesignBundle['css']): string {
@@ -77,6 +121,8 @@ export function bundleFromRepoFiles(
   } catch {
     return { ok: false, errors: ['brand.json / design.json is not valid JSON.'] }
   }
+  const region = readRegion(files.overridesCss)
+  if (!region.ok) return { ok: false, errors: [MALFORMED_REGION_ERROR] }
   const t = normalizeTypography(design.typography)
   return parseDesignBundle({
     schemaVersion: 1,
@@ -95,7 +141,7 @@ export function bundleFromRepoFiles(
       eyebrowStyle: design.eyebrowStyle ?? 'standard',
       darkSections: design.darkSections ?? false,
     },
-    css: readRegion(files.overridesCss),
+    css: region.css,
     meta: { source: meta.source },
   })
 }
@@ -104,7 +150,7 @@ export function bundleToRepoFiles(
   bundle: DesignBundle,
   current: RepoThemeFiles,
   opts: { removeLegacy: boolean }
-): { ok: true; files: RenderedThemeFiles } | { ok: false; errors: string[] } {
+): { ok: true; files: RenderedThemeFiles; css: DesignBundle['css'] } | { ok: false; errors: string[] } {
   let brand: BrandJson
   let design: DesignJson
   try {
@@ -112,6 +158,14 @@ export function bundleToRepoFiles(
     design = JSON.parse(current.designText) as DesignJson
   } catch {
     return { ok: false, errors: ['brand.json / design.json is not valid JSON.'] }
+  }
+
+  // Malformed markers in the file we're about to partially rewrite are fatal
+  // unless removeLegacy is set — removeLegacy discards everything outside the
+  // region anyway, so there's nothing to guess at.
+  const normalizedOverrides = normalizeNewlines(current.overridesCss)
+  if (!opts.removeLegacy && regionStatus(normalizedOverrides).kind === 'malformed') {
+    return { ok: false, errors: [MALFORMED_REGION_ERROR] }
   }
 
   // Sanitize every CSS fragment first — nothing is written if any fails.
@@ -154,7 +208,7 @@ export function bundleToRepoFiles(
   const flagged = patchDesignFlags(serialize(merged), bundle.treatments)
   if (!flagged.ok) return { ok: false, errors: [flagged.reason] }
 
-  const base = (opts.removeLegacy ? MANAGED_HEADER : removeRegion(current.overridesCss)).trimEnd()
+  const base = (opts.removeLegacy ? MANAGED_HEADER : removeRegion(normalizedOverrides)).trimEnd()
   const region = composeRegion(clean)
   const overridesCss = region ? (base ? `${base}\n\n${region}` : region) : base ? `${base}\n` : ''
 
@@ -166,5 +220,9 @@ export function bundleToRepoFiles(
       themeCss: generateThemeCss(nextBrand, flagged.design),
       overridesCss,
     },
+    // The sanitized, canonical fragments that were actually written — later
+    // phases should store this, not the bundle's pre-sanitize css, as the
+    // record of what's on disk.
+    css: clean,
   }
 }
