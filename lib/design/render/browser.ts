@@ -3,7 +3,18 @@
 // 2–5 s cold start). Vercel → @sparticuz/chromium; local dev →
 // CHROMIUM_EXECUTABLE_PATH (a local Chrome). Both are loaded lazily so
 // importing this module never touches a native binary.
-import { chromium, type Browser } from 'playwright-core'
+//
+// Gate round 3 root cause (task-4-findings-gate-r3.md): @sparticuz/chromium
+// REQUIRES --single-process on Vercel, and in single-process mode repeatedly
+// creating/closing BrowserContexts + pages intermittently wedges
+// context.newPage() forever. So a launch now creates ONE BrowserContext and
+// ONE Page (plus one CDP session on it) and caches all of them together as a
+// "render bundle"; renders reuse that page (per-render viewport/DPR via CDP
+// emulation, per-render request policy via the module-level state below) and
+// never create or close a context/page in the success path. A recycle closes
+// the whole bundle (closing the browser closes its context and page).
+import { chromium, type Browser, type BrowserContext, type CDPSession, type Page, type Route } from 'playwright-core'
+import { MAX_RENDER_REQUESTS, PAGE_TIMEOUT_MS, VIEWPORTS, isAllowedRenderRequest } from './harden'
 
 export class RendererUnavailableError extends Error {
   constructor(message: string) {
@@ -13,10 +24,9 @@ export class RendererUnavailableError extends Error {
 }
 
 // Thrown by renderComposed() when the overall render deadline elapses. Lives
-// here (next to RendererUnavailableError) even though the deadline race lives
-// in render-composed.ts, so both renderer-error types have one home. The
-// render route checks this by `err.name` rather than `instanceof` — the
-// module is lazily `import()`-ed there, and a name check is robust either way.
+// here (next to RendererUnavailableError) so both renderer-error types have
+// one home. The render route checks this by `err.name` rather than
+// `instanceof` — the module is lazily `import()`-ed there.
 export class RenderTimeoutError extends Error {
   constructor(message: string) {
     super(message)
@@ -24,15 +34,69 @@ export class RenderTimeoutError extends Error {
   }
 }
 
-let browserPromise: Promise<Browser> | null = null
+export type RenderBundle = {
+  browser: Browser
+  context: BrowserContext
+  page: Page
+  cdp: CDPSession
+}
+
+// ── Per-render request policy ────────────────────────────────────────────
+// The context's route handler and the page's requestfailed listener are
+// installed ONCE per bundle; both consult this mutable "current render"
+// state, which renderComposed sets at the start of each render (under its
+// render mutex, so there is at most one) and clears when it's done.
+// Requests arriving while no render is active are aborted outright.
+export type RenderRequestState = {
+  shellOrigin: string
+  requestCount: number
+  blocked: number
+}
+
+let activeRender: RenderRequestState | null = null
+
+export function beginRenderRequests(shellOrigin: string): RenderRequestState {
+  const state: RenderRequestState = { shellOrigin, requestCount: 0, blocked: 0 }
+  activeRender = state
+  return state
+}
+
+// Identity-scoped: a late end from an abandoned (timed-out) render can never
+// clear a newer render's state.
+export function endRenderRequests(state: RenderRequestState | null): void {
+  if (state && activeRender === state) activeRender = null
+}
+
+function handleRoute(route: Route): Promise<void> {
+  const state = activeRender
+  if (!state) return route.abort()
+  state.requestCount++
+  if (state.requestCount > MAX_RENDER_REQUESTS || !isAllowedRenderRequest(route.request().url(), state.shellOrigin)) {
+    state.blocked++
+    return route.abort()
+  }
+  return route.continue()
+}
+
+// A CSP-blocked fetch never reaches the route handler above (Chromium refuses
+// it before dispatching it to the network layer) but does fire
+// 'requestfailed' with this specific errorText — count it against the
+// current render so `blockedRequests` covers both layers.
+function handleRequestFailed(req: { failure(): { errorText: string } | null }): void {
+  if (activeRender && req.failure()?.errorText === 'csp') activeRender.blocked++
+}
+
+// ── Bundle cache ─────────────────────────────────────────────────────────
+let bundlePromise: Promise<RenderBundle> | null = null
 
 const RECYCLE_CLOSE_TIMEOUT_MS = 3_000
+// Bound for the post-launch setup (newContext/route/newPage/CDP). If it
+// wedges, the just-launched browser is closed here rather than being left as
+// an orphan nobody holds a reference to.
+const SETUP_TIMEOUT_MS = 15_000
 
 // Best-effort bounded wait: resolves with `fallback` if `promise` doesn't
-// settle — or itself rejects — within `ms`. Every recycle path below is
-// pure best-effort cleanup, never something that should propagate an error
-// up past a render that's already failing for its own reason, so this never
-// rejects (unlike render-composed.ts's own `withTimeout`, which needs to).
+// settle — or itself rejects — within `ms`. Never rejects.
 function withFallback<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise<T>((resolve) => {
     const timer = setTimeout(() => resolve(fallback), ms)
@@ -49,9 +113,20 @@ function withFallback<T>(promise: Promise<T>, ms: number, fallback: T): Promise<
   })
 }
 
-async function launch(): Promise<Browser> {
+function closeBounded(browser: Browser): Promise<void> {
+  return withFallback(browser.close().catch(() => {}), RECYCLE_CLOSE_TIMEOUT_MS, undefined)
+}
+
+// Local-only extra flags (space-separated), e.g.
+// CHROMIUM_EXTRA_ARGS="--single-process --no-zygote" to reproduce the
+// @sparticuz/chromium production mode against a local Chrome.
+function localExtraArgs(): string[] {
+  return (process.env.CHROMIUM_EXTRA_ARGS ?? '').split(/\s+/).filter(Boolean)
+}
+
+async function launchBrowser(): Promise<Browser> {
   const localPath = process.env.CHROMIUM_EXECUTABLE_PATH
-  if (localPath) return chromium.launch({ executablePath: localPath, headless: true })
+  if (localPath) return chromium.launch({ executablePath: localPath, headless: true, args: localExtraArgs() })
   if (process.env.VERCEL) {
     const sparticuz = (await import('@sparticuz/chromium')).default
     sparticuz.setGraphicsMode = false
@@ -60,94 +135,107 @@ async function launch(): Promise<Browser> {
   throw new RendererUnavailableError('No Chromium available — set CHROMIUM_EXECUTABLE_PATH for local rendering.')
 }
 
-export async function getBrowser(): Promise<Browser> {
+async function setupBundle(browser: Browser): Promise<RenderBundle> {
+  const context = await browser.newContext({
+    viewport: { width: VIEWPORTS.desktop.width, height: VIEWPORTS.desktop.height },
+    deviceScaleFactor: VIEWPORTS.desktop.deviceScaleFactor,
+    serviceWorkers: 'block',
+  })
+  await context.route('**/*', handleRoute)
+  const page = await context.newPage()
+  page.setDefaultTimeout(PAGE_TIMEOUT_MS)
+  page.on('requestfailed', handleRequestFailed)
+  const cdp = await context.newCDPSession(page)
+  return { browser, context, page, cdp }
+}
+
+async function launchBundle(): Promise<RenderBundle> {
+  const browser = await launchBrowser()
+  const setup = setupBundle(browser)
+  const timeout = new Error(`Renderer setup did not finish within ${SETUP_TIMEOUT_MS}ms`)
+  const outcome = await withFallback<RenderBundle | Error>(
+    setup.catch((err: unknown) => (err instanceof Error ? err : new Error(String(err)))),
+    SETUP_TIMEOUT_MS,
+    timeout
+  )
+  if (outcome instanceof Error) {
+    await closeBounded(browser)
+    throw outcome
+  }
+  return outcome
+}
+
+function isHealthy(bundle: RenderBundle): boolean {
+  return bundle.browser.isConnected() && !bundle.page.isClosed()
+}
+
+export async function getRenderPage(): Promise<RenderBundle> {
   // Snapshot the promise we're evaluating so we can tell, after awaiting it,
-  // whether another concurrent caller has already replaced it — the whole
-  // point of single-flight relaunch is that only ONE of N concurrent callers
-  // who observe a disconnected browser actually launches a new one; the rest
-  // piggyback on that same in-flight promise instead of each starting their
-  // own Chromium process (which would leak N-1 orphaned browsers).
-  const current = browserPromise
+  // whether another concurrent caller has already replaced it — only ONE of
+  // N concurrent callers who observe a stale bundle actually relaunches; the
+  // rest piggyback on that same in-flight promise (no orphaned Chromiums).
+  const current = bundlePromise
   if (current) {
     const existing = await current.catch(() => null)
-    if (existing?.isConnected()) return existing
-    // Stale or failed — best-effort close so it doesn't linger as an orphan
-    // process; failure to close a browser that's already dead is expected.
-    await existing?.close().catch(() => {})
-    if (browserPromise !== current) {
-      // Another caller already noticed the same thing and is relaunching
-      // (or has already relaunched) — recurse to observe THEIR promise
-      // rather than racing a second launch.
-      return getBrowser()
-    }
+    if (existing && isHealthy(existing)) return existing
+    // Stale or failed — best-effort close so it doesn't linger as an orphan.
+    if (existing) await closeBounded(existing.browser)
+    if (bundlePromise !== current) return getRenderPage()
   }
-  const p = launch()
-  browserPromise = p
+  const p = launchBundle()
+  bundlePromise = p
   try {
     return await p
   } catch (err) {
-    // Only clear if nobody else has already moved browserPromise on (e.g. a
-    // later caller's own launch attempt) — never clobber a newer promise.
-    if (browserPromise === p) browserPromise = null
+    // Only clear if nobody else has already moved the cache on.
+    if (bundlePromise === p) bundlePromise = null
     throw err
   }
 }
 
-// Exposes the raw browserPromise reference — never a fresh async-call
-// wrapper — so a caller about to invoke getBrowser() can remember exactly
-// which in-flight/cached promise it started with. Call this IMMEDIATELY
-// after invoking getBrowser() (but before awaiting its result): calling an
-// async function runs its synchronous prefix right away, and getBrowser()'s
-// own synchronous prefix (which, in the cold-start case, already assigns a
-// fresh browserPromise) has therefore already run by the time its call
-// expression returns a pending promise — so this reads the SAME promise
-// getBrowser() itself is now working with. Used only by renderComposed's
-// timeout path (see recycleIfStill below); everywhere else, callers just
-// use the resolved Browser from recycleBrowser(target).
-export function currentBrowserPromise(): Promise<Browser> | null {
-  return browserPromise
+// Thin wrapper kept for callers that only need the Browser.
+export async function getBrowser(): Promise<Browser> {
+  return (await getRenderPage()).browser
 }
 
-// Force the next getBrowser() call to launch a fresh Chromium process —
-// scoped to the SPECIFIC browser a failing render was using, never "clear
-// whatever's cached right now." Under concurrency (e.g. several renders on
-// one warm, reused Vercel Fluid-compute instance) a late recycle from one
-// request must not close a DIFFERENT, already-relaunched, healthy browser
-// another request is now relying on: if the shared cache still holds
-// `target`, clear it too (so the next getBrowser() call relaunches);
-// otherwise the cache has already moved on, so leave it alone and just
-// best-effort close `target` directly. A browser that just timed out a
-// render (e.g. wedged under @sparticuz/chromium's --single-process mode)
-// may still self-report as "connected", so callers that know a render just
-// timed out or errored on a disconnected browser call this explicitly
-// rather than relying on getBrowser()'s own isConnected() heuristic.
+// Exposes the raw cached promise reference — never a fresh wrapper — so a
+// caller about to await getRenderPage() can remember exactly which
+// in-flight/cached promise it started with. Call this IMMEDIATELY after
+// invoking getRenderPage() (before awaiting it): its synchronous prefix has
+// already assigned any fresh launch promise by then. Used only by
+// renderComposed's timeout path (see recycleIfStill below).
+export function currentBrowserPromise(): Promise<RenderBundle> | null {
+  return bundlePromise
+}
+
+// Force the next getRenderPage() to launch a fresh bundle — scoped to the
+// SPECIFIC browser a failing render was using. If the cache still holds that
+// browser's bundle, clear it; otherwise the cache has already moved on to a
+// different, healthy bundle another request relies on, so leave it alone and
+// just best-effort close `target`. Closing the browser closes its context
+// and page with it.
 export async function recycleBrowser(target?: Browser): Promise<void> {
   if (!target) return
-  const current = browserPromise
+  const current = bundlePromise
   const existing = current ? await withFallback(current.catch(() => null), RECYCLE_CLOSE_TIMEOUT_MS, null) : null
-  if (existing === target && browserPromise === current) browserPromise = null
-  await withFallback(target.close().catch(() => {}), RECYCLE_CLOSE_TIMEOUT_MS, undefined)
+  if (existing?.browser === target && bundlePromise === current) bundlePromise = null
+  await closeBounded(target)
 }
 
 // Variant for when a render's deadline fires WHILE it's still inside
-// `await getBrowser()` itself (e.g. a launch that never settles) — so there
-// is no resolved Browser to hand recycleBrowser() above. `snapshot` must be
-// captured via currentBrowserPromise() right after calling getBrowser(),
-// before awaiting it. Only clears the cache if it STILL holds that exact
-// same promise — never a newer one some other concurrent request has
-// already moved on to — and is otherwise a no-op (there's nothing of this
-// render's to safely close: the underlying launch, if it ever settles, is
-// what a later getBrowser() call would inherit or supersede on its own).
-export async function recycleIfStill(snapshot: Promise<Browser> | null): Promise<void> {
-  if (!snapshot || browserPromise !== snapshot) return
-  browserPromise = null
+// `await getRenderPage()` (no resolved bundle in hand). Only clears the
+// cache if it STILL holds that exact snapshot — never a newer one.
+export async function recycleIfStill(snapshot: Promise<RenderBundle> | null): Promise<void> {
+  if (!snapshot || bundlePromise !== snapshot) return
+  bundlePromise = null
   const existing = await withFallback(snapshot.catch(() => null), RECYCLE_CLOSE_TIMEOUT_MS, null)
-  if (existing) await withFallback(existing.close().catch(() => {}), RECYCLE_CLOSE_TIMEOUT_MS, undefined)
+  if (existing) await closeBounded(existing.browser)
 }
 
 // Test-only: close the shared browser so vitest can exit cleanly.
 export async function closeBrowserForTests(): Promise<void> {
-  const b = browserPromise ? await browserPromise.catch(() => null) : null
-  browserPromise = null
-  await b?.close()
+  const b = bundlePromise ? await bundlePromise.catch(() => null) : null
+  bundlePromise = null
+  activeRender = null
+  await b?.browser.close()
 }
