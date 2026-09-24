@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // lightningcss ships native .node bindings — keep it out of the server
   // bundle (require() it at runtime) instead of letting Turbopack try to
   // bundle the binary. Used by lib/design/css-sanitizer.ts (server-only).
-  serverExternalPackages: ['lightningcss'],
+  serverExternalPackages: ['lightningcss', '@sparticuz/chromium', 'playwright-core'],
   // lightningcss picks its native binding at runtime with a computed
   // require() (`lightningcss-${platform}-${arch}`), which file tracing can't
   // follow — so the Linux binary Vercel needs would be missing from the
@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
       './node_modules/lightningcss-linux-x64-gnu/**',
       './node_modules/detect-libc/**',
     ],
+    // @sparticuz/chromium ships its brotli-compressed Chromium in bin/, which it
+    // loads by path at runtime — tracing can't see it, so force-include it.
+    '/api/edit/\\[id\\]/design/render': ['./node_modules/@sparticuz/chromium/bin/**'],
   },
   async headers() {
     return [

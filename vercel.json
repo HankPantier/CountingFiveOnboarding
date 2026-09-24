@@ -36,6 +36,10 @@
     },
     "app/api/audit-batches/[id]/run/route.ts": {
       "maxDuration": 600
+    },
+    "app/api/edit/[id]/design/render/route.ts": {
+      "maxDuration": 120,
+      "memory": 3009
     }
   }
 }
