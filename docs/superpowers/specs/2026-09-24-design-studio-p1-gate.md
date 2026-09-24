@@ -69,3 +69,19 @@
   - Renders on one instance are serialized, so a burst will queue. A 10 s minimum-budget guard follows in the final fix round.
   - Off-origin hotlinked images render blank, by design of the allowlist.
   - Mobile uses `mobile: true` emulation, so pages without a viewport meta lay out 980 px wide.
+
+## Final-head smoke test (commit `24718fc`, preview `counting-five-admin-km2fpyp2d…`)
+
+After the final-review fixes, the test ran 1 cold render, 3 warm renders, and 1 concurrent desktop + mobile pair. **All 6 returned 200.**
+
+| Render | renderMs | totalMs | Notes |
+|---|---|---|---|
+| desktop `/` (cold) | 5307 | 8374 | launch 2925 ms |
+| desktop `/services` | 1957 | 3810 | |
+| mobile `/` | 1197 | 2453 | |
+| desktop `/` | 1858 | 3525 | |
+| desktop `/services` (concurrent) | 3087 | 4666 | 908 ms of that was queue wait (serialized by the render mutex) |
+| mobile `/` (concurrent) | 1043 | 2555 | |
+
+- The per-function `memory` warning no longer appears in the build log.
+- **Open post-merge check:** confirm in the Vercel dashboard (Deployment → Functions) whether `design/render` is its own function, or is grouped with the other `maxDuration = 120` routes.
