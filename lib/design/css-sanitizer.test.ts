@@ -449,3 +449,102 @@ describe('sanitizeDesignCss — round 2 findings (bypasses closed)', () => {
     )
   })
 })
+
+// Regression tests for task-3-findings-r3.md (task review round 3) — the
+// leading-dot alpha regression + clamp nested-comma parsing, structural
+// animation limits, colour hiding via nested functions, and two uncovered
+// properties.
+describe('sanitizeDesignCss — round 3 findings (bypasses closed, regression fixed)', () => {
+  it.each([
+    ['modern slash syntax', 'color: rgb(0 59 113 / .9)'],
+    ['legacy comma syntax', 'color: rgba(0, 0, 0, .5)'],
+  ])('accepts a leading-dot alpha (regression fix): %s', (_label, decl) => {
+    ok(`[data-block="hero"] { ${decl}; }`)
+  })
+
+  it('accepts clamp() whose 2nd argument is itself a multi-arg nested function', () => {
+    ok('[data-block="hero"] { font-size: clamp(1rem, min(2vw, 3rem), 4rem); }')
+  })
+
+  it('still rejects clamp() with a nested-comma 2nd arg when the minimum is too small', () => {
+    expect(errs('[data-block="hero"] { font-size: clamp(8px, min(2vw, 3rem), 4rem); }')).toMatch(/not allowed/i)
+  })
+
+  it('accepts the from/to entrance+exit animation with a plain final-step opacity', () => {
+    ok(
+      '@keyframes c5-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] h1 { animation: c5-rise .6s ease-out; } }'
+    )
+  })
+
+  it('accepts an animation shorthand with cubic-bezier() timing and a delay', () => {
+    ok(
+      '@keyframes c5-rise2 { from { opacity: 0; } to { opacity: 1; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-rise2 600ms cubic-bezier(.2,.7,.2,1) 100ms; } }'
+    )
+  })
+
+  it('rejects a `from, 100.0%` combined selector as a final step (parseFloat, not string equality)', () => {
+    expect(
+      errs(
+        '@keyframes c5-h { from, 100.0% { opacity: 0; } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h 1s; } }'
+      )
+    ).toMatch(/final .* step/i)
+  })
+
+  it('rejects a non-plain-number final-step opacity (calc(), not just a too-low number)', () => {
+    expect(
+      errs(
+        '@keyframes c5-h2 { to { opacity: calc(0); } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h2 1s; } }'
+      )
+    ).toMatch(/plain number or percentage/i)
+  })
+
+  it.each([
+    ['steps()', 'animation: c5-h 1s steps(1, end)'],
+    ['infinite', 'animation: c5-h 1s infinite'],
+    ['var()', 'animation: c5-h 1s var(--c5-f)'],
+  ])('rejects the structurally-banned animation token: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/steps\(\)|infinite|var\(\)/)
+  })
+
+  it('rejects an animation-duration over 2s (via the shorthand)', () => {
+    expect(errs('[data-block="hero"] { animation: c5-h 30s; }')).toContain('duration must be')
+  })
+
+  it('rejects an animation-delay over 1s (via the shorthand, 2nd time value)', () => {
+    expect(errs('[data-block="hero"] { animation: c5-h 1s 5s; }')).toContain('delay must be')
+  })
+
+  it('rejects animation-iteration-count set to anything but 1', () => {
+    expect(errs('[data-block="hero"] { animation-iteration-count: 3; }')).toContain('must be exactly 1')
+  })
+
+  it('rejects a bare iteration-count number in the shorthand other than 1', () => {
+    expect(errs('[data-block="hero"] { animation: c5-h .3s 3; }')).toContain('bare number of 1')
+  })
+
+  it('does not misidentify a number inside cubic-bezier() as a bare iteration count', () => {
+    ok(
+      '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h .3s cubic-bezier(.2,.7,.2,1); } }'
+    )
+  })
+
+  it.each([
+    ['color-mix()', 'color: color-mix(in srgb, red 0%, transparent)'],
+    ['relative-colour syntax', 'color: rgb(from var(--c) r g b / 0)'],
+  ])('rejects colour hiding via nested functions: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/hides text/i)
+  })
+
+  it('rejects the font shorthand entirely', () => {
+    expect(errs('[data-block="hero"] { font: 16px/1.5 sans-serif; }')).toMatch(/longhands/i)
+  })
+
+  it('treats -webkit-sticky exactly like sticky (navbar only)', () => {
+    ok('[data-component="navbar"] { position: -webkit-sticky; }', { kind: 'target', target: 'navbar' })
+    expect(errs('[data-block="hero"] { position: -webkit-sticky; }')).toMatch(/navbar/i)
+  })
+})

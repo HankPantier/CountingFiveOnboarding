@@ -12,11 +12,17 @@
 //
 // This is a denylist-plus-scoping gate, not a formal CSS security model — it
 // cannot enumerate every possible bypass, only the ones found and closed so
-// far (see task-3-findings-r1.md and task-3-findings-r2.md for the round-1
-// and round-2 reviews). Where practical, prefer a structural allowlist (e.g.
-// font-size, the reduced-motion gate, :root's shape) over another denylist
-// pattern — it's harder to bypass with an unanticipated variant. Treat any
-// new bypass class the same way: add a regression test, then close it here.
+// far (see task-3-findings-r1.md, task-3-findings-r2.md, and
+// task-3-findings-r3.md for the round-1/2/3 reviews). Where practical, prefer
+// a structural allowlist (e.g. font-size, the reduced-motion gate, :root's
+// shape, animation's duration/delay/iteration-count limits) over another
+// denylist pattern — it's harder to bypass with an unanticipated variant.
+// Treat any new bypass class the same way: add a regression test, then close
+// it here. Known residual limit (parked, not fixed here — round 3 ruling):
+// var() indirection in font-size/colour (e.g. `font-size: var(--x, 0px)` where
+// --x is later set to 0px in :root) can't be statically evaluated; the spec's
+// P4 render gate (hidden-block / axe contrast metrics on the rendered page)
+// is the intended defense in depth for that gap.
 import postcss, {
   type AtRule,
   type ChildNode,
@@ -157,9 +163,12 @@ function checkUrls(value: string, errors: string[]) {
 }
 
 // A colour function's alpha channel must be a plain, strictly-positive number
-// or percentage (round 2 ruling). No alpha channel at all means fully opaque
-// — fine. calc()/var()/negative/zero/zero% either can't be statically proven
-// non-zero or resolve to exactly zero, and either way could hide text.
+// or percentage (round 2 ruling; round 3 fix: a bare leading dot — `.9`, not
+// just `0.9` — is a plain number too and must be accepted). No alpha channel
+// at all means fully opaque — fine. calc()/var()/negative/zero/zero% either
+// can't be statically proven non-zero or resolve to exactly zero, and either
+// way could hide text.
+const ALPHA_NUMBER_RE = /^(?:\d+(?:\.\d+)?|\.\d+)%?$/
 function hasInvalidAlpha(value: string): boolean {
   const re = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^)]*)\)/gi
   let m: RegExpExecArray | null
@@ -174,11 +183,44 @@ function hasInvalidAlpha(value: string): boolean {
       if (parts.length === 4) alphaStr = parts[3]
     }
     if (!alphaStr) continue
-    if (!/^\d+(?:\.\d+)?%?$/.test(alphaStr)) return true
+    if (!ALPHA_NUMBER_RE.test(alphaStr)) return true
     const n = alphaStr.endsWith('%') ? parseFloat(alphaStr) / 100 : parseFloat(alphaStr)
     if (n <= 0) return true
   }
   return false
+}
+
+// Splits a function's argument list on top-level commas only — a comma
+// inside a nested function call (e.g. `min(2vw, 3rem)` as clamp()'s 2nd arg,
+// or `cubic-bezier(.2,.7,.2,1)` inside an animation shorthand) doesn't count.
+function splitTopLevel(s: string, sep: RegExp): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let current = ''
+  for (const ch of s) {
+    if (ch === '(') depth++
+    else if (ch === ')') depth--
+    if (depth === 0 && sep.test(ch)) {
+      parts.push(current)
+      current = ''
+    } else {
+      current += ch
+    }
+  }
+  parts.push(current)
+  return parts.filter((p) => p !== '')
+}
+const splitTopLevelCommas = (s: string): string[] => splitTopLevel(s, /,/).map((p) => p.trim())
+// Tokenizes a shorthand value on top-level whitespace — `cubic-bezier(.2, .7,
+// .2, 1)` stays one token even though it contains both commas and spaces.
+const tokenizeBalanced = (s: string): string[] => splitTopLevel(s, /\s/)
+
+// A CSS <time>: a plain (no calc/var) number followed by s or ms, in seconds.
+function timeToSeconds(tok: string): number | null {
+  const m = /^(-?\d+(?:\.\d+)?)(m?s)$/i.exec(tok)
+  if (!m) return null
+  const n = parseFloat(m[1])
+  return m[2].toLowerCase() === 'ms' ? n / 1000 : n
 }
 
 // 4-digit (#rgba) and 8-digit (#rrggbbaa) hex colours carry alpha as their
@@ -235,9 +277,13 @@ function fontSizeError(rawValue: string, value: string): string | null {
 
   if (/^var\(\s*--[a-z0-9_-]+\s*(?:,[^)]*)?\)$/i.test(value)) return null
 
-  const clampMatch = /^clamp\(\s*([^,]+?)\s*,\s*[^,]+\s*,\s*[^,]+\s*\)$/i.exec(value)
+  const clampMatch = /^clamp\((.*)\)$/i.exec(value)
   if (clampMatch) {
-    const minLen = parsePxRemEm(clampMatch[1].trim())
+    // Split at TOP-LEVEL commas only — the 2nd/3rd arg may itself be a
+    // multi-arg nested function (`clamp(1rem, min(2vw, 3rem), 4rem)`); only
+    // the first (minimum) argument is checked, per the round-3 ruling.
+    const args = splitTopLevelCommas(clampMatch[1])
+    const minLen = args.length === 3 ? parsePxRemEm(args[0]) : null
     if (minLen && meetsFontMin(minLen)) return null
     return `font-size: ${rawValue} is not allowed (clamp()'s minimum must be a px/rem/em length ≥ 12px / 0.75rem).`
   }
@@ -247,13 +293,16 @@ function fontSizeError(rawValue: string, value: string): string | null {
   return `font-size: ${rawValue} is not allowed (must be a px/rem/em length, a percentage ≥ 75%, var(), clamp(), or an allowed keyword).`
 }
 
-// @keyframes step whose selector includes `to` or `100%` — the animation's
-// resting state. `from { opacity: 0 }` entrance animations stay allowed;
-// ending invisible/hidden does not.
+// @keyframes step whose selector includes `to` or a percentage that resolves
+// to 100 (round 3: parseFloat, so `100.0%` counts too, not just the literal
+// string `100%`) — the animation's resting state. `from { opacity: 0 }`
+// entrance animations stay allowed; ending invisible/hidden does not.
 function isFinalKeyframeStep(selector: string): boolean {
   return selector.split(',').some((part) => {
     const p = part.trim().toLowerCase()
-    return p === 'to' || p === '100%'
+    if (p === 'to') return true
+    const m = /^(\d+(?:\.\d+)?)%$/.exec(p)
+    return !!m && parseFloat(m[1]) === 100
   })
 }
 
@@ -285,12 +334,26 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
   if ((prop === 'list-style' || prop === 'list-style-type') && /["']/.test(decl.value)) {
     errors.push(`${prop}: custom list markers are not allowed (no injected copy).`)
   }
-  if (prop === 'position' && (value === 'fixed' || value === 'sticky')) {
+  if (prop === 'position' && (value === 'fixed' || value === 'sticky' || value === '-webkit-sticky')) {
     const allNavbar = leads.length > 0 && leads.every((l) => l.kind === 'component' && l.id === 'navbar')
     if (!allNavbar) errors.push(`position: ${value} is not allowed outside the navbar.`)
   }
+  if (prop === 'font') {
+    errors.push(`font: ${decl.value} is not allowed — use the font-family/font-size/… longhands instead.`)
+  }
   if (prop === 'color' || prop === '-webkit-text-fill-color') {
-    if (value === 'transparent' || hasInvalidAlpha(value) || hasZeroAlphaHex(value)) {
+    // Round 3: `transparent` anywhere (not just as the whole value — it can
+    // ride inside color-mix()), color-mix() itself (any of its stops could
+    // still resolve to invisible), and relative-colour syntax `(from …)`
+    // (channels can be substituted via var() — unevaluable, ruled a flat ban)
+    // are all rejected outright, on top of the existing alpha/hex checks.
+    if (
+      value.includes('transparent') ||
+      value.includes('color-mix(') ||
+      /\(from\s/.test(value) ||
+      hasInvalidAlpha(value) ||
+      hasZeroAlphaHex(value)
+    ) {
       errors.push(`${prop}: ${decl.value} is not allowed (it hides text).`)
     }
   }
@@ -308,6 +371,45 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
   }
   if ((prop === 'animation' || prop === 'animation-name') && value !== 'none' && !hasAncestor(decl, isReducedMotionGate)) {
     errors.push('animations must sit inside @media (prefers-reduced-motion: no-preference).')
+  }
+  // Round 3: constrain animation STRUCTURALLY rather than chasing more
+  // keyframe-content denylist variants — any hiding via animation is then at
+  // most transient (≤2s duration, ≤1s delay, exactly one iteration).
+  if (prop.startsWith('animation')) {
+    if (/\bvar\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use var().`)
+    if (/\bsteps\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use steps().`)
+    if (/\binfinite\b/.test(value)) errors.push(`${prop}: ${decl.value} may not use infinite.`)
+  }
+  if (prop === 'animation-iteration-count' && value !== '1') {
+    errors.push(`animation-iteration-count: ${decl.value} must be exactly 1.`)
+  }
+  if (prop === 'animation-duration' || prop === 'animation-delay') {
+    const max = prop === 'animation-duration' ? 2 : 1
+    for (const part of splitTopLevelCommas(value)) {
+      const secs = timeToSeconds(part)
+      if (secs === null) errors.push(`${prop}: ${decl.value} must be a plain <num>(s|ms) time value.`)
+      else if (secs > max) errors.push(`${prop}: ${decl.value} must be ≤ ${max}s.`)
+    }
+  }
+  if (prop === 'animation') {
+    const tokens = tokenizeBalanced(value)
+    // Any bare unitless number in the shorthand other than exactly `1` is an
+    // iteration count — cubic-bezier(...)'s internal numbers never appear as
+    // their own token, since tokenizeBalanced keeps the whole call together.
+    for (const t of tokens) {
+      if (/^-?\d+(?:\.\d+)?$/.test(t) && t !== '1') {
+        errors.push(`animation: ${decl.value} may only use a bare number of 1 (the iteration count).`)
+      }
+    }
+    // The shorthand's <time> values appear in order: 1st = duration (≤2s),
+    // 2nd = delay (≤1s).
+    const times = tokens.filter((t) => timeToSeconds(t) !== null)
+    if (times[0] !== undefined && (timeToSeconds(times[0]) ?? 0) > 2) {
+      errors.push(`animation: ${decl.value} duration must be ≤ 2s.`)
+    }
+    if (times[1] !== undefined && (timeToSeconds(times[1]) ?? 0) > 1) {
+      errors.push(`animation: ${decl.value} delay must be ≤ 1s.`)
+    }
   }
   if (/image-set\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use image-set() (remote fetch risk).`)
   if (/\bsrc\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use src() (remote fetch risk).`)
@@ -389,9 +491,16 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
           const p = child.prop.toLowerCase()
           const v = child.value.trim().toLowerCase()
           if (p === 'opacity') {
-            const n = v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v)
-            if (!Number.isNaN(n) && n < 0.2) {
-              errors.push(`opacity: ${child.value} is not allowed at a keyframe's final (to/100%) step (can hide content permanently).`)
+            // Round 3: must be a plain number/percentage — calc()/var() can't
+            // be statically proven safe, so they're rejected outright here
+            // rather than only checked when they happen to parse as < 0.2.
+            if (!/^\d+(?:\.\d+)?%?$/.test(v)) {
+              errors.push(`opacity: ${child.value} is not allowed at a keyframe's final (to/100%) step (must be a plain number or percentage).`)
+            } else {
+              const n = v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v)
+              if (!Number.isNaN(n) && n < 0.2) {
+                errors.push(`opacity: ${child.value} is not allowed at a keyframe's final (to/100%) step (can hide content permanently).`)
+              }
             }
           }
           if (p === 'visibility' && (v === 'hidden' || v === 'collapse')) {
