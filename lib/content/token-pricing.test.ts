@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { estimateCostUsd } from './token-pricing'
 import {
   CRITIC_MODEL,
+  DESIGN_AB_CHALLENGER_MODEL,
+  DESIGN_MODEL,
   FAST_MODEL,
   INTERACTIVE_CHAT_MODEL,
   PUBLISHED_CONTENT_MODEL,
@@ -38,5 +40,17 @@ describe('estimateCostUsd', () => {
     for (const model of [CRITIC_MODEL, FAST_MODEL, INTERACTIVE_CHAT_MODEL, PUBLISHED_CONTENT_MODEL]) {
       expect(estimateCostUsd(model, M, 0)).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('design studio model pricing', () => {
+  it('prices DESIGN_MODEL (Opus 5.5) at $4/$20', () => {
+    expect(DESIGN_MODEL).toBe('claude-opus-5-5')
+    expect(estimateCostUsd(DESIGN_MODEL, M, M)).toBeCloseTo(24)
+  })
+
+  it('prices the A/B challenger (Fable 5.1) at 5x Sonnet 5 ($10/$50)', () => {
+    expect(DESIGN_AB_CHALLENGER_MODEL).toBe('claude-fable-5-1')
+    expect(estimateCostUsd(DESIGN_AB_CHALLENGER_MODEL, M, M)).toBeCloseTo(60)
   })
 })

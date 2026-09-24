@@ -17,6 +17,17 @@ export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5'
 // capped (~6k-token page) and output is small JSON, so the premium is cents/page.
 export const CRITIC_MODEL = 'claude-opus-5-5'
 
+// Design Studio concept generation + vision self-critique (admin-only, a few
+// runs per client). Taste and visual judgement matter more than cost here, so
+// it uses the strongest everyday tier. Opus 5.5 always thinks and rejects forced
+// toolChoice — use generateText → extractJson → zod (see draft-critic.ts).
+export const DESIGN_MODEL = 'claude-opus-5-5'
+
+// Only for scripts/compare-design-models.ts (A/B vs DESIGN_MODEL). Not used by
+// any route — the tier map keeps Fable out of production paths until the A/B
+// says otherwise.
+export const DESIGN_AB_CHALLENGER_MODEL = 'claude-fable-5-1'
+
 // Interactive (streaming, operator-facing) chats. Sonnet 5 turns adaptive
 // thinking on with effort 'high' by default, which is too slow for chat — every
 // chat route must pass chatProviderOptions() to pick its effort explicitly.
