@@ -3,14 +3,7 @@ import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
-import {
-  DRAFT_BRANCH,
-  ensureDraftBranch,
-  readFile,
-  writeFiles,
-  FileNotFoundError,
-  StaleShaError,
-} from '@/lib/github/repo-files'
+import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError, StaleShaError } from '@/lib/github/repo-files'
 import {
   patchBrandPalette,
   patchDesignTypography,
@@ -23,27 +16,10 @@ import { generateThemeCss, checkThemeContrast } from '@/lib/content/theme-css-ge
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
-import {
-  BRAND_PATH,
-  DESIGN_PATH,
-  OVERRIDES_PATH,
-  THEME_CSS_PATH,
-  normalizeTypography,
-  type ThemeSources,
-} from './_theme'
+import { loadDraftThemeSources } from '@/lib/design/theme-sources'
+import { BRAND_PATH, DESIGN_PATH, THEME_CSS_PATH, normalizeTypography } from './_theme'
 
 export const runtime = 'nodejs'
-
-// Read a text file on draft, returning a fallback when it's absent (a client
-// packaged before a given file was introduced).
-async function readOr(githubRepo: string, path: string, fallback: string): Promise<string> {
-  try {
-    return (await readFile(githubRepo, path, DRAFT_BRANCH)).content
-  } catch (err) {
-    if (err instanceof FileNotFoundError) return fallback
-    throw err
-  }
-}
 
 // GET the client site's current theme sources from the draft branch — feeds the
 // Theme Studio preview + the token panel. Admin-only, same gate as the theme chat.
@@ -59,42 +35,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   try {
-    await ensureDraftBranch(githubRepo)
-    const brandText = await readOr(githubRepo, BRAND_PATH, '')
-    const designText = await readOr(githubRepo, DESIGN_PATH, '')
-    if (!brandText || !designText) {
-      return NextResponse.json(
-        { error: 'This site has no brand.json / design.json yet — theme editing is unavailable.' },
-        { status: 409 }
-      )
-    }
-    let brand: BrandJson
-    let design: DesignJson
-    try {
-      brand = JSON.parse(brandText) as BrandJson
-      design = JSON.parse(designText) as DesignJson
-    } catch {
-      return NextResponse.json({ error: 'brand.json / design.json is not valid JSON.' }, { status: 422 })
-    }
-
-    const themeCss = await readOr(githubRepo, THEME_CSS_PATH, '')
-    const overridesCss = await readOr(githubRepo, OVERRIDES_PATH, '')
-
-    const sources: ThemeSources = {
-      palette: brand.palette,
-      typography: normalizeTypography(design.typography),
-      roundness: design.roundness,
-      density: design.density,
-      visualFeel: design.visualFeel,
-      headlineStyle: design.headlineStyle ?? 'sans',
-      eyebrowStyle: design.eyebrowStyle ?? 'standard',
-      darkSections: design.darkSections ?? false,
-      spacing: design.spacing,
-      radius: design.radius,
-      themeCss,
-      overridesCss,
-    }
-    return NextResponse.json(sources)
+    const loaded = await loadDraftThemeSources(githubRepo)
+    if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status })
+    return NextResponse.json(loaded.sources)
   } catch (err) {
     return internalError('theme:get', err, 'Failed to load theme sources')
   }
