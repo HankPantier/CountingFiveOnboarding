@@ -9,6 +9,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { extractCacheUsage } from '@/lib/content/cache-control'
+import { sanitizeDesignCss } from '@/lib/design/css-sanitizer'
 import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
@@ -266,7 +267,9 @@ RULES
             .describe('CSS rule(s) scoped to the block, e.g. [data-block="hero"] h1 { font-size: 3.5rem; }'),
         }),
         execute: async ({ block, css }) => {
-          const res = upsertBlockOverride(files[OVERRIDES_PATH].content, block, css)
+          const clean = sanitizeDesignCss(css, { kind: 'target', target: block })
+          if (!clean.ok) return { error: `CSS rejected: ${clean.errors.join(' ')}` }
+          const res = upsertBlockOverride(files[OVERRIDES_PATH].content, block, clean.css)
           if (!res.ok) return { error: res.reason }
           try {
             await commit(

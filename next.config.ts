@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   // Enables forbidden()/unauthorized() so section layouts can return a real
   // HTTP 403 for authenticated-but-unauthorized users (see lib/auth/page-guards).
   experimental: { authInterrupts: true },
+  // lightningcss ships native .node bindings — keep it out of the server
+  // bundle (require() it at runtime) instead of letting Turbopack try to
+  // bundle the binary. Used by lib/design/css-sanitizer.ts (server-only).
+  serverExternalPackages: ['lightningcss'],
   async headers() {
     return [
       {
