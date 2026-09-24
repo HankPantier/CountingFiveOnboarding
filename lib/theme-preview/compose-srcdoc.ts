@@ -30,6 +30,30 @@ function attrSafe(value: string | undefined): string {
   return (typeof value === 'string' ? value : '').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 }
 
+// <html> attributes the preview may rewrite. The deployed shell carries the LIVE
+// treatment attributes, so the preview has to overwrite them with the pending
+// draft values or treatment toggles would never show. Allowlisted so a caller
+// can never add event handlers or other attributes to the frame's root.
+export const PREVIEW_HTML_ATTRS = ['data-headline', 'data-eyebrow'] as const
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// Set (string) or remove (null) allowlisted attributes on the FIRST <html> tag.
+export function setHtmlAttributes(html: string, attrs: Record<string, string | null>): string {
+  const match = /<html\b[^>]*>/i.exec(html)
+  if (!match) return html
+  let tag = match[0]
+  for (const [key, value] of Object.entries(attrs)) {
+    if (!(PREVIEW_HTML_ATTRS as readonly string[]).includes(key)) continue
+    // Drop any existing occurrence (double-, single- or un-quoted).
+    tag = tag.replace(new RegExp(`\\s${key}(=("[^"]*"|'[^']*'|[^\\s>]*))?(?=[\\s>])`, 'i'), '')
+    if (value !== null) tag = tag.replace(/>$/, ` ${key}="${escapeAttr(value)}">`)
+  }
+  return html.slice(0, match.index) + tag + html.slice(match.index + match[0].length)
+}
+
 // Map the chosen fonts onto the template's --font-*-loaded vars + a <link> that
 // loads the families into the frame, so a font swap re-skins the preview
 // instantly (the frame allows external CSS/fonts even while fully sandboxed).
@@ -52,10 +76,11 @@ export function composePreviewSrcDoc(args: {
   themeCss: string
   overridesCss: string
   typography?: PreviewTypography
+  htmlAttributes?: Record<string, string | null>
 }): string {
   const { link, vars } = fontHead(args.typography)
   const style = `${link}<style>${vars}\n${cssSafe(args.themeCss)}\n${cssSafe(args.overridesCss)}</style>`
-  const { shellHtml } = args
+  const shellHtml = args.htmlAttributes ? setHtmlAttributes(args.shellHtml, args.htmlAttributes) : args.shellHtml
   return shellHtml.includes(THEME_SLOT)
     ? shellHtml.replace(THEME_SLOT, style)
     : shellHtml.replace(/<\/head>/i, `${style}</head>`)

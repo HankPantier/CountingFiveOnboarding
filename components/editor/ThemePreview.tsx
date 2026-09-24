@@ -37,8 +37,14 @@ export default function ThemePreview({
         themeCss: sources.themeCss,
         overridesCss: sources.overridesCss,
         typography: sources.typography,
+        // The shell carries the LIVE treatment attributes; override them with
+        // the draft values so treatment toggles preview instantly.
+        htmlAttributes: {
+          'data-headline': sources.headlineStyle,
+          'data-eyebrow': sources.eyebrowStyle,
+        },
       }),
-    [shellHtml, sources.themeCss, sources.overridesCss, sources.typography]
+    [shellHtml, sources.themeCss, sources.overridesCss, sources.typography, sources.headlineStyle, sources.eyebrowStyle]
   )
 
   return (

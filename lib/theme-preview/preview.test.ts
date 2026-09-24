@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { transformShellHtml } from './build-preview-shell'
-import { composePreviewSrcDoc, THEME_SLOT } from './compose-srcdoc'
+import { composePreviewSrcDoc, THEME_SLOT, setHtmlAttributes } from './compose-srcdoc'
 import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 
 // A minimal page shaped like the real Next output: a stylesheet whose utilities
@@ -120,5 +120,57 @@ describe('normalizeTypography', () => {
   it('preserves an existing googleFontsUrl', () => {
     const t = normalizeTypography({ headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces', googleFontsUrl: 'https://example.com/fonts' })
     expect(t.googleFontsUrl).toBe('https://example.com/fonts')
+  })
+})
+
+describe('setHtmlAttributes', () => {
+  const html = '<!doctype html><html lang="en" data-headline="sans" data-eyebrow="standard"><head></head><body></body></html>'
+
+  it('overrides existing treatment attributes on <html>', () => {
+    const out = setHtmlAttributes(html, { 'data-headline': 'serif', 'data-eyebrow': 'mono' })
+    expect(out).toContain('<html lang="en" data-headline="serif" data-eyebrow="mono">')
+    expect(out).not.toContain('data-headline="sans"')
+  })
+
+  it('adds an attribute the shell lacks (older template)', () => {
+    const out = setHtmlAttributes('<html lang="en"><head></head></html>', { 'data-headline': 'serif' })
+    expect(out).toContain('<html lang="en" data-headline="serif">')
+  })
+
+  it('removes an attribute when the value is null', () => {
+    const out = setHtmlAttributes(html, { 'data-eyebrow': null })
+    expect(out).not.toContain('data-eyebrow')
+    expect(out).toContain('data-headline="sans"')
+  })
+
+  it('ignores keys outside the allowlist', () => {
+    const out = setHtmlAttributes(html, { onload: 'alert(1)', 'data-headline': 'serif' })
+    expect(out).not.toContain('onload')
+    expect(out).toContain('data-headline="serif"')
+  })
+
+  it('escapes values so they cannot break out of the attribute', () => {
+    const out = setHtmlAttributes(html, { 'data-headline': '"><script>x</script>' })
+    expect(out).not.toContain('<script>')
+    expect(out).toContain('data-headline="&quot;&gt;&lt;script&gt;x&lt;/script&gt;"')
+  })
+
+  it('only touches the first <html> tag', () => {
+    const doc = `${html}<!-- <html data-headline="sans"> -->`
+    const out = setHtmlAttributes(doc, { 'data-headline': 'serif' })
+    expect(out.endsWith('<!-- <html data-headline="sans"> -->')).toBe(true)
+  })
+})
+
+describe('composePreviewSrcDoc htmlAttributes', () => {
+  it('applies treatment attributes to the composed document', () => {
+    const shellHtml = `<html data-headline="sans"><head>${THEME_SLOT}</head><body></body></html>`
+    const out = composePreviewSrcDoc({
+      shellHtml,
+      themeCss: '',
+      overridesCss: '',
+      htmlAttributes: { 'data-headline': 'serif' },
+    })
+    expect(out).toContain('<html data-headline="serif">')
   })
 })

@@ -249,7 +249,7 @@ export default function ThemeControls({
       </div>
 
       <p className="font-body text-[11px] text-text-muted">
-        Treatments apply after the site rebuilds on the updated template — the preview above won&rsquo;t reflect them until then.
+        Headline and eyebrow treatments preview here when the deployed site&rsquo;s template supports them. Dark sections apply only after the site rebuilds.
       </p>
 
       {contrastWarnings.length > 0 && (
