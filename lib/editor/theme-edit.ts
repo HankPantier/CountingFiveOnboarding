@@ -8,7 +8,7 @@ import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { CURATED_FONTS, gfUrl } from '@/lib/content/type-pairing-catalog'
 
-const HEX_RE = /^#[0-9a-fA-F]{6}$/
+export const HEX_RE = /^#[0-9a-fA-F]{6}$/
 export const PALETTE_ROLES = [
   'primary',
   'secondary',
@@ -22,7 +22,7 @@ export type PalettePatch = Partial<Record<PaletteRole, string>>
 
 // A CSS length the token fields accept: px/rem/em/%/0/9999px etc. Kept strict so
 // a token value can never smuggle arbitrary text into the generated theme.css.
-const LENGTH_RE = /^(0|[0-9]+(\.[0-9]+)?(px|rem|em|%|vw|vh))$/
+export const LENGTH_RE = /^(0|[0-9]+(\.[0-9]+)?(px|rem|em|%|vw|vh))$/
 const SPACING_KEYS = ['xs', 'sm', 'md', 'lg', 'xl', '2xl'] as const
 const RADIUS_KEYS = ['none', 'sm', 'md', 'lg', 'pill'] as const
 export type TokenPatch = {
