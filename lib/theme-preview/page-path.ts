@@ -15,7 +15,10 @@ export function resolvePreviewPageUrl(
   } catch {
     return { ok: false, reason: 'The site URL is invalid.' }
   }
-  if (rawPath == null || rawPath === '') return { ok: true, url: new URL('/', base).toString(), path: '/' }
+  // No page requested: use the preview URL exactly as configured (its own
+  // path + query, e.g. https://x.vercel.app/home?draft=1) — the pre-Design-
+  // Studio behavior of the theme preview.
+  if (rawPath == null || rawPath === '') return { ok: true, url: base.toString(), path: base.pathname }
 
   let decoded: string
   try {

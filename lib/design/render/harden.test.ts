@@ -151,6 +151,47 @@ describe('isAllowedRenderRequest', () => {
   })
 })
 
+describe('hardenForRender resource-hint links', () => {
+  const run = (head: string) => hardenForRender(`<html><head>${head}</head><body></body></html>`, ORIGIN)
+
+  it.each([
+    ['preconnect', '<link rel="preconnect" href="https://cdn.evil.test">'],
+    ['dns-prefetch', '<link rel="dns-prefetch" href="//tracker.evil.test">'],
+    ['prefetch', "<link rel='prefetch' href='https://evil.test/next.html'>"],
+    ['prerender', '<link rel=prerender href=https://evil.test/>'],
+    ['preload', '<link href="https://cdn.evil.test/a.woff2" rel="preload" as="font" crossorigin>'],
+    ['same-origin preload', '<link rel="preload" href="/_next/static/a.css" as="style">'],
+    ['multi-token rel', '<link rel="dns-prefetch preconnect" href="https://evil.test">'],
+    ['uppercase', '<LINK REL="PRECONNECT" HREF="https://evil.test">'],
+    ['no href', '<link rel="preconnect">'],
+    ['google host lookalike', '<link rel="preconnect" href="https://fonts.googleapis.com.evil.test">'],
+  ])('strips a foreign %s hint', (_l, tag) => {
+    const out = run(tag)
+    expect(out).not.toMatch(/<link/i)
+  })
+
+  it('keeps Google Fonts preconnect / preload hints', () => {
+    const tags =
+      '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+      '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+      '<link rel="preload" href="https://fonts.gstatic.com/s/inter.woff2" as="font">'
+    const out = run(tags)
+    expect(out).toContain('<link rel="preconnect" href="https://fonts.googleapis.com">')
+    expect(out).toContain('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
+    expect(out).toContain('<link rel="preload" href="https://fonts.gstatic.com/s/inter.woff2" as="font">')
+  })
+
+  it('leaves stylesheet and other non-hint links untouched', () => {
+    const tags =
+      '<link rel="stylesheet" href="/_next/static/css/app.css">' +
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">' +
+      '<link rel="icon" href="/favicon.ico">' +
+      '<link rel="canonical" href="https://bblcpa.vercel.app/">'
+    const out = run(tags)
+    for (const t of tags.split(/(?=<link)/)) expect(out).toContain(t)
+  })
+})
+
 describe('render constants', () => {
   it('uses the spec viewports', () => {
     expect(VIEWPORTS.desktop).toEqual({ width: 1440, height: 900, deviceScaleFactor: 1 })

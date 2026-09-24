@@ -8,8 +8,9 @@ const store = vi.fn(async (..._a: unknown[]) => undefined)
 
 vi.mock('../_design', () => ({ requireDesignAdmin: (id: string) => gate(id) }))
 vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: async () => 'https://bblcpa.vercel.app/' }))
+const shellOrigin = { value: 'https://bblcpa.vercel.app/' }
 vi.mock('@/lib/theme-preview/build-preview-shell', () => ({
-  buildPreviewShell: async () => ({ ok: true, origin: 'https://bblcpa.vercel.app/', shellHtml: '<html><head><!--__C5_THEME_SLOT__--></head><body></body></html>' }),
+  buildPreviewShell: async () => ({ ok: true, origin: shellOrigin.value, shellHtml: '<html><head><!--__C5_THEME_SLOT__--></head><body></body></html>' }),
 }))
 vi.mock('@/lib/design/theme-sources', () => ({
   loadDraftThemeSources: async () => ({
@@ -42,6 +43,7 @@ const params = { params: Promise.resolve({ id: SID }) }
 const req = (body: unknown) => new Request('http://x/api', { method: 'POST', body: JSON.stringify(body) })
 
 beforeEach(() => {
+  shellOrigin.value = 'https://bblcpa.vercel.app/'
   gate.mockReset()
   render.mockReset()
   store.mockClear()
@@ -65,6 +67,14 @@ describe('POST /design/render', () => {
   it('rejects an unsafe page path with 400', async () => {
     const res = await POST(req({ path: '//evil.test' }), params)
     expect(res.status).toBe(400)
+    expect(render).not.toHaveBeenCalled()
+  })
+
+  it('refuses a non-https shell origin with 422 before rendering', async () => {
+    shellOrigin.value = 'http://bblcpa.example/'
+    const res = await POST(req({}), params)
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: 'The preview URL must use https to render.' })
     expect(render).not.toHaveBeenCalled()
   })
 

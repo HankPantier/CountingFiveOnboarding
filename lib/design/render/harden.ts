@@ -78,6 +78,12 @@ export function hardenForRender(html: string, shellOrigin: string): string {
   // `aria-*` untouched since "-" is not in that separator class.
   out = out.replace(/[\s/]+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
 
+  // Strip resource hints (preconnect / dns-prefetch / prefetch / prerender /
+  // preload) to anything but Google Fonts: a hint can open a connection or a
+  // DNS lookup to a foreign host outside the request route, and none of them
+  // are needed for a screenshot. Stylesheets and other links are untouched.
+  out = out.replace(/<link\b[^>]*>/gi, (tag) => (isForeignResourceHint(tag, shellOrigin) ? '' : tag))
+
   out = out.replace(/\bloading\s*=\s*(["']?)lazy\1/gi, 'loading="eager"')
 
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`
@@ -89,6 +95,32 @@ export function hardenForRender(html: string, shellOrigin: string): string {
     out = `<head>${cspMeta}</head>${out}`
   }
   return out
+}
+
+const RESOURCE_HINT_RELS = new Set(['preconnect', 'dns-prefetch', 'prefetch', 'prerender', 'preload'])
+
+// Attribute value (double-, single- or un-quoted). The name must follow
+// whitespace or "/" so `data-rel=` / `data-href=` never match.
+function linkAttr(tag: string, name: string): string | null {
+  const m = new RegExp(`[\\s/]${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag)
+  return m ? (m[1] ?? m[2] ?? m[3] ?? '') : null
+}
+
+function isForeignResourceHint(tag: string, shellOrigin: string): boolean {
+  const rel = linkAttr(tag, 'rel')
+  if (!rel) return false
+  const isHint = rel
+    .toLowerCase()
+    .split(/\s+/)
+    .some((token) => RESOURCE_HINT_RELS.has(token))
+  if (!isHint) return false
+  const href = linkAttr(tag, 'href')
+  if (!href) return true
+  try {
+    return !FONT_HOSTS.has(new URL(href.trim(), shellOrigin).hostname)
+  } catch {
+    return true
+  }
 }
 
 export function isAllowedRenderRequest(url: string, shellOrigin: string): boolean {
