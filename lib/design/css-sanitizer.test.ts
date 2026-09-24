@@ -223,8 +223,8 @@ describe('sanitizeDesignCss — round 1 findings (bypasses closed)', () => {
         '@keyframes c5-h { to { opacity: 0; } }\n' +
           '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h 1ms forwards; } }'
       )
-    ).toContain('forwards/both')
-    expect(errs('[data-block="hero"] { animation-fill-mode: both; }')).toContain('forwards/both')
+    ).toContain('fill mode')
+    expect(errs('[data-block="hero"] { animation-fill-mode: both; }')).toContain('fill mode')
   })
 
   it('rejects content unless the whole value is a plain literal or counter()', () => {
@@ -307,6 +307,145 @@ describe('sanitizeDesignCss — round 1 findings (bypasses closed)', () => {
     ok(
       '@keyframes c5-p { 0%, 50% { opacity: .5; } 100% { opacity: 1; } }\n' +
         '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-p 1s; } }'
+    )
+  })
+})
+
+// Regression tests for task-3-findings-r2.md (task review round 2) — remaining
+// bypass variants plus one regression from round 1's nested-@media relaxation.
+describe('sanitizeDesignCss — round 2 findings (bypasses closed)', () => {
+  it.each([
+    ['mixed with a block selector', '[data-block="hero"], :root { h1 { color: red; } }'],
+    ['mixed with itself twice', ':root, :root { --c5-x: 1px; }'],
+  ])(':root must be the only selector in its rule — %s', (_label, css) => {
+    expect(errs(css, GLOBAL)).toMatch(/:root must be the only selector/i)
+  })
+
+  it.each([
+    ['nested @media', ':root { @media (min-width:0) { color: red; --color-primary: red; } }'],
+    ['nested @supports', ':root { @supports (display:grid) { --color-primary: red; } }'],
+  ])(':root may not contain a nested at-rule — %s', (_label, css) => {
+    expect(errs(css, GLOBAL)).toMatch(/no nested rules or at-rules/i)
+  })
+
+  it('still accepts a plain :root with only direct custom-property declarations', () => {
+    ok(':root { --c5-x: 1px; --shadow-card: 0 8px 24px rgb(0 59 113 / .12); }', GLOBAL)
+  })
+
+  it('still accepts :root nested inside an allowed at-rule, with the same content rules', () => {
+    ok('@media (min-width:0) { :root { --c5-x: 1px; } }', GLOBAL)
+    expect(errs('@media (min-width:0) { :root { --color-primary: red; } }', GLOBAL)).toContain('--color-primary')
+    expect(errs('@media (min-width:0) { :root { @supports (display:grid) { --c5-x: 1px; } } }', GLOBAL)).toMatch(
+      /no nested rules or at-rules/i
+    )
+  })
+
+  it('rejects a target-dependent check (position fixed) that only holds for one selector in a mixed list', () => {
+    expect(errs('[data-component="navbar"], [data-block="hero"] { position: fixed; }', GLOBAL)).toMatch(/navbar/i)
+  })
+
+  it('still accepts position: fixed when every selector in the list is the navbar', () => {
+    ok('[data-component="navbar"], [data-component="navbar"] { position: fixed; }', { kind: 'target', target: 'navbar' })
+  })
+
+  it.each([
+    ['zero with pt unit', 'font-size: 0pt'],
+    ['zero with vw unit', 'font-size: 0vw'],
+    ['exponent notation', 'font-size: 1e-9px'],
+    ['min()', 'font-size: min(1px, 2px)'],
+    ['max()', 'font-size: max(1px, 2px)'],
+    ['bare leading dot', 'font-size: .5rem'],
+    ['smaller keyword (not on the allow-list)', 'font-size: smaller'],
+    ['x-small keyword (not on the allow-list)', 'font-size: x-small'],
+    ['xx-small keyword (not on the allow-list)', 'font-size: xx-small'],
+    ["clamp() minimum below the px/rem/em floor", 'font-size: clamp(8px, 2vw, 3rem)'],
+  ])('rejects a font-size not on the round-2 allow-list: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/not allowed|too small/i)
+  })
+
+  it.each(['large', 'x-large', 'xx-large', 'xxx-large', 'larger', 'inherit', 'initial', 'unset', 'revert'])(
+    'accepts the allow-listed font-size keyword: %s',
+    (kw) => {
+      ok(`[data-block="hero"] { font-size: ${kw}; }`)
+    }
+  )
+
+  it('accepts a clamp() whose minimum meets the px/rem/em floor', () => {
+    ok('[data-block="hero"] { font-size: clamp(12px, 2vw, 3rem); }')
+  })
+
+  it.each([
+    ['negative alpha', 'color: rgb(0 0 0 / -1)'],
+    ['calc() alpha', 'color: rgb(0 0 0 / calc(0))'],
+    ['oklch zero alpha', 'color: oklch(0 0 0 / 0)'],
+    ['hwb zero alpha', 'color: hwb(0 0% 0% / 0)'],
+  ])('rejects a colour function with an invalid/zero alpha: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/hides text/i)
+  })
+
+  it.each([
+    ['4-digit hex, zero alpha nibble', 'color: #f000'],
+    ['8-digit hex, zero alpha byte', 'color: #ffffff00'],
+  ])('rejects a hex colour with zero alpha: %s', (_label, decl) => {
+    expect(errs(`[data-block="hero"] { ${decl}; }`)).toMatch(/hides text/i)
+  })
+
+  it('accepts currentcolor and opaque hex forms (no false positives)', () => {
+    ok('[data-block="hero"] { color: currentcolor; }')
+    ok('[data-block="hero"] { color: #ff0000; }')
+    ok('[data-block="hero"] { color: #f00; }')
+    ok('[data-block="hero"] { color: #ff000080; }')
+  })
+
+  it('rejects the backwards animation fill mode too (in addition to forwards/both)', () => {
+    expect(errs('[data-block="hero"] { animation-fill-mode: backwards; }')).toContain('fill mode')
+    expect(
+      errs(
+        '@keyframes c5-h { from { opacity: 0; } to { opacity: 1; } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h 1s 99999s backwards; } }'
+      )
+    ).toContain('fill mode')
+  })
+
+  it('rejects opacity < 0.2 at a keyframe final (to/100%) step, even combined with `from`', () => {
+    expect(
+      errs(
+        '@keyframes c5-h { from, to { opacity: 0; } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h 1s infinite; } }'
+      )
+    ).toMatch(/final .* step/i)
+  })
+
+  it('rejects visibility hidden/collapse at a keyframe final (to/100%) step', () => {
+    expect(
+      errs(
+        '@keyframes c5-h { to { visibility: hidden; } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-h 1s; } }'
+      )
+    ).toMatch(/final .* step/i)
+  })
+
+  it('still accepts a `from { opacity: 0 }` entrance animation with no matching final-step issue', () => {
+    ok(
+      '@keyframes c5-e { from { opacity: 0; } to { opacity: 1; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-e .3s; } }'
+    )
+  })
+
+  it('rejects the reduced-motion gate `or` variant (always-true escape)', () => {
+    expect(
+      errs('@media (prefers-reduced-motion: no-preference) or (min-width: 0px) { [data-block="hero"] h1 { animation: c5-r 1s; } }')
+    ).toContain('prefers-reduced-motion')
+  })
+
+  it('accepts the reduced-motion gate extended with one or more `and (<feature>)` groups', () => {
+    ok(
+      '@keyframes c5-f { from { opacity: 0; } to { opacity: 1; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) and (min-width: 768px) { [data-block="hero"] { animation: c5-f 1s; } }'
+    )
+    ok(
+      '@keyframes c5-g { from { opacity: 0; } to { opacity: 1; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) and (min-width: 768px) and (orientation: landscape) { [data-block="hero"] { animation: c5-g 1s; } }'
     )
   })
 })

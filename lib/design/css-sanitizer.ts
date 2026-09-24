@@ -12,8 +12,11 @@
 //
 // This is a denylist-plus-scoping gate, not a formal CSS security model — it
 // cannot enumerate every possible bypass, only the ones found and closed so
-// far (see task-3-findings-r1.md for the round-1 review). Treat any new
-// bypass class the same way: add a regression test, then close it here.
+// far (see task-3-findings-r1.md and task-3-findings-r2.md for the round-1
+// and round-2 reviews). Where practical, prefer a structural allowlist (e.g.
+// font-size, the reduced-motion gate, :root's shape) over another denylist
+// pattern — it's harder to bypass with an unanticipated variant. Treat any
+// new bypass class the same way: add a regression test, then close it here.
 import postcss, {
   type AtRule,
   type ChildNode,
@@ -112,17 +115,17 @@ function isRootRule(n: Container): boolean {
     return false
   }
 }
-// Strict reduced-motion gate: exactly the no-preference query, no `not`, no
-// comma-separated query list (a comma is `or`, which can smuggle in an
-// always-true branch alongside the no-preference one).
+// Strict reduced-motion gate (round 2: full structural match, not a
+// substring test). The whole params string must be exactly the
+// no-preference query, optionally extended by one or more `and (<feature>)`
+// groups. `not`, `only`, `or`, commas, and media types (anything before the
+// first `(`) all fail this match by construction — there's no denylist to
+// keep up to date.
+const REDUCED_MOTION_GATE_RE = /^\(\s*prefers-reduced-motion\s*:\s*no-preference\s*\)(?:\s+and\s+\([^()]*\))*$/
 const isReducedMotionGate = (n: Container): boolean => {
   if (!(n.type === 'atrule' && (n as AtRule).name.toLowerCase() === 'media')) return false
-  const params = (n as AtRule).params.toLowerCase()
-  return (
-    /\(\s*prefers-reduced-motion\s*:\s*no-preference\s*\)/.test(params) &&
-    !/\bnot\b/.test(params) &&
-    !params.includes(',')
-  )
+  const params = (n as AtRule).params.trim().toLowerCase()
+  return REDUCED_MOTION_GATE_RE.test(params)
 }
 
 // @keyframes bodies may only use from / to / percentage step selectors.
@@ -153,11 +156,12 @@ function checkUrls(value: string, errors: string[]) {
   }
 }
 
-// Alpha-zero colours (rgb(.../ 0), rgb(.../0%), legacy rgba(...,0) / hsla(...,0))
-// hide text as effectively as `transparent` does. Returns true only when an
-// alpha channel is present AND statically resolves to exactly zero.
-function hasZeroAlpha(value: string): boolean {
-  const re = /\b(?:rgba?|hsla?)\(([^)]*)\)/gi
+// A colour function's alpha channel must be a plain, strictly-positive number
+// or percentage (round 2 ruling). No alpha channel at all means fully opaque
+// — fine. calc()/var()/negative/zero/zero% either can't be statically proven
+// non-zero or resolve to exactly zero, and either way could hide text.
+function hasInvalidAlpha(value: string): boolean {
+  const re = /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(([^)]*)\)/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(value))) {
     const inner = m[1]
@@ -165,17 +169,98 @@ function hasZeroAlpha(value: string): boolean {
     if (inner.includes('/')) {
       alphaStr = inner.split('/')[1]?.trim()
     } else {
+      // Legacy comma syntax only carries alpha as a 4th arg (rgba/hsla).
       const parts = inner.split(',').map((p) => p.trim())
       if (parts.length === 4) alphaStr = parts[3]
     }
     if (!alphaStr) continue
+    if (!/^\d+(?:\.\d+)?%?$/.test(alphaStr)) return true
     const n = alphaStr.endsWith('%') ? parseFloat(alphaStr) / 100 : parseFloat(alphaStr)
-    if (!Number.isNaN(n) && n === 0) return true
+    if (n <= 0) return true
   }
   return false
 }
 
-function checkDeclaration(decl: Declaration, lead: LeadTarget | null, errors: string[]) {
+// 4-digit (#rgba) and 8-digit (#rrggbbaa) hex colours carry alpha as their
+// last nibble/byte; #rgb and #rrggbb have no alpha channel and are fine.
+function hasZeroAlphaHex(value: string): boolean {
+  const re = /#([0-9a-f]{3,8})\b/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(value))) {
+    const hex = m[1]
+    if (hex.length === 4 && hex[3] === '0') return true
+    if (hex.length === 8 && hex.slice(6) === '00') return true
+  }
+  return false
+}
+
+const FONT_SIZE_KEYWORDS = new Set([
+  'small',
+  'medium',
+  'large',
+  'x-large',
+  'xx-large',
+  'xxx-large',
+  'larger',
+  'inherit',
+  'initial',
+  'unset',
+  'revert',
+])
+
+// A plain px/rem/em length, or null if the value isn't in that exact form
+// (round 2: no exponents, no bare leading dot — the number must match
+// /^\d+(\.\d+)?$/).
+function parsePxRemEm(value: string): { n: number; unit: 'px' | 'rem' | 'em' } | null {
+  const m = /^(\d+(?:\.\d+)?)(px|rem|em)$/.exec(value)
+  if (!m) return null
+  return { n: parseFloat(m[1]), unit: m[2] as 'px' | 'rem' | 'em' }
+}
+
+function meetsFontMin(len: { n: number; unit: 'px' | 'rem' | 'em' }): boolean {
+  return len.unit === 'px' ? len.n >= 12 : len.n >= 0.75
+}
+
+// Round 2 ruling: font-size is a structural allowlist, not a denylist.
+// Accept ONLY a px/rem/em length ≥ the minimum, a percentage ≥ 75%, var(),
+// clamp() whose first (minimum) argument itself passes the px/rem/em rule,
+// or one of the explicitly-allowed keywords. Everything else — 0pt, 0vw,
+// 1e-9px, min()/max()/calc(), .5rem, smaller/x-small/xx-small — is rejected.
+function fontSizeError(rawValue: string, value: string): string | null {
+  const len = parsePxRemEm(value)
+  if (len) return meetsFontMin(len) ? null : `font-size: ${rawValue} is too small (min 12px / 0.75rem).`
+
+  const pct = /^(\d+(?:\.\d+)?)%$/.exec(value)
+  if (pct) return parseFloat(pct[1]) >= 75 ? null : `font-size: ${rawValue} is too small (min 75%).`
+
+  if (/^var\(\s*--[a-z0-9_-]+\s*(?:,[^)]*)?\)$/i.test(value)) return null
+
+  const clampMatch = /^clamp\(\s*([^,]+?)\s*,\s*[^,]+\s*,\s*[^,]+\s*\)$/i.exec(value)
+  if (clampMatch) {
+    const minLen = parsePxRemEm(clampMatch[1].trim())
+    if (minLen && meetsFontMin(minLen)) return null
+    return `font-size: ${rawValue} is not allowed (clamp()'s minimum must be a px/rem/em length ≥ 12px / 0.75rem).`
+  }
+
+  if (FONT_SIZE_KEYWORDS.has(value)) return null
+
+  return `font-size: ${rawValue} is not allowed (must be a px/rem/em length, a percentage ≥ 75%, var(), clamp(), or an allowed keyword).`
+}
+
+// @keyframes step whose selector includes `to` or `100%` — the animation's
+// resting state. `from { opacity: 0 }` entrance animations stay allowed;
+// ending invisible/hidden does not.
+function isFinalKeyframeStep(selector: string): boolean {
+  return selector.split(',').some((part) => {
+    const p = part.trim().toLowerCase()
+    return p === 'to' || p === '100%'
+  })
+}
+
+// Every selector in the owning rule's comma-list, not just the first — a
+// declaration applies to ALL of them, so a target-dependent check (currently
+// just position:fixed/sticky → navbar-only) must hold for every one.
+function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string[]) {
   const prop = decl.prop.toLowerCase()
   const value = decl.value.trim().toLowerCase()
   const inKeyframes = hasAncestor(decl, isKeyframes)
@@ -201,40 +286,25 @@ function checkDeclaration(decl: Declaration, lead: LeadTarget | null, errors: st
     errors.push(`${prop}: custom list markers are not allowed (no injected copy).`)
   }
   if (prop === 'position' && (value === 'fixed' || value === 'sticky')) {
-    const navbar = lead?.kind === 'component' && lead.id === 'navbar'
-    if (!navbar) errors.push(`position: ${value} is not allowed outside the navbar.`)
+    const allNavbar = leads.length > 0 && leads.every((l) => l.kind === 'component' && l.id === 'navbar')
+    if (!allNavbar) errors.push(`position: ${value} is not allowed outside the navbar.`)
   }
   if (prop === 'color' || prop === '-webkit-text-fill-color') {
-    if (value === 'transparent' || hasZeroAlpha(value)) {
+    if (value === 'transparent' || hasInvalidAlpha(value) || hasZeroAlphaHex(value)) {
       errors.push(`${prop}: ${decl.value} is not allowed (it hides text).`)
     }
   }
   if (prop === 'font-size') {
-    if (/calc\(/.test(value)) {
-      errors.push(`font-size: ${decl.value} is not allowed (calc() cannot be evaluated statically).`)
-    } else if (/^[\d.]+$/.test(value)) {
-      errors.push(`font-size: ${decl.value} is not allowed (unitless font sizes are not allowed).`)
-    } else {
-      const mUnit = /^([\d.]+)(px|rem|em)$/.exec(value)
-      const mPct = /^([\d.]+)%$/.exec(value)
-      if (mUnit) {
-        const n = parseFloat(mUnit[1])
-        if ((mUnit[2] === 'px' && n < 12) || (mUnit[2] !== 'px' && n < 0.75)) {
-          errors.push(`font-size: ${decl.value} is too small (min 12px / 0.75rem).`)
-        }
-      } else if (mPct) {
-        if (parseFloat(mPct[1]) < 75) errors.push(`font-size: ${decl.value} is too small (min 75%).`)
-      }
-      // else: var()/clamp()/keyword — allowed, can't statically evaluate.
-    }
+    const err = fontSizeError(decl.value, value)
+    if (err) errors.push(err)
   }
   if (prop === 'z-index') {
     const n = parseInt(value, 10)
     if (!Number.isNaN(n) && n > 50) errors.push(`z-index: ${decl.value} is too high (max 50).`)
   }
   if (prop === 'pointer-events' && value === 'none') errors.push('pointer-events: none is not allowed.')
-  if ((prop === 'animation' || prop === 'animation-fill-mode') && /\b(?:forwards|both)\b/.test(value)) {
-    errors.push(`${prop}: ${decl.value} may not use the forwards/both fill mode (can hide content permanently).`)
+  if ((prop === 'animation' || prop === 'animation-fill-mode') && /\b(?:forwards|backwards|both)\b/.test(value)) {
+    errors.push(`${prop}: ${decl.value} may not use the forwards/backwards/both fill mode (can hide content permanently).`)
   }
   if ((prop === 'animation' || prop === 'animation-name') && value !== 'none' && !hasAncestor(decl, isReducedMotionGate)) {
     errors.push('animations must sit inside @media (prefers-reduced-motion: no-preference).')
@@ -309,6 +379,25 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
     if (hasAncestor(rule, isKeyframes)) {
       if (!isValidKeyframeSelector(rule.selector)) {
         errors.push(`Keyframe selector "${rule.selector}" must be from, to, or a percentage.`)
+        return
+      }
+      // A step whose selector includes `to`/`100%` is the animation's resting
+      // state — it must not end invisible. `from { opacity: 0 }` stays fine.
+      if (isFinalKeyframeStep(rule.selector)) {
+        for (const child of rule.nodes ?? []) {
+          if (child.type !== 'decl') continue
+          const p = child.prop.toLowerCase()
+          const v = child.value.trim().toLowerCase()
+          if (p === 'opacity') {
+            const n = v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v)
+            if (!Number.isNaN(n) && n < 0.2) {
+              errors.push(`opacity: ${child.value} is not allowed at a keyframe's final (to/100%) step (can hide content permanently).`)
+            }
+          }
+          if (p === 'visibility' && (v === 'hidden' || v === 'collapse')) {
+            errors.push(`visibility: ${v} is not allowed at a keyframe's final (to/100%) step (can hide content permanently).`)
+          }
+        }
       }
       return
     }
@@ -323,6 +412,18 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
     })
     if (hasBannedCombinator) {
       errors.push(`Selector "${rule.selector}" may not use the ~ or + combinator (cross-element/cross-block styling).`)
+    }
+
+    // :root must be the ONLY selector in its rule's comma-list — mixing it
+    // with anything else (`[data-block="hero"], :root { … }`) let an
+    // unscoped/root-privileged rule ride along with a normal one.
+    let hasRootBranch = false
+    parsed.each((sel) => {
+      if (leadingTarget(sel)?.kind === 'root') hasRootBranch = true
+    })
+    if (hasRootBranch && parsed.nodes.length > 1) {
+      errors.push(`Selector "${rule.selector}" mixes :root with another selector — :root must be the only selector in its rule.`)
+      return
     }
 
     if (hasAncestor(rule, isRootRule)) {
@@ -345,15 +446,23 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
         errors.push(`Selector "${sel.toString().trim()}" must be scoped to ${where}.`)
         return
       }
-      rule.walkDecls((decl) => {
-        if (lead.kind === 'root' && decl.parent === rule) {
-          const prop = decl.prop.toLowerCase()
-          if (!prop.startsWith('--')) errors.push(`:root may only set custom properties (got ${decl.prop}).`)
+      if (lead.kind === 'root') {
+        // :root may contain ONLY direct-child custom-property declarations —
+        // no nested rules or at-rules (that's how a declaration nested inside
+        // `:root { @media {…} }` previously escaped this check entirely,
+        // since it's never a direct child of the :root rule).
+        for (const child of rule.nodes ?? []) {
+          if (child.type !== 'decl') {
+            errors.push(':root may only contain direct custom-property declarations — no nested rules or at-rules.')
+            continue
+          }
+          const prop = child.prop.toLowerCase()
+          if (!prop.startsWith('--')) errors.push(`:root may only set custom properties (got ${child.prop}).`)
           else if (!ROOT_PROP_PREFIXES.some((p) => prop.startsWith(p))) {
-            errors.push(`:root may not set ${decl.prop} (allowed prefixes: ${ROOT_PROP_PREFIXES.join(', ')}).`)
+            errors.push(`:root may not set ${child.prop} (allowed prefixes: ${ROOT_PROP_PREFIXES.join(', ')}).`)
           }
         }
-      })
+      }
     })
   })
 
@@ -368,20 +477,30 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
       errors.push(`Declaration "${decl.prop}" must be inside a rule.`)
       return
     }
-    // Find the outermost rule (through any nesting/at-rule wrapping) to learn
-    // which target this decl styles.
-    let top: ChildNode = decl.parent as Rule
-    while (top.parent && top.parent.type !== 'root') top = top.parent as ChildNode
-    let lead: LeadTarget | null = null
-    const outer = top.type === 'rule' ? (top as Rule) : null
-    const ownerRule = outer ?? (decl.parent as Rule)
-    try {
-      const first = selectorParser().astSync(ownerRule.selector).first
-      lead = first ? leadingTarget(first) : null
-    } catch {
-      lead = null
+    // Resolve the owning rule as the OUTERMOST rule ancestor — walk all the
+    // way to root and keep the last (outermost) Rule seen, skipping over any
+    // at-rules along the way, rather than stopping at whatever node happens
+    // to sit directly under root (which can itself be an at-rule).
+    let ownerRule: Rule | null = null
+    let p: Node | undefined = decl.parent
+    while (p && p.type !== 'root' && p.type !== 'document') {
+      if (p.type === 'rule') ownerRule = p as Rule
+      p = (p as Container).parent
     }
-    checkDeclaration(decl, lead, errors)
+    // A declaration applies to every selector in the owning rule's
+    // comma-list, not just the first — collect all of them.
+    let leads: LeadTarget[] = []
+    if (ownerRule) {
+      try {
+        selectorParser().astSync(ownerRule.selector).each((sel) => {
+          const l = leadingTarget(sel)
+          if (l) leads.push(l)
+        })
+      } catch {
+        leads = []
+      }
+    }
+    checkDeclaration(decl, leads, errors)
   })
   if (important > MAX_IMPORTANT) errors.push(`Too many !important declarations (${important}; max ${MAX_IMPORTANT}).`)
 
