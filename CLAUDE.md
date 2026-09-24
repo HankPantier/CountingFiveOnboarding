@@ -105,6 +105,7 @@ Any route that accepts a file path in a query param or JSON body MUST decode-the
 - Storage paths follow these conventions:
   - Client uploads: `sessions/{sessionId}/{uuid}-{filename}`
   - Generated PDFs: `pdfs/{sessionId}/intake-summary.pdf`
+  - Design Studio images: `design/{sessionId}/{renders|inputs|runs|versions|attachments}/…webp` (WebP, long edge ≤ 1568; signed URLs only; never the `assets` table)
 - Never make the `session-assets` bucket public
 - `assets.public_url` is nullable and **new inserts must write `null`**. To show an asset in the admin UI, the parent server component signs a short-TTL URL with `createSignedUrl(path, 3600)` and passes a `signedUrls: Record<assetId, url>` map to the client component. See `app/admin/sessions/[id]/page.tsx` for the pattern.
 
