@@ -110,6 +110,28 @@ describe('renderComposed deadline (mocked browser, no real Chromium)', () => {
     expect(recycleMock).not.toHaveBeenCalled()
   }, 10_000)
 
+  it('a launch that completes AFTER the deadline has its late browser closed exactly once (no orphaned Chromium)', async () => {
+    let resolveLaunch!: (b: typeof bundle) => void
+    // The fake bundle is structurally partial, so hand it back through an
+    // untyped promise rather than claiming it's a full RenderBundle.
+    vi.mocked(getRenderPage).mockImplementationOnce(
+      () => new Promise<typeof bundle>((r) => (resolveLaunch = r)) as unknown as ReturnType<typeof getRenderPage>
+    )
+
+    const caught = await catchErr(renderComposed({ ...ARGS, viewport: 'desktop', deadlineMs: 150 }))
+    expect((caught as Error).message).toContain('"launch"')
+    expect(recycleMock).not.toHaveBeenCalled()
+
+    const late = makeBundle()
+    resolveLaunch(late)
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(recycleMock).toHaveBeenCalledTimes(1)
+    expect(recycleMock).toHaveBeenCalledWith(late.browser)
+    expect(late.page.setContent).not.toHaveBeenCalled()
+    expect(late.cdp.send).not.toHaveBeenCalled()
+  }, 10_000)
+
   it('recycles the bundle after ANY render error, not just timeouts (shared page state is unknown)', async () => {
     bundle = makeBundle(async (html) => {
       if (!html.includes(IDLE_MARKER)) throw new Error('navigation failed')
@@ -216,24 +238,63 @@ describe('renderComposed render mutex (mocked browser)', () => {
   })
 
   it('a queued render that cannot start before its deadline throws RenderTimeoutError step "queue" (no recycle)', async () => {
+    vi.mocked(getRenderPage).mockClear()
     let releaseFirst!: () => void
     bundle = makeBundle((html) =>
       html.includes(IDLE_MARKER) ? Promise.resolve() : new Promise<void>((r) => (releaseFirst = r))
     )
+    const oldBundle = bundle
     const first = renderComposed({ ...ARGS, viewport: 'desktop', deadlineMs: 5_000 })
     const caught = await catchErr(renderComposed({ ...ARGS, viewport: 'desktop', deadlineMs: 150 }))
     expect(caught).toBeInstanceOf(FakeRenderTimeoutError)
     expect((caught as Error).message).toContain('"queue"')
     expect(recycleMock).not.toHaveBeenCalled()
 
-    // The first render is unaffected, and the abandoned waiter doesn't block
-    // the queue: a third render still runs once the first finishes.
+    // Swap the bundle BEFORE the first render releases the lock: if the
+    // abandoned waiter (next in FIFO order) went on to render, it would call
+    // getRenderPage() and drive THIS new bundle's page.
+    bundle = makeBundle()
     releaseFirst()
     await expect(first).resolves.toMatchObject({ shots: [{ kind: 'fold' }] })
-    bundle = makeBundle()
+    await new Promise((r) => setTimeout(r, 20)) // let the abandoned waiter take (and pass on) its turn
+    expect(vi.mocked(getRenderPage)).toHaveBeenCalledTimes(1) // the first render's only
+    expect(bundle.page.setContent).not.toHaveBeenCalled()
+    expect(oldBundle.page.setContent).toHaveBeenCalledTimes(2) // first's content + idle reset only
+
+    // And the queue isn't blocked: a third render runs normally.
     await expect(renderComposed({ ...ARGS, viewport: 'desktop', deadlineMs: 2_000 })).resolves.toBeTruthy()
-    // The abandoned render never touched the page after its turn came.
+    expect(vi.mocked(getRenderPage)).toHaveBeenCalledTimes(2)
     expect(bundle.page.setContent).toHaveBeenCalledTimes(2)
+  }, 10_000)
+
+  it('a render that acquires the lock with < 10s of budget left fails fast as "queue", never touches or recycles the bundle', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      vi.mocked(getRenderPage).mockClear()
+      let releaseFirst!: () => void
+      bundle = makeBundle((html) =>
+        html.includes(IDLE_MARKER) ? Promise.resolve() : new Promise<void>((r) => (releaseFirst = r))
+      )
+      const first = renderComposed({ ...ARGS, viewport: 'desktop' }) // default 45s deadline
+      const second = catchErr(renderComposed({ ...ARGS, viewport: 'desktop' })) // default 45s deadline
+      await vi.advanceTimersByTimeAsync(36_000)
+      releaseFirst() // second acquires with ~9s of its 45s left
+      await vi.advanceTimersByTimeAsync(10)
+      await expect(first).resolves.toMatchObject({ shots: [{ kind: 'fold' }] })
+
+      const caught = await second
+      expect(caught).toBeInstanceOf(FakeRenderTimeoutError)
+      expect((caught as Error).message).toContain('"queue"')
+      expect(vi.mocked(getRenderPage)).toHaveBeenCalledTimes(1) // only the first render's
+      expect(recycleMock).not.toHaveBeenCalled()
+      expect(recycleIfStillMock).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+    // The lock was released: the next render proceeds normally.
+    bundle = makeBundle()
+    await expect(renderComposed({ ...ARGS, viewport: 'desktop' })).resolves.toMatchObject({ shots: [{ kind: 'fold' }] })
+    expect(recycleMock).not.toHaveBeenCalled()
   }, 10_000)
 
   it('a timed-out render releases the lock so the next render runs', async () => {

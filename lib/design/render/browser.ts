@@ -48,6 +48,11 @@ export type RenderBundle = {
 // render mutex, so there is at most one) and clears when it's done.
 // Requests arriving while no render is active are aborted outright.
 export type RenderRequestState = {
+  // The bundle page this render drives. Each bundle's handlers only allow /
+  // count requests when the active state belongs to THEIR page, so a stale
+  // bundle (recycled, but whose close() hasn't taken effect yet) can never
+  // load anything or skew the active render's counters.
+  page: Page
   shellOrigin: string
   requestCount: number
   blocked: number
@@ -55,8 +60,8 @@ export type RenderRequestState = {
 
 let activeRender: RenderRequestState | null = null
 
-export function beginRenderRequests(shellOrigin: string): RenderRequestState {
-  const state: RenderRequestState = { shellOrigin, requestCount: 0, blocked: 0 }
+export function beginRenderRequests(shellOrigin: string, page: Page): RenderRequestState {
+  const state: RenderRequestState = { page, shellOrigin, requestCount: 0, blocked: 0 }
   activeRender = state
   return state
 }
@@ -67,9 +72,9 @@ export function endRenderRequests(state: RenderRequestState | null): void {
   if (state && activeRender === state) activeRender = null
 }
 
-function handleRoute(route: Route): Promise<void> {
+function handleRoute(route: Route, ownPage: Page): Promise<void> {
   const state = activeRender
-  if (!state) return route.abort()
+  if (!state || state.page !== ownPage) return route.abort()
   state.requestCount++
   if (state.requestCount > MAX_RENDER_REQUESTS || !isAllowedRenderRequest(route.request().url(), state.shellOrigin)) {
     state.blocked++
@@ -82,8 +87,9 @@ function handleRoute(route: Route): Promise<void> {
 // it before dispatching it to the network layer) but does fire
 // 'requestfailed' with this specific errorText — count it against the
 // current render so `blockedRequests` covers both layers.
-function handleRequestFailed(req: { failure(): { errorText: string } | null }): void {
-  if (activeRender && req.failure()?.errorText === 'csp') activeRender.blocked++
+function handleRequestFailed(req: { failure(): { errorText: string } | null }, ownPage: Page): void {
+  const state = activeRender
+  if (state && state.page === ownPage && req.failure()?.errorText === 'csp') state.blocked++
 }
 
 // ── Bundle cache ─────────────────────────────────────────────────────────
@@ -141,10 +147,13 @@ async function setupBundle(browser: Browser): Promise<RenderBundle> {
     deviceScaleFactor: VIEWPORTS.desktop.deviceScaleFactor,
     serviceWorkers: 'block',
   })
-  await context.route('**/*', handleRoute)
   const page = await context.newPage()
   page.setDefaultTimeout(PAGE_TIMEOUT_MS)
-  page.on('requestfailed', handleRequestFailed)
+  // Installed after the page exists (context routes apply to existing pages
+  // too) so both handlers can be bound to this bundle's own page. The blank
+  // initial page makes no requests before this point.
+  await context.route('**/*', (route) => handleRoute(route, page))
+  page.on('requestfailed', (req) => handleRequestFailed(req, page))
   const cdp = await context.newCDPSession(page)
   return { browser, context, page, cdp }
 }

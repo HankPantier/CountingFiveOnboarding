@@ -4,7 +4,7 @@
 // settles and assert how many browsers / contexts / pages were created under
 // concurrent callers, recycles, and failed setups.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Browser } from 'playwright-core'
+import type { Browser, Page } from 'playwright-core'
 
 const launchMock = vi.fn()
 
@@ -66,6 +66,10 @@ function fakeBrowser(connected: boolean) {
 
 function asBrowser(fake: ReturnType<typeof fakeBrowser>): Browser {
   return fake as unknown as Browser
+}
+
+function asPage(fake: ReturnType<typeof fakeBrowser>): Page {
+  return fake.page as unknown as Page
 }
 
 function deferred<T>() {
@@ -347,7 +351,7 @@ describe('per-render request policy on the shared context (mocked playwright-cor
     const { MAX_RENDER_REQUESTS } = await import('./harden')
     await getRenderPage()
 
-    const state = beginRenderRequests('https://example.invalid/')
+    const state = beginRenderRequests('https://example.invalid/', asPage(b))
     expect(b.route('https://example.invalid/app.css').continue).toHaveBeenCalled()
     expect(b.route('https://evil.test/x.png').abort).toHaveBeenCalled()
     expect(state.blocked).toBe(1)
@@ -373,10 +377,38 @@ describe('per-render request policy on the shared context (mocked playwright-cor
     const { getRenderPage, beginRenderRequests, endRenderRequests } = await import('./browser')
     await getRenderPage()
 
-    const old = beginRenderRequests('https://old.invalid/')
-    const current = beginRenderRequests('https://example.invalid/')
+    const old = beginRenderRequests('https://old.invalid/', asPage(b))
+    const current = beginRenderRequests('https://example.invalid/', asPage(b))
     endRenderRequests(old)
     expect(b.route('https://example.invalid/app.css').continue).toHaveBeenCalled()
     expect(current.requestCount).toBe(1)
+  })
+
+  it('requests from a stale (recycled-but-not-closed) bundle page are aborted and not counted against the active render', async () => {
+    const stale = fakeBrowser(true)
+    const current = fakeBrowser(true)
+    launchMock.mockResolvedValueOnce(stale).mockResolvedValueOnce(current)
+    const { getRenderPage, recycleBrowser, beginRenderRequests } = await import('./browser')
+
+    await getRenderPage()
+    // The fake close() resolves without killing anything, so the stale page's
+    // handlers are still live — exactly the wedged-browser case.
+    await recycleBrowser(asBrowser(stale))
+    const b = await getRenderPage()
+    expect(b.browser).toBe(current)
+
+    const state = beginRenderRequests('https://example.invalid/', asPage(current))
+
+    const fromStale = stale.route('https://example.invalid/app.css')
+    expect(fromStale.abort).toHaveBeenCalled()
+    expect(fromStale.continue).not.toHaveBeenCalled()
+    for (const fn of stale.page.listeners.requestfailed ?? []) fn({ failure: () => ({ errorText: 'csp' }) })
+    expect(state.requestCount).toBe(0)
+    expect(state.blocked).toBe(0)
+
+    expect(current.route('https://example.invalid/app.css').continue).toHaveBeenCalled()
+    for (const fn of current.page.listeners.requestfailed ?? []) fn({ failure: () => ({ errorText: 'csp' }) })
+    expect(state.requestCount).toBe(1)
+    expect(state.blocked).toBe(1)
   })
 })

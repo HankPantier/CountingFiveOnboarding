@@ -81,6 +81,12 @@ const SCREENSHOT_TIMEOUT_MS = 10_000
 const RESET_TIMEOUT_MS = 2_000
 const IDLE_HTML = '<!doctype html><title>idle</title>'
 const DEFAULT_DEADLINE_MS = 45_000
+// A render that only gets the lock with less than this much of its deadline
+// left fails fast as a 'queue' timeout instead of starting: it would most
+// likely time out mid-render and recycle a healthy bundle, which cascades
+// into the renders queued behind it. Capped at half the deadline so a short
+// explicit deadline (tests, future callers) isn't rejected outright.
+const RENDER_MIN_BUDGET_MS = 10_000
 
 // Thrown inside an abandoned render body (its deadline already fired) at the
 // next step boundary, so it stops touching the shared page. Never surfaces:
@@ -200,12 +206,28 @@ export async function renderComposed(args: {
       granted()
       throw new RenderAbandonedError()
     }
+    const remainingMs = deadlineMs - (Date.now() - t0)
+    if (remainingMs < Math.min(RENDER_MIN_BUDGET_MS, deadlineMs / 2)) {
+      // Pass the lock straight on; never touch (or recycle) the bundle.
+      granted()
+      steps[currentStep] = Date.now() - stepStart
+      throw new RenderTimeoutError(
+        `Render timed out during step "queue" after ${deadlineMs}ms (only ${remainingMs}ms left once the renderer was free)`
+      )
+    }
     release = granted
     mark('launch')
 
     const bundleCall = getRenderPage()
     bundleSnapshot = currentBrowserPromise()
     const acquired = await bundleCall
+    if (cancelled) {
+      // The deadline fired while the launch was in flight and the launch
+      // completed afterwards — nobody else will close this browser, so close
+      // it here (bounded, identity-scoped) rather than orphan the Chromium.
+      await recycleBrowser(acquired.browser)
+      throw new RenderAbandonedError()
+    }
     bundle = acquired
     const launchMs = Date.now() - stepStart
     mark('emulate')
@@ -225,7 +247,7 @@ export async function renderComposed(args: {
     mark('setContent')
     // Synchronously after mark() (which throws if abandoned), so an abandoned
     // body can never install its state over a newer render's.
-    const reqs = beginRenderRequests(args.shellOrigin)
+    const reqs = beginRenderRequests(args.shellOrigin, page)
     requestState = reqs
 
     const shots: RenderShot[] = []
