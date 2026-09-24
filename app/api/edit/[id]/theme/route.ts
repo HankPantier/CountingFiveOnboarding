@@ -15,18 +15,14 @@ import {
   patchBrandPalette,
   patchDesignTypography,
   patchDesignFlags,
-  PALETTE_ROLES,
   type PalettePatch,
   type TypographyPatch,
   type DesignFlagsPatch,
 } from '@/lib/editor/theme-edit'
 import { generateThemeCss, checkThemeContrast } from '@/lib/content/theme-css-generator'
-import { deepSetPath } from '@/lib/mbp/schema-write'
-import { asJson } from '@/lib/supabase/json-typed'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
-import type { PaletteData } from '@/types/palette'
-import { updateSessionWithCas } from '@/lib/session/schema-cas'
+import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
 import {
   BRAND_PATH,
   DESIGN_PATH,
@@ -105,24 +101,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch; flags?: DesignFlagsPatch }
-
-// Build the free-text MBP summary the operator sees on the profile.
-function paletteSummary(palette: BrandJson['palette']): string {
-  return PALETTE_ROLES.map((r) => `${r}: ${palette[r]}`).join(', ')
-}
-function typographySummary(t: DesignJson['typography']): string {
-  return `Headings: ${t.headingFont} · Body: ${t.bodyFont} · Accent: ${t.accentFont}`
-}
-
-// Re-key the structured content_jobs palette from the new hexes, preserving any
-// existing swatch names (fall back to the role name).
-function toPaletteData(palette: BrandJson['palette'], existing: PaletteData | null): PaletteData {
-  const out = {} as PaletteData
-  for (const role of PALETTE_ROLES) {
-    out[role] = { hex: palette[role], name: existing?.[role]?.name ?? role }
-  }
-  return out
-}
 
 // PATCH — direct (non-AI) theme edits from the Theme Studio pickers. Applies a
 // palette and/or typography change: commits brand.json/design.json + the
@@ -222,30 +200,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
     })
 
-    // MBP sync: keep the profile in step with the site.
-    const supabase = createServerClient()
-    if (brandChanged || designChanged) {
-      try {
-        await updateSessionWithCas(supabase, sessionId, session => {
-          let schema = (session.schema_data ?? {}) as Record<string, unknown>
-          if (brandChanged) schema = deepSetPath(schema, 'brand.primaryColors', paletteSummary(brand.palette))
-          if (designChanged) schema = deepSetPath(schema, 'brand.typography', typographySummary(normalizeTypography(design.typography)))
-          return { update: { schema_data: asJson(schema) }, result: null }
-        })
-      } catch (err) {
-        // The repo commit already landed; the MBP mirror is best-effort.
-        console.warn('[theme] MBP sync failed (theme saved):', err)
-      }
-    }
-    if (brandChanged) {
-      const { data: job } = await supabase
-        .from('content_jobs')
-        .select('palette')
-        .eq('id', jobId)
-        .maybeSingle()
-      const nextPalette = toPaletteData(brand.palette, (job?.palette as PaletteData | null) ?? null)
-      await supabase.from('content_jobs').update({ palette: asJson(nextPalette) }).eq('id', jobId)
-    }
+    // MBP sync: keep the profile in step with the site (best-effort).
+    await syncMbpTheme(createServerClient(), {
+      sessionId,
+      jobId,
+      brand: brandChanged ? brand : undefined,
+      design: designChanged ? design : undefined,
+    })
 
     return NextResponse.json({
       ok: true,
