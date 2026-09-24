@@ -9,7 +9,6 @@ import { createServerClient } from '@/lib/supabase/server'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { extractCacheUsage } from '@/lib/content/cache-control'
-import { sanitizeDesignCss } from '@/lib/design/css-sanitizer'
 import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
@@ -163,7 +162,9 @@ RULES
 - When you change a colour, keep the palette coherent (don't break contrast). If a tool reports a contrast warning, tell the admin plainly which pair is low and offer to adjust.
 - After a successful change, briefly say what changed. If a tool returns an error, tell the admin and try a corrected call — never claim success when a tool failed.
 - Every change is saved to the DRAFT site. Tell the admin to review in the preview and Publish when ready. Never say it is live.
-- Use hex colours (#rrggbb) and CSS lengths (px/rem) — never colour names or arbitrary CSS.`
+- Use hex colours (#rrggbb) and CSS lengths (px/rem) — never colour names or arbitrary CSS.
+- CSS limits: scope every selector to the block; no ~ or + combinators; no display:none, visibility:hidden, opacity < 0.2, transparent text, or content text; font-size ≥ 12px (px/rem/em/clamp); position sticky/fixed only on the navbar; no font shorthand, color-mix(), @import, @apply, or theme().
+- Animations only inside @media (prefers-reduced-motion: no-preference), ≤ 2s, no infinite or fill modes.`
 
   const result = streamText({
     model: anthropic(INTERACTIVE_CHAT_MODEL),
@@ -267,7 +268,17 @@ RULES
             .describe('CSS rule(s) scoped to the block, e.g. [data-block="hero"] h1 { font-size: 3.5rem; }'),
         }),
         execute: async ({ block, css }) => {
-          const clean = sanitizeDesignCss(css, { kind: 'target', target: block })
+          // Loaded lazily: the sanitizer pulls in lightningcss (a native
+          // module). If its binary is ever missing at runtime, only this tool
+          // fails — the chat and the palette/token tools keep working.
+          let sanitizer: typeof import('@/lib/design/css-sanitizer')
+          try {
+            sanitizer = await import('@/lib/design/css-sanitizer')
+          } catch (err) {
+            console.error('[theme-chat] failed to load the CSS sanitizer', err)
+            return { error: 'Block CSS overrides are temporarily unavailable. Palette and token changes still work.' }
+          }
+          const clean = sanitizer.sanitizeDesignCss(css, { kind: 'target', target: block })
           if (!clean.ok) return { error: `CSS rejected: ${clean.errors.join(' ')}` }
           const res = upsertBlockOverride(files[OVERRIDES_PATH].content, block, clean.css)
           if (!res.ok) return { error: res.reason }

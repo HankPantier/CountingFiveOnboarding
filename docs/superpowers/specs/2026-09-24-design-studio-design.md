@@ -155,7 +155,7 @@ Five tables. RLS on all five is admin-tier only (`admins.role='admin'`); the rea
   - **`url()`:** only `data:image/svg+xml` ≤2 KB, scrubbed.
   - **Selectors must be scoped** to `[data-block=…]`, `[data-component=…]`, known `html[data-axis]`, or `:root` custom properties (not `--color-*` or `--font-*-loaded`).
   - **Anti-hiding blocklist:** `display:none`, transparent text, tiny fonts, and similar.
-  - **Output:** re-serialized into a managed region (`/* design-studio:begin vN */ … end`).
+  - **Output:** re-serialized into a managed region (`/* design-studio:begin */ … end`; the version lives in `design_versions`, not the file).
 - **Hard gates before apply:**
   - `checkThemeContrast` passes;
   - axe AA on body text;
