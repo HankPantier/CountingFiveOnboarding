@@ -548,3 +548,59 @@ describe('sanitizeDesignCss — round 3 findings (bypasses closed, regression fi
     expect(errs('[data-block="hero"] { position: -webkit-sticky; }')).toMatch(/navbar/i)
   })
 })
+
+// Round 4: one numeric grammar for every animation value (canonical plain
+// numbers only, per-layer duration/delay/iteration limits), plus leading-dot
+// acceptance for longhand times and final-step opacity.
+describe('sanitizeDesignCss — round 4 findings (animation number forms, per-layer limits)', () => {
+  const gated = (decl: string) =>
+    `@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { ${decl}; } }`
+
+  it.each([
+    ['signed duration', 'animation: c5-h +30s'],
+    ['exponent duration', 'animation: c5-h 3e1s'],
+    ['exponent iteration count', 'animation: c5-h 1s 1e3'],
+    ['signed iteration count', 'animation: c5-h 1s +3'],
+    ['leading-dot duration then long delay', 'animation: c5-h .1s 1.5s'],
+    ['3rd-layer duration', 'animation: a 1s 0s, b 1s 0s, c 30s'],
+  ])('rejects an animation shorthand bypass: %s', (_label, decl) => {
+    expect(errs(gated(decl))).toMatch(/animation/i)
+  })
+
+  it('rejects a third <time> value in one shorthand layer', () => {
+    expect(errs(gated('animation: c5-h 1s 0s 1s'))).toMatch(/time/i)
+  })
+
+  it('rejects non-canonical numbers in the longhands too', () => {
+    errs(gated('animation-duration: 3e1s'))
+    errs(gated('animation-delay: +1s'))
+    errs(gated('animation-iteration-count: 1e0'))
+    errs(gated('animation-duration: 1s, 30s'))
+  })
+
+  it.each([
+    ['leading-dot duration', 'animation-duration: .3s'],
+    ['leading-dot delay', 'animation-delay: .2s'],
+    ['iteration count 1.0', 'animation-iteration-count: 1.0'],
+    ['multi-layer shorthand within limits', 'animation: c5-a .6s ease-out .2s, c5-b 1s cubic-bezier(.2,.7,.2,1) 0s 1'],
+    ['multi-layer longhands within limits', 'animation-duration: .3s, 2s'],
+  ])('accepts: %s', (_label, decl) => {
+    ok(gated(decl))
+  })
+
+  it('accepts a leading-dot final keyframe step opacity (to { opacity: .9 })', () => {
+    ok(
+      '@keyframes c5-f9 { from { opacity: 0; } to { opacity: .9; } }\n' +
+        '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-f9 .6s; } }'
+    )
+  })
+
+  it('still rejects a leading-dot final keyframe step opacity below 0.2', () => {
+    expect(
+      errs(
+        '@keyframes c5-f1 { from { opacity: 0; } to { opacity: .1; } }\n' +
+          '@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { animation: c5-f1 .6s; } }'
+      )
+    ).toMatch(/final/i)
+  })
+})

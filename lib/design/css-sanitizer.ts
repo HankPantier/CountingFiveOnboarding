@@ -13,7 +13,7 @@
 // This is a denylist-plus-scoping gate, not a formal CSS security model — it
 // cannot enumerate every possible bypass, only the ones found and closed so
 // far (see task-3-findings-r1.md, task-3-findings-r2.md, and
-// task-3-findings-r3.md for the round-1/2/3 reviews). Where practical, prefer
+// task-3-findings-r3.md / -r4.md for the round-1..4 reviews). Where practical, prefer
 // a structural allowlist (e.g. font-size, the reduced-motion gate, :root's
 // shape, animation's duration/delay/iteration-count limits) over another
 // denylist pattern — it's harder to bypass with an unanticipated variant.
@@ -215,12 +215,78 @@ const splitTopLevelCommas = (s: string): string[] => splitTopLevel(s, /,/).map((
 // .2, 1)` stays one token even though it contains both commas and spaces.
 const tokenizeBalanced = (s: string): string[] => splitTopLevel(s, /\s/)
 
-// A CSS <time>: a plain (no calc/var) number followed by s or ms, in seconds.
-function timeToSeconds(tok: string): number | null {
-  const m = /^(-?\d+(?:\.\d+)?)(m?s)$/i.exec(tok)
-  if (!m) return null
-  const n = parseFloat(m[1])
-  return m[2].toLowerCase() === 'ms' ? n / 1000 : n
+// Round 4 ruling: ONE numeric grammar for every animation value. A number
+// must be canonical and plain — digits with an optional fraction, or a bare
+// leading-dot fraction — optionally followed by s/ms. Signs, exponents and any
+// other unit are rejected, so `+30s`, `3e1s`, `1e3` can't slip past the limits.
+const ANIMATION_NUMBER_RE = /^(?:\d+(?:\.\d+)?|\.\d+)(?:s|ms)?$/
+// Anything that starts like a number (optional sign, optional dot, digit).
+const NUMERIC_LOOKING_RE = /^[+-]?\.?\d/
+
+type AnimationToken =
+  | { kind: 'time'; seconds: number }
+  | { kind: 'number'; value: number }
+  | { kind: 'badNumber'; raw: string }
+  | { kind: 'other'; raw: string }
+
+// Parses an `animation` / `animation-*` value into its comma-separated layers,
+// each a list of classified tokens. Parenthesised groups (e.g.
+// `cubic-bezier(.2,.7,.2,1)`) stay one token and are classified as `other`, so
+// their argument lists are never mistaken for a time or iteration count.
+function parseAnimationLayers(value: string): AnimationToken[][] {
+  return splitTopLevelCommas(value).map((layer) =>
+    tokenizeBalanced(layer).map((raw): AnimationToken => {
+      if (raw.includes('(') || !NUMERIC_LOOKING_RE.test(raw)) return { kind: 'other', raw }
+      if (!ANIMATION_NUMBER_RE.test(raw)) return { kind: 'badNumber', raw }
+      const n = parseFloat(raw)
+      if (raw.endsWith('ms')) return { kind: 'time', seconds: n / 1000 }
+      if (raw.endsWith('s')) return { kind: 'time', seconds: n }
+      return { kind: 'number', value: n }
+    })
+  )
+}
+
+const ANIMATION_NUMBER_MSG = 'animation numbers must be plain, e.g. 0.6s or 600ms'
+const MAX_ANIMATION_DURATION_S = 2
+const MAX_ANIMATION_DELAY_S = 1
+
+// Per-layer duration/delay/iteration-count limits for `animation` and its
+// numeric longhands (round 4: applied to EVERY comma-separated layer, not just
+// the first). Any hiding via animation is then at most transient.
+function checkAnimationValue(prop: string, rawValue: string, value: string, errors: string[]) {
+  for (const layer of parseAnimationLayers(value)) {
+    for (const t of layer) {
+      if (t.kind === 'badNumber') errors.push(`${prop}: ${rawValue} is not allowed (${ANIMATION_NUMBER_MSG}).`)
+    }
+    const times = layer.flatMap((t) => (t.kind === 'time' ? [t.seconds] : []))
+    const numbers = layer.flatMap((t) => (t.kind === 'number' ? [t.value] : []))
+
+    if (prop === 'animation') {
+      // Shorthand <time> values appear in order: 1st = duration, 2nd = delay.
+      if (times[0] !== undefined && times[0] > MAX_ANIMATION_DURATION_S) {
+        errors.push(`animation: ${rawValue} duration must be ≤ ${MAX_ANIMATION_DURATION_S}s.`)
+      }
+      if (times[1] !== undefined && times[1] > MAX_ANIMATION_DELAY_S) {
+        errors.push(`animation: ${rawValue} delay must be ≤ ${MAX_ANIMATION_DELAY_S}s.`)
+      }
+      if (times.length > 2) errors.push(`animation: ${rawValue} may have at most two time values per layer.`)
+      // A bare number in the shorthand is the iteration count.
+      if (numbers.some((n) => n !== 1)) {
+        errors.push(`animation: ${rawValue} may only use a bare number of 1 (the iteration count).`)
+      }
+    } else if (prop === 'animation-duration' || prop === 'animation-delay') {
+      const max = prop === 'animation-duration' ? MAX_ANIMATION_DURATION_S : MAX_ANIMATION_DELAY_S
+      if (layer.length !== 1 || times.length !== 1) {
+        errors.push(`${prop}: ${rawValue} must be a plain <num>(s|ms) time value.`)
+      } else if (times[0] > max) {
+        errors.push(`${prop}: ${rawValue} must be ≤ ${max}s.`)
+      }
+    } else if (prop === 'animation-iteration-count') {
+      if (layer.length !== 1 || numbers.length !== 1 || numbers[0] !== 1) {
+        errors.push(`animation-iteration-count: ${rawValue} must be exactly 1.`)
+      }
+    }
+  }
 }
 
 // 4-digit (#rgba) and 8-digit (#rrggbbaa) hex colours carry alpha as their
@@ -379,37 +445,7 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
     if (/\bvar\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use var().`)
     if (/\bsteps\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use steps().`)
     if (/\binfinite\b/.test(value)) errors.push(`${prop}: ${decl.value} may not use infinite.`)
-  }
-  if (prop === 'animation-iteration-count' && value !== '1') {
-    errors.push(`animation-iteration-count: ${decl.value} must be exactly 1.`)
-  }
-  if (prop === 'animation-duration' || prop === 'animation-delay') {
-    const max = prop === 'animation-duration' ? 2 : 1
-    for (const part of splitTopLevelCommas(value)) {
-      const secs = timeToSeconds(part)
-      if (secs === null) errors.push(`${prop}: ${decl.value} must be a plain <num>(s|ms) time value.`)
-      else if (secs > max) errors.push(`${prop}: ${decl.value} must be ≤ ${max}s.`)
-    }
-  }
-  if (prop === 'animation') {
-    const tokens = tokenizeBalanced(value)
-    // Any bare unitless number in the shorthand other than exactly `1` is an
-    // iteration count — cubic-bezier(...)'s internal numbers never appear as
-    // their own token, since tokenizeBalanced keeps the whole call together.
-    for (const t of tokens) {
-      if (/^-?\d+(?:\.\d+)?$/.test(t) && t !== '1') {
-        errors.push(`animation: ${decl.value} may only use a bare number of 1 (the iteration count).`)
-      }
-    }
-    // The shorthand's <time> values appear in order: 1st = duration (≤2s),
-    // 2nd = delay (≤1s).
-    const times = tokens.filter((t) => timeToSeconds(t) !== null)
-    if (times[0] !== undefined && (timeToSeconds(times[0]) ?? 0) > 2) {
-      errors.push(`animation: ${decl.value} duration must be ≤ 2s.`)
-    }
-    if (times[1] !== undefined && (timeToSeconds(times[1]) ?? 0) > 1) {
-      errors.push(`animation: ${decl.value} delay must be ≤ 1s.`)
-    }
+    checkAnimationValue(prop, decl.value, value, errors)
   }
   if (/image-set\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use image-set() (remote fetch risk).`)
   if (/\bsrc\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use src() (remote fetch risk).`)
@@ -494,7 +530,9 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
             // Round 3: must be a plain number/percentage — calc()/var() can't
             // be statically proven safe, so they're rejected outright here
             // rather than only checked when they happen to parse as < 0.2.
-            if (!/^\d+(?:\.\d+)?%?$/.test(v)) {
+            // Round 4: same plain-number grammar as colour alpha, so a
+            // leading-dot value like `.9` is accepted.
+            if (!ALPHA_NUMBER_RE.test(v)) {
               errors.push(`opacity: ${child.value} is not allowed at a keyframe's final (to/100%) step (must be a plain number or percentage).`)
             } else {
               const n = v.endsWith('%') ? parseFloat(v) / 100 : parseFloat(v)
