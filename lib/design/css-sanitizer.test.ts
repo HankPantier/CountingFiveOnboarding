@@ -604,3 +604,33 @@ describe('sanitizeDesignCss — round 4 findings (animation number forms, per-la
     ).toMatch(/final/i)
   })
 })
+
+// Round 5: math functions (calc/min/max/clamp/…) inside animation values
+// escaped the per-layer limits — only cubic-bezier/linear/view/scroll allowed.
+describe('sanitizeDesignCss — round 5 findings (animation function allowlist)', () => {
+  const gated = (decl: string) =>
+    `@media (prefers-reduced-motion: no-preference) { [data-block="hero"] { ${decl}; } }`
+
+  it.each([
+    ['calc() duration', 'animation: c5-h calc(30s)'],
+    ['max() duration', 'animation: c5-h max(30s, 1s)'],
+    ['calc() delay', 'animation: c5-h 1s calc(100s)'],
+    ['calc() iteration count', 'animation: c5-h 1s calc(1000)'],
+    ['min() iteration count', 'animation: c5-h 1s 0s min(999, 1000)'],
+    ['clamp() iteration count', 'animation: c5-h 1s 0s clamp(5, 9, 99)'],
+    ['calc() in a longhand', 'animation-duration: calc(30s)'],
+    ['math nested inside cubic-bezier()', 'animation: c5-h 1s cubic-bezier(calc(.2), .7, .2, 1)'],
+  ])('rejects a non-allowlisted function: %s', (_label, decl) => {
+    expect(errs(gated(decl))).toContain('only cubic-bezier()/linear()/view()/scroll() functions are allowed in animation values')
+  })
+
+  it.each([
+    ['cubic-bezier with negative args', 'animation: c5-h .6s cubic-bezier(.2, -0.6, .3, 1.4)'],
+    ['linear() easing', 'animation-timing-function: linear(0, .25, 1)'],
+    ['LINEAR() case-insensitive', 'animation: c5-h .6s LINEAR(0, .25, 1)'],
+    ['view() timeline', 'animation-timeline: view()'],
+    ['scroll() timeline', 'animation-timeline: scroll()'],
+  ])('accepts an allowlisted function: %s', (_label, decl) => {
+    ok(gated(decl))
+  })
+})

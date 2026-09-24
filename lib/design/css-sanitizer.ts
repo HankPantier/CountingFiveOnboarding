@@ -13,7 +13,7 @@
 // This is a denylist-plus-scoping gate, not a formal CSS security model — it
 // cannot enumerate every possible bypass, only the ones found and closed so
 // far (see task-3-findings-r1.md, task-3-findings-r2.md, and
-// task-3-findings-r3.md / -r4.md for the round-1..4 reviews). Where practical, prefer
+// task-3-findings-r3.md / -r4.md / -r5.md for the round-1..5 reviews). Where practical, prefer
 // a structural allowlist (e.g. font-size, the reduced-motion gate, :root's
 // shape, animation's duration/delay/iteration-count limits) over another
 // denylist pattern — it's harder to bypass with an unanticipated variant.
@@ -227,16 +227,33 @@ type AnimationToken =
   | { kind: 'time'; seconds: number }
   | { kind: 'number'; value: number }
   | { kind: 'badNumber'; raw: string }
+  | { kind: 'badFunction'; raw: string }
   | { kind: 'other'; raw: string }
+
+// Round 5 ruling: the only functions allowed anywhere in an animation value.
+// Math functions (calc/min/max/clamp/round/…) would otherwise hide a time or
+// iteration count from the limits below. Every function name in the token is
+// checked, including ones nested inside an allowed function's arguments.
+const ANIMATION_FUNCTIONS = new Set(['cubic-bezier', 'linear', 'view', 'scroll'])
+function hasDisallowedFunction(token: string): boolean {
+  const re = /([\w-]*)\(/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(token))) {
+    if (!ANIMATION_FUNCTIONS.has(m[1].toLowerCase())) return true
+  }
+  return false
+}
 
 // Parses an `animation` / `animation-*` value into its comma-separated layers,
 // each a list of classified tokens. Parenthesised groups (e.g.
-// `cubic-bezier(.2,.7,.2,1)`) stay one token and are classified as `other`, so
-// their argument lists are never mistaken for a time or iteration count.
+// `cubic-bezier(.2,.7,.2,1)`) stay one token: `other` when every function in
+// it is allowlisted (its arguments are never read as a time or iteration
+// count), `badFunction` otherwise.
 function parseAnimationLayers(value: string): AnimationToken[][] {
   return splitTopLevelCommas(value).map((layer) =>
     tokenizeBalanced(layer).map((raw): AnimationToken => {
-      if (raw.includes('(') || !NUMERIC_LOOKING_RE.test(raw)) return { kind: 'other', raw }
+      if (raw.includes('(')) return hasDisallowedFunction(raw) ? { kind: 'badFunction', raw } : { kind: 'other', raw }
+      if (!NUMERIC_LOOKING_RE.test(raw)) return { kind: 'other', raw }
       if (!ANIMATION_NUMBER_RE.test(raw)) return { kind: 'badNumber', raw }
       const n = parseFloat(raw)
       if (raw.endsWith('ms')) return { kind: 'time', seconds: n / 1000 }
@@ -247,6 +264,7 @@ function parseAnimationLayers(value: string): AnimationToken[][] {
 }
 
 const ANIMATION_NUMBER_MSG = 'animation numbers must be plain, e.g. 0.6s or 600ms'
+const ANIMATION_FUNCTION_MSG = 'only cubic-bezier()/linear()/view()/scroll() functions are allowed in animation values'
 const MAX_ANIMATION_DURATION_S = 2
 const MAX_ANIMATION_DELAY_S = 1
 
@@ -257,6 +275,7 @@ function checkAnimationValue(prop: string, rawValue: string, value: string, erro
   for (const layer of parseAnimationLayers(value)) {
     for (const t of layer) {
       if (t.kind === 'badNumber') errors.push(`${prop}: ${rawValue} is not allowed (${ANIMATION_NUMBER_MSG}).`)
+      if (t.kind === 'badFunction') errors.push(`${prop}: ${rawValue} is not allowed (${ANIMATION_FUNCTION_MSG}).`)
     }
     const times = layer.flatMap((t) => (t.kind === 'time' ? [t.seconds] : []))
     const numbers = layer.flatMap((t) => (t.kind === 'number' ? [t.value] : []))
