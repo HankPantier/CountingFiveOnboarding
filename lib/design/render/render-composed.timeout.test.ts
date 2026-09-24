@@ -5,7 +5,7 @@
 // tests sharing the same module registry.
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 
-const { recycleMock, recycleIfStillMock, FakeRenderTimeoutError, state } = vi.hoisted(() => {
+const { recycleMock, recycleIfStillMock, releaseAbandonedMock, FakeRenderTimeoutError, state } = vi.hoisted(() => {
   class FakeRenderTimeoutError extends Error {
     constructor(message: string) {
       super(message)
@@ -15,6 +15,7 @@ const { recycleMock, recycleIfStillMock, FakeRenderTimeoutError, state } = vi.ho
   return {
     recycleMock: vi.fn(async (_b?: unknown) => undefined),
     recycleIfStillMock: vi.fn(async (_s?: unknown) => undefined),
+    releaseAbandonedMock: vi.fn(async (_b?: unknown) => undefined),
     FakeRenderTimeoutError,
     state: { current: null as null | { shellOrigin: string; requestCount: number; blocked: number } },
   }
@@ -50,6 +51,7 @@ vi.mock('./browser', () => ({
   currentBrowserPromise: vi.fn(() => null),
   recycleBrowser: recycleMock,
   recycleIfStill: recycleIfStillMock,
+  releaseAbandonedBundle: releaseAbandonedMock,
   beginRenderRequests: vi.fn((shellOrigin: string) => {
     state.current = { shellOrigin, requestCount: 0, blocked: 0 }
     return state.current
@@ -78,6 +80,7 @@ beforeEach(() => {
   bundle = makeBundle()
   recycleMock.mockClear()
   recycleIfStillMock.mockClear()
+  releaseAbandonedMock.mockClear()
   vi.mocked(endRenderRequests).mockClear()
 })
 
@@ -110,7 +113,7 @@ describe('renderComposed deadline (mocked browser, no real Chromium)', () => {
     expect(recycleMock).not.toHaveBeenCalled()
   }, 10_000)
 
-  it('a launch that completes AFTER the deadline has its late browser closed exactly once (no orphaned Chromium)', async () => {
+  it('a launch that completes AFTER the deadline hands its late bundle to releaseAbandonedBundle exactly once, never drives it', async () => {
     let resolveLaunch!: (b: typeof bundle) => void
     // The fake bundle is structurally partial, so hand it back through an
     // untyped promise rather than claiming it's a full RenderBundle.
@@ -126,8 +129,11 @@ describe('renderComposed deadline (mocked browser, no real Chromium)', () => {
     resolveLaunch(late)
     await new Promise((r) => setTimeout(r, 20))
 
-    expect(recycleMock).toHaveBeenCalledTimes(1)
-    expect(recycleMock).toHaveBeenCalledWith(late.browser)
+    // Orphan-vs-cached decision (and the close) live in browser.ts — covered
+    // end-to-end in render-composed.late-launch.test.ts.
+    expect(releaseAbandonedMock).toHaveBeenCalledTimes(1)
+    expect(releaseAbandonedMock).toHaveBeenCalledWith(late)
+    expect(recycleMock).not.toHaveBeenCalled()
     expect(late.page.setContent).not.toHaveBeenCalled()
     expect(late.cdp.send).not.toHaveBeenCalled()
   }, 10_000)

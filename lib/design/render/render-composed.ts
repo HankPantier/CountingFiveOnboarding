@@ -46,6 +46,7 @@ import {
   getRenderPage,
   recycleBrowser,
   recycleIfStill,
+  releaseAbandonedBundle,
   RenderTimeoutError,
   type RenderBundle,
   type RenderRequestState,
@@ -223,9 +224,11 @@ export async function renderComposed(args: {
     const acquired = await bundleCall
     if (cancelled) {
       // The deadline fired while the launch was in flight and the launch
-      // completed afterwards — nobody else will close this browser, so close
-      // it here (bounded, identity-scoped) rather than orphan the Chromium.
-      await recycleBrowser(acquired.browser)
+      // completed afterwards. If it's still the healthy cached bundle, it's
+      // now the warm browser (a render queued behind us may already be using
+      // it) — keep it. Only an orphan (no longer cached) is closed here, so
+      // it doesn't linger as a leaked Chromium.
+      await releaseAbandonedBundle(acquired)
       throw new RenderAbandonedError()
     }
     bundle = acquired

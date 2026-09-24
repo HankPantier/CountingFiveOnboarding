@@ -119,7 +119,14 @@ function withFallback<T>(promise: Promise<T>, ms: number, fallback: T): Promise<
   })
 }
 
+// Browsers already asked to close. Several cleanup paths can reach the same
+// browser (e.g. recycleIfStill's snapshot close AND an abandoned render's
+// late-launch cleanup) — close each one only once.
+const closing = new WeakSet<Browser>()
+
 function closeBounded(browser: Browser): Promise<void> {
+  if (closing.has(browser)) return Promise.resolve()
+  closing.add(browser)
   return withFallback(browser.close().catch(() => {}), RECYCLE_CLOSE_TIMEOUT_MS, undefined)
 }
 
@@ -208,11 +215,16 @@ export async function getBrowser(): Promise<Browser> {
 }
 
 // Exposes the raw cached promise reference — never a fresh wrapper — so a
-// caller about to await getRenderPage() can remember exactly which
-// in-flight/cached promise it started with. Call this IMMEDIATELY after
-// invoking getRenderPage() (before awaiting it): its synchronous prefix has
-// already assigned any fresh launch promise by then. Used only by
-// renderComposed's timeout path (see recycleIfStill below).
+// caller about to await getRenderPage() can remember which in-flight/cached
+// promise it started with. Call this IMMEDIATELY after invoking
+// getRenderPage() (before awaiting it). CAVEAT: this is only the NEW launch
+// promise on a cold start (empty cache — getRenderPage assigns it
+// synchronously). When the cache holds a bundle, getRenderPage first awaits
+// that bundle's health check, so the snapshot is the OLD cached promise even
+// if it turns out stale and a relaunch replaces it afterwards; recycleIfStill
+// then correctly does nothing (the cache has moved on) and the late-landing
+// bundle is handled by releaseAbandonedBundle below instead. Used only by
+// renderComposed's timeout path.
 export function currentBrowserPromise(): Promise<RenderBundle> | null {
   return bundlePromise
 }
@@ -239,6 +251,20 @@ export async function recycleIfStill(snapshot: Promise<RenderBundle> | null): Pr
   bundlePromise = null
   const existing = await withFallback(snapshot.catch(() => null), RECYCLE_CLOSE_TIMEOUT_MS, null)
   if (existing) await closeBounded(existing.browser)
+}
+
+// For a render whose deadline fired while its getRenderPage() was in flight
+// and which got the bundle back only afterwards. If that bundle is the one
+// currently cached AND healthy, it is the warm browser other renders (e.g.
+// one queued behind the abandoned render, which awaited the same launch)
+// are using — leave it alone. Otherwise it is an orphan (or a broken cached
+// bundle): recycle it (clears the cache only if it's still cached, then a
+// bounded close that is a no-op if another path already closed it).
+export async function releaseAbandonedBundle(bundle: RenderBundle): Promise<void> {
+  const current = bundlePromise
+  const cached = current ? await withFallback(current.catch(() => null), RECYCLE_CLOSE_TIMEOUT_MS, null) : null
+  if (cached === bundle && bundlePromise === current && isHealthy(bundle)) return
+  await recycleBrowser(bundle.browser)
 }
 
 // Test-only: close the shared browser so vitest can exit cleanly.
