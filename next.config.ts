@@ -15,10 +15,13 @@ const nextConfig: NextConfig = {
   // function bundle. Force-include it for the one route that loads the
   // sanitizer. Keys are picomatch globs matched against the route path, so
   // the dynamic segment's brackets must be escaped to match literally.
+  // On Linux, lightningcss also require()s detect-libc (to pick gnu vs musl)
+  // before loading the binary — tracing misses that branch on a macOS build.
   outputFileTracingIncludes: {
     '/api/edit/\\[id\\]/theme/chat': [
       './node_modules/lightningcss/**',
       './node_modules/lightningcss-linux-x64-gnu/**',
+      './node_modules/detect-libc/**',
     ],
   },
   async headers() {
