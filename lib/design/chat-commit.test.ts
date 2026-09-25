@@ -131,6 +131,25 @@ describe('commitWorkspace', () => {
     expect(ws.draftShas()).toEqual(LATER)
     expect(ws.lastVersionId()).toBe('ver-10')
   })
+  it('an edit landing during the commit stays staged and the auto-commit writes it', async () => {
+    const ws = workspace()
+    ws.apply({ kind: 'palette', patch: { primary: '#123a5c' } })
+    let release: () => void = () => {}
+    commitVersion.mockImplementationOnce(async () => {
+      await new Promise<void>((r) => (release = r))
+      return { ok: true, version: makeVersionRow({ id: 'ver-9', version_no: 9, source: 'chat' }), commitSha: '1'.repeat(40), changedPaths: ['content/brand.json'], appliedBlobs: NEXT, css: { blocks: {} } }
+    })
+    const pending = commitWorkspace(ws, { summary: 'one', target: TARGET, commitVersion })
+    await Promise.resolve()
+    ws.apply({ kind: 'treatments', patch: { darkSections: true } })
+    release()
+    await pending
+    expect(commitVersion.mock.calls[0][0].bundle.treatments.darkSections).not.toBe(true)
+    expect(ws.isStaged()).toBe(true)
+    const out = await finishTurnCommit(ws, (s) => commitWorkspace(ws, { summary: s, target: TARGET, commitVersion }), false)
+    expect(out).toMatchObject({ status: 'committed', auto: true })
+    expect(commitVersion.mock.calls[1][0]).toMatchObject({ expectedShas: NEXT, bundle: { treatments: { darkSections: true } } })
+  })
 })
 
 describe('finishTurnCommit', () => {
@@ -146,6 +165,13 @@ describe('finishTurnCommit', () => {
     const commit = vi.fn(async () => ({ ok: true as const, versionId: 'ver-9', versionNo: 9, changedPaths: ['content/brand.json'], warnings: [] }))
     expect(await finishTurnCommit(staged(), commit, false)).toEqual({ status: 'committed', versionId: 'ver-9', versionNo: 9, changedPaths: ['content/brand.json'], warnings: [], auto: true })
     expect(commit).toHaveBeenCalledWith('palette (primary)')
+  })
+  it('none after an explicit commit with no further edits', async () => {
+    const ws = staged()
+    await commitWorkspace(ws, { summary: 'x', target: TARGET, commitVersion })
+    const commit = vi.fn()
+    expect(await finishTurnCommit(ws, commit, false)).toEqual({ status: 'none' })
+    expect(commit).not.toHaveBeenCalled()
   })
   it('discards (never commits) staged edits after a stream failure', async () => {
     const commit = vi.fn()

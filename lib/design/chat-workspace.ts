@@ -96,20 +96,30 @@ export class ChatWorkspace {
   previewsUsed(): number {
     return this.previews
   }
-  recordPreview(p: Omit<WorkspacePreview, 'revision'>): void {
-    this.preview = { ...p, revision: this.rev }
+  // Hands back a slot taken for a preview that never rendered (no time left).
+  releasePreviewSlot(): void {
+    if (this.previews > 0) this.previews--
+  }
+  // `revision` = the revision whose theme was rendered (captured when the
+  // preview theme was taken); an edit that landed during the render makes the
+  // recorded preview stale, so it never gates CSS it didn't render.
+  recordPreview(p: Omit<WorkspacePreview, 'revision'>, revision: number = this.rev): void {
+    this.preview = { ...p, revision }
   }
   // The preview of the CURRENT working copy, or null (never previewed / edited since).
   currentPreview(): WorkspacePreview | null {
     return this.preview && this.preview.revision === this.rev ? this.preview : null
   }
 
-  markCommitted(appliedBlobs: ThemeBlobShas, versionId: string | null): void {
-    const r = this.renderedFiles()
+  // `at` = the revision + bundle that was actually committed (captured before
+  // the commit's await). Edits applied after it stay staged — with their
+  // pending summaries — for the next commit / the auto-commit.
+  markCommitted(appliedBlobs: ThemeBlobShas, versionId: string | null, at: { revision: number; bundle: DesignBundle } = { revision: this.rev, bundle: this.working }): void {
+    const r = bundleToRepoFiles(at.bundle, this.files, { removeLegacy: false })
     if (r.ok) this.files = { brandText: r.files.brandText, designText: r.files.designText, overridesCss: r.files.overridesCss }
     this.shas = appliedBlobs
-    this.committedRev = this.rev
-    this.pending = []
+    this.pending = this.pending.slice(Math.max(0, at.revision - this.committedRev))
+    this.committedRev = at.revision
     if (versionId) this.versionIds.push(versionId)
   }
   lastVersionId(): string | null {

@@ -85,6 +85,32 @@ describe('ChatWorkspace previews + commits', () => {
     // Later edits validate against the committed files.
     expect(w.apply({ kind: 'palette', patch: { action: '#0a7c86' } }).ok).toBe(true)
   })
+  it('a preview recorded for an earlier revision (an edit landed mid-render) never gates the current copy', () => {
+    const w = ws()
+    w.apply({ kind: 'palette', patch: { primary: '#123a5c' } })
+    const rendered = w.revision()
+    w.apply({ kind: 'palette', patch: { action: '#0a7c86' } })
+    w.recordPreview({ metrics: null, baseline: null, shots: [] }, rendered)
+    expect(w.currentPreview()).toBeNull()
+  })
+  it('releasePreviewSlot hands back an unused slot', () => {
+    const w = ws()
+    w.takePreviewSlot()
+    w.releasePreviewSlot()
+    expect(w.previewsUsed()).toBe(0)
+    w.releasePreviewSlot()
+    expect(w.previewsUsed()).toBe(0)
+  })
+  it('markCommitted at an earlier revision keeps later edits staged (with their summaries)', () => {
+    const w = ws()
+    w.apply({ kind: 'palette', patch: { primary: '#123a5c' } })
+    const at = { revision: w.revision(), bundle: w.bundle() }
+    w.apply({ kind: 'treatments', patch: { darkSections: !current().treatments.darkSections } })
+    w.markCommitted({ ...SHAS, 'content/brand.json': 'c'.repeat(40) }, 'ver-1', at)
+    expect(w.isStaged()).toBe(true)
+    expect(w.pendingSummary()).not.toContain('palette')
+    expect(w.pendingSummary()).not.toBe('')
+  })
   it('PF2: the base starts at the turn-start draft shas and follows each commit', () => {
     const w = ws()
     expect(w.draftShas()).toEqual(SHAS)

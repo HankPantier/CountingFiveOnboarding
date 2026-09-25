@@ -117,10 +117,75 @@ describe('render_preview', () => {
     expect(JSON.stringify(out)).not.toContain('ERR_SECRET')
     expect(ws.currentPreview()).toBeNull()
   })
+  it('a render refused for time after the shell fetch is not recorded and hands its slot back', async () => {
+    const { ws, tools } = setup({ preview: vi.fn(async () => ({ shots: [], images: [], metrics: null, baseline: null, error: CHAT_PREVIEW_NO_TIME_ERROR })) })
+    expect(await exec(tools.render_preview, {})).toEqual({ ok: false, error: PREVIEW_TIME_ERROR })
+    expect(ws.previewsUsed()).toBe(0)
+    expect(ws.currentPreview()).toBeNull()
+  })
   it('reports a failed render as an error but still records it (unmeasured)', async () => {
     const { ws, tools } = setup({ preview: vi.fn(async () => ({ shots: [], images: [], metrics: null, baseline: null, error: 'The render timed out.' })) })
     expect(await exec(tools.render_preview, { page: '/services' })).toEqual({ ok: false, error: 'The render timed out.' })
     expect(ws.currentPreview()).not.toBeNull()
+  })
+})
+
+describe('concurrent tool calls (one step runs them in parallel)', () => {
+  function deferredPreview() {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((r) => (release = r))
+    const preview = vi.fn(async (): Promise<ChatPreviewResult> => {
+      await gate
+      return { shots: [{ viewport: 'desktop', path: `design/${SID}/renders/chat/t-p1-desktop.webp`, width: 1440, height: 900 }], images: [], metrics: null, baseline: null, error: null }
+    })
+    return { preview, release: () => release() }
+  }
+  it('an edit issued during a render runs after it, so the preview never gates CSS it did not render', async () => {
+    const d = deferredPreview()
+    const { ws, tools } = setup({ preview: d.preview })
+    const p = exec(tools.render_preview, {}, 'r1')
+    const e = exec(tools.set_palette, { primary: '#123a5c' }, 'e1')
+    await Promise.resolve()
+    d.release()
+    await Promise.all([p, e])
+    expect(ws.isStaged()).toBe(true)
+    expect(ws.currentPreview()).toBeNull()
+  })
+  it('an edit issued during commit_version stays staged', async () => {
+    let release: () => void = () => {}
+    const { ws, tools } = setup({
+      commit: vi.fn(async () => {
+        await new Promise<void>((r) => (release = r))
+        ws.markCommitted({}, 'ver-9')
+        return { ok: true as const, versionId: 'ver-9', versionNo: 9, changedPaths: [], warnings: [] }
+      }),
+    })
+    await exec(tools.set_palette, { primary: '#123a5c' })
+    const c = exec(tools.commit_version, { summary: 'x' }, 'c1')
+    const e = exec(tools.set_treatments, { darkSections: true }, 'e2')
+    await new Promise((r) => setTimeout(r, 0))
+    release()
+    await Promise.all([c, e])
+    expect(ws.isStaged()).toBe(true)
+  })
+  it('parallel previews respect the per-turn cap', async () => {
+    const { tools } = setup()
+    const outs = await Promise.all([0, 1, 2].map((i) => exec(tools.render_preview, {}, `p${i}`)))
+    expect(outs.filter((o) => o.ok).length).toBe(PREVIEWS_PER_TURN)
+    expect(outs[2]).toEqual({ ok: false, error: PREVIEW_LIMIT_ERROR })
+  })
+  it('parallel previews each check the time left AFTER the previous one finished', async () => {
+    let left = MIN_PREVIEW_TIME_MS * 2 - 10_000
+    const preview = vi.fn(async (): Promise<ChatPreviewResult> => {
+      await new Promise((r) => setTimeout(r, 0))
+      left -= MIN_PREVIEW_TIME_MS
+      return { shots: [{ viewport: 'desktop', path: 'x.webp', width: 1, height: 1 }], images: [], metrics: null, baseline: null, error: null }
+    })
+    const { tools } = setup({ preview, timeLeftMs: () => left })
+    const outs = await Promise.all([exec(tools.render_preview, {}, 'a'), exec(tools.render_preview, {}, 'b')])
+    expect(outs[0].ok).toBe(true)
+    expect(outs[1]).toEqual({ ok: false, error: PREVIEW_TIME_ERROR })
+    expect(preview).toHaveBeenCalledTimes(1)
   })
 })
 

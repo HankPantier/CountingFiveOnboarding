@@ -93,14 +93,27 @@ function previewForModel(output: RenderPreviewOutput): unknown {
 
 export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
   const images = new Map<string, ChatPreviewResult['images']>()
-  const edit = (e: ChatEdit) => {
+  // Tool calls of one step run concurrently (streamText starts each as soon as
+  // it is parsed). Every execute goes through this one queue, so an edit never
+  // lands mid-render / mid-commit and each time check sees the previous
+  // preview's cost already spent.
+  let queue: Promise<void> = Promise.resolve()
+  const run = <T>(f: () => Promise<T>): Promise<T> => {
+    const p = queue.then(f, f)
+    queue = p.then(
+      () => undefined,
+      () => undefined
+    )
+    return p
+  }
+  const edit = (e: ChatEdit) => run(async () => {
     try {
       return editOutput(ws.apply(e))
     } catch (err) {
       console.error('[design-chat] edit tool failed', err)
       return { ok: false as const, error: EDIT_FAILED_ERROR }
     }
-  }
+  })
 
   return {
     set_palette: tool({
@@ -148,19 +161,26 @@ export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
     render_preview: tool({
       description: `Render the staged design on a page (desktop + mobile) and see it, with render checks. At most ${PREVIEWS_PER_TURN} per turn.`,
       inputSchema: z.object({ page: z.string().max(200).optional().describe('Site path, e.g. /services (default: the admin’s page)') }),
-      execute: async ({ page }, { toolCallId }): Promise<RenderPreviewOutput> => {
+      execute: ({ page }, { toolCallId }): Promise<RenderPreviewOutput> => run(async () => {
         try {
           const path = page ?? deps.defaultPage
           // PF1: the end-of-turn auto-commit always keeps its reserve.
           if (deps.timeLeftMs() < MIN_PREVIEW_TIME_MS) return { ok: false, error: PREVIEW_TIME_ERROR }
           if (deps.previewFits && !deps.previewFits(path)) return { ok: false, error: PREVIEW_TIME_ERROR }
           // A working copy that can't become theme files costs no slot.
+          const revision = ws.revision()
           const theme = chatPreviewTheme(ws.renderedFiles())
           if (!theme.ok) return { ok: false, error: theme.error }
           if (!ws.takePreviewSlot()) return { ok: false, error: PREVIEW_LIMIT_ERROR }
           const previewNo = ws.previewsUsed()
           const r = await deps.preview(path, previewNo, theme.theme)
-          ws.recordPreview({ metrics: r.metrics, baseline: r.baseline, shots: r.shots.map(({ url: _url, ...s }) => s) })
+          // Refused for time after the shell fetch: nothing rendered, so no
+          // record and the slot is handed back.
+          if (r.shots.length === 0 && r.error === CHAT_PREVIEW_NO_TIME_ERROR) {
+            ws.releasePreviewSlot()
+            return { ok: false, error: PREVIEW_TIME_ERROR }
+          }
+          ws.recordPreview({ metrics: r.metrics, baseline: r.baseline, shots: r.shots.map(({ url: _url, ...s }) => s) }, revision)
           if (r.shots.length === 0) return { ok: false, error: r.error ?? CHAT_PREVIEW_FAILED_ERROR }
           if (r.images.length > 0) images.set(toolCallId, r.images)
           const check = previewCheck(r.metrics, r.baseline)
@@ -177,7 +197,7 @@ export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
           console.error('[design-chat] render_preview failed', err)
           return { ok: false, error: CHAT_PREVIEW_FAILED_ERROR }
         }
-      },
+      }),
       toModelOutput: ({ toolCallId, output }) => {
         const shown = images.get(toolCallId) ?? []
         const note = shown.length > 0 || !output.ok ? '' : ' (screenshots from an earlier turn are not shown again)'
@@ -193,14 +213,15 @@ export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
     commit_version: tool({
       description: 'Save the staged design to the draft as a new version. Refused while the latest preview fails a render check.',
       inputSchema: z.object({ summary: z.string().min(1).max(300).describe('One line for the version list') }),
-      execute: async ({ summary }): Promise<CommitOutput> => {
-        try {
-          return await deps.commit(summary)
-        } catch (err) {
-          console.error('[design-chat] commit_version failed', err)
-          return { ok: false, error: COMMIT_FAILED_ERROR }
-        }
-      },
+      execute: ({ summary }): Promise<CommitOutput> =>
+        run(async () => {
+          try {
+            return await deps.commit(summary)
+          } catch (err) {
+            console.error('[design-chat] commit_version failed', err)
+            return { ok: false, error: COMMIT_FAILED_ERROR }
+          }
+        }),
     }),
   }
 }

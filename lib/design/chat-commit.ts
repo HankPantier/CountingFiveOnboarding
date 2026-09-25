@@ -28,9 +28,12 @@ export async function commitWorkspace(
   if (!gate.ok) return { ok: false, error: chatGateMessage(gate.failures), failures: gate.failures }
 
   const summary = (args.summary.trim() || ws.pendingSummary() || 'theme update').slice(0, 300)
+  // What is committed is fixed here, before the await: an edit landing during
+  // the commit stays staged instead of being marked committed unwritten.
+  const at = { revision: ws.revision(), bundle: ws.bundle() }
   const result = await args.commitVersion({
     target: args.target,
-    bundle: ws.bundle(),
+    bundle: at.bundle,
     source: 'chat',
     removeLegacy: false,
     syncMbp: false,
@@ -42,7 +45,7 @@ export async function commitWorkspace(
   })
   if (!result.ok) return { ok: false, error: result.error }
   // The FULL applied_blobs map becomes the base (and sha guard) of the next commit.
-  ws.markCommitted(result.appliedBlobs, result.version?.id ?? null)
+  ws.markCommitted(result.appliedBlobs, result.version?.id ?? null, at)
   if (!result.version) return { ok: true, unchanged: true }
   return { ok: true, versionId: result.version.id, versionNo: result.version.version_no, changedPaths: result.changedPaths, warnings: gate.warnings }
 }
