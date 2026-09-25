@@ -15,18 +15,14 @@
 // (shouldChain + chainOrFail in the step route's after()).
 import { createServerClient } from '@/lib/supabase/server'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
-import { readOptional } from './apply-bundle'
 import { parseDesignBundle } from './bundle'
-import { bundleFromRepoFiles, bundleToRepoFiles } from './bundle-files'
-import { capabilitiesFromJson } from './capabilities'
-import { buildConceptPrompt, type PriorConcept, type PromptImage } from './brief'
-import { DESIGN_MD_PATH } from './brief/brand'
-import { extractBlockSamples } from './brief/samples'
+import { bundleToRepoFiles } from './bundle-files'
+import { buildConceptPrompt, type PromptImage } from './brief'
 import { generateConcept, type GeneratedConcept, type StopReason } from './concept-generator'
 import { composedThemeFromFiles } from './composed-theme'
 import { loadRenderShell, renderAndStoreFolds } from './render/render-folds'
 import { readDraftThemeTexts } from './theme-snapshot'
-import { listInputs, readSessionSchema } from './store'
+import { listInputs } from './store'
 import { downloadDesignImage } from './storage'
 import {
   claimConceptPosition,
@@ -44,9 +40,10 @@ import {
   type DesignRunRow,
   type RunPatch,
 } from './run-store'
-import { inputCaption, inputLabel, isUsableConcept, nextAction, parseBaseSnapshot, selectRunInputs } from './run-state'
-import { PALETTE_FREEDOMS, type RunStatus } from './studio-types'
-import { MAX_PROMPT_IMAGES, type PaletteFreedom, type RunBaseSnapshot, type RunScreenshot } from './run-types'
+import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
+import { inputCaption, inputLabel, nextAction, parseBaseSnapshot, selectRunInputs, usablePriors } from './run-state'
+import type { RunStatus } from './studio-types'
+import { MAX_PROMPT_IMAGES, type RunBaseSnapshot, type RunScreenshot } from './run-types'
 
 type Db = ReturnType<typeof createServerClient>
 
@@ -101,30 +98,6 @@ async function failRun(
   return { kind: 'failed', error: message }
 }
 
-function firmNameFrom(brandText: string): string {
-  try {
-    const name = (JSON.parse(brandText) as { firm?: { name?: unknown } }).firm?.name
-    return typeof name === 'string' && name.trim() ? name.trim() : 'the firm'
-  } catch {
-    return 'the firm'
-  }
-}
-
-function paletteFreedomOf(run: DesignRunRow): PaletteFreedom {
-  return (PALETTE_FREEDOMS as readonly string[]).includes(run.palette_freedom) ? (run.palette_freedom as PaletteFreedom) : 'evolve'
-}
-
-// The accepted concepts (valid stored bundles), by position.
-function priorConcepts(concepts: DesignConceptRow[]): PriorConcept[] {
-  return concepts
-    .filter(isUsableConcept)
-    .flatMap((c) => {
-      const parsed = parseDesignBundle(c.bundle)
-      return parsed.ok ? [{ position: c.position, bundle: parsed.bundle }] : []
-    })
-    .sort((a, b) => a.position - b.position)
-}
-
 const withNotes = (base: RunBaseSnapshot, notes: string[]): RunBaseSnapshot => ({ ...base, notes: [...new Set([...base.notes, ...notes])] })
 
 const capNote = (capUsd: number, accepted: number): string =>
@@ -140,7 +113,7 @@ export async function runDesignStep(ctx: StepContext, now: () => number = Date.n
     case 'generate':
       return generateStage(db, ctx, run, concepts, action.position, now)
     case 'start-render':
-      return endGeneration(db, run.id, GENERATE_STATUSES, { accepted: priorConcepts(concepts).length, position: null, capped: false })
+      return endGeneration(db, run.id, GENERATE_STATUSES, { accepted: usablePriors(concepts).length, position: null, capped: false })
     case 'no-concepts':
       return failRun(db, run.id, GENERATE_STATUSES, STOP_MESSAGES.no_output)
     case 'render':
@@ -208,7 +181,7 @@ async function generateStage(
     if (!run) return { kind: 'noop', reason: 'generation already claimed' }
   }
   const capUsd = Number(run.cost_cap_usd)
-  const priors = priorConcepts(concepts)
+  const priors = usablePriors(concepts)
   let base = parseBaseSnapshot(run.base_snapshot)
 
   // The cap is checked before every call — including before claiming a position.
@@ -262,28 +235,17 @@ async function generateStage(
       })
     }
 
-    const caps = capabilitiesFromJson(run.capabilities)
-    const paletteFreedom = paletteFreedomOf(run)
-    const notes: string[] = []
+    const gathered = await gatherBriefBasics(db, ctx, run, base.pagePath, { markup: true })
+    if (!gathered.ok) return abort(gathered.error)
+    const b = gathered.basics
+    const notes: string[] = [...b.notes]
 
-    const theme = await readDraftThemeTexts(ctx.githubRepo)
-    if (!theme.ok) return abort(theme.error)
-    const { brandText, designText, overridesCss } = theme.files
-    // The current design's levers (its CSS region is irrelevant input here, and
-    // skipping it means malformed legacy markers can't block generation).
-    const current = bundleFromRepoFiles({ brandText, designText, overridesCss: '' }, { name: 'Current design', source: 'baseline' })
-    if (!current.ok) return abort(`The current design can’t be read: ${current.errors.join(' ')}`.slice(0, 500))
-
-    // The chosen page: real markup for the brief + the current-site "before".
-    // Rendered once (the first concept); later concepts re-read it from storage.
+    // The current-site "before": rendered once (the first concept); later
+    // concepts re-read it from storage.
     const images: PromptImage[] = []
-    let blockSamples = ''
     let currentShots = base.screenshots
     let currentMetrics = base.metrics ?? null
     const beforeCaption = `The client's CURRENT design of ${base.pagePath} (desktop, 1440 px) — the "before" to improve on.`
-    const shell = await loadRenderShell(ctx, base.pagePath)
-    if (shell.ok) blockSamples = extractBlockSamples(shell.shell.shellHtml)
-    else notes.push(`Page ${base.pagePath} could not be loaded (${shell.reason}) — concepts were generated without its markup.`)
     const storedBefore = base.screenshots.find((s) => s.viewport === 'desktop')
     if (storedBefore) {
       try {
@@ -292,14 +254,14 @@ async function generateStage(
         console.warn('[design-run] current-site render download failed', err)
         notes.push(`The current-site render could not be re-read — concept ${position + 1} was designed without it.`)
       }
-    } else if (position === 0 && shell.ok) {
+    } else if (position === 0 && b.shell) {
       const rendered = await renderAndStoreFolds({
         db,
         sessionId: ctx.sessionId,
         runId,
         name: 'current',
-        shell: shell.shell,
-        theme: composedThemeFromFiles({ designText, themeCss: theme.files.themeCss, overridesCss }),
+        shell: b.shell,
+        theme: composedThemeFromFiles(b.theme),
         metrics: true,
       })
       currentShots = rendered.shots
@@ -326,8 +288,6 @@ async function generateStage(
       }
     }
 
-    const [schema, designMd] = await Promise.all([readSessionSchema(db, ctx.sessionId), readOptional(ctx.githubRepo, DESIGN_MD_PATH)])
-
     // Persist the gather (the current render's paths + notes) before spending,
     // so later concepts and a retry reuse it. The guarded write doubles as the
     // cancel check: cancelled meanwhile ⇒ release the claim, no model call.
@@ -339,22 +299,14 @@ async function generateStage(
     }
 
     const result = await generateConcept({
-      prompt: buildConceptPrompt({
-        caps,
-        conceptCount: run.concept_count,
-        position,
-        priors,
-        paletteFreedom,
-        current: current.bundle,
-        firmName: firmNameFrom(brandText),
-        schema,
-        designMd: designMd?.content ?? null,
-        adminBrief: run.admin_brief,
-        images,
-        blockSamples,
-        pagePath: base.pagePath,
-      }),
-      context: { current: current.bundle, caps, paletteFreedom, draftFiles: { brandText, designText, overridesCss }, model: DESIGN_MODEL },
+      prompt: buildConceptPrompt({ ...sharedPromptArgs(b, run, base.pagePath, images), conceptCount: run.concept_count, position, priors }),
+      context: {
+        current: b.current,
+        caps: b.caps,
+        paletteFreedom: b.paletteFreedom,
+        draftFiles: { brandText: b.theme.brandText, designText: b.theme.designText, overridesCss: b.theme.overridesCss },
+        model: DESIGN_MODEL,
+      },
       priors,
       costSoFarUsd: priorCost,
       costCapUsd: capUsd,

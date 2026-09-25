@@ -10,8 +10,7 @@
 import { buildCachedPartsMessages, type DynamicPart } from '@/lib/content/cache-control'
 import { GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
 import { DESIGN_SYSTEM_PROMPT, type PriorConcept } from './brief'
-import { parseConceptsEnvelope, validateConceptBundle, type ConceptContext, type ValidConcept } from './concept-validate'
-import { isNearDuplicate } from './distinctness'
+import { checkConceptCandidate, parseConceptsEnvelope, type ConceptContext, type ValidConcept } from './concept-validate'
 import { createDesignCaller, MIN_CALL_TIMEOUT_MS, type StopReason } from './model-call'
 
 export { DEADLINE_SAFETY_MS, ESTIMATED_TOKENS_PER_IMAGE } from './model-call'
@@ -82,19 +81,8 @@ export async function generateConcept(args: GenerateConceptArgs): Promise<Genera
 
   // Validation + distinctness against every already-accepted concept.
   const check = (raw: unknown, prefix = ''): Slot => {
-    if (raw === undefined) return { concept: null, errors: [`${prefix}missing — the answer had no concept`] }
-    const v = validateConceptBundle(raw, args.context)
-    if (!v.ok) return { concept: null, errors: v.errors.map((e) => `${prefix}${e}`) }
-    const clash = args.priors.find((p) => isNearDuplicate(p.bundle, v.concept.bundle))
-    if (clash) {
-      return {
-        concept: null,
-        errors: [
-          `${prefix}too similar to concept ${clash.position + 1} ("${clash.bundle.name.slice(0, 60)}") — change the palette direction (primary/action) or at least two of fonts, tokens and treatments`,
-        ],
-      }
-    }
-    return { concept: v.concept, errors: [] }
+    const v = checkConceptCandidate(raw, args.context, args.priors, prefix)
+    return v.ok ? { concept: v.concept, errors: [] } : { concept: null, errors: v.errors }
   }
 
   const done = (slot: Slot): GeneratedConcept => {
