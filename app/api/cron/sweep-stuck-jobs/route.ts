@@ -7,6 +7,7 @@ import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS 
 import { reconcileStuckTarget } from '@/lib/content/blog-batch-runner'
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
+import { sweepStuckDesignRows } from '@/lib/design/sweep'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -125,6 +126,16 @@ export async function GET(req: Request) {
   })()
   const [research, pages, ideas, socials, oneoffs, audits, newPages] =
     sweep ?? [null, null, null, null, null, null, null]
+
+  // Design Studio (migration 078): captures, runs and concepts whose worker
+  // died mid-flight. Fail-soft — the helper logs and counts 0, never throws,
+  // so the self-heal steps below always run.
+  const designSwept = await sweepStuckDesignRows(supabase)
+  if (designSwept.inputs || designSwept.runs || designSwept.concepts) {
+    console.warn(
+      `[sweep-stuck-jobs] design inputs=${designSwept.inputs} runs=${designSwept.runs} concepts=${designSwept.concepts}`
+    )
+  }
 
   // blog_batch_targets stuck at 'generating' (worker died between claim and
   // terminal write) are invisible to future chained runs, which only select
@@ -542,5 +553,6 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed, researchResumed, cutoff })
+  return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed,
+    researchResumed, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, cutoff })
 }
