@@ -12,8 +12,11 @@ export const IMAGE_USER_TURNS = 2
 export const HISTORY_LOAD_LIMIT = 60
 export const HISTORY_MAX_MESSAGES = 16
 export const HISTORY_MAX_CHARS = 48_000
-// The route's maxDuration is 300 s; a turn plans within 270 s.
-export const TURN_BUDGET_MS = 270_000
+// The route's maxDuration is 600 s (PF1); a turn plans within 540 s, leaving a
+// 60 s margin for the model's last step, persistence and the stream close.
+// Previews are refused when they could eat CHAT_COMMIT_RESERVE_MS
+// (chat-preview.ts), so the end-of-turn auto-commit always has its reserve.
+export const TURN_BUDGET_MS = 540_000
 export const CHAT_MAX_STEPS = 12
 // Adaptive-thinking tokens count against this cap — leave headroom for CSS.
 export const CHAT_MAX_OUTPUT_TOKENS = 16_000
