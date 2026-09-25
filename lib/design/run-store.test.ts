@@ -9,7 +9,6 @@ import {
   claimConceptUnit,
   createRun,
   deleteConcepts,
-  finishConceptRender,
   getRun,
   resetConcepts,
   resumeConcepts,
@@ -130,15 +129,6 @@ describe('run-store', () => {
     expect(ops[0][1]).toMatchObject({ status: 'refining', error: null })
     expect(ops).toContainEqual(['eq', 'run_id', RID])
     expect(ops).toContainEqual(['eq', 'status', 'pending'])
-  })
-
-  it('finishConceptRender moves refining → ready with screenshots', async () => {
-    const f = fakeSupabase({ design_concepts: [{ data: makeConceptRow({ status: 'ready' }) }] })
-    const shots = [{ viewport: 'desktop' as const, path: `design/${SID}/runs/${RID}/a.webp`, width: 1440, height: 900 }]
-    await finishConceptRender(f.client, CID, { screenshots: shots, error: null })
-    const ops = f.opsFor('design_concepts')
-    expect(ops[0][1]).toMatchObject({ status: 'ready', screenshots: shots, error: null })
-    expect(ops).toContainEqual(['eq', 'status', 'refining'])
   })
 
   it('resetConcepts is a no-op for an empty list', async () => {

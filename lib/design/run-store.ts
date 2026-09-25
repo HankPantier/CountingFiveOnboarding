@@ -211,22 +211,6 @@ export async function claimConceptRender(db: Db, runId: string, conceptId: strin
   return data
 }
 
-export async function finishConceptRender(
-  db: Db,
-  conceptId: string,
-  result: { screenshots: RunScreenshot[]; error: string | null }
-): Promise<DesignConceptRow | null> {
-  const { data, error } = await db
-    .from('design_concepts')
-    .update({ status: 'ready', screenshots: asJson(result.screenshots), error: result.error, updated_at: stamp() })
-    .eq('id', conceptId)
-    .eq('status', 'refining')
-    .select('*')
-    .maybeSingle()
-  if (error) throw storeError('finishConceptRender', error)
-  return data
-}
-
 export async function resetConcepts(db: Db, runId: string, ids: string[]): Promise<void> {
   if (ids.length === 0) return
   const { error } = await db

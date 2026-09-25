@@ -13,8 +13,6 @@ const m = vi.hoisted(() => ({
   deleteConcepts: vi.fn(async (..._a: unknown[]) => {}),
   claimConceptPosition: vi.fn(),
   settleConceptGeneration: vi.fn(async (..._a: unknown[]) => null),
-  claimConceptRender: vi.fn(),
-  finishConceptRender: vi.fn(async (..._a: unknown[]) => null),
   resumeParkedConcept: vi.fn(),
   snapshot: vi.fn(),
   listInputs: vi.fn(),
@@ -24,6 +22,10 @@ const m = vi.hoisted(() => ({
   renderFolds: vi.fn(),
   generateConcept: vi.fn(),
   readFile: vi.fn(),
+  renderUnit: vi.fn(),
+  critiqueUnit: vi.fn(),
+  reviseUnit: vi.fn(),
+  finishConceptUnit: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
@@ -35,8 +37,6 @@ vi.mock('./run-store', () => ({
   deleteConcepts: (...a: unknown[]) => m.deleteConcepts(...a),
   claimConceptPosition: (...a: unknown[]) => m.claimConceptPosition(...a),
   settleConceptGeneration: (...a: unknown[]) => m.settleConceptGeneration(...a),
-  claimConceptRender: (...a: unknown[]) => m.claimConceptRender(...a),
-  finishConceptRender: (...a: unknown[]) => m.finishConceptRender(...a),
   resumeParkedConcept: (...a: unknown[]) => m.resumeParkedConcept(...a),
 }))
 vi.mock('./theme-snapshot', async (orig) => {
@@ -55,6 +55,12 @@ vi.mock('./storage', () => ({ downloadDesignImage: (...a: unknown[]) => m.downlo
 vi.mock('./render/render-folds', () => ({
   loadRenderShell: (...a: unknown[]) => m.loadShell(...a),
   renderAndStoreFolds: (a: unknown) => m.renderFolds(a),
+}))
+vi.mock('./refine-stage', () => ({
+  renderUnit: (...a: unknown[]) => m.renderUnit(...a),
+  critiqueUnit: (...a: unknown[]) => m.critiqueUnit(...a),
+  reviseUnit: (...a: unknown[]) => m.reviseUnit(...a),
+  finishConceptUnit: (...a: unknown[]) => m.finishConceptUnit(...a),
 }))
 vi.mock('./concept-generator', () => ({ generateConcept: (a: unknown) => m.generateConcept(a) }))
 vi.mock('@/lib/github/repo-files', () => {
@@ -420,39 +426,40 @@ describe('runDesignStep — every position already exists', () => {
   })
 })
 
-describe('runDesignStep — render', () => {
+describe('runDesignStep — critique loop dispatch', () => {
+  const refining = makeRunRow({ status: 'refining', stage: 'render' })
+  const unitOut = { kind: 'refined', unit: 'render', conceptId: 'c0', remaining: true }
   beforeEach(() => {
-    m.getRun.mockResolvedValue(makeRunRow({ status: 'refining', stage: 'render' }))
-    m.listConcepts.mockResolvedValueOnce([makeConceptRow({ status: 'pending' })]).mockResolvedValueOnce([makeConceptRow({ status: 'ready' })])
-    m.claimConceptRender.mockResolvedValue(makeConceptRow({ status: 'refining' }))
+    m.getRun.mockResolvedValue(refining)
+    for (const f of [m.renderUnit, m.critiqueUnit, m.reviseUnit, m.finishConceptUnit]) f.mockResolvedValue(unitOut)
   })
+  const inLoop = (next: string) => makeConceptRow({ id: 'c0', position: 0, status: 'refining', critique: asJson({ v: 1, next, claim: null, metrics: null, metricsIteration: null, initialScreenshots: [], critiques: [], outcome: null, notes: [] }) })
 
-  it('renders one concept, stores its folds, and finalizes when none remain', async () => {
-    const out = await runDesignStep(CTX)
-    expect(out).toEqual({ kind: 'rendered', conceptId: CID, remaining: 0 })
-    expect(m.claimConceptRender).toHaveBeenCalledWith({}, RID, CID)
-    expect((m.renderFolds.mock.calls[0][0] as { name: string }).name).toBe('concept-0')
-    expect(m.finishConceptRender).toHaveBeenCalledWith({}, CID, { screenshots: [CURRENT_SHOT], error: null })
-    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { status: 'ready', stage: 'ready' })
+  it('renders the first pending concept (initial)', async () => {
+    m.listConcepts.mockResolvedValue([pending(0), pending(1, OXBLOOD)])
+    expect(await runDesignStep(CTX)).toEqual(unitOut)
+    expect(m.renderUnit).toHaveBeenCalledWith({}, CTX, refining, 'c0', 'initial')
   })
-
-  it('keeps the concept applicable (ready, error note) when its render fails', async () => {
-    m.renderFolds.mockResolvedValue({ shots: [], desktopWebp: null, error: 'The render timed out.' })
+  it.each([
+    ['critique', 'critiqueUnit'],
+    ['revise', 'reviseUnit'],
+  ] as const)('dispatches a %s unit with the step clock', async (next, fn) => {
+    m.listConcepts.mockResolvedValue([inLoop(next), pending(1, OXBLOOD)])
+    const now = () => 42
+    await runDesignStep(CTX, now)
+    expect(m[fn]).toHaveBeenCalledWith({}, CTX, RID, 'c0', now)
+  })
+  it('re-renders after a revision and finishes a concept whose loop is done', async () => {
+    m.listConcepts.mockResolvedValue([inLoop('render')])
     await runDesignStep(CTX)
-    expect(m.finishConceptRender).toHaveBeenCalledWith({}, CID, { screenshots: [], error: 'The render timed out.' })
-  })
-
-  it('finishes the concept with an error note when the site lost its theme files', async () => {
-    m.snapshot.mockResolvedValue({ shas: {}, texts: {} })
+    expect(m.renderUnit).toHaveBeenCalledWith({}, CTX, refining, 'c0', 'rerender')
+    m.listConcepts.mockResolvedValue([inLoop('done')])
     await runDesignStep(CTX)
-    expect(m.renderFolds).not.toHaveBeenCalled()
-    expect(m.finishConceptRender).toHaveBeenCalledWith({}, CID, { screenshots: [], error: 'This site has no brand.json / design.json yet.' })
+    expect(m.finishConceptUnit).toHaveBeenCalledWith({}, RID, 'c0')
   })
-
-  it('is a no-op when the concept was already claimed', async () => {
-    m.claimConceptRender.mockResolvedValue(null)
-    expect((await runDesignStep(CTX)).kind).toBe('noop')
-    expect(m.renderFolds).not.toHaveBeenCalled()
+  it('finalizes when every concept is ready', async () => {
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'c0', status: 'ready' })])
+    expect(await runDesignStep(CTX)).toEqual({ kind: 'finalized' })
   })
 })
 
@@ -466,7 +473,7 @@ describe('runDesignStep — a concept parked mid-loop by a Retry', () => {
     m.resumeParkedConcept.mockResolvedValue(makeConceptRow({ status: 'refining' }))
     expect(await runDesignStep(CTX)).toEqual({ kind: 'resumed', conceptId: CID })
     expect(m.resumeParkedConcept).toHaveBeenCalledWith({}, RID, expect.objectContaining({ id: CID, updated_at: parked().updated_at }))
-    expect(m.claimConceptRender).not.toHaveBeenCalled()
+    expect(m.renderUnit).not.toHaveBeenCalled()
     expect(m.generateConcept).not.toHaveBeenCalled()
   })
   it('is a no-op when another step already resumed it', async () => {
@@ -484,14 +491,13 @@ describe('runDesignStep — terminal', () => {
 })
 
 describe('shouldChain', () => {
-  it.each([
-    [{ kind: 'generated', position: 0, next: 'generate' }, true],
-    [{ kind: 'generated', position: null, next: 'render' }, true],
-    [{ kind: 'rendered', conceptId: 'c', remaining: 1 }, true],
-    [{ kind: 'rendered', conceptId: 'c', remaining: 0 }, false],
-    [{ kind: 'resumed', conceptId: 'c' }, true],
-    [{ kind: 'finalized' }, false],
-    [{ kind: 'noop', reason: 'x' }, false],
-    [{ kind: 'failed', error: 'x' }, false],
-  ] as const)('%j → %s', (o, want) => expect(shouldChain(o)).toBe(want))
+  it('chains after generation and after a loop unit with work left; stops otherwise', () => {
+    expect(shouldChain({ kind: 'generated', position: 0, next: 'generate' })).toBe(true)
+    expect(shouldChain({ kind: 'refined', unit: 'critique', conceptId: 'c', remaining: true })).toBe(true)
+    expect(shouldChain({ kind: 'refined', unit: 'render', conceptId: 'c', remaining: false })).toBe(false)
+    expect(shouldChain({ kind: 'resumed', conceptId: 'c' })).toBe(true)
+    expect(shouldChain({ kind: 'finalized' })).toBe(false)
+    expect(shouldChain({ kind: 'noop', reason: 'x' })).toBe(false)
+    expect(shouldChain({ kind: 'failed', error: 'x' })).toBe(false)
+  })
 })
