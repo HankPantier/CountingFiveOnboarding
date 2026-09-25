@@ -2,13 +2,14 @@ import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH } from '@/app/api/edit/[id]/theme/_theme'
-import { bundleFromRepoFiles } from '@/lib/design/bundle-files'
 import { computeDrift, isThemeCssStale, toBlobMap } from '@/lib/design/drift'
 import { readDraftThemeSnapshot } from '@/lib/design/theme-snapshot'
 import { getBaselineOrCreate, listInputs, listVersions, readSessionSchema, type BaselineSource } from '@/lib/design/store'
 import { signDesignPaths } from '@/lib/design/storage'
 import { buildInputSuggestions, toInputDto, toVersionDto, versionScreenshotPaths } from '@/lib/design/studio-dto'
 import type { BaselineStatus, DesignStudioState } from '@/lib/design/studio-types'
+import { loadLatestRunDto } from '@/lib/design/run-view'
+import type { DesignRunDto } from '@/lib/design/run-types'
 import { requireDesignAdmin } from './_design'
 
 export const runtime = 'nodejs'
@@ -36,13 +37,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const brandText = snapshot.texts[BRAND_PATH]
     const designText = snapshot.texts[DESIGN_PATH]
-    const source: BaselineSource =
-      brandText && designText
-        ? bundleFromRepoFiles(
-            { brandText, designText, overridesCss: snapshot.texts[OVERRIDES_PATH] ?? '' },
-            { name: 'Baseline', source: 'baseline' }
-          )
-        : { ok: false, errors: [NO_THEME_FILES] }
+    let source: BaselineSource
+    if (brandText && designText) {
+      // Lazy-imported: bundle-files pulls in the sanitizer (lightningcss),
+      // which needs its own outputFileTracingIncludes entry (R7) and must
+      // never be a static import in a route module.
+      try {
+        const { bundleFromRepoFiles } = await import('@/lib/design/bundle-files')
+        source = bundleFromRepoFiles(
+          { brandText, designText, overridesCss: snapshot.texts[OVERRIDES_PATH] ?? '' },
+          { name: 'Baseline', source: 'baseline' }
+        )
+      } catch (err) {
+        console.error('[design:state] bundle-files unavailable:', err)
+        source = { ok: false, errors: ['Could not read the current theme — try again shortly.'] }
+      }
+    } else {
+      source = { ok: false, errors: [NO_THEME_FILES] }
+    }
 
     const outcome = await getBaselineOrCreate(supabase, {
       sessionId: ctx.sessionId,
@@ -72,6 +84,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
     const versions = versionRows.map((v) => toVersionDto(v, signed))
 
+    // The latest run is best-effort for the page load (the Studio still opens
+    // if it can't be read); the runs route reports errors while polling.
+    let run: DesignRunDto | null = null
+    try {
+      run = await loadLatestRunDto(supabase, ctx.sessionId)
+    } catch (err) {
+      console.warn('[design:state] latest run unavailable:', err)
+    }
+
     const state: DesignStudioState = {
       versions,
       latest: versions[0] ?? null,
@@ -80,6 +101,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       themeCssStale: isThemeCssStale(snapshot.texts),
       inputs: inputs.map((i) => toInputDto(i, signed)),
       suggestions: buildInputSuggestions(schema),
+      run,
     }
     return NextResponse.json(state)
   } catch (err) {
