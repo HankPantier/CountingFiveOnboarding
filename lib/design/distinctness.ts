@@ -1,7 +1,7 @@
 // Pure. "Are these two concepts really different?" — CIEDE2000 ΔE on the
 // primary + action colours, plus a count of differing categorical levers.
 // Near-duplicate = palettes within ΔE 12 AND fewer than 2 lever differences.
-// P4 may refine this (spec: distinctness.ts, ΔE via chroma-js).
+// P4 feeds `distinctnessReport` to the critic (spec: distinctness.ts, ΔE via chroma-js).
 import chroma from 'chroma-js'
 import type { DesignBundle } from './bundle'
 
@@ -47,4 +47,16 @@ export function findNearDuplicates(bundles: DesignBundle[]): { keep: number; dro
     }
   }
   return out
+}
+
+export type DistinctnessRow = { label: string; deltaE: number; leverDifferences: number }
+
+// Objective distance numbers the critic reads alongside the renders when it
+// scores distinctiveness (vs the current site and each other concept).
+export function distinctnessReport(target: DesignBundle, others: { label: string; bundle: DesignBundle }[]): DistinctnessRow[] {
+  return others.map((o) => ({
+    label: o.label,
+    deltaE: Math.round(paletteDistance(target.palette, o.bundle.palette) * 10) / 10,
+    leverDifferences: categoricalDifferences(target, o.bundle),
+  }))
 }
