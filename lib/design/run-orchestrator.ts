@@ -35,6 +35,7 @@ import {
   finishConceptRender,
   getRun,
   listConcepts,
+  resumeParkedConcept,
   settleConceptGeneration,
   transitionRun,
   updateRunFields,
@@ -55,6 +56,8 @@ export type StepOutcome =
   // position already existed, or the cost cap was already reached).
   | { kind: 'generated'; position: number | null; next: 'generate' | 'render' }
   | { kind: 'rendered'; conceptId: string; remaining: number }
+  // A concept parked mid-loop by a Retry went back to refining (P4).
+  | { kind: 'resumed'; conceptId: string }
   | { kind: 'finalized' }
   | { kind: 'noop'; reason: string }
   | { kind: 'failed'; error: string }
@@ -76,7 +79,7 @@ const POSITION_STOP_MESSAGES: Record<Exclude<StopReason, 'cost_cap'>, string> = 
 }
 
 export function shouldChain(outcome: StepOutcome): boolean {
-  return outcome.kind === 'generated' || (outcome.kind === 'rendered' && outcome.remaining > 0)
+  return outcome.kind === 'generated' || outcome.kind === 'resumed' || (outcome.kind === 'rendered' && outcome.remaining > 0)
 }
 
 const GENERATE_FAILED = 'Concept generation failed — press Retry.'
@@ -144,6 +147,16 @@ export async function runDesignStep(ctx: StepContext, now: () => number = Date.n
       return renderStage(db, ctx, run, action.conceptId)
     case 'finalize':
       return finalizeStage(db, run.id)
+    case 'resume': {
+      const row = concepts.find((c) => c.id === action.conceptId)
+      const resumed = row ? await resumeParkedConcept(db, run.id, row) : null
+      return resumed ? { kind: 'resumed', conceptId: resumed.id } : { kind: 'noop', reason: 'concept already resumed' }
+    }
+    case 'critique':
+    case 'revise':
+    case 'rerender':
+    case 'finish-concept':
+      return { kind: 'noop', reason: `${action.kind} not wired yet (P4 Task 7)` }
     default:
       return { kind: 'noop', reason: action.reason }
   }

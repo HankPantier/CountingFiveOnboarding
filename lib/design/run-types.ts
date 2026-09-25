@@ -16,11 +16,14 @@ export const MAX_RUN_INPUTS = 5
 // The current-site render + MAX_RUN_INPUTS input screenshots.
 export const MAX_PROMPT_IMAGES = 6
 export const DEFAULT_RUN_PAGE = '/'
+// A new run's cost cap (USD). createRun writes it explicitly; the DB column
+// default (4) is only a fallback for rows inserted elsewhere.
+export const DEFAULT_RUN_COST_CAP_USD = 6
 
 // design_runs.stage (free text in the DB). Migration 078 has no 'rendering'
-// status: the render pass runs with status 'refining' + stage 'render' (P4's
-// critique loop re-renders inside the same status).
-export const RUN_STAGES = ['generate', 'render', 'ready'] as const
+// status: the P4 critique loop runs with status 'refining', and the stage
+// names the unit in flight — 'render' / 'critique' / 'revise' — then 'ready'.
+export const RUN_STAGES = ['generate', 'render', 'critique', 'revise', 'ready'] as const
 export type RunStage = (typeof RUN_STAGES)[number]
 
 // Template capability tier (spec "Capability levels", ruled for P3):

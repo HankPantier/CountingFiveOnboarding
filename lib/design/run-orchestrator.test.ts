@@ -3,6 +3,7 @@ import { CID, IID, RID, SID, makeConceptRow, makeInputRow, makeRunRow } from './
 import { BRAND_TEXT, DESIGN_TEXT, THEME_CSS_TEXT } from './__fixtures__/theme-texts'
 import { VALID } from './__fixtures__/valid-bundle'
 import { asJson } from '@/lib/supabase/json-typed'
+import { newReview } from './review'
 
 const m = vi.hoisted(() => ({
   getRun: vi.fn(),
@@ -14,6 +15,7 @@ const m = vi.hoisted(() => ({
   settleConceptGeneration: vi.fn(async (..._a: unknown[]) => null),
   claimConceptRender: vi.fn(),
   finishConceptRender: vi.fn(async (..._a: unknown[]) => null),
+  resumeParkedConcept: vi.fn(),
   snapshot: vi.fn(),
   listInputs: vi.fn(),
   readSessionSchema: vi.fn(),
@@ -35,6 +37,7 @@ vi.mock('./run-store', () => ({
   settleConceptGeneration: (...a: unknown[]) => m.settleConceptGeneration(...a),
   claimConceptRender: (...a: unknown[]) => m.claimConceptRender(...a),
   finishConceptRender: (...a: unknown[]) => m.finishConceptRender(...a),
+  resumeParkedConcept: (...a: unknown[]) => m.resumeParkedConcept(...a),
 }))
 vi.mock('./theme-snapshot', async (orig) => {
   const real = (await orig()) as typeof import('./theme-snapshot')
@@ -453,6 +456,25 @@ describe('runDesignStep — render', () => {
   })
 })
 
+describe('runDesignStep — a concept parked mid-loop by a Retry', () => {
+  const parked = () => makeConceptRow({ status: 'pending', critique: asJson({ ...newReview(), next: 'revise' }) })
+  beforeEach(() => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'refining', stage: 'critique' }))
+    m.listConcepts.mockResolvedValue([parked()])
+  })
+  it('resumes it (back to refining, CAS on the row as read) and chains — no render, no model call', async () => {
+    m.resumeParkedConcept.mockResolvedValue(makeConceptRow({ status: 'refining' }))
+    expect(await runDesignStep(CTX)).toEqual({ kind: 'resumed', conceptId: CID })
+    expect(m.resumeParkedConcept).toHaveBeenCalledWith({}, RID, expect.objectContaining({ id: CID, updated_at: parked().updated_at }))
+    expect(m.claimConceptRender).not.toHaveBeenCalled()
+    expect(m.generateConcept).not.toHaveBeenCalled()
+  })
+  it('is a no-op when another step already resumed it', async () => {
+    m.resumeParkedConcept.mockResolvedValue(null)
+    expect((await runDesignStep(CTX)).kind).toBe('noop')
+  })
+})
+
 describe('runDesignStep — terminal', () => {
   it.each(['ready', 'applied', 'cancelled', 'error'])('does nothing for a %s run', async (status) => {
     m.getRun.mockResolvedValue(makeRunRow({ status }))
@@ -467,6 +489,7 @@ describe('shouldChain', () => {
     [{ kind: 'generated', position: null, next: 'render' }, true],
     [{ kind: 'rendered', conceptId: 'c', remaining: 1 }, true],
     [{ kind: 'rendered', conceptId: 'c', remaining: 0 }, false],
+    [{ kind: 'resumed', conceptId: 'c' }, true],
     [{ kind: 'finalized' }, false],
     [{ kind: 'noop', reason: 'x' }, false],
     [{ kind: 'failed', error: 'x' }, false],
