@@ -188,7 +188,9 @@ export default function InputsPanel({
       )}
 
       {visible.length === 0 ? (
-        <p className="font-body text-xs italic text-text-muted">No inputs yet. Add the client’s current site, a competitor or two, and anything they admire.</p>
+        <p className="font-body text-xs italic text-text-muted">
+          {archivedCount > 0 ? 'All inputs are archived.' : 'No inputs yet. Add the client’s current site, a competitor or two, and anything they admire.'}
+        </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((input) => (

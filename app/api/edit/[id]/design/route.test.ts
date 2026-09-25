@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { NextResponse } from 'next/server'
-import { SID, makeInputRow, makeVersionRow } from '@/lib/design/__fixtures__/rows'
+import { SID, makeInputRow, makeVersionListRow, makeVersionRow } from '@/lib/design/__fixtures__/rows'
 import { MALFORMED_REGION_ERROR } from '@/lib/design/bundle-files'
 import { asJson } from '@/lib/supabase/json-typed'
 
@@ -46,7 +46,7 @@ beforeEach(() => {
   m.snapshot.mockReset().mockResolvedValue({ shas: SHAS, texts: TEXTS })
   m.readSessionSchema.mockReset().mockResolvedValue({ websiteUrl: 'bblcpa.com', business: { competitors: [{ name: 'Acme CPA' }] } })
   m.listInputs.mockReset().mockResolvedValue([makeInputRow({ storage_path: THUMB, capture_status: 'ok' })])
-  m.listVersions.mockReset().mockResolvedValue([makeVersionRow({ applied_blobs: asJson(SHAS) })])
+  m.listVersions.mockReset().mockResolvedValue([makeVersionListRow({ applied_blobs: asJson(SHAS) })])
   m.getBaselineOrCreate.mockReset().mockResolvedValue({ status: 'created', latest: makeVersionRow({ applied_blobs: asJson(SHAS) }) })
 })
 
@@ -102,7 +102,7 @@ describe('GET /design', () => {
 
   it('flags drift since the latest version', async () => {
     m.getBaselineOrCreate.mockResolvedValue({ status: 'existing', latest: makeVersionRow() })
-    m.listVersions.mockResolvedValue([makeVersionRow({ version_no: 1, applied_blobs: asJson({ ...SHAS, 'src/styles/theme.css': 'f'.repeat(40) }) })])
+    m.listVersions.mockResolvedValue([makeVersionListRow({ version_no: 1, applied_blobs: asJson({ ...SHAS, 'src/styles/theme.css': 'f'.repeat(40) }) })])
     const body = await (await call()).json()
     expect(body.baseline).toEqual({ status: 'ok', created: false })
     expect(body.drift).toEqual({ status: 'drifted', changedPaths: ['src/styles/theme.css'], sinceVersion: 1 })
@@ -111,6 +111,16 @@ describe('GET /design', () => {
   it('flags a stale theme.css', async () => {
     m.snapshot.mockResolvedValue({ shas: SHAS, texts: { ...TEXTS, 'src/styles/theme.css': ':root{}' } })
     expect((await (await call()).json()).themeCssStale).toBe(true)
+  })
+
+  it('continues with null thumbnails when signing fails, instead of 500', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    m.sign.mockRejectedValueOnce(new Error('storage down'))
+    const res = await call()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.inputs[0].thumbnailUrl).toBeNull()
+    expect(warn).toHaveBeenCalled()
   })
 
   it('hides raw errors behind a generic 500', async () => {

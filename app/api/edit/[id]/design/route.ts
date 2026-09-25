@@ -64,7 +64,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       ...inputs.flatMap((i) => (i.storage_path ? [i.storage_path] : [])),
       ...versionRows.flatMap(versionScreenshotPaths),
     ]
-    const signed = await signDesignPaths(supabase, paths)
+    let signed: Record<string, string> = {}
+    try {
+      signed = await signDesignPaths(supabase, paths)
+    } catch (err) {
+      console.warn('[design:state] signDesignPaths failed, continuing without thumbnails:', err)
+    }
     const versions = versionRows.map((v) => toVersionDto(v, signed))
 
     const state: DesignStudioState = {

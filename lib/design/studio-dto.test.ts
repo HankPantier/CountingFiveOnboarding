@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { asJson } from '@/lib/supabase/json-typed'
-import { SID, makeInputRow, makeVersionRow } from './__fixtures__/rows'
+import { SID, makeInputRow, makeVersionListRow } from './__fixtures__/rows'
 import { buildInputSuggestions, toInputDto, toVersionDto, versionScreenshotPaths } from './studio-dto'
 
 describe('toInputDto', () => {
@@ -16,9 +16,9 @@ describe('toInputDto', () => {
 })
 
 describe('versions', () => {
-  it('takes the name from the bundle and signs screenshots', () => {
+  it('takes the name from bundle_name and signs screenshots', () => {
     const p = `design/${SID}/versions/v1.webp`
-    const row = makeVersionRow({ version_no: 1, source: 'concept', screenshots: asJson([{ path: p }, { path: 'sessions/x.png' }, 'junk']) })
+    const row = makeVersionListRow({ version_no: 1, source: 'concept', screenshots: asJson([{ path: p }, { path: 'sessions/x.png' }, 'junk']) })
     expect(versionScreenshotPaths(row)).toEqual([p])
     expect(toVersionDto(row, { [p]: 'https://signed/v1' })).toMatchObject({
       versionNo: 1,
@@ -27,8 +27,8 @@ describe('versions', () => {
       screenshotUrls: ['https://signed/v1'],
     })
   })
-  it('falls back for a nameless bundle and an unknown source', () => {
-    const dto = toVersionDto(makeVersionRow({ bundle: asJson({}), source: 'weird' }), {})
+  it('falls back for a null/blank bundle_name and an unknown source', () => {
+    const dto = toVersionDto(makeVersionListRow({ bundle_name: null, source: 'weird' }), {})
     expect(dto.name).toBe('Untitled design')
     expect(dto.source).toBe('import')
   })

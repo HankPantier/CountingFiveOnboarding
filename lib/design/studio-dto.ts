@@ -37,7 +37,16 @@ export function toInputDto(row: Tables<'design_inputs'>, signed: Record<string, 
   }
 }
 
-export function versionScreenshotPaths(row: Tables<'design_versions'>): string[] {
+// The columns listVersions() actually selects: everything toVersionDto needs,
+// plus the drift check's applied_blobs — but never the full `bundle` JSONB.
+// The bundle's name comes over as its own field via a `bundle->>name` JSON
+// path alias in the query, not by shipping the whole blob.
+export type DesignVersionListRow = Pick<
+  Tables<'design_versions'>,
+  'id' | 'version_no' | 'source' | 'summary' | 'applied_commit_sha' | 'applied_blobs' | 'screenshots' | 'created_at'
+> & { bundle_name: string | null }
+
+export function versionScreenshotPaths(row: Pick<DesignVersionListRow, 'screenshots'>): string[] {
   const shots = row.screenshots
   if (!Array.isArray(shots)) return []
   const out: string[] = []
@@ -47,19 +56,16 @@ export function versionScreenshotPaths(row: Tables<'design_versions'>): string[]
   return out
 }
 
-function bundleName(bundle: Tables<'design_versions'>['bundle']): string {
-  if (bundle && typeof bundle === 'object' && !Array.isArray(bundle) && typeof bundle.name === 'string' && bundle.name.trim()) {
-    return bundle.name
-  }
-  return 'Untitled design'
+function bundleName(name: string | null): string {
+  return name && name.trim() ? name : 'Untitled design'
 }
 
-export function toVersionDto(row: Tables<'design_versions'>, signed: Record<string, string>): DesignVersionDto {
+export function toVersionDto(row: DesignVersionListRow, signed: Record<string, string>): DesignVersionDto {
   return {
     id: row.id,
     versionNo: row.version_no,
     source: oneOf<VersionSource>(VERSION_SOURCES, row.source, 'import'),
-    name: bundleName(row.bundle),
+    name: bundleName(row.bundle_name),
     summary: row.summary,
     appliedCommitSha: row.applied_commit_sha,
     createdAt: row.created_at,

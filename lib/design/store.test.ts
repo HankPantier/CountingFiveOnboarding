@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { fakeSupabase } from './__fixtures__/fake-supabase'
-import { IID, SID, makeInputRow, makeVersionRow } from './__fixtures__/rows'
+import { IID, SID, makeInputRow, makeVersionListRow, makeVersionRow } from './__fixtures__/rows'
 import { VALID } from './__fixtures__/valid-bundle'
 import {
   BASELINE_SUMMARY,
@@ -125,11 +125,17 @@ describe('inputs', () => {
 })
 
 describe('versions', () => {
-  it('listVersions is newest first and scoped', async () => {
-    const f = fakeSupabase({ design_versions: [{ data: [makeVersionRow()] }] })
-    await listVersions(f.client, SID)
+  it('listVersions is newest first and scoped, and never selects the full bundle JSONB', async () => {
+    const f = fakeSupabase({ design_versions: [{ data: [makeVersionListRow()] }] })
+    const rows = await listVersions(f.client, SID)
+    expect(rows[0].bundle_name).toBe('Baseline')
     expect(f.opsFor('design_versions')).toContainEqual(['order', 'version_no', { ascending: false }])
     expect(f.opsFor('design_versions')).toContainEqual(['eq', 'session_id', SID])
+    const [selectOp, columns] = f.opsFor('design_versions')[0] as [string, string]
+    expect(selectOp).toBe('select')
+    expect(columns).not.toContain('bundle,')
+    expect(columns).not.toMatch(/(^|\s|,)bundle(\s|,|$)/)
+    expect(columns).toContain('bundle_name:bundle->>name')
   })
 
   it('latestVersion returns null when there are none', async () => {

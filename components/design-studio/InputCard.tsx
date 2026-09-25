@@ -29,17 +29,21 @@ export default function InputCard({
   const base = `/api/edit/${sessionId}/design/inputs/${input.id}`
   const capturing = busy === 'capture' || input.captureStatus === 'pending'
   const title = input.label || displayHost(input.url) || 'Uploaded image'
-  const canCapture = input.kind !== 'inspiration_image'
+  const canCapture = input.kind !== 'inspiration_image' && !input.archived
 
   async function run(kind: Exclude<Busy, null>, fn: () => Promise<unknown>, fallback: string) {
     setBusy(kind)
     setError(null)
     try {
       await fn()
-      await onChanged()
+      if (kind !== 'capture') await onChanged()
     } catch (err) {
       setError(errorMessage(err, fallback))
     } finally {
+      // Capture refreshes on both success AND failure — a failed capture
+      // still writes capture_status: 'error' server-side, and the card
+      // needs that reflected even though the POST itself rejected.
+      if (kind === 'capture') await onChanged()
       setBusy(null)
     }
   }

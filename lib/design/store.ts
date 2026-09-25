@@ -8,6 +8,7 @@ import type { Database, Tables, TablesInsert, TablesUpdate } from '@/types/datab
 import { asJson } from '@/lib/supabase/json-typed'
 import type { DesignBundle } from './bundle'
 import { removeDesignPaths } from './storage'
+import type { DesignVersionListRow } from './studio-dto'
 import type { CaptureStatus, DesignInputKind, ThemeBlobShas, VersionSource } from './studio-types'
 
 type Db = SupabaseClient<Database>
@@ -159,15 +160,20 @@ export async function deleteInput(db: Db, sessionId: string, inputId: string): P
 
 // ---------------------------------------------------------------- versions
 
-export async function listVersions(db: Db, sessionId: string): Promise<DesignVersionRow[]> {
+// Narrow select for the version list: never the full `bundle` JSONB (Minor
+// #3 in the P2 final review) — just the columns the DTO + drift check need,
+// with the bundle's name pulled out via a JSON path alias.
+const VERSION_LIST_COLUMNS = 'id, version_no, source, summary, applied_commit_sha, applied_blobs, screenshots, created_at, bundle_name:bundle->>name'
+
+export async function listVersions(db: Db, sessionId: string): Promise<DesignVersionListRow[]> {
   const { data, error } = await db
     .from('design_versions')
-    .select('*')
+    .select(VERSION_LIST_COLUMNS)
     .eq('session_id', sessionId)
     .order('version_no', { ascending: false })
     .limit(200)
   if (error) throw storeError('listVersions', error)
-  return data ?? []
+  return (data ?? []) as unknown as DesignVersionListRow[]
 }
 
 export async function latestVersion(db: Db, sessionId: string): Promise<DesignVersionRow | null> {

@@ -43,3 +43,26 @@ export function makeVersionRow(overrides: Partial<Tables<'design_versions'>> = {
     ...overrides,
   }
 }
+
+// The narrow shape listVersions() actually selects (no full `bundle` JSONB —
+// just its name, via a JSON-path alias). Derives sensible defaults from
+// makeVersionRow so existing "Baseline" expectations keep working.
+export function makeVersionListRow(
+  overrides: Partial<Omit<Tables<'design_versions'>, 'bundle'>> & { bundle_name?: string | null } = {}
+): Omit<Tables<'design_versions'>, 'bundle' | 'session_id' | 'concept_id' | 'created_by'> & { bundle_name: string | null } {
+  const { bundle_name, ...rest } = overrides
+  const full = makeVersionRow(rest)
+  const bundle = full.bundle as { name?: unknown } | null
+  const defaultName = bundle && typeof bundle === 'object' && typeof bundle.name === 'string' ? bundle.name : null
+  return {
+    id: full.id,
+    version_no: full.version_no,
+    source: full.source,
+    summary: full.summary,
+    applied_commit_sha: full.applied_commit_sha,
+    applied_blobs: full.applied_blobs,
+    screenshots: full.screenshots,
+    created_at: full.created_at,
+    bundle_name: bundle_name !== undefined ? bundle_name : defaultName,
+  }
+}
