@@ -139,6 +139,33 @@ describe('applyBundleToDraft', () => {
     }
   })
 
+  it('base mode: a written file ABSENT from the base is guarded as must-not-exist (null); non-base stays unguarded', async () => {
+    const base = {
+      shas: { 'content/brand.json': 'B1', 'content/design.json': 'D1' },
+      texts: { 'content/brand.json': files.get('content/brand.json')?.content ?? '', 'content/design.json': files.get('content/design.json')?.content ?? '' },
+    }
+    await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, base })
+    const guarded = Object.fromEntries((writeFiles.mock.calls[0][1] as { path: string; expectedSha?: string | null }[]).map((c) => [c.path, c.expectedSha]))
+    expect(guarded['src/styles/theme.css']).toBeNull()
+    expect(guarded['content/design-overrides.css']).toBeNull()
+
+    writeFiles.mockClear()
+    await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR })
+    const plain = writeFiles.mock.calls[0][1] as { path: string; expectedSha?: string | null }[]
+    expect(plain.find((c) => c.path === 'content/design-overrides.css')?.expectedSha).toBeUndefined()
+  })
+
+  it('base mode: a concurrent creation of a base-absent file fails the commit (StaleShaError propagates, nothing recorded)', async () => {
+    // writeFiles' real null guard (repo-files.test.ts) throws StaleShaError before committing.
+    class StaleShaError extends Error {}
+    writeFiles.mockRejectedValueOnce(new StaleShaError('content/design-overrides.css'))
+    const base = {
+      shas: { 'content/brand.json': 'B1', 'content/design.json': 'D1' },
+      texts: { 'content/brand.json': files.get('content/brand.json')?.content ?? '', 'content/design.json': files.get('content/design.json')?.content ?? '' },
+    }
+    await expect(applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, base })).rejects.toBeInstanceOf(StaleShaError)
+  })
+
   it('base mode: a base without brand/design texts is a 409', async () => {
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, base: { shas: {}, texts: {} } })
     expect(r).toMatchObject({ ok: false, status: 409 })

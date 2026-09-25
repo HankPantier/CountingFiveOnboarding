@@ -9,8 +9,9 @@
 // shas + their texts. When given, the branch is NOT re-read (a read right after
 // a commit can still return the pre-commit tip) — the bundle is rendered onto
 // the base texts and EVERY existing base file is sha-guarded in the commit
-// (unchanged ones ride along as same-blob guard entries), so the writeFiles
-// guard is the only staleness check (StaleShaError when the draft moved).
+// (unchanged ones ride along as same-blob guard entries; a written file absent
+// from the base is guarded as must-not-exist), so the writeFiles guard is the
+// only staleness check (StaleShaError when the draft moved).
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError } from '@/lib/github/repo-files'
@@ -97,7 +98,10 @@ export async function applyBundleToDraft(args: {
     .filter((c) => c.next !== (c.current?.content ?? null))
     // An absent overrides file that would stay empty is not a change.
     .filter((c) => !(c.current === null && c.next === ''))
-    .map((c) => ({ path: c.path, content: c.next, expectedSha: c.current?.sha || undefined }))
+    // Base mode: a file absent from the base must still be absent at commit
+    // time (null = must-not-exist), so a concurrent creation is a StaleShaError.
+    // Without a base, an absent file is written unguarded (today's behaviour).
+    .map((c) => ({ path: c.path, content: c.next, expectedSha: c.current?.sha || (base ? null : undefined) }))
 
   if (changes.length === 0) {
     return { ok: true, commitSha: null, blobs: {}, changedPaths: [], brand, design, css: rendered.css }

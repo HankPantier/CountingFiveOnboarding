@@ -55,8 +55,9 @@ export async function POST(req: Request, { params }: Params) {
 
   // Native-backed (lightningcss) — lazy, traced in next.config.ts.
   let commitDesignVersion: (typeof import('@/lib/design/commit-version'))['commitDesignVersion']
+  let APPLIED_VERSION_UNRECORDED: string
   try {
-    ;({ commitDesignVersion } = await import('@/lib/design/commit-version'))
+    ;({ commitDesignVersion, APPLIED_VERSION_UNRECORDED } = await import('@/lib/design/commit-version'))
   } catch (err) {
     console.error('[design:concept:apply] failed to load the design engine', err)
     return NextResponse.json({ error: 'The design engine is unavailable right now.' }, { status: 503 })
@@ -100,7 +101,7 @@ export async function POST(req: Request, { params }: Params) {
     }
     const version = committed.version
     // Unreachable without skipIfUnchanged, but keeps the type honest.
-    if (!version) return NextResponse.json({ error: 'The design was applied to the draft, but its version could not be recorded — refresh the Studio.' }, { status: 409 })
+    if (!version) return NextResponse.json({ error: APPLIED_VERSION_UNRECORDED }, { status: 409 })
     try {
       await markRunApplied(db, concept.run_id)
     } catch (err) {
