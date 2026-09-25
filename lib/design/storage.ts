@@ -50,3 +50,13 @@ export async function signDesignPaths(supabase: SupabaseClient<Database>, paths:
   for (const row of data) if (row.path && row.signedUrl) out[row.path] = row.signedUrl
   return out
 }
+
+// Delete Design Studio objects. Only design/… paths are ever removed (defence
+// against a bad stored path deleting a client upload or PDF). Throws on a
+// storage error; callers treat cleanup as best-effort and log.
+export async function removeDesignPaths(supabase: SupabaseClient<Database>, paths: string[]): Promise<void> {
+  const safe = paths.filter((p) => p.startsWith('design/') && !p.includes('..'))
+  if (safe.length === 0) return
+  const { error } = await supabase.storage.from(BUCKET).remove(safe)
+  if (error) throw new Error(`removeDesignPaths failed: ${error.message}`)
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import sharp from 'sharp'
-import { toWebp, designStoragePath, storeDesignImage, signDesignPaths, SCREENSHOT_MAX_EDGE } from './storage'
+import { toWebp, designStoragePath, storeDesignImage, signDesignPaths, removeDesignPaths, SCREENSHOT_MAX_EDGE } from './storage'
 
 const SID = '7ce3c00a-f6ad-41f3-86cc-6bdfc3af7184'
 
@@ -71,5 +71,27 @@ describe('storage wrappers', () => {
   it('throws when the upload fails', async () => {
     const supabase = { storage: { from: () => ({ upload: async () => ({ data: null, error: { message: 'boom' } }) }) } } as never
     await expect(storeDesignImage(supabase, `design/${SID}/x.webp`, Buffer.from('x'))).rejects.toThrow()
+  })
+})
+
+describe('removeDesignPaths', () => {
+  it('removes only design/ paths from the private bucket', async () => {
+    const remove = vi.fn(async () => ({ data: [], error: null }))
+    const from = vi.fn(() => ({ remove }))
+    const supabase = { storage: { from } } as never
+    await removeDesignPaths(supabase, [`design/${SID}/inputs/a.webp`, 'sessions/x/secret.pdf', `design/${SID}/../x`])
+    expect(from).toHaveBeenCalledWith('session-assets')
+    expect(remove).toHaveBeenCalledWith([`design/${SID}/inputs/a.webp`])
+  })
+
+  it('is a no-op when nothing is removable', async () => {
+    const from = vi.fn()
+    await removeDesignPaths({ storage: { from } } as never, ['sessions/x.pdf'])
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('throws when storage reports an error', async () => {
+    const supabase = { storage: { from: () => ({ remove: async () => ({ data: null, error: { message: 'boom' } }) }) } } as never
+    await expect(removeDesignPaths(supabase, [`design/${SID}/inputs/a.webp`])).rejects.toThrow('removeDesignPaths failed')
   })
 })
