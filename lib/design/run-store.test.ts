@@ -189,13 +189,22 @@ describe('run-store — critique-loop claims', () => {
     expect('bundle' in u2).toBe(false)
   })
 
-  it('settleInitialRender is guarded by the refining status (the pending → refining flip was the claim)', async () => {
+  it('settleInitialRender is a CAS on the row the pending → refining claim returned (refining + its updated_at), stamped strictly later', async () => {
     const f = fakeSupabase({ design_concepts: [{ data: makeConceptRow() }] })
-    await settleInitialRender(f.client, RID, CID, { status: 'refining', review: { ...newReview(), next: 'critique' }, screenshots: [], error: null })
+    await settleInitialRender(f.client, RID, { id: CID, updated_at: READ_AT }, { status: 'refining', review: { ...newReview(), next: 'critique' }, screenshots: [], error: null })
     const ops = f.opsFor('design_concepts')
-    expect(ops).toContainEqual(['eq', 'status', 'refining'])
-    expect(ops).toContainEqual(['eq', 'run_id', RID])
-    expect(ops.some((o) => o[0] === 'eq' && o[1] === 'updated_at')).toBe(false)
+    for (const op of [['eq', 'id', CID], ['eq', 'run_id', RID], ['eq', 'status', 'refining'], ['eq', 'updated_at', READ_AT]]) expect(ops).toContainEqual(op)
+    const update = ops[0][1] as { updated_at: string; critique: { claim: unknown; next: string } }
+    expect(Date.parse(update.updated_at)).toBeGreaterThan(Date.parse(READ_AT))
+    expect(update.critique).toMatchObject({ claim: null, next: 'critique' })
+  })
+
+  it('settleInitialRender from a late worker (row swept, retried and re-claimed since) matches nothing and returns null', async () => {
+    // The DB finds no row with the late worker's claimed stamp: no update applies.
+    const f = fakeSupabase({ design_concepts: [{ data: null }] })
+    const lateClaim = { id: CID, updated_at: '2026-09-25T10:40:00.000+00:00' }
+    expect(await settleInitialRender(f.client, RID, lateClaim, { status: 'refining', review: { ...newReview(), next: 'critique' }, screenshots: [], error: null })).toBeNull()
+    expect(f.opsFor('design_concepts')).toContainEqual(['eq', 'updated_at', lateClaim.updated_at])
   })
 
   it('resumeConcepts puts loop concepts back to refining with no claim and without attempt notes', async () => {

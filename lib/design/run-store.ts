@@ -316,14 +316,23 @@ export async function settleConceptUnit(
   return data
 }
 
-// Settles a concept's FIRST render (claimed by the pending → refining flip).
-export async function settleInitialRender(db: Db, runId: string, conceptId: string, patch: ConceptUnitPatch): Promise<DesignConceptRow | null> {
+// Settles a concept's FIRST render — CAS on the row claimConceptRender
+// returned (the pending → refining flip). A late worker whose concept was
+// swept, retried and re-claimed meanwhile finds a different stamp and writes
+// nothing (null), so it can't overwrite the new worker's loop state.
+export async function settleInitialRender(
+  db: Db,
+  runId: string,
+  claimed: Pick<DesignConceptRow, 'id' | 'updated_at'>,
+  patch: ConceptUnitPatch
+): Promise<DesignConceptRow | null> {
   const { data, error } = await db
     .from('design_concepts')
-    .update(unitUpdate(patch, stamp()))
-    .eq('id', conceptId)
+    .update(unitUpdate(patch, stampAfter(claimed.updated_at)))
+    .eq('id', claimed.id)
     .eq('run_id', runId)
     .eq('status', 'refining')
+    .eq('updated_at', claimed.updated_at)
     .select('*')
     .maybeSingle()
   if (error) throw storeError('settleInitialRender', error)
