@@ -1,5 +1,6 @@
 import type { Tables } from '@/types/database'
 import { asJson } from '@/lib/supabase/json-typed'
+import { DEFAULT_CAPABILITIES } from '../run-types'
 import { VALID } from './valid-bundle'
 
 export const SID = '7ce3c00a-f6ad-41f3-86cc-6bdfc3af7184'
@@ -64,5 +65,51 @@ export function makeVersionListRow(
     screenshots: full.screenshots,
     created_at: full.created_at,
     bundle_name: bundle_name !== undefined ? bundle_name : defaultName,
+  }
+}
+
+export const RID = '3f1d2c4b-5a6e-4f70-8a9b-0c1d2e3f4a5b'
+export const CID = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
+
+export function makeRunRow(overrides: Partial<Tables<'design_runs'>> = {}): Tables<'design_runs'> {
+  return {
+    id: RID,
+    session_id: SID,
+    status: 'queued',
+    stage: 'generate',
+    admin_brief: null,
+    palette_freedom: 'evolve',
+    concept_count: 3,
+    input_ids: [],
+    capabilities: asJson(DEFAULT_CAPABILITIES),
+    base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [], notes: [] }),
+    cost_usd: 0,
+    cost_cap_usd: 4,
+    max_revisions: 2,
+    error: null,
+    created_by: 'admin-1',
+    created_at: '2026-09-25T11:00:00.000Z',
+    updated_at: '2026-09-25T11:00:00.000Z',
+    ...overrides,
+  }
+}
+
+export function makeConceptRow(overrides: Partial<Tables<'design_concepts'>> = {}): Tables<'design_concepts'> {
+  return {
+    id: CID,
+    run_id: RID,
+    session_id: SID,
+    position: 0,
+    status: 'pending',
+    bundle: asJson(VALID),
+    initial_bundle: asJson(VALID),
+    critique: null,
+    iterations: 0,
+    screenshots: asJson([]),
+    cost_usd: 0,
+    error: null,
+    created_at: '2026-09-25T11:00:00.000Z',
+    updated_at: '2026-09-25T11:00:00.000Z',
+    ...overrides,
   }
 }
