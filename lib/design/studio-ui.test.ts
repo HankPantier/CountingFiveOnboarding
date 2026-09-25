@@ -6,8 +6,10 @@ import {
   apiFailureInfo,
   applicableConcepts,
   applyErrorMessage,
+  applyGateFailures,
   defaultRunInputIds,
   formatUsd,
+  runCostCopy,
   reconcileRunInputIds,
   runIsActive,
   runStatusLabel,
@@ -70,6 +72,18 @@ describe('studio-ui helpers', () => {
       runStatusLabel({ status: 'generating', conceptCount: 2, concepts: [concept('pending'), concept('rejected', false), concept('pending')] })
     ).toMatch(/^Designing concept 2 of 2…/)
     expect(runStatusLabel({ status: 'queued', conceptCount: 3, concepts: [] })).toBe('Queued…')
+  })
+  it('runStatusLabel reports the critique loop while refining', () => {
+    const looping = { id: 'b', position: 1, status: 'refining', iterations: 1, review: { next: 'revise', activeUnit: 'revise' } } as unknown as DesignConceptDto
+    expect(runStatusLabel({ status: 'refining', conceptCount: 2, maxRevisions: 2, concepts: [concept('ready'), looping] })).toBe('Revising concept 2 (round 2 of 2)…')
+  })
+  it('runCostCopy states the typical range and the hard cap', () => {
+    expect(runCostCopy(6)).toBe('A run usually costs about $2–5 including the critique-and-revise loop (hard cap $6).')
+    expect(runCostCopy(4.5)).toMatch(/hard cap \$4\.50\)\.$/)
+  })
+  it('applyGateFailures reads the 422 body’s failures list', () => {
+    expect(applyGateFailures({ error: 'x', failures: ['a', 1, 'b'] })).toEqual(['a', 'b'])
+    expect(applyGateFailures(null)).toEqual([])
   })
   it('pre-selects captured, unarchived inputs (max 5)', () => {
     const inputs = [input('a'), input('b', { archived: true }), input('c', { captureStatus: 'error' }), ...['d', 'e', 'f', 'g', 'h'].map((id) => input(id))]

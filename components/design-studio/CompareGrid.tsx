@@ -1,8 +1,7 @@
 'use client'
 
-import { useRef } from 'react'
 import type { DesignRunDto, RunViewport, ScreenshotDto } from '@/lib/design/run-types'
-import { syncedScrollTop } from '@/lib/design/studio-ui'
+import { useSyncedScroll } from './useSyncedScroll'
 
 type Column = { key: string; name: string; shots: ScreenshotDto[] }
 
@@ -25,22 +24,7 @@ export default function CompareGrid({ run }: { run: DesignRunDto }) {
 }
 
 function SyncedRow({ viewport, columns }: { viewport: RunViewport; columns: Column[] }) {
-  const panes = useRef<(HTMLDivElement | null)[]>([])
-  const syncing = useRef(false)
-
-  const onScroll = (i: number) => {
-    if (syncing.current) return
-    const source = panes.current[i]
-    if (!source) return
-    syncing.current = true
-    panes.current.forEach((pane, j) => {
-      if (!pane || j === i) return
-      pane.scrollTop = syncedScrollTop(source.scrollTop, source.scrollHeight - source.clientHeight, pane.scrollHeight - pane.clientHeight)
-    })
-    requestAnimationFrame(() => {
-      syncing.current = false
-    })
-  }
+  const { register, onScroll } = useSyncedScroll()
 
   const label = viewport === 'desktop' ? 'Desktop (1440)' : 'Mobile (390)'
   return (
@@ -53,9 +37,7 @@ function SyncedRow({ viewport, columns }: { viewport: RunViewport; columns: Colu
             <figure key={col.key} className="flex min-w-0 flex-col gap-1">
               <figcaption className="truncate font-body text-[11px] text-text-muted">{col.name}</figcaption>
               <div
-                ref={(el) => {
-                  panes.current[i] = el
-                }}
+                ref={register(i)}
                 onScroll={() => onScroll(i)}
                 // Keyboard-scrollable region (a11y): focusable + named.
                 tabIndex={0}

@@ -6,11 +6,12 @@ import {
   ADMIN_BRIEF_MAX,
   DEFAULT_CONCEPT_COUNT,
   DEFAULT_PALETTE_FREEDOM,
+  DEFAULT_RUN_COST_CAP_USD,
   DEFAULT_RUN_PAGE,
   MAX_RUN_INPUTS,
   type PaletteFreedom,
 } from '@/lib/design/run-types'
-import { defaultRunInputIds, reconcileRunInputIds } from '@/lib/design/studio-ui'
+import { defaultRunInputIds, reconcileRunInputIds, runCostCopy } from '@/lib/design/studio-ui'
 import PagePicker from './PagePicker'
 import { designApi, errorMessage } from './api'
 import { CHIP, PANEL, PRIMARY_BTN, TEXTAREA } from './styles'
@@ -78,8 +79,8 @@ export default function RunLauncher({
           Generate concepts
         </h2>
         <p className="font-body text-xs text-text-muted">
-          The AI designs {count} distinct concepts from the MBP, this page’s real markup, the current design and your references, then renders each one.
-          A run usually costs $1–2 (hard cap $4). Fonts and style axes stay locked unless the site’s template supports them.
+          The AI designs {count} distinct concepts from the MBP, this page’s real markup, the current design and your references, then critiques and
+          revises each one. {runCostCopy(DEFAULT_RUN_COST_CAP_USD)} Fonts and style axes stay locked unless the site’s template supports them.
         </p>
       </div>
 

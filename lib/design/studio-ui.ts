@@ -2,6 +2,7 @@
 // not covered by vitest, so their logic lives here).
 import { RUN_ACTIVE_STATUSES, type DesignInputDto } from './studio-types'
 import { MAX_RUN_INPUTS, type DesignConceptDto, type DesignRunDto } from './run-types'
+import { refineStatusLabel } from './critique-ui'
 
 export const PREVIEW_VIEWPORTS = [
   { width: 1440, height: 900, label: 'Desktop' },
@@ -64,7 +65,7 @@ export function designingConceptNumber(run: Pick<DesignRunDto, 'conceptCount' | 
   return Math.max(1, Math.min(settled + 1, run.conceptCount))
 }
 
-export function runStatusLabel(run: Pick<DesignRunDto, 'status' | 'concepts' | 'conceptCount'>): string {
+export function runStatusLabel(run: Pick<DesignRunDto, 'status' | 'concepts' | 'conceptCount'> & Partial<Pick<DesignRunDto, 'maxRevisions'>>): string {
   switch (run.status) {
     case 'queued':
       return 'Queued…'
@@ -72,6 +73,8 @@ export function runStatusLabel(run: Pick<DesignRunDto, 'status' | 'concepts' | '
     case 'generating':
       return `Designing concept ${designingConceptNumber(run)} of ${run.conceptCount}… (usually 2–4 minutes each)`
     case 'refining': {
+      const loop = refineStatusLabel({ concepts: run.concepts, maxRevisions: run.maxRevisions ?? 2 })
+      if (loop) return loop
       const renderable = run.concepts.filter((c) => c.palette !== null && c.status !== 'rejected')
       const done = renderable.filter((c) => c.status === 'ready').length
       return `Rendering previews… (${done} of ${renderable.length})`
@@ -121,6 +124,14 @@ export function formatUsd(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
+// RunLauncher's cost line. With the P4 critique loop (critique + up to
+// max-revisions redesigns per concept) a run typically lands around $2–5; the
+// hard cap comes from the run default so the copy can't drift from it.
+export function runCostCopy(capUsd: number): string {
+  const cap = Number.isInteger(capUsd) ? `$${capUsd}` : formatUsd(capUsd)
+  return `A run usually costs about $2–5 including the critique-and-revise loop (hard cap ${cap}).`
+}
+
 // A failed Design Studio API call, reduced to what the UI needs.
 export type ApiFailureInfo = { status: number; error: string | null; stale: boolean }
 
@@ -147,4 +158,11 @@ export function applyErrorMessage(failure: ApiFailureInfo, genericMessage: strin
   }
   if (failure.status >= 400 && failure.error) return failure.error
   return genericMessage
+}
+
+// The render-check failures listed in an apply 422 body (P4 hard gates).
+export function applyGateFailures(body: unknown): string[] {
+  if (body === null || typeof body !== 'object') return []
+  const list = (body as Record<string, unknown>).failures
+  return Array.isArray(list) ? list.filter((f): f is string => typeof f === 'string') : []
 }
