@@ -135,6 +135,18 @@ describe('POST /design/concepts/[cid]/apply', () => {
     expect((m.apply.mock.calls[0][0] as { removeLegacy: boolean }).removeLegacy).toBe(false)
   })
 
+  it('prefers the written blobs over a stale post-apply snapshot', async () => {
+    const stale = { ...AFTER_SHAS, 'content/brand.json': 'a'.repeat(40) } // pre-commit tip for the changed file
+    m.snapshot.mockReset().mockResolvedValueOnce(BEFORE).mockResolvedValueOnce({ shas: stale, texts: {} })
+    await call()
+    expect((m.insertVersion.mock.calls[0][1] as { appliedBlobs: unknown }).appliedBlobs).toEqual({
+      'content/brand.json': 'c'.repeat(40),
+      'content/design.json': 'd'.repeat(40),
+      'src/styles/theme.css': 'e'.repeat(40),
+      'content/design-overrides.css': 'f'.repeat(40),
+    })
+  })
+
   it('falls back to before-shas + written blobs when the post-apply snapshot fails', async () => {
     m.snapshot.mockReset().mockResolvedValueOnce(BEFORE).mockRejectedValueOnce(new Error('github down'))
     await call()

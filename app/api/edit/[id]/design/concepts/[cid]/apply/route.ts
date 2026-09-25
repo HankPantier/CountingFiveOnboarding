@@ -108,9 +108,12 @@ export async function POST(req: Request, { params }: Params) {
     })
 
     // applied_blobs MUST be the full four-file map (drift compares to it).
+    // Written blobs win: right after updateRef the (ETag-conditional) tree read
+    // can still return the pre-commit tip, so the snapshot only fills the
+    // files this commit didn't touch.
     let appliedBlobs: ThemeBlobShas
     try {
-      appliedBlobs = mergeAppliedBlobs((await readDraftThemeSnapshot(ctx.githubRepo)).shas, {})
+      appliedBlobs = mergeAppliedBlobs((await readDraftThemeSnapshot(ctx.githubRepo)).shas, result.blobs)
     } catch (err) {
       console.warn('[design:concept:apply] post-apply snapshot failed, using before + written shas:', err)
       appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs)
