@@ -57,13 +57,20 @@ export function runIsActive(run: Pick<DesignRunDto, 'status'> | null): boolean {
   return run !== null && (RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)
 }
 
-export function runStatusLabel(run: Pick<DesignRunDto, 'status' | 'concepts'>): string {
+// Generation designs one concept per step: k = the concepts already settled
+// (accepted or rejected) + 1, capped at the run's concept count.
+export function designingConceptNumber(run: Pick<DesignRunDto, 'conceptCount' | 'concepts'>): number {
+  const settled = run.concepts.filter((c) => c.status !== 'generating' && c.status !== 'error').length
+  return Math.max(1, Math.min(settled + 1, run.conceptCount))
+}
+
+export function runStatusLabel(run: Pick<DesignRunDto, 'status' | 'concepts' | 'conceptCount'>): string {
   switch (run.status) {
     case 'queued':
       return 'Queued…'
     case 'capturing':
     case 'generating':
-      return 'Designing concepts… (usually 2–5 minutes)'
+      return `Designing concept ${designingConceptNumber(run)} of ${run.conceptCount}… (usually 2–4 minutes each)`
     case 'refining': {
       const renderable = run.concepts.filter((c) => c.palette !== null && c.status !== 'rejected')
       const done = renderable.filter((c) => c.status === 'ready').length

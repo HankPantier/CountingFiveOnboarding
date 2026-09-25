@@ -10,6 +10,8 @@ const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new
 const ARGS: ConceptPromptArgs = {
   caps: DEFAULT_CAPABILITIES,
   conceptCount: 3,
+  position: 0,
+  priors: [],
   paletteFreedom: 'evolve',
   current: VALID,
   firmName: 'Korbey Lague PLLP',
@@ -32,7 +34,16 @@ const texts = (parts: ReturnType<typeof buildConceptPrompt>['parts']) =>
 describe('buildStaticPrefix', () => {
   it('is byte-stable and independent of every per-run argument', () => {
     const a = buildConceptPrompt(ARGS).staticPrefix
-    const b = buildConceptPrompt({ ...ARGS, firmName: 'Other Firm', adminBrief: null, images: [], paletteFreedom: 'free', conceptCount: 2 }).staticPrefix
+    const b = buildConceptPrompt({
+      ...ARGS,
+      firmName: 'Other Firm',
+      adminBrief: null,
+      images: [],
+      paletteFreedom: 'free',
+      conceptCount: 2,
+      position: 1,
+      priors: [{ position: 0, bundle: VALID }],
+    }).staticPrefix
     expect(a).toBe(b)
     expect(a).toBe(buildStaticPrefix(DEFAULT_CAPABILITIES))
     expect(a).not.toContain('Korbey')
@@ -77,10 +88,16 @@ describe('buildConceptPrompt (dynamic parts)', () => {
     expect(parts[first - 1]).toMatchObject({ type: 'text' })
     expect(parts[first]).toEqual({ type: 'image', image: new Uint8Array([1]), mediaType: 'image/webp' })
   })
-  it('ends with the task text (the second cache breakpoint lands on it)', () => {
+  it('ends with the task text (the second cache breakpoint lands on it): concept k+1 of N, one concept', () => {
     const last = parts[parts.length - 1]
     expect(last.type).toBe('text')
-    expect(last.type === 'text' && last.text).toContain('exactly 3 distinct concepts')
+    const text = last.type === 'text' ? last.text : ''
+    expect(text).toContain('You are designing concept 1 of 3')
+    expect(text).toContain('exactly ONE concept')
+    expect(text).toContain('{"concepts":[')
+  })
+  it('the first concept has no already-designed block', () => {
+    expect(all).not.toContain('ALREADY DESIGNED')
   })
   it('states the palette rule; keep lists the exact hexes', () => {
     expect(all).toContain('PALETTE: evolve')
@@ -90,5 +107,42 @@ describe('buildConceptPrompt (dynamic parts)', () => {
   })
   it('restates the locked typography below L2', () => {
     expect(all).toContain(`TYPOGRAPHY IS LOCKED on this site: headingFont "${VALID.typography.headingFont}"`)
+  })
+})
+
+describe('buildConceptPrompt (later concepts)', () => {
+  const OTHER = {
+    ...VALID,
+    name: 'Oxblood Ledger',
+    tagline: 'Deep red, confident',
+    moves: ['m1', 'm2', 'm3', 'm4', 'm5', 'm6'],
+    palette: { ...VALID.palette, primary: '#5c1a2b' },
+    treatments: { headlineStyle: 'sans' as const, eyebrowStyle: 'standard' as const, darkSections: false },
+  }
+  const { parts } = buildConceptPrompt({ ...ARGS, position: 2, priors: [{ position: 0, bundle: VALID }, { position: 1, bundle: OTHER }] })
+  const all = texts(parts)
+
+  it('says which concept this is', () => {
+    const last = parts[parts.length - 1]
+    expect(last.type === 'text' && last.text).toContain('You are designing concept 3 of 3')
+  })
+  it('summarizes every already-accepted concept: name, tagline, palette hexes, treatments, up to 5 moves', () => {
+    expect(all).toContain('These already exist — yours must be clearly different in palette, type treatment and layout moves')
+    for (const s of ['Concept 1 "Harbor Ledger"', 'Calm authority with a warm serif voice', '#003b71', '#00c1de', 'headline serif', 'eyebrow mono', 'dark sections on']) {
+      expect(all).toContain(s)
+    }
+    for (const s of ['Concept 2 "Oxblood Ledger"', '#5c1a2b', 'headline sans', 'dark sections off', 'm5']) expect(all).toContain(s)
+    expect(all).not.toContain('m6')
+  })
+  it('never includes CSS bodies of the prior concepts', () => {
+    expect(all).not.toContain('letter-spacing: -0.02em')
+  })
+  it('puts the summary before the task (the task stays last)', () => {
+    const idx = parts.findIndex((p) => p.type === 'text' && p.text.includes('ALREADY DESIGNED'))
+    expect(idx).toBeGreaterThan(-1)
+    expect(idx).toBe(parts.length - 2)
+  })
+  it('keeps the static prefix byte-identical to the first concept’s', () => {
+    expect(buildConceptPrompt({ ...ARGS, position: 2, priors: [{ position: 0, bundle: VALID }] }).staticPrefix).toBe(buildConceptPrompt(ARGS).staticPrefix)
   })
 })

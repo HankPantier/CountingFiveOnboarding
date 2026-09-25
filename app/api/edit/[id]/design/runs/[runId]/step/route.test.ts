@@ -10,6 +10,7 @@ const m = vi.hoisted(() => ({
   listConcepts: vi.fn(),
   transitionRun: vi.fn(),
   resetConcepts: vi.fn(async (..._a: unknown[]) => {}),
+  deleteConcepts: vi.fn(async (..._a: unknown[]) => {}),
   runDesignStep: vi.fn(),
   shouldChain: vi.fn(),
   chainOrFail: vi.fn(async (..._a: unknown[]) => {}),
@@ -25,6 +26,7 @@ vi.mock('@/lib/design/run-store', async (orig) => ({
   listConcepts: (...a: unknown[]) => m.listConcepts(...a),
   transitionRun: (...a: unknown[]) => m.transitionRun(...a),
   resetConcepts: (...a: unknown[]) => m.resetConcepts(...a),
+  deleteConcepts: (...a: unknown[]) => m.deleteConcepts(...a),
 }))
 vi.mock('@/lib/design/run-orchestrator', () => ({
   runDesignStep: (...a: unknown[]) => m.runDesignStep(...a),
@@ -110,6 +112,16 @@ describe('POST step — admin retry', () => {
     expect(res.status).toBe(202)
     expect(m.transitionRun).toHaveBeenCalledWith(m.db, RID, ['error'], { status: 'refining', stage: 'render', error: null })
     expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
+    expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, [])
+  })
+  it('resumes a run that failed mid-generation at its first missing / errored position', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'generate' }))
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'pending' }), makeConceptRow({ id: 'b', position: 1, status: 'error', bundle: null })])
+    m.transitionRun.mockResolvedValue(makeRunRow({ status: 'queued' }))
+    expect((await call()).status).toBe(202)
+    expect(m.transitionRun).toHaveBeenCalledWith(m.db, RID, ['error'], { status: 'queued', stage: 'generate', error: null })
+    expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
+    expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, [])
   })
   it('nudges an active run without changing it', async () => {
     expect((await call()).status).toBe(202)

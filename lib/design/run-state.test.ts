@@ -10,11 +10,31 @@ describe('nextAction', () => {
   it.each(['ready', 'applied', 'cancelled', 'error'])('stops on terminal status %s', (status) => {
     expect(nextAction(makeRunRow({ status }), []).kind).toBe('stop')
   })
-  it('generates a queued run', () => {
-    expect(nextAction(makeRunRow({ status: 'queued' }), [])).toEqual({ kind: 'generate' })
+  it('a queued run generates position 0', () => {
+    expect(nextAction(makeRunRow({ status: 'queued' }), [])).toEqual({ kind: 'generate', position: 0 })
   })
-  it('waits while generation is in flight', () => {
-    expect(nextAction(makeRunRow({ status: 'generating' }), []).kind).toBe('wait')
+  it('a generating run generates the next position (rejected rows count as done)', () => {
+    const run = makeRunRow({ status: 'generating' })
+    expect(nextAction(run, [c('a', 0, 'pending')])).toEqual({ kind: 'generate', position: 1 })
+    expect(nextAction(run, [c('a', 0, 'pending'), c('b', 1, 'rejected', false)])).toEqual({ kind: 'generate', position: 2 })
+  })
+  it('fills the first missing position', () => {
+    expect(nextAction(makeRunRow({ status: 'generating' }), [c('a', 0, 'pending'), c('d', 2, 'pending')])).toEqual({ kind: 'generate', position: 1 })
+  })
+  it('respects the run’s concept_count', () => {
+    const run = makeRunRow({ status: 'generating', concept_count: 2 })
+    expect(nextAction(run, [c('a', 0, 'pending'), c('b', 1, 'pending')])).toEqual({ kind: 'start-render' })
+  })
+  it('waits while a concept is being designed', () => {
+    expect(nextAction(makeRunRow({ status: 'generating' }), [c('a', 0, 'pending'), c('b', 1, 'generating', false)]).kind).toBe('wait')
+  })
+  it('moves to render once every position exists and one is usable', () => {
+    const run = makeRunRow({ status: 'generating' })
+    expect(nextAction(run, [c('a', 0, 'rejected', false), c('b', 1, 'pending'), c('d', 2, 'rejected', false)])).toEqual({ kind: 'start-render' })
+  })
+  it('reports no-concepts when every position was rejected', () => {
+    const run = makeRunRow({ status: 'generating' })
+    expect(nextAction(run, [c('a', 0, 'rejected', false), c('b', 1, 'rejected', false), c('d', 2, 'rejected', false)])).toEqual({ kind: 'no-concepts' })
   })
   it('renders the first pending concept by position', () => {
     const run = makeRunRow({ status: 'refining', stage: 'render' })
@@ -33,17 +53,47 @@ describe('planRetry', () => {
   it('refuses a run that is not in error', () => {
     expect(planRetry(makeRunRow({ status: 'ready' }), []).ok).toBe(false)
   })
-  it('regenerates from scratch when no concept has a bundle', () => {
+  it('generate stage: resumes at the first missing position, keeping accepted and rejected concepts', () => {
+    const run = makeRunRow({ status: 'error', stage: 'generate' })
+    expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'rejected', false)])).toEqual({
+      ok: true,
+      status: 'queued',
+      stage: 'generate',
+      resetConceptIds: [],
+      deleteConceptIds: [],
+    })
+  })
+  it('generate stage: an errored or stale generating position is deleted so it is regenerated', () => {
+    const run = makeRunRow({ status: 'error', stage: 'generate' })
+    expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'error', false)])).toMatchObject({ status: 'queued', deleteConceptIds: ['b'] })
+    expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'generating', false)])).toMatchObject({ status: 'queued', deleteConceptIds: ['b'] })
+  })
+  it('generate stage: a lone rejected concept is kept (no re-spend) and generation resumes after it', () => {
     expect(planRetry(makeRunRow({ status: 'error' }), [c('x', 0, 'rejected', false)])).toEqual({
       ok: true,
       status: 'queued',
       stage: 'generate',
       resetConceptIds: [],
+      deleteConceptIds: [],
     })
   })
+  it('regenerates from scratch when every position was rejected', () => {
+    const run = makeRunRow({ status: 'error', stage: 'generate' })
+    const all = [c('a', 0, 'rejected', false), c('b', 1, 'rejected', false), c('d', 2, 'rejected', false)]
+    expect(planRetry(run, all)).toEqual({ ok: true, status: 'queued', stage: 'generate', resetConceptIds: [], deleteConceptIds: ['a', 'b', 'd'] })
+  })
   it('resumes rendering and resets only the unfinished concepts', () => {
-    const plan = planRetry(makeRunRow({ status: 'error' }), [c('a', 0, 'ready'), c('b', 1, 'error'), c('d', 2, 'refining'), c('e', 3, 'pending')])
-    expect(plan).toEqual({ ok: true, status: 'refining', stage: 'render', resetConceptIds: ['b', 'd'] })
+    const run = makeRunRow({ status: 'error', stage: 'render' })
+    const plan = planRetry(run, [c('a', 0, 'ready'), c('b', 1, 'error'), c('d', 2, 'refining'), c('e', 3, 'pending')])
+    expect(plan).toEqual({ ok: true, status: 'refining', stage: 'render', resetConceptIds: ['b', 'd'], deleteConceptIds: [] })
+  })
+  it('treats a run whose concepts already rendered as past generation, whatever its stage says', () => {
+    const plan = planRetry(makeRunRow({ status: 'error', stage: 'generate' }), [c('a', 0, 'ready'), c('b', 1, 'error')])
+    expect(plan).toMatchObject({ status: 'refining', stage: 'render', resetConceptIds: ['b'] })
+  })
+  it('render stage with nothing usable regenerates from scratch', () => {
+    const run = makeRunRow({ status: 'error', stage: 'render' })
+    expect(planRetry(run, [c('a', 0, 'rejected', false)])).toEqual({ ok: true, status: 'queued', stage: 'generate', resetConceptIds: [], deleteConceptIds: ['a'] })
   })
 })
 

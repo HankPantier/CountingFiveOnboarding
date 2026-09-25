@@ -54,8 +54,22 @@ describe('studio-ui helpers', () => {
     expect(runIsActive(null)).toBe(false)
   })
   it('labels a rendering run with its progress', () => {
-    expect(runStatusLabel({ status: 'refining', concepts: [concept('ready'), concept('pending'), concept('rejected', false)] })).toBe('Rendering previews… (1 of 2)')
-    expect(runStatusLabel({ status: 'generating', concepts: [] })).toContain('Designing concepts')
+    expect(runStatusLabel({ status: 'refining', conceptCount: 3, concepts: [concept('ready'), concept('pending'), concept('rejected', false)] })).toBe(
+      'Rendering previews… (1 of 2)'
+    )
+  })
+  it('labels a generating run with the concept being designed (accepted + rejected + 1, capped at N)', () => {
+    expect(runStatusLabel({ status: 'generating', conceptCount: 3, concepts: [] })).toMatch(/^Designing concept 1 of 3…/)
+    expect(runStatusLabel({ status: 'generating', conceptCount: 3, concepts: [concept('pending'), concept('generating', false)] })).toMatch(
+      /^Designing concept 2 of 3…/
+    )
+    expect(runStatusLabel({ status: 'generating', conceptCount: 3, concepts: [concept('pending'), concept('rejected', false)] })).toMatch(
+      /^Designing concept 3 of 3…/
+    )
+    expect(
+      runStatusLabel({ status: 'generating', conceptCount: 2, concepts: [concept('pending'), concept('rejected', false), concept('pending')] })
+    ).toMatch(/^Designing concept 2 of 2…/)
+    expect(runStatusLabel({ status: 'queued', conceptCount: 3, concepts: [] })).toBe('Queued…')
   })
   it('pre-selects captured, unarchived inputs (max 5)', () => {
     const inputs = [input('a'), input('b', { archived: true }), input('c', { captureStatus: 'error' }), ...['d', 'e', 'f', 'g', 'h'].map((id) => input(id))]

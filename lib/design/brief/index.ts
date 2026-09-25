@@ -4,8 +4,10 @@
 //                  cached (buildCachedPartsMessages puts a breakpoint on it).
 //   parts        — everything per-run: firm brief, current design, palette
 //                  rule, fenced page HTML, fenced admin brief, captioned
-//                  images (+ fenced admin notes), and the task. The LAST part
-//                  is always text (the second cache breakpoint lands there).
+//                  images (+ fenced admin notes), the concepts this run has
+//                  already accepted (from concept 2 on), and the task ("concept
+//                  k of N", exactly ONE concept). The LAST part is always text
+//                  (the second cache breakpoint lands there).
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
 import { fontsUnlocked } from '../capabilities'
@@ -21,9 +23,15 @@ export const DESIGN_SYSTEM_PROMPT =
 
 export type PromptImage = { caption: string; adminText: string | null; bytes: Uint8Array; mediaType: string }
 
+// A concept this run already accepted (a validated bundle) — summarized so
+// the next concept can be clearly different from it.
+export type PriorConcept = { position: number; bundle: DesignBundle }
+
 export type ConceptPromptArgs = {
   caps: DesignCapabilities
   conceptCount: number
+  position: number // 0-based: this call designs concept position+1 of conceptCount
+  priors: PriorConcept[]
   paletteFreedom: PaletteFreedom
   current: DesignBundle
   firmName: string
@@ -65,6 +73,36 @@ function currentDesignJson(current: DesignBundle): string {
   return JSON.stringify({ palette, typography, tokens, treatments })
 }
 
+const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+const MAX_PRIOR_MOVES = 5
+
+// Our own serialization of validated bundles (never admin text, never CSS).
+export function priorConceptsBlock(priors: PriorConcept[]): string {
+  const lines = [...priors]
+    .sort((a, b) => a.position - b.position)
+    .map(({ position, bundle }) => {
+      const { palette, typography, tokens, treatments } = bundle
+      const hexes = Object.entries(palette)
+        .map(([role, hex]) => `${role} ${hex}`)
+        .join(', ')
+      const moves = bundle.moves
+        .slice(0, MAX_PRIOR_MOVES)
+        .map((m) => clip(m, 120))
+        .join('; ')
+      return [
+        `- Concept ${position + 1} "${clip(bundle.name, 60)}"${bundle.tagline ? ` — ${clip(bundle.tagline, 120)}` : ''}`,
+        `  Palette: ${hexes}`,
+        `  Type: heading ${typography.headingFont} / body ${typography.bodyFont} / accent ${typography.accentFont}; roundness ${tokens.roundness}, density ${tokens.density}, feel ${tokens.visualFeel}`,
+        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}`,
+        ...(moves ? [`  Moves: ${moves}`] : []),
+      ].join('\n')
+    })
+  return [
+    'CONCEPTS ALREADY DESIGNED IN THIS RUN. These already exist — yours must be clearly different in palette, type treatment and layout moves (a different palette direction, or at least two different levers among fonts, roundness, density, visual feel and treatments).',
+    ...lines,
+  ].join('\n')
+}
+
 export function buildConceptPrompt(args: ConceptPromptArgs): { staticPrefix: string; parts: DynamicPart[] } {
   const parts: DynamicPart[] = []
   parts.push({ type: 'text', text: `THE FIRM\n${buildBrandBrief({ firmName: args.firmName, schema: args.schema, designMd: args.designMd })}` })
@@ -101,9 +139,11 @@ export function buildConceptPrompt(args: ConceptPromptArgs): { staticPrefix: str
     })
   }
 
+  if (args.priors.length > 0) parts.push({ type: 'text', text: priorConceptsBlock(args.priors) })
+
   parts.push({
     type: 'text',
-    text: `TASK\nProduce exactly ${args.conceptCount} distinct concepts for ${args.firmName}'s site, following the art direction, the contract and the palette rule. Return ONLY the JSON envelope {"concepts":[…]} described in OUTPUT FORMAT.`,
+    text: `TASK\nYou are designing concept ${args.position + 1} of ${args.conceptCount} for ${args.firmName}'s site. Produce exactly ONE concept, following the art direction, the contract and the palette rule. Return ONLY the JSON envelope described in OUTPUT FORMAT, with that one concept: {"concepts":[ … ]}.`,
   })
   return { staticPrefix: buildStaticPrefix(args.caps), parts }
 }

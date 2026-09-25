@@ -139,34 +139,61 @@ export async function updateRunFields(db: Db, runId: string, patch: RunPatch): P
   if (error) throw storeError('updateRunFields', error)
 }
 
-export async function deleteRunConcepts(db: Db, runId: string): Promise<void> {
-  const { error } = await db.from('design_concepts').delete().eq('run_id', runId)
-  if (error) throw storeError('deleteRunConcepts', error)
+// Deletes these concepts of this run (a retry regenerating a failed position,
+// or a generation claim released because nothing was generated).
+export async function deleteConcepts(db: Db, runId: string, ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const { error } = await db.from('design_concepts').delete().eq('run_id', runId).in('id', ids)
+  if (error) throw storeError('deleteConcepts', error)
 }
 
-export type NewDesignConcept = {
-  runId: string
-  sessionId: string
-  position: number
-  status: 'pending' | 'rejected'
-  bundle: DesignBundle | null
-  error: string | null
+// Claims a position for generation by inserting its row as 'generating'. The
+// UNIQUE (run_id, position) constraint makes this atomic: a duplicate step
+// for the same position gets null and must not call the model.
+export async function claimConceptPosition(
+  db: Db,
+  claim: { runId: string; sessionId: string; position: number }
+): Promise<DesignConceptRow | null> {
+  const row: TablesInsert<'design_concepts'> = {
+    run_id: claim.runId,
+    session_id: claim.sessionId,
+    position: claim.position,
+    status: 'generating',
+    bundle: null,
+    initial_bundle: null,
+    error: null,
+  }
+  const { data, error } = await db.from('design_concepts').insert(row).select('*').single()
+  if (error?.code === UNIQUE_VIOLATION) return null
+  if (error || !data) throw storeError('claimConceptPosition', error)
+  return data
 }
 
-export async function insertConcepts(db: Db, rows: NewDesignConcept[]): Promise<DesignConceptRow[]> {
-  if (rows.length === 0) return []
-  const insert: TablesInsert<'design_concepts'>[] = rows.map((r) => ({
-    run_id: r.runId,
-    session_id: r.sessionId,
-    position: r.position,
-    status: r.status,
-    bundle: r.bundle ? asJson(r.bundle) : null,
-    initial_bundle: r.bundle ? asJson(r.bundle) : null,
-    error: r.error,
-  }))
-  const { data, error } = await db.from('design_concepts').insert(insert).select('*')
-  if (error) throw storeError('insertConcepts', error)
-  return data ?? []
+export type ConceptGenerationResult =
+  | { status: 'pending'; bundle: DesignBundle }
+  | { status: 'rejected' | 'error'; error: string }
+
+const MAX_CONCEPT_ERROR_CHARS = 1000
+
+// Finalizes a claimed position (only while it is still 'generating').
+export async function settleConceptGeneration(
+  db: Db,
+  conceptId: string,
+  result: ConceptGenerationResult
+): Promise<DesignConceptRow | null> {
+  const update: TablesUpdate<'design_concepts'> =
+    result.status === 'pending'
+      ? { status: 'pending', bundle: asJson(result.bundle), initial_bundle: asJson(result.bundle), error: null, updated_at: stamp() }
+      : { status: result.status, bundle: null, error: result.error.slice(0, MAX_CONCEPT_ERROR_CHARS), updated_at: stamp() }
+  const { data, error } = await db
+    .from('design_concepts')
+    .update(update)
+    .eq('id', conceptId)
+    .eq('status', 'generating')
+    .select('*')
+    .maybeSingle()
+  if (error) throw storeError('settleConceptGeneration', error)
+  return data
 }
 
 export async function claimConceptRender(db: Db, runId: string, conceptId: string): Promise<DesignConceptRow | null> {

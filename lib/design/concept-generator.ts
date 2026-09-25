@@ -1,26 +1,29 @@
-// Server-only. ONE Design-model call produces N concepts; each is validated
-// (concept-validate) and checked for distinctness; invalid or near-duplicate
-// concepts get exactly ONE repair turn (the original answer is replayed as the
-// assistant turn, so the cached first message is re-read at the cache rate).
-// Budget guards run BEFORE every model call: the run's cost cap and the step
-// invocation's deadline. Opus 5.5: generateText → extractJson → zod, adaptive
-// thinking, never temperature/top_p/top_k/toolChoice.
+// Server-only. ONE Design-model call produces ONE concept (a run designs its
+// concepts one per step invocation). The answer is validated (concept-validate)
+// and checked for distinctness against the concepts this run already accepted
+// (`priors`); an invalid or near-duplicate concept gets exactly ONE repair turn
+// (the original answer is replayed as the assistant turn, so the cached first
+// message is re-read at the cache rate). Budget guards run BEFORE every model
+// call: the run's cost cap and the step invocation's deadline. Opus 5.5:
+// generateText → extractJson → zod, adaptive thinking, never
+// temperature/top_p/top_k/toolChoice.
 //
 // Timeouts: every attempt (the first one, generateJson's internal larger-budget
 // retry, and the repair) gets whatever time is left —
 // min(cap, deadline − now − DEADLINE_SAFETY_MS) — and is vetoed as 'deadline'
 // when that is under MIN_REPAIR_TIMEOUT_MS. The first call's cap is
-// FIRST_ATTEMPT_CAP_MS, so with the 540 s invocation budget and a short gather
-// the first attempt gets up to 500 s instead of a fixed slice that would leave
-// too little for anything after an abort.
+// FIRST_ATTEMPT_CAP_MS (one bundle needs far less than the old three-bundle
+// call), the repair's REPAIR_CALL_TIMEOUT_MS.
 //
 // Spend reporting: `onSpend` is called with the running total every time it
 // changes, so the caller can persist spend even if this function throws later.
 //
 // Aborted attempts: generateJson only reports usage (onAttempt) when the model
 // call returns. A call aborted by its timeout (or failing mid-flight) may still
-// be billed, so every started-but-unreported attempt adds an ESTIMATED
-// input-only cost to the run (never to token_usage, which stays exact-only).
+// be billed, so every started-but-unreported attempt adds an ESTIMATED cost to
+// the run — the prompt's input estimate plus the attempt's full
+// maxOutputTokens at the output rate (a deliberate over-estimate that keeps
+// the cost cap honest). Never recorded in token_usage, which stays exact-only.
 import { anthropic } from '@ai-sdk/anthropic'
 import type { LanguageModelUsage, ModelMessage } from 'ai'
 import { generateJson, type GenerateJsonOptions } from '@/lib/content/json-generation'
@@ -28,29 +31,31 @@ import { buildCachedPartsMessages, extractCacheUsage, type DynamicPart } from '@
 import { DESIGN_MODEL, GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
 import { estimateCostUsd } from '@/lib/content/token-pricing'
 import { recordTokenUsage } from '@/lib/content/token-usage'
-import { DESIGN_SYSTEM_PROMPT } from './brief'
+import { DESIGN_SYSTEM_PROMPT, type PriorConcept } from './brief'
 import { parseConceptsEnvelope, validateConceptBundle, type ConceptContext, type ValidConcept } from './concept-validate'
-import { findNearDuplicates, isNearDuplicate } from './distinctness'
+import { isNearDuplicate } from './distinctness'
 
 // Cap for the first concept call's attempts; the actual timeout is dynamic.
-export const FIRST_ATTEMPT_CAP_MS = 500_000
+export const FIRST_ATTEMPT_CAP_MS = 300_000
 // Cap for the repair call; the actual timeout is dynamic (see header).
 export const REPAIR_CALL_TIMEOUT_MS = 150_000
 export const MIN_REPAIR_TIMEOUT_MS = 90_000
 export const DEADLINE_SAFETY_MS = 20_000
 // Rough input-token cost of one ≤1568 px image part, for aborted-attempt estimates.
 export const ESTIMATED_TOKENS_PER_IMAGE = 1_600
-const CONCEPT_OUTPUT_TOKENS = 32_000
-const REPAIR_OUTPUT_TOKENS = 24_000
+// One bundle per call (thinking tokens count against this too).
+export const CONCEPT_OUTPUT_TOKENS = 16_000
+export const REPAIR_OUTPUT_TOKENS = 16_000
 const MAX_ERRORS_QUOTED = 8
 const MAX_ERROR_CHARS = 200
 
 export type StopReason = 'cost_cap' | 'deadline' | 'no_output'
 
-export type GenerateConceptsArgs = {
+export type GenerateConceptArgs = {
   prompt: { staticPrefix: string; parts: DynamicPart[] }
   context: ConceptContext
-  conceptCount: number
+  // Concepts this run already accepted: the new one must not near-duplicate any.
+  priors: PriorConcept[]
   costSoFarUsd: number
   costCapUsd: number
   deadline: number // epoch ms by which every model call must have finished
@@ -60,30 +65,34 @@ export type GenerateConceptsArgs = {
   onSpend?: (totalUsd: number) => void
 }
 
-export type GeneratedConcepts = {
-  concepts: ValidConcept[]
-  rejected: { errors: string[] }[]
-  // Total run cost of this generation: exact (recorded) usage + estimatedUsd.
-  // The orchestrator adds this whole figure to design_runs.cost_usd.
+export type GeneratedConcept = {
+  concept: ValidConcept | null
+  // Why the concept is unusable (validation / distinctness, incl. "after
+  // repair: …"). Empty when a concept came back, or when there was no answer.
+  errors: string[]
+  // Total run cost of this call: exact (recorded) usage + estimatedUsd.
   costUsd: number
-  // The part of costUsd that is an input-only estimate for attempts that were
-  // started but never reported usage (aborted / failed mid-flight). Not in token_usage.
+  // The part of costUsd that is an estimate for attempts that were started but
+  // never reported usage (aborted / failed mid-flight). Not in token_usage.
   estimatedUsd: number
   notes: string[]
+  // null when a concept came back; otherwise why not (a budget veto, or no
+  // usable output).
   stoppedReason: StopReason | null
 }
 
 type Slot = { concept: ValidConcept | null; errors: string[] }
 
-// One generateJson call's attempt bookkeeping.
-type CallTracker = { started: number; accounted: number; estimated: number; estimateUsd: number }
+// One generateJson call's attempt bookkeeping: the estimate of every started
+// attempt, in order; the first `accounted + estimated` of them are settled.
+type CallTracker = { started: number[]; accounted: number; estimated: number; inputUsd: number }
 
 type Plan = { ok: true; timeoutMs: number } | { ok: false; reason: StopReason }
 
-// Input-only estimate for one attempt of a call: ~4 chars per token of prompt
-// text (system + every text part / string turn) + a flat cost per image part,
+// Input estimate for one attempt of a call: ~4 chars per token of prompt text
+// (system + every text part / string turn) + a flat cost per image part,
 // priced at the model's uncached input rate.
-function estimateAttemptUsd(system: string, messages: ModelMessage[]): number {
+function estimateInputUsd(system: string, messages: ModelMessage[]): number {
   let chars = system.length
   let images = 0
   for (const msg of messages) {
@@ -100,7 +109,13 @@ function estimateAttemptUsd(system: string, messages: ModelMessage[]): number {
   return estimateCostUsd(DESIGN_MODEL, tokens, 0)
 }
 
-export async function generateConcepts(args: GenerateConceptsArgs): Promise<GeneratedConcepts> {
+const clipErrors = (errors: string[]): string =>
+  errors
+    .slice(0, MAX_ERRORS_QUOTED)
+    .map((e) => e.slice(0, MAX_ERROR_CHARS))
+    .join('; ')
+
+export async function generateConcept(args: GenerateConceptArgs): Promise<GeneratedConcept> {
   const now = args.now ?? Date.now
   const state: { spent: number; estimated: number; stop: StopReason | null } = { spent: 0, estimated: 0, stop: null }
   const notes: string[] = []
@@ -115,14 +130,14 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
 
   // Charge the estimate for every started attempt that never reported usage.
   const reconcile = (tracker: CallTracker): void => {
-    const unaccounted = tracker.started - tracker.accounted - tracker.estimated
-    if (unaccounted <= 0) return
-    const usd = unaccounted * tracker.estimateUsd
-    tracker.estimated += unaccounted
+    const unsettled = tracker.started.slice(tracker.accounted + tracker.estimated)
+    if (unsettled.length === 0) return
+    const usd = unsettled.reduce((sum, v) => sum + v, 0)
+    tracker.estimated += unsettled.length
     state.spent += usd
     state.estimated += usd
     args.onSpend?.(state.spent)
-    console.warn(`[design-concept] aborted attempt — estimated input cost $${usd.toFixed(4)} added to run`)
+    console.warn(`[design-concept] aborted attempt — estimated cost $${usd.toFixed(4)} (input + max output) added to run`)
   }
 
   const account = (tracker: CallTracker) => async (usage: LanguageModelUsage | undefined): Promise<void> => {
@@ -158,7 +173,7 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
       capMs: number
     }
   ): Promise<unknown | null> => {
-    const tracker: CallTracker = { started: 0, accounted: 0, estimated: 0, estimateUsd: estimateAttemptUsd(DESIGN_SYSTEM_PROMPT, messages) }
+    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, inputUsd: estimateInputUsd(DESIGN_SYSTEM_PROMPT, messages) }
     const { capMs, ...budgets } = cfg
     const opts: GenerateJsonOptions = {
       model,
@@ -168,7 +183,7 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
       timeoutMs: capMs,
       // generateJson reads opts.timeoutMs when it starts each attempt, AFTER
       // this gate — so setting it here gives the attempt its dynamic timeout.
-      beforeAttempt: () => {
+      beforeAttempt: (attempt) => {
         reconcile(tracker)
         const p = plan(capMs)
         if (!p.ok) {
@@ -176,7 +191,8 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
           return false
         }
         opts.timeoutMs = p.timeoutMs
-        tracker.started++
+        const maxOutputTokens = attempt === 2 ? (budgets.retryBudget ?? budgets.firstBudget) : budgets.firstBudget
+        tracker.started.push(tracker.inputUsd + estimateCostUsd(DESIGN_MODEL, 0, maxOutputTokens))
         return true
       },
       onAttempt: account(tracker),
@@ -189,20 +205,34 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
     }
   }
 
-  const validate = (raw: unknown): Slot => {
-    if (raw === undefined) return { concept: null, errors: ['missing — the answer had fewer concepts than asked'] }
+  // Validation + distinctness against every already-accepted concept.
+  const check = (raw: unknown, prefix = ''): Slot => {
+    if (raw === undefined) return { concept: null, errors: [`${prefix}missing — the answer had no concept`] }
     const v = validateConceptBundle(raw, args.context)
-    return v.ok ? { concept: v.concept, errors: [] } : { concept: null, errors: v.errors }
+    if (!v.ok) return { concept: null, errors: v.errors.map((e) => `${prefix}${e}`) }
+    const clash = args.priors.find((p) => isNearDuplicate(p.bundle, v.concept.bundle))
+    if (clash) {
+      return {
+        concept: null,
+        errors: [
+          `${prefix}too similar to concept ${clash.position + 1} ("${clash.bundle.name.slice(0, 60)}") — change the palette direction (primary/action) or at least two of fonts, tokens and treatments`,
+        ],
+      }
+    }
+    return { concept: v.concept, errors: [] }
   }
 
-  const done = (concepts: ValidConcept[], rejected: { errors: string[] }[], stoppedReason: StopReason | null): GeneratedConcepts => ({
-    concepts,
-    rejected,
-    costUsd: state.spent,
-    estimatedUsd: state.estimated,
-    notes,
-    stoppedReason,
-  })
+  const done = (slot: Slot): GeneratedConcept => {
+    if (slot.concept) for (const n of slot.concept.notes) notes.push(`${slot.concept.bundle.name}: ${n}`)
+    return {
+      concept: slot.concept,
+      errors: slot.concept ? [] : slot.errors,
+      costUsd: state.spent,
+      estimatedUsd: state.estimated,
+      notes,
+      stoppedReason: slot.concept ? null : (state.stop ?? 'no_output'),
+    }
+  }
 
   const messages = buildCachedPartsMessages(args.prompt.staticPrefix, args.prompt.parts, { ttl: '5m', cacheDynamic: true })
   const first = await call(messages, {
@@ -210,71 +240,40 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
     retryBudget: CONCEPT_OUTPUT_TOKENS,
     providerOptions: GENERATION_PROVIDER_OPTIONS,
     retryProviderOptions: providerOptionsForAttempt(3),
-    label: 'design-concepts',
+    label: 'design-concept',
     capMs: FIRST_ATTEMPT_CAP_MS,
   })
   const raws = first === null ? null : parseConceptsEnvelope(first)
-  if (!raws) return done([], [], state.stop ?? 'no_output')
+  if (!raws) return done({ concept: null, errors: [] })
 
-  const slots: Slot[] = Array.from({ length: args.conceptCount }, (_, i) => validate(raws[i]))
+  const slot = check(raws[0])
+  if (slot.concept) return done(slot)
 
-  // Distinctness among the valid ones: the later concept of a pair is repaired.
-  const validIdx = slots.flatMap((s, i) => (s.concept ? [i] : []))
-  for (const { keep, drop } of findNearDuplicates(validIdx.map((i) => (slots[i].concept as ValidConcept).bundle))) {
-    slots[validIdx[drop]] = {
-      concept: null,
-      errors: [`too similar to concept ${validIdx[keep] + 1} — change the palette direction (primary/action) or at least two of fonts, tokens and treatments`],
-    }
-  }
-
-  const failing = slots.flatMap((s, i) => (s.concept ? [] : [i]))
-  const repairPlan = failing.length > 0 ? plan(REPAIR_CALL_TIMEOUT_MS) : null
-  if (repairPlan && !repairPlan.ok) state.stop = repairPlan.reason
-  if (failing.length > 0 && repairPlan?.ok) {
-    const request = [
-      'Some concepts in your answer cannot be used. Replace ONLY these, keeping every rule above:',
-      ...failing.map((i) => {
-        const raw = raws[i]
-        const name = raw && typeof raw === 'object' && typeof (raw as { name?: unknown }).name === 'string' ? ` ("${(raw as { name: string }).name.slice(0, 60)}")` : ''
-        const errs = slots[i].errors.slice(0, MAX_ERRORS_QUOTED).map((e) => e.slice(0, MAX_ERROR_CHARS)).join('; ')
-        return `- Concept ${i + 1}${name}: ${errs}`
-      }),
-      `Return ONLY JSON: {"concepts":[ exactly ${failing.length} replacement concept(s), in the order listed ]}`,
-    ].join('\n')
-    const repairMessages: ModelMessage[] = [
-      ...messages,
-      { role: 'assistant', content: JSON.stringify(first) },
-      { role: 'user', content: request },
-    ]
-    const repaired = await call(repairMessages, {
-      firstBudget: REPAIR_OUTPUT_TOKENS,
-      providerOptions: providerOptionsForAttempt(2),
-      label: 'design-concepts-repair',
-      capMs: REPAIR_CALL_TIMEOUT_MS,
-    })
-    const fixes = repaired === null ? [] : (parseConceptsEnvelope(repaired) ?? [])
-    failing.forEach((slotIndex, k) => {
-      const fixed = validate(fixes[k])
-      if (!fixed.concept) {
-        slots[slotIndex] = { concept: null, errors: [...slots[slotIndex].errors, ...fixed.errors.map((e) => `after repair: ${e}`)] }
-        return
-      }
-      const clash = slots.findIndex((s, j) => j !== slotIndex && s.concept && isNearDuplicate(s.concept.bundle, (fixed.concept as ValidConcept).bundle))
-      slots[slotIndex] = clash === -1 ? fixed : { concept: null, errors: [`after repair: still too similar to concept ${clash + 1}`] }
-    })
-  } else if (failing.length > 0) {
+  const repairPlan = plan(REPAIR_CALL_TIMEOUT_MS)
+  if (!repairPlan.ok) {
+    state.stop = repairPlan.reason
     notes.push(
-      state.stop === 'cost_cap'
+      repairPlan.reason === 'cost_cap'
         ? 'Skipped the repair pass — the run hit its cost cap.'
         : 'Skipped the repair pass — not enough time left in this step.'
     )
+    return done(slot)
   }
 
-  const concepts = slots.flatMap((s) => (s.concept ? [s.concept] : []))
-  for (const c of concepts) for (const n of c.notes) notes.push(`${c.bundle.name}: ${n}`)
-  return done(
-    concepts,
-    slots.flatMap((s) => (s.concept ? [] : [{ errors: s.errors }])),
-    concepts.length > 0 ? null : (state.stop ?? 'no_output')
-  )
+  const raw = raws[0]
+  const name = raw && typeof raw === 'object' && typeof (raw as { name?: unknown }).name === 'string' ? ` ("${(raw as { name: string }).name.slice(0, 60)}")` : ''
+  const request = [
+    `Your concept${name} cannot be used: ${clipErrors(slot.errors)}`,
+    'Replace it, keeping every rule above.',
+    'Return ONLY JSON: {"concepts":[ exactly 1 replacement concept ]}',
+  ].join('\n')
+  const repaired = await call([...messages, { role: 'assistant', content: JSON.stringify(first) }, { role: 'user', content: request }], {
+    firstBudget: REPAIR_OUTPUT_TOKENS,
+    providerOptions: providerOptionsForAttempt(2),
+    label: 'design-concept-repair',
+    capMs: REPAIR_CALL_TIMEOUT_MS,
+  })
+  const fixes = repaired === null ? [] : (parseConceptsEnvelope(repaired) ?? [])
+  const fixed = check(fixes[0], 'after repair: ')
+  return done(fixed.concept ? fixed : { concept: null, errors: [...slot.errors, ...fixed.errors] })
 }

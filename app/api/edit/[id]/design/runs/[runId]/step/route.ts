@@ -2,15 +2,16 @@ import { after, NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { isUuid } from '@/lib/design/input-validation'
-import { ActiveRunExistsError, getRun, listConcepts, resetConcepts, transitionRun } from '@/lib/design/run-store'
+import { ActiveRunExistsError, deleteConcepts, getRun, listConcepts, resetConcepts, transitionRun } from '@/lib/design/run-store'
 import { planRetry } from '@/lib/design/run-state'
 import { chainOrFail, failActiveRun } from '@/lib/design/run-trigger'
 import { RUN_ACTIVE_STATUSES } from '@/lib/design/studio-types'
 import { authorizeStep, type StepTarget } from '../../../_step-auth'
 
 export const runtime = 'nodejs'
-// Generation (one Opus call + one repair) is budgeted to finish by 540 s
-// (GENERATE_BUDGET_MS); a render step is two warm renders (~5–20 s).
+// A generate step (ONE concept: one Opus call + one repair) is budgeted to
+// finish by 540 s (GENERATE_BUDGET_MS); a render step is two warm renders
+// (~5–20 s).
 export const maxDuration = 600
 
 const WORKER_UNAVAILABLE = 'The design worker is unavailable right now — press Retry.'
@@ -61,6 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (!plan.ok) return NextResponse.json({ error: plan.reason }, { status: 409 })
         const moved = await transitionRun(db, run.id, ['error'], { status: plan.status, stage: plan.stage, error: null })
         if (!moved) return NextResponse.json({ error: 'The run changed — refresh and try again.' }, { status: 409 })
+        await deleteConcepts(db, run.id, plan.deleteConceptIds)
         await resetConcepts(db, run.id, plan.resetConceptIds)
       } else if (!(RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)) {
         return NextResponse.json({ error: 'This run has finished — start a new one.' }, { status: 409 })

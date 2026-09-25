@@ -4,12 +4,14 @@ import { CID, RID, SID, makeConceptRow, makeRunRow } from './__fixtures__/rows'
 import { VALID } from './__fixtures__/valid-bundle'
 import {
   ActiveRunExistsError,
+  claimConceptPosition,
   claimConceptRender,
   createRun,
+  deleteConcepts,
   finishConceptRender,
   getRun,
-  insertConcepts,
   resetConcepts,
+  settleConceptGeneration,
   transitionRun,
 } from './run-store'
 import { DEFAULT_CAPABILITIES } from './run-types'
@@ -67,11 +69,49 @@ describe('run-store', () => {
     await expect(transitionRun(f.client, RID, ['error'], { status: 'queued' })).rejects.toBeInstanceOf(ActiveRunExistsError)
   })
 
-  it('insertConcepts writes bundle + initial_bundle per row', async () => {
-    const f = fakeSupabase({ design_concepts: [{ data: [makeConceptRow()] }] })
-    await insertConcepts(f.client, [{ runId: RID, sessionId: SID, position: 0, status: 'pending', bundle: VALID, error: null }])
-    const rows = f.opsFor('design_concepts')[0][1] as Record<string, unknown>[]
-    expect(rows[0]).toMatchObject({ run_id: RID, session_id: SID, position: 0, status: 'pending', bundle: VALID, initial_bundle: VALID })
+  it('claimConceptPosition inserts a bundle-less generating row for that position', async () => {
+    const f = fakeSupabase({ design_concepts: [{ data: makeConceptRow({ status: 'generating', bundle: null }) }] })
+    const row = await claimConceptPosition(f.client, { runId: RID, sessionId: SID, position: 1 })
+    expect(row?.status).toBe('generating')
+    const ops = f.opsFor('design_concepts')
+    expect(ops[0]).toEqual(['insert', { run_id: RID, session_id: SID, position: 1, status: 'generating', bundle: null, initial_bundle: null, error: null }])
+  })
+
+  it('claimConceptPosition returns null when that position is already claimed (unique run_id, position)', async () => {
+    const f = fakeSupabase({ design_concepts: [{ error: { code: '23505', message: 'duplicate key value violates unique constraint' } }] })
+    expect(await claimConceptPosition(f.client, { runId: RID, sessionId: SID, position: 0 })).toBeNull()
+  })
+
+  it('claimConceptPosition throws on any other DB error', async () => {
+    const f = fakeSupabase({ design_concepts: [{ error: { code: '23514', message: 'check violation' } }] })
+    await expect(claimConceptPosition(f.client, { runId: RID, sessionId: SID, position: 3 })).rejects.toThrow('claimConceptPosition')
+  })
+
+  it('settleConceptGeneration stores an accepted bundle (+ initial_bundle), only from generating', async () => {
+    const f = fakeSupabase({ design_concepts: [{ data: makeConceptRow() }] })
+    await settleConceptGeneration(f.client, CID, { status: 'pending', bundle: VALID })
+    const ops = f.opsFor('design_concepts')
+    expect(ops[0][1]).toMatchObject({ status: 'pending', bundle: VALID, initial_bundle: VALID, error: null })
+    expect(ops).toContainEqual(['eq', 'id', CID])
+    expect(ops).toContainEqual(['eq', 'status', 'generating'])
+  })
+
+  it('settleConceptGeneration stores a rejection with our own error text', async () => {
+    const f = fakeSupabase({ design_concepts: [{ data: makeConceptRow({ status: 'rejected' }) }] })
+    await settleConceptGeneration(f.client, CID, { status: 'rejected', error: 'x'.repeat(1500) })
+    const update = f.opsFor('design_concepts')[0][1] as { status: string; bundle: unknown; error: string }
+    expect(update.status).toBe('rejected')
+    expect(update.bundle).toBeNull()
+    expect(update.error).toHaveLength(1000)
+  })
+
+  it('deleteConcepts is scoped to the run and a no-op for an empty list', async () => {
+    const empty = fakeSupabase({})
+    await deleteConcepts(empty.client, RID, [])
+    expect(empty.queries).toHaveLength(0)
+    const f = fakeSupabase({ design_concepts: [{ data: null }] })
+    await deleteConcepts(f.client, RID, [CID])
+    expect(f.opsFor('design_concepts')).toEqual([['delete'], ['eq', 'run_id', RID], ['in', 'id', [CID]]])
   })
 
   it('claimConceptRender only claims a pending concept of this run', async () => {
