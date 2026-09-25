@@ -1,25 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
-import { fileTypeFromBuffer } from 'file-type'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { createInput, type DesignInputRow } from '@/lib/design/store'
-import { designStoragePath, removeDesignPaths, signDesignPaths, storeDesignImage, toWebp } from '@/lib/design/storage'
+import { designStoragePath, removeDesignPaths, signDesignPaths, storeDesignImage } from '@/lib/design/storage'
+import { readImageForm, toValidatedWebp } from '@/lib/design/upload-image'
 import { parseOptionalText } from '@/lib/design/input-validation'
 import { toInputDto } from '@/lib/design/studio-dto'
 import { INPUT_LABEL_MAX, INPUT_NOTES_MAX } from '@/lib/design/studio-types'
 import { requireDesignAdmin } from '../../_design'
 
 export const runtime = 'nodejs'
-
-// Under Vercel's ~4.5 MB request-body limit so our JSON 413 (with a clear
-// message) wins over the platform's opaque non-JSON 413 whenever reachable.
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
-// Multipart framing (boundary markers, headers) adds a little over the raw
-// file size — 64 KB is generous headroom for a single-file form.
-const MULTIPART_OVERHEAD_BYTES = 64 * 1024
-// Magic-byte-verifiable rasters only. SVG has no magic bytes and can carry script.
-const UPLOAD_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 
 // POST multipart { file, label?, notes? } — an inspiration image. Validated
 // (size, magic bytes) and re-encoded to WebP (strips metadata, caps the long
@@ -31,41 +22,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const ctx = await requireDesignAdmin(id)
   if (ctx instanceof NextResponse) return ctx
 
-  // Cheap rejection of an oversized body before buffering the whole
-  // multipart payload into memory via req.formData().
-  const contentLength = Number(req.headers.get('content-length'))
-  if (contentLength > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES) {
-    return NextResponse.json({ error: 'Images must be 4 MB or smaller.' }, { status: 413 })
-  }
+  const read = await readImageForm(req)
+  if (!read.ok) return NextResponse.json({ error: read.error }, { status: read.status })
 
-  let form: FormData
-  try {
-    form = await req.formData()
-  } catch {
-    return NextResponse.json({ error: 'Expected multipart/form-data.' }, { status: 400 })
-  }
-
-  const file = form.get('file')
-  if (!(file instanceof Blob)) return NextResponse.json({ error: 'An image file is required.' }, { status: 400 })
-  if (file.size === 0) return NextResponse.json({ error: 'The file is empty.' }, { status: 400 })
-  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: 'Images must be 4 MB or smaller.' }, { status: 413 })
-
-  const label = parseOptionalText(form.get('label'), INPUT_LABEL_MAX, 'Label')
+  const label = parseOptionalText(read.form.get('label'), INPUT_LABEL_MAX, 'Label')
   if (!label.ok) return NextResponse.json({ error: label.reason }, { status: 400 })
-  const notes = parseOptionalText(form.get('notes'), INPUT_NOTES_MAX, 'Notes')
+  const notes = parseOptionalText(read.form.get('notes'), INPUT_NOTES_MAX, 'Notes')
   if (!notes.ok) return NextResponse.json({ error: notes.reason }, { status: 400 })
 
-  const bytes = Buffer.from(await file.arrayBuffer())
-  const type = await fileTypeFromBuffer(bytes)
-  if (!type || !UPLOAD_MIMES.has(type.mime)) {
-    return NextResponse.json({ error: 'Upload a PNG, JPEG or WebP image.' }, { status: 415 })
-  }
-  let webp: Buffer
-  try {
-    webp = (await toWebp(bytes)).webp
-  } catch {
-    return NextResponse.json({ error: 'That image could not be read.' }, { status: 415 })
-  }
+  const image = await toValidatedWebp(read.file)
+  if (!image.ok) return NextResponse.json({ error: image.error }, { status: image.status })
+  const webp = image.webp
 
   const inputId = randomUUID()
   const path = designStoragePath(ctx.sessionId, 'inputs', `${inputId}.webp`)

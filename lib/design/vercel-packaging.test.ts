@@ -30,6 +30,8 @@ describe('Vercel packaging (R7)', () => {
     'app/api/edit/[id]/design/concepts/[cid]/preview/route.ts',
     'app/api/edit/[id]/design/versions/[vid]/restore/route.ts',
     'app/api/edit/[id]/design/versions/import/route.ts',
+    'app/api/edit/[id]/design/attachments/route.ts',
+    'app/api/edit/[id]/design/attachments/[attachmentId]/route.ts',
   ])('%s never statically imports a native-backed module', (file) => {
     const src = readFileSync(path.join(process.cwd(), file), 'utf-8')
     expect(src).not.toMatch(HEAVY)

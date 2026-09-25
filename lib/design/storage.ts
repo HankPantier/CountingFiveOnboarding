@@ -37,6 +37,14 @@ export function designStoragePath(sessionId: string, ...segments: string[]): str
   return `design/${sessionId}/${segments.join('/')}`
 }
 
+// Chat attachments (P5): design/{sid}/attachments/{uuid}.webp. Always built
+// from the GATED session id, so a client-supplied id can never address
+// another session's object.
+export function attachmentStoragePath(sessionId: string, attachmentId: string): string {
+  if (!UUID_RE.test(attachmentId)) throw new Error('attachmentStoragePath: invalid attachment id')
+  return designStoragePath(sessionId, 'attachments', `${attachmentId.toLowerCase()}.webp`)
+}
+
 // upsert: true only for Design Studio run renders, whose names are
 // deterministic per concept + iteration (a retried render overwrites its own
 // object instead of orphaning one).
