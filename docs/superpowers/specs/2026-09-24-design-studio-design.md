@@ -227,6 +227,13 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - Rubric scored 1–5: brandFit, distinctiveness, hierarchy, legibility, consistency, craft.
 - Pass rule: all ≥3, mean ≥3.8, distinctiveness ≥4.
 - UI: CritiqueView and BeforeAfter.
+- **Accepted deviations (recorded 2026-09-25):**
+  - **No axe-core.** The renderer's CSP blocks a script tag, and axe would be roughly 0.5 MB evaluated on every render. Our own in-page checks run over CDP instead: WCAG AA contrast (4.5:1 normal, 3:1 large text), overflow at 390 px, and hidden, zero-size or off-screen `[data-block]` elements. Text on an image, or in a colour that can't be parsed, counts as unverified and is not failed.
+  - **Gates compare against the current site.** A failure blocks apply only if the current site doesn't already have it. The diff uses the full, uncapped set of contrast failure keys. If any viewport went unmeasured, apply is allowed with a warning per viewport.
+  - **Default cost cap is $6 per run** (user decision). `DEFAULT_RUN_COST_CAP_USD` is written explicitly when a run is created, and the database default of 4 is unused. A typical run costs about $2–5.
+  - **Revise calls are recorded as `design_concept`;** critique calls are recorded as `design_critique`.
+  - **One model call per step invocation** (render, critique or revise). Concepts loop one at a time. Loop state and metrics live in `design_concepts.critique`. Claims are compare-and-set on status plus `updated_at`.
+  - **Retry resumes only the first concept that was mid-loop,** and parks the others as `pending` with their review kept.
 
 ### P5 — Revision chat with vision
 - `design/chat` route on Sonnet 5, `chatProviderOptions('medium')`, cached stable system block plus a dynamic bundle block.
