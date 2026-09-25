@@ -234,6 +234,7 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
   - **Revise calls are recorded as `design_concept`;** critique calls are recorded as `design_critique`.
   - **One model call per step invocation** (render, critique or revise). Concepts loop one at a time. Loop state and metrics live in `design_concepts.critique`. Claims are compare-and-set on status plus `updated_at`.
   - **Retry resumes only the first concept that was mid-loop,** and parks the others as `pending` with their review kept.
+  - **Revise gets a CSS budget and one size-only repair.** The revise prompt's per-call part lists each block's line count against its cap. A revision rejected only for exceeding a size cap gets exactly one repair turn, under the same cost, deadline and floor rules as P3's repair. The live E2E showed revisions otherwise overshooting the 60-line block cap.
 
 ### P5 — Revision chat with vision
 - `design/chat` route on Sonnet 5, `chatProviderOptions('medium')`, cached stable system block plus a dynamic bundle block.
