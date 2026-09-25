@@ -23,10 +23,15 @@ export async function triggerDesignStep(sessionId: string, runId: string): Promi
     console.warn('[design-run] step chain skipped — NEXT_PUBLIC_APP_URL or CRON_SECRET missing')
     return false
   }
+  const headers: Record<string, string> = { Authorization: `Bearer ${cronSecret}` }
+  // Deployment-Protected previews reject the self-call without Vercel's
+  // automation bypass. Never logged.
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+  if (bypass) headers['x-vercel-protection-bypass'] = bypass
   try {
     const res = await fetch(designStepUrl(baseUrl, sessionId, runId), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${cronSecret}` },
+      headers,
       signal: AbortSignal.timeout(TRIGGER_TIMEOUT_MS),
     })
     if (!res.ok) {

@@ -34,6 +34,7 @@ vi.mock('@/lib/design/apply-bundle', () => ({ applyBundleToDraft: (a: unknown) =
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
 vi.mock('@/lib/design/store', async (orig) => ({ ...((await orig()) as object), insertVersion: (...a: unknown[]) => m.insertVersion(...a) }))
 
+import { VersionConflictError } from '@/lib/design/store'
 import { POST } from './route'
 
 const SHOT = { viewport: 'desktop', path: `design/${SID}/runs/${RID}/concept-0-desktop-aaaaaaaa.webp`, width: 1440, height: 900 }
@@ -168,6 +169,24 @@ describe('POST /design/concepts/[cid]/apply', () => {
     const res = await call()
     expect(res.status).toBe(409)
     expect((await res.json()).stale).toBe(true)
+  })
+
+  it('says the concept WAS applied when recording the version conflicts', async () => {
+    m.insertVersion.mockRejectedValue(new VersionConflictError(SID))
+    const res = await call()
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('The design was applied to the draft, but its version number could not be recorded — refresh the Studio.')
+  })
+
+  it('says the concept WAS applied when recording the version fails, without leaking DB text', async () => {
+    m.insertVersion.mockRejectedValue(new Error('insert design_versions: permission denied for table design_versions'))
+    const res = await call()
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body).toEqual({ error: 'The design was applied to the draft, but its version could not be recorded — refresh the Studio.' })
+    expect(JSON.stringify(body)).not.toContain('design_versions')
+    expect(console.error).toHaveBeenCalled()
+    expect(m.apply).toHaveBeenCalledTimes(1)
   })
 
   it('hides raw errors behind a generic 500', async () => {

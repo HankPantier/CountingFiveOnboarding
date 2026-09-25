@@ -27,6 +27,9 @@ interface ApplyConceptBody {
 
 type Params = { params: Promise<{ id: string; cid: string }> }
 
+const APPLIED_VERSION_NUMBER_UNRECORDED = 'The design was applied to the draft, but its version number could not be recorded — refresh the Studio.'
+const APPLIED_VERSION_UNRECORDED = 'The design was applied to the draft, but its version could not be recorded — refresh the Studio.'
+
 // POST — apply a ready concept to the DRAFT branch as one atomic commit, then
 // mirror the palette/fonts into the MBP and record a `concept` version.
 // Gates, in order: stored bundle re-parsed (zod) → template capability tier
@@ -119,17 +122,29 @@ export async function POST(req: Request, { params }: Params) {
       appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs)
     }
 
-    const version = await insertVersion(db, {
-      sessionId: ctx.sessionId,
-      source: 'concept',
-      bundle: { ...bundle, css: result.css },
-      summary: `Concept “${bundle.name}”${removeLegacy ? ' — legacy overrides removed' : ''}`.slice(0, 500),
-      appliedCommitSha: result.commitSha,
-      appliedBlobs,
-      conceptId: concept.id,
-      createdBy: ctx.adminId,
-      screenshots: parseScreenshots(concept.screenshots),
-    })
+    // The draft commit has landed: any failure from here on must say so, never
+    // a generic "failed to apply" that invites a second apply.
+    let version: Awaited<ReturnType<typeof insertVersion>>
+    try {
+      version = await insertVersion(db, {
+        sessionId: ctx.sessionId,
+        source: 'concept',
+        bundle: { ...bundle, css: result.css },
+        summary: `Concept “${bundle.name}”${removeLegacy ? ' — legacy overrides removed' : ''}`.slice(0, 500),
+        appliedCommitSha: result.commitSha,
+        appliedBlobs,
+        conceptId: concept.id,
+        createdBy: ctx.adminId,
+        screenshots: parseScreenshots(concept.screenshots),
+      })
+    } catch (err) {
+      if (err instanceof VersionConflictError) {
+        return NextResponse.json({ error: APPLIED_VERSION_NUMBER_UNRECORDED }, { status: 409 })
+      }
+      // Logged server-side (raw DB text never reaches the client); same 409
+      // shape as the conflict so the Apply dialog shows the message as-is.
+      return internalError('design:concept:apply', err, APPLIED_VERSION_UNRECORDED, 409)
+    }
     try {
       await markRunApplied(db, concept.run_id)
     } catch (err) {
@@ -146,12 +161,6 @@ export async function POST(req: Request, { params }: Params) {
   } catch (err) {
     if (err instanceof StaleShaError) {
       return NextResponse.json({ error: 'The theme changed while applying — refresh the Studio and try again.', stale: true }, { status: 409 })
-    }
-    if (err instanceof VersionConflictError) {
-      return NextResponse.json(
-        { error: 'The design was applied to the draft, but its version number could not be recorded — refresh the Studio.' },
-        { status: 409 }
-      )
     }
     return internalError('design:concept:apply', err, 'Failed to apply the concept')
   }

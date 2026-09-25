@@ -43,6 +43,30 @@ describe('triggerDesignStep', () => {
     expect(init.method).toBe('POST')
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer s3cret')
   })
+  it('adds the Vercel protection-bypass header only when the secret is set', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    fetchMock.mockResolvedValue(new Response(null, { status: 202 }))
+
+    vi.stubEnv('VERCEL_AUTOMATION_BYPASS_SECRET', '')
+    await triggerDesignStep(SID, RID)
+    expect(new Headers((fetchMock.mock.calls[0] as [string, RequestInit])[1].headers).has('x-vercel-protection-bypass')).toBe(false)
+
+    vi.stubEnv('VERCEL_AUTOMATION_BYPASS_SECRET', 'byp4ss')
+    await triggerDesignStep(SID, RID)
+    const headers = new Headers((fetchMock.mock.calls[1] as [string, RequestInit])[1].headers)
+    expect(headers.get('x-vercel-protection-bypass')).toBe('byp4ss')
+    expect(headers.get('authorization')).toBe('Bearer s3cret')
+  })
+  it('never logs the bypass secret when the chain fails', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    vi.stubEnv('VERCEL_AUTOMATION_BYPASS_SECRET', 'byp4ss')
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }))
+    expect(await triggerDesignStep(SID, RID)).toBe(false)
+    const logged = [...vi.mocked(console.warn).mock.calls, ...vi.mocked(console.error).mock.calls].flat().map(String).join(' ')
+    expect(logged).not.toContain('byp4ss')
+  })
   it('returns false on a non-2xx', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
     vi.stubEnv('CRON_SECRET', 's3cret')
