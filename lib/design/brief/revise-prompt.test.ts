@@ -4,7 +4,8 @@ import { DEFAULT_CAPABILITIES } from '../run-types'
 import type { CritiqueRecord } from '../critique'
 import { CSS_RULES_REMINDER } from './contract'
 import { buildConceptPrompt, buildSharedParts, buildStaticPrefix, type SharedPromptArgs } from './index'
-import { buildRevisePrompt, formatCritique, type RevisePromptArgs } from './revise-prompt'
+import { buildRevisePrompt, formatCritique, formatCssBudget, type RevisePromptArgs } from './revise-prompt'
+import { MAX_GLOBAL_BYTES, MAX_GLOBAL_LINES, MAX_TARGET_BYTES, MAX_TARGET_LINES } from '../css-budget'
 
 const SHARED: SharedPromptArgs = {
   caps: DEFAULT_CAPABILITIES,
@@ -72,5 +73,23 @@ describe('buildRevisePrompt', () => {
     const f = formatCritique(CRIT)
     expect(f.split('\n')[0]).toBe('Scores (mean 3.5; passes at every score ≥ 3, mean ≥ 3.8, distinctiveness ≥ 4):')
     expect(f).toContain('Summary: Timid.')
+  })
+  it('carries a per-call CSS budget: each fragment’s lines/bytes vs the sanitizer caps — never in the static prefix', () => {
+    const hero = Array.from({ length: 52 }, (_, i) => (i % 3 === 0 ? '[data-block="hero"] h1 {' : i % 3 === 1 ? '    margin: 0' : '}')).join('\n') + '\n[data-block="hero"] h2 {\n    margin: 0\n}'
+    const b = buildRevisePrompt({ ...ARGS, bundle: { ...VALID, css: { global: 'body {\n    margin: 0\n}', blocks: { hero } } } })
+    const budget = texts(b.parts.slice(b.sharedPartCount))
+    expect(budget).toContain('CSS BUDGET')
+    expect(budget).toContain(`- css.global: 3/${MAX_GLOBAL_LINES} lines, 22/${MAX_GLOBAL_BYTES.toLocaleString('en-US')} bytes`)
+    expect(budget).toMatch(new RegExp(`- css\\.blocks\\.hero: 55/${MAX_TARGET_LINES} lines, [\\d,]+/${MAX_TARGET_BYTES.toLocaleString('en-US')} bytes — near the cap`))
+    expect(budget).toContain(`any other block: ${MAX_TARGET_LINES} lines`)
+    expect(budget).toContain('tighten or drop rules rather than add them')
+    expect(b.staticPrefix).not.toContain('CSS BUDGET')
+    expect(b.staticPrefix).toBe(buildStaticPrefix(DEFAULT_CAPABILITIES)) // byte-stable across bundles
+    expect(b.staticPrefix).toBe(built.staticPrefix)
+    expect(b.parts.slice(0, b.sharedPartCount)).toEqual(built.parts.slice(0, built.sharedPartCount))
+  })
+  it('formatCssBudget counts lines exactly as the sanitizer does', () => {
+    expect(formatCssBudget({ blocks: { hero: VALID.css.blocks.hero } })).toContain(`- css.blocks.hero: 1/${MAX_TARGET_LINES} lines`)
+    expect(formatCssBudget({ blocks: {} })).toContain('(no CSS yet)')
   })
 })

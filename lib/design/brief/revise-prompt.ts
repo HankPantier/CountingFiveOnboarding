@@ -4,10 +4,13 @@
 // markup, admin brief; no reference images — a revision fixes the concept,
 // it doesn't restart it). Then per iteration: the run's other concepts, this
 // concept's full bundle (with its CSS), the fenced critique, the render-check
-// failures, its desktop + mobile renders and the task (round r, one concept,
-// the CSS reminder).
+// failures, its desktop + mobile renders, the CSS budget (each fragment's
+// size vs the sanitizer's caps — per call, never in the cached prefix) and the
+// task (round r, one concept, the CSS reminder).
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
+import { CSS_TARGETS } from '../css-targets'
+import { MAX_TARGET_BYTES, MAX_TARGET_LINES, countCssLines, cssByteLength, cssCaps, type CssSizeScope } from '../css-budget'
 import { PASS_MIN_DISTINCTIVENESS, PASS_MIN_MEAN, PASS_MIN_SCORE, RUBRIC_KEYS, RUBRIC_LABELS, type CritiqueRecord } from '../critique'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
@@ -40,6 +43,32 @@ function bundleForPrompt(b: DesignBundle): Omit<DesignBundle, 'schemaVersion' | 
   return levers
 }
 
+const fmt = (n: number): string => n.toLocaleString('en-US')
+
+// The bundle's CSS measured the way the sanitizer measures it, against its
+// caps. A revision with any fragment over its cap is rejected outright.
+export function formatCssBudget(css: DesignBundle['css']): string {
+  const rows: string[] = []
+  const row = (label: string, body: string, scope: CssSizeScope) => {
+    const { maxBytes, maxLines } = cssCaps(scope)
+    const lines = countCssLines(body)
+    const bytes = cssByteLength(body)
+    const tight = lines >= maxLines * 0.8 || bytes >= maxBytes * 0.8 ? ' — near the cap' : ''
+    rows.push(`- ${label}: ${lines}/${maxLines} lines, ${fmt(bytes)}/${fmt(maxBytes)} bytes${tight}`)
+  }
+  if (css.global?.trim()) row('css.global', css.global, 'global')
+  for (const key of CSS_TARGETS) {
+    const body = css.blocks[key]
+    if (body?.trim()) row(`css.blocks.${key}`, body, 'target')
+  }
+  return [
+    'CSS BUDGET — hard caps (the sanitizer rejects the whole revision if any fragment is over):',
+    ...(rows.length ? rows : ['- (no CSS yet)']),
+    `- any other block: ${MAX_TARGET_LINES} lines, ${fmt(MAX_TARGET_BYTES)} bytes each`,
+    'Stay within budget: tighten or drop rules rather than add them, and prefer editing existing rules to writing new ones. Lines are counted after the sanitizer reformats the CSS: every selector list, declaration and closing brace (incl. @media) is its own line, blank lines are dropped — one-line rules save nothing. A fragment near its cap has no room to grow.',
+  ].join('\n')
+}
+
 const image = (bytes: Uint8Array): DynamicPart => ({ type: 'image', image: bytes, mediaType: 'image/webp' })
 
 export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
@@ -49,6 +78,7 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
 
   if (args.others.length > 0) parts.push({ type: 'text', text: priorConceptsBlock(args.others) })
   parts.push({ type: 'text', text: `YOUR CONCEPT ${k} — the version to revise. Keep its direction; fix its problems.\n${JSON.stringify(bundleForPrompt(args.bundle))}` })
+  parts.push({ type: 'text', text: formatCssBudget(args.bundle.css) })
   if (args.critique) {
     parts.push({
       type: 'text',

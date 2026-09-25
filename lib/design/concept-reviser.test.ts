@@ -27,14 +27,19 @@ const args = (over: Partial<ReviseConceptArgs> = {}): ReviseConceptArgs => ({
   ...over,
 })
 let answer: unknown = null
+let queue: unknown[] = [] // per-call answers; `answer` once empty
+// 25 one-line rules → 75 lines once the sanitizer reformats them
+const OVER = Array.from({ length: 25 }, () => '[data-block="hero"] h1 { letter-spacing: -0.02em; }').join('\n')
+const OVERSIZED = { ...rawOf(REVISED), css: { blocks: { hero: OVER } } }
 
 beforeEach(() => {
   answer = { concepts: [rawOf(REVISED)] }
+  queue = []
   m.record.mockClear()
   m.generateJson.mockReset().mockImplementation(async (o: Opts) => {
     if (o.beforeAttempt && !(await o.beforeAttempt(1))) return null
     await o.onAttempt?.(USAGE, 'stop')
-    return answer
+    return queue.length ? queue.shift() : answer
   })
 })
 
@@ -70,5 +75,57 @@ describe('reviseConcept', () => {
   it('the cost cap vetoes the call', async () => {
     const r = await reviseConcept(args({ costSoFarUsd: 4 }))
     expect(r).toMatchObject({ concept: null, stoppedReason: 'cost_cap', costUsd: 0 })
+  })
+  describe('size-only repair', () => {
+    it('an over-cap revision gets exactly one repair turn (answer replayed + the exact errors) and the repaired bundle is used', async () => {
+      queue = [{ concepts: [OVERSIZED] }]
+      const r = await reviseConcept(args())
+      expect(m.generateJson).toHaveBeenCalledTimes(2)
+      const repair = m.generateJson.mock.calls[1][0] as Opts & { messages: { role: string; content: unknown }[]; label: string }
+      expect(repair.label).toBe('design-revise-repair')
+      const [assistant, user] = repair.messages.slice(-2)
+      expect(assistant).toEqual({ role: 'assistant', content: JSON.stringify({ concepts: [OVERSIZED] }) })
+      expect(user.content).toContain('css.blocks.hero: The CSS has 75 lines (max 60).')
+      expect(user.content).toContain('Shorten the CSS to fit the budget, keeping the design intent')
+      expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
+      expect(r.concept?.bundle.css.blocks.hero?.split('\n')).toHaveLength(3) // the repaired (short) hero, sanitized
+      expect(r.stoppedReason).toBeNull()
+      expect(m.record).toHaveBeenCalledTimes(2)
+      for (const [a] of m.record.mock.calls) expect(a).toMatchObject({ stage: 'design_concept' })
+      expect(r.costUsd).toBeCloseTo(0.56, 6)
+    })
+    it('over the cap twice → rejected with both errors, no third call', async () => {
+      answer = { concepts: [OVERSIZED] }
+      const r = await reviseConcept(args())
+      expect(m.generateJson).toHaveBeenCalledTimes(2)
+      expect(r).toMatchObject({ concept: null, stoppedReason: 'no_output' })
+      expect(r.errors).toEqual(['css.blocks.hero: The CSS has 75 lines (max 60).', 'after repair: css.blocks.hero: The CSS has 75 lines (max 60).'])
+    })
+    it('a size error mixed with any other error → no repair', async () => {
+      const mixed = { ...OVERSIZED, css: { global: 'body { position: fixed; }', blocks: { hero: OVER } } }
+      answer = { concepts: [mixed] }
+      const r = await reviseConcept(args())
+      expect(r.concept).toBeNull()
+      expect(r.errors.some((e) => e.includes('75 lines'))).toBe(true)
+      expect(r.errors.length).toBeGreaterThan(1)
+      expect(m.generateJson).toHaveBeenCalledTimes(1)
+    })
+    it('the cost cap vetoes the repair: rejected with the size errors, no extra spend', async () => {
+      queue = [{ concepts: [OVERSIZED] }]
+      const r = await reviseConcept(args({ costCapUsd: 0.2 })) // the first call spends $0.28
+      expect(m.generateJson).toHaveBeenCalledTimes(1)
+      expect(r).toMatchObject({ concept: null, stoppedReason: 'cost_cap' })
+      expect(r.errors).toEqual(['css.blocks.hero: The CSS has 75 lines (max 60).'])
+      expect(r.costUsd).toBeCloseTo(0.28, 6)
+      expect(m.record).toHaveBeenCalledTimes(1)
+    })
+    it('too little time left vetoes the repair: rejected, no extra spend', async () => {
+      queue = [{ concepts: [OVERSIZED] }]
+      let t = NOW
+      const r = await reviseConcept(args({ now: () => t, onSpend: () => void (t = NOW + 540_000 - 100_000) })) // 80 s usable < 90 s floor
+      expect(m.generateJson).toHaveBeenCalledTimes(1)
+      expect(r).toMatchObject({ concept: null, stoppedReason: 'deadline' })
+      expect(r.costUsd).toBeCloseTo(0.28, 6)
+    })
   })
 })
