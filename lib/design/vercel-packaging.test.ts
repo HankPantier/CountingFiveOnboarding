@@ -32,4 +32,13 @@ describe('Vercel packaging (R7)', () => {
     expect(src).toMatch(/export const maxDuration = \d+/)
     expect(src).toContain("export const runtime = 'nodejs'")
   })
+
+  // design/route.ts (GET state) has no maxDuration, so it can't join the
+  // it.each above — but it lazily imports bundle-files (Task 7), so it needs
+  // the same "no static heavy import" + runtime guarantee.
+  it('app/api/edit/[id]/design/route.ts never statically imports a native-backed module', () => {
+    const src = readFileSync(path.join(process.cwd(), 'app/api/edit/[id]/design/route.ts'), 'utf-8')
+    expect(src).not.toMatch(HEAVY)
+    expect(src).toContain("export const runtime = 'nodejs'")
+  })
 })
