@@ -26,7 +26,8 @@ export type ApplyBundleResult =
     }
   | { ok: false; status: 409 | 422; error: string }
 
-async function readOptional(repo: string, path: string): Promise<{ content: string; sha: string } | null> {
+// A draft-branch file's text + blob sha, or null when it doesn't exist.
+export async function readOptional(repo: string, path: string): Promise<{ content: string; sha: string } | null> {
   try {
     const f = await readFile(repo, path, DRAFT_BRANCH)
     return { content: f.content, sha: f.sha }
