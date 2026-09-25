@@ -690,6 +690,339 @@ export type Database = {
           },
         ]
       }
+      // Hand-patched for migration 078 (Design Studio) — replaced on the next `supabase gen types`.
+      design_chat_messages: {
+        Row: {
+          attachment_ids: string[]
+          content: string
+          created_at: string
+          created_by: string | null
+          id: string
+          parts: Json | null
+          role: string
+          session_id: string
+          version_id: string | null
+        }
+        Insert: {
+          attachment_ids?: string[]
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          parts?: Json | null
+          role: string
+          session_id: string
+          version_id?: string | null
+        }
+        Update: {
+          attachment_ids?: string[]
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          parts?: Json | null
+          role?: string
+          session_id?: string
+          version_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_chat_messages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_chat_messages_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_chat_messages_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "design_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      design_concepts: {
+        Row: {
+          bundle: Json | null
+          cost_usd: number
+          created_at: string
+          critique: Json | null
+          error: string | null
+          id: string
+          initial_bundle: Json | null
+          iterations: number
+          position: number
+          run_id: string
+          screenshots: Json
+          session_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          bundle?: Json | null
+          cost_usd?: number
+          created_at?: string
+          critique?: Json | null
+          error?: string | null
+          id?: string
+          initial_bundle?: Json | null
+          iterations?: number
+          position: number
+          run_id: string
+          screenshots?: Json
+          session_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          bundle?: Json | null
+          cost_usd?: number
+          created_at?: string
+          critique?: Json | null
+          error?: string | null
+          id?: string
+          initial_bundle?: Json | null
+          iterations?: number
+          position?: number
+          run_id?: string
+          screenshots?: Json
+          session_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_concepts_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "design_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_concepts_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      design_inputs: {
+        Row: {
+          archived: boolean
+          capture_error: string | null
+          capture_status: string
+          captured_at: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          label: string | null
+          notes: string | null
+          session_id: string
+          storage_path: string | null
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          archived?: boolean
+          capture_error?: string | null
+          capture_status?: string
+          captured_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind: string
+          label?: string | null
+          notes?: string | null
+          session_id: string
+          storage_path?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          archived?: boolean
+          capture_error?: string | null
+          capture_status?: string
+          captured_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          label?: string | null
+          notes?: string | null
+          session_id?: string
+          storage_path?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_inputs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_inputs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      design_runs: {
+        Row: {
+          admin_brief: string | null
+          base_snapshot: Json | null
+          capabilities: Json
+          concept_count: number
+          cost_cap_usd: number
+          cost_usd: number
+          created_at: string
+          created_by: string | null
+          error: string | null
+          id: string
+          input_ids: string[]
+          max_revisions: number
+          palette_freedom: string
+          session_id: string
+          stage: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          admin_brief?: string | null
+          base_snapshot?: Json | null
+          capabilities?: Json
+          concept_count?: number
+          cost_cap_usd?: number
+          cost_usd?: number
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          id?: string
+          input_ids?: string[]
+          max_revisions?: number
+          palette_freedom?: string
+          session_id: string
+          stage?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          admin_brief?: string | null
+          base_snapshot?: Json | null
+          capabilities?: Json
+          concept_count?: number
+          cost_cap_usd?: number
+          cost_usd?: number
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          id?: string
+          input_ids?: string[]
+          max_revisions?: number
+          palette_freedom?: string
+          session_id?: string
+          stage?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_runs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      design_versions: {
+        Row: {
+          applied_blobs: Json
+          applied_commit_sha: string | null
+          bundle: Json
+          concept_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          screenshots: Json
+          session_id: string
+          source: string
+          summary: string | null
+          version_no: number
+        }
+        Insert: {
+          applied_blobs?: Json
+          applied_commit_sha?: string | null
+          bundle: Json
+          concept_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          screenshots?: Json
+          session_id: string
+          source: string
+          summary?: string | null
+          version_no: number
+        }
+        Update: {
+          applied_blobs?: Json
+          applied_commit_sha?: string | null
+          bundle?: Json
+          concept_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          screenshots?: Json
+          session_id?: string
+          source?: string
+          summary?: string | null
+          version_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_versions_concept_id_fkey"
+            columns: ["concept_id"]
+            isOneToOne: false
+            referencedRelation: "design_concepts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_versions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_pages: {
         Row: {
           admin_approved_content: boolean

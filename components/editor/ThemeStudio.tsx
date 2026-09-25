@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ThemePreview from './ThemePreview'
 import ThemeChat from './ThemeChat'
+import DesignStudio from '@/components/design-studio/DesignStudio'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
@@ -28,6 +29,12 @@ function rebuildThemeCss(
     }
   )
 }
+
+type StudioTab = 'studio' | 'controls'
+const STUDIO_TABS: { key: StudioTab; label: string }[] = [
+  { key: 'studio', label: 'Studio' },
+  { key: 'controls', label: 'Controls' },
+]
 
 // Admin-only Theme Studio: a live 1:1 preview of the client's site (left) beside
 // the AI theme assistant (right). The preview fetches a real deployed URL — the
@@ -62,6 +69,8 @@ export default function ThemeStudio({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [contrastWarnings, setContrastWarnings] = useState<string[]>([])
+  // Controls (today's UI) stays the default; Studio is the Design Studio.
+  const [tab, setTab] = useState<StudioTab>('controls')
 
   const loadSources = useCallback(async () => {
     const res = await fetch(`/api/edit/${sessionId}/theme`)
@@ -235,7 +244,39 @@ export default function ThemeStudio({
   const canResetToDefault = overrideSet && !!info?.configUrl && info.configUrl !== info.previewUrl
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div role="tablist" aria-label="Theme Studio mode" className="flex items-center gap-1 border-b border-border-default bg-surface-card px-6 py-1.5">
+        {STUDIO_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            id={`theme-tab-${t.key}`}
+            aria-selected={tab === t.key}
+            aria-controls={`theme-panel-${t.key}`}
+            onClick={() => setTab(t.key)}
+            className={[
+              'rounded-pill px-3.5 py-1 font-heading text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan',
+              tab === t.key ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle hover:text-brand-navy',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'studio' && (
+        <div id="theme-panel-studio" role="tabpanel" aria-labelledby="theme-tab-studio" className="flex min-h-0 flex-1">
+          <DesignStudio sessionId={sessionId} />
+        </div>
+      )}
+      {/* Controls stays mounted while hidden so the preview and ThemeChat keep their state. */}
+      <div
+        id="theme-panel-controls"
+        role="tabpanel"
+        aria-labelledby="theme-tab-controls"
+        hidden={tab !== 'controls'}
+        className={tab === 'controls' ? 'flex min-h-0 flex-1' : 'hidden'}
+      >
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-border-default bg-surface-default px-6 py-2.5">
           <div className="min-w-0">
@@ -343,6 +384,7 @@ export default function ThemeStudio({
             onCommitted()
           }}
         />
+      </div>
       </div>
     </div>
   )

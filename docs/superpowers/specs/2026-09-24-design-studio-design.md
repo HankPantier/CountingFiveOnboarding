@@ -98,6 +98,7 @@ Five tables. RLS on all five is admin-tier only (`admins.role='admin'`); the rea
 - **Drift banner** when the draft theme blobs differ from the latest version (for example after manual edits), with a "Capture as version" action.
 - **"Live"** = the blobs on `main` match.
 - **Publish** is the existing route, gated by `canPublish`. It publishes all of draft, and the UI says so.
+- **`applied_blobs` contract:** MUST be the full post-apply blob-sha map for all four theme files (`content/brand.json`, `content/design.json`, `src/styles/theme.css`, `content/design-overrides.css`), omitting any file that no longer exists after apply — drift compares this map to the live draft, so partial maps show as drifted immediately.
 
 **Storage:** `session-assets` under `design/{sessionId}/{inputs|runs|versions|attachments}/…webp`.
 - Re-encoded with sharp to WebP, long edge ≤1568 px.
