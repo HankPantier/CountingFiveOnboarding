@@ -80,8 +80,8 @@ describe('POST /design/inputs/upload', () => {
     expect((await send(form(await pngFile(), { label: 'x'.repeat(121) }))).status).toBe(400)
   })
 
-  it('rejects a file over 8 MB with 413 before storing anything', async () => {
-    const big = new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' })
+  it('rejects a file over 4 MB with 413 before storing anything', async () => {
+    const big = new File([new Uint8Array(4 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' })
     expect((await send(form(big))).status).toBe(413)
     expect(m.store).not.toHaveBeenCalled()
   })
@@ -89,7 +89,7 @@ describe('POST /design/inputs/upload', () => {
   it('rejects an oversized Content-Length with 413 before parsing the body', async () => {
     // A body that would 400 (not multipart) if formData() were ever reached —
     // proves the Content-Length check runs and returns first.
-    const res = await send('{"x":1}', { 'content-length': String(8 * 1024 * 1024 + 64 * 1024 + 1) })
+    const res = await send('{"x":1}', { 'content-length': String(4 * 1024 * 1024 + 64 * 1024 + 1) })
     expect(res.status).toBe(413)
     expect(m.store).not.toHaveBeenCalled()
   })

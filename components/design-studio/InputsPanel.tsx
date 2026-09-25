@@ -12,11 +12,9 @@ import {
 import { displayHost, parseUrlInputKind } from '@/lib/design/input-validation'
 import InputCard from './InputCard'
 import { designApi, errorMessage } from './api'
+import { downscaleImageIfNeeded } from './downscale-image'
 import { CHIP, FIELD, LINK_BTN, PANEL, PRIMARY_BTN, SECONDARY_BTN } from './styles'
 
-// Pre-check the spec's 8 MB cap in the browser for a clear message; the
-// route itself enforces the same cap and magic bytes for any caller.
-const CLIENT_UPLOAD_MAX_BYTES = 8 * 1024 * 1024
 const UPLOAD_ACCEPT = 'image/png,image/jpeg,image/webp'
 
 export default function InputsPanel({
@@ -76,14 +74,14 @@ export default function InputsPanel({
 
   async function upload(file: File) {
     setError(null)
-    if (file.size > CLIENT_UPLOAD_MAX_BYTES) {
-      setError('Images must be 8 MB or smaller — export a smaller PNG, JPEG or WebP.')
-      return
-    }
     setUploading(true)
     try {
+      // Large photos get shrunk + re-encoded in the browser first so the
+      // request stays under the platform's body-size limit; the route
+      // re-validates size and magic bytes regardless.
+      const toSend = await downscaleImageIfNeeded(file)
       const form = new FormData()
-      form.set('file', file)
+      form.set('file', toSend)
       await designApi(`/api/edit/${sessionId}/design/inputs/upload`, { method: 'POST', form })
       await onChanged()
     } catch (err) {

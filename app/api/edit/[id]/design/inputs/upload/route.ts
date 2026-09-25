@@ -12,7 +12,9 @@ import { requireDesignAdmin } from '../../_design'
 
 export const runtime = 'nodejs'
 
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+// Under Vercel's ~4.5 MB request-body limit so our JSON 413 (with a clear
+// message) wins over the platform's opaque non-JSON 413 whenever reachable.
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
 // Multipart framing (boundary markers, headers) adds a little over the raw
 // file size — 64 KB is generous headroom for a single-file form.
 const MULTIPART_OVERHEAD_BYTES = 64 * 1024
@@ -33,7 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // multipart payload into memory via req.formData().
   const contentLength = Number(req.headers.get('content-length'))
   if (contentLength > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES) {
-    return NextResponse.json({ error: 'Images must be 8 MB or smaller.' }, { status: 413 })
+    return NextResponse.json({ error: 'Images must be 4 MB or smaller.' }, { status: 413 })
   }
 
   let form: FormData
@@ -46,7 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const file = form.get('file')
   if (!(file instanceof Blob)) return NextResponse.json({ error: 'An image file is required.' }, { status: 400 })
   if (file.size === 0) return NextResponse.json({ error: 'The file is empty.' }, { status: 400 })
-  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: 'Images must be 8 MB or smaller.' }, { status: 413 })
+  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: 'Images must be 4 MB or smaller.' }, { status: 413 })
 
   const label = parseOptionalText(form.get('label'), INPUT_LABEL_MAX, 'Label')
   if (!label.ok) return NextResponse.json({ error: label.reason }, { status: 400 })
