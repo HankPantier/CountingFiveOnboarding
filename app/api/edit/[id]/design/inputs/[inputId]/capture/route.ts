@@ -37,6 +37,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     if (input.kind === 'inspiration_image' || !input.url) {
       return NextResponse.json({ error: 'Uploaded images don’t need capturing.' }, { status: 400 })
     }
+    if (input.archived) {
+      return NextResponse.json({ error: 'Unarchive this input before capturing it.' }, { status: 409 })
+    }
     const row = await claimCapture(supabase, ctx.sessionId, inputId)
     if (!row) return NextResponse.json({ error: 'A capture is already running for this input.' }, { status: 409 })
     claimed = row
@@ -44,42 +47,65 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return internalError('design:inputs:capture', err, 'Failed to start the capture')
   }
 
+  // From here, `storedPath` tracks a new object that can still be rolled
+  // back if something fails BEFORE the row is committed to point at it. Once
+  // the commit succeeds we clear it — nothing past that point (including a
+  // signing failure below) may delete the new object or reset the row.
   let storedPath: string | null = null
+  let resultRow: DesignInputRow
   try {
     const shot = await captureExternalScreenshot(claimed.url ?? '')
     if (!shot.ok) {
       // shot.reason is our own message from capture/external.ts — never provider text.
       const row = await updateInput(supabase, ctx.sessionId, inputId, { captureStatus: 'error', captureError: shot.reason })
       if (!row) return NextResponse.json({ error: 'Input not found.' }, { status: 404 })
-      return NextResponse.json({ input: toInputDto(row, await signedFor(supabase, row)) })
-    }
+      resultRow = row
+    } else {
+      const path = designStoragePath(ctx.sessionId, 'inputs', `${inputId}-${randomUUID()}.webp`)
+      await storeDesignImage(supabase, path, shot.webp)
+      storedPath = path
 
-    const path = designStoragePath(ctx.sessionId, 'inputs', `${inputId}-${randomUUID()}.webp`)
-    await storeDesignImage(supabase, path, shot.webp)
-    storedPath = path
+      const row = await updateInput(supabase, ctx.sessionId, inputId, {
+        captureStatus: 'ok',
+        captureError: null,
+        storagePath: path,
+        capturedAt: new Date().toISOString(),
+      })
+      if (!row) {
+        // Deleted while we were capturing — drop the orphaned object.
+        await removeDesignPaths(supabase, [path]).catch((e) => console.warn('[design-capture] orphan cleanup failed:', e))
+        return NextResponse.json({ error: 'Input not found.' }, { status: 404 })
+      }
 
-    const row = await updateInput(supabase, ctx.sessionId, inputId, {
-      captureStatus: 'ok',
-      captureError: null,
-      storagePath: path,
-      capturedAt: new Date().toISOString(),
-    })
-    if (!row) {
-      // Deleted while we were capturing — drop the orphaned object.
-      await removeDesignPaths(supabase, [path]).catch((e) => console.warn('[design-capture] orphan cleanup failed:', e))
-      return NextResponse.json({ error: 'Input not found.' }, { status: 404 })
-    }
+      // Commit point: the row now points at `path`. This capture is no
+      // longer eligible for rollback.
+      storedPath = null
 
-    const previous = claimed.storage_path
-    if (previous && previous !== path) {
-      await removeDesignPaths(supabase, [previous]).catch((e) => console.warn('[design-capture] old capture cleanup failed:', e))
+      const previous = claimed.storage_path
+      if (previous && previous !== path) {
+        await removeDesignPaths(supabase, [previous]).catch((e) => console.warn('[design-capture] old capture cleanup failed:', e))
+      }
+      resultRow = row
     }
-    return NextResponse.json({ input: toInputDto(row, await signedFor(supabase, row)) })
   } catch (err) {
     if (storedPath) {
       await removeDesignPaths(supabase, [storedPath]).catch((e) => console.warn('[design-capture] cleanup failed:', e))
     }
-    await updateInput(supabase, ctx.sessionId, inputId, { captureStatus: 'error', captureError: GENERIC_CAPTURE_ERROR }).catch(() => null)
+    try {
+      await updateInput(supabase, ctx.sessionId, inputId, { captureStatus: 'error', captureError: GENERIC_CAPTURE_ERROR })
+    } catch (resetErr) {
+      console.warn('[design-capture] failed to reset row to error after a capture failure:', resetErr)
+    }
     return internalError('design:inputs:capture', err, 'Failed to capture the screenshot')
+  }
+
+  // Signing is best-effort and deliberately outside the rollback above: a
+  // signing failure must not undo an already-committed row — it only means
+  // the client gets a null thumbnail for now (the next GET will retry it).
+  try {
+    return NextResponse.json({ input: toInputDto(resultRow, await signedFor(supabase, resultRow)) })
+  } catch (err) {
+    console.warn('[design-capture] signing failed after capture:', err)
+    return NextResponse.json({ input: toInputDto(resultRow, {}) })
   }
 }

@@ -81,6 +81,14 @@ describe('POST /design/inputs/[inputId]/capture', () => {
     expect(m.capture).not.toHaveBeenCalled()
   })
 
+  it('409s for an archived input, before claiming', async () => {
+    m.getInput.mockResolvedValue(makeInputRow({ archived: true }))
+    const res = await call()
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'Unarchive this input before capturing it.' })
+    expect(m.claimCapture).not.toHaveBeenCalled()
+  })
+
   it('stores a new WebP, points the row at it and deletes the previous object', async () => {
     const res = await call()
     expect(res.status).toBe(200)
@@ -105,6 +113,13 @@ describe('POST /design/inputs/[inputId]/capture', () => {
     expect(body.input.thumbnailUrl).toBe(`https://signed/${OLD}`)
   })
 
+  it('404s when the row is deleted mid-capture, on a clean capture failure', async () => {
+    m.capture.mockResolvedValue({ ok: false, reason: 'That URL is not publicly reachable.' })
+    m.updateInput.mockResolvedValueOnce(null)
+    const res = await call()
+    expect(res.status).toBe(404)
+  })
+
   it('resets the row to error and cleans up on an unexpected failure', async () => {
     m.updateInput.mockImplementationOnce(async () => {
       throw new Error('db down')
@@ -115,5 +130,40 @@ describe('POST /design/inputs/[inputId]/capture', () => {
     const storedPath = m.store.mock.calls[0][1] as string
     expect(m.remove).toHaveBeenCalledWith({}, [storedPath])
     expect(m.updateInput).toHaveBeenLastCalledWith({}, SID, IID, { captureStatus: 'error', captureError: 'Capture failed. Try again.' })
+  })
+
+  it('resets the row to error when storing the new image throws, without removing anything (nothing was stored yet)', async () => {
+    m.store.mockRejectedValueOnce(new Error('storage down'))
+    const res = await call()
+    expect(res.status).toBe(500)
+    expect(m.remove).not.toHaveBeenCalled()
+    expect(m.updateInput).toHaveBeenCalledWith({}, SID, IID, { captureStatus: 'error', captureError: 'Capture failed. Try again.' })
+  })
+
+  it('logs (and does not throw) when the reset-to-error write itself fails', async () => {
+    m.store.mockRejectedValueOnce(new Error('storage down'))
+    m.updateInput.mockImplementationOnce(async () => {
+      throw new Error('db down again')
+    })
+    const res = await call()
+    expect(res.status).toBe(500)
+    expect(console.warn).toHaveBeenCalledWith(
+      '[design-capture] failed to reset row to error after a capture failure:',
+      expect.any(Error)
+    )
+  })
+
+  it('does not roll back a committed capture when signing fails afterward', async () => {
+    m.sign.mockRejectedValueOnce(new Error('sign down'))
+    const res = await call()
+    expect(res.status).toBe(200)
+    const storedPath = m.store.mock.calls[0][1] as string
+    expect(m.remove).toHaveBeenCalledTimes(1)
+    expect(m.remove).toHaveBeenCalledWith({}, [OLD])
+    expect(m.remove).not.toHaveBeenCalledWith({}, [storedPath])
+    expect(m.updateInput).toHaveBeenCalledTimes(1)
+    const body = await res.json()
+    expect(body.input.captureStatus).toBe('ok')
+    expect(body.input.thumbnailUrl).toBeNull()
   })
 })
