@@ -13,6 +13,8 @@ describe('Vercel packaging (R7)', () => {
     ['/api/edit/\\[id\\]/design/runs/\\[runId\\]/step', [...LIGHTNING, ...CHROMIUM]],
     ['/api/edit/\\[id\\]/design/concepts/\\[cid\\]/apply', LIGHTNING],
     ['/api/edit/\\[id\\]/design/concepts/\\[cid\\]/preview', LIGHTNING],
+    ['/api/edit/\\[id\\]/design/versions/\\[vid\\]/restore', LIGHTNING],
+    ['/api/edit/\\[id\\]/design/versions/import', LIGHTNING],
     ['/api/edit/\\[id\\]/design/render', CHROMIUM],
     ['/api/edit/\\[id\\]/theme/chat', LIGHTNING],
   ])('%s traces its native dependencies', (route, globs) => {
@@ -26,6 +28,8 @@ describe('Vercel packaging (R7)', () => {
     'app/api/edit/[id]/design/runs/[runId]/step/route.ts',
     'app/api/edit/[id]/design/concepts/[cid]/apply/route.ts',
     'app/api/edit/[id]/design/concepts/[cid]/preview/route.ts',
+    'app/api/edit/[id]/design/versions/[vid]/restore/route.ts',
+    'app/api/edit/[id]/design/versions/import/route.ts',
   ])('%s never statically imports a native-backed module', (file) => {
     const src = readFileSync(path.join(process.cwd(), file), 'utf-8')
     expect(src).not.toMatch(HEAVY)

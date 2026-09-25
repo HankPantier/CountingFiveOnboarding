@@ -34,6 +34,8 @@ const nextConfig: NextConfig = {
       '/api/edit/\\[id\\]/design/runs/\\[runId\\]/step': [...lightningcss, ...renderer],
       '/api/edit/\\[id\\]/design/concepts/\\[cid\\]/apply': lightningcss,
       '/api/edit/\\[id\\]/design/concepts/\\[cid\\]/preview': lightningcss,
+      '/api/edit/\\[id\\]/design/versions/\\[vid\\]/restore': lightningcss,
+      '/api/edit/\\[id\\]/design/versions/import': lightningcss,
     }
   })(),
   async headers() {
