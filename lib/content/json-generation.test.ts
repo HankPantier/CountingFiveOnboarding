@@ -87,4 +87,44 @@ describe('generateJson', () => {
     expect(res).toEqual({ a: 1 })
     expect(onAttempt).toHaveBeenCalledWith({ inputTokens: 10, outputTokens: 20 }, 'stop')
   })
+
+  it('sends messages instead of prompt when given (multi-part callers)', async () => {
+    mockGen.mockResolvedValueOnce(reply('{"a":1}'))
+    const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'hi' }] }]
+    expect(await generateJson({ model: base.model, messages, label: 't', firstBudget: 1000 })).toEqual({ a: 1 })
+    const call = mockGen.mock.calls[0][0] as Record<string, unknown>
+    expect(call.messages).toBe(messages)
+    expect('prompt' in call).toBe(false)
+  })
+
+  it('still sends a plain prompt for existing callers', async () => {
+    mockGen.mockResolvedValueOnce(reply('{"a":1}'))
+    await generateJson({ ...base, firstBudget: 1000 })
+    const call = mockGen.mock.calls[0][0] as Record<string, unknown>
+    expect(call.prompt).toBe('p')
+    expect('messages' in call).toBe(false)
+  })
+
+  it('beforeAttempt=false on the first attempt skips the model entirely', async () => {
+    const beforeAttempt = vi.fn(() => false)
+    expect(await generateJson({ ...base, firstBudget: 1000, retryBudget: 2000, beforeAttempt })).toBeNull()
+    expect(mockGen).not.toHaveBeenCalled()
+    expect(beforeAttempt).toHaveBeenCalledWith(1)
+  })
+
+  it('beforeAttempt=false on the retry keeps it to one call', async () => {
+    mockGen.mockResolvedValue(reply('not json'))
+    const beforeAttempt = vi.fn((attempt: 1 | 2) => attempt === 1)
+    expect(await generateJson({ ...base, firstBudget: 1000, retryBudget: 2000, beforeAttempt })).toBeNull()
+    expect(mockGen).toHaveBeenCalledTimes(1)
+    expect(beforeAttempt).toHaveBeenCalledWith(2)
+  })
+
+  it('a throwing beforeAttempt counts as a veto', async () => {
+    const beforeAttempt = vi.fn(() => {
+      throw new Error('boom')
+    })
+    expect(await generateJson({ ...base, firstBudget: 1000, beforeAttempt })).toBeNull()
+    expect(mockGen).not.toHaveBeenCalled()
+  })
 })

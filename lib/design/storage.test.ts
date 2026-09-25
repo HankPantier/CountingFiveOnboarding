@@ -1,6 +1,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import sharp from 'sharp'
-import { toWebp, designStoragePath, storeDesignImage, signDesignPaths, removeDesignPaths, SCREENSHOT_MAX_EDGE } from './storage'
+import {
+  toWebp,
+  designStoragePath,
+  storeDesignImage,
+  signDesignPaths,
+  removeDesignPaths,
+  downloadDesignImage,
+  SCREENSHOT_MAX_EDGE,
+} from './storage'
 
 const SID = '7ce3c00a-f6ad-41f3-86cc-6bdfc3af7184'
 
@@ -93,5 +101,40 @@ describe('removeDesignPaths', () => {
   it('throws when storage reports an error', async () => {
     const supabase = { storage: { from: () => ({ remove: async () => ({ data: null, error: { message: 'boom' } }) }) } } as never
     await expect(removeDesignPaths(supabase, [`design/${SID}/inputs/a.webp`])).rejects.toThrow('removeDesignPaths failed')
+  })
+})
+
+describe('downloadDesignImage', () => {
+  function fakeDb(result: { data: Blob | null; error: { message: string } | null }) {
+    const calls: string[] = []
+    const db = {
+      storage: {
+        from: (bucket: string) => ({
+          download: async (p: string) => {
+            calls.push(`${bucket}:${p}`)
+            return result
+          },
+        }),
+      },
+    }
+    return { calls, db: db as never }
+  }
+
+  it('returns the bytes of a design/ object from the private bucket', async () => {
+    const f = fakeDb({ data: new Blob([new Uint8Array([7, 8, 9])]), error: null })
+    const bytes = await downloadDesignImage(f.db, `design/${SID}/inputs/a.webp`)
+    expect(Array.from(bytes)).toEqual([7, 8, 9])
+    expect(f.calls).toEqual([`session-assets:design/${SID}/inputs/a.webp`])
+  })
+
+  it.each(['sessions/x/a.png', `design/${SID}/../../pdfs/a.pdf`])('refuses %s without calling storage', async (p) => {
+    const f = fakeDb({ data: null, error: null })
+    await expect(downloadDesignImage(f.db, p)).rejects.toThrow('not a design path')
+    expect(f.calls).toEqual([])
+  })
+
+  it('throws on a storage error', async () => {
+    const f = fakeDb({ data: null, error: { message: 'not found' } })
+    await expect(downloadDesignImage(f.db, `design/${SID}/inputs/a.webp`)).rejects.toThrow('downloadDesignImage failed')
   })
 })

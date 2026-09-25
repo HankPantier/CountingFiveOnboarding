@@ -51,6 +51,16 @@ export async function signDesignPaths(supabase: SupabaseClient<Database>, paths:
   return out
 }
 
+// Read a Design Studio image's bytes (service-role client — the bucket is
+// private) so the concept generator can send it to the model INLINE. Never
+// hand the model a signed URL. Only design/… paths.
+export async function downloadDesignImage(supabase: SupabaseClient<Database>, path: string): Promise<Uint8Array> {
+  if (!path.startsWith('design/') || path.includes('..')) throw new Error('downloadDesignImage: not a design path')
+  const { data, error } = await supabase.storage.from(BUCKET).download(path)
+  if (error || !data) throw new Error(`downloadDesignImage failed: ${error?.message ?? 'no data'}`)
+  return new Uint8Array(await data.arrayBuffer())
+}
+
 // Delete Design Studio objects. Only design/… paths are ever removed (defence
 // against a bad stored path deleting a client upload or PDF). Throws on a
 // storage error; callers treat cleanup as best-effort and log.
