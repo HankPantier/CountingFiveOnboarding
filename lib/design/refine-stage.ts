@@ -55,7 +55,7 @@ import {
   type DesignRunRow,
 } from './run-store'
 import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
-import { parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
+import { CONCEPT_STOPPED_MID_REVIEW, hasStalledConcept, parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
 import type { RunScreenshot } from './run-types'
 import { STEP_MODEL_BUDGET_MS, type StepContext, type StepOutcome } from './step-types'
 import { downloadDesignImage, removeDesignPaths } from './storage'
@@ -81,12 +81,40 @@ export function revisionRejectionReason(errors: string[]): string {
 }
 
 // After a unit: finalize the run when no concept has work left, else heartbeat.
+// A concept stopped mid-loop (swept to 'error' with its bundle) fails the run
+// instead of being finalized without its review — Retry resumes it.
 async function afterUnit(db: Db, runId: string, unit: ReviewUnit | 'finish', conceptId: string): Promise<StepOutcome> {
   const rows = await listConcepts(db, runId)
   const remaining = rows.some((c) => c.status === 'refining' || (c.status === 'pending' && c.bundle !== null))
-  if (remaining) await updateRunFields(db, runId, {})
-  else await transitionRun(db, runId, ['refining'], { status: 'ready', stage: 'ready' })
+  if (remaining) {
+    await updateRunFields(db, runId, {})
+  } else if (hasStalledConcept(rows)) {
+    await transitionRun(db, runId, ['refining'], { status: 'error', error: CONCEPT_STOPPED_MID_REVIEW })
+    return { kind: 'failed', error: CONCEPT_STOPPED_MID_REVIEW }
+  } else {
+    await transitionRun(db, runId, ['refining'], { status: 'ready', stage: 'ready' })
+  }
   return { kind: 'refined', unit, conceptId, remaining }
+}
+
+// A failure AFTER a model unit's concept settle landed (afterUnit's reads /
+// run writes). It must reach the step route — which errors the run at once
+// (WORKER_CRASHED) so Retry works — instead of the unit's catch, whose endLoop
+// CAS would miss the already-settled row and no-op, stalling the run until the
+// sweep.
+class AfterSettleError extends Error {
+  constructor(cause: unknown) {
+    super('[design-run] a step failed after its concept was settled', { cause })
+    this.name = 'AfterSettleError'
+  }
+}
+
+async function afterSettle(db: Db, runId: string, unit: ReviewUnit | 'finish', conceptId: string): Promise<StepOutcome> {
+  try {
+    return await afterUnit(db, runId, unit, conceptId)
+  } catch (err) {
+    throw new AfterSettleError(err)
+  }
 }
 
 // Absolute (idempotent) spend write: guarded, unguarded when the run moved on.
@@ -118,11 +146,16 @@ async function claimUnit(db: Db, runId: string, conceptId: string, unit: ReviewU
 // The current-site render is the critic's context and the metrics baseline:
 // retried here when generation couldn't make it (a stale "skipped" note is
 // replaced by the retry's own outcome). Best effort — never blocks the render.
-async function ensureCurrentRender(db: Db, ctx: StepContext): Promise<void> {
+// Only before the run's FIRST concept render: a baseline appearing mid-run
+// would judge later concepts against it and earlier ones without it.
+async function ensureCurrentRender(db: Db, ctx: StepContext, conceptId: string): Promise<void> {
   const run = await getRun(db, ctx.sessionId, ctx.runId)
   if (!run) return
   const base = parseBaseSnapshot(run.base_snapshot)
   if (base.screenshots.some((s) => s.viewport === 'desktop')) return
+  const concepts = await listConcepts(db, ctx.runId)
+  const anyRendered = concepts.some((c) => c.id !== conceptId && (parseConceptReview(c.critique) !== null || parseScreenshots(c.screenshots).length > 0))
+  if (anyRendered) return
   let shots = base.screenshots
   let metrics = base.metrics ?? null
   let note: string | null = null
@@ -177,7 +210,7 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
     claimed = row
     review = parseConceptReview(row.critique) ?? newReview()
     try {
-      await ensureCurrentRender(db, ctx)
+      await ensureCurrentRender(db, ctx, conceptId)
     } catch (err) {
       console.warn('[design-run] current-site re-render failed', err)
     }
@@ -259,7 +292,7 @@ async function startModelUnit(db: Db, ctx: StepContext, runId: string, conceptId
 // Ends a concept's loop (ready, latest valid bundle kept) after a model unit.
 async function endLoop(db: Db, runId: string, claimed: DesignConceptRow, unit: ReviewUnit, review: ConceptReview, outcome: ReviewOutcome, notes: string[]): Promise<StepOutcome> {
   const done = await settleConceptUnit(db, runId, claimed, { status: 'ready', review: endReview(review, outcome, notes) })
-  return done ? afterUnit(db, runId, unit, claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
+  return done ? afterSettle(db, runId, unit, claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
 }
 
 export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conceptId: string, now: Now): Promise<StepOutcome> {
@@ -334,8 +367,9 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
       return await endLoop(db, runId, claimed, 'critique', next, decision.outcome, decision.outcome === 'cost_cap' ? [capLoopNote(capUsd)] : [])
     }
     const settled = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: { ...next, next: 'revise' } })
-    return settled ? await afterUnit(db, runId, 'critique', claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
+    return settled ? await afterSettle(db, runId, 'critique', claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
   } catch (err) {
+    if (err instanceof AfterSettleError) throw err.cause // settled: the step route errors the run
     console.error('[design-run] critique failed', err)
     const spend = costUsd ?? (reportedSpend === undefined ? undefined : priorCost + reportedSpend)
     if (spend !== undefined) await persistSpend(db, runId, spend)
@@ -414,8 +448,9 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
       [...b.notes, ...result.notes].map((n) => `Revision ${round}: ${n}`)
     )
     const settled = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: nextReview, bundle: result.concept.bundle, iterations: round })
-    return settled ? await afterUnit(db, runId, 'revise', claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
+    return settled ? await afterSettle(db, runId, 'revise', claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
   } catch (err) {
+    if (err instanceof AfterSettleError) throw err.cause // settled: the step route errors the run
     console.error('[design-run] revise failed', err)
     const spend = costUsd ?? (reportedSpend === undefined ? undefined : priorCost + reportedSpend)
     if (spend !== undefined) await persistSpend(db, runId, spend)

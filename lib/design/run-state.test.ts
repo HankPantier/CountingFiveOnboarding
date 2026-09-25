@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { asJson } from '@/lib/supabase/json-typed'
 import { makeConceptRow, makeInputRow, makeRunRow } from './__fixtures__/rows'
-import { nextAction, parseBaseSnapshot, parseScreenshots, planRetry, selectRunInputs, usablePriors, CONCEPT_STILL_REFINING } from './run-state'
+import { hasStalledConcept, nextAction, parseBaseSnapshot, parseScreenshots, planRetry, selectRunInputs, usablePriors, CONCEPT_STILL_REFINING } from './run-state'
 import { newReview } from './review'
 import { DESIGN_STEP_MAX_LIFETIME_MS } from './run-types'
 
@@ -48,6 +48,22 @@ describe('nextAction', () => {
   it('finalizes when nothing is left to render (rejected / bundle-less rows are ignored)', () => {
     const run = makeRunRow({ status: 'refining' })
     expect(nextAction(run, [c('a', 0, 'ready'), c('b', 1, 'rejected', false)])).toEqual({ kind: 'finalize' })
+  })
+  it('does NOT finalize while a concept was stopped mid-loop (error with a valid bundle): the run is stalled, for Retry', () => {
+    const run = makeRunRow({ status: 'refining' })
+    const swept = makeConceptRow({ id: 'b', position: 1, status: 'error', critique: asJson({ ...newReview(), next: 'revise' }) })
+    expect(nextAction(run, [c('a', 0, 'ready'), swept])).toEqual({ kind: 'stalled' })
+    // Swept during its first render (no review yet) — also stalled.
+    expect(nextAction(run, [c('a', 0, 'ready'), c('b', 1, 'error')])).toEqual({ kind: 'stalled' })
+    // A generation failure stores no bundle: nothing to resume.
+    expect(nextAction(run, [c('a', 0, 'ready'), c('b', 1, 'error', false)])).toEqual({ kind: 'finalize' })
+    // Work left elsewhere still runs first.
+    expect(nextAction(run, [swept, c('a', 0, 'pending')])).toEqual({ kind: 'render', conceptId: 'a' })
+  })
+  it('hasStalledConcept ignores an error row whose bundle no longer validates', () => {
+    expect(hasStalledConcept([makeConceptRow({ status: 'error', bundle: asJson({ nope: true }) })])).toBe(false)
+    expect(hasStalledConcept([makeConceptRow({ status: 'error' })])).toBe(true)
+    expect(hasStalledConcept([makeConceptRow({ status: 'ready' })])).toBe(false)
   })
 })
 

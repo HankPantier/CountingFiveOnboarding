@@ -37,7 +37,7 @@ import {
   type RunPatch,
 } from './run-store'
 import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
-import { inputCaption, inputLabel, nextAction, parseBaseSnapshot, selectRunInputs, usablePriors } from './run-state'
+import { CONCEPT_STOPPED_MID_REVIEW, inputCaption, inputLabel, nextAction, parseBaseSnapshot, selectRunInputs, usablePriors } from './run-state'
 import type { RunStatus } from './studio-types'
 import { MAX_PROMPT_IMAGES, type RunBaseSnapshot } from './run-types'
 import { critiqueUnit, finishConceptUnit, renderUnit, reviseUnit } from './refine-stage'
@@ -116,6 +116,8 @@ export async function runDesignStep(ctx: StepContext, now: () => number = Date.n
       return finishConceptUnit(db, run.id, action.conceptId)
     case 'finalize':
       return finalizeStage(db, run.id)
+    case 'stalled':
+      return failRun(db, run.id, ['refining'], CONCEPT_STOPPED_MID_REVIEW)
     case 'resume': {
       const row = concepts.find((c) => c.id === action.conceptId)
       const resumed = row ? await resumeParkedConcept(db, run.id, row) : null

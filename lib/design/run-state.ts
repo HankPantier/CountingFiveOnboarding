@@ -7,7 +7,8 @@
 //     review (design_concepts.critique) names — critique / revise / re-render —
 //     one per step, until the loop ends and the concept is finished (ready).
 //     A pending concept parked mid-loop by a Retry resumes its loop.
-//   Nothing left ⇒ finalize (ready).
+//   Nothing left ⇒ finalize (ready) — unless a concept was stopped mid-loop
+//     ('error' with a valid bundle): then the run fails, for Retry to resume.
 import type { Tables } from '@/types/database'
 import type { PriorConcept } from './brief'
 import { parseDesignBundle } from './bundle'
@@ -39,6 +40,9 @@ export type NextAction =
   // A pending concept parked mid-loop by a Retry: back to refining, review kept.
   | { kind: 'resume'; conceptId: string }
   | { kind: 'finalize' }
+  // Nothing left to run, but a concept was stopped mid-loop (swept): fail the
+  // run so a Retry resumes it rather than finalizing without it.
+  | { kind: 'stalled' }
   | { kind: 'wait'; reason: string }
   | { kind: 'stop'; reason: string }
 
@@ -49,6 +53,15 @@ const byPosition = <T extends { position: number }>(list: T[]): T[] => [...list]
 // An accepted concept: it has a bundle and wasn't rejected / is not mid-generation.
 export function isUsableConcept(c: Pick<ConceptLite, 'status' | 'bundle'>): boolean {
   return c.bundle !== null && c.status !== 'rejected' && c.status !== 'generating'
+}
+
+export const CONCEPT_STOPPED_MID_REVIEW = 'A concept stopped mid-review — press Retry.'
+
+// A concept in 'error' that still holds a valid bundle: it was generated (and
+// accepted), then stopped mid-render / mid-loop (swept). Generation failures
+// store no bundle.
+export function hasStalledConcept(concepts: Pick<ConceptLite, 'status' | 'bundle'>[]): boolean {
+  return concepts.some((c) => c.status === 'error' && c.bundle !== null && parseDesignBundle(c.bundle).ok)
 }
 
 // The first position in 0..count-1 with no concept row (any status), or null.
@@ -89,7 +102,7 @@ export function nextAction(run: RunLite, concepts: ConceptLite[]): NextAction {
   // Next pending concept: one parked mid-loop (it has a review) continues its
   // loop; otherwise its first render.
   const next = ordered.find((c) => c.status === 'pending' && c.bundle !== null)
-  if (!next) return { kind: 'finalize' }
+  if (!next) return hasStalledConcept(concepts) ? { kind: 'stalled' } : { kind: 'finalize' }
   return parseConceptReview(next.critique) ? { kind: 'resume', conceptId: next.id } : { kind: 'render', conceptId: next.id }
 }
 

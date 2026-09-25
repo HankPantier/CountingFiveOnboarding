@@ -461,6 +461,15 @@ describe('runDesignStep — critique loop dispatch', () => {
     m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'c0', status: 'ready' })])
     expect(await runDesignStep(CTX)).toEqual({ kind: 'finalized' })
   })
+  it('fails (not finalizes) the run when a concept was stopped mid-loop, so Retry can resume it', async () => {
+    const swept = makeConceptRow({ id: 'c1', position: 1, status: 'error', critique: asJson({ ...newReview(), next: 'critique' }) })
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'c0', status: 'ready' }), swept])
+    const out = await runDesignStep(CTX)
+    expect(out).toEqual({ kind: 'failed', error: 'A concept stopped mid-review — press Retry.' })
+    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { status: 'error', error: 'A concept stopped mid-review — press Retry.' })
+    expect(m.transitionRun).not.toHaveBeenCalledWith({}, RID, ['refining'], { status: 'ready', stage: 'ready' })
+    expect(shouldChain(out)).toBe(false)
+  })
 })
 
 describe('runDesignStep — a concept parked mid-loop by a Retry', () => {
@@ -471,14 +480,28 @@ describe('runDesignStep — a concept parked mid-loop by a Retry', () => {
   })
   it('resumes it (back to refining, CAS on the row as read) and chains — no render, no model call', async () => {
     m.resumeParkedConcept.mockResolvedValue(makeConceptRow({ status: 'refining' }))
-    expect(await runDesignStep(CTX)).toEqual({ kind: 'resumed', conceptId: CID })
+    const out = await runDesignStep(CTX)
+    expect(out).toEqual({ kind: 'resumed', conceptId: CID })
+    expect(shouldChain(out)).toBe(true)
     expect(m.resumeParkedConcept).toHaveBeenCalledWith({}, RID, expect.objectContaining({ id: CID, updated_at: parked().updated_at }))
     expect(m.renderUnit).not.toHaveBeenCalled()
     expect(m.generateConcept).not.toHaveBeenCalled()
   })
-  it('is a no-op when another step already resumed it', async () => {
+  it('is a no-op when another step already resumed it (CAS miss) — and does not chain', async () => {
     m.resumeParkedConcept.mockResolvedValue(null)
-    expect((await runDesignStep(CTX)).kind).toBe('noop')
+    const out = await runDesignStep(CTX)
+    expect(out).toEqual({ kind: 'noop', reason: 'concept already resumed' })
+    expect(shouldChain(out)).toBe(false)
+    expect(m.renderUnit).not.toHaveBeenCalled()
+  })
+  it('resumes the first parked concept by position, after the finished ones', async () => {
+    const later = makeConceptRow({ id: 'p2', position: 2, status: 'pending', critique: asJson({ ...newReview(), next: 'critique' }) })
+    const first = makeConceptRow({ id: 'p1', position: 1, status: 'pending', critique: asJson({ ...newReview(), next: 'revise' }) })
+    m.listConcepts.mockResolvedValue([later, makeConceptRow({ id: 'r0', position: 0, status: 'ready' }), first])
+    m.resumeParkedConcept.mockResolvedValue(makeConceptRow({ id: 'p1', status: 'refining' }))
+    expect(await runDesignStep(CTX)).toEqual({ kind: 'resumed', conceptId: 'p1' })
+    expect(m.resumeParkedConcept).toHaveBeenCalledTimes(1)
+    expect(m.resumeParkedConcept).toHaveBeenCalledWith({}, RID, expect.objectContaining({ id: 'p1', updated_at: first.updated_at }))
   })
 })
 

@@ -141,6 +141,17 @@ describe('renderUnit', () => {
     expect(snap.metrics).toEqual(OK_METRICS)
   })
 
+  it('does not retry the current-site render once another concept of the run was rendered (no baseline mid-run)', async () => {
+    const bare = makeRunRow({ status: 'refining', base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [], notes: [] }) })
+    m.getRun.mockResolvedValue(bare)
+    m.claimConceptRender.mockResolvedValue(makeConceptRow({ id: 'c1', position: 1, status: 'refining' }))
+    const earlier = makeConceptRow({ status: 'ready', screenshots: asJson(R0), critique: asJson({ ...newReview(), next: 'done', outcome: 'passed' }) })
+    m.listConcepts.mockResolvedValue([earlier, makeConceptRow({ id: 'c1', position: 1, status: 'refining' })])
+    await renderUnit({} as never, CTX, bare, 'c1', 'initial')
+    expect(m.renderFolds.mock.calls.map((c) => (c[0] as { name: string }).name)).toEqual(['concept-1-r0'])
+    expect(m.transitionRun.mock.calls.some((c) => (c[3] as { baseSnapshot?: unknown }).baseSnapshot)).toBe(false)
+  })
+
   it('no desktop render ends the loop: ready + not_rendered, still applicable; the last concept finalizes the run', async () => {
     m.claimConceptRender.mockResolvedValue(makeConceptRow({ status: 'refining' }))
     m.renderFolds.mockResolvedValue({ shots: [], desktopWebp: null, metrics: null, error: 'The renderer is unavailable right now.' })
@@ -302,6 +313,36 @@ describe('critiqueUnit', () => {
     expect(m.updateRunFields).toHaveBeenCalledWith({}, RID, { costUsd: 0.1 })
   })
 
+  it('a failure AFTER the settle landed propagates (the step route errors the run) — no second settle, no swallowed no-op', async () => {
+    m.listConcepts.mockResolvedValue([looping()])
+    m.critique.mockResolvedValue(result(crit(false)))
+    const blip = new Error('db blip')
+    m.updateRunFields.mockRejectedValue(blip) // afterUnit's heartbeat
+    await expect(critiqueUnit({} as never, CTX, RID, CID, () => 1_000)).rejects.toBe(blip)
+    expect(m.settleConceptUnit).toHaveBeenCalledTimes(1)
+    expect(unitPatch().review.next).toBe('revise')
+  })
+
+  it('a failure after an END-of-loop settle propagates too', async () => {
+    m.listConcepts.mockResolvedValueOnce([looping()]).mockResolvedValueOnce([looping()])
+    const blip = new Error('db blip')
+    m.listConcepts.mockRejectedValueOnce(blip) // afterUnit's read
+    m.critique.mockResolvedValue(result(crit(true)))
+    await expect(critiqueUnit({} as never, CTX, RID, CID, () => 1_000)).rejects.toBe(blip)
+    expect(m.settleConceptUnit).toHaveBeenCalledTimes(1)
+    expect(unitPatch().review.outcome).toBe('passed')
+  })
+
+  it('the last loop to end fails the run (not ready) when another concept was stopped mid-review', async () => {
+    const swept = makeConceptRow({ id: 'c1', position: 1, status: 'error', critique: asJson({ ...newReview(), next: 'revise' }) })
+    m.listConcepts.mockResolvedValueOnce([looping(), swept]).mockResolvedValueOnce([looping(), swept]).mockResolvedValue([makeConceptRow({ status: 'ready' }), swept])
+    m.critique.mockResolvedValue(result(crit(true)))
+    const out = await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    expect(out).toEqual({ kind: 'failed', error: 'A concept stopped mid-review — press Retry.' })
+    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { status: 'error', error: 'A concept stopped mid-review — press Retry.' })
+    expect(m.transitionRun).not.toHaveBeenCalledWith({}, RID, ['refining'], { status: 'ready', stage: 'ready' })
+  })
+
   it('a unit someone else holds makes no model call', async () => {
     m.listConcepts.mockResolvedValue([looping({ claim: { unit: 'critique', at: '2026-09-25T12:00:00.000Z' } })])
     expect((await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)).kind).toBe('noop')
@@ -366,6 +407,16 @@ describe('reviseUnit', () => {
     await reviseUnit({} as never, CTX, RID, CID, () => 1_000)
     expect(m.revise).not.toHaveBeenCalled()
     expect(unitPatch().review).toMatchObject({ outcome: 'cost_cap', notes: [capLoopNote(4)] })
+  })
+
+  it('a failure AFTER the revision was settled propagates (the step route errors the run) — the new bundle is not undone', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'revise', critiques: [crit(false)] })])
+    m.revise.mockResolvedValue({ concept: { bundle: REVISED, files: FILES, notes: [] }, errors: [], notes: [], costUsd: 0.4, estimatedUsd: 0, stoppedReason: null })
+    const blip = new Error('db blip')
+    m.updateRunFields.mockRejectedValue(blip)
+    await expect(reviseUnit({} as never, CTX, RID, CID, () => 1_000)).rejects.toBe(blip)
+    expect(m.settleConceptUnit).toHaveBeenCalledTimes(1)
+    expect(unitPatch()).toMatchObject({ status: 'refining', bundle: REVISED, iterations: 1 })
   })
 
   it('a throw mid-call persists the reported spend and keeps the previous bundle', async () => {
