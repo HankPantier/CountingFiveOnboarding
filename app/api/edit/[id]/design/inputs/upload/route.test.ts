@@ -27,11 +27,19 @@ vi.mock('@/lib/design/storage', async (importOriginal) => {
 import { POST } from './route'
 
 const params = { params: Promise.resolve({ id: SID }) }
-const send = (body: FormData | string) => POST(new Request('http://x/api', { method: 'POST', body }), params)
+const send = (body: FormData | string, headers?: Record<string, string>) =>
+  POST(new Request('http://x/api', { method: 'POST', body, headers }), params)
 
 async function pngFile(): Promise<File> {
   const buf = await sharp({ create: { width: 64, height: 40, channels: 3, background: '#003b71' } }).png().toBuffer()
   return new File([new Uint8Array(buf)], 'shot.png', { type: 'image/png' })
+}
+
+// Correct PNG magic bytes, but the rest of the stream is missing — file-type
+// identifies it as PNG from the signature alone; sharp then fails to decode.
+async function truncatedPngFile(): Promise<File> {
+  const buf = await sharp({ create: { width: 64, height: 40, channels: 3, background: '#003b71' } }).png().toBuffer()
+  return new File([new Uint8Array(buf.subarray(0, 16))], 'bad.png', { type: 'image/png' })
 }
 
 function form(file: File | null, extra: Record<string, string> = {}): FormData {
@@ -78,9 +86,22 @@ describe('POST /design/inputs/upload', () => {
     expect(m.store).not.toHaveBeenCalled()
   })
 
+  it('rejects an oversized Content-Length with 413 before parsing the body', async () => {
+    // A body that would 400 (not multipart) if formData() were ever reached —
+    // proves the Content-Length check runs and returns first.
+    const res = await send('{"x":1}', { 'content-length': String(8 * 1024 * 1024 + 64 * 1024 + 1) })
+    expect(res.status).toBe(413)
+    expect(m.store).not.toHaveBeenCalled()
+  })
+
   it('rejects a file whose magic bytes are not PNG/JPEG/WebP with 415', async () => {
     const svg = new File([new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>')], 'x.png', { type: 'image/png' })
     expect((await send(form(svg))).status).toBe(415)
+    expect(m.store).not.toHaveBeenCalled()
+  })
+
+  it('rejects a file with correct magic bytes that cannot be decoded with 415', async () => {
+    expect((await send(form(await truncatedPngFile()))).status).toBe(415)
     expect(m.store).not.toHaveBeenCalled()
   })
 
@@ -103,5 +124,15 @@ describe('POST /design/inputs/upload', () => {
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Failed to save the image' })
     expect(m.remove).toHaveBeenCalledWith({}, [m.store.mock.calls[0][1]])
+  })
+
+  it('does not roll back a committed upload when signing fails afterward', async () => {
+    m.sign.mockRejectedValueOnce(new Error('sign down'))
+    const res = await send(form(await pngFile()))
+    expect(res.status).toBe(201)
+    expect(m.createInput).toHaveBeenCalledTimes(1)
+    expect(m.remove).not.toHaveBeenCalled()
+    const body = await res.json()
+    expect(body.input.thumbnailUrl).toBeNull()
   })
 })
