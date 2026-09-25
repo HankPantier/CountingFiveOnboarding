@@ -45,6 +45,10 @@ describe('parseOptionalText', () => {
   it('treats a string that becomes empty after stripping like an empty value', () => {
     expect(parseOptionalText('\u0000\u0007', 10, 'Label')).toEqual({ ok: true, value: null })
   })
+  it('strips control characters before trimming, so exposed edge whitespace is also trimmed', () => {
+    expect(parseOptionalText('\u0000 abc \u0000', 10, 'Label')).toEqual({ ok: true, value: 'abc' })
+    expect(parseOptionalText('\u0007  x', 10, 'Label')).toEqual({ ok: true, value: 'x' })
+  })
 })
 
 describe('small guards', () => {

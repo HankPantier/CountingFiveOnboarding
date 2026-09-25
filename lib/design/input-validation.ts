@@ -49,8 +49,7 @@ export function parseOptionalText(
 ): { ok: true; value: string | null } | { ok: false; reason: string } {
   if (value === undefined || value === null) return { ok: true, value: null }
   if (typeof value !== 'string') return { ok: false, reason: `${field} must be text.` }
-  const trimmed = value.trim()
-  const cleaned = trimmed.replace(CONTROL_CHARS_RE, '')
+  const cleaned = value.replace(CONTROL_CHARS_RE, '').trim()
   if (cleaned.length > max) return { ok: false, reason: `${field} must be ${max} characters or fewer.` }
   return { ok: true, value: cleaned || null }
 }
