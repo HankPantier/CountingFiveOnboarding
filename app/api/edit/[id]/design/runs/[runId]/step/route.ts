@@ -11,7 +11,8 @@ import { authorizeStep, type StepTarget } from '../../../_step-auth'
 export const runtime = 'nodejs'
 // A generate step (ONE concept: one Opus call + one repair) is budgeted to
 // finish by 540 s (GENERATE_BUDGET_MS); a render step is two warm renders
-// (~5–20 s).
+// (~5–20 s). Must stay a literal for Next.js — pinned by a test to
+// DESIGN_STEP_MAX_DURATION_S (planRetry's stale-claim window).
 export const maxDuration = 600
 
 const WORKER_UNAVAILABLE = 'The design worker is unavailable right now — press Retry.'

@@ -5,10 +5,10 @@
 import type { Tables } from '@/types/database'
 import { displayHost, isPlainObject } from './input-validation'
 import { INPUT_KIND_LABELS, type DesignInputKind, type ThemeBlobShas } from './studio-types'
-import { DEFAULT_RUN_PAGE, MAX_RUN_INPUTS, type RunBaseSnapshot, type RunScreenshot, type RunStage } from './run-types'
+import { DEFAULT_RUN_PAGE, DESIGN_STEP_MAX_LIFETIME_MS, MAX_RUN_INPUTS, type RunBaseSnapshot, type RunScreenshot, type RunStage } from './run-types'
 
 export type RunLite = Pick<Tables<'design_runs'>, 'status' | 'stage' | 'concept_count'>
-export type ConceptLite = Pick<Tables<'design_concepts'>, 'id' | 'position' | 'status' | 'bundle'>
+export type ConceptLite = Pick<Tables<'design_concepts'>, 'id' | 'position' | 'status' | 'bundle' | 'updated_at'>
 
 // Generation is one concept per step: `generate` names the position to design
 // next; once every position exists the run moves to render (≥ 1 usable
@@ -61,11 +61,23 @@ export type RetryPlan =
 //   concept ⇒ render whatever didn't finish (swept 'error' / stuck 'refining').
 //   Otherwise ⇒ generate again from the first missing position: accepted and
 //   rejected concepts are kept (no re-spend); an errored / stale 'generating'
-//   position is deleted so it is designed again. When every position was
+//   position is deleted so it is designed again (a 'generating' row younger
+//   than a step's max lifetime refuses the retry — its worker may be alive). When every position was
 //   rejected (or generation finished with nothing usable) all rows are deleted
 //   and generation starts over.
-export function planRetry(run: RunLite, concepts: ConceptLite[]): RetryPlan {
+export const CONCEPT_STILL_DESIGNING = 'A concept is still being designed — try again in a few minutes.'
+
+// A 'generating' row whose claim is older than any step can live: its worker
+// is gone. A younger one may still have a live worker (the run can be errored
+// by a failed chain trigger while a generate step is still running).
+function isStaleGenerating(c: Pick<ConceptLite, 'status' | 'updated_at'>, now: number): boolean {
+  const at = Date.parse(c.updated_at)
+  return c.status === 'generating' && (!Number.isFinite(at) || now - at > DESIGN_STEP_MAX_LIFETIME_MS)
+}
+
+export function planRetry(run: RunLite, concepts: ConceptLite[], now: number = Date.now()): RetryPlan {
   if (run.status !== 'error') return { ok: false, reason: 'Only a failed run can be retried.' }
+  if (concepts.some((c) => c.status === 'generating' && !isStaleGenerating(c, now))) return { ok: false, reason: CONCEPT_STILL_DESIGNING }
   const usable = concepts.filter((c) => c.bundle !== null && c.status !== 'rejected')
   const pastGeneration = run.stage !== 'generate' || concepts.some((c) => c.status === 'refining' || c.status === 'ready')
   if (pastGeneration && usable.length > 0) {

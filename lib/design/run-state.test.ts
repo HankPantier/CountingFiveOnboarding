@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { asJson } from '@/lib/supabase/json-typed'
 import { makeConceptRow, makeInputRow, makeRunRow } from './__fixtures__/rows'
 import { nextAction, parseBaseSnapshot, parseScreenshots, planRetry, selectRunInputs } from './run-state'
+import { DESIGN_STEP_MAX_LIFETIME_MS } from './run-types'
 
 const c = (id: string, position: number, status: string, withBundle = true) =>
   makeConceptRow({ id, position, status, ...(withBundle ? {} : { bundle: null }) })
@@ -66,7 +67,17 @@ describe('planRetry', () => {
   it('generate stage: an errored or stale generating position is deleted so it is regenerated', () => {
     const run = makeRunRow({ status: 'error', stage: 'generate' })
     expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'error', false)])).toMatchObject({ status: 'queued', deleteConceptIds: ['b'] })
-    expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'generating', false)])).toMatchObject({ status: 'queued', deleteConceptIds: ['b'] })
+    // makeConceptRow's updated_at is 2026-09-25T11:00Z; the step's max lifetime has passed.
+    const later = Date.parse('2026-09-25T11:00:00.000Z') + DESIGN_STEP_MAX_LIFETIME_MS + 1
+    expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'generating', false)], later)).toMatchObject({ status: 'queued', deleteConceptIds: ['b'] })
+  })
+  it('refuses while a generating row is younger than a step’s max lifetime (its worker may still be alive)', () => {
+    const run = makeRunRow({ status: 'error', stage: 'generate' })
+    const soon = Date.parse('2026-09-25T11:00:00.000Z') + DESIGN_STEP_MAX_LIFETIME_MS - 1_000
+    expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'generating', false)], soon)).toEqual({
+      ok: false,
+      reason: 'A concept is still being designed — try again in a few minutes.',
+    })
   })
   it('generate stage: a lone rejected concept is kept (no re-spend) and generation resumes after it', () => {
     expect(planRetry(makeRunRow({ status: 'error' }), [c('x', 0, 'rejected', false)])).toEqual({

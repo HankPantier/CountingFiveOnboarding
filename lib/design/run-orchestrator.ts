@@ -194,13 +194,12 @@ async function generateStage(
     run = await transitionRun(db, runId, ['queued'], { status: 'generating', stage: 'generate', error: null })
     if (!run) return { kind: 'noop', reason: 'generation already claimed' }
   }
-  const priorCost = Number(run.cost_usd)
   const capUsd = Number(run.cost_cap_usd)
   const priors = priorConcepts(concepts)
-  const base = parseBaseSnapshot(run.base_snapshot)
+  let base = parseBaseSnapshot(run.base_snapshot)
 
   // The cap is checked before every call — including before claiming a position.
-  if (priorCost >= capUsd) {
+  if (Number(run.cost_usd) >= capUsd) {
     return endGeneration(db, runId, GENERATING, {
       accepted: priors.length,
       position: null,
@@ -212,6 +211,10 @@ async function generateStage(
   const claim = await claimConceptPosition(db, { runId, sessionId: ctx.sessionId, position })
   if (!claim) return { kind: 'noop', reason: `concept ${position + 1} already claimed` }
 
+  // The run's cost before this call. Re-read AFTER the claim (below): an
+  // overlapping step may have paid for an earlier position since this step
+  // read the run, and this step's absolute cost write must include that.
+  let priorCost = Number(run.cost_usd)
   // The run's cost including this call — set as soon as the model call
   // returns, so a later failure (settle, transition) still persists the spend.
   let costUsd: number | undefined
@@ -229,6 +232,23 @@ async function generateStage(
   }
 
   try {
+    const fresh = await getRun(db, ctx.sessionId, runId)
+    if (!fresh) {
+      await deleteConcepts(db, runId, [claim.id])
+      return { kind: 'noop', reason: 'run not found' }
+    }
+    priorCost = Number(fresh.cost_usd)
+    base = parseBaseSnapshot(fresh.base_snapshot)
+    if (priorCost >= capUsd) {
+      await deleteConcepts(db, runId, [claim.id])
+      return endGeneration(db, runId, GENERATING, {
+        accepted: priors.length,
+        position: null,
+        capped: true,
+        baseSnapshot: withNotes(base, [capNote(capUsd, priors.length)]),
+      })
+    }
+
     const caps = capabilitiesFromJson(run.capabilities)
     const paletteFreedom = paletteFreedomOf(run)
     const notes: string[] = []
@@ -331,23 +351,23 @@ async function generateStage(
     })
     costUsd = priorCost + result.costUsd // result.costUsd already includes its estimate
 
+    const accepted = priors.length + (result.concept ? 1 : 0)
+    const capped = result.stoppedReason === 'cost_cap' || costUsd >= capUsd
+    const last = position >= run.concept_count - 1
+    const stoppedByCap = result.stoppedReason === 'cost_cap' || (capped && !last)
+    snapshot = withNotes(snapshot, stoppedByCap ? [...result.notes, capNote(capUsd, accepted)] : result.notes)
+
+    // Persist the spend (guarded; unguarded when cancelled) BEFORE settling the
+    // concept row, so a kill in between never loses what this call cost.
+    const persisted = await transitionRun(db, runId, GENERATING, { costUsd, baseSnapshot: snapshot })
+    if (!persisted) await updateRunFields(db, runId, { costUsd })
+
     const settled = positionResult(result)
     if (settled) await settleConceptGeneration(db, claim.id, settled)
     else await deleteConcepts(db, runId, [claim.id])
 
-    const accepted = priors.length + (result.concept ? 1 : 0)
-    const capped = result.stoppedReason === 'cost_cap' || costUsd >= capUsd
-    const last = position >= run.concept_count - 1
-    snapshot = withNotes(snapshot, capped && !last ? [...result.notes, capNote(capUsd, accepted)] : result.notes)
-
+    if (!persisted) return { kind: 'noop', reason: 'run was cancelled' }
     if (last || capped) return endGeneration(db, runId, GENERATING, { accepted, position, capped, costUsd, baseSnapshot: snapshot })
-
-    // More positions to go: persist spend + notes (also the sweep heartbeat).
-    const persisted = await transitionRun(db, runId, GENERATING, { costUsd, baseSnapshot: snapshot })
-    if (!persisted) {
-      await updateRunFields(db, runId, { costUsd })
-      return { kind: 'noop', reason: 'run was cancelled' }
-    }
     return { kind: 'generated', position, next: 'generate' }
   } catch (err) {
     console.error('[design-run] generate failed', err)

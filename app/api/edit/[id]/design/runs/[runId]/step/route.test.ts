@@ -39,7 +39,8 @@ vi.mock('@/lib/design/run-trigger', () => ({
 vi.mock('next/server', async (orig) => ({ ...((await orig()) as object), after: (fn: () => unknown) => m.after(fn) }))
 
 import { ActiveRunExistsError } from '@/lib/design/run-store'
-import { POST } from './route'
+import { DESIGN_STEP_MAX_DURATION_S } from '@/lib/design/run-types'
+import { POST, maxDuration } from './route'
 
 const call = (headers: Record<string, string> = {}, runId = RID) =>
   POST(new Request('http://x/api', { method: 'POST', headers }), { params: Promise.resolve({ id: SID, runId }) })
@@ -122,6 +123,18 @@ describe('POST step — admin retry', () => {
     expect(m.transitionRun).toHaveBeenCalledWith(m.db, RID, ['error'], { status: 'queued', stage: 'generate', error: null })
     expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
     expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, [])
+  })
+  it('409s a retry while a concept of the failed run is still being designed', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'generate' }))
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'b', status: 'generating', bundle: null, updated_at: new Date().toISOString() })])
+    const res = await call()
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'A concept is still being designed — try again in a few minutes.' })
+    expect(m.transitionRun).not.toHaveBeenCalled()
+    expect(m.deleteConcepts).not.toHaveBeenCalled()
+  })
+  it('keeps maxDuration in step with the shared step-lifetime constant', () => {
+    expect(maxDuration).toBe(DESIGN_STEP_MAX_DURATION_S)
   })
   it('nudges an active run without changing it', async () => {
     expect((await call()).status).toBe(202)

@@ -224,6 +224,45 @@ describe('runDesignStep — later concepts', () => {
     expect(m.settleConceptGeneration).toHaveBeenCalledWith({}, 'claim-1', { status: 'rejected', error: 'Ran out of time designing this concept.' })
   })
 
+  it('persists cost_usd (guarded) BEFORE settling the concept row', async () => {
+    m.listConcepts.mockResolvedValue([pending(0)])
+    const order: string[] = []
+    m.transitionRun.mockImplementation(async (_db: unknown, _id: string, _from: string[], patch: Patch) => {
+      if (patch.costUsd !== undefined) order.push('persist')
+      return makeRunRow({ status: patch.status ?? 'generating' })
+    })
+    m.settleConceptGeneration.mockImplementation(async () => {
+      order.push('settle')
+      return null
+    })
+    await runDesignStep(CTX)
+    expect(order).toEqual(['persist', 'settle'])
+  })
+
+  it('re-reads cost_usd after claiming: spend an overlapping step recorded meanwhile is not overwritten', async () => {
+    m.listConcepts.mockResolvedValue([pending(0)])
+    m.getRun
+      .mockReset()
+      .mockResolvedValueOnce(makeRunRow({ status: 'generating', cost_usd: 0.5, ...withCurrent })) // step start
+      .mockResolvedValue(makeRunRow({ status: 'generating', cost_usd: 1.2, ...withCurrent })) // after the claim
+    await runDesignStep(CTX)
+    expect((m.generateConcept.mock.calls[0][0] as { costSoFarUsd: number }).costSoFarUsd).toBe(1.2)
+    expect(lastTransition().patch.costUsd).toBeCloseTo(1.7, 6)
+  })
+
+  it('re-checks the cap with the re-read cost and releases the claim when it is already reached', async () => {
+    m.listConcepts.mockResolvedValue([pending(0)])
+    m.getRun
+      .mockReset()
+      .mockResolvedValueOnce(makeRunRow({ status: 'generating', cost_usd: 0.5, ...withCurrent }))
+      .mockResolvedValue(makeRunRow({ status: 'generating', cost_usd: 4, ...withCurrent }))
+    const out = await runDesignStep(CTX)
+    expect(out).toEqual({ kind: 'generated', position: null, next: 'render' })
+    expect(m.generateConcept).not.toHaveBeenCalled()
+    expect(m.deleteConcepts).toHaveBeenCalledWith({}, RID, ['claim-1'])
+    expect(lastTransition().patch.baseSnapshot?.notes).toContain('Stopped at the $4.00 cap after 1 concept.')
+  })
+
   it('the last position moves the run to render', async () => {
     m.listConcepts.mockResolvedValue([pending(0), rejected(1)])
     const out = await runDesignStep(CTX)
@@ -291,6 +330,14 @@ describe('runDesignStep — later concepts', () => {
       expect(out).toEqual({ kind: 'generated', position: 1, next: 'render' })
       expect(lastTransition().patch).toMatchObject({ status: 'refining', stage: 'render' })
       expect(lastTransition().patch.costUsd).toBeCloseTo(4.3, 6)
+      expect(lastTransition().patch.baseSnapshot?.notes).toContain('Stopped at the $4.00 cap after 2 concepts.')
+    })
+
+    it('adds the cap note when the cap stops the LAST position’s call too', async () => {
+      m.listConcepts.mockResolvedValue([pending(0), pending(1, OXBLOOD)])
+      m.generateConcept.mockResolvedValue({ concept: null, errors: [], costUsd: 0, estimatedUsd: 0, notes: [], stoppedReason: 'cost_cap' })
+      await runDesignStep(CTX)
+      expect(lastTransition().patch).toMatchObject({ status: 'refining', stage: 'render' })
       expect(lastTransition().patch.baseSnapshot?.notes).toContain('Stopped at the $4.00 cap after 2 concepts.')
     })
 
