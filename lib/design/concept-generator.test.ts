@@ -9,7 +9,8 @@ import { VALID } from './__fixtures__/valid-bundle'
 import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
 import { DESIGN_SYSTEM_PROMPT } from './brief'
 import {
-  CONCEPT_CALL_TIMEOUT_MS,
+  DEADLINE_SAFETY_MS,
+  FIRST_ATTEMPT_CAP_MS,
   ESTIMATED_TOKENS_PER_IMAGE,
   MIN_REPAIR_TIMEOUT_MS,
   REPAIR_CALL_TIMEOUT_MS,
@@ -107,7 +108,9 @@ describe('generateConcepts', () => {
     expect(opts.providerOptions.anthropic.thinking.type).toBe('adaptive')
     for (const k of ['temperature', 'topP', 'topK', 'toolChoice', 'prompt']) expect(k in opts).toBe(false)
     expect(opts.messages).toHaveLength(1)
-    expect(timeouts).toEqual([CONCEPT_CALL_TIMEOUT_MS])
+    // 540 − 0 − 20 safety = 520 s → capped at the 500 s first-attempt cap.
+    expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS])
+    expect(FIRST_ATTEMPT_CAP_MS).toBe(500_000)
   })
 
   it('repairs ONLY the invalid concept, once, as a follow-up turn', async () => {
@@ -157,10 +160,57 @@ describe('generateConcepts', () => {
   })
 
   it('does not start a call that could overrun the invocation deadline', async () => {
-    // 300 s left < 360 s first-call timeout + 20 s safety.
-    const r = await generateConcepts(args({ deadline: NOW + 300_000 }))
+    // 100 − 20 safety = 80 s < the 90 s minimum.
+    const r = await generateConcepts(args({ deadline: NOW + 100_000 }))
     expect(m.record).not.toHaveBeenCalled()
+    expect(timeouts).toEqual([])
     expect(r.stoppedReason).toBe('deadline')
+  })
+
+  describe('first-attempt timeout', () => {
+    it('gets the remaining budget when less than the cap is left', async () => {
+      scripted = [{ concepts: [A, B, C] }]
+      const r = await generateConcepts(args({ deadline: NOW + 300_000 }))
+      expect(timeouts).toEqual([300_000 - DEADLINE_SAFETY_MS])
+      expect(r.concepts).toHaveLength(3)
+    })
+
+    it('with the 540 s budget and a 10 s gather (510 s left), is capped at 500 s', async () => {
+      scripted = [{ concepts: [A, B, C] }]
+      clock = NOW + 10_000 // gather time already spent
+      await generateConcepts(args({ deadline: NOW + 540_000 }))
+      expect(timeouts).toEqual([500_000])
+    })
+
+    it('with a long gather, gets ≈ the remaining time (under the cap)', async () => {
+      scripted = [{ concepts: [A, B, C] }]
+      clock = NOW + 60_000
+      await generateConcepts(args({ deadline: NOW + 540_000 }))
+      expect(timeouts).toEqual([540_000 - 60_000 - DEADLINE_SAFETY_MS])
+    })
+  })
+
+  describe('onSpend', () => {
+    it('reports the running total after every accounted call', async () => {
+      scripted = [{ concepts: [A, BROKEN, C] }, { concepts: [B] }]
+      const seen: number[] = []
+      await generateConcepts(args({ onSpend: (usd) => seen.push(usd) }))
+      expect(seen).toHaveLength(2)
+      expect(seen[0]).toBeCloseTo(0.14, 6)
+      expect(seen[1]).toBeCloseTo(0.28, 6)
+    })
+
+    it('reports the aborted-attempt estimate, even when generateJson throws', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      m.generateJson.mockImplementationOnce(async (opts: Opts) => {
+        await opts.beforeAttempt?.(1)
+        throw new Error('socket hang up')
+      })
+      const seen: number[] = []
+      await expect(generateConcepts(args({ onSpend: (usd) => seen.push(usd) }))).rejects.toThrow('socket hang up')
+      expect(seen).toHaveLength(1)
+      expect(seen[0]).toBeGreaterThan(0)
+    })
   })
 
   it('reports no_output when the model returns nothing usable', async () => {
@@ -183,7 +233,7 @@ describe('generateConcepts', () => {
       elapsed = [440_000]
       const r = await generateConcepts(args())
       expect(m.record).toHaveBeenCalledTimes(1)
-      expect(timeouts).toEqual([CONCEPT_CALL_TIMEOUT_MS])
+      expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS])
       expect(r.concepts).toHaveLength(2)
       expect(r.rejected).toHaveLength(1)
       expect(r.stoppedReason).toBeNull()
@@ -195,7 +245,7 @@ describe('generateConcepts', () => {
       scripted = [{ concepts: [A, BROKEN, C] }, { concepts: [B] }]
       elapsed = [400_000]
       const r = await generateConcepts(args())
-      expect(timeouts).toEqual([CONCEPT_CALL_TIMEOUT_MS, 120_000])
+      expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS, 120_000])
       expect(r.concepts).toHaveLength(3)
     })
 
@@ -203,7 +253,7 @@ describe('generateConcepts', () => {
       scripted = [{ concepts: [A, BROKEN, C] }, { concepts: [B] }]
       elapsed = [100_000]
       await generateConcepts(args())
-      expect(timeouts).toEqual([CONCEPT_CALL_TIMEOUT_MS, REPAIR_CALL_TIMEOUT_MS])
+      expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS, REPAIR_CALL_TIMEOUT_MS])
       expect(REPAIR_CALL_TIMEOUT_MS).toBeGreaterThan(MIN_REPAIR_TIMEOUT_MS)
     })
 
@@ -219,8 +269,8 @@ describe('generateConcepts', () => {
         return { concepts: [A, B, C] }
       })
       const r = await generateConcepts(args())
-      // 540 − 200 − 20 = 320 s, under the 360 s first-call cap.
-      expect(timeouts).toEqual([CONCEPT_CALL_TIMEOUT_MS, 320_000])
+      // 540 − 200 − 20 = 320 s, under the 500 s first-call cap.
+      expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS, 320_000])
       expect(r.concepts).toHaveLength(3)
       expect(r.costUsd).toBeCloseTo(0.28, 6)
     })

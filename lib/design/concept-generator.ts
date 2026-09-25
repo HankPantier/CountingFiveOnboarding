@@ -6,12 +6,16 @@
 // invocation's deadline. Opus 5.5: generateText → extractJson → zod, adaptive
 // thinking, never temperature/top_p/top_k/toolChoice.
 //
-// Timeouts: the first attempt of the first call gets a fixed
-// CONCEPT_CALL_TIMEOUT_MS and only starts when it can finish (plus
-// DEADLINE_SAFETY_MS) before the deadline. Every later attempt (the repair, and
-// generateJson's internal larger-budget retry) gets whatever time is left —
+// Timeouts: every attempt (the first one, generateJson's internal larger-budget
+// retry, and the repair) gets whatever time is left —
 // min(cap, deadline − now − DEADLINE_SAFETY_MS) — and is vetoed as 'deadline'
-// when that is under MIN_REPAIR_TIMEOUT_MS.
+// when that is under MIN_REPAIR_TIMEOUT_MS. The first call's cap is
+// FIRST_ATTEMPT_CAP_MS, so with the 540 s invocation budget and a short gather
+// the first attempt gets up to 500 s instead of a fixed slice that would leave
+// too little for anything after an abort.
+//
+// Spend reporting: `onSpend` is called with the running total every time it
+// changes, so the caller can persist spend even if this function throws later.
 //
 // Aborted attempts: generateJson only reports usage (onAttempt) when the model
 // call returns. A call aborted by its timeout (or failing mid-flight) may still
@@ -28,7 +32,8 @@ import { DESIGN_SYSTEM_PROMPT } from './brief'
 import { parseConceptsEnvelope, validateConceptBundle, type ConceptContext, type ValidConcept } from './concept-validate'
 import { findNearDuplicates, isNearDuplicate } from './distinctness'
 
-export const CONCEPT_CALL_TIMEOUT_MS = 360_000
+// Cap for the first concept call's attempts; the actual timeout is dynamic.
+export const FIRST_ATTEMPT_CAP_MS = 500_000
 // Cap for the repair call; the actual timeout is dynamic (see header).
 export const REPAIR_CALL_TIMEOUT_MS = 150_000
 export const MIN_REPAIR_TIMEOUT_MS = 90_000
@@ -51,6 +56,8 @@ export type GenerateConceptsArgs = {
   deadline: number // epoch ms by which every model call must have finished
   attribution: { sessionId: string; contentJobId: string; createdBy: string | null }
   now?: () => number
+  // Called with the running spend (exact + estimated) every time it changes.
+  onSpend?: (totalUsd: number) => void
 }
 
 export type GeneratedConcepts = {
@@ -99,15 +106,10 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
   const notes: string[] = []
   const model = anthropic(DESIGN_MODEL)
 
-  // Side-effect free budget check. `fixedMs` → the attempt needs exactly that
-  // long; otherwise it gets the remaining time, capped at `capMs`.
-  const plan = (fixedMs: number | null, capMs: number): Plan => {
+  // Side-effect free budget check: the attempt gets the remaining time, capped at `capMs`.
+  const plan = (capMs: number): Plan => {
     if (args.costSoFarUsd + state.spent >= args.costCapUsd) return { ok: false, reason: 'cost_cap' }
-    const t = now()
-    if (fixedMs !== null) {
-      return t + fixedMs + DEADLINE_SAFETY_MS > args.deadline ? { ok: false, reason: 'deadline' } : { ok: true, timeoutMs: fixedMs }
-    }
-    const remaining = Math.min(capMs, args.deadline - t - DEADLINE_SAFETY_MS)
+    const remaining = Math.min(capMs, args.deadline - now() - DEADLINE_SAFETY_MS)
     return remaining < MIN_REPAIR_TIMEOUT_MS ? { ok: false, reason: 'deadline' } : { ok: true, timeoutMs: remaining }
   }
 
@@ -119,6 +121,7 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
     tracker.estimated += unaccounted
     state.spent += usd
     state.estimated += usd
+    args.onSpend?.(state.spent)
     console.warn(`[design-concept] aborted attempt — estimated input cost $${usd.toFixed(4)} added to run`)
   }
 
@@ -133,6 +136,7 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
       cache.cacheCreationInputTokens,
       '5m'
     )
+    args.onSpend?.(state.spent)
     await recordTokenUsage({
       task: 'content',
       stage: 'design_concept',
@@ -147,28 +151,26 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
     })
   }
 
-  // One gated, accounted generateJson call. `firstFixedMs` is the fixed timeout
-  // for attempt 1 (null → dynamic like every other attempt).
+  // One gated, accounted generateJson call; every attempt's timeout is dynamic.
   const call = async (
     messages: ModelMessage[],
     cfg: Pick<GenerateJsonOptions, 'firstBudget' | 'retryBudget' | 'providerOptions' | 'retryProviderOptions' | 'label'> & {
-      firstFixedMs: number | null
       capMs: number
     }
   ): Promise<unknown | null> => {
     const tracker: CallTracker = { started: 0, accounted: 0, estimated: 0, estimateUsd: estimateAttemptUsd(DESIGN_SYSTEM_PROMPT, messages) }
-    const { firstFixedMs, capMs, ...budgets } = cfg
+    const { capMs, ...budgets } = cfg
     const opts: GenerateJsonOptions = {
       model,
       system: DESIGN_SYSTEM_PROMPT,
       messages,
       ...budgets,
-      timeoutMs: firstFixedMs ?? capMs,
+      timeoutMs: capMs,
       // generateJson reads opts.timeoutMs when it starts each attempt, AFTER
       // this gate — so setting it here gives the attempt its dynamic timeout.
-      beforeAttempt: (attempt) => {
+      beforeAttempt: () => {
         reconcile(tracker)
-        const p = plan(attempt === 1 ? firstFixedMs : null, capMs)
+        const p = plan(capMs)
         if (!p.ok) {
           state.stop = p.reason
           return false
@@ -179,9 +181,12 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
       },
       onAttempt: account(tracker),
     }
-    const result = await generateJson(opts)
-    reconcile(tracker)
-    return result
+    try {
+      return await generateJson(opts)
+    } finally {
+      // Also on a throw, so the caller's onSpend sees the aborted-attempt estimate.
+      reconcile(tracker)
+    }
   }
 
   const validate = (raw: unknown): Slot => {
@@ -206,8 +211,7 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
     providerOptions: GENERATION_PROVIDER_OPTIONS,
     retryProviderOptions: providerOptionsForAttempt(3),
     label: 'design-concepts',
-    firstFixedMs: CONCEPT_CALL_TIMEOUT_MS,
-    capMs: CONCEPT_CALL_TIMEOUT_MS,
+    capMs: FIRST_ATTEMPT_CAP_MS,
   })
   const raws = first === null ? null : parseConceptsEnvelope(first)
   if (!raws) return done([], [], state.stop ?? 'no_output')
@@ -224,7 +228,7 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
   }
 
   const failing = slots.flatMap((s, i) => (s.concept ? [] : [i]))
-  const repairPlan = failing.length > 0 ? plan(null, REPAIR_CALL_TIMEOUT_MS) : null
+  const repairPlan = failing.length > 0 ? plan(REPAIR_CALL_TIMEOUT_MS) : null
   if (repairPlan && !repairPlan.ok) state.stop = repairPlan.reason
   if (failing.length > 0 && repairPlan?.ok) {
     const request = [
@@ -246,7 +250,6 @@ export async function generateConcepts(args: GenerateConceptsArgs): Promise<Gene
       firstBudget: REPAIR_OUTPUT_TOKENS,
       providerOptions: providerOptionsForAttempt(2),
       label: 'design-concepts-repair',
-      firstFixedMs: null,
       capMs: REPAIR_CALL_TIMEOUT_MS,
     })
     const fixes = repaired === null ? [] : (parseConceptsEnvelope(repaired) ?? [])

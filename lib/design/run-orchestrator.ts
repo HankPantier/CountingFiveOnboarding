@@ -119,6 +119,9 @@ async function generateStage(db: Db, ctx: StepContext, runId: string, now: () =>
   // The run's cost including this generation — set as soon as the model call
   // returns, so a later failure (insert, transition) still persists the spend.
   let costUsd: number | undefined
+  // The generator's latest running spend (onSpend), so spend already incurred
+  // survives a throw from INSIDE generateConcepts (e.g. validation).
+  let reportedSpend: number | undefined
   try {
     const base = parseBaseSnapshot(run.base_snapshot)
     const caps = capabilitiesFromJson(run.capabilities)
@@ -206,6 +209,9 @@ async function generateStage(db: Db, ctx: StepContext, runId: string, now: () =>
       deadline: started + GENERATE_BUDGET_MS,
       attribution: { sessionId: ctx.sessionId, contentJobId: ctx.jobId, createdBy: run.created_by },
       now,
+      onSpend: (usd) => {
+        reportedSpend = usd
+      },
     })
     notes.push(...result.notes)
     costUsd = Number(run.cost_usd) + result.costUsd // result.costUsd already includes its estimate
@@ -238,7 +244,9 @@ async function generateStage(db: Db, ctx: StepContext, runId: string, now: () =>
     return { kind: 'generated', concepts: result.concepts.length }
   } catch (err) {
     console.error('[design-run] generate failed', err)
-    return failRun(db, runId, ['generating'], GENERATE_FAILED, costUsd === undefined ? {} : { costUsd })
+    // Absolute (idempotent) write: prior run cost + this generation's spend.
+    const spend = costUsd ?? (reportedSpend === undefined ? undefined : Number(run.cost_usd) + reportedSpend)
+    return failRun(db, runId, ['generating'], GENERATE_FAILED, spend === undefined ? {} : { costUsd: spend })
   }
 }
 

@@ -173,11 +173,38 @@ describe('runDesignStep — generate', () => {
     expect(m.updateRunFields).toHaveBeenCalledWith({}, RID, { costUsd: 0.75 })
   })
 
-  it('does not touch cost when generation itself throws before returning', async () => {
+  it('does not touch cost when generation throws before reporting any spend', async () => {
     m.generateConcepts.mockRejectedValueOnce(new Error('boom'))
     expect((await runDesignStep(CTX)).kind).toBe('failed')
     const last = m.transitionRun.mock.calls.at(-1) as unknown[]
     expect(last[3]).toEqual({ status: 'error', error: 'Concept generation failed — press Retry.' })
+    expect(m.updateRunFields).not.toHaveBeenCalled()
+  })
+
+  it('persists the reported spend when generation throws after a model call was accounted', async () => {
+    m.transitionRun.mockImplementationOnce(async () => makeRunRow({ status: 'generating', input_ids: [IID], cost_usd: 0.25 }))
+    m.generateConcepts.mockImplementationOnce(async (a: { onSpend?: (usd: number) => void }) => {
+      a.onSpend?.(0.6)
+      throw new Error('validateConceptBundle: unexpected token')
+    })
+    const out = await runDesignStep(CTX)
+    expect(out).toEqual({ kind: 'failed', error: 'Concept generation failed — press Retry.' })
+    const last = m.transitionRun.mock.calls.at(-1) as unknown[]
+    expect(last.slice(1, 3)).toEqual([RID, ['generating']])
+    expect(last[3]).toEqual({ status: 'error', error: 'Concept generation failed — press Retry.', costUsd: 0.85 })
+  })
+
+  it('persists the reported spend unguarded when the throwing run was cancelled meanwhile', async () => {
+    m.transitionRun
+      .mockImplementationOnce(async () => makeRunRow({ status: 'generating', input_ids: [IID], cost_usd: 0.25 }))
+      .mockImplementationOnce(async () => null)
+    m.generateConcepts.mockImplementationOnce(async (a: { onSpend?: (usd: number) => void }) => {
+      a.onSpend?.(0.3)
+      a.onSpend?.(0.6)
+      throw new Error('boom')
+    })
+    expect((await runDesignStep(CTX)).kind).toBe('failed')
+    expect(m.updateRunFields).toHaveBeenCalledWith({}, RID, { costUsd: 0.85 })
   })
 
   it('fails without a model call when the site has no design.json', async () => {
