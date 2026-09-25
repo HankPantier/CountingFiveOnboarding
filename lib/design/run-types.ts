@@ -1,6 +1,9 @@
 // Client-safe constants + types for Design Studio RUNS (P3). Imported by the
 // UI, the pure helpers and the server units alike — no server imports here.
 import type { DesignBundle } from './bundle'
+import type { RenderMetrics } from './metrics'
+import type { CritiqueRecord } from './critique'
+import type { ReviewNext, ReviewOutcome, ReviewUnit } from './review'
 import type { ConceptStatus, RunStatus, ThemeBlobShas } from './studio-types'
 import { PALETTE_FREEDOMS } from './studio-types'
 
@@ -15,11 +18,14 @@ export const MAX_RUN_INPUTS = 5
 // The current-site render + MAX_RUN_INPUTS input screenshots.
 export const MAX_PROMPT_IMAGES = 6
 export const DEFAULT_RUN_PAGE = '/'
+// A new run's cost cap (USD). createRun writes it explicitly; the DB column
+// default (4) is only a fallback for rows inserted elsewhere.
+export const DEFAULT_RUN_COST_CAP_USD = 6
 
 // design_runs.stage (free text in the DB). Migration 078 has no 'rendering'
-// status: the render pass runs with status 'refining' + stage 'render' (P4's
-// critique loop re-renders inside the same status).
-export const RUN_STAGES = ['generate', 'render', 'ready'] as const
+// status: the P4 critique loop runs with status 'refining', and the stage
+// names the unit in flight — 'render' / 'critique' / 'revise' — then 'ready'.
+export const RUN_STAGES = ['generate', 'render', 'critique', 'revise', 'ready'] as const
 export type RunStage = (typeof RUN_STAGES)[number]
 
 // Template capability tier (spec "Capability levels", ruled for P3):
@@ -44,9 +50,27 @@ export type RunBaseSnapshot = {
   themeShas: ThemeBlobShas
   screenshots: RunScreenshot[]
   notes: string[]
+  // The current-site render's metrics (P4): the baseline concept render
+  // checks are diffed against. Absent on P3 runs.
+  metrics?: RenderMetrics | null
 }
 
 export type ScreenshotDto = { viewport: RunViewport; url: string; width: number; height: number }
+
+// The critique loop of one concept, for the Studio (P4).
+export type ConceptReviewDto = {
+  next: ReviewNext
+  activeUnit: ReviewUnit | null // the unit a step is working on right now
+  latest: CritiqueRecord | null
+  critiqueCount: number
+  outcome: ReviewOutcome | null
+  measured: boolean // the latest bundle's render was measured (at least one viewport)
+  unmeasuredViewports: RunViewport[] // viewports a partly-measured render did not check (empty when unmeasured)
+  gateFailures: string[] // baseline-diffed render-check failures (apply refuses when non-empty)
+  renderWarnings: string[] // apply-gate warnings for a partly-measured render (apply allows, with these)
+  notes: string[]
+  initialScreenshots: ScreenshotDto[] // BeforeAfter's "before"
+}
 
 export type DesignConceptDto = {
   id: string
@@ -63,6 +87,8 @@ export type DesignConceptDto = {
   treatments: DesignBundle['treatments'] | null
   tokens: Pick<DesignBundle['tokens'], 'roundness' | 'density' | 'visualFeel'> | null
   screenshots: ScreenshotDto[]
+  iterations: number
+  review: ConceptReviewDto | null
 }
 
 export type DesignRunDto = {
@@ -75,6 +101,7 @@ export type DesignRunDto = {
   pagePath: string
   costUsd: number
   costCapUsd: number
+  maxRevisions: number
   error: string | null
   notes: string[]
   capabilities: DesignCapabilities

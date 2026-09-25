@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextResponse } from 'next/server'
 import { fakeSupabase } from '@/lib/design/__fixtures__/fake-supabase'
 import { RID, SID, makeConceptRow, makeRunRow } from '@/lib/design/__fixtures__/rows'
+import { asJson } from '@/lib/supabase/json-typed'
+import { newReview } from '@/lib/design/review'
 
 const m = vi.hoisted(() => ({
   gate: vi.fn(),
@@ -11,6 +13,7 @@ const m = vi.hoisted(() => ({
   transitionRun: vi.fn(),
   resetConcepts: vi.fn(async (..._a: unknown[]) => {}),
   deleteConcepts: vi.fn(async (..._a: unknown[]) => {}),
+  resumeConcepts: vi.fn(async (..._a: unknown[]) => {}),
   runDesignStep: vi.fn(),
   shouldChain: vi.fn(),
   chainOrFail: vi.fn(async (..._a: unknown[]) => {}),
@@ -27,6 +30,7 @@ vi.mock('@/lib/design/run-store', async (orig) => ({
   transitionRun: (...a: unknown[]) => m.transitionRun(...a),
   resetConcepts: (...a: unknown[]) => m.resetConcepts(...a),
   deleteConcepts: (...a: unknown[]) => m.deleteConcepts(...a),
+  resumeConcepts: (...a: unknown[]) => m.resumeConcepts(...a),
 }))
 vi.mock('@/lib/design/run-orchestrator', () => ({
   runDesignStep: (...a: unknown[]) => m.runDesignStep(...a),
@@ -107,20 +111,56 @@ describe('POST step — gate matrix', () => {
 describe('POST step — admin retry', () => {
   it('resumes a failed run from its first unfinished stage', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error' }))
-    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'ready' }), makeConceptRow({ id: 'b', position: 1, status: 'error' })])
+    const b = makeConceptRow({ id: 'b', position: 1, status: 'error' })
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'ready' }), b])
     m.transitionRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
     const res = await call()
     expect(res.status).toBe(202)
-    expect(m.transitionRun).toHaveBeenCalledWith(m.db, RID, ['error'], { status: 'refining', stage: 'render', error: null })
-    expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
+    expect(m.transitionRun.mock.calls[0].slice(0, 3)).toEqual([m.db, RID, ['error']])
+    expect(m.transitionRun.mock.calls[0][3]).toMatchObject({ status: 'refining', stage: 'render', error: null })
+    // The rows as read (their updated_at is the CAS key).
+    expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, [b])
     expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, [])
+    expect(m.resumeConcepts).toHaveBeenCalledWith(m.db, RID, [])
+  })
+  it('a retry resumes mid-loop concepts and drops failed-attempt notes from the run', async () => {
+    const run = makeRunRow({
+      status: 'error',
+      stage: 'critique',
+      base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [], notes: ['Current-site render skipped: The renderer is unavailable right now.', 'Input skipped — A: it is archived'] }),
+    })
+    const mid = makeConceptRow({ id: 'mid', status: 'error', critique: asJson({ ...newReview(), next: 'critique' }) })
+    m.getRun.mockResolvedValue(run)
+    m.listConcepts.mockResolvedValue([mid])
+    m.transitionRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
+    const res = await call()
+    expect(res.status).toBe(202)
+    expect(m.transitionRun.mock.calls[0][3]).toMatchObject({ status: 'refining', error: null, baseSnapshot: { notes: ['Input skipped — A: it is archived'] } })
+    expect(m.resumeConcepts).toHaveBeenCalledWith(m.db, run.id, [mid])
+    // The concept side is written BEFORE the run leaves 'error', so no
+    // concurrent step can act on the stale concept set (e.g. finalize it).
+    for (const fn of [m.deleteConcepts, m.resetConcepts, m.resumeConcepts]) {
+      expect(fn.mock.invocationCallOrder[0]).toBeLessThan(m.transitionRun.mock.invocationCallOrder[0])
+    }
+  })
+  it('a Retry that loses the guarded transition 409s; its concept writes were CAS’d on the rows as read', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'critique' }))
+    const mid = makeConceptRow({ id: 'mid', status: 'error', critique: asJson({ ...newReview(), next: 'critique' }) })
+    m.listConcepts.mockResolvedValue([mid])
+    m.transitionRun.mockResolvedValue(null)
+    const res = await call()
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'The run changed — refresh and try again.' })
+    // Handed the row as read: a concurrent winner already re-stamped it, so the CAS matches nothing.
+    expect(m.resumeConcepts).toHaveBeenCalledWith(m.db, RID, [mid])
+    expect(m.after).not.toHaveBeenCalled()
   })
   it('resumes a run that failed mid-generation at its first missing / errored position', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'generate' }))
     m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'pending' }), makeConceptRow({ id: 'b', position: 1, status: 'error', bundle: null })])
     m.transitionRun.mockResolvedValue(makeRunRow({ status: 'queued' }))
     expect((await call()).status).toBe(202)
-    expect(m.transitionRun).toHaveBeenCalledWith(m.db, RID, ['error'], { status: 'queued', stage: 'generate', error: null })
+    expect(m.transitionRun.mock.calls[0][3]).toMatchObject({ status: 'queued', stage: 'generate', error: null })
     expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
     expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, [])
   })

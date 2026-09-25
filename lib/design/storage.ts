@@ -37,8 +37,16 @@ export function designStoragePath(sessionId: string, ...segments: string[]): str
   return `design/${sessionId}/${segments.join('/')}`
 }
 
-export async function storeDesignImage(supabase: SupabaseClient<Database>, path: string, webp: Buffer): Promise<void> {
-  const { error } = await supabase.storage.from(BUCKET).upload(path, webp, { contentType: 'image/webp', upsert: false })
+// upsert: true only for Design Studio run renders, whose names are
+// deterministic per concept + iteration (a retried render overwrites its own
+// object instead of orphaning one).
+export async function storeDesignImage(
+  supabase: SupabaseClient<Database>,
+  path: string,
+  webp: Buffer,
+  opts: { upsert?: boolean } = {}
+): Promise<void> {
+  const { error } = await supabase.storage.from(BUCKET).upload(path, webp, { contentType: 'image/webp', upsert: opts.upsert ?? false })
   if (error) throw new Error(`storeDesignImage failed: ${error.message}`)
 }
 

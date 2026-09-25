@@ -12,7 +12,9 @@ import type { BrandJson } from '@/types/brand-json'
 import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from './bundle-files'
+import type { PriorConcept } from './brief'
 import { enforceCapabilities, hasStyleField } from './capabilities'
+import { isNearDuplicate } from './distinctness'
 import { isPlainObject } from './input-validation'
 import type { DesignCapabilities, PaletteFreedom } from './run-types'
 
@@ -68,4 +70,24 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
     return { ok: false, errors: contrast.map((f) => `contrast ${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`) }
   }
   return { ok: true, concept: { bundle: { ...bundle, css: rendered.css }, files: rendered.files, notes } }
+}
+
+// ONE model answer → a usable concept, or the errors to quote back: missing,
+// invalid (validateConceptBundle) or a near-duplicate of one of `others` (the
+// run's other accepted concepts). Shared by concept generation (incl. its
+// repair turn, prefix "after repair: ") and the P4 reviser.
+export function checkConceptCandidate(raw: unknown, ctx: ConceptContext, others: PriorConcept[], prefix = ''): ConceptValidation {
+  if (raw === undefined) return { ok: false, errors: [`${prefix}missing — the answer had no concept`] }
+  const v = validateConceptBundle(raw, ctx)
+  if (!v.ok) return { ok: false, errors: v.errors.map((e) => `${prefix}${e}`) }
+  const clash = others.find((p) => isNearDuplicate(p.bundle, v.concept.bundle))
+  if (clash) {
+    return {
+      ok: false,
+      errors: [
+        `${prefix}too similar to concept ${clash.position + 1} ("${clash.bundle.name.slice(0, 60)}") — change the palette direction (primary/action) or at least two of fonts, tokens and treatments`,
+      ],
+    }
+  }
+  return v
 }

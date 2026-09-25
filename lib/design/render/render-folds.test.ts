@@ -30,29 +30,47 @@ beforeEach(async () => {
 const args = (over = {}) => ({ db: {} as never, sessionId: SID, runId: RID, name: 'concept-0', shell: SHELL, theme: THEME, ...over })
 
 describe('renderAndStoreFolds', () => {
-  it('renders desktop then mobile, stores ONLY the fold of each as WebP under runs/{runId}/', async () => {
+  it('renders desktop then mobile, stores ONLY the fold of each as WebP under a deterministic name (upsert)', async () => {
     m.render.mockImplementation(async (a: { viewport: string }) => ({
       shots: a.viewport === 'desktop' ? [{ kind: 'fold', png }, { kind: 'block', selector: 'x', png }] : [{ kind: 'fold', png }, { kind: 'next', png }],
+      sample: null,
     }))
-    const r = await renderAndStoreFolds(args())
+    const r = await renderAndStoreFolds(args({ name: 'concept-0-r1' }))
     expect(m.render.mock.calls.map((c) => (c[0] as { viewport: string; crops: boolean }).viewport)).toEqual(['desktop', 'mobile'])
     expect((m.render.mock.calls[0][0] as { crops: boolean }).crops).toBe(false)
     expect(r.error).toBeNull()
-    expect(r.shots.map((s) => s.viewport)).toEqual(['desktop', 'mobile'])
-    for (const s of r.shots) expect(s.path).toMatch(new RegExp(`^design/${SID}/runs/${RID}/concept-0-(desktop|mobile)-[0-9a-f]{8}\\.webp$`))
-    expect(m.store).toHaveBeenCalledTimes(2)
+    expect(r.shots.map((s) => s.path)).toEqual([`design/${SID}/runs/${RID}/concept-0-r1-desktop.webp`, `design/${SID}/runs/${RID}/concept-0-r1-mobile.webp`])
+    expect(m.store.mock.calls.map((c) => c[3])).toEqual([{ upsert: true }, { upsert: true }])
+    expect(r.metrics).toBeNull()
     expect(r.desktopWebp?.subarray(8, 12).toString('ascii')).toBe('WEBP')
+  })
+
+  it('asks for metrics only when requested and evaluates each viewport’s sample', async () => {
+    const sample = { viewportWidth: 390, scrollWidth: 430, docHeight: 2000, offenders: [], text: [], blocks: [] }
+    m.render.mockImplementation(async (a: { viewport: string }) => ({ shots: [{ kind: 'fold', png }], sample: a.viewport === 'mobile' ? sample : null }))
+    const r = await renderAndStoreFolds(args({ metrics: true }))
+    expect(m.render.mock.calls.map((c) => (c[0] as { metrics?: boolean }).metrics)).toEqual([true, true])
+    expect(r.metrics?.viewports.map((v) => v.viewport)).toEqual(['mobile'])
+    expect(r.metrics?.viewports[0].overflow?.scrollWidth).toBe(430)
+  })
+
+  it('keeps the metrics it has when a later viewport fails', async () => {
+    const sample = { viewportWidth: 1440, scrollWidth: 1440, docHeight: 2000, offenders: [], text: [], blocks: [] }
+    m.render.mockResolvedValueOnce({ shots: [{ kind: 'fold', png }], sample }).mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'RenderTimeoutError' }))
+    const r = await renderAndStoreFolds(args({ metrics: true }))
+    expect(r.error).toBe('The render timed out.')
+    expect(r.metrics?.viewports.map((v) => v.viewport)).toEqual(['desktop'])
   })
 
   it('refuses a non-https shell without rendering', async () => {
     const r = await renderAndStoreFolds(args({ shell: { ...SHELL, origin: 'http://acme.test' } }))
-    expect(r).toEqual({ shots: [], desktopWebp: null, error: 'The preview URL must use https to render.' })
+    expect(r).toEqual({ shots: [], desktopWebp: null, metrics: null, error: 'The preview URL must use https to render.' })
     expect(m.render).not.toHaveBeenCalled()
   })
 
   it('keeps what it has and reports a readable error when a render fails', async () => {
     const timeout = Object.assign(new Error('late'), { name: 'RenderTimeoutError' })
-    m.render.mockResolvedValueOnce({ shots: [{ kind: 'fold', png }] }).mockRejectedValueOnce(timeout)
+    m.render.mockResolvedValueOnce({ shots: [{ kind: 'fold', png }], sample: null }).mockRejectedValueOnce(timeout)
     const r = await renderAndStoreFolds(args())
     expect(r.shots).toHaveLength(1)
     expect(r.error).toBe('The render timed out.')

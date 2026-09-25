@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { VALID } from './__fixtures__/valid-bundle'
 import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
-import { parseConceptsEnvelope, validateConceptBundle, type ConceptContext } from './concept-validate'
+import { checkConceptCandidate, parseConceptsEnvelope, validateConceptBundle, type ConceptContext } from './concept-validate'
 import { DEFAULT_CAPABILITIES } from './run-types'
 
 const CTX: ConceptContext = { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: 'claude-opus-5-5' }
@@ -70,5 +70,28 @@ describe('validateConceptBundle', () => {
 
   it('rejects a non-object', () => {
     expect(validateConceptBundle('nope', CTX)).toEqual({ ok: false, errors: ['The concept is not a JSON object.'] })
+  })
+})
+
+describe('checkConceptCandidate', () => {
+  const OTHER = { ...VALID, name: 'Other' }
+  it('a missing answer is an error (prefixed)', () => {
+    expect(checkConceptCandidate(undefined, CTX, [], 'after repair: ')).toEqual({ ok: false, errors: ['after repair: missing — the answer had no concept'] })
+  })
+  it('passes validation errors through, prefixed', () => {
+    const r = checkConceptCandidate({ ...rawOf(VALID), palette: { ...VALID.palette, primary: 'navy' } }, CTX, [], 'p: ')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors.every((e) => e.startsWith('p: '))).toBe(true)
+  })
+  it('rejects a near-duplicate of another concept, naming it', () => {
+    const r = checkConceptCandidate(rawOf(VALID), CTX, [{ position: 2, bundle: OTHER }])
+    expect(r).toEqual({
+      ok: false,
+      errors: ['too similar to concept 3 ("Other") — change the palette direction (primary/action) or at least two of fonts, tokens and treatments'],
+    })
+  })
+  it('returns the validated concept when valid and distinct', () => {
+    const r = checkConceptCandidate(rawOf(VALID), CTX, [])
+    expect(r.ok && r.concept.bundle.name).toBe(VALID.name)
   })
 })

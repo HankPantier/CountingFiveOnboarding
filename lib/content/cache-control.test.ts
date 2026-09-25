@@ -80,6 +80,29 @@ describe('buildCachedPartsMessages', () => {
     expect(p[0].providerOptions?.anthropic?.cacheControl).toEqual({ type: 'ephemeral', ttl: '1h' })
     expect(p[1].providerOptions?.anthropic?.cacheControl).toEqual({ type: 'ephemeral', ttl: '1h' })
   })
+
+  it('breakAt adds a breakpoint on that suffix part — an image too — alongside the dynamic one', () => {
+    const img = { type: 'image' as const, image: new Uint8Array([1]), mediaType: 'image/webp' }
+    const msgs = buildCachedPartsMessages('STATIC', [{ type: 'text', text: 'A' }, img, { type: 'text', text: 'B' }], {
+      cacheDynamic: true,
+      breakAt: 1,
+    })
+    const p = msgs[0].content as Part[]
+    expect(p[1].providerOptions).toBeUndefined()
+    expect(p[2].providerOptions?.anthropic?.cacheControl).toEqual({ type: 'ephemeral' })
+    expect(p[3].providerOptions?.anthropic?.cacheControl).toEqual({ type: 'ephemeral' })
+    expect(p.filter((x) => x.providerOptions).length).toBe(3)
+  })
+
+  it('breakAt on the last text part does not add a second marker; out-of-range breakAt is ignored', () => {
+    const parts = [{ type: 'text' as const, text: 'A' }, { type: 'text' as const, text: 'B' }]
+    const same = buildCachedPartsMessages('S', parts, { cacheDynamic: true, breakAt: 1 })[0].content as Part[]
+    expect(same.filter((x) => x.providerOptions).length).toBe(2)
+    const out = buildCachedPartsMessages('S', parts, { breakAt: 9 })[0].content as Part[]
+    expect(out.filter((x) => x.providerOptions).length).toBe(1)
+    const neg = buildCachedPartsMessages('S', parts, { breakAt: -1 })[0].content as Part[]
+    expect(neg.filter((x) => x.providerOptions).length).toBe(1)
+  })
 })
 
 describe('extractCacheUsage', () => {

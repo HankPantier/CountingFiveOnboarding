@@ -44,14 +44,11 @@ import selectorParser from 'postcss-selector-parser'
 import { transform } from 'lightningcss'
 import { OVERRIDE_BLOCKS } from '@/lib/editor/theme-edit'
 import { CHROME_COMPONENTS, HTML_STATE_ATTRS, type CssTarget } from './css-targets'
+import { cssByteLength, cssCaps, countCssLines, cssTooLargeError, cssTooManyLinesError } from './css-budget'
 
 export type CssScope = { kind: 'target'; target: CssTarget } | { kind: 'global' }
 export type SanitizeResult = { ok: true; css: string } | { ok: false; errors: string[] }
 
-const MAX_GLOBAL_BYTES = 16_000
-const MAX_GLOBAL_LINES = 400
-const MAX_TARGET_BYTES = 4_000
-const MAX_TARGET_LINES = 60
 const MAX_IMPORTANT = 5
 const MAX_SVG_URL_CHARS = 2_048
 
@@ -540,8 +537,8 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
 export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult {
   const input = css.trim()
   if (!input) return { ok: false, errors: ['The CSS is empty.'] }
-  const maxBytes = scope.kind === 'global' ? MAX_GLOBAL_BYTES : MAX_TARGET_BYTES
-  if (Buffer.byteLength(input, 'utf8') > maxBytes) return { ok: false, errors: [`The CSS is too large (max ${maxBytes} bytes).`] }
+  const { maxBytes, maxLines } = cssCaps(scope.kind)
+  if (cssByteLength(input) > maxBytes) return { ok: false, errors: [cssTooLargeError(maxBytes)] }
   if (/<\/|<script/i.test(input)) return { ok: false, errors: ['The CSS contains disallowed markup.'] }
   // Legit design CSS never needs an escape. Backslash escapes are how every
   // known bypass in this file smuggled banned tokens (comments, keywords,
@@ -750,9 +747,8 @@ export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult 
   if (important > MAX_IMPORTANT) errors.push(`Too many !important declarations (${important}; max ${MAX_IMPORTANT}).`)
 
   const out = root.toString().trim()
-  const maxLines = scope.kind === 'global' ? MAX_GLOBAL_LINES : MAX_TARGET_LINES
-  const lines = out.split('\n').length
-  if (lines > maxLines) errors.push(`The CSS has ${lines} lines (max ${maxLines}).`)
+  const lines = countCssLines(out)
+  if (lines > maxLines) errors.push(cssTooManyLinesError(lines, maxLines))
   // Belt-and-braces: even after scrubbing comment nodes and raws above, if
   // any comment marker still made it into the serialized output, refuse it
   // rather than trust that the scrub above was exhaustive.

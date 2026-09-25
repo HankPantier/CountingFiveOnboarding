@@ -2,32 +2,27 @@
 
 import { useState } from 'react'
 import type { DesignConceptDto } from '@/lib/design/run-types'
+import { conceptStatusLabel } from '@/lib/design/critique-ui'
 import ApplyDialog from './ApplyDialog'
+import CritiqueView from './CritiqueView'
 import { PRIMARY_BTN_SM, SECONDARY_BTN_SM } from './styles'
 
-const STATUS_LABELS: Record<DesignConceptDto['status'], string> = {
-  pending: 'Waiting to render',
-  generating: 'Generating',
-  refining: 'Rendering…',
-  ready: 'Ready',
-  rejected: 'Rejected',
-  error: 'Failed',
-}
-
 // One card per concept: name, palette swatches, type, key levers, moves and
-// render status, with Preview (drives the live iframe) and Apply.
+// render / critique-loop status, the critique itself, with Preview (drives the live iframe) and Apply.
 export default function ConceptCards({
   sessionId,
   concepts,
   selectedId,
+  maxRevisions,
   onSelect,
   onApplied,
 }: {
   sessionId: string
   concepts: DesignConceptDto[]
   selectedId: string | null
+  maxRevisions: number
   onSelect: (id: string) => void
-  onApplied: (versionNo: number) => void | Promise<void>
+  onApplied: (versionNo: number, warnings: string[]) => void | Promise<void>
 }) {
   const [applyingId, setApplyingId] = useState<string | null>(null)
 
@@ -47,7 +42,7 @@ export default function ConceptCards({
                 {c.tagline && <p className="font-body text-xs text-text-muted">{c.tagline}</p>}
               </div>
               <span className="shrink-0 rounded-pill bg-surface-subtle px-2 py-0.5 font-heading text-[10px] font-semibold text-text-secondary">
-                {STATUS_LABELS[c.status]}
+                {conceptStatusLabel(c, maxRevisions)}
               </span>
             </div>
 
@@ -78,6 +73,7 @@ export default function ConceptCards({
                 ))}
               </ul>
             )}
+            {c.review && <CritiqueView review={c.review} iterations={c.iterations} maxRevisions={maxRevisions} />}
             {c.error && <p className="font-body text-[11px] text-warning-strong">{c.error}</p>}
 
             {usable && (
@@ -101,9 +97,9 @@ export default function ConceptCards({
                 sessionId={sessionId}
                 concept={c}
                 onCancel={() => setApplyingId(null)}
-                onApplied={async (versionNo) => {
+                onApplied={async (versionNo, warnings) => {
                   setApplyingId(null)
-                  await onApplied(versionNo)
+                  await onApplied(versionNo, warnings)
                 }}
               />
             )}

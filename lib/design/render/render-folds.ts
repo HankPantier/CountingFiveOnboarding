@@ -1,22 +1,27 @@
 // Server-only. Run renders for the Design Studio: the desktop (1440) and
 // mobile (390) FOLD of one page, composed with a given theme, stored as WebP
-// under design/{sessionId}/runs/{runId}/. The renderer is lazy-imported
+// under design/{sessionId}/runs/{runId}/{name}-{viewport}.webp — a
+// deterministic name, uploaded with upsert so a retried render overwrites its
+// own object instead of orphaning one. With `metrics: true` each viewport's
+// in-page sample (taken in the same render page) is evaluated and combined
+// into a RenderMetrics (kept even when a later viewport fails — its `viewports`
+// list records which were measured; the apply gate warns about the others). The renderer is lazy-imported
 // (playwright-core / @sparticuz/chromium are traced by path — see
 // next.config.ts) and only ever driven through renderComposed(), which owns the
 // single cached single-process page and its mutex. Never throws: failures come
 // back as a readable, provider-free `error` alongside whatever was stored.
-import { randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { getPreviewSiteUrl } from '@/lib/theme-preview/site-url'
 import { resolvePreviewPageUrl } from '@/lib/theme-preview/page-path'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
 import { composeThemeDoc, type ComposedTheme } from '../composed-theme'
+import { combineMetrics, evaluatePageSample, type RenderMetrics, type ViewportMetrics } from '../metrics'
 import { designStoragePath, storeDesignImage, toWebp } from '../storage'
 import type { RunScreenshot, RunViewport } from '../run-types'
 
 export type RenderShell = { origin: string; shellHtml: string }
-export type FoldRenderResult = { shots: RunScreenshot[]; desktopWebp: Buffer | null; error: string | null }
+export type FoldRenderResult = { shots: RunScreenshot[]; desktopWebp: Buffer | null; metrics: RenderMetrics | null; error: string | null }
 
 const VIEWPORTS: RunViewport[] = ['desktop', 'mobile']
 
@@ -48,6 +53,8 @@ export async function loadRenderShell(
   return { ok: true, shell: { origin: shell.origin, shellHtml: shell.shellHtml }, path: page.path }
 }
 
+// `name` is deterministic per run ('current', 'concept-{p}-r{i}'): the stored
+// path is …/runs/{runId}/{name}-{viewport}.webp and a re-render UPSERTS it.
 export async function renderAndStoreFolds(args: {
   db: SupabaseClient<Database>
   sessionId: string
@@ -55,34 +62,37 @@ export async function renderAndStoreFolds(args: {
   name: string
   shell: RenderShell
   theme: ComposedTheme
+  metrics?: boolean
 }): Promise<FoldRenderResult> {
-  if (!isHttpsOrigin(args.shell.origin)) return { shots: [], desktopWebp: null, error: 'The preview URL must use https to render.' }
+  if (!isHttpsOrigin(args.shell.origin)) return { shots: [], desktopWebp: null, metrics: null, error: 'The preview URL must use https to render.' }
 
   let renderComposed: (typeof import('./render-composed'))['renderComposed']
   try {
     ;({ renderComposed } = await import('./render-composed'))
   } catch (err) {
     console.error('[design-run] failed to load the renderer', err)
-    return { shots: [], desktopWebp: null, error: 'The renderer is unavailable right now.' }
+    return { shots: [], desktopWebp: null, metrics: null, error: 'The renderer is unavailable right now.' }
   }
 
   const html = composeThemeDoc(args.shell.shellHtml, args.theme)
   const shots: RunScreenshot[] = []
+  const measured: ViewportMetrics[] = []
   let desktopWebp: Buffer | null = null
   for (const viewport of VIEWPORTS) {
     try {
-      const result = await renderComposed({ html, shellOrigin: args.shell.origin, viewport, crops: false })
+      const result = await renderComposed({ html, shellOrigin: args.shell.origin, viewport, crops: false, ...(args.metrics ? { metrics: true } : {}) })
+      if (args.metrics && result.sample) measured.push(evaluatePageSample(viewport, result.sample))
       const fold = result.shots.find((s) => s.kind === 'fold')
       if (!fold) continue
       const { webp, width, height } = await toWebp(fold.png)
-      const path = designStoragePath(args.sessionId, 'runs', args.runId, `${args.name}-${viewport}-${randomUUID().slice(0, 8)}.webp`)
-      await storeDesignImage(args.db, path, webp)
+      const path = designStoragePath(args.sessionId, 'runs', args.runId, `${args.name}-${viewport}.webp`)
+      await storeDesignImage(args.db, path, webp, { upsert: true })
       shots.push({ viewport, path, width, height })
       if (viewport === 'desktop') desktopWebp = webp
     } catch (err) {
       console.error(`[design-run] ${viewport} render failed for ${args.name}`, err)
-      return { shots, desktopWebp, error: renderErrorMessage(err) }
+      return { shots, desktopWebp, metrics: combineMetrics(measured), error: renderErrorMessage(err) }
     }
   }
-  return { shots, desktopWebp, error: null }
+  return { shots, desktopWebp, metrics: combineMetrics(measured), error: null }
 }

@@ -28,7 +28,7 @@ ${typography}
 - Never emit a "style" field (style axes are not available to you).`
 }
 
-const CSS_RULES = `CSS RULES (enforced by a strict sanitizer — a violating concept is rejected)
+export const CSS_RULES_SECTION = `CSS RULES (enforced by a strict sanitizer — a violating concept is rejected)
 - Block targets: ${CSS_TARGETS.filter((t) => !(CHROME_COMPONENTS as readonly string[]).includes(t)).join(', ')} (selector [data-block="<id>"]); chrome targets: ${CHROME_COMPONENTS.join(', ')} (selector [data-component="<id>"]).
 - css.blocks.<id> may ONLY contain selectors that start with that target's own attribute selector, optionally prefixed by an html state: html[${HTML_STATE_ATTRS.join(']/html[')}] (values: data-headline="sans|serif", data-eyebrow="standard|mono").
 - css.global may target any of the above, plus :root custom properties named --c5-*, --type-*, --tracking-*, --shadow-*, --overlay-*, --duration-* (never --color-* or --font-*).
@@ -45,5 +45,11 @@ Return ONLY this JSON (no prose, no markdown fences):
 name ≤ 60 chars, tagline ≤ 160, rationale ≤ 2000, at most 6 moves of ≤ 200 chars each.`
 
 export function buildContract(caps: DesignCapabilities): string {
-  return [TOKEN_CONTRACT, leversSection(caps), CSS_RULES, OUTPUT_FORMAT].join('\n\n')
+  return [TOKEN_CONTRACT, leversSection(caps), CSS_RULES_SECTION, OUTPUT_FORMAT].join('\n\n')
 }
+
+// One-line restatement of the two rules concepts most often break (Concept-3
+// lesson, P3 E2E). The concept task, the critic and the revise prompt all
+// import THIS — never copy the wording.
+export const CSS_RULES_REMINDER =
+  'CSS reminder: every selector must START with [data-block="<id>"], [data-component="<id>"] or :root (custom properties only) — never a bare class or element selector — and the CSS must contain no backslashes (no CSS escapes).'

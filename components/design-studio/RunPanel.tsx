@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { DesignRunDto } from '@/lib/design/run-types'
 import { applicableConcepts, formatUsd, runIsActive, runStatusLabel } from '@/lib/design/studio-ui'
+import BeforeAfter from './BeforeAfter'
 import CompareGrid from './CompareGrid'
 import ConceptCards from './ConceptCards'
 import InlineConfirm from './InlineConfirm'
@@ -17,6 +18,7 @@ export default function RunPanel({ sessionId, run, onChanged }: { sessionId: str
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [appliedNo, setAppliedNo] = useState<number | null>(null)
+  const [appliedWarnings, setAppliedWarnings] = useState<string[]>([])
 
   const active = runIsActive(run)
   const usable = applicableConcepts(run)
@@ -74,6 +76,11 @@ export default function RunPanel({ sessionId, run, onChanged }: { sessionId: str
           Applied to the draft as v{appliedNo}. Review it, then Publish from the editor when ready (Publish ships all draft changes).
         </p>
       )}
+      {appliedNo !== null && appliedWarnings.length > 0 && (
+        <p role="status" className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 font-body text-xs text-warning-strong">
+          {appliedWarnings.join(' ')}
+        </p>
+      )}
       {run.notes.length > 0 && (
         <details className="font-body text-xs text-text-secondary">
           <summary className="cursor-pointer font-heading font-semibold text-text-primary">Notes ({run.notes.length})</summary>
@@ -90,14 +97,17 @@ export default function RunPanel({ sessionId, run, onChanged }: { sessionId: str
           sessionId={sessionId}
           concepts={run.concepts}
           selectedId={selected?.id ?? null}
+          maxRevisions={run.maxRevisions}
           onSelect={setSelectedId}
-          onApplied={async (versionNo) => {
+          onApplied={async (versionNo, warnings) => {
             setAppliedNo(versionNo)
+            setAppliedWarnings(warnings)
             await onChanged()
           }}
         />
       )}
       <CompareGrid run={run} />
+      {selected && <BeforeAfter concept={selected} />}
       {selected && <ViewportToggle sessionId={sessionId} conceptId={selected.id} conceptName={selected.name} pagePath={run.pagePath} />}
     </section>
   )

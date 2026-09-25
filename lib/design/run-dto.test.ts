@@ -2,7 +2,15 @@ import { describe, it, expect } from 'vitest'
 import { asJson } from '@/lib/supabase/json-typed'
 import { CID, RID, SID, makeConceptRow, makeRunRow } from './__fixtures__/rows'
 import { VALID } from './__fixtures__/valid-bundle'
-import { runScreenshotPaths, toRunDto } from './run-dto'
+import { parseRenderMetrics, type RenderMetrics } from './metrics'
+import { newReview, unmeasuredViewportWarning } from './review'
+import { runScreenshotPaths, toConceptDto, toRunDto } from './run-dto'
+
+const asJsonMetrics = (v: unknown): RenderMetrics => {
+  const m = parseRenderMetrics(v)
+  if (!m) throw new Error('fixture metrics')
+  return m
+}
 
 const CUR = { viewport: 'desktop', path: `design/${SID}/runs/${RID}/current-desktop-aaaaaaaa.webp`, width: 1440, height: 900 }
 const SHOT = { viewport: 'mobile', path: `design/${SID}/runs/${RID}/concept-0-mobile-bbbbbbbb.webp`, width: 780, height: 1568 }
@@ -49,5 +57,44 @@ describe('run DTO', () => {
 
   it('drops screenshots whose signing failed', () => {
     expect(toRunDto(RUN, CONCEPTS, {}).currentScreenshots).toEqual([])
+  })
+})
+
+describe('critique-loop DTO', () => {
+  const INIT = { viewport: 'desktop', path: `design/${SID}/runs/${RID}/concept-0-r0-desktop.webp`, width: 1440, height: 900 }
+  const LATEST = { viewport: 'desktop', path: `design/${SID}/runs/${RID}/concept-0-r2-desktop.webp`, width: 1440, height: 900 }
+  const OVERFLOW = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: { scrollWidth: 430, viewportWidth: 390, offenders: [] }, hidden: [] }] }
+  const row = makeConceptRow({
+    status: 'refining',
+    iterations: 2,
+    screenshots: asJson([LATEST]),
+    critique: asJson({ ...newReview(), next: 'critique', claim: { unit: 'critique', at: '2026-09-25T12:00:00.000Z' }, metrics: OVERFLOW, metricsIteration: 2, initialScreenshots: [INIT], notes: ['n'] }),
+  })
+  const signed = { [INIT.path]: 'https://signed/init', [LATEST.path]: 'https://signed/latest' }
+
+  it('carries the review: active unit, measured, baseline-diffed gate failures, signed first-render shots', () => {
+    const dto = toConceptDto(row, signed)
+    expect(dto.iterations).toBe(2)
+    expect(dto.review).toMatchObject({ next: 'critique', activeUnit: 'critique', measured: true, latest: null, critiqueCount: 0, outcome: null, notes: ['n'] })
+    expect(dto.review?.gateFailures[0]).toContain('wider than the screen')
+    expect(dto.review?.initialScreenshots).toEqual([{ viewport: 'desktop', url: 'https://signed/init', width: 1440, height: 900 }])
+    expect(toConceptDto(row, signed, asJsonMetrics(OVERFLOW)).review?.gateFailures).toEqual([])
+  })
+  it('a partly-measured render (mobile failed) reports the unmeasured viewport and the apply warning, not a clean pass', () => {
+    const DESKTOP_ONLY = { v: 1, viewports: [{ viewport: 'desktop', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
+    const partial = makeConceptRow({ status: 'ready', critique: asJson({ ...newReview(), next: 'done', metrics: DESKTOP_ONLY, metricsIteration: 0 }) })
+    const review = toConceptDto(partial, {}).review
+    expect(review).toMatchObject({ measured: true, unmeasuredViewports: ['mobile'], gateFailures: [], renderWarnings: [unmeasuredViewportWarning('mobile')] })
+    // Fully measured ⇒ nothing to warn about; unmeasured ⇒ the UI's "render checks not run".
+    expect(toConceptDto(row, signed, asJsonMetrics(OVERFLOW)).review).toMatchObject({ unmeasuredViewports: ['desktop'] })
+    expect(toConceptDto(makeConceptRow({ critique: asJson(newReview()) }), {}).review).toMatchObject({ measured: false, unmeasuredViewports: [], renderWarnings: [] })
+  })
+  it('a P3 concept (no review) has review null', () => {
+    expect(toConceptDto(makeConceptRow({ critique: null }), {}).review).toBeNull()
+  })
+  it('signs the first-render screenshots too, and the run DTO carries maxRevisions', () => {
+    const run = makeRunRow({ max_revisions: 2 })
+    expect(runScreenshotPaths(run, [row])).toEqual([LATEST.path, INIT.path])
+    expect(toRunDto(run, [row], signed).maxRevisions).toBe(2)
   })
 })

@@ -7,34 +7,27 @@
 //                from the accepted concepts, settle the row (pending /
 //                rejected). After the last position — or when the cost cap
 //                stops generation — move to render (≥ 1 usable) or error.
-//   refining   → RENDER one pending concept (desktop + mobile fold); finalize
-//                (→ ready) inline when none remain.
+//   refining   → ONE critique-loop unit per step (render / critique / revise,
+//                see refine-stage.ts) for the concept in its loop, or resume a
+//                concept a Retry parked; finalize (→ ready) when none remain.
 //   anything else → no-op.
 // Every transition is guarded (run-store), so a duplicate step call or a
 // cancel mid-flight is harmless. Chaining to the next step is the caller's job
 // (shouldChain + chainOrFail in the step route's after()).
 import { createServerClient } from '@/lib/supabase/server'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
-import { readOptional } from './apply-bundle'
-import { parseDesignBundle } from './bundle'
-import { bundleFromRepoFiles, bundleToRepoFiles } from './bundle-files'
-import { capabilitiesFromJson } from './capabilities'
-import { buildConceptPrompt, type PriorConcept, type PromptImage } from './brief'
-import { DESIGN_MD_PATH } from './brief/brand'
-import { extractBlockSamples } from './brief/samples'
+import { buildConceptPrompt, type PromptImage } from './brief'
 import { generateConcept, type GeneratedConcept, type StopReason } from './concept-generator'
 import { composedThemeFromFiles } from './composed-theme'
-import { loadRenderShell, renderAndStoreFolds } from './render/render-folds'
-import { readDraftThemeTexts } from './theme-snapshot'
-import { listInputs, readSessionSchema } from './store'
+import { renderAndStoreFolds } from './render/render-folds'
+import { listInputs } from './store'
 import { downloadDesignImage } from './storage'
 import {
   claimConceptPosition,
-  claimConceptRender,
   deleteConcepts,
-  finishConceptRender,
   getRun,
   listConcepts,
+  resumeParkedConcept,
   settleConceptGeneration,
   transitionRun,
   updateRunFields,
@@ -43,25 +36,20 @@ import {
   type DesignRunRow,
   type RunPatch,
 } from './run-store'
-import { inputCaption, inputLabel, isUsableConcept, nextAction, parseBaseSnapshot, selectRunInputs } from './run-state'
-import { PALETTE_FREEDOMS, type RunStatus } from './studio-types'
-import { MAX_PROMPT_IMAGES, type PaletteFreedom, type RunBaseSnapshot, type RunScreenshot } from './run-types'
+import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
+import { CONCEPT_STOPPED_MID_REVIEW, inputCaption, inputLabel, nextAction, parseBaseSnapshot, selectRunInputs, usablePriors } from './run-state'
+import type { RunStatus } from './studio-types'
+import { MAX_PROMPT_IMAGES, type RunBaseSnapshot } from './run-types'
+import { critiqueUnit, finishConceptUnit, renderUnit, reviseUnit } from './refine-stage'
+import { STEP_MODEL_BUDGET_MS, type StepContext, type StepOutcome } from './step-types'
+
+export type { StepContext, StepOutcome } from './step-types'
 
 type Db = ReturnType<typeof createServerClient>
 
-export type StepContext = { sessionId: string; runId: string; jobId: string; githubRepo: string }
-export type StepOutcome =
-  // position: the position designed this step (null: no model call — every
-  // position already existed, or the cost cap was already reached).
-  | { kind: 'generated'; position: number | null; next: 'generate' | 'render' }
-  | { kind: 'rendered'; conceptId: string; remaining: number }
-  | { kind: 'finalized' }
-  | { kind: 'noop'; reason: string }
-  | { kind: 'failed'; error: string }
-
 // The step route's maxDuration is 600 s; generation must finish every model
 // call by this point so the function is never killed mid-write.
-export const GENERATE_BUDGET_MS = 540_000
+export const GENERATE_BUDGET_MS = STEP_MODEL_BUDGET_MS
 
 const STOP_MESSAGES: Record<StopReason, string> = {
   cost_cap: 'The run hit its cost cap before any concept was usable.',
@@ -76,7 +64,7 @@ const POSITION_STOP_MESSAGES: Record<Exclude<StopReason, 'cost_cap'>, string> = 
 }
 
 export function shouldChain(outcome: StepOutcome): boolean {
-  return outcome.kind === 'generated' || (outcome.kind === 'rendered' && outcome.remaining > 0)
+  return outcome.kind === 'generated' || outcome.kind === 'resumed' || (outcome.kind === 'refined' && outcome.remaining)
 }
 
 const GENERATE_FAILED = 'Concept generation failed — press Retry.'
@@ -98,30 +86,6 @@ async function failRun(
   return { kind: 'failed', error: message }
 }
 
-function firmNameFrom(brandText: string): string {
-  try {
-    const name = (JSON.parse(brandText) as { firm?: { name?: unknown } }).firm?.name
-    return typeof name === 'string' && name.trim() ? name.trim() : 'the firm'
-  } catch {
-    return 'the firm'
-  }
-}
-
-function paletteFreedomOf(run: DesignRunRow): PaletteFreedom {
-  return (PALETTE_FREEDOMS as readonly string[]).includes(run.palette_freedom) ? (run.palette_freedom as PaletteFreedom) : 'evolve'
-}
-
-// The accepted concepts (valid stored bundles), by position.
-function priorConcepts(concepts: DesignConceptRow[]): PriorConcept[] {
-  return concepts
-    .filter(isUsableConcept)
-    .flatMap((c) => {
-      const parsed = parseDesignBundle(c.bundle)
-      return parsed.ok ? [{ position: c.position, bundle: parsed.bundle }] : []
-    })
-    .sort((a, b) => a.position - b.position)
-}
-
 const withNotes = (base: RunBaseSnapshot, notes: string[]): RunBaseSnapshot => ({ ...base, notes: [...new Set([...base.notes, ...notes])] })
 
 const capNote = (capUsd: number, accepted: number): string =>
@@ -137,13 +101,28 @@ export async function runDesignStep(ctx: StepContext, now: () => number = Date.n
     case 'generate':
       return generateStage(db, ctx, run, concepts, action.position, now)
     case 'start-render':
-      return endGeneration(db, run.id, GENERATE_STATUSES, { accepted: priorConcepts(concepts).length, position: null, capped: false })
+      return endGeneration(db, run.id, GENERATE_STATUSES, { accepted: usablePriors(concepts).length, position: null, capped: false })
     case 'no-concepts':
       return failRun(db, run.id, GENERATE_STATUSES, STOP_MESSAGES.no_output)
     case 'render':
-      return renderStage(db, ctx, run, action.conceptId)
+      return renderUnit(db, ctx, run, action.conceptId, 'initial')
+    case 'rerender':
+      return renderUnit(db, ctx, run, action.conceptId, 'rerender')
+    case 'critique':
+      return critiqueUnit(db, ctx, run.id, action.conceptId, now)
+    case 'revise':
+      return reviseUnit(db, ctx, run.id, action.conceptId, now)
+    case 'finish-concept':
+      return finishConceptUnit(db, run.id, action.conceptId)
     case 'finalize':
       return finalizeStage(db, run.id)
+    case 'stalled':
+      return failRun(db, run.id, ['refining'], CONCEPT_STOPPED_MID_REVIEW)
+    case 'resume': {
+      const row = concepts.find((c) => c.id === action.conceptId)
+      const resumed = row ? await resumeParkedConcept(db, run.id, row) : null
+      return resumed ? { kind: 'resumed', conceptId: resumed.id } : { kind: 'noop', reason: 'concept already resumed' }
+    }
     default:
       return { kind: 'noop', reason: action.reason }
   }
@@ -195,7 +174,7 @@ async function generateStage(
     if (!run) return { kind: 'noop', reason: 'generation already claimed' }
   }
   const capUsd = Number(run.cost_cap_usd)
-  const priors = priorConcepts(concepts)
+  const priors = usablePriors(concepts)
   let base = parseBaseSnapshot(run.base_snapshot)
 
   // The cap is checked before every call — including before claiming a position.
@@ -249,27 +228,17 @@ async function generateStage(
       })
     }
 
-    const caps = capabilitiesFromJson(run.capabilities)
-    const paletteFreedom = paletteFreedomOf(run)
-    const notes: string[] = []
+    const gathered = await gatherBriefBasics(db, ctx, run, base.pagePath, { markup: true })
+    if (!gathered.ok) return abort(gathered.error)
+    const b = gathered.basics
+    const notes: string[] = [...b.notes]
 
-    const theme = await readDraftThemeTexts(ctx.githubRepo)
-    if (!theme.ok) return abort(theme.error)
-    const { brandText, designText, overridesCss } = theme.files
-    // The current design's levers (its CSS region is irrelevant input here, and
-    // skipping it means malformed legacy markers can't block generation).
-    const current = bundleFromRepoFiles({ brandText, designText, overridesCss: '' }, { name: 'Current design', source: 'baseline' })
-    if (!current.ok) return abort(`The current design can’t be read: ${current.errors.join(' ')}`.slice(0, 500))
-
-    // The chosen page: real markup for the brief + the current-site "before".
-    // Rendered once (the first concept); later concepts re-read it from storage.
+    // The current-site "before": rendered once (the first concept); later
+    // concepts re-read it from storage.
     const images: PromptImage[] = []
-    let blockSamples = ''
     let currentShots = base.screenshots
+    let currentMetrics = base.metrics ?? null
     const beforeCaption = `The client's CURRENT design of ${base.pagePath} (desktop, 1440 px) — the "before" to improve on.`
-    const shell = await loadRenderShell(ctx, base.pagePath)
-    if (shell.ok) blockSamples = extractBlockSamples(shell.shell.shellHtml)
-    else notes.push(`Page ${base.pagePath} could not be loaded (${shell.reason}) — concepts were generated without its markup.`)
     const storedBefore = base.screenshots.find((s) => s.viewport === 'desktop')
     if (storedBefore) {
       try {
@@ -278,16 +247,18 @@ async function generateStage(
         console.warn('[design-run] current-site render download failed', err)
         notes.push(`The current-site render could not be re-read — concept ${position + 1} was designed without it.`)
       }
-    } else if (position === 0 && shell.ok) {
+    } else if (position === 0 && b.shell) {
       const rendered = await renderAndStoreFolds({
         db,
         sessionId: ctx.sessionId,
         runId,
         name: 'current',
-        shell: shell.shell,
-        theme: composedThemeFromFiles({ designText, themeCss: theme.files.themeCss, overridesCss }),
+        shell: b.shell,
+        theme: composedThemeFromFiles(b.theme),
+        metrics: true,
       })
       currentShots = rendered.shots
+      currentMetrics = rendered.metrics
       if (rendered.desktopWebp) {
         images.push({ caption: beforeCaption, adminText: null, bytes: new Uint8Array(rendered.desktopWebp), mediaType: 'image/webp' })
       }
@@ -310,12 +281,10 @@ async function generateStage(
       }
     }
 
-    const [schema, designMd] = await Promise.all([readSessionSchema(db, ctx.sessionId), readOptional(ctx.githubRepo, DESIGN_MD_PATH)])
-
     // Persist the gather (the current render's paths + notes) before spending,
     // so later concepts and a retry reuse it. The guarded write doubles as the
     // cancel check: cancelled meanwhile ⇒ release the claim, no model call.
-    let snapshot = withNotes({ ...base, screenshots: currentShots }, notes)
+    let snapshot = withNotes({ ...base, screenshots: currentShots, metrics: currentMetrics }, notes)
     const live = await transitionRun(db, runId, GENERATING, { baseSnapshot: snapshot })
     if (!live) {
       await deleteConcepts(db, runId, [claim.id])
@@ -323,22 +292,14 @@ async function generateStage(
     }
 
     const result = await generateConcept({
-      prompt: buildConceptPrompt({
-        caps,
-        conceptCount: run.concept_count,
-        position,
-        priors,
-        paletteFreedom,
-        current: current.bundle,
-        firmName: firmNameFrom(brandText),
-        schema,
-        designMd: designMd?.content ?? null,
-        adminBrief: run.admin_brief,
-        images,
-        blockSamples,
-        pagePath: base.pagePath,
-      }),
-      context: { current: current.bundle, caps, paletteFreedom, draftFiles: { brandText, designText, overridesCss }, model: DESIGN_MODEL },
+      prompt: buildConceptPrompt({ ...sharedPromptArgs(b, run, base.pagePath, images), conceptCount: run.concept_count, position, priors }),
+      context: {
+        current: b.current,
+        caps: b.caps,
+        paletteFreedom: b.paletteFreedom,
+        draftFiles: { brandText: b.theme.brandText, designText: b.theme.designText, overridesCss: b.theme.overridesCss },
+        model: DESIGN_MODEL,
+      },
       priors,
       costSoFarUsd: priorCost,
       costCapUsd: capUsd,
@@ -375,50 +336,6 @@ async function generateStage(
     const spend = costUsd ?? (reportedSpend === undefined ? undefined : priorCost + reportedSpend)
     return abort(GENERATE_FAILED, spend === undefined ? {} : { costUsd: spend })
   }
-}
-
-async function renderStage(db: Db, ctx: StepContext, run: DesignRunRow, conceptId: string): Promise<StepOutcome> {
-  const concept = await claimConceptRender(db, run.id, conceptId)
-  if (!concept) return { kind: 'noop', reason: 'render already claimed' }
-  let result: ConceptRender
-  try {
-    result = await renderConcept(db, ctx, run, concept)
-  } catch (err) {
-    console.error('[design-run] render step failed', err)
-    result = { screenshots: [], error: 'The render failed — use the live preview instead.' }
-  }
-  await finishConceptRender(db, concept.id, result)
-
-  const remaining = (await listConcepts(db, run.id)).filter((c) => c.status === 'pending' && c.bundle !== null).length
-  if (remaining === 0) await finalizeStage(db, run.id)
-  else await updateRunFields(db, run.id, {}) // heartbeat for the sweep
-  return { kind: 'rendered', conceptId: concept.id, remaining }
-}
-
-type ConceptRender = { screenshots: RunScreenshot[]; error: string | null }
-
-// A concept whose render can't happen stays applicable: no shots + a note.
-async function renderConcept(db: Db, ctx: StepContext, run: DesignRunRow, concept: DesignConceptRow): Promise<ConceptRender> {
-  const skip = (error: string): ConceptRender => ({ screenshots: [], error })
-  const parsed = parseDesignBundle(concept.bundle)
-  if (!parsed.ok) return skip('The stored concept is no longer valid.')
-  const theme = await readDraftThemeTexts(ctx.githubRepo)
-  if (!theme.ok) return skip(theme.error)
-  const { brandText, designText, overridesCss } = theme.files
-  // removeLegacy: preview what the default apply writes.
-  const files = bundleToRepoFiles(parsed.bundle, { brandText, designText, overridesCss }, { removeLegacy: true })
-  if (!files.ok) return skip('The concept could not be prepared for rendering.')
-  const shell = await loadRenderShell(ctx, parseBaseSnapshot(run.base_snapshot).pagePath)
-  if (!shell.ok) return skip(`Render skipped: ${shell.reason}`)
-  const r = await renderAndStoreFolds({
-    db,
-    sessionId: ctx.sessionId,
-    runId: run.id,
-    name: `concept-${concept.position}`,
-    shell: shell.shell,
-    theme: composedThemeFromFiles(files.files),
-  })
-  return { screenshots: r.shots, error: r.error }
 }
 
 async function finalizeStage(db: Db, runId: string): Promise<StepOutcome> {

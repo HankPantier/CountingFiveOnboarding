@@ -7,7 +7,8 @@ import type { Database, Tables, TablesInsert, TablesUpdate } from '@/types/datab
 import { asJson } from '@/lib/supabase/json-typed'
 import type { DesignBundle } from './bundle'
 import type { RunStatus } from './studio-types'
-import type { DesignCapabilities, PaletteFreedom, RunBaseSnapshot, RunScreenshot, RunStage } from './run-types'
+import { DEFAULT_RUN_COST_CAP_USD, type DesignCapabilities, type PaletteFreedom, type RunBaseSnapshot, type RunScreenshot, type RunStage } from './run-types'
+import { dropAttemptNotes, parseConceptReview, type ConceptReview, type ReviewUnit } from './review'
 
 type Db = SupabaseClient<Database>
 export type DesignRunRow = Tables<'design_runs'>
@@ -50,6 +51,7 @@ export async function createRun(db: Db, run: NewDesignRun): Promise<DesignRunRow
     input_ids: run.inputIds,
     capabilities: asJson(run.capabilities),
     base_snapshot: asJson(run.baseSnapshot),
+    cost_cap_usd: DEFAULT_RUN_COST_CAP_USD,
     created_by: run.createdBy,
   }
   const { data, error } = await db.from('design_runs').insert(row).select('*').single()
@@ -209,30 +211,24 @@ export async function claimConceptRender(db: Db, runId: string, conceptId: strin
   return data
 }
 
-export async function finishConceptRender(
-  db: Db,
-  conceptId: string,
-  result: { screenshots: RunScreenshot[]; error: string | null }
-): Promise<DesignConceptRow | null> {
-  const { data, error } = await db
-    .from('design_concepts')
-    .update({ status: 'ready', screenshots: asJson(result.screenshots), error: result.error, updated_at: stamp() })
-    .eq('id', conceptId)
-    .eq('status', 'refining')
-    .select('*')
-    .maybeSingle()
-  if (error) throw storeError('finishConceptRender', error)
-  return data
-}
-
-export async function resetConcepts(db: Db, runId: string, ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  const { error } = await db
-    .from('design_concepts')
-    .update({ status: 'pending', error: null, updated_at: stamp() })
-    .eq('run_id', runId)
-    .in('id', ids)
-  if (error) throw storeError('resetConcepts', error)
+// Retry: concepts without a loop review restart their first render (pending).
+// Each write is a CAS on the row exactly as the Retry read it, so a Retry that
+// lost the race to a concurrent one (whose steps may already be working on
+// these rows) changes nothing. Returns how many rows were reset.
+export async function resetConcepts(db: Db, runId: string, rows: Pick<DesignConceptRow, 'id' | 'updated_at'>[]): Promise<number> {
+  let reset = 0
+  for (const row of rows) {
+    const { data, error } = await db
+      .from('design_concepts')
+      .update({ status: 'pending', error: null, updated_at: stampAfter(row.updated_at) })
+      .eq('id', row.id)
+      .eq('run_id', runId)
+      .eq('updated_at', row.updated_at)
+      .select('id')
+    if (error) throw storeError('resetConcepts', error)
+    reset += data?.length ?? 0
+  }
+  return reset
 }
 
 export async function markRunApplied(db: Db, runId: string): Promise<void> {
@@ -242,4 +238,147 @@ export async function markRunApplied(db: Db, runId: string): Promise<void> {
     .eq('id', runId)
     .eq('status', 'ready')
   if (error) throw storeError('markRunApplied', error)
+}
+
+export type ConceptUnitPatch = {
+  status: 'refining' | 'ready'
+  review: ConceptReview
+  bundle?: DesignBundle
+  iterations?: number
+  screenshots?: RunScreenshot[]
+  error?: string | null
+}
+
+function unitUpdate(patch: ConceptUnitPatch, at: string): TablesUpdate<'design_concepts'> {
+  const update: TablesUpdate<'design_concepts'> = { status: patch.status, critique: asJson({ ...patch.review, claim: null }), updated_at: at }
+  if (patch.bundle !== undefined) update.bundle = asJson(patch.bundle)
+  if (patch.iterations !== undefined) update.iterations = patch.iterations
+  if (patch.screenshots !== undefined) update.screenshots = asJson(patch.screenshots)
+  if (patch.error !== undefined) update.error = patch.error === null ? null : patch.error.slice(0, MAX_CONCEPT_ERROR_CHARS)
+  return update
+}
+
+// A stamp strictly later than `after`, so a CAS on updated_at can never be
+// satisfied twice by the same value (ms clock ties, clock skew).
+function stampAfter(after: string): string {
+  const prev = Date.parse(after)
+  return new Date(Number.isFinite(prev) ? Math.max(Date.now(), prev + 1) : Date.now()).toISOString()
+}
+
+// Claims one critique-loop unit (critique / revise / re-render) of a concept
+// already in its loop: a compare-and-set on the row exactly as the caller
+// read it. null ⇒ another step claimed or changed it (or it was swept) — the
+// caller must not call the model.
+export async function claimConceptUnit(
+  db: Db,
+  runId: string,
+  row: Pick<DesignConceptRow, 'id' | 'updated_at'>,
+  unit: ReviewUnit,
+  review: ConceptReview
+): Promise<DesignConceptRow | null> {
+  const at = stampAfter(row.updated_at)
+  const { data, error } = await db
+    .from('design_concepts')
+    .update({ critique: asJson({ ...review, claim: { unit, at } }), updated_at: at })
+    .eq('id', row.id)
+    .eq('run_id', runId)
+    .eq('status', 'refining')
+    .eq('updated_at', row.updated_at)
+    .select('*')
+    .maybeSingle()
+  if (error) throw storeError('claimConceptUnit', error)
+  return data
+}
+
+// Settles a claimed unit (clears the claim) — CAS on the CLAIMED row's stamp.
+export async function settleConceptUnit(
+  db: Db,
+  runId: string,
+  claimed: Pick<DesignConceptRow, 'id' | 'updated_at'>,
+  patch: ConceptUnitPatch
+): Promise<DesignConceptRow | null> {
+  const { data, error } = await db
+    .from('design_concepts')
+    .update(unitUpdate(patch, stampAfter(claimed.updated_at)))
+    .eq('id', claimed.id)
+    .eq('run_id', runId)
+    .eq('status', 'refining')
+    .eq('updated_at', claimed.updated_at)
+    .select('*')
+    .maybeSingle()
+  if (error) throw storeError('settleConceptUnit', error)
+  return data
+}
+
+// Settles a concept's FIRST render — CAS on the row claimConceptRender
+// returned (the pending → refining flip). A late worker whose concept was
+// swept, retried and re-claimed meanwhile finds a different stamp and writes
+// nothing (null), so it can't overwrite the new worker's loop state.
+export async function settleInitialRender(
+  db: Db,
+  runId: string,
+  claimed: Pick<DesignConceptRow, 'id' | 'updated_at'>,
+  patch: ConceptUnitPatch
+): Promise<DesignConceptRow | null> {
+  const { data, error } = await db
+    .from('design_concepts')
+    .update(unitUpdate(patch, stampAfter(claimed.updated_at)))
+    .eq('id', claimed.id)
+    .eq('run_id', runId)
+    .eq('status', 'refining')
+    .eq('updated_at', claimed.updated_at)
+    .select('*')
+    .maybeSingle()
+  if (error) throw storeError('settleInitialRender', error)
+  return data
+}
+
+// Retry: mid-loop concepts resume at their next unit, with the claim and any
+// attempt notes cleared. Only the FIRST (by position) goes back to 'refining'
+// — the loop runs one concept at a time, and a 'refining' row left waiting
+// would be swept to error — the rest are parked as 'pending' with their review
+// kept (nextAction resumes each in turn). Rows without a review are skipped.
+// Like resetConcepts, each write is a CAS on the row as the Retry read it.
+export async function resumeConcepts(db: Db, runId: string, rows: DesignConceptRow[]): Promise<void> {
+  const inLoop = rows
+    .flatMap((row) => {
+      const review = parseConceptReview(row.critique)
+      return review ? [{ row, review }] : []
+    })
+    .sort((a, b) => a.row.position - b.row.position)
+  for (const [index, { row, review }] of inLoop.entries()) {
+    const { error } = await db
+      .from('design_concepts')
+      .update({
+        status: index === 0 ? 'refining' : 'pending',
+        error: null,
+        critique: asJson({ ...review, claim: null, notes: dropAttemptNotes(review.notes) }),
+        updated_at: stampAfter(row.updated_at),
+      })
+      .eq('id', row.id)
+      .eq('run_id', runId)
+      .eq('updated_at', row.updated_at)
+    if (error) throw storeError('resumeConcepts', error)
+  }
+}
+
+// Resumes a concept parked mid-loop ('pending' with a review) — back to
+// 'refining', review untouched: a CAS on the row as read, like a unit claim.
+// null ⇒ another step resumed or changed it.
+export async function resumeParkedConcept(
+  db: Db,
+  runId: string,
+  row: Pick<DesignConceptRow, 'id' | 'updated_at'>
+): Promise<DesignConceptRow | null> {
+  const { data, error } = await db
+    .from('design_concepts')
+    .update({ status: 'refining', error: null, updated_at: stampAfter(row.updated_at) })
+    .eq('id', row.id)
+    .eq('run_id', runId)
+    .eq('status', 'pending')
+    .eq('updated_at', row.updated_at)
+    .select('*')
+    .maybeSingle()
+  if (error) throw storeError('resumeParkedConcept', error)
+  return data
 }
