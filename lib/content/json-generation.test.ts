@@ -127,4 +127,19 @@ describe('generateJson', () => {
     expect(await generateJson({ ...base, firstBudget: 1000, beforeAttempt })).toBeNull()
     expect(mockGen).not.toHaveBeenCalled()
   })
+
+  // Contract relied on by lib/design/concept-generator.ts: a beforeAttempt that
+  // sets opts.timeoutMs gives THAT attempt its (dynamic) timeout.
+  it('reads opts.timeoutMs after beforeAttempt, per attempt', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout')
+    mockGen.mockResolvedValueOnce(reply('not json')).mockResolvedValueOnce(reply('{"a":1}'))
+    const opts: Parameters<typeof generateJson>[0] = { ...base, firstBudget: 1000, retryBudget: 2000, timeoutMs: 5_000 }
+    opts.beforeAttempt = (attempt) => {
+      opts.timeoutMs = attempt === 1 ? 7_000 : 3_000
+      return true
+    }
+    expect(await generateJson(opts)).toEqual({ a: 1 })
+    expect(timeoutSpy.mock.calls.map((c) => c[0])).toEqual([7_000, 3_000])
+    timeoutSpy.mockRestore()
+  })
 })
