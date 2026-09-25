@@ -28,7 +28,6 @@ const nextConfig: NextConfig = {
     const renderer = ['./node_modules/@sparticuz/chromium/bin/**', './node_modules/playwright-core/**']
     // Keys are picomatch globs against the route path — escape the brackets.
     return {
-      '/api/edit/\\[id\\]/theme/chat': lightningcss,
       '/api/edit/\\[id\\]/design': lightningcss, // GET state imports bundle-files (P2 gap)
       '/api/edit/\\[id\\]/design/render': renderer,
       '/api/edit/\\[id\\]/design/runs/\\[runId\\]/step': [...lightningcss, ...renderer],

@@ -17,7 +17,6 @@ describe('Vercel packaging (R7)', () => {
     ['/api/edit/\\[id\\]/design/versions/import', LIGHTNING],
     ['/api/edit/\\[id\\]/design/render', CHROMIUM],
     ['/api/edit/\\[id\\]/design/chat', [...LIGHTNING, ...CHROMIUM]],
-    ['/api/edit/\\[id\\]/theme/chat', LIGHTNING],
   ])('%s traces its native dependencies', (route, globs) => {
     expect(includes[route]).toEqual(expect.arrayContaining(globs))
   })

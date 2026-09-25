@@ -78,6 +78,14 @@ describe('POST /design/render', () => {
     expect(render).not.toHaveBeenCalled()
   })
 
+  it('skips the desktop block crops when crops is false (PF11: a plain draft screenshot for annotation)', async () => {
+    const res = await POST(req({ path: '/', viewport: 'desktop', crops: false }), params)
+    expect(res.status).toBe(200)
+    const call = render.mock.calls[0][0] as { viewport: string; crops: boolean }
+    expect(call.viewport).toBe('desktop')
+    expect(call.crops).toBe(false)
+  })
+
   it('rejects an unknown viewport with 400', async () => {
     const res = await POST(req({ viewport: 'tablet' }), params)
     expect(res.status).toBe(400)

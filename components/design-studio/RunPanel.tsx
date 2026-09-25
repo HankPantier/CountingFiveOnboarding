@@ -13,7 +13,19 @@ import { PANEL, SECONDARY_BTN_SM } from './styles'
 
 // The latest run: status + cost, notes (skipped inputs, capability strips),
 // cancel / retry, concept cards, the synced compare grid and a live preview.
-export default function RunPanel({ sessionId, run, onChanged }: { sessionId: string; run: DesignRunDto; onChanged: () => void | Promise<void> }) {
+// `onChanged` reloads the Studio after any action; `onApplied` fires only after
+// a successful apply (the one action here that changes the draft theme).
+export default function RunPanel({
+  sessionId,
+  run,
+  onChanged,
+  onApplied,
+}: {
+  sessionId: string
+  run: DesignRunDto
+  onChanged: () => void | Promise<void>
+  onApplied?: () => void
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -102,6 +114,7 @@ export default function RunPanel({ sessionId, run, onChanged }: { sessionId: str
           onApplied={async (versionNo, warnings) => {
             setAppliedNo(versionNo)
             setAppliedWarnings(warnings)
+            onApplied?.()
             await onChanged()
           }}
         />

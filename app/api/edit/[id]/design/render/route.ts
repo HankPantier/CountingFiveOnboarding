@@ -25,6 +25,9 @@ function isHttpsOrigin(origin: string): boolean {
 interface RenderRequestBody {
   path?: string
   viewport?: string
+  // Desktop renders add up to 3 block crops by default; false skips them
+  // (the chat's "Screenshot the draft" only needs the fold — PF11).
+  crops?: boolean
 }
 
 // POST — render one page of the client's site with the DRAFT theme applied
@@ -97,7 +100,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       htmlAttributes: { 'data-headline': sources.headlineStyle, 'data-eyebrow': sources.eyebrowStyle },
     })
 
-    const result = await renderComposed({ html, shellOrigin: shell.origin, viewport, crops: viewport === 'desktop' })
+    const result = await renderComposed({ html, shellOrigin: shell.origin, viewport, crops: viewport === 'desktop' && body.crops !== false })
 
     const supabase = createServerClient()
     const renderId = randomUUID()
