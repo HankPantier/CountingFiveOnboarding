@@ -7,6 +7,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // A scheme followed by something other than a port digit ("acme.com:8080" has
 // no scheme; "javascript:alert" does).
 const SCHEME_RE = /^[a-z][a-z0-9+.-]*:(?!\d)/i
+// C0/C1 control characters, excluding newline and tab — a NUL byte in
+// particular makes Postgres reject the insert with an opaque 500.
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g
 
 export function isUuid(v: string): boolean {
   return UUID_RE.test(v)
@@ -47,8 +50,9 @@ export function parseOptionalText(
   if (value === undefined || value === null) return { ok: true, value: null }
   if (typeof value !== 'string') return { ok: false, reason: `${field} must be text.` }
   const trimmed = value.trim()
-  if (trimmed.length > max) return { ok: false, reason: `${field} must be ${max} characters or fewer.` }
-  return { ok: true, value: trimmed || null }
+  const cleaned = trimmed.replace(CONTROL_CHARS_RE, '')
+  if (cleaned.length > max) return { ok: false, reason: `${field} must be ${max} characters or fewer.` }
+  return { ok: true, value: cleaned || null }
 }
 
 export function displayHost(url: string | null): string | null {

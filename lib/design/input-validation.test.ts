@@ -37,6 +37,14 @@ describe('parseOptionalText', () => {
     expect(parseOptionalText('x'.repeat(11), 10, 'Label')).toEqual({ ok: false, reason: 'Label must be 10 characters or fewer.' })
     expect(parseOptionalText(5, 10, 'Notes')).toEqual({ ok: false, reason: 'Notes must be text.' })
   })
+  it('strips control characters but keeps newlines and tabs', () => {
+    expect(parseOptionalText('a\u0000b', 10, 'Label')).toEqual({ ok: true, value: 'ab' })
+    expect(parseOptionalText('a\u0007b', 10, 'Label')).toEqual({ ok: true, value: 'ab' })
+    expect(parseOptionalText('a\nb\tc', 10, 'Label')).toEqual({ ok: true, value: 'a\nb\tc' })
+  })
+  it('treats a string that becomes empty after stripping like an empty value', () => {
+    expect(parseOptionalText('\u0000\u0007', 10, 'Label')).toEqual({ ok: true, value: null })
+  })
 })
 
 describe('small guards', () => {
