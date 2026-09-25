@@ -8,6 +8,7 @@ import type { Database, Tables, TablesInsert, TablesUpdate } from '@/types/datab
 import { asJson } from '@/lib/supabase/json-typed'
 import type { DesignBundle } from './bundle'
 import { removeDesignPaths } from './storage'
+import type { RunScreenshot } from './run-types'
 import type { DesignVersionListRow } from './studio-dto'
 import type { CaptureStatus, DesignInputKind, ThemeBlobShas, VersionSource } from './studio-types'
 
@@ -199,6 +200,8 @@ export type NewDesignVersion = {
   appliedBlobs: ThemeBlobShas
   conceptId?: string | null
   createdBy: string | null
+  // Render screenshots to show with the version (concept applies reuse the run's).
+  screenshots?: RunScreenshot[]
 }
 
 function versionInsert(v: NewDesignVersion, versionNo: number): TablesInsert<'design_versions'> {
@@ -212,6 +215,7 @@ function versionInsert(v: NewDesignVersion, versionNo: number): TablesInsert<'de
     applied_blobs: asJson(v.appliedBlobs),
     concept_id: v.conceptId ?? null,
     created_by: v.createdBy,
+    screenshots: asJson(v.screenshots ?? []),
   }
 }
 
