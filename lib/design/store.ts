@@ -189,6 +189,13 @@ export async function latestVersion(db: Db, sessionId: string): Promise<DesignVe
   return data
 }
 
+// One FULL version row (incl. its bundle) — for restore. Scoped by session.
+export async function getVersion(db: Db, sessionId: string, versionId: string): Promise<DesignVersionRow | null> {
+  const { data, error } = await db.from('design_versions').select('*').eq('id', versionId).eq('session_id', sessionId).maybeSingle()
+  if (error) throw storeError('getVersion', error)
+  return data
+}
+
 export type NewDesignVersion = {
   sessionId: string
   source: VersionSource

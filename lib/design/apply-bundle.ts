@@ -4,6 +4,13 @@
 // concurrent edit surfaces as StaleShaError (rethrown — callers map it to 409).
 // Contrast is a hard gate: nothing is written if the palette fails WCAG checks.
 // The MBP mirror is NOT done here — callers invoke syncMbpTheme() after.
+//
+// `base` (optional): the theme files the caller built on, as immutable blob
+// shas + their texts. When given, the branch is NOT re-read (a read right after
+// a commit can still return the pre-commit tip) — the bundle is rendered onto
+// the base texts and EVERY existing base file is sha-guarded in the commit
+// (unchanged ones ride along as same-blob guard entries), so the writeFiles
+// guard is the only staleness check (StaleShaError when the draft moved).
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError } from '@/lib/github/repo-files'
@@ -11,6 +18,7 @@ import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { bundleToRepoFiles } from './bundle-files'
 import type { DesignBundle } from './bundle'
+import type { DraftThemeSnapshot } from './theme-snapshot'
 
 export type ApplyBundleResult =
   | {
@@ -43,17 +51,25 @@ export async function applyBundleToDraft(args: {
   removeLegacy: boolean
   message: string
   author: { name: string; email: string }
+  base?: DraftThemeSnapshot
 }): Promise<ApplyBundleResult> {
-  const { githubRepo, bundle, removeLegacy, message, author } = args
+  const { githubRepo, bundle, removeLegacy, message, author, base } = args
   await ensureDraftBranch(githubRepo)
 
-  const brandFile = await readOptional(githubRepo, BRAND_PATH)
-  const designFile = await readOptional(githubRepo, DESIGN_PATH)
+  const fromBase = (p: string): { content: string; sha: string } | null => {
+    const sha = base?.shas[p]
+    const content = base?.texts[p as keyof DraftThemeSnapshot['texts']]
+    return sha && content !== undefined ? { content, sha } : null
+  }
+  const read = (p: string) => (base ? Promise.resolve(fromBase(p)) : readOptional(githubRepo, p))
+
+  const brandFile = await read(BRAND_PATH)
+  const designFile = await read(DESIGN_PATH)
   if (!brandFile || !designFile) {
     return { ok: false, status: 409, error: 'This site has no brand.json / design.json yet — design changes are unavailable.' }
   }
-  const themeFile = await readOptional(githubRepo, THEME_CSS_PATH)
-  const overridesFile = await readOptional(githubRepo, OVERRIDES_PATH)
+  const themeFile = await read(THEME_CSS_PATH)
+  const overridesFile = await read(OVERRIDES_PATH)
 
   const rendered = bundleToRepoFiles(
     bundle,
@@ -87,9 +103,20 @@ export async function applyBundleToDraft(args: {
     return { ok: true, commitSha: null, blobs: {}, changedPaths: [], brand, design, css: rendered.css }
   }
 
-  const { commitSha, blobs } = await writeFiles(githubRepo, changes, DRAFT_BRANCH, message, {
+  const changedPaths = changes.map((c) => c.path)
+  // Base mode: guard the unchanged base files too (same content = same blob,
+  // so the tree is untouched for them) — the whole base must still be current.
+  const guards = base
+    ? candidates
+        .filter((c) => c.current !== null && !changedPaths.includes(c.path))
+        .map((c) => ({ path: c.path, content: c.current?.content ?? '', expectedSha: c.current?.sha }))
+    : []
+
+  const written = await writeFiles(githubRepo, [...changes, ...guards], DRAFT_BRANCH, message, {
     authorName: author.name,
     authorEmail: author.email,
   })
-  return { ok: true, commitSha, blobs, changedPaths: changes.map((c) => c.path), brand, design, css: rendered.css }
+  const blobs: Record<string, string> = {}
+  for (const p of changedPaths) if (written.blobs[p]) blobs[p] = written.blobs[p]
+  return { ok: true, commitSha: written.commitSha, blobs, changedPaths, brand, design, css: rendered.css }
 }

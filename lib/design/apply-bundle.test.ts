@@ -20,6 +20,7 @@ vi.mock('@/lib/github/repo-files', () => {
   }
 })
 
+import { readFile } from '@/lib/github/repo-files'
 import { applyBundleToDraft } from './apply-bundle'
 import { readRegion } from './bundle-files'
 import { VALID } from './__fixtures__/valid-bundle'
@@ -105,6 +106,42 @@ describe('applyBundleToDraft', () => {
     writeFiles.mockClear()
     const again = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR })
     expect(again).toMatchObject({ ok: true, commitSha: null, changedPaths: [] })
+    expect(writeFiles).not.toHaveBeenCalled()
+  })
+
+  it('base mode: renders onto the caller’s base (no branch reads) and sha-guards EVERY base file', async () => {
+    const brandText = files.get('content/brand.json')?.content ?? ''
+    const designText = files.get('content/design.json')?.content ?? ''
+    // A theme.css the bundle will regenerate identically must still be guarded.
+    const first = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR })
+    if (!first.ok) throw new Error('first apply failed')
+    const themeCss = (writeFiles.mock.calls[0][1] as { path: string; content: string }[]).find((c) => c.path === 'src/styles/theme.css')?.content ?? ''
+    writeFiles.mockClear()
+    vi.mocked(readFile).mockClear()
+    files.clear() // a lagging branch read would now 404 — base mode must not read
+
+    const base = {
+      shas: { 'content/brand.json': 'B1', 'content/design.json': 'D1', 'src/styles/theme.css': 'T1' },
+      texts: { 'content/brand.json': brandText, 'content/design.json': designText, 'src/styles/theme.css': themeCss },
+    }
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, base })
+    expect(r.ok).toBe(true)
+    expect(readFile).not.toHaveBeenCalled()
+    const changes = writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha?: string }[]
+    const byPath = Object.fromEntries(changes.map((c) => [c.path, c]))
+    expect(byPath['content/brand.json'].expectedSha).toBe('B1')
+    expect(byPath['content/design.json'].expectedSha).toBe('D1')
+    // theme.css is unchanged vs base → rides along as a same-content guard, not a change.
+    expect(byPath['src/styles/theme.css']).toEqual({ path: 'src/styles/theme.css', content: themeCss, expectedSha: 'T1' })
+    if (r.ok) {
+      expect(r.changedPaths).not.toContain('src/styles/theme.css')
+      expect(Object.keys(r.blobs).every((p) => r.changedPaths.includes(p))).toBe(true)
+    }
+  })
+
+  it('base mode: a base without brand/design texts is a 409', async () => {
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, base: { shas: {}, texts: {} } })
+    expect(r).toMatchObject({ ok: false, status: 409 })
     expect(writeFiles).not.toHaveBeenCalled()
   })
 })
