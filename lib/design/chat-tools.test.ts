@@ -16,7 +16,7 @@ vi.mock('./chat-preview', async (orig) => ({
 
 import { CHAT_COMMIT_RESERVE_MS, CHAT_PREVIEW_FAILED_ERROR, CHAT_PREVIEW_NO_TIME_ERROR, chatPreviewRenderMs, type ChatPreviewResult } from './chat-preview'
 import { PREVIEWS_PER_TURN, TURN_BUDGET_MS, type RenderPreviewOutput } from './chat-types'
-import { MIN_PREVIEW_TIME_MS, PREVIEW_LIMIT_ERROR, PREVIEW_TIME_ERROR, buildDesignChatTools, chatPreviewDeps, type ChatToolDeps } from './chat-tools'
+import { MIN_PREVIEW_TIME_MS, PREVIEW_LIMIT_ERROR, PREVIEW_TIME_ERROR, buildDesignChatTools, chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -186,6 +186,43 @@ describe('concurrent tool calls (one step runs them in parallel)', () => {
     expect(outs[0].ok).toBe(true)
     expect(outs[1]).toEqual({ ok: false, error: PREVIEW_TIME_ERROR })
     expect(preview).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('drain (the turn awaits it before the auto-commit)', () => {
+  it('resolves only after every queued execute — including ones queued while draining — has settled', async () => {
+    let releasePreview: () => void = () => {}
+    const previewGate = new Promise<void>((r) => (releasePreview = r))
+    let releaseCommit: () => void = () => {}
+    const commitGate = new Promise<void>((r) => (releaseCommit = r))
+    const preview = vi.fn(async (): Promise<ChatPreviewResult> => {
+      await previewGate
+      return { shots: [{ viewport: 'desktop', path: 'x.webp', width: 1, height: 1 }], images: [], metrics: null, baseline: null, error: null }
+    })
+    const commit = vi.fn(async () => {
+      await commitGate
+      return { ok: true as const, unchanged: true as const }
+    })
+    const r = bundleFromRepoFiles(DRAFT_FILES, { name: 'Harbor v3', source: 'chat' })
+    if (!r.ok) throw new Error('fixture')
+    const ws = new ChatWorkspace({ current: r.bundle, draftFiles: DRAFT_FILES, draftShas: {}, caps: DEFAULT_CAPABILITIES, model: 'claude-sonnet-5' })
+    const { tools, drain } = createDesignChatToolset(ws, { defaultPage: '/', timeLeftMs: () => 500_000, preview, commit })
+    const tick = () => new Promise((res) => setTimeout(res, 0))
+    let drained = false
+    void exec(tools.render_preview, {}, 'r1')
+    const d = drain().then(() => (drained = true))
+    // Queued AFTER drain() started: drain must still wait for it.
+    void exec(tools.commit_version, { summary: 'x' }, 'c1')
+    await tick()
+    expect(drained).toBe(false)
+    releasePreview()
+    await tick()
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(drained).toBe(false)
+    releaseCommit()
+    await d
+    expect(drained).toBe(true)
+    await drain() // an idle queue drains immediately
   })
 })
 

@@ -91,7 +91,11 @@ function previewForModel(output: RenderPreviewOutput): unknown {
   return { ...rest, viewports: shots.map((s) => s.viewport) }
 }
 
-export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
+// The tools plus drain(): resolves once every queued tool execute (including
+// any enqueued while waiting) has settled. The turn awaits it before the
+// end-of-turn auto-commit, so a render or commit still running after the
+// model stream ended (finished, failed or aborted) can't race it.
+export function createDesignChatToolset(ws: ChatWorkspace, deps: ChatToolDeps) {
   const images = new Map<string, ChatPreviewResult['images']>()
   // Tool calls of one step run concurrently (streamText starts each as soon as
   // it is parsed). Every execute goes through this one queue, so an edit never
@@ -115,7 +119,15 @@ export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
     }
   })
 
-  return {
+  const drain = async (): Promise<void> => {
+    let tail: Promise<void>
+    do {
+      tail = queue
+      await tail
+    } while (tail !== queue)
+  }
+
+  const tools = {
     set_palette: tool({
       description: 'Stage palette changes: #rrggbb for the roles you change only. Validated for contrast immediately.',
       inputSchema: z.object(paletteShape),
@@ -224,4 +236,9 @@ export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
         }),
     }),
   }
+  return { tools, drain }
+}
+
+export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
+  return createDesignChatToolset(ws, deps).tools
 }
