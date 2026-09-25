@@ -10,8 +10,9 @@ import { capabilityViolations } from '@/lib/design/capabilities'
 import { readDesignCapabilities } from '@/lib/design/capabilities-read'
 import { mergeAppliedBlobs } from '@/lib/design/drift'
 import { isPlainObject, isUuid } from '@/lib/design/input-validation'
-import { getConcept, markRunApplied } from '@/lib/design/run-store'
-import { parseScreenshots } from '@/lib/design/run-state'
+import { applyRenderGate, parseConceptReview, renderGateMessage } from '@/lib/design/review'
+import { getConcept, getRun, markRunApplied } from '@/lib/design/run-store'
+import { parseBaseSnapshot, parseScreenshots } from '@/lib/design/run-state'
 import { insertVersion, VersionConflictError } from '@/lib/design/store'
 import type { ThemeBlobShas } from '@/lib/design/studio-types'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
@@ -25,6 +26,15 @@ interface ApplyConceptBody {
   removeLegacyOverrides?: unknown
 }
 
+interface ApplyConceptResponse {
+  ok: true
+  versionId: string
+  versionNo: number
+  commitSha: string | null
+  changedPaths: string[]
+  warnings: string[]
+}
+
 type Params = { params: Promise<{ id: string; cid: string }> }
 
 const APPLIED_VERSION_NUMBER_UNRECORDED = 'The design was applied to the draft, but its version number could not be recorded — refresh the Studio.'
@@ -32,11 +42,13 @@ const APPLIED_VERSION_UNRECORDED = 'The design was applied to the draft, but its
 
 // POST — apply a ready concept to the DRAFT branch as one atomic commit, then
 // mirror the palette/fonts into the MBP and record a `concept` version.
-// Gates, in order: stored bundle re-parsed (zod) → template capability tier
+// Gates, in order: stored bundle re-parsed (zod) → the concept's LATEST
+// render's metrics, baseline-diffed against the current site (P4's render
+// hard gates: AA contrast / mobile overflow / hidden blocks — 422 on a new
+// failure; unmeasured is allowed with a warning) → template capability tier
 // (fonts locked below L2) → applyBundleToDraft, which re-sanitizes every CSS
 // fragment, hard-gates checkThemeContrast, and guards every file with its
-// expected blob sha (StaleShaError → 409). The axe AA / mobile-overflow /
-// hidden-block render gates arrive with P4's metrics.ts.
+// expected blob sha (StaleShaError → 409).
 // Publishing is unchanged (the editor's Publish ships ALL of draft).
 export async function POST(req: Request, { params }: Params) {
   const { id, cid } = await params
@@ -78,6 +90,15 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: `This concept can no longer be applied: ${parsed.errors.join(' ')}` }, { status: 422 })
     }
     const bundle = parsed.bundle
+
+    // Render hard gates (spec "hard gates before apply"; P4): the concept's
+    // LATEST render must pass AA contrast, no mobile overflow and no hidden
+    // blocks, relative to the current site (the run's baseline). A concept
+    // that couldn't be rendered is allowed, with a warning.
+    const run = await getRun(db, ctx.sessionId, concept.run_id)
+    const baseline = run ? (parseBaseSnapshot(run.base_snapshot).metrics ?? null) : null
+    const gate = applyRenderGate(parseConceptReview(concept.critique), baseline)
+    if (!gate.ok) return NextResponse.json({ error: renderGateMessage(gate.failures), failures: gate.failures }, { status: 422 })
 
     const before = await readDraftThemeSnapshot(ctx.githubRepo)
     const draft = themeTextsFromSnapshot(before)
@@ -151,13 +172,15 @@ export async function POST(req: Request, { params }: Params) {
       console.warn('[design:concept:apply] could not mark the run applied:', err)
     }
 
-    return NextResponse.json({
+    const response: ApplyConceptResponse = {
       ok: true,
       versionId: version.id,
       versionNo: version.version_no,
       commitSha: result.commitSha,
       changedPaths: result.changedPaths,
-    })
+      warnings: gate.warnings,
+    }
+    return NextResponse.json(response)
   } catch (err) {
     if (err instanceof StaleShaError) {
       return NextResponse.json({ error: 'The theme changed while applying — refresh the Studio and try again.', stale: true }, { status: 409 })

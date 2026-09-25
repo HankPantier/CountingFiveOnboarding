@@ -41,4 +41,10 @@ describe('Vercel packaging (R7)', () => {
     expect(src).not.toMatch(HEAVY)
     expect(src).toContain("export const runtime = 'nodejs'")
   })
+
+  it('the critique loop is reached only through the step route’s lazy orchestrator import', () => {
+    const src = readFileSync(path.join(process.cwd(), 'app/api/edit/[id]/design/runs/[runId]/step/route.ts'), 'utf-8')
+    expect(src).toContain("await import('@/lib/design/run-orchestrator')")
+    expect(includes['/api/edit/\\[id\\]/design/runs/\\[runId\\]/step']).toEqual(expect.arrayContaining([...LIGHTNING, ...CHROMIUM]))
+  })
 })

@@ -2,6 +2,8 @@
 // UI, the pure helpers and the server units alike — no server imports here.
 import type { DesignBundle } from './bundle'
 import type { RenderMetrics } from './metrics'
+import type { CritiqueRecord } from './critique'
+import type { ReviewNext, ReviewOutcome, ReviewUnit } from './review'
 import type { ConceptStatus, RunStatus, ThemeBlobShas } from './studio-types'
 import { PALETTE_FREEDOMS } from './studio-types'
 
@@ -55,6 +57,19 @@ export type RunBaseSnapshot = {
 
 export type ScreenshotDto = { viewport: RunViewport; url: string; width: number; height: number }
 
+// The critique loop of one concept, for the Studio (P4).
+export type ConceptReviewDto = {
+  next: ReviewNext
+  activeUnit: ReviewUnit | null // the unit a step is working on right now
+  latest: CritiqueRecord | null
+  critiqueCount: number
+  outcome: ReviewOutcome | null
+  measured: boolean // the latest bundle's render was measured
+  gateFailures: string[] // baseline-diffed render-check failures (apply refuses when non-empty)
+  notes: string[]
+  initialScreenshots: ScreenshotDto[] // BeforeAfter's "before"
+}
+
 export type DesignConceptDto = {
   id: string
   runId: string
@@ -70,6 +85,8 @@ export type DesignConceptDto = {
   treatments: DesignBundle['treatments'] | null
   tokens: Pick<DesignBundle['tokens'], 'roundness' | 'density' | 'visualFeel'> | null
   screenshots: ScreenshotDto[]
+  iterations: number
+  review: ConceptReviewDto | null
 }
 
 export type DesignRunDto = {
@@ -82,6 +99,7 @@ export type DesignRunDto = {
   pagePath: string
   costUsd: number
   costCapUsd: number
+  maxRevisions: number
   error: string | null
   notes: string[]
   capabilities: DesignCapabilities

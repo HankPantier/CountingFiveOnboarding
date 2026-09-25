@@ -1,16 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextResponse } from 'next/server'
 import { asJson } from '@/lib/supabase/json-typed'
-import { CID, RID, SID, makeConceptRow, makeVersionRow } from '@/lib/design/__fixtures__/rows'
+import { CID, RID, SID, makeConceptRow, makeRunRow, makeVersionRow } from '@/lib/design/__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT } from '@/lib/design/__fixtures__/theme-texts'
 import { VALID } from '@/lib/design/__fixtures__/valid-bundle'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { StaleShaError } from '@/lib/github/repo-files'
 import { DEFAULT_CAPABILITIES } from '@/lib/design/run-types'
+import { newReview, UNMEASURED_WARNING } from '@/lib/design/review'
 
 const m = vi.hoisted(() => ({
   gate: vi.fn(),
   getConcept: vi.fn(),
+  getRun: vi.fn(),
   markRunApplied: vi.fn(async (..._a: unknown[]) => {}),
   snapshot: vi.fn(),
   caps: vi.fn(),
@@ -22,6 +24,7 @@ vi.mock('../../../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
 vi.mock('@/lib/design/run-store', () => ({
   getConcept: (...a: unknown[]) => m.getConcept(...a),
+  getRun: (...a: unknown[]) => m.getRun(...a),
   markRunApplied: (...a: unknown[]) => m.markRunApplied(...a),
 }))
 // The real pure themeTextsFromSnapshot runs on the mocked snapshot (PF9).
@@ -66,6 +69,7 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   m.gate.mockResolvedValue({ sessionId: SID, jobId: 'job-1', githubRepo: 'o/r', adminId: 'admin-1', adminEmail: 'a@x.com', adminName: 'Ada', user: { isAdmin: true } })
   m.getConcept.mockResolvedValue(makeConceptRow({ status: 'ready', screenshots: asJson([SHOT]) }))
+  m.getRun.mockResolvedValue(makeRunRow({ status: 'ready' }))
   m.snapshot.mockResolvedValueOnce(BEFORE).mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
   m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
   m.apply.mockResolvedValue(APPLIED)
@@ -102,7 +106,7 @@ describe('POST /design/concepts/[cid]/apply', () => {
   it('applies with legacy overrides removed by default and records a FULL-blob concept version', async () => {
     const res = await call()
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, versionId: 'ver-3', versionNo: 3, commitSha: '1'.repeat(40), changedPaths: APPLIED.changedPaths })
+    expect(await res.json()).toEqual({ ok: true, versionId: 'ver-3', versionNo: 3, commitSha: '1'.repeat(40), changedPaths: APPLIED.changedPaths, warnings: [UNMEASURED_WARNING] })
 
     const applyArgs = m.apply.mock.calls[0][0] as { githubRepo: string; removeLegacy: boolean; bundle: { name: string }; author: { name: string; email: string } }
     expect(applyArgs).toMatchObject({ githubRepo: 'o/r', removeLegacy: true, author: { name: 'Ada', email: 'a@x.com' } })
@@ -194,5 +198,40 @@ describe('POST /design/concepts/[cid]/apply', () => {
     const res = await call()
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Failed to apply the concept' })
+  })
+})
+
+describe('render hard gates (P4)', () => {
+  const OVERFLOW = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: { scrollWidth: 430, viewportWidth: 390, offenders: [] }, hidden: [] }] }
+  const CLEAN = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
+  const withMetrics = (metrics: unknown) => makeConceptRow({ status: 'ready', critique: asJson({ ...newReview(), next: 'done', outcome: 'max_revisions', metrics }) })
+
+  it('422s a concept whose latest render fails a gate, listing the failures, and never touches the draft', async () => {
+    m.getConcept.mockResolvedValue(withMetrics(OVERFLOW))
+    const res = await call()
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as { error: string; failures: string[] }
+    expect(body.error).toMatch(/^This concept fails the render checks, so it can’t be applied: /)
+    expect(body.failures[0]).toContain('wider than the screen')
+    expect(m.apply).not.toHaveBeenCalled()
+  })
+  it('lets a failure the current site already has through (baseline diff)', async () => {
+    m.getConcept.mockResolvedValue(withMetrics(OVERFLOW))
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'ready', base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [], notes: [], metrics: OVERFLOW }) }))
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { warnings: string[] }).warnings).toEqual([])
+  })
+  it('applies a clean concept with no warnings', async () => {
+    m.getConcept.mockResolvedValue(withMetrics(CLEAN))
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { warnings: string[] }).warnings).toEqual([])
+  })
+  it('applies an unmeasured concept (renderer unavailable / pre-P4) with a warning', async () => {
+    m.getConcept.mockResolvedValue(makeConceptRow({ status: 'ready', critique: null }))
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { warnings: string[] }).warnings[0]).toMatch(/not checked for contrast/)
   })
 })
