@@ -133,8 +133,19 @@ describe('run-store', () => {
 
   it('resetConcepts is a no-op for an empty list', async () => {
     const f = fakeSupabase({})
-    await resetConcepts(f.client, RID, [])
+    expect(await resetConcepts(f.client, RID, [])).toBe(0)
     expect(f.queries).toHaveLength(0)
+  })
+
+  it('resetConcepts is a CAS per row on updated_at as read (a lost Retry race resets nothing)', async () => {
+    const READ_AT = '2026-09-25T11:00:00.000+00:00'
+    const f = fakeSupabase({ design_concepts: [{ data: [{ id: CID }] }, { data: [] }] })
+    expect(await resetConcepts(f.client, RID, [{ id: CID, updated_at: READ_AT }, { id: 'moved', updated_at: READ_AT }])).toBe(1)
+    const ops = f.opsFor('design_concepts', 0)
+    expect(ops[0][1]).toMatchObject({ status: 'pending', error: null })
+    expect(Date.parse((ops[0][1] as { updated_at: string }).updated_at)).toBeGreaterThan(Date.parse(READ_AT))
+    for (const op of [['eq', 'id', CID], ['eq', 'run_id', RID], ['eq', 'updated_at', READ_AT]]) expect(ops).toContainEqual(op)
+    expect(f.opsFor('design_concepts', 1)).toContainEqual(['eq', 'id', 'moved'])
   })
 })
 
@@ -209,6 +220,8 @@ describe('run-store — critique-loop claims', () => {
     const update = f.opsFor('design_concepts')[0][1] as { status: string; error: null; critique: { claim: unknown; notes: string[]; next: string } }
     expect(update).toMatchObject({ status: 'refining', error: null })
     expect(update.critique).toMatchObject({ claim: null, notes: ['keep me'], next: 'critique' })
+    // CAS on the row as the Retry read it.
+    expect(f.opsFor('design_concepts')).toContainEqual(['eq', 'updated_at', row.updated_at])
   })
 })
 

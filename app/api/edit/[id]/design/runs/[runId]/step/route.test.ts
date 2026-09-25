@@ -111,13 +111,15 @@ describe('POST step — gate matrix', () => {
 describe('POST step — admin retry', () => {
   it('resumes a failed run from its first unfinished stage', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error' }))
-    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'ready' }), makeConceptRow({ id: 'b', position: 1, status: 'error' })])
+    const b = makeConceptRow({ id: 'b', position: 1, status: 'error' })
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'ready' }), b])
     m.transitionRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
     const res = await call()
     expect(res.status).toBe(202)
     expect(m.transitionRun.mock.calls[0].slice(0, 3)).toEqual([m.db, RID, ['error']])
     expect(m.transitionRun.mock.calls[0][3]).toMatchObject({ status: 'refining', stage: 'render', error: null })
-    expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
+    // The rows as read (their updated_at is the CAS key).
+    expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, [b])
     expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, [])
     expect(m.resumeConcepts).toHaveBeenCalledWith(m.db, RID, [])
   })
@@ -135,15 +137,23 @@ describe('POST step — admin retry', () => {
     expect(res.status).toBe(202)
     expect(m.transitionRun.mock.calls[0][3]).toMatchObject({ status: 'refining', error: null, baseSnapshot: { notes: ['Input skipped — A: it is archived'] } })
     expect(m.resumeConcepts).toHaveBeenCalledWith(m.db, run.id, [mid])
-    // Resumed only AFTER the guarded error → refining transition succeeded.
-    expect(m.resumeConcepts.mock.invocationCallOrder[0]).toBeGreaterThan(m.transitionRun.mock.invocationCallOrder[0])
+    // The concept side is written BEFORE the run leaves 'error', so no
+    // concurrent step can act on the stale concept set (e.g. finalize it).
+    for (const fn of [m.deleteConcepts, m.resetConcepts, m.resumeConcepts]) {
+      expect(fn.mock.invocationCallOrder[0]).toBeLessThan(m.transitionRun.mock.invocationCallOrder[0])
+    }
   })
-  it('does not resume anything when the guarded retry transition loses the race', async () => {
+  it('a Retry that loses the guarded transition 409s; its concept writes were CAS’d on the rows as read', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'critique' }))
-    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'mid', status: 'error', critique: asJson({ ...newReview(), next: 'critique' }) })])
+    const mid = makeConceptRow({ id: 'mid', status: 'error', critique: asJson({ ...newReview(), next: 'critique' }) })
+    m.listConcepts.mockResolvedValue([mid])
     m.transitionRun.mockResolvedValue(null)
-    expect((await call()).status).toBe(409)
-    expect(m.resumeConcepts).not.toHaveBeenCalled()
+    const res = await call()
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'The run changed — refresh and try again.' })
+    // Handed the row as read: a concurrent winner already re-stamped it, so the CAS matches nothing.
+    expect(m.resumeConcepts).toHaveBeenCalledWith(m.db, RID, [mid])
+    expect(m.after).not.toHaveBeenCalled()
   })
   it('resumes a run that failed mid-generation at its first missing / errored position', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'generate' }))

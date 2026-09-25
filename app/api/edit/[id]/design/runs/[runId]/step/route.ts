@@ -63,6 +63,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const concepts = await listConcepts(db, run.id)
         const plan = planRetry(run, concepts)
         if (!plan.ok) return NextResponse.json({ error: plan.reason }, { status: 409 })
+        // The concept side FIRST, while the run is still 'error' (no step acts
+        // on an errored run): once the run is active again a concurrent step
+        // must never see the stale concept set (e.g. nothing pending ⇒
+        // finalize). Every concept write is a CAS on the row as read above, so
+        // if a concurrent Retry got there first these writes match nothing,
+        // and a Retry whose transition below loses leaves only rows that the
+        // next Retry plans from as usual (deletes are of dead rows only).
+        await deleteConcepts(db, run.id, plan.deleteConceptIds)
+        await resetConcepts(
+          db,
+          run.id,
+          concepts.filter((c) => plan.resetConceptIds.includes(c.id))
+        )
+        // Mid-loop concepts: the first (by position) back to refining, the
+        // rest parked pending — nextAction resumes each in turn.
+        await resumeConcepts(
+          db,
+          run.id,
+          concepts.filter((c) => plan.resumeConceptIds.includes(c.id))
+        )
+        // The gate: only the Retry that moves the run out of 'error' proceeds.
         // R8b: notes describing the failed attempt (renderer down, …) go; the
         // retried work re-adds them if it fails again.
         const base = parseBaseSnapshot(run.base_snapshot)
@@ -73,15 +94,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           baseSnapshot: { ...base, notes: dropAttemptNotes(base.notes) },
         })
         if (!moved) return NextResponse.json({ error: 'The run changed — refresh and try again.' }, { status: 409 })
-        await deleteConcepts(db, run.id, plan.deleteConceptIds)
-        await resetConcepts(db, run.id, plan.resetConceptIds)
-        // Mid-loop concepts: the first (by position) back to refining, the
-        // rest parked pending — nextAction resumes each in turn.
-        await resumeConcepts(
-          db,
-          run.id,
-          concepts.filter((c) => plan.resumeConceptIds.includes(c.id))
-        )
       } else if (!(RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)) {
         return NextResponse.json({ error: 'This run has finished — start a new one.' }, { status: 409 })
       }

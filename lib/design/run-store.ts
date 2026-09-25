@@ -211,14 +211,24 @@ export async function claimConceptRender(db: Db, runId: string, conceptId: strin
   return data
 }
 
-export async function resetConcepts(db: Db, runId: string, ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  const { error } = await db
-    .from('design_concepts')
-    .update({ status: 'pending', error: null, updated_at: stamp() })
-    .eq('run_id', runId)
-    .in('id', ids)
-  if (error) throw storeError('resetConcepts', error)
+// Retry: concepts without a loop review restart their first render (pending).
+// Each write is a CAS on the row exactly as the Retry read it, so a Retry that
+// lost the race to a concurrent one (whose steps may already be working on
+// these rows) changes nothing. Returns how many rows were reset.
+export async function resetConcepts(db: Db, runId: string, rows: Pick<DesignConceptRow, 'id' | 'updated_at'>[]): Promise<number> {
+  let reset = 0
+  for (const row of rows) {
+    const { data, error } = await db
+      .from('design_concepts')
+      .update({ status: 'pending', error: null, updated_at: stampAfter(row.updated_at) })
+      .eq('id', row.id)
+      .eq('run_id', runId)
+      .eq('updated_at', row.updated_at)
+      .select('id')
+    if (error) throw storeError('resetConcepts', error)
+    reset += data?.length ?? 0
+  }
+  return reset
 }
 
 export async function markRunApplied(db: Db, runId: string): Promise<void> {
@@ -328,6 +338,7 @@ export async function settleInitialRender(
 // — the loop runs one concept at a time, and a 'refining' row left waiting
 // would be swept to error — the rest are parked as 'pending' with their review
 // kept (nextAction resumes each in turn). Rows without a review are skipped.
+// Like resetConcepts, each write is a CAS on the row as the Retry read it.
 export async function resumeConcepts(db: Db, runId: string, rows: DesignConceptRow[]): Promise<void> {
   const inLoop = rows
     .flatMap((row) => {
@@ -342,10 +353,11 @@ export async function resumeConcepts(db: Db, runId: string, rows: DesignConceptR
         status: index === 0 ? 'refining' : 'pending',
         error: null,
         critique: asJson({ ...review, claim: null, notes: dropAttemptNotes(review.notes) }),
-        updated_at: stamp(),
+        updated_at: stampAfter(row.updated_at),
       })
       .eq('id', row.id)
       .eq('run_id', runId)
+      .eq('updated_at', row.updated_at)
     if (error) throw storeError('resumeConcepts', error)
   }
 }
