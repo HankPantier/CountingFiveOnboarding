@@ -6,6 +6,7 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest'
 import { renderComposed } from './render-composed'
 import { closeBrowserForTests } from './browser'
+import { evaluatePageSample } from '../metrics'
 
 export const HAS_CHROME = !!process.env.CHROMIUM_EXECUTABLE_PATH
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47])
@@ -19,6 +20,7 @@ export const TEST_HTML = `<!doctype html><html><head><base href="https://example
 </body></html>`
 
 const SHELL = 'https://example.invalid/'
+const MOBILE_VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">'
 
 // PNG IHDR: width/height are big-endian uint32s at byte offsets 16 and 20.
 export function pngSize(png: Buffer): { width: number; height: number } {
@@ -50,6 +52,36 @@ export function defineRealChromeSuite(label: string, extraArgs: string | null): 
       for (const s of r.shots) expect(s.png.subarray(0, 4).equals(PNG_MAGIC)).toBe(true)
       expect(r.blockedRequests).toBeGreaterThanOrEqual(1)
       expect(r.timings.renderMs).toBeGreaterThan(0)
+    }, 60_000)
+
+    it('collects metrics in-page despite the CSP: low contrast, overflow and a hidden block', async () => {
+      // The viewport meta matters: without it mobile emulation lays the page
+      // out at Chrome's 980 px default and the 600 px div no longer overflows.
+      const html = `<!doctype html><html><head>${MOBILE_VIEWPORT_META}</head><body style="margin:0;background:#ffffff">
+<section data-block="hero" style="padding:20px"><p style="color:#bbbbbb">Faint body copy here</p><p style="color:#111111">Readable body copy</p></section>
+<section data-block="feature-grid" style="display:none"><p>Gone</p></section>
+<section data-block="cta-banner"><div style="width:600px;height:20px;background:#003b71;color:#ffffff">Too wide</div></section>
+</body></html>`
+      const r = await renderComposed({ html, shellOrigin: SHELL, viewport: 'mobile', metrics: true })
+      if (!r.sample) throw new Error('no metrics sample')
+      const vm = evaluatePageSample('mobile', r.sample)
+      expect(vm.contrast.map((f) => f.text)).toContain('Faint body copy here')
+      expect(vm.contrast.map((f) => f.text)).not.toContain('Readable body copy')
+      expect(vm.overflow).not.toBeNull()
+      expect(vm.hidden).toContainEqual({ key: 'block:feature-grid#0', reason: 'display' })
+    }, 60_000)
+
+    it('does not flag overflow that html/body clip horizontally (decorative bleed)', async () => {
+      for (const target of ['html', 'body'] as const) {
+        const clip = 'overflow-x:hidden'
+        const html = `<!doctype html><html${target === 'html' ? ` style="${clip}"` : ''}><head>${MOBILE_VIEWPORT_META}</head><body style="margin:0;background:#ffffff${target === 'body' ? `;${clip}` : ''}">
+<section data-block="hero"><div style="width:600px;height:20px;background:#003b71;color:#ffffff">Decorative bleed</div></section>
+</body></html>`
+        const r = await renderComposed({ html, shellOrigin: SHELL, viewport: 'mobile', metrics: true })
+        if (!r.sample) throw new Error('no metrics sample')
+        expect(r.sample.offenders).toEqual([])
+        expect(evaluatePageSample('mobile', r.sample).overflow).toBeNull()
+      }
     }, 60_000)
 
     it('renders mobile fold + next viewport and no block crops', async () => {

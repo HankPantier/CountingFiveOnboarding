@@ -120,8 +120,14 @@ describe('snapshot parsing', () => {
     ).toEqual([{ viewport: 'desktop', path: 'design/s/runs/r/a.webp', width: 1440, height: 900 }])
   })
   it('defaults a missing base snapshot to the home page', () => {
-    expect(parseBaseSnapshot(null)).toEqual({ pagePath: '/', themeShas: {}, screenshots: [], notes: [] })
+    expect(parseBaseSnapshot(null)).toEqual({ pagePath: '/', themeShas: {}, screenshots: [], notes: [], metrics: null })
     expect(parseBaseSnapshot(asJson({ pagePath: '/services/tax', notes: ['a', 7] })).notes).toEqual(['a'])
+  })
+  it('parseBaseSnapshot reads the baseline metrics (null when absent or malformed)', () => {
+    const metrics = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
+    expect(parseBaseSnapshot({ pagePath: '/', themeShas: {}, screenshots: [], notes: [], metrics }).metrics).toEqual(metrics)
+    expect(parseBaseSnapshot({ pagePath: '/' }).metrics).toBeNull()
+    expect(parseBaseSnapshot({ pagePath: '/', metrics: { v: 9 } }).metrics).toBeNull()
   })
 })
 

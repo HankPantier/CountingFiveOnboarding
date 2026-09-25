@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
 import { PAGE_METRICS_SCRIPT } from './page-metrics-script'
-import { parseRawPageSample } from '../metrics'
+import { evaluatePageSample, parseRawPageSample, type RawPageSample } from '../metrics'
 
 function stubLayout(viewportWidth: number, scrollWidth: number): void {
   Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: viewportWidth })
@@ -54,5 +54,29 @@ describe('PAGE_METRICS_SCRIPT', () => {
   })
   it('names the outermost element that pokes past the right edge', () => {
     expect(collect()?.offenders).toEqual(['block:cta-banner div#0 (600px)'])
+  })
+  it.each([
+    ['html overflow-x: hidden', 'html', 'overflow-x: hidden'],
+    ['html overflow-x: clip', 'html', 'overflow-x: clip'],
+    ['body overflow-x: hidden (propagates to the viewport)', 'body', 'overflow-x: hidden'],
+    ['body overflow: hidden shorthand', 'body', 'overflow: hidden'],
+  ])('a root/body horizontal clip (%s) is not page overflow and has no offenders', (_label, target, css) => {
+    const el = target === 'html' ? document.documentElement : document.body
+    el.setAttribute('style', css)
+    try {
+      const s = collect()
+      expect(s?.scrollWidth).toBe(390)
+      expect(s?.offenders).toEqual([])
+      expect(evaluatePageSample('mobile', s as RawPageSample).overflow).toBeNull()
+    } finally {
+      el.removeAttribute('style')
+    }
+  })
+  it('still flags overflow when only an inner element clips something else', () => {
+    document.body.insertAdjacentHTML('beforeend', '<div data-rect="0,600,390,50" style="overflow-x: hidden"><span data-rect="0,600,700,20">clipped</span></div>')
+    const s = collect()
+    expect(s?.scrollWidth).toBe(420)
+    expect(s?.offenders).toEqual(['block:cta-banner div#0 (600px)'])
+    expect(evaluatePageSample('mobile', s as RawPageSample).overflow).not.toBeNull()
   })
 })

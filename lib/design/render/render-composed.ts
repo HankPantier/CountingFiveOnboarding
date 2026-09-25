@@ -3,6 +3,11 @@
 //   desktop → the above-the-fold shot + up to 3 block crops (crops: true)
 //   mobile  → the fold + the next viewport down (skipped if the page is too
 //             short to differ meaningfully from the fold)
+// Steps: queue → launch → emulate → setContent → settle → fonts →
+// [metrics] → fold → (scroll/next | crops) → reset. The optional `metrics`
+// step (metrics: true) evaluates PAGE_METRICS_SCRIPT in the same page after
+// webfonts settle and before the fold capture (bounded; a failure yields a
+// null `sample`, never a failed render).
 // Every network request is filtered through isAllowedRenderRequest and capped
 // (the shared context route handler in browser.ts).
 // The page's own per-origin CSP (harden.ts's buildRenderCsp) is now a full
@@ -51,6 +56,8 @@ import {
   type RenderBundle,
   type RenderRequestState,
 } from './browser'
+import { parseRawPageSample, type RawPageSample } from '../metrics'
+import { PAGE_METRICS_SCRIPT } from './page-metrics-script'
 
 export type RenderShot = { kind: 'fold' | 'next' | 'block'; selector?: string; png: Buffer }
 export type RenderResult = {
@@ -58,6 +65,9 @@ export type RenderResult = {
   timings: { launchMs: number; renderMs: number }
   blockedRequests: number
   steps: Record<string, number>
+  // The in-page metrics sample (metrics: true), taken at scroll 0 before the
+  // fold; null when not requested or when the bounded evaluate failed.
+  sample: RawPageSample | null
 }
 
 const MAX_BLOCK_CROPS = 3
@@ -168,6 +178,7 @@ export async function renderComposed(args: {
   viewport: ViewportKey
   crops?: boolean
   deadlineMs?: number
+  metrics?: boolean
 }): Promise<RenderResult> {
   const deadlineMs = args.deadlineMs ?? DEFAULT_DEADLINE_MS
   const t0 = Date.now()
@@ -263,6 +274,12 @@ export async function renderComposed(args: {
     // CDP evaluate is not subject to the page CSP; wait for webfonts so type
     // renders, but bounded — a webfont that never resolves must not hang.
     await boundedEvaluate(page.evaluate(() => document.fonts.ready.then(() => undefined)), undefined)
+    let sample: RawPageSample | null = null
+    if (args.metrics) {
+      mark('metrics')
+      // CDP evaluate (like the fonts wait above) is not subject to the page CSP.
+      sample = parseRawPageSample(await boundedEvaluate(page.evaluate<unknown>(PAGE_METRICS_SCRIPT), null))
+    }
     mark('fold')
 
     shots.push({ kind: 'fold', png: await captureViewport(cdp) })
@@ -305,7 +322,7 @@ export async function renderComposed(args: {
     if (!reset) suspect = true
     steps[currentStep] = Date.now() - stepStart
 
-    return { shots, timings: { launchMs, renderMs: Date.now() - t0 }, blockedRequests, steps }
+    return { shots, timings: { launchMs, renderMs: Date.now() - t0 }, blockedRequests, steps, sample }
   }
 
   try {

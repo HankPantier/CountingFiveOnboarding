@@ -266,6 +266,7 @@ async function generateStage(
     const images: PromptImage[] = []
     let blockSamples = ''
     let currentShots = base.screenshots
+    let currentMetrics = base.metrics ?? null
     const beforeCaption = `The client's CURRENT design of ${base.pagePath} (desktop, 1440 px) — the "before" to improve on.`
     const shell = await loadRenderShell(ctx, base.pagePath)
     if (shell.ok) blockSamples = extractBlockSamples(shell.shell.shellHtml)
@@ -286,8 +287,10 @@ async function generateStage(
         name: 'current',
         shell: shell.shell,
         theme: composedThemeFromFiles({ designText, themeCss: theme.files.themeCss, overridesCss }),
+        metrics: true,
       })
       currentShots = rendered.shots
+      currentMetrics = rendered.metrics
       if (rendered.desktopWebp) {
         images.push({ caption: beforeCaption, adminText: null, bytes: new Uint8Array(rendered.desktopWebp), mediaType: 'image/webp' })
       }
@@ -315,7 +318,7 @@ async function generateStage(
     // Persist the gather (the current render's paths + notes) before spending,
     // so later concepts and a retry reuse it. The guarded write doubles as the
     // cancel check: cancelled meanwhile ⇒ release the claim, no model call.
-    let snapshot = withNotes({ ...base, screenshots: currentShots }, notes)
+    let snapshot = withNotes({ ...base, screenshots: currentShots, metrics: currentMetrics }, notes)
     const live = await transitionRun(db, runId, GENERATING, { baseSnapshot: snapshot })
     if (!live) {
       await deleteConcepts(db, runId, [claim.id])

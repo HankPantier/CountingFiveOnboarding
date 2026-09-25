@@ -80,6 +80,14 @@ describe('storage wrappers', () => {
     const supabase = { storage: { from: () => ({ upload: async () => ({ data: null, error: { message: 'boom' } }) }) } } as never
     await expect(storeDesignImage(supabase, `design/${SID}/x.webp`, Buffer.from('x'))).rejects.toThrow()
   })
+
+  it('storeDesignImage passes upsert through (default false)', async () => {
+    const calls: unknown[] = []
+    const client = { storage: { from: () => ({ upload: async (...a: unknown[]) => { calls.push(a[2]); return { error: null } } }) } } as never
+    await storeDesignImage(client, `design/${SID}/runs/x/a.webp`, Buffer.from([1]))
+    await storeDesignImage(client, `design/${SID}/runs/x/b.webp`, Buffer.from([1]), { upsert: true })
+    expect(calls).toEqual([{ contentType: 'image/webp', upsert: false }, { contentType: 'image/webp', upsert: true }])
+  })
 })
 
 describe('removeDesignPaths', () => {

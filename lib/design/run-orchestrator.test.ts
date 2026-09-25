@@ -138,6 +138,8 @@ describe('runDesignStep — generate the first concept', () => {
     expect(snap.from).toEqual(['generating'])
     expect(snap.patch.baseSnapshot?.screenshots).toEqual([CURRENT_SHOT])
     expect(snap.patch.baseSnapshot?.notes).toContain('Input skipped — Acme CPA: it has not been captured yet')
+    expect((m.renderFolds.mock.calls[0][0] as { name: string; metrics?: boolean }).name).toBe('current')
+    expect((m.renderFolds.mock.calls[0][0] as { metrics?: boolean }).metrics).toBe(true)
 
     const a = m.generateConcept.mock.calls[0][0] as { prompt: { parts: { type: string }[] }; priors: unknown[]; costSoFarUsd: number }
     expect(a.prompt.parts.some((p) => p.type === 'image')).toBe(true) // the current-site render
@@ -150,6 +152,14 @@ describe('runDesignStep — generate the first concept', () => {
     expect(last.patch).toMatchObject({ costUsd: 0.5 })
     expect(last.patch.status).toBeUndefined() // still generating: more positions to go
     expect(last.patch.baseSnapshot?.notes).toContain('model note')
+  })
+
+  it('stores the current-site render’s metrics as the run baseline', async () => {
+    const metrics = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 2, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
+    m.renderFolds.mockResolvedValue({ shots: [CURRENT_SHOT], desktopWebp: Buffer.from([1]), metrics, error: null })
+    await runDesignStep(CTX)
+    const snap = transitions()[1].patch.baseSnapshot as { metrics?: unknown }
+    expect(snap.metrics).toEqual(metrics)
   })
 
   it('is a no-op when another worker already claimed generation', async () => {

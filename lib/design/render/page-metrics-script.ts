@@ -8,15 +8,31 @@
 //
 // It only COLLECTS raw samples; every decision (contrast ratios, overflow,
 // hidden blocks) is made in lib/design/metrics.ts so it is unit-tested
-// without a browser. Bounded: ≤ 4000 elements scanned, ≤ 400 text samples,
-// ≤ 80 blocks, ≤ 8 offenders. Empty computed values (jsdom) are read as the
-// CSS initial value.
+// without a browser. A horizontal clip on html/body (overflow-x hidden or
+// clip) means nothing scrolls sideways: the page is reported as not
+// overflowing and nothing past the right edge is an offender. Bounded:
+// ≤ 4000 elements scanned, ≤ 400 text samples, ≤ 80 blocks, ≤ 8 offenders.
+// Empty computed values (jsdom) are read as the CSS initial value.
 export const PAGE_METRICS_SCRIPT = String.raw`(() => {
   const MAX_SCAN = 4000, MAX_TEXT = 400, MAX_BLOCKS = 80, MAX_OFFENDERS = 8;
   const root = document.documentElement;
   const body = document.body;
   const vw = root.clientWidth;
-  const scrollWidth = Math.max(root.scrollWidth || 0, body ? body.scrollWidth || 0 : 0);
+  const overflowXOf = (el) => {
+    if (!el) return 'visible';
+    const s = getComputedStyle(el);
+    return s.overflowX || (s.overflow || '').split(/\s+/)[0] || 'visible';
+  };
+  const clips = (v) => v === 'hidden' || v === 'clip';
+  const rootOx = overflowXOf(root), bodyOx = overflowXOf(body);
+  // Templates often put overflow-x: hidden/clip on html or body to hide
+  // decorative bleed. Chromium still reports the clipped width in
+  // scrollWidth, but nothing scrolls: the viewport clips (root's value, or
+  // body's when root is visible and it propagates), or body clips at its own
+  // box when that box is no wider than the viewport.
+  const pageClipsX = clips(rootOx) || (clips(bodyOx) && (rootOx === 'visible' || (body && body.getBoundingClientRect().right <= vw + 2)));
+  const rawScrollWidth = Math.max(root.scrollWidth || 0, body ? body.scrollWidth || 0 : 0);
+  const scrollWidth = pageClipsX ? Math.min(rawScrollWidth, vw) : rawScrollWidth;
   const sx = window.scrollX || 0, sy = window.scrollY || 0;
   const num = (v, d) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
   const alphaOf = (c) => {
@@ -96,7 +112,9 @@ export const PAGE_METRICS_SCRIPT = String.raw`(() => {
   const offenderKey = counter();
   const offending = new Set();
   const offenders = [];
-  for (const el of all) {
+  // A root/body horizontal clip hides everything past the right edge, so
+  // nothing there is an offender.
+  for (const el of pageClipsX ? [] : all) {
     if (offenders.length >= MAX_OFFENDERS) break;
     if (SKIP.has(el.tagName)) continue;
     const r = el.getBoundingClientRect();

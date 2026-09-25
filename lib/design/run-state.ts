@@ -4,6 +4,7 @@
 // and routes act on it.
 import type { Tables } from '@/types/database'
 import { displayHost, isPlainObject } from './input-validation'
+import { parseRenderMetrics } from './metrics'
 import { INPUT_KIND_LABELS, type DesignInputKind, type ThemeBlobShas } from './studio-types'
 import { DEFAULT_RUN_PAGE, DESIGN_STEP_MAX_LIFETIME_MS, MAX_RUN_INPUTS, type RunBaseSnapshot, type RunScreenshot, type RunStage } from './run-types'
 
@@ -126,6 +127,7 @@ export function parseBaseSnapshot(value: unknown): RunBaseSnapshot {
     themeShas,
     screenshots: parseScreenshots(v.screenshots),
     notes: Array.isArray(v.notes) ? v.notes.filter((n): n is string => typeof n === 'string') : [],
+    metrics: parseRenderMetrics(v.metrics),
   }
 }
 

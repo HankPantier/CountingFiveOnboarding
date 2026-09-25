@@ -1,6 +1,7 @@
 // Client-safe constants + types for Design Studio RUNS (P3). Imported by the
 // UI, the pure helpers and the server units alike — no server imports here.
 import type { DesignBundle } from './bundle'
+import type { RenderMetrics } from './metrics'
 import type { ConceptStatus, RunStatus, ThemeBlobShas } from './studio-types'
 import { PALETTE_FREEDOMS } from './studio-types'
 
@@ -44,6 +45,9 @@ export type RunBaseSnapshot = {
   themeShas: ThemeBlobShas
   screenshots: RunScreenshot[]
   notes: string[]
+  // The current-site render's metrics (P4): the baseline concept render
+  // checks are diffed against. Absent on P3 runs.
+  metrics?: RenderMetrics | null
 }
 
 export type ScreenshotDto = { viewport: RunViewport; url: string; width: number; height: number }
