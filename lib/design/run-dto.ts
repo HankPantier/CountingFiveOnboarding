@@ -4,7 +4,7 @@ import type { Tables } from '@/types/database'
 import { parseDesignBundle } from './bundle'
 import { capabilitiesFromJson } from './capabilities'
 import { metricGateFailures, type RenderMetrics } from './metrics'
-import { latestCritique, parseConceptReview, type ConceptReview } from './review'
+import { latestCritique, parseConceptReview, renderGateWarnings, unmeasuredViewports, type ConceptReview } from './review'
 import { parseBaseSnapshot, parseScreenshots } from './run-state'
 import { CONCEPT_STATUSES, PALETTE_FREEDOMS, RUN_STATUSES, type ConceptStatus, type RunStatus } from './studio-types'
 import {
@@ -51,7 +51,9 @@ function toReviewDto(review: ConceptReview | null, signed: Record<string, string
     critiqueCount: review.critiques.length,
     outcome: review.outcome,
     measured: review.metrics !== null,
+    unmeasuredViewports: review.metrics ? unmeasuredViewports(review.metrics) : [],
     gateFailures: review.metrics ? metricGateFailures(review.metrics, baseline).map((f) => f.message) : [],
+    renderWarnings: review.metrics ? renderGateWarnings(review, baseline) : [],
     notes: review.notes,
     initialScreenshots: toShots(review.initialScreenshots, signed),
   }

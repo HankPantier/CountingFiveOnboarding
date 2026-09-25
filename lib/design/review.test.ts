@@ -12,6 +12,9 @@ import {
   newReview,
   parseConceptReview,
   renderGateMessage,
+  renderGateWarnings,
+  unmeasuredViewportWarning,
+  unmeasuredViewports,
   withCritique,
   withReviewNotes,
 } from './review'
@@ -32,6 +35,9 @@ const OVERFLOWING: RenderMetrics = {
   v: 1,
   viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: { scrollWidth: 430, viewportWidth: 390, offenders: [] }, hidden: [] }],
 }
+const DESKTOP_CLEAN = { viewport: 'desktop' as const, textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }
+const BOTH_OVERFLOWING: RenderMetrics = { v: 1, viewports: [DESKTOP_CLEAN, ...OVERFLOWING.viewports] }
+const DESKTOP_ONLY: RenderMetrics = { v: 1, viewports: [DESKTOP_CLEAN] }
 
 describe('decideAfterCritique', () => {
   const base = { passed: false, gateFailures: 0, iterations: 0, maxRevisions: 2, capReached: false }
@@ -93,7 +99,21 @@ describe('applyRenderGate (R6)', () => {
     expect(!gate.ok && gate.failures[0]).toContain('wider than the screen')
   })
   it('passes when the baseline has the same failure', () => {
-    expect(applyRenderGate({ ...newReview(), metrics: OVERFLOWING }, OVERFLOWING)).toEqual({ ok: true, warnings: [] })
+    expect(applyRenderGate({ ...newReview(), metrics: BOTH_OVERFLOWING }, BOTH_OVERFLOWING)).toEqual({ ok: true, warnings: [] })
+  })
+  it('a partly-measured render (mobile failed) is allowed with a warning naming the unmeasured viewport — never a silent pass', () => {
+    expect(unmeasuredViewports(DESKTOP_ONLY)).toEqual(['mobile'])
+    expect(unmeasuredViewports(BOTH_OVERFLOWING)).toEqual([])
+    expect(unmeasuredViewports(null)).toEqual(['desktop', 'mobile'])
+    const gate = applyRenderGate({ ...newReview(), metrics: DESKTOP_ONLY }, null)
+    expect(gate).toEqual({ ok: true, warnings: [unmeasuredViewportWarning('mobile')] })
+    expect(unmeasuredViewportWarning('mobile')).toContain('mobile (390)')
+    expect(renderGateWarnings({ ...newReview(), metrics: DESKTOP_ONLY }, null)).toEqual([unmeasuredViewportWarning('mobile')])
+  })
+  it('a measured viewport’s failure still refuses a partly-measured render', () => {
+    const gate = applyRenderGate({ ...newReview(), metrics: OVERFLOWING }, null)
+    expect(gate.ok).toBe(false)
+    expect(renderGateWarnings({ ...newReview(), metrics: OVERFLOWING }, null)).toEqual([])
   })
   it('allows an unmeasured concept (renderer unavailable / pre-P4) with a warning', () => {
     expect(applyRenderGate(null, null)).toEqual({ ok: true, warnings: [UNMEASURED_WARNING] })

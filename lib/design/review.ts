@@ -8,7 +8,7 @@ import { isPlainObject } from './input-validation'
 import { parseCritiqueRecord, type CritiqueRecord } from './critique'
 import { metricGateFailures, parseRenderMetrics, type RenderMetrics } from './metrics'
 import { parseScreenshots } from './screenshots'
-import { DESIGN_STEP_MAX_LIFETIME_MS, type RunScreenshot } from './run-types'
+import { DESIGN_STEP_MAX_LIFETIME_MS, type RunScreenshot, type RunViewport } from './run-types'
 
 export const REVIEW_UNITS = ['render', 'critique', 'revise'] as const
 export type ReviewUnit = (typeof REVIEW_UNITS)[number]
@@ -107,14 +107,36 @@ export function dropAttemptNotes(notes: string[]): string[] {
 export const UNMEASURED_WARNING =
   'This concept was not checked for contrast, mobile overflow or hidden blocks (it could not be rendered) — check it in the live preview before publishing.'
 
+const MEASURED_VIEWPORTS: readonly RunViewport[] = ['desktop', 'mobile']
+const VIEWPORT_NAME: Record<RunViewport, string> = { desktop: 'desktop (1440)', mobile: 'mobile (390)' }
+
+// The viewports a render's metrics do NOT cover (a render that failed part-way
+// keeps the viewports it measured) — all of them when unmeasured.
+export function unmeasuredViewports(metrics: RenderMetrics | null): RunViewport[] {
+  const have = new Set((metrics?.viewports ?? []).map((v) => v.viewport))
+  return MEASURED_VIEWPORTS.filter((v) => !have.has(v))
+}
+
+export const unmeasuredViewportWarning = (viewport: RunViewport): string =>
+  `This concept’s ${VIEWPORT_NAME[viewport]} render was not checked for contrast, overflow or hidden blocks (it could not be measured) — check it in the live preview before publishing.`
+
 export type RenderGate = { ok: true; warnings: string[] } | { ok: false; failures: string[] }
 
 // Spec "hard gates before apply" (R6): the LATEST render's metrics, diffed
-// against the current site's. Unmeasured ⇒ allowed with a warning.
+// against the current site's. Unmeasured ⇒ allowed with a warning; a viewport
+// the render did not measure ⇒ allowed with a warning naming that viewport
+// (its checks never ran, so their absence is not a pass).
 export function applyRenderGate(review: ConceptReview | null, baseline: RenderMetrics | null): RenderGate {
   if (!review?.metrics) return { ok: true, warnings: [UNMEASURED_WARNING] }
   const failures = metricGateFailures(review.metrics, baseline)
-  return failures.length > 0 ? { ok: false, failures: failures.map((f) => f.message) } : { ok: true, warnings: [] }
+  if (failures.length > 0) return { ok: false, failures: failures.map((f) => f.message) }
+  return { ok: true, warnings: unmeasuredViewports(review.metrics).map(unmeasuredViewportWarning) }
+}
+
+// What the UI shows before apply: the gate's warnings (none while it refuses).
+export function renderGateWarnings(review: ConceptReview | null, baseline: RenderMetrics | null): string[] {
+  const gate = applyRenderGate(review, baseline)
+  return gate.ok ? gate.warnings : []
 }
 
 export function renderGateMessage(failures: string[]): string {

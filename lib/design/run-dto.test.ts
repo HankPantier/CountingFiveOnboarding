@@ -3,7 +3,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { CID, RID, SID, makeConceptRow, makeRunRow } from './__fixtures__/rows'
 import { VALID } from './__fixtures__/valid-bundle'
 import { parseRenderMetrics, type RenderMetrics } from './metrics'
-import { newReview } from './review'
+import { newReview, unmeasuredViewportWarning } from './review'
 import { runScreenshotPaths, toConceptDto, toRunDto } from './run-dto'
 
 const asJsonMetrics = (v: unknown): RenderMetrics => {
@@ -79,6 +79,15 @@ describe('critique-loop DTO', () => {
     expect(dto.review?.gateFailures[0]).toContain('wider than the screen')
     expect(dto.review?.initialScreenshots).toEqual([{ viewport: 'desktop', url: 'https://signed/init', width: 1440, height: 900 }])
     expect(toConceptDto(row, signed, asJsonMetrics(OVERFLOW)).review?.gateFailures).toEqual([])
+  })
+  it('a partly-measured render (mobile failed) reports the unmeasured viewport and the apply warning, not a clean pass', () => {
+    const DESKTOP_ONLY = { v: 1, viewports: [{ viewport: 'desktop', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
+    const partial = makeConceptRow({ status: 'ready', critique: asJson({ ...newReview(), next: 'done', metrics: DESKTOP_ONLY, metricsIteration: 0 }) })
+    const review = toConceptDto(partial, {}).review
+    expect(review).toMatchObject({ measured: true, unmeasuredViewports: ['mobile'], gateFailures: [], renderWarnings: [unmeasuredViewportWarning('mobile')] })
+    // Fully measured ⇒ nothing to warn about; unmeasured ⇒ the UI's "render checks not run".
+    expect(toConceptDto(row, signed, asJsonMetrics(OVERFLOW)).review).toMatchObject({ unmeasuredViewports: ['desktop'] })
+    expect(toConceptDto(makeConceptRow({ critique: asJson(newReview()) }), {}).review).toMatchObject({ measured: false, unmeasuredViewports: [], renderWarnings: [] })
   })
   it('a P3 concept (no review) has review null', () => {
     expect(toConceptDto(makeConceptRow({ critique: null }), {}).review).toBeNull()

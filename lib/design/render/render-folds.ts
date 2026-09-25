@@ -4,7 +4,8 @@
 // deterministic name, uploaded with upsert so a retried render overwrites its
 // own object instead of orphaning one. With `metrics: true` each viewport's
 // in-page sample (taken in the same render page) is evaluated and combined
-// into a RenderMetrics (kept even when a later viewport fails). The renderer is lazy-imported
+// into a RenderMetrics (kept even when a later viewport fails — its `viewports`
+// list records which were measured; the apply gate warns about the others). The renderer is lazy-imported
 // (playwright-core / @sparticuz/chromium are traced by path — see
 // next.config.ts) and only ever driven through renderComposed(), which owns the
 // single cached single-process page and its mutex. Never throws: failures come

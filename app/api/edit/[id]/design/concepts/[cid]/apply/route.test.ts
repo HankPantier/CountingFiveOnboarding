@@ -202,8 +202,9 @@ describe('POST /design/concepts/[cid]/apply', () => {
 })
 
 describe('render hard gates (P4)', () => {
-  const OVERFLOW = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: { scrollWidth: 430, viewportWidth: 390, offenders: [] }, hidden: [] }] }
-  const CLEAN = { v: 1, viewports: [{ viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
+  const DESKTOP = { viewport: 'desktop', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }
+  const OVERFLOW = { v: 1, viewports: [DESKTOP, { viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: { scrollWidth: 430, viewportWidth: 390, offenders: [] }, hidden: [] }] }
+  const CLEAN = { v: 1, viewports: [DESKTOP, { viewport: 'mobile', textChecked: 1, textUnverified: 0, contrast: [], overflow: null, hidden: [] }] }
   const withMetrics = (metrics: unknown) => makeConceptRow({ status: 'ready', critique: asJson({ ...newReview(), next: 'done', outcome: 'max_revisions', metrics }) })
 
   it('422s a concept whose latest render fails a gate, listing the failures, and never touches the draft', async () => {
@@ -227,6 +228,15 @@ describe('render hard gates (P4)', () => {
     const res = await call()
     expect(res.status).toBe(200)
     expect(((await res.json()) as { warnings: string[] }).warnings).toEqual([])
+  })
+  it('applies a partly-measured concept (mobile render failed) with a warning naming mobile — not a silent pass', async () => {
+    m.getConcept.mockResolvedValue(withMetrics({ v: 1, viewports: [DESKTOP] }))
+    const res = await call()
+    expect(res.status).toBe(200)
+    const { warnings } = (await res.json()) as { warnings: string[] }
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(/mobile \(390\) render was not checked/)
+    expect(m.apply).toHaveBeenCalled()
   })
   it('applies an unmeasured concept (renderer unavailable / pre-P4) with a warning', async () => {
     m.getConcept.mockResolvedValue(makeConceptRow({ status: 'ready', critique: null }))

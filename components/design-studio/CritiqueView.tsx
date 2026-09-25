@@ -15,6 +15,9 @@ export default function CritiqueView({ review, iterations, maxRevisions }: { rev
         {chip && <span className={`rounded-pill border px-2 py-0.5 font-heading text-[10px] font-semibold ${TONE_CHIP[chip.tone]}`}>{chip.label}</span>}
         <span className="font-body text-[11px] text-text-muted">{revisionsLabel(iterations, maxRevisions)}</span>
         {!review.measured && <span className="font-body text-[11px] text-text-muted">· render checks not run</span>}
+        {review.measured && review.unmeasuredViewports.length > 0 && (
+          <span className="font-body text-[11px] text-text-muted">· {review.unmeasuredViewports.join(' + ')} render checks not run</span>
+        )}
       </div>
 
       {latest && (
@@ -66,6 +69,14 @@ export default function CritiqueView({ review, iterations, maxRevisions }: { rev
           )}
           {latest.summary && <p className="mt-1 italic">{latest.summary}</p>}
         </details>
+      )}
+
+      {review.renderWarnings.length > 0 && (
+        <ul className="list-disc pl-4 font-body text-[11px] text-warning-strong" aria-label="Render-check warnings">
+          {review.renderWarnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
       )}
 
       {review.notes.length > 0 && (

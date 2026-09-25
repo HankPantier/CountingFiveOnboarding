@@ -64,8 +64,10 @@ export type ConceptReviewDto = {
   latest: CritiqueRecord | null
   critiqueCount: number
   outcome: ReviewOutcome | null
-  measured: boolean // the latest bundle's render was measured
+  measured: boolean // the latest bundle's render was measured (at least one viewport)
+  unmeasuredViewports: RunViewport[] // viewports a partly-measured render did not check (empty when unmeasured)
   gateFailures: string[] // baseline-diffed render-check failures (apply refuses when non-empty)
+  renderWarnings: string[] // apply-gate warnings for a partly-measured render (apply allows, with these)
   notes: string[]
   initialScreenshots: ScreenshotDto[] // BeforeAfter's "before"
 }
