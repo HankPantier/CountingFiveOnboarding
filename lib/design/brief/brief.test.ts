@@ -2,8 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { VALID } from '../__fixtures__/valid-bundle'
 import { parseTemplateMarker } from '../capabilities'
 import { DEFAULT_CAPABILITIES } from '../run-types'
+import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
-import { buildConceptPrompt, buildStaticPrefix, type ConceptPromptArgs } from './index'
+import { buildConceptPrompt, buildSharedParts, buildStaticPrefix, type ConceptPromptArgs } from './index'
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
 
@@ -154,5 +155,30 @@ describe('buildConceptPrompt (later concepts)', () => {
   })
   it('keeps the static prefix byte-identical to the first concept’s', () => {
     expect(buildConceptPrompt({ ...ARGS, position: 2, priors: [{ position: 0, bundle: VALID }] }).staticPrefix).toBe(buildConceptPrompt(ARGS).staticPrefix)
+  })
+})
+
+describe('shared parts (the second cache breakpoint)', () => {
+  it('reports how many leading parts are shared, identical across positions', () => {
+    const a = buildConceptPrompt(ARGS)
+    const b = buildConceptPrompt({ ...ARGS, position: 1, priors: [{ position: 0, bundle: VALID }] })
+    expect(a.sharedPartCount).toBeGreaterThan(0)
+    expect(a.sharedPartCount).toBe(b.sharedPartCount)
+    expect(b.parts.slice(0, b.sharedPartCount)).toEqual(a.parts.slice(0, a.sharedPartCount))
+    const next = b.parts[b.sharedPartCount]
+    expect(next.type === 'text' && next.text.startsWith('CONCEPTS ALREADY DESIGNED')).toBe(true)
+  })
+  it('the shared parts end with the last reference image when there are images', () => {
+    const { parts, sharedPartCount } = buildConceptPrompt(ARGS)
+    expect(parts[sharedPartCount - 1].type).toBe('image')
+  })
+  it('buildSharedParts is exactly the shared prefix', () => {
+    const { parts, sharedPartCount } = buildConceptPrompt(ARGS)
+    expect(buildSharedParts(ARGS)).toEqual(parts.slice(0, sharedPartCount))
+  })
+  it('the task restates the CSS scoping + no-escape reminder from the contract', () => {
+    const { parts } = buildConceptPrompt(ARGS)
+    const last = parts[parts.length - 1]
+    expect(last.type === 'text' && last.text).toContain(CSS_RULES_REMINDER)
   })
 })

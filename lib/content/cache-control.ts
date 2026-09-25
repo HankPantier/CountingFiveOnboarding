@@ -57,30 +57,34 @@ export function buildCachedMessages(
 export type DynamicPart = { type: 'text'; text: string } | { type: 'image'; image: Uint8Array; mediaType: string }
 
 // Multi-part sibling of buildCachedMessages for vision prompts (Design Studio).
-// The static prefix is always a cache breakpoint. `cacheDynamic` adds a second
-// breakpoint on the LAST text part of the suffix, so a follow-up turn (e.g. a
-// repair request appended after the model's answer) re-reads the whole first
-// message — images included — at the cache rate. Image parts are never marked.
+// The static prefix is always a cache breakpoint. `breakAt` adds one on that
+// suffix part (text OR image) — the LAST part every call of a run shares
+// (firm brief, current design, page markup, reference images), so later
+// concepts / iterations / critiques read it back. `cacheDynamic` adds one on
+// the LAST text part, so a follow-up turn (a repair request appended after the
+// model's answer) re-reads the whole first message. At most 3 breakpoints.
 export function buildCachedPartsMessages(
   staticPrefix: string,
   dynamicParts: DynamicPart[],
-  opts: { ttl?: CacheTtl; cacheDynamic?: boolean } = {},
+  opts: { ttl?: CacheTtl; cacheDynamic?: boolean; breakAt?: number } = {},
 ): ModelMessage[] {
   const breakpoint = opts.ttl === '1h' ? CACHE_EPHEMERAL_1H : CACHE_EPHEMERAL
-  let lastText = -1
+  const marked = new Set<number>()
+  if (opts.breakAt !== undefined && opts.breakAt >= 0 && opts.breakAt < dynamicParts.length) marked.add(opts.breakAt)
   if (opts.cacheDynamic) {
     for (let i = dynamicParts.length - 1; i >= 0; i--) {
       if (dynamicParts[i].type === 'text') {
-        lastText = i
+        marked.add(i)
         break
       }
     }
   }
-  const suffix = dynamicParts.map((part, i) =>
-    part.type === 'text'
-      ? { type: 'text' as const, text: part.text, ...(i === lastText ? { providerOptions: breakpoint } : {}) }
-      : { type: 'image' as const, image: part.image, mediaType: part.mediaType },
-  )
+  const suffix = dynamicParts.map((part, i) => {
+    const mark = marked.has(i) ? { providerOptions: breakpoint } : {}
+    return part.type === 'text'
+      ? { type: 'text' as const, text: part.text, ...mark }
+      : { type: 'image' as const, image: part.image, mediaType: part.mediaType, ...mark }
+  })
   return [
     {
       role: 'user',
