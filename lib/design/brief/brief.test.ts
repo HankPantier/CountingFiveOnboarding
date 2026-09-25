@@ -54,6 +54,16 @@ describe('buildStaticPrefix', () => {
       expect(p).toContain(phrase)
     }
   })
+  it('tells the model every selector must start with an allowed scope and never invent a bare utility class', () => {
+    const p = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(p).toContain('EVERY selector, in css.global and every css.blocks.<id> alike, MUST START with one of those scopes')
+    expect(p).toContain('.u-card')
+    expect(p).toContain('never invent a new utility class')
+  })
+  it('bans CSS escapes outright', () => {
+    const p = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(p).toContain('No CSS escapes (backslashes, \\) anywhere in the output')
+  })
   it('locks fonts below L2 and lists the curated fonts at L2', () => {
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toContain('typography: LOCKED')
     const l2 = buildStaticPrefix(parseTemplateMarker('{"capabilities":["fonts"]}'))

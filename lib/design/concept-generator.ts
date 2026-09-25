@@ -44,7 +44,7 @@ export const DEADLINE_SAFETY_MS = 20_000
 // Rough input-token cost of one ≤1568 px image part, for aborted-attempt estimates.
 export const ESTIMATED_TOKENS_PER_IMAGE = 1_600
 // One bundle per call (thinking tokens count against this too).
-export const CONCEPT_OUTPUT_TOKENS = 16_000
+export const CONCEPT_OUTPUT_TOKENS = 24_000
 export const REPAIR_OUTPUT_TOKENS = 16_000
 const MAX_ERRORS_QUOTED = 8
 const MAX_ERROR_CHARS = 200

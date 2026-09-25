@@ -110,8 +110,8 @@ describe('generateConcept', () => {
     expect(opts.providerOptions.anthropic.thinking.type).toBe('adaptive')
     for (const k of ['temperature', 'topP', 'topK', 'toolChoice', 'prompt']) expect(k in opts).toBe(false)
     expect(opts.messages).toHaveLength(1)
-    expect(opts.firstBudget).toBe(16_000)
-    expect(opts.retryBudget).toBe(16_000)
+    expect(opts.firstBudget).toBe(24_000)
+    expect(opts.retryBudget).toBe(24_000)
     // 540 − 0 − 20 safety = 520 s → capped at the 300 s first-attempt cap.
     expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS])
     expect(FIRST_ATTEMPT_CAP_MS).toBe(300_000)
@@ -310,7 +310,7 @@ describe('generateConcept', () => {
   describe('aborted attempts', () => {
     const IMG = { type: 'image' as const, image: new Uint8Array([1, 2, 3]), mediaType: 'image/webp' }
     // Opus 5.5 at $4/M input + the attempt's full maxOutputTokens at $20/M output.
-    const estimateFor = (textChars: number, images: number, maxOutputTokens = 16_000) =>
+    const estimateFor = (textChars: number, images: number, maxOutputTokens = 24_000) =>
       ((Math.ceil(textChars / 4) + images * ESTIMATED_TOKENS_PER_IMAGE) / 1_000_000) * 4 + (maxOutputTokens / 1_000_000) * 20
 
     it('adds an estimated input + max-output cost for a started attempt that never reported usage, and warns', async () => {
@@ -321,7 +321,7 @@ describe('generateConcept', () => {
       })
       const r = await generateConcept(args({ prompt: { staticPrefix: 'STATIC', parts: [{ type: 'text', text: 'TASK' }, IMG] } }))
       const expected = estimateFor(DESIGN_SYSTEM_PROMPT.length + 'STATIC'.length + 'TASK'.length, 1)
-      expect(expected).toBeGreaterThan(0.32) // the 16k output tokens alone are $0.32
+      expect(expected).toBeGreaterThan(0.48) // the 24k output tokens alone are $0.48
       expect(r.estimatedUsd).toBeCloseTo(expected, 9)
       expect(r.costUsd).toBeCloseTo(expected, 9)
       expect(m.record).not.toHaveBeenCalled() // token_usage stays exact-only
