@@ -12,6 +12,35 @@ export type PreviewViewport = (typeof PREVIEW_VIEWPORTS)[number]
 
 export const RUN_POLL_MS = 4000
 
+// Sequential polling: waits `delayMs`, runs `tick`, and only schedules the next
+// tick after this one has SETTLED (so slow responses never pile up the way a
+// setInterval(async …) does). `tick` resolves false to stop; a rejected tick
+// counts as transient and polling continues. Returns a stop function that
+// clears the pending timer and suppresses any later scheduling.
+export function startSequentialPoll(tick: () => Promise<boolean>, delayMs: number): () => void {
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const schedule = () => {
+    if (stopped) return
+    timer = setTimeout(async () => {
+      timer = null
+      let again = true
+      try {
+        again = await tick()
+      } catch {
+        again = true
+      }
+      if (again) schedule()
+    }, delayMs)
+  }
+  schedule()
+  return () => {
+    stopped = true
+    if (timer !== null) clearTimeout(timer)
+    timer = null
+  }
+}
+
 export function viewportScale(containerWidth: number, viewportWidth: number): number {
   if (!(containerWidth > 0) || !(viewportWidth > 0)) return 1
   return Math.min(1, Math.max(0.1, containerWidth / viewportWidth))

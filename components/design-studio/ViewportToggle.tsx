@@ -15,18 +15,23 @@ export default function ViewportToggle({ sessionId, conceptId, conceptName, page
   const [viewport, setViewport] = useState<PreviewViewport>(PREVIEW_VIEWPORTS[0])
   const [shell, setShell] = useState<{ path: string; html: string } | null>(null)
   const [theme, setTheme] = useState<{ id: string; theme: ComposedTheme } | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // One error per load, so a new concept load clears only its own stale error.
+  const [shellError, setShellError] = useState<string | null>(null)
+  const [themeError, setThemeError] = useState<string | null>(null)
   const [width, setWidth] = useState(0)
   const frameBox = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
+      setShellError(null) // a new load starts clean (shows the loading placeholder)
       try {
         const res = await designApi<{ shellHtml: string }>(`/api/edit/${sessionId}/theme/shell?path=${encodeURIComponent(pagePath)}`)
-        if (!cancelled) setShell({ path: pagePath, html: res.shellHtml })
+        if (cancelled) return
+        setShell({ path: pagePath, html: res.shellHtml })
+        setShellError(null)
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Couldn’t load the page'))
+        if (!cancelled) setShellError(errorMessage(err, 'Couldn’t load the page'))
       }
     }
     void load()
@@ -38,11 +43,14 @@ export default function ViewportToggle({ sessionId, conceptId, conceptName, page
   useEffect(() => {
     let cancelled = false
     const load = async () => {
+      setThemeError(null) // switching concepts drops the previous concept's error
       try {
         const res = await designApi<{ theme: ComposedTheme }>(`/api/edit/${sessionId}/design/concepts/${conceptId}/preview`)
-        if (!cancelled) setTheme({ id: conceptId, theme: res.theme })
+        if (cancelled) return
+        setTheme({ id: conceptId, theme: res.theme })
+        setThemeError(null)
       } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Couldn’t load the concept preview'))
+        if (!cancelled) setThemeError(errorMessage(err, 'Couldn’t load the concept preview'))
       }
     }
     void load()
@@ -62,6 +70,7 @@ export default function ViewportToggle({ sessionId, conceptId, conceptName, page
   const ready = shell?.path === pagePath && theme?.id === conceptId
   const srcDoc = useMemo(() => (ready && shell && theme ? composeThemeDoc(shell.html, theme.theme) : null), [ready, shell, theme])
   const scale = viewportScale(width, viewport.width)
+  const error = shellError ?? themeError
 
   return (
     <div className="flex flex-col gap-2">

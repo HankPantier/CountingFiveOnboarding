@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { DesignConceptDto } from './run-types'
 import type { DesignInputDto } from './studio-types'
 import {
@@ -11,6 +11,7 @@ import {
   reconcileRunInputIds,
   runIsActive,
   runStatusLabel,
+  startSequentialPoll,
   syncedScrollTop,
   viewportScale,
 } from './studio-ui'
@@ -112,5 +113,65 @@ describe('applyErrorMessage', () => {
   it('falls back to the generic message for 5xx or a missing 4xx message', () => {
     expect(applyErrorMessage({ status: 500, error: 'db exploded', stale: false }, generic)).toBe(generic)
     expect(applyErrorMessage({ status: 400, error: null, stale: false }, generic)).toBe(generic)
+  })
+})
+
+describe('startSequentialPoll', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('waits for each tick to settle before scheduling the next', async () => {
+    vi.useFakeTimers()
+    const resolvers: ((v: boolean) => void)[] = []
+    const tick = vi.fn(() => new Promise<boolean>((r) => resolvers.push(r)))
+    const stop = startSequentialPoll(tick, 1000)
+    expect(tick).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(tick).toHaveBeenCalledTimes(1)
+    // A slow request: no new tick while it is in flight, however long it takes.
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(tick).toHaveBeenCalledTimes(1)
+    resolvers[0](true)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(tick).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(tick).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('stops when a tick resolves false', async () => {
+    vi.useFakeTimers()
+    const tick = vi.fn(async () => false)
+    startSequentialPoll(tick, 1000)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(tick).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps polling after a rejected (transient) tick', async () => {
+    vi.useFakeTimers()
+    const tick = vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue(true)
+    const stop = startSequentialPoll(tick, 1000)
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(tick).toHaveBeenCalledTimes(3)
+    stop()
+  })
+
+  it('stop() clears the pending timer and suppresses scheduling after an in-flight tick', async () => {
+    vi.useFakeTimers()
+    let release: (v: boolean) => void = () => {}
+    const tick = vi.fn(() => new Promise<boolean>((r) => (release = r)))
+    const stop = startSequentialPoll(tick, 1000)
+    await vi.advanceTimersByTimeAsync(1000)
+    stop()
+    release(true)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(tick).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+
+    const idle = vi.fn(async () => true)
+    startSequentialPoll(idle, 1000)()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(idle).not.toHaveBeenCalled()
   })
 })

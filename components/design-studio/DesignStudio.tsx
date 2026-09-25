@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { DesignStudioState } from '@/lib/design/studio-types'
 import type { DesignRunDto } from '@/lib/design/run-types'
-import { RUN_POLL_MS, runIsActive } from '@/lib/design/studio-ui'
+import { RUN_POLL_MS, runIsActive, startSequentialPoll } from '@/lib/design/studio-ui'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
 import RunPanel from './RunPanel'
@@ -43,19 +43,19 @@ export default function DesignStudio({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!active) return
     let cancelled = false
-    const timer = setInterval(async () => {
-      try {
-        const res = await designApi<{ run: DesignRunDto | null }>(`/api/edit/${sessionId}/design/runs`)
-        if (cancelled) return
-        setRun(res.run)
-        if (!runIsActive(res.run)) void load()
-      } catch {
-        // Transient — keep polling; the next tick retries.
-      }
+    // Each request settles before the next is scheduled; a failed request is
+    // transient (the poller keeps going), a settled run stops it.
+    const stop = startSequentialPoll(async () => {
+      const res = await designApi<{ run: DesignRunDto | null }>(`/api/edit/${sessionId}/design/runs`)
+      if (cancelled) return false
+      setRun(res.run)
+      if (runIsActive(res.run)) return true
+      void load()
+      return false
     }, RUN_POLL_MS)
     return () => {
       cancelled = true
-      clearInterval(timer)
+      stop()
     }
   }, [active, sessionId, load])
 
