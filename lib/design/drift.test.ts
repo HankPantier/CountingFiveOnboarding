@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { THEME_FILE_PATHS, computeDrift, isThemeCssStale, toBlobMap } from './drift'
+import { THEME_FILE_PATHS, computeDrift, isThemeCssStale, mergeAppliedBlobs, toBlobMap } from './drift'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -68,5 +68,19 @@ describe('isThemeCssStale', () => {
   it('is null when it cannot tell', () => {
     expect(isThemeCssStale({ 'content/design.json': design })).toBeNull()
     expect(isThemeCssStale({ 'content/brand.json': '{nope', 'content/design.json': design })).toBeNull()
+  })
+})
+
+describe('mergeAppliedBlobs', () => {
+  it('keeps only the four theme files; written shas win', () => {
+    expect(mergeAppliedBlobs({ ...SNAP, 'content/other.json': D }, { 'content/brand.json': D, 'content/design-overrides.css': C })).toEqual({
+      'content/brand.json': D,
+      'content/design.json': B,
+      'src/styles/theme.css': C,
+      'content/design-overrides.css': C,
+    })
+  })
+  it('omits files that exist in neither map', () => {
+    expect(mergeAppliedBlobs({ 'content/brand.json': A }, {})).toEqual({ 'content/brand.json': A })
   })
 })

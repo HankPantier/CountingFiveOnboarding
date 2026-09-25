@@ -175,6 +175,15 @@ describe('versions', () => {
     await expect(insertVersion(f.client, NEW)).rejects.toBeInstanceOf(VersionConflictError)
   })
 
+  it('insertVersion stores screenshots when given, [] otherwise', async () => {
+    const shot = { viewport: 'desktop' as const, path: `design/${SID}/runs/r/a.webp`, width: 1440, height: 900 }
+    const f = fakeSupabase({ design_versions: [{ data: null }, { data: makeVersionRow() }, { data: null }, { data: makeVersionRow() }] })
+    await insertVersion(f.client, { ...NEW, screenshots: [shot] })
+    expect(f.opsFor('design_versions', 1)[0][1]).toMatchObject({ screenshots: [shot] })
+    await insertVersion(f.client, NEW)
+    expect(f.opsFor('design_versions', 3)[0][1]).toMatchObject({ screenshots: [] })
+  })
+
   it('insertVersion rethrows a non-conflict error immediately', async () => {
     const f = fakeSupabase({ design_versions: [{ data: null }, { error: { code: '42501', message: 'denied' } }] })
     await expect(insertVersion(f.client, NEW)).rejects.toThrow('insertVersion')

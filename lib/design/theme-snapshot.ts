@@ -4,6 +4,7 @@
 // rate-limit friendly) gives the shas; texts are read by sha and cached in
 // process, since blobs are immutable.
 import { DRAFT_BRANCH, ensureDraftBranch, listTree, readTextBlobs } from '@/lib/github/repo-files'
+import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { THEME_FILE_PATHS, type ThemeFilePath } from './drift'
 import type { ThemeBlobShas } from './studio-types'
 
@@ -47,4 +48,35 @@ export async function readDraftThemeSnapshot(githubRepo: string): Promise<DraftT
     if (text !== undefined) texts[p] = text
   }
   return { shas, texts }
+}
+
+// The draft theme as the texts every Design Studio consumer needs (the
+// orchestrator's generate + render stages, the concept apply / preview
+// routes). brand.json + design.json are required; theme.css and the overrides
+// file default to ''. `shas` is the snapshot's blob map, for drift/guards.
+export const MISSING_THEME_FILES_ERROR = 'This site has no brand.json / design.json yet.'
+
+export type DraftThemeTexts = { brandText: string; designText: string; themeCss: string; overridesCss: string }
+export type DraftThemeTextsResult =
+  | { ok: true; files: DraftThemeTexts; shas: ThemeBlobShas }
+  | { ok: false; reason: 'missing_theme_files'; error: string }
+
+export function themeTextsFromSnapshot(snapshot: DraftThemeSnapshot): DraftThemeTextsResult {
+  const brandText = snapshot.texts[BRAND_PATH]
+  const designText = snapshot.texts[DESIGN_PATH]
+  if (!brandText || !designText) return { ok: false, reason: 'missing_theme_files', error: MISSING_THEME_FILES_ERROR }
+  return {
+    ok: true,
+    files: {
+      brandText,
+      designText,
+      themeCss: snapshot.texts[THEME_CSS_PATH] ?? '',
+      overridesCss: snapshot.texts[OVERRIDES_PATH] ?? '',
+    },
+    shas: snapshot.shas,
+  }
+}
+
+export async function readDraftThemeTexts(githubRepo: string): Promise<DraftThemeTextsResult> {
+  return themeTextsFromSnapshot(await readDraftThemeSnapshot(githubRepo))
 }

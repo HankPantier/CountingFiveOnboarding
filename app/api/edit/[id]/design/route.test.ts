@@ -14,6 +14,7 @@ const m = vi.hoisted(() => ({
   listVersions: vi.fn(),
   getBaselineOrCreate: vi.fn(),
   sign: vi.fn(async (_s: unknown, paths: string[]) => Object.fromEntries(paths.map((p) => [p, `https://signed/${p}`]))),
+  loadRun: vi.fn(),
 }))
 
 vi.mock('./_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
@@ -26,6 +27,7 @@ vi.mock('@/lib/design/store', () => ({
   getBaselineOrCreate: (...a: unknown[]) => m.getBaselineOrCreate(...a),
 }))
 vi.mock('@/lib/design/storage', () => ({ signDesignPaths: (s: unknown, p: string[]) => m.sign(s, p) }))
+vi.mock('@/lib/design/run-view', () => ({ loadLatestRunDto: (...a: unknown[]) => m.loadRun(...a) }))
 
 import { GET } from './route'
 
@@ -48,6 +50,7 @@ beforeEach(() => {
   m.listInputs.mockReset().mockResolvedValue([makeInputRow({ storage_path: THUMB, capture_status: 'ok' })])
   m.listVersions.mockReset().mockResolvedValue([makeVersionListRow({ applied_blobs: asJson(SHAS) })])
   m.getBaselineOrCreate.mockReset().mockResolvedValue({ status: 'created', latest: makeVersionRow({ applied_blobs: asJson(SHAS) }) })
+  m.loadRun.mockReset().mockResolvedValue(null)
 })
 
 describe('GET /design', () => {
@@ -128,5 +131,19 @@ describe('GET /design', () => {
     const res = await call()
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Failed to load the Design Studio' })
+  })
+
+  it('includes the latest design run', async () => {
+    m.loadRun.mockResolvedValue({ id: 'run-1', status: 'ready' })
+    const body = await (await call()).json()
+    expect(body.run).toEqual({ id: 'run-1', status: 'ready' })
+  })
+
+  it('still loads when the latest run cannot be read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    m.loadRun.mockRejectedValue(new Error('db'))
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect((await res.json()).run).toBeNull()
   })
 })

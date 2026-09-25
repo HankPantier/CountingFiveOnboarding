@@ -2,6 +2,7 @@
 // supabase/078_design_studio.sql must match these arrays exactly — enforced by
 // lib/design/migration-078.test.ts. Import freely from client components.
 import { BUNDLE_SOURCES } from './bundle'
+import type { DesignRunDto } from './run-types'
 
 export const DESIGN_INPUT_KINDS = ['inspiration_url', 'inspiration_image', 'competitor_url', 'current_site'] as const
 export type DesignInputKind = (typeof DESIGN_INPUT_KINDS)[number]
@@ -86,4 +87,5 @@ export type DesignStudioState = {
   themeCssStale: boolean | null
   inputs: DesignInputDto[]
   suggestions: InputSuggestions
+  run: DesignRunDto | null // the latest design run (P3)
 }

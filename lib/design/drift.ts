@@ -44,3 +44,15 @@ export function isThemeCssStale(texts: Partial<Record<ThemeFilePath, string>>): 
     return null
   }
 }
+
+// The FULL post-apply blob map of the four theme files (the design_versions.
+// applied_blobs contract): shas from `shas`, overridden by `written`. Used as
+// the fallback when the post-apply snapshot can't be read.
+export function mergeAppliedBlobs(shas: ThemeBlobShas, written: Record<string, string>): ThemeBlobShas {
+  const out: ThemeBlobShas = {}
+  for (const p of THEME_FILE_PATHS) {
+    const sha = written[p] ?? shas[p]
+    if (sha) out[p] = sha
+  }
+  return out
+}

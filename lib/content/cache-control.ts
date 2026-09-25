@@ -51,6 +51,44 @@ export function buildCachedMessages(
   ]
 }
 
+// One part of the per-call (dynamic) suffix of a multi-part cached message.
+// Images are raw bytes downloaded server-side — never hand the model a signed
+// URL — with their IANA media type.
+export type DynamicPart = { type: 'text'; text: string } | { type: 'image'; image: Uint8Array; mediaType: string }
+
+// Multi-part sibling of buildCachedMessages for vision prompts (Design Studio).
+// The static prefix is always a cache breakpoint. `cacheDynamic` adds a second
+// breakpoint on the LAST text part of the suffix, so a follow-up turn (e.g. a
+// repair request appended after the model's answer) re-reads the whole first
+// message — images included — at the cache rate. Image parts are never marked.
+export function buildCachedPartsMessages(
+  staticPrefix: string,
+  dynamicParts: DynamicPart[],
+  opts: { ttl?: CacheTtl; cacheDynamic?: boolean } = {},
+): ModelMessage[] {
+  const breakpoint = opts.ttl === '1h' ? CACHE_EPHEMERAL_1H : CACHE_EPHEMERAL
+  let lastText = -1
+  if (opts.cacheDynamic) {
+    for (let i = dynamicParts.length - 1; i >= 0; i--) {
+      if (dynamicParts[i].type === 'text') {
+        lastText = i
+        break
+      }
+    }
+  }
+  const suffix = dynamicParts.map((part, i) =>
+    part.type === 'text'
+      ? { type: 'text' as const, text: part.text, ...(i === lastText ? { providerOptions: breakpoint } : {}) }
+      : { type: 'image' as const, image: part.image, mediaType: part.mediaType },
+  )
+  return [
+    {
+      role: 'user',
+      content: [{ type: 'text' as const, text: staticPrefix, providerOptions: breakpoint }, ...suffix],
+    },
+  ]
+}
+
 // Pull the cache-token split out of an AI SDK usage object. Reads surface as
 // `inputTokenDetails.cacheReadTokens`, writes as `cacheWriteTokens`. Note
 // `usage.inputTokens` is the TOTAL (uncached + read + write), so cost accounting

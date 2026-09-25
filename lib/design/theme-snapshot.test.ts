@@ -9,7 +9,13 @@ vi.mock('@/lib/github/repo-files', () => ({
   readTextBlobs: (...a: unknown[]) => m.readTextBlobs(...a),
 }))
 
-import { readDraftThemeSnapshot, __resetThemeBlobCacheForTests } from './theme-snapshot'
+import {
+  MISSING_THEME_FILES_ERROR,
+  readDraftThemeSnapshot,
+  readDraftThemeTexts,
+  themeTextsFromSnapshot,
+  __resetThemeBlobCacheForTests,
+} from './theme-snapshot'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -56,5 +62,47 @@ describe('readDraftThemeSnapshot', () => {
     m.listTree.mockResolvedValue(TREE.map((e) => (e.path === 'src/styles/theme.css' ? { ...e, sha: D } : e)))
     await readDraftThemeSnapshot('o/r')
     expect(m.readTextBlobs).toHaveBeenLastCalledWith('o/r', [{ path: 'src/styles/theme.css', sha: D, type: 'blob' }])
+  })
+})
+
+describe('themeTextsFromSnapshot', () => {
+  it('returns the four texts (missing css files as empty) plus the shas', () => {
+    const r = themeTextsFromSnapshot({
+      shas: { 'content/brand.json': A, 'content/design.json': B },
+      texts: { 'content/brand.json': '{"b":1}', 'content/design.json': '{"d":1}' },
+    })
+    expect(r).toEqual({
+      ok: true,
+      files: { brandText: '{"b":1}', designText: '{"d":1}', themeCss: '', overridesCss: '' },
+      shas: { 'content/brand.json': A, 'content/design.json': B },
+    })
+  })
+  it.each([
+    ['brand.json', { 'content/design.json': '{}' }],
+    ['design.json', { 'content/brand.json': '{}' }],
+    ['a non-empty brand.json', { 'content/brand.json': '', 'content/design.json': '{}' }],
+  ])('reports missing theme files without %s', (_label, texts) => {
+    expect(themeTextsFromSnapshot({ shas: {}, texts })).toEqual({ ok: false, reason: 'missing_theme_files', error: MISSING_THEME_FILES_ERROR })
+  })
+})
+
+describe('readDraftThemeTexts', () => {
+  it('reads the draft snapshot and maps it', async () => {
+    const r = await readDraftThemeTexts('o/r')
+    expect(m.listTree).toHaveBeenCalledWith('o/r', 'draft')
+    expect(r).toEqual({
+      ok: true,
+      files: {
+        brandText: 'text:content/brand.json',
+        designText: 'text:content/design.json',
+        themeCss: 'text:src/styles/theme.css',
+        overridesCss: '',
+      },
+      shas: { 'content/brand.json': A, 'content/design.json': B, 'src/styles/theme.css': C },
+    })
+  })
+  it('reports a site without design.json', async () => {
+    m.listTree.mockResolvedValue(TREE.filter((e) => e.path !== 'content/design.json'))
+    expect((await readDraftThemeTexts('o/r')).ok).toBe(false)
   })
 })

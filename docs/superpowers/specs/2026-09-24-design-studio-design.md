@@ -214,6 +214,13 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - A cached multi-part message helper in `cache-control.ts`.
 - UI: RunLauncher (palette freedom, admin brief, inputs), ConceptCards, CompareGrid (synced screenshots), PagePicker, ViewportToggle (1440 / 768 / 390, scaled iframe).
 - Apply dialog with "Remove legacy overrides" (default on).
+- **Accepted deviations (recorded 2026-09-25):**
+  - With no `c5-template.json`, a site is **L1**, so treatments count as a base lever. They shipped fleet-wide on 09-08. Fonts stay locked until L2, and style axes until L3.
+  - MBP data enters the prompt only through `buildBrandVoiceBlock` / `buildFirmContext`, not `serializeSchema()`, which is private to the onboarding chat. The hygiene is the same: no `_meta`, no `mbp_content`, and a test checks nothing leaks.
+  - Concepts render **one after another**, one per step invocation, because the single-process Chromium renderer handles one render at a time anyway.
+  - The render pass reuses the `refining` status (migration 078 has no `rendering`).
+  - The first Opus call may use up to 500 s of the step's 540 s generation budget. An aborted call adds an estimated input cost to the run's `cost_usd`, so the cap stays honest.
+  - The axe AA, mobile-overflow and hidden-block apply gates arrive with P4. P3 gates on zod, capability tier, the sanitizer, `checkThemeContrast` and the sha guards.
 
 ### P4 — Vision critique loop
 - `critic.ts`, `metrics.ts` (axe, overflow, hidden) and `distinctness.ts` (ΔE via chroma-js).
