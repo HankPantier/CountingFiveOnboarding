@@ -108,7 +108,8 @@ export const UNMEASURED_WARNING =
   'This concept was not checked for contrast, mobile overflow or hidden blocks (it could not be rendered) — check it in the live preview before publishing.'
 
 const MEASURED_VIEWPORTS: readonly RunViewport[] = ['desktop', 'mobile']
-const VIEWPORT_NAME: Record<RunViewport, string> = { desktop: 'desktop (1440)', mobile: 'mobile (390)' }
+// Lower-case viewport names for warnings (shared with the design chat's gate).
+export const RUN_VIEWPORT_NAME: Record<RunViewport, string> = { desktop: 'desktop (1440)', mobile: 'mobile (390)' }
 
 // The viewports a render's metrics do NOT cover (a render that failed part-way
 // keeps the viewports it measured) — all of them when unmeasured.
@@ -118,7 +119,7 @@ export function unmeasuredViewports(metrics: RenderMetrics | null): RunViewport[
 }
 
 export const unmeasuredViewportWarning = (viewport: RunViewport): string =>
-  `This concept’s ${VIEWPORT_NAME[viewport]} render was not checked for contrast, overflow or hidden blocks (it could not be measured) — check it in the live preview before publishing.`
+  `This concept’s ${RUN_VIEWPORT_NAME[viewport]} render was not checked for contrast, overflow or hidden blocks (it could not be measured) — check it in the live preview before publishing.`
 
 export type RenderGate = { ok: true; warnings: string[] } | { ok: false; failures: string[] }
 
@@ -127,10 +128,21 @@ export type RenderGate = { ok: true; warnings: string[] } | { ok: false; failure
 // the render did not measure ⇒ allowed with a warning naming that viewport
 // (its checks never ran, so their absence is not a pass).
 export function applyRenderGate(review: ConceptReview | null, baseline: RenderMetrics | null): RenderGate {
-  if (!review?.metrics) return { ok: true, warnings: [UNMEASURED_WARNING] }
-  const failures = metricGateFailures(review.metrics, baseline)
+  return metricsRenderGate(review?.metrics ?? null, baseline, { unmeasured: UNMEASURED_WARNING, unmeasuredViewport: unmeasuredViewportWarning })
+}
+
+// The gate itself, over bare metrics, with caller wording for the warnings —
+// the concept apply gate above and the design chat's commit gate
+// (chat-gate.ts) both run exactly this.
+export function metricsRenderGate(
+  metrics: RenderMetrics | null,
+  baseline: RenderMetrics | null,
+  wording: { unmeasured: string; unmeasuredViewport: (viewport: RunViewport) => string }
+): RenderGate {
+  if (!metrics) return { ok: true, warnings: [wording.unmeasured] }
+  const failures = metricGateFailures(metrics, baseline)
   if (failures.length > 0) return { ok: false, failures: failures.map((f) => f.message) }
-  return { ok: true, warnings: unmeasuredViewports(review.metrics).map(unmeasuredViewportWarning) }
+  return { ok: true, warnings: unmeasuredViewports(metrics).map(wording.unmeasuredViewport) }
 }
 
 // What the UI shows before apply: the gate's warnings (none while it refuses).

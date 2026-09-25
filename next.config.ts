@@ -36,6 +36,8 @@ const nextConfig: NextConfig = {
       '/api/edit/\\[id\\]/design/concepts/\\[cid\\]/preview': lightningcss,
       '/api/edit/\\[id\\]/design/versions/\\[vid\\]/restore': lightningcss,
       '/api/edit/\\[id\\]/design/versions/import': lightningcss,
+      // Design chat: chat-workspace (sanitizer) + chat-preview (renderer), both lazy.
+      '/api/edit/\\[id\\]/design/chat': [...lightningcss, ...renderer],
     }
   })(),
   async headers() {

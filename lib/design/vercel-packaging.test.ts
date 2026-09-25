@@ -16,12 +16,13 @@ describe('Vercel packaging (R7)', () => {
     ['/api/edit/\\[id\\]/design/versions/\\[vid\\]/restore', LIGHTNING],
     ['/api/edit/\\[id\\]/design/versions/import', LIGHTNING],
     ['/api/edit/\\[id\\]/design/render', CHROMIUM],
+    ['/api/edit/\\[id\\]/design/chat', [...LIGHTNING, ...CHROMIUM]],
     ['/api/edit/\\[id\\]/theme/chat', LIGHTNING],
   ])('%s traces its native dependencies', (route, globs) => {
     expect(includes[route]).toEqual(expect.arrayContaining(globs))
   })
 
-  const HEAVY = /^import[^\n]*from '@\/lib\/design\/(css-sanitizer|bundle-files|apply-bundle|commit-version|chat-workspace|concept-validate|concept-generator|run-orchestrator|model-call|critic|concept-reviser|run-gather|refine-stage|render\/render-composed|render\/render-folds)'/m
+  const HEAVY = /^import[^\n]*from '@\/lib\/design\/(css-sanitizer|bundle-files|apply-bundle|commit-version|chat-workspace|chat-preview|concept-validate|concept-generator|run-orchestrator|model-call|critic|concept-reviser|run-gather|refine-stage|render\/render-composed|render\/render-folds)'/m
   it.each([
     'app/api/edit/[id]/design/runs/route.ts',
     'app/api/edit/[id]/design/runs/[runId]/cancel/route.ts',

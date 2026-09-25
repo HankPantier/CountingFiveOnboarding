@@ -117,3 +117,6 @@ export const DESIGN_STEP_MAX_DURATION_S = 600
 // No step worker can outlive this: a concept row still 'generating' after it
 // has no live worker (retry may regenerate it).
 export const DESIGN_STEP_MAX_LIFETIME_MS = DESIGN_STEP_MAX_DURATION_S * 1000
+// renderComposed()'s default per-render deadline (lock wait included). Lives
+// here, not in the renderer, so callers budgeting time never import Chromium.
+export const RENDER_DEADLINE_MS = 45_000
