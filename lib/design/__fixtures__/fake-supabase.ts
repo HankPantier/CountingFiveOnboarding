@@ -10,7 +10,7 @@ export type FakeResult = { data?: unknown; error?: FakeError | null }
 export type FakeOp = [method: string, ...args: unknown[]]
 export type FakeQuery = { table: string; ops: FakeOp[] }
 
-const CHAIN_METHODS = ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'neq', 'lt', 'gt', 'in', 'is', 'or', 'order', 'limit'] as const
+const CHAIN_METHODS = ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'neq', 'lt', 'gt', 'in', 'contains', 'is', 'or', 'order', 'limit'] as const
 
 export function fakeSupabase(results: Record<string, FakeResult[]> = {}) {
   const queries: FakeQuery[] = []
