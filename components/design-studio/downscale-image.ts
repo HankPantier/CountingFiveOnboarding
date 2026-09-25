@@ -23,9 +23,15 @@ export class ImageTooLargeError extends Error {
 
 type Decoded = { width: number; height: number; source: ImageBitmap | HTMLImageElement }
 
+// Portrait phone JPEGs carry EXIF orientation; without this, some engines
+// decode the raw (often sideways) pixel grid instead of the upright image —
+// the <img> fallback below is orientation-correct by default, so this keeps
+// the two paths consistent.
+const DECODE_OPTIONS: ImageBitmapOptions = { imageOrientation: 'from-image' }
+
 async function decode(file: File): Promise<Decoded> {
   if (typeof createImageBitmap === 'function') {
-    const bitmap = await createImageBitmap(file)
+    const bitmap = await createImageBitmap(file, DECODE_OPTIONS)
     return { width: bitmap.width, height: bitmap.height, source: bitmap }
   }
   const url = URL.createObjectURL(file)
