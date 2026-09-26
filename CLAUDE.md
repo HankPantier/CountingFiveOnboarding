@@ -157,10 +157,12 @@ Tier map (reviewed 2026-09-23 against the Fable 5.1 / Opus 5.5 / Sonnet 5 / Haik
 - **Haiku 4.5** (`FAST_MODEL`) — phase 1/2/5/6 intake chat and classification helpers (brand-fit,
   keyword, reverse-link, oneoff resolve, pricing seeds, article-import links, command bar).
   Retirement "not sooner than 2026-10-15"; when it's deprecated, swap `FAST_MODEL` in one place.
-- **Opus 5.5** (`DESIGN_MODEL`) — Design Studio concept generation + vision critique (admin-only,
-  a few runs per client). Defined in P0; no route calls it yet.
+- **Opus 5.5** (`DESIGN_MODEL`) — Design Studio concept generation, revision and vision critique
+  (admin-only, a few runs per client). Kept after the 2026-09-26 A/B on bblcpa: Fable 5.1 scored
+  +0.09 (3.34 vs 3.25) at 2.3x the cost and 24% slower.
 - **Fable 5.1** (`DESIGN_AB_CHALLENGER_MODEL`) — only the Design Studio A/B script
-  (`scripts/compare-design-models.ts`, P7); never a production route at 5x Sonnet's price.
+  (`scripts/compare-design-models.ts`, P7); never a production route at 5x Sonnet's price. The
+  script judges both sides with Sonnet 5 by default (`--critic`), so the judge is never a contender.
 
 The async generation paths use adaptive thinking + `effort` via the shared
 `GENERATION_PROVIDER_OPTIONS` in `lib/content/generation-tuning.ts`. Hard rules:
@@ -198,6 +200,15 @@ This does NOT apply to the **background** impact reviews (`reviewContentForMbpIm
 ### Content Generation Concurrency
 - `lib/content/content-generator.ts → generateSinglePage()` uses an atomic SQL guard: the `generation_status` is updated to `'running'` only if it's not already `'running'` (`.neq('generation_status', 'running')`). A second caller hitting the same outline-id while one is in flight gets `{ status: 'skipped' }`. Mirror this pattern for any future per-row pipeline worker.
 - Stuck rows (status `running` for >15 min) are reset to `error` automatically by `/api/cron/sweep-stuck-jobs` every 5 minutes. Don't write manual recovery scripts for orphaned rows — extend the cron.
+
+### Design Studio
+Spec: `docs/superpowers/specs/2026-09-24-design-studio-design.md`. It replaced the template's retired `export-brief` → Claude Design workflow (removed 2026-09-26).
+- Every `app/api/edit/[id]/design/**` route calls `requireDesignAdmin(id)` first (admin-only); the run step route alternatively takes the fail-closed `CRON_SECRET` bearer.
+- **Capabilities:** gates (what a concept/chat may change, the 422 "locked" checks, the specimen pick) use the EFFECTIVE tier = draft `c5-template.json` ∩ the deployed shell's `<meta name="c5-capabilities">` (`readEffectiveCapabilities`). File-contract decisions (write/guard `src/app/fonts.generated.ts`, `applied_blobs`, drift paths) use the DRAFT marker. An unverified shell counts as the draft tier.
+- `applied_blobs` = the four theme files, plus `src/app/fonts.generated.ts` on L2+ drafts. Every theme write on an L2+ draft regenerates the fonts module; never hand-edit it.
+- Chat commits never sync the MBP. All writes go through `commitDesignVersion`.
+- The critic scores only the levers a concept controls (palette, type, tokens, treatments, style axes, scoped CSS) — never copy, images, layout, CTAs, the chat widget or the logo. Pass rule: every dimension ≥3, mean ≥3.8, distinctiveness ≥3 for keep/evolve palette freedom and ≥4 for free.
+- Template contracts are byte-mirrored: `lib/content/__fixtures__/font-manifest.template.json` + fonts goldens and `lib/design/__fixtures__/style-axes.template.json` must equal the template's `docs/design/*` files — copy, don't retype.
 
 ---
 
