@@ -12,9 +12,11 @@
 //      against a snapshot, which can still show the pre-commit tip right after
 //      a commit and would false-409 a chat turn's second commit).
 //   4. syncMbpTheme (palette → brand.primaryColors, fonts → brand.typography),
-//      only when `syncMbp` — human-clicked commits (concept apply, restore,
-//      capture) pass true; chat commits pass false (CLAUDE.md: an interactive
-//      AI session never silently mutates schema_data).
+//      only when `syncMbp` — human-clicked commits (concept apply, restore)
+//      pass true; chat commits pass false (CLAUDE.md: an interactive AI
+//      session never silently mutates schema_data). A chat-made design reaches
+//      the MBP through the Versions panel's human-clicked "Sync palette &
+//      fonts to MBP" (POST design/sync-mbp), which mirrors the whole draft.
 //   5. the FULL post-apply four-file blob map (the applied_blobs contract)
 //   6. insertVersion (version_no = max + 1, 23505 retry)
 // Render gates are the CALLER's job (concept: its stored review metrics; chat:
@@ -53,7 +55,7 @@ export type CommitVersionArgs = {
   source: 'concept' | 'chat' | 'revert'
   removeLegacy: boolean
   // Mirror the applied palette/fonts into schema_data. true for human-clicked
-  // commits (concept apply, restore, capture); false for chat commits.
+  // commits (concept apply, restore); false for chat commits.
   syncMbp: boolean
   summary: string
   commitMessage: string
@@ -68,6 +70,8 @@ export type CommitVersionArgs = {
   // the draft actually has some, what would be written was never rendered —
   // refuse (422) instead of committing an unchecked composition.
   gateRenderedWithoutLegacy?: boolean
+  // Restore only: the exact design-overrides.css to write (see applyBundleToDraft).
+  overridesVerbatim?: string
 }
 
 export type CommitVersionResult =
@@ -104,6 +108,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       message: args.commitMessage,
       author: { name: target.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: target.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email },
       ...(expectedShas ? { base: before } : {}),
+      ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
     })
   } catch (err) {
     if (err instanceof StaleShaError) return { ok: false, status: 409, error: STALE_THEME_ERROR, stale: true }

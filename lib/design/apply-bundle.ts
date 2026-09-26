@@ -53,8 +53,12 @@ export async function applyBundleToDraft(args: {
   message: string
   author: { name: string; email: string }
   base?: DraftThemeSnapshot
+  // Restore of a baseline / captured version: write this EXACT
+  // design-overrides.css (the text that version recorded, hand CSS included)
+  // instead of splicing the bundle's managed region into the current file.
+  overridesVerbatim?: string
 }): Promise<ApplyBundleResult> {
-  const { githubRepo, bundle, removeLegacy, message, author, base } = args
+  const { githubRepo, bundle, removeLegacy, message, author, base, overridesVerbatim } = args
   await ensureDraftBranch(githubRepo)
 
   const fromBase = (p: string): { content: string; sha: string } | null => {
@@ -75,9 +79,12 @@ export async function applyBundleToDraft(args: {
   const rendered = bundleToRepoFiles(
     bundle,
     { brandText: brandFile.content, designText: designFile.content, overridesCss: overridesFile?.content ?? '' },
-    { removeLegacy }
+    // A verbatim overrides file replaces the current one wholesale, so the
+    // current file's region (even a malformed one) is irrelevant.
+    { removeLegacy: overridesVerbatim !== undefined ? true : removeLegacy }
   )
   if (!rendered.ok) return { ok: false, status: 422, error: rendered.errors.join(' ') }
+  if (overridesVerbatim !== undefined) rendered.files.overridesCss = overridesVerbatim
 
   const brand = JSON.parse(rendered.files.brandText) as BrandJson
   const design = JSON.parse(rendered.files.designText) as DesignJson

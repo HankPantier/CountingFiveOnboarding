@@ -5,7 +5,8 @@ import { SID, makeVersionRow } from '@/lib/design/__fixtures__/rows'
 import { VALID } from '@/lib/design/__fixtures__/valid-bundle'
 
 const VID = '5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e'
-const m = vi.hoisted(() => ({ gate: vi.fn(), getVersion: vi.fn(), commit: vi.fn() }))
+const m = vi.hoisted(() => ({ gate: vi.fn(), getVersion: vi.fn(), commit: vi.fn(), snapshotAt: vi.fn() }))
+vi.mock('@/lib/design/theme-snapshot', () => ({ readThemeSnapshotAt: (...a: unknown[]) => m.snapshotAt(...a) }))
 vi.mock('../../../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
 vi.mock('@/lib/design/store', async (orig) => ({ ...((await orig()) as object), getVersion: (...a: unknown[]) => m.getVersion(...a) }))
@@ -43,7 +44,7 @@ describe('POST /design/versions/[vid]/restore', () => {
   it('re-applies version k as a NEW forward revert version, keeping hand-written CSS', async () => {
     const res = await call()
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, versionId: 'ver-7', versionNo: 7, restoredFrom: 2, commitSha: '1'.repeat(40), changedPaths: ['content/brand.json'] })
+    expect(await res.json()).toEqual({ ok: true, versionId: 'ver-7', versionNo: 7, restoredFrom: 2, commitSha: '1'.repeat(40), changedPaths: ['content/brand.json'], warnings: [] })
     const a = m.commit.mock.calls[0][1] as { source: string; removeLegacy: boolean; summary: string; bundle: { meta: { source: string }; name: string }; screenshots: unknown[] }
     expect(a).toMatchObject({ source: 'revert', removeLegacy: false, summary: 'Restored v2 “Harbor Ledger”' })
     expect(a.bundle.meta.source).toBe('revert')
@@ -71,5 +72,48 @@ describe('POST /design/versions/[vid]/restore', () => {
     const res = await call()
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Failed to restore the version' })
+  })
+})
+
+describe('restoring a baseline / captured version (hand CSS outside the region)', () => {
+  const OVR = 'content/design-overrides.css'
+  const ORIGINAL_SHA = 'a'.repeat(40)
+  const ORIGINAL = '/* hand polish */\n[data-block="hero"] h1 { letter-spacing: -0.01em; }\n'
+  const baselineRow = (blobs: Record<string, string>) =>
+    makeVersionRow({ id: VID, version_no: 0, source: 'baseline', bundle: asJson({ ...VALID, name: 'Baseline' }), applied_blobs: asJson(blobs) })
+
+  it('writes the recorded design-overrides.css back verbatim', async () => {
+    m.getVersion.mockResolvedValue(baselineRow({ [OVR]: ORIGINAL_SHA }))
+    m.snapshotAt.mockResolvedValue({ shas: { [OVR]: ORIGINAL_SHA }, texts: { [OVR]: ORIGINAL } })
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect(m.snapshotAt).toHaveBeenCalledWith('o/r', { [OVR]: ORIGINAL_SHA })
+    expect((m.commit.mock.calls[0][1] as { overridesVerbatim?: string }).overridesVerbatim).toBe(ORIGINAL)
+    expect((await res.json()).warnings).toEqual([])
+  })
+
+  it('warns clearly when the recorded overrides blob cannot be read back', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    m.getVersion.mockResolvedValue(baselineRow({ [OVR]: ORIGINAL_SHA }))
+    m.snapshotAt.mockRejectedValue(new Error('404'))
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect((m.commit.mock.calls[0][1] as { overridesVerbatim?: string }).overridesVerbatim).toBeUndefined()
+    expect((await res.json()).warnings[0]).toMatch(/couldn’t be read back/)
+  })
+
+  it('a baseline recorded with no overrides file restores an empty one', async () => {
+    m.getVersion.mockResolvedValue(baselineRow({}))
+    await call()
+    expect((m.commit.mock.calls[0][1] as { overridesVerbatim?: string }).overridesVerbatim).toBe('')
+    expect(m.snapshotAt).not.toHaveBeenCalled()
+  })
+
+  it('a concept/chat restore whose overrides end up different from the version’s warns', async () => {
+    m.getVersion.mockResolvedValue(makeVersionRow({ id: VID, version_no: 2, source: 'chat', bundle: asJson(VALID), applied_blobs: asJson({ [OVR]: ORIGINAL_SHA }) }))
+    m.commit.mockResolvedValue({ ok: true, version: makeVersionRow({ id: 'ver-7', version_no: 7, source: 'revert' }), commitSha: null, changedPaths: [], appliedBlobs: { [OVR]: 'b'.repeat(40) }, css: { blocks: {} } })
+    const res = await call()
+    expect((await res.json()).warnings[0]).toMatch(/differs from v2/)
+    expect((m.commit.mock.calls[0][1] as { overridesVerbatim?: string }).overridesVerbatim).toBeUndefined()
   })
 })
