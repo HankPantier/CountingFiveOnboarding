@@ -39,7 +39,8 @@ function report(concepts: AbConcept[]): AbReport {
     firmName: 'Acme CPA',
     generatedAt: '2026-09-26T00:00:00.000Z',
     models: ['A', 'B'],
-    criticModel: 'claude-opus-5-5',
+    criticModel: 'claude-sonnet-5',
+    criticIsContender: false,
     pages: ['/'],
     primaryPage: '/',
     conceptsPerModel: 2,
@@ -133,5 +134,17 @@ describe('escaping', () => {
     expect(html).toContain('--n:2')
     expect(html.match(/<section class="col">/g)).toHaveLength(2)
     expect(html).toContain('Mean critic score')
+  })
+})
+
+describe('report header', () => {
+  it('names the judge, flags a contender judge, and states the spend attribution', () => {
+    const plain = buildReportHtml(report([concept({})]))
+    expect(plain).toContain('Judge: <b>claude-sonnet-5</b> (not one of the compared models)')
+    expect(plain).toContain('design_concept / design_critique')
+    const flagged = buildReportHtml({ ...report([concept({})]), criticModel: 'A', criticIsContender: true })
+    expect(flagged).toContain('the judge is also a compared model')
+    const off = buildReportHtml({ ...report([concept({})]), criticModel: null })
+    expect(off).toContain('Judge: none (--no-critic)')
   })
 })

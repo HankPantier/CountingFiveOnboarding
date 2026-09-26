@@ -17,6 +17,7 @@ export type AbArgs = {
   pages: string[] | null // null ⇒ the representative pages (pickRepresentativePages)
   capUsd: number
   critic: boolean
+  criticModel: string // the judge (used only when critic is true)
   out: string | null // null ⇒ tmp/design-ab/<sessionId>-<timestamp>/
   brief: string | null
   palette: PaletteFreedom
@@ -25,7 +26,9 @@ export type AbArgs = {
 
 export type ParsedAbArgs = { kind: 'help' } | { kind: 'error'; error: string } | { kind: 'ok'; args: AbArgs }
 
-export function abUsage(defaultModels: string[]): string {
+export type AbDefaults = { models: string[]; critic: string }
+
+export function abUsage(defaults: AbDefaults): string {
   return `Design Studio model A/B — generate concepts for one client with each model from the SAME
 prompt, render them, judge them with the same critic, and write a side-by-side report.
 
@@ -34,17 +37,20 @@ Usage:
 
 Options:
   --concepts <n>        concepts per model, 1-${CONCEPT_COUNT_MAX} (default ${DEFAULT_AB_CONCEPTS})
-  --models <a,b,...>    model ids to compare (default ${defaultModels.join(',')})
+  --models <a,b,...>    model ids to compare (default ${defaults.models.join(',')})
   --pages </,/x,...>    pages to render, at most ${MAX_AB_PAGES}; the FIRST is the page whose markup
                         goes into the prompt and whose renders the critic judges
                         (default: the Studio's representative pages, home first)
-  --cap <usd>           hard spend cap for the whole run, critic included (default ${DEFAULT_AB_CAP_USD}, max ${MAX_AB_CAP_USD})
+  --cap <usd>           hard spend cap for the whole run, critic included (default ${DEFAULT_AB_CAP_USD}, max ${MAX_AB_CAP_USD});
+                        every call, its retry and its repair are bounded by it
+  --critic <modelId>    the judge for every concept (default ${defaults.critic} — not a contender;
+                        a judge that is also a compared model is warned about and flagged)
   --no-critic           skip the critic (renders + metrics only)
   --brief "<text>"      admin brief (default: none), at most ${ADMIN_BRIEF_MAX} chars
   --palette <mode>      palette freedom: ${PALETTE_FREEDOMS.join(' | ')} (default ${DEFAULT_PALETTE_FREEDOM})
   --inputs <choice>     reference images: all | none | <inputId,...> (default all — the
                         session's captured, non-archived Design Studio inputs, first ${MAX_RUN_INPUTS})
-  --out <dir>           output directory (default tmp/design-ab/<sessionId>-<timestamp>/)
+  --out <dir>           output directory (default <repo>/tmp/design-ab/<sessionId>-<timestamp>/)
   --help                show this help and exit (no model is called)
 
 Environment (.env.local is loaded): NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
@@ -53,8 +59,9 @@ Chrome/Chromium binary, e.g. "/Applications/Google Chrome.app/Contents/MacOS/Goo
 — without it nothing renders and the critic is skipped.
 
 Read-only: no design run, concept, version or chat row is written, nothing is committed to
-GitHub or uploaded to Storage. The ONLY writes are token_usage rows (real spend, attributed to
-the session's content job) so the Token Usage dashboard shows what the comparison cost.
+GitHub or uploaded to Storage. The ONLY writes are token_usage rows (real spend) under the
+normal design_concept / design_critique stages, attributed to the session's content job and
+its creator — on the Token Usage dashboard A/B spend shows up as ordinary Design Studio spend.
 The session's draft branch must already exist (open the Design Studio once).`
 }
 
@@ -67,16 +74,17 @@ function splitList(v: string): string[] {
     .filter(Boolean)
 }
 
-export function parseAbArgs(argv: string[], defaultModels: string[]): ParsedAbArgs {
+export function parseAbArgs(argv: string[], defaults: AbDefaults): ParsedAbArgs {
   if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) return { kind: 'help' }
   const err = (error: string): ParsedAbArgs => ({ kind: 'error', error })
   const out: Omit<AbArgs, 'sessionId'> & { sessionId: string | null } = {
     sessionId: null,
     concepts: DEFAULT_AB_CONCEPTS,
-    models: [...defaultModels],
+    models: [...defaults.models],
     pages: null,
     capUsd: DEFAULT_AB_CAP_USD,
     critic: true,
+    criticModel: defaults.critic,
     out: null,
     brief: null,
     palette: DEFAULT_PALETTE_FREEDOM,
@@ -123,6 +131,12 @@ export function parseAbArgs(argv: string[], defaultModels: string[]): ParsedAbAr
         out.capUsd = n
         break
       }
+      case '--critic': {
+        const model = value.trim()
+        if (!model || model.includes(',')) return err('--critic takes exactly one model id')
+        out.criticModel = model
+        break
+      }
       case '--out':
         out.out = value
         break
@@ -153,4 +167,9 @@ export function parseAbArgs(argv: string[], defaultModels: string[]): ParsedAbAr
   if (out.sessionId === null) return err('Missing <sessionId>')
   if (!isUuid(out.sessionId)) return err('<sessionId> must be a session UUID')
   return { kind: 'ok', args: { ...out, sessionId: out.sessionId } }
+}
+
+// A judge that is also one of the compared models grades its own work.
+export function criticIsContender(args: Pick<AbArgs, 'critic' | 'criticModel' | 'models'>): boolean {
+  return args.critic && args.models.includes(args.criticModel)
 }

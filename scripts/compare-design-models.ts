@@ -6,22 +6,28 @@
 // generateConcept path (validation, one repair turn, distinctness vs that
 // model's own earlier concepts), renders every valid concept on each page at
 // desktop + mobile, measures the render checks, and — unless --no-critic —
-// scores each concept with the SAME judge (CRITIC_MODEL via critiqueConcept),
-// never the model under test. No revise loop: this compares first drafts.
+// scores each concept with the SAME judge via critiqueConcept: --critic, by
+// default PUBLISHED_CONTENT_MODEL (Sonnet 5), which is not a contender (the
+// production critic, DESIGN_MODEL, is Opus 5.5 — one of the compared models).
+// A judge that IS a compared model is warned about and flagged in the report.
+// No revise loop: this compares first drafts.
 // Output: report.html (self-contained; images by relative path) + report.json
-// + the WebP renders, in tmp/design-ab/<sessionId>-<timestamp>/ by default.
+// + the WebP renders, in <repo>/tmp/design-ab/<sessionId>-<timestamp>/ by default.
 //
 // Read-only against app data: never writes design_runs / design_concepts /
 // design_versions / design_chat_messages, never commits to GitHub, never
-// uploads to Storage. The only DB writes are token_usage rows (real spend,
-// attributed to the session's content job) via the normal recordTokenUsage path.
+// uploads to Storage. The only DB writes are token_usage rows (real spend) via
+// the normal recordTokenUsage path, under the ordinary design_concept /
+// design_critique stages, attributed to the content job and (createdBy null ⇒
+// resolved) its creator — the dashboard shows it as normal Studio spend.
 // A USD cap (default $15, critic included) is checked before EVERY model call
-// against that call's projected worst case; once a call would exceed it, that
-// call and all later ones are reported as "skipped (cap)".
+// against that call's projected worst attempt; once a call would exceed it,
+// that call and all later ones are reported as "skipped (cap)". The call itself
+// gets the cap minus that projection, so its retry / repair can't overshoot.
 //
 // Usage (run with --help for every option):
 //   npx tsx scripts/compare-design-models.ts <sessionId> [--concepts 2] [--models claude-opus-5-5,claude-fable-5-1]
-//     [--pages /,/services] [--cap 15] [--no-critic] [--brief "<text>"] [--palette evolve] [--inputs all] [--out <dir>]
+//     [--pages /,/services] [--cap 15] [--critic claude-sonnet-5] [--no-critic] [--brief "<text>"] [--palette evolve] [--inputs all] [--out <dir>]
 // Rendering needs a local Chrome/Chromium: set CHROMIUM_EXECUTABLE_PATH, e.g.
 //   CHROMIUM_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
@@ -48,8 +54,11 @@ const errText = (err: unknown): string => (err instanceof Error ? `${err.name}: 
 
 async function main() {
   const tuning = await import('../lib/content/generation-tuning')
-  const { parseAbArgs, abUsage } = await import('../lib/design/ab/args')
-  const defaults = [tuning.DESIGN_MODEL, tuning.DESIGN_AB_CHALLENGER_MODEL]
+  const { abUsage, criticIsContender, parseAbArgs } = await import('../lib/design/ab/args')
+  // Default judge: the Sonnet 5 writing tier — not a contender. critiqueConcept
+  // sends it adaptive thinking + effort (GENERATION_PROVIDER_OPTIONS), both
+  // supported on Sonnet 5; nothing Opus-only.
+  const defaults = { models: [tuning.DESIGN_MODEL, tuning.DESIGN_AB_CHALLENGER_MODEL], critic: tuning.PUBLISHED_CONTENT_MODEL }
   const parsed = parseAbArgs(process.argv.slice(2), defaults)
   if (parsed.kind === 'help') {
     console.log(abUsage(defaults))
@@ -67,7 +76,14 @@ async function main() {
   }
 
   const { estimateCostUsd } = await import('../lib/content/token-pricing')
-  const criticModel = args.critic ? tuning.CRITIC_MODEL : null
+  const criticModel = args.critic ? args.criticModel : null
+  const judgeIsContender = criticIsContender(args)
+  if (criticModel && tuning.FAST_MODEL === criticModel) {
+    // critiqueConcept always sends effort, which errors on Haiku 4.5.
+    console.error(`--critic ${criticModel}: the design critic sends effort/thinking options, which Haiku rejects — pick another judge.`)
+    process.exit(2)
+  }
+  if (judgeIsContender) console.warn(`WARNING: the judge ${criticModel} is also a compared model — its scores may favour its own concepts. The report flags this.`)
   // A model missing from PRICING prices at $0 — the cap could not protect it.
   for (const model of [...args.models, ...(criticModel ? [criticModel] : [])]) {
     if (estimateCostUsd(model, 1_000_000, 1_000_000) <= 0) {
@@ -86,8 +102,8 @@ async function main() {
   const { CRITIC_SYSTEM_PROMPT, buildCritiquePrompt } = await import('../lib/design/brief/critique-prompt')
   const { specimenUnlocked } = await import('../lib/design/capabilities')
   const { readEffectiveCapabilities } = await import('../lib/design/capabilities-read')
-  const { CONCEPT_OUTPUT_TOKENS, generateConcept } = await import('../lib/design/concept-generator')
-  const { CRITIQUE_OUTPUT_TOKENS, critiqueConcept } = await import('../lib/design/critic')
+  const { CONCEPT_OUTPUT_TOKENS, REPAIR_OUTPUT_TOKENS, generateConcept } = await import('../lib/design/concept-generator')
+  const { CRITIQUE_OUTPUT_TOKENS, CRITIQUE_RETRY_OUTPUT_TOKENS, critiqueConcept } = await import('../lib/design/critic')
   const { estimateInputUsd } = await import('../lib/design/model-call')
   const { bundleToRepoFiles } = await import('../lib/design/bundle-files')
   type DesignBundle = import('../lib/design/bundle').DesignBundle
@@ -105,7 +121,10 @@ async function main() {
   const { downloadDesignImage, toWebp } = await import('../lib/design/storage')
   const { loadRenderShell } = await import('../lib/design/render/render-folds')
   type RenderShell = import('../lib/design/render/render-folds').RenderShell
-  const { createAbBudget, projectCallUsd } = await import('../lib/design/ab/budget')
+  const { callerCapUsd, createAbBudget, projectCallUsd } = await import('../lib/design/ab/budget')
+  // The worst single attempt of each call (first try / larger retry / repair).
+  const conceptAttemptTokens = Math.max(CONCEPT_OUTPUT_TOKENS, REPAIR_OUTPUT_TOKENS)
+  const critiqueAttemptTokens = Math.max(CRITIQUE_OUTPUT_TOKENS, CRITIQUE_RETRY_OUTPUT_TOKENS)
   const { ZERO_USAGE, addUsage, apiErrorSummary, parseAnthropicUsage } = await import('../lib/design/ab/api-tap')
   type ApiUsage = import('../lib/design/ab/api-tap').ApiUsage
   const { buildReportHtml, summarize, summaryText } = await import('../lib/design/ab/report')
@@ -194,7 +213,8 @@ async function main() {
   const notes: string[] = [...b.notes]
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-  const outDir = path.resolve(args.out ?? path.join('tmp', 'design-ab', `${args.sessionId}-${stamp}`))
+  // The default lives under the repo root (git-ignored /tmp/), whatever the cwd.
+  const outDir = path.resolve(args.out ?? path.join(__dirname, '..', 'tmp', 'design-ab', `${args.sessionId}-${stamp}`))
   fs.mkdirSync(outDir, { recursive: true })
   const writeImage = (rel: string, bytes: Buffer): string => {
     const abs = path.join(outDir, rel)
@@ -318,7 +338,7 @@ async function main() {
       const prompt = buildConceptPrompt({ ...shared, conceptCount: args.concepts, position, priors: modelPriors })
       const shared0 = prompt.sharedPartCount
       const messages = buildCachedPartsMessages(prompt.staticPrefix, prompt.parts, { ttl: '5m', cacheDynamic: true, ...(shared0 > 0 ? { breakAt: shared0 - 1 } : {}) })
-      const projected = projectCallUsd({ model, inputUsd: estimateInputUsd(DESIGN_SYSTEM_PROMPT, messages, model), maxOutputTokens: CONCEPT_OUTPUT_TOKENS })
+      const projected = projectCallUsd({ model, inputUsd: estimateInputUsd(DESIGN_SYSTEM_PROMPT, messages, model), maxOutputTokens: conceptAttemptTokens })
       if (!budget.admit(projected)) {
         row.status = 'skipped_cap'
         row.critiqueStatus = args.critic ? 'skipped_cap' : 'disabled'
@@ -339,7 +359,7 @@ async function main() {
           },
           priors: modelPriors,
           costSoFarUsd: budget.spentUsd(),
-          costCapUsd: budget.capUsd,
+          costCapUsd: callerCapUsd(budget, projected),
           deadline: Date.now() + CALL_DEADLINE_MS,
           attribution,
           model,
@@ -439,7 +459,7 @@ async function main() {
           mobile: webp.mobile ? new Uint8Array(webp.mobile) : null,
         })
         const messages = buildCachedPartsMessages(prompt.staticPrefix, prompt.parts, { ttl: '5m', ...(prompt.sharedPartCount > 0 ? { breakAt: prompt.sharedPartCount - 1 } : {}) })
-        const projected = projectCallUsd({ model: criticModel, inputUsd: estimateInputUsd(CRITIC_SYSTEM_PROMPT, messages, criticModel), maxOutputTokens: CRITIQUE_OUTPUT_TOKENS })
+        const projected = projectCallUsd({ model: criticModel, inputUsd: estimateInputUsd(CRITIC_SYSTEM_PROMPT, messages, criticModel), maxOutputTokens: critiqueAttemptTokens })
         if (!budget.admit(projected)) {
           row.critiqueStatus = 'skipped_cap'
           continue
@@ -451,7 +471,7 @@ async function main() {
             prompt,
             iteration: 0,
             costSoFarUsd: budget.spentUsd(),
-            costCapUsd: budget.capUsd,
+            costCapUsd: callerCapUsd(budget, projected),
             deadline: Date.now() + CALL_DEADLINE_MS,
             attribution,
             model: criticModel,
@@ -477,6 +497,7 @@ async function main() {
   }
 
   // ── report
+  if (judgeIsContender) notes.push(`The judge (${criticModel}) is also a compared model — weigh its scores accordingly.`)
   if (budget.tripped()) notes.push(`The $${args.capUsd.toFixed(2)} cap was reached — later calls were skipped.`)
   const report: AbReport = {
     sessionId: args.sessionId,
@@ -484,6 +505,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     models: args.models,
     criticModel,
+    criticIsContender: judgeIsContender,
     pages,
     primaryPage,
     conceptsPerModel: args.concepts,

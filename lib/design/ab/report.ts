@@ -52,6 +52,8 @@ export type AbReport = {
   generatedAt: string
   models: string[]
   criticModel: string | null
+  // The judge is also one of the compared models (it grades its own work).
+  criticIsContender: boolean
   pages: string[]
   primaryPage: string
   conceptsPerModel: number
@@ -169,7 +171,7 @@ const CSS = `
 :root{--ink:#1a2433;--muted:#5b6778;--line:#dde3ea;--bg:#f6f8fa;--card:#fff;--ok:#1b7f4b;--bad:#b3261e;--warn:#8a5a00}
 *{box-sizing:border-box}body{margin:0;padding:24px 16px;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
 h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px}h3{font-size:15px;margin:0 0 4px}h4{font-size:13px;margin:12px 0 4px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.meta{color:var(--muted);margin:0 0 16px}.notes li{color:var(--muted)}
+.meta{color:var(--muted);margin:0 0 8px}.judge{margin:0 0 8px}.notes li{color:var(--muted)}
 table{border-collapse:collapse;background:var(--card);width:100%;max-width:1100px}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:#eef2f6;font-weight:600}
 .cols{display:grid;grid-template-columns:repeat(var(--n),minmax(320px,1fr));gap:16px;overflow-x:auto}
 .col{min-width:0}.col>h2{position:sticky;top:0;background:var(--bg);padding:6px 0;margin-top:0}
@@ -288,6 +290,15 @@ export function buildReportHtml(report: AbReport): string {
     `${report.referenceImages} reference image${report.referenceImages === 1 ? '' : 's'}`,
     `spent ${fmtUsd(report.spentUsd)} of ${fmtUsd(report.capUsd)} cap${report.capHit ? ' (cap reached)' : ''}`,
   ].join(' · ')
+  const judge = report.criticModel
+    ? `<p class="judge">Judge: <b>${escapeHtml(report.criticModel)}</b>${
+        report.criticIsContender
+          ? ' <span class="tag bad">warning: the judge is also a compared model — its scores may favour its own concepts</span>'
+          : ' (not one of the compared models)'
+      }</p>`
+    : '<p class="judge">Judge: none (--no-critic)</p>'
+  const attribution =
+    '<p class="small">Spend is recorded in token_usage under the normal design_concept / design_critique stages, attributed to the session’s content job and its creator — on the Token Usage dashboard it appears as ordinary Design Studio spend.</p>'
   const brief = report.adminBrief ? `<p class="small">Admin brief: ${escapeHtml(report.adminBrief)}</p>` : ''
   const current = `<div class="card"><h3>Current site (the "before" + metrics baseline)</h3>${shotsBlock(report.current.shots, report.current.checks, report.pages)}</div>`
   const columns = report.models
@@ -305,7 +316,7 @@ export function buildReportHtml(report: AbReport): string {
 <title>Design model A/B — ${escapeHtml(report.firmName)}</title><style>${CSS}</style></head>
 <body>
 <h1>Design model A/B — ${escapeHtml(report.firmName)}</h1>
-<p class="meta">${escapeHtml(meta)}</p>${brief}
+<p class="meta">${escapeHtml(meta)}</p>${judge}${attribution}${brief}
 <h2>Summary</h2>${summary}
 ${report.notes.length ? `<h2>Notes</h2>${list(report.notes, 'notes')}` : ''}
 <h2>Current site</h2>${current}

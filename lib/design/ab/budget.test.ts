@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createAbBudget, projectCallUsd } from './budget'
+import { callerCapUsd, createAbBudget, projectCallUsd } from './budget'
 
 describe('createAbBudget', () => {
   it('admits calls while the projection fits, charges actual spend', () => {
@@ -38,9 +38,19 @@ describe('createAbBudget', () => {
 })
 
 describe('projectCallUsd', () => {
-  it('is the input estimate plus the full max output at the model’s output rate', () => {
+  it('is the input estimate at the cache-write rate plus the full max output at the model’s output rate', () => {
     // Opus 5.5 output $20/M: 24k → $0.48; Fable 5.1 output $50/M: 24k → $1.20.
-    expect(projectCallUsd({ model: 'claude-opus-5-5', inputUsd: 0.1, maxOutputTokens: 24_000 })).toBeCloseTo(0.58, 10)
-    expect(projectCallUsd({ model: 'claude-fable-5-1', inputUsd: 0.25, maxOutputTokens: 24_000 })).toBeCloseTo(1.45, 10)
+    expect(projectCallUsd({ model: 'claude-opus-5-5', inputUsd: 0.1, maxOutputTokens: 24_000 })).toBeCloseTo(0.605, 10)
+    expect(projectCallUsd({ model: 'claude-fable-5-1', inputUsd: 0.25, maxOutputTokens: 24_000 })).toBeCloseTo(1.5125, 10)
+  })
+})
+
+describe('callerCapUsd', () => {
+  it('reserves one worst-case attempt so a retry / repair can never overshoot the cap', () => {
+    const b = createAbBudget(10)
+    expect(callerCapUsd(b, 1.5)).toBeCloseTo(8.5, 10)
+    // Any attempt the caller still starts has spentSoFar < 8.5; adding ≤ 1.5 stays ≤ 10.
+    expect(callerCapUsd(b, 12)).toBe(0)
+    expect(callerCapUsd(b, Number.NaN)).toBe(10)
   })
 })
