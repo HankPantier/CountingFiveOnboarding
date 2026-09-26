@@ -5,7 +5,7 @@ import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { denySiteOwnerConfig } from '@/lib/auth/access'
 import { parseNavJson } from '@/lib/editor/nav-config'
-import { orderMoves, toPathname } from '@/lib/editor/nav-urls'
+import { isCleanPageUrl, orderMoves, toPathname } from '@/lib/editor/nav-urls'
 import {
   appendRedirects,
   frontmatterUrl,
@@ -87,6 +87,9 @@ export async function POST(
     const from = toPathname(m.from)
     const to = toPathname(m.to)
     if (!from || !to || from === to) return []
+    // Both ends become a 301 row in redirects.csv and a content filename, so
+    // only clean slug paths qualify (no `//host`, commas, newlines…).
+    if (!isCleanPageUrl(from) || !isCleanPageUrl(to)) return []
     const key = `${from}::${to}`
     if (seenMoves.has(key)) return []
     seenMoves.add(key)
@@ -116,7 +119,7 @@ export async function POST(
     // Resolve the page behind each move. Moves whose source page doesn't exist
     // are nav-only edits — skipped. Kept in orderedMoves order so a vacated slot
     // is freed before the move that reuses it.
-    const planned: Array<Move & { fromPath: string; toPath: string; sha: string }> = []
+    const planned: Array<Move & { fromPath: string; toPath: string; sha: string; content: string }> = []
     for (const m of orderedMoves) {
       const fromPath = pagePath(m.from)
       const toPath = pagePath(m.to)
@@ -128,7 +131,7 @@ export async function POST(
         if (err instanceof FileNotFoundError) continue
         throw err
       }
-      planned.push({ ...m, fromPath, toPath, sha: src.sha })
+      planned.push({ ...m, fromPath, toPath, sha: src.sha, content: src.content })
     }
 
     // Slots this batch will free — a target sitting in `vacated` isn't a real
@@ -163,6 +166,9 @@ export async function POST(
     }
 
     // Relocate each page (atomic, reuses the blob), then fix its canonical.
+    // The move reuses the source blob (content p.content, sha p.sha), so no
+    // read-back of the moved file: a branch read right after the commit can
+    // still see the old tip and would 500 after the move already landed.
     for (const p of toRelocate) {
       await moveFile(
         ctx.githubRepo,
@@ -173,11 +179,10 @@ export async function POST(
         `Move ${p.from} → ${p.to} via admin${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
         author(ctx)
       )
-      const moved = await readFile(ctx.githubRepo, p.toPath, DRAFT_BRANCH)
-      const fixed = swapFrontmatterUrl(moved.content, p.from, p.to)
-      if (fixed !== moved.content) {
+      const fixed = swapFrontmatterUrl(p.content, p.from, p.to)
+      if (fixed !== p.content) {
         await writeFile(ctx.githubRepo, p.toPath, fixed, DRAFT_BRANCH, `Update canonical for ${p.to}`, {
-          expectedSha: moved.sha,
+          expectedSha: p.sha,
           ...author(ctx),
         })
       }

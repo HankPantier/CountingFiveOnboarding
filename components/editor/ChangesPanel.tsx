@@ -137,7 +137,12 @@ export default function ChangesPanel({
       const res = await fetch(`/api/edit/${sessionId}/revert-file`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: file.path, expectedSha: file.blobSha }),
+        // A rename reverts both names together (restores the old path).
+        body: JSON.stringify({
+          path: file.path,
+          expectedSha: file.blobSha,
+          previousPath: file.status === 'renamed' ? file.previousPath : null,
+        }),
       })
       if (res.status === 409) {
         const data = (await res.json().catch(() => ({}))) as { message?: string }
@@ -150,6 +155,7 @@ export default function ChangesPanel({
         throw new Error(data.error ?? `Undo failed: ${res.status}`)
       }
       await onReverted(file.path)
+      if (file.status === 'renamed' && file.previousPath) await onReverted(file.previousPath)
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Undo failed')

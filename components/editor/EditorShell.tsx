@@ -983,7 +983,7 @@ export default function EditorShell({
   return (
     // Admins/managers render under the admin shell's h-16 AdminTopBar, so the
     // editor fills the viewport minus 4rem — a full h-screen overflowed by 64px
-    // and pushed the bottom of every panel (e.g. the theme chat composer) below
+    // and pushed the bottom of every panel (e.g. the Design Studio chat composer) below
     // the fold. Site Owners get no admin chrome, so they keep the full height.
     <div className={`flex flex-col ${viewerIsOwner ? 'h-screen' : 'h-[calc(100vh-4rem)]'} bg-surface-default`}>
       <EditorTopBar
@@ -1323,8 +1323,8 @@ export default function EditorShell({
           </button>
         </div>
       )}
-      {/* Hidden on the Theme view: Theme Studio has its own assistant, and this
-          fixed button sat directly over the theme chat's Send button. */}
+      {/* Hidden on the Theme view: it has its own assistant (the Design Studio
+          chat), and this fixed button would sit over that composer's Send button. */}
       {isAdmin && !assistantOpen && selectedPath !== THEME_VIEW && (
         <button
           type="button"

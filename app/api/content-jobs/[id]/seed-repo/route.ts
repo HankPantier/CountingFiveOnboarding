@@ -3,7 +3,8 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { seedRepoFromTemplate } from '@/lib/github/template-seed'
-import { githubErrorMessage } from '@/lib/github/error-hint'
+import { githubErrorHint } from '@/lib/github/error-hint'
+import { internalError } from '@/lib/api/errors'
 
 export const runtime = 'nodejs'
 // Copying ~180 template blobs is a one-time burst of GitHub calls; give it room
@@ -36,7 +37,8 @@ export async function POST(
     })
     return NextResponse.json(result)
   } catch (err) {
-    console.error('[seed-repo] Seed failed:', err)
-    return NextResponse.json({ error: githubErrorMessage(err, job.github_repo) }, { status: 500 })
+    // Only the curated rate-limit / permission hints reach the browser; the raw
+    // GitHub text is logged by internalError.
+    return internalError('seed-repo', err, githubErrorHint(err, job.github_repo) ?? 'Repo seeding failed')
   }
 }
