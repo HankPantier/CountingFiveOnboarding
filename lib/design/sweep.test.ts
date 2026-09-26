@@ -27,6 +27,16 @@ describe('sweepStuckDesignRows', () => {
     expect(f.opsFor('design_concepts')).toContainEqual(['in', 'status', ['generating', 'refining']])
   })
 
+  it('skips the runs the cron just nudged, and their concepts', async () => {
+    const f = fakeSupabase({ design_inputs: [{ data: [] }], design_runs: [{ data: [] }], design_concepts: [{ data: [] }] })
+    await sweepStuckDesignRows(f.client, NOW, { skipRunIds: ['r1', 'r2'] })
+    expect(f.opsFor('design_runs')).toContainEqual(['not', 'id', 'in', '(r1,r2)'])
+    expect(f.opsFor('design_concepts')).toContainEqual(['not', 'run_id', 'in', '(r1,r2)'])
+    const plain = fakeSupabase({ design_inputs: [{ data: [] }], design_runs: [{ data: [] }], design_concepts: [{ data: [] }] })
+    await sweepStuckDesignRows(plain.client, NOW, { skipRunIds: [] })
+    expect(plain.opsFor('design_runs').some(([m]) => m === 'not')).toBe(false)
+  })
+
   it('never throws: a failing query logs and counts 0', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const f = fakeSupabase({

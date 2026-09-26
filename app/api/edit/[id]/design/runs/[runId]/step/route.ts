@@ -7,6 +7,7 @@ import { parseBaseSnapshot, planRetry } from '@/lib/design/run-state'
 import { dropAttemptNotes } from '@/lib/design/review'
 import { chainOrFail, failActiveRun } from '@/lib/design/run-trigger'
 import { RUN_ACTIVE_STATUSES } from '@/lib/design/studio-types'
+import { NUDGE_PARAM } from '@/lib/design/studio-ui'
 import { authorizeStep, type StepTarget } from '../../../_step-auth'
 
 export const runtime = 'nodejs'
@@ -46,7 +47,16 @@ async function runStepInBackground(target: StepTarget, runId: string): Promise<v
 //   Bearer CRON_SECRET (the self-chain): just advance.
 //   Admin: a failed run is RETRIED from its first unfinished stage; an active
 //   run is nudged (a stalled chain restarts; duplicate calls are no-ops thanks
-//   to the guarded claims); a finished run is a 409.
+//   to the guarded claims); a finished run is a 409. The Studio poll nudges
+//   automatically when the run DTO says `stalled` (Vercel refused the chain's
+//   next self-call — see run-trigger.ts); the sweep cron does the same via
+//   the Bearer path when no tab is open (run-nudge.ts).
+//   `?nudge=1` (the Studio's automatic nudge): advance an ACTIVE run only —
+//   any other status is a 409 with no state change, so a run that failed
+//   between the poll and the nudge is never silently retried (and re-spent);
+//   only an explicit Retry (no flag) retries. The Bearer path never retries.
+const NUDGE_NOT_ACTIVE = 'This run is no longer active — nothing to resume.'
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string; runId: string }> }) {
   const { id, runId } = await params
   const caller = await authorizeStep(req, id)
@@ -57,6 +67,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const db = createServerClient()
     const run = await getRun(db, caller.target.sessionId, runId)
     if (!run) return NextResponse.json({ error: 'Run not found.' }, { status: 404 })
+
+    const isActive = (RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)
+    if (new URL(req.url).searchParams.get(NUDGE_PARAM) === '1' && !isActive) {
+      return NextResponse.json({ error: NUDGE_NOT_ACTIVE }, { status: 409 })
+    }
 
     if (caller.kind === 'admin') {
       if (run.status === 'error') {
@@ -94,7 +109,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           baseSnapshot: { ...base, notes: dropAttemptNotes(base.notes) },
         })
         if (!moved) return NextResponse.json({ error: 'The run changed — refresh and try again.' }, { status: 409 })
-      } else if (!(RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)) {
+      } else if (!isActive) {
         return NextResponse.json({ error: 'This run has finished — start a new one.' }, { status: 409 })
       }
     }

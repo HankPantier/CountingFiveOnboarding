@@ -5,6 +5,9 @@
 //   design_runs    queued/capturing/generating/refining > 15 min → 'error'
 //   design_concepts generating/refining        > 15 min → 'error'
 // Keyed on updated_at (stamped on claim / every step). Fail-soft: never throws.
+// `skipRunIds`: runs the cron just nudged (nudgeStalledDesignRuns) — a run
+// whose self-chain was refused and restarted is not stuck, so neither it nor
+// its concepts (e.g. one parked 'refining' between loop units) are swept.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { CONCEPT_ACTIVE_STATUSES, RUN_ACTIVE_STATUSES } from './studio-types'
@@ -30,7 +33,15 @@ async function count(label: string, run: () => SweepQuery): Promise<number> {
   }
 }
 
-export async function sweepStuckDesignRows(supabase: SupabaseClient<Database>, now: number = Date.now()): Promise<DesignSweepResult> {
+// PostgREST `in` list for .not(col, 'in', …) — ids are uuids from our own rows.
+const inList = (ids: readonly string[]): string => `(${ids.join(',')})`
+
+export async function sweepStuckDesignRows(
+  supabase: SupabaseClient<Database>,
+  now: number = Date.now(),
+  opts: { skipRunIds?: readonly string[] } = {}
+): Promise<DesignSweepResult> {
+  const skip = opts.skipRunIds ?? []
   const stamp = new Date(now).toISOString()
   const inputCutoff = new Date(now - DESIGN_INPUT_STUCK_MS).toISOString()
   const runCutoff = new Date(now - DESIGN_RUN_STUCK_MS).toISOString()
@@ -44,22 +55,22 @@ export async function sweepStuckDesignRows(supabase: SupabaseClient<Database>, n
         .lt('updated_at', inputCutoff)
         .select('id')
     ),
-    count('runs', () =>
-      supabase
+    count('runs', () => {
+      const q = supabase
         .from('design_runs')
         .update({ status: 'error', error: 'Run timed out (swept by cron)', updated_at: stamp })
         .in('status', [...RUN_ACTIVE_STATUSES])
         .lt('updated_at', runCutoff)
-        .select('id')
-    ),
-    count('concepts', () =>
-      supabase
+      return (skip.length ? q.not('id', 'in', inList(skip)) : q).select('id')
+    }),
+    count('concepts', () => {
+      const q = supabase
         .from('design_concepts')
         .update({ status: 'error', error: 'Concept timed out (swept by cron)', updated_at: stamp })
         .in('status', [...CONCEPT_ACTIVE_STATUSES])
         .lt('updated_at', runCutoff)
-        .select('id')
-    ),
+      return (skip.length ? q.not('run_id', 'in', inList(skip)) : q).select('id')
+    }),
   ])
   return { inputs, runs, concepts }
 }

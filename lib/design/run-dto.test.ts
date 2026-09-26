@@ -98,3 +98,19 @@ describe('critique-loop DTO', () => {
     expect(toRunDto(run, [row], signed).maxRevisions).toBe(2)
   })
 })
+
+describe('toRunDto — stalled', () => {
+  const T = '2026-09-26T23:25:00.000Z'
+  const t = Date.parse(T)
+  const inLoop = makeConceptRow({ status: 'refining', updated_at: T, critique: asJson({ ...newReview(), next: 'revise' }) })
+  it('is true for an active run whose chain marker is current, false once a later write lands', () => {
+    const run = makeRunRow({ status: 'refining', updated_at: T, base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [], notes: [], chainStalledAt: T }) })
+    expect(toRunDto(run, [inLoop], {}, t + 1000).stalled).toBe(true)
+    expect(toRunDto(run, [{ ...inLoop, updated_at: new Date(t + 500).toISOString() }], {}, t + 1000).stalled).toBe(false)
+  })
+  it('is false while a unit holds its claim, and for a finished run', () => {
+    const claimed = { ...inLoop, critique: asJson({ ...newReview(), next: 'revise', claim: { unit: 'revise', at: T } }) }
+    expect(toRunDto(makeRunRow({ status: 'refining', updated_at: T }), [claimed], {}, t + 3_600_000).stalled).toBe(false)
+    expect(toRunDto(makeRunRow({ status: 'ready', updated_at: T }), [], {}, t + 3_600_000).stalled).toBe(false)
+  })
+})

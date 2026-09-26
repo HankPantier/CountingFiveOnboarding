@@ -46,8 +46,9 @@ import { ActiveRunExistsError } from '@/lib/design/run-store'
 import { DESIGN_STEP_MAX_DURATION_S } from '@/lib/design/run-types'
 import { POST, maxDuration } from './route'
 
-const call = (headers: Record<string, string> = {}, runId = RID) =>
-  POST(new Request('http://x/api', { method: 'POST', headers }), { params: Promise.resolve({ id: SID, runId }) })
+const call = (headers: Record<string, string> = {}, runId = RID, query = '') =>
+  POST(new Request(`http://x/api${query}`, { method: 'POST', headers }), { params: Promise.resolve({ id: SID, runId }) })
+const nudge = (headers: Record<string, string> = {}) => call(headers, RID, '?nudge=1')
 const runAfter = async () => {
   await (m.after.mock.calls[0][0] as () => Promise<void>)()
 }
@@ -190,6 +191,56 @@ describe('POST step — admin retry', () => {
     const res = await call()
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ error: 'Another design run is in progress for this client.' })
+  })
+})
+
+describe('POST step — automatic nudges (?nudge=1) never retry', () => {
+  const expectUntouched = () => {
+    expect(m.listConcepts).not.toHaveBeenCalled()
+    expect(m.transitionRun).not.toHaveBeenCalled()
+    expect(m.resetConcepts).not.toHaveBeenCalled()
+    expect(m.deleteConcepts).not.toHaveBeenCalled()
+    expect(m.resumeConcepts).not.toHaveBeenCalled()
+    expect(m.after).not.toHaveBeenCalled()
+  }
+  it('an admin nudge on an errored run → 409, the run stays error, no concept writes', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'render' }))
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'error' })])
+    const res = await nudge()
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'This run is no longer active — nothing to resume.' })
+    expectUntouched()
+  })
+  it.each(['ready', 'applied', 'cancelled'])('an admin nudge on a %s run → 409, nothing runs', async (status) => {
+    m.getRun.mockResolvedValue(makeRunRow({ status }))
+    expect((await nudge()).status).toBe(409)
+    expectUntouched()
+  })
+  it('a cron (Bearer) nudge on an errored run → 409 too', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error' }))
+    expect((await nudge({ authorization: 'Bearer s3cret' })).status).toBe(409)
+    expectUntouched()
+  })
+  it('a nudge on an active run advances it without changing it', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
+    expect((await nudge()).status).toBe(202)
+    expect(m.transitionRun).not.toHaveBeenCalled()
+    await runAfter()
+    expect(m.runDesignStep).toHaveBeenCalledTimes(1)
+  })
+  it('the Bearer path never retries an errored run even without the flag (it only advances; the step no-ops)', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error' }))
+    expect((await call({ authorization: 'Bearer s3cret' })).status).toBe(202)
+    expect(m.listConcepts).not.toHaveBeenCalled()
+    expect(m.transitionRun).not.toHaveBeenCalled()
+    expect(m.resetConcepts).not.toHaveBeenCalled()
+  })
+  it('an explicit Retry (no flag) still retries an errored run', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error' }))
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'ready' })])
+    m.transitionRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
+    expect((await call()).status).toBe(202)
+    expect(m.transitionRun.mock.calls[0].slice(0, 3)).toEqual([m.db, RID, ['error']])
   })
 })
 
