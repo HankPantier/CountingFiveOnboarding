@@ -6,6 +6,7 @@ import {
   byUserClient,
   dailySeries,
   dailySeriesByUser,
+  USAGE_ROW_COLUMNS,
   type UsageRow,
   type AuditMeta,
 } from '@/lib/tokens/aggregate'
@@ -27,7 +28,7 @@ export async function loadTokenUsage(params: DateRangeParams = {}) {
   const usageRows = fetchAllPages<UsageRow>((from, to) => {
     let q = supabase
       .from('token_usage')
-      .select('task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at')
+      .select(USAGE_ROW_COLUMNS)
     if (range.fromISO) q = q.gte('created_at', range.fromISO)
     if (range.toISO) q = q.lte('created_at', range.toISO)
     return q

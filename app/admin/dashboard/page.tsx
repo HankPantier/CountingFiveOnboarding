@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
-import { estimateCostUsd } from '@/lib/content/token-usage'
+import { modelTotalsCost, type ModelTotalsRow } from '@/lib/tokens/aggregate'
 import SessionRowActions from '@/components/admin/SessionRowActions'
 import DashboardSearch from '@/components/admin/DashboardSearch'
 import PipelineChart from '@/components/admin/PipelineChart'
@@ -96,9 +96,7 @@ export default async function DashboardPage({
   // approach grew without bound.
   // eslint-disable-next-line react-hooks/purity
   const thirtyDaysAgoIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-  const emptyTotals = Promise.resolve({
-    data: [] as Array<{ model: string; input_tokens: number; output_tokens: number }>,
-  })
+  const emptyTotals = Promise.resolve({ data: [] as ModelTotalsRow[] })
   const [
     { data: sessions, count: totalCount },
     { count: approvedCount },
@@ -132,10 +130,9 @@ export default async function DashboardPage({
     return `/admin/dashboard${s ? `?${s}` : ''}`
   }
 
-  // Cost math stays in app code (PRICING map) over the per-model DB aggregates.
-  const sumCost = (rows: Array<{ model: string; input_tokens: number; output_tokens: number }> | null) =>
-    (rows ?? []).reduce((acc, r) => acc + estimateCostUsd(r.model, r.input_tokens, r.output_tokens), 0)
-  const spend = { total: sumCost(totalUsage), recent: sumCost(recentUsage) }
+  // Stored cache-aware cost_usd summed per model (migration 079); falls back
+  // to re-pricing the token sums when the RPC predates 079.
+  const spend = { total: modelTotalsCost(totalUsage), recent: modelTotalsCost(recentUsage) }
 
   // ── KPI row (derived from data already fetched — no new queries) ──────────
   const byStatus = Object.fromEntries(pipeline.statuses.map((s) => [s.status, s.count]))

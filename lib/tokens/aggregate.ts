@@ -1,8 +1,9 @@
 // Pure aggregation over token_usage rows for the admin Token Usage dashboard.
 // Kept dependency-free (besides the shared cost estimator) and side-effect-free
-// so it can be unit-tested and run inside a Server Component. Cost is recomputed
-// from estimateCostUsd rather than trusting the stored cost_usd, matching the
-// existing dashboard summary (app/admin/dashboard/page.tsx).
+// so it can be unit-tested and run inside a Server Component. Cost is the STORED
+// cost_usd: recordTokenUsage prices it at insert time including cache reads,
+// cache writes and the 1h TTL, which the raw input/output columns alone can't
+// reproduce (re-pricing them overstated cached chat input up to ~10x).
 import { estimateCostUsd, type TokenTask } from '@/lib/content/token-pricing'
 
 export const TASKS: readonly TokenTask[] = ['onboarding', 'audit', 'content']
@@ -14,6 +15,8 @@ export type UsageRow = {
   model: string
   input_tokens: number
   output_tokens: number
+  // numeric(10,6) — cache-aware cost priced at insert time.
+  cost_usd: number | string | null
   session_id: string | null
   audit_id: string | null
   created_by: string | null
@@ -72,8 +75,13 @@ function emptyByTask(): Record<TokenTask, Totals> {
 }
 
 export function rowCost(row: UsageRow): number {
-  return estimateCostUsd(row.model, row.input_tokens, row.output_tokens)
+  const cost = Number(row.cost_usd ?? 0)
+  return Number.isFinite(cost) ? cost : 0
 }
+
+/** The token_usage columns every UsageRow select must fetch. */
+export const USAGE_ROW_COLUMNS =
+  'task, stage, model, input_tokens, output_tokens, cost_usd, session_id, audit_id, created_by, created_at'
 
 function addInto(t: Totals, row: UsageRow): void {
   t.cost += rowCost(row)
@@ -110,6 +118,39 @@ export function summarize(rows: UsageRow[], nowMs: number): UsageSummary {
     addInto(summary.byModel[row.model], row)
   }
   return summary
+}
+
+export type ModelTotalsRow = {
+  model: string
+  input_tokens: number
+  output_tokens: number
+  // Present once migration 079 is applied (sum of the stored cost_usd).
+  cost_usd?: number | string | null
+}
+
+/** Total cost over token_usage_model_totals rows. Uses the RPC's summed stored
+ * cost_usd (cache-aware) when present; before migration 079 the RPC returns
+ * only token sums, so fall back to re-pricing them (cache-unaware). */
+export function modelTotalsCost(rows: ModelTotalsRow[] | null | undefined): number {
+  return (rows ?? []).reduce((acc, r) => {
+    if (r.cost_usd !== undefined && r.cost_usd !== null) {
+      const stored = Number(r.cost_usd)
+      if (Number.isFinite(stored)) return acc + stored
+    }
+    return acc + estimateCostUsd(r.model, r.input_tokens, r.output_tokens)
+  }, 0)
+}
+
+export type UsageWindow = 'thisMonth' | 'last30' | 'allTime'
+
+/** Inclusive lower bound (ISO) for a summary window, or null for all time —
+ * the same boundaries `summarize` uses, so a query can push the window into
+ * the DB instead of fetching every row and filtering in JS. */
+export function usageWindowStartIso(window: UsageWindow, nowMs: number): string | null {
+  if (window === 'allTime') return null
+  if (window === 'last30') return new Date(nowMs - 30 * 24 * 60 * 60 * 1000).toISOString()
+  const now = new Date(nowMs)
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
 }
 
 type ResolvedBucket = { key: string; clientId: string | null; kind: ClientKind; label: string }
