@@ -111,6 +111,10 @@ export type DesignRunDto = {
   capabilities: DesignCapabilities
   createdAt: string
   updatedAt: string
+  // Active, a step would act if called, and the self-chain stopped (Vercel
+  // refused the next hop, or nothing moved for a while) — the Studio nudges
+  // it (see isRunStalled). Always false for a finished run.
+  stalled: boolean
   currentScreenshots: ScreenshotDto[]
   concepts: DesignConceptDto[]
 }

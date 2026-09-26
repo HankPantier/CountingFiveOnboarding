@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { RID, SID } from './__fixtures__/rows'
 
-const m = vi.hoisted(() => ({ transitionRun: vi.fn(async (..._a: unknown[]) => null) }))
-vi.mock('./run-store', () => ({ transitionRun: (...a: unknown[]) => m.transitionRun(...a) }))
+const m = vi.hoisted(() => ({
+  transitionRun: vi.fn(async (..._a: unknown[]) => null),
+  markRunChainStalled: vi.fn(async (..._a: unknown[]) => true),
+}))
+vi.mock('./run-store', () => ({
+  transitionRun: (...a: unknown[]) => m.transitionRun(...a),
+  markRunChainStalled: (...a: unknown[]) => m.markRunChainStalled(...a),
+}))
 
 import { STEP_CHAIN_ERROR, chainOrFail, designStepUrl, triggerDesignStep } from './run-trigger'
 
@@ -10,6 +16,8 @@ const fetchMock = vi.fn()
 beforeEach(() => {
   fetchMock.mockReset()
   m.transitionRun.mockClear()
+  m.markRunChainStalled.mockReset()
+  m.markRunChainStalled.mockResolvedValue(true)
   vi.stubGlobal('fetch', fetchMock)
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -27,17 +35,17 @@ describe('designStepUrl', () => {
 })
 
 describe('triggerDesignStep', () => {
-  it('returns false without calling anything when CRON_SECRET is missing', async () => {
+  it('is misconfigured (no call) when CRON_SECRET is missing', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
     vi.stubEnv('CRON_SECRET', '')
-    expect(await triggerDesignStep(SID, RID)).toBe(false)
+    expect(await triggerDesignStep(SID, RID)).toBe('misconfigured')
     expect(fetchMock).not.toHaveBeenCalled()
   })
   it('POSTs the step route with the cron bearer', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
     vi.stubEnv('CRON_SECRET', 's3cret')
     fetchMock.mockResolvedValue(new Response(null, { status: 202 }))
-    expect(await triggerDesignStep(SID, RID)).toBe(true)
+    expect(await triggerDesignStep(SID, RID)).toBe('started')
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe(`http://localhost:3000/api/edit/${SID}/design/runs/${RID}/step`)
     expect(init.method).toBe('POST')
@@ -63,22 +71,69 @@ describe('triggerDesignStep', () => {
     vi.stubEnv('CRON_SECRET', 's3cret')
     vi.stubEnv('VERCEL_AUTOMATION_BYPASS_SECRET', 'byp4ss')
     fetchMock.mockResolvedValue(new Response(null, { status: 401 }))
-    expect(await triggerDesignStep(SID, RID)).toBe(false)
+    expect(await triggerDesignStep(SID, RID)).toBe('refused')
     const logged = [...vi.mocked(console.warn).mock.calls, ...vi.mocked(console.error).mock.calls].flat().map(String).join(' ')
     expect(logged).not.toContain('byp4ss')
   })
-  it('returns false on a non-2xx', async () => {
+  it('is refused on a non-2xx (incl. Vercel 508 recursion protection) and on a network error', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
     vi.stubEnv('CRON_SECRET', 's3cret')
-    fetchMock.mockResolvedValue(new Response(null, { status: 500 }))
-    expect(await triggerDesignStep(SID, RID)).toBe(false)
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 500 }))
+    expect(await triggerDesignStep(SID, RID)).toBe('refused')
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 508 }))
+    expect(await triggerDesignStep(SID, RID)).toBe('refused')
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'))
+    expect(await triggerDesignStep(SID, RID)).toBe('refused')
   })
 })
 
 describe('chainOrFail', () => {
-  it('errors the still-active run when the chain cannot start', async () => {
+  const ACTIVE = ['queued', 'capturing', 'generating', 'refining']
+
+  it('errors the still-active run when the chain is misconfigured (no nudge can fix it)', async () => {
     vi.stubEnv('CRON_SECRET', '')
     await chainOrFail({} as never, SID, RID)
-    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['queued', 'capturing', 'generating', 'refining'], { status: 'error', error: STEP_CHAIN_ERROR })
+    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ACTIVE, { status: 'error', error: STEP_CHAIN_ERROR })
+    expect(m.markRunChainStalled).not.toHaveBeenCalled()
+  })
+
+  it('also errors the run when no app URL is configured', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', '')
+    vi.stubEnv('VERCEL_URL', '')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    await chainOrFail({} as never, SID, RID)
+    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ACTIVE, { status: 'error', error: STEP_CHAIN_ERROR })
+  })
+
+  it.each([
+    ['a 508 (Vercel recursion protection)', () => fetchMock.mockResolvedValue(new Response(null, { status: 508 }))],
+    ['another non-2xx', () => fetchMock.mockResolvedValue(new Response(null, { status: 502 }))],
+    ['a network error / timeout', () => fetchMock.mockRejectedValue(new DOMException('timed out', 'TimeoutError'))],
+  ])('leaves the run active and marks it stalled on %s', async (_label, arrange) => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    arrange()
+    await chainOrFail({} as never, SID, RID)
+    expect(m.transitionRun).not.toHaveBeenCalled()
+    expect(m.markRunChainStalled).toHaveBeenCalledWith({}, SID, RID)
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it('does nothing else when the next step started', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    fetchMock.mockResolvedValue(new Response(null, { status: 202 }))
+    await chainOrFail({} as never, SID, RID)
+    expect(m.transitionRun).not.toHaveBeenCalled()
+    expect(m.markRunChainStalled).not.toHaveBeenCalled()
+  })
+
+  it('never errors the run when the stalled marker cannot be written (the idle threshold still nudges it)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    fetchMock.mockResolvedValue(new Response(null, { status: 508 }))
+    m.markRunChainStalled.mockRejectedValue(new Error('db down'))
+    await expect(chainOrFail({} as never, SID, RID)).resolves.toBeUndefined()
+    expect(m.transitionRun).not.toHaveBeenCalled()
   })
 })

@@ -6,7 +6,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, Tables, TablesInsert, TablesUpdate } from '@/types/database'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { DesignBundle } from './bundle'
-import type { RunStatus } from './studio-types'
+import { RUN_ACTIVE_STATUSES, type RunStatus } from './studio-types'
+import { isPlainObject } from './input-validation'
 import { DEFAULT_RUN_COST_CAP_USD, type DesignCapabilities, type PaletteFreedom, type RunBaseSnapshot, type RunScreenshot, type RunStage } from './run-types'
 import { dropAttemptNotes, parseConceptReview, type ConceptReview, type ReviewUnit } from './review'
 
@@ -149,6 +150,29 @@ export async function transitionRun(
   if (error?.code === UNIQUE_VIOLATION) throw new ActiveRunExistsError(runId)
   if (error) throw storeError('transitionRun', error)
   return data
+}
+
+// Records that the self-chain could not start the run's next step (see
+// isRunStalled): base_snapshot.chainStalledAt and updated_at are set to the
+// SAME instant, so any later write to the run or a concept makes the marker
+// stale. A compare-and-set on the run as read (still active, updated_at
+// unchanged) — if anything moved meanwhile, a step is alive and no marker is
+// needed. The rest of base_snapshot is kept as read. Returns whether it landed.
+export async function markRunChainStalled(db: Db, sessionId: string, runId: string): Promise<boolean> {
+  const run = await getRun(db, sessionId, runId)
+  if (!run || !(RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)) return false
+  const at = stampAfter(run.updated_at)
+  const snapshot = isPlainObject(run.base_snapshot) ? run.base_snapshot : {}
+  const { data, error } = await db
+    .from('design_runs')
+    .update({ base_snapshot: asJson({ ...snapshot, chainStalledAt: at }), updated_at: at })
+    .eq('id', runId)
+    .in('status', [...RUN_ACTIVE_STATUSES])
+    .eq('updated_at', run.updated_at)
+    .select('id')
+    .maybeSingle()
+  if (error) throw storeError('markRunChainStalled', error)
+  return data !== null
 }
 
 // Unguarded field write (cost on a cancelled run, an updated_at heartbeat).

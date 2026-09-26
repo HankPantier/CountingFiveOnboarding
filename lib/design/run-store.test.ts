@@ -10,6 +10,7 @@ import {
   createRun,
   deleteConcepts,
   getRun,
+  markRunChainStalled,
   resetConcepts,
   resumeConcepts,
   resumeParkedConcept,
@@ -252,5 +253,32 @@ describe('run-store — Retry parks all but the first mid-loop concept (PF3)', (
     expect('critique' in update).toBe(false)
     expect(Date.parse(update.updated_at as string)).toBeGreaterThan(Date.parse(READ_AT))
     for (const op of [['eq', 'id', CID], ['eq', 'run_id', RID], ['eq', 'status', 'pending'], ['eq', 'updated_at', READ_AT]]) expect(ops).toContainEqual(op)
+  })
+})
+
+describe('markRunChainStalled', () => {
+  const T = '2026-09-26T23:25:00.000Z'
+  it('writes chainStalledAt and updated_at as ONE instant (after the read), keeping the snapshot, CAS on the run as read', async () => {
+    const run = makeRunRow({ status: 'refining', updated_at: T, base_snapshot: asJson({ pagePath: '/about', themeShas: {}, screenshots: [], notes: ['n1'] }) })
+    const f = fakeSupabase({ design_runs: [{ data: run }, { data: { id: RID } }] })
+    expect(await markRunChainStalled(f.client, SID, RID)).toBe(true)
+    const ops = f.opsFor('design_runs', 1)
+    const update = ops[0] as ['update', { base_snapshot: Record<string, unknown>; updated_at: string }]
+    expect(update[0]).toBe('update')
+    const { base_snapshot, updated_at } = update[1]
+    expect(base_snapshot).toEqual({ pagePath: '/about', themeShas: {}, screenshots: [], notes: ['n1'], chainStalledAt: updated_at })
+    expect(Date.parse(updated_at)).toBeGreaterThan(Date.parse(T))
+    expect(ops).toContainEqual(['eq', 'id', RID])
+    expect(ops).toContainEqual(['in', 'status', ['queued', 'capturing', 'generating', 'refining']])
+    expect(ops).toContainEqual(['eq', 'updated_at', T])
+  })
+  it('is false (no write) for a finished or missing run, and false when the CAS lost', async () => {
+    const done = fakeSupabase({ design_runs: [{ data: makeRunRow({ status: 'ready' }) }] })
+    expect(await markRunChainStalled(done.client, SID, RID)).toBe(false)
+    expect(done.queries).toHaveLength(1)
+    const missing = fakeSupabase({ design_runs: [{ data: null }] })
+    expect(await markRunChainStalled(missing.client, SID, RID)).toBe(false)
+    const lost = fakeSupabase({ design_runs: [{ data: makeRunRow({ status: 'refining' }) }, { data: null }] })
+    expect(await markRunChainStalled(lost.client, SID, RID)).toBe(false)
   })
 })

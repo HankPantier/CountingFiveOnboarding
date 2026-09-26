@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesignStudioState } from '@/lib/design/studio-types'
 import type { DesignRunDto } from '@/lib/design/run-types'
-import { RUN_POLL_MS, SIGNED_VIEW_STALE_MS, runIsActive, startSequentialPoll, stabilizeSignedUrls, type SignedUrlCache } from '@/lib/design/studio-ui'
+import { RUN_POLL_MS, SIGNED_VIEW_STALE_MS, runIsActive, shouldNudgeRun, startSequentialPoll, stabilizeSignedUrls, type NudgeState, type SignedUrlCache } from '@/lib/design/studio-ui'
 import DesignChat from './DesignChat'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
@@ -30,6 +30,8 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
   const lastLoadAt = useRef(0)
   // Keeps each screenshot's signed URL stable across polls (no re-download).
   const urlCache = useRef<SignedUrlCache>(new Map())
+  // Stalled-run nudges (see shouldNudgeRun): one in flight, debounced.
+  const nudge = useRef<NudgeState>({ inFlight: false, lastNudgeAt: null })
 
   const load = useCallback(async () => {
     const loadId = ++loadSeq.current
@@ -83,6 +85,17 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
       if (runId !== runSeq.current) return true
       const run = stabilizeSignedUrls(res.run, urlCache.current, Date.now())
       setRun(run)
+      // The run's self-chain stopped (Vercel refuses a deployment's ~5th
+      // self-call per chain): restart it from here. Fire-and-forget — a failed
+      // nudge is retried on a later poll, and the sweep cron is the backstop.
+      if (run && shouldNudgeRun(run, nudge.current, Date.now())) {
+        nudge.current = { inFlight: true, lastNudgeAt: Date.now() }
+        void designApi(`/api/edit/${sessionId}/design/runs/${run.id}/step`, { method: 'POST' })
+          .catch(() => {})
+          .finally(() => {
+            nudge.current = { ...nudge.current, inFlight: false }
+          })
+      }
       if (runIsActive(run)) return true
       void load()
       return false

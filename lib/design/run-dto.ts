@@ -5,7 +5,7 @@ import { parseDesignBundle } from './bundle'
 import { capabilitiesFromJson } from './capabilities'
 import { metricGateFailures, type RenderMetrics } from './metrics'
 import { latestCritique, parseConceptReview, renderGateWarnings, unmeasuredViewports, type ConceptReview } from './review'
-import { parseBaseSnapshot, parseScreenshots } from './run-state'
+import { isRunStalled, parseBaseSnapshot, parseScreenshots } from './run-state'
 import { CONCEPT_STATUSES, PALETTE_FREEDOMS, RUN_STATUSES, type ConceptStatus, type RunStatus } from './studio-types'
 import {
   RUN_STAGES,
@@ -83,7 +83,7 @@ export function toConceptDto(row: ConceptRow, signed: Record<string, string>, ba
   }
 }
 
-export function toRunDto(run: RunRow, concepts: ConceptRow[], signed: Record<string, string>): DesignRunDto {
+export function toRunDto(run: RunRow, concepts: ConceptRow[], signed: Record<string, string>, now: number = Date.now()): DesignRunDto {
   const base = parseBaseSnapshot(run.base_snapshot)
   const stage = run.stage && (RUN_STAGES as readonly string[]).includes(run.stage) ? (run.stage as RunStage) : null
   return {
@@ -102,6 +102,7 @@ export function toRunDto(run: RunRow, concepts: ConceptRow[], signed: Record<str
     capabilities: capabilitiesFromJson(run.capabilities),
     createdAt: run.created_at,
     updatedAt: run.updated_at,
+    stalled: isRunStalled(run, concepts, now),
     currentScreenshots: toShots(base.screenshots, signed),
     concepts: [...concepts].sort((a, b) => a.position - b.position).map((c) => toConceptDto(c, signed, base.metrics ?? null)),
   }

@@ -58,6 +58,20 @@ export function runIsActive(run: Pick<DesignRunDto, 'status'> | null): boolean {
   return run !== null && (RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)
 }
 
+// Nudging a stalled run (DesignRunDto.stalled): the Studio POSTs the step
+// route as the admin, which starts a FRESH self-chain (Vercel's recursion
+// protection counts hops per originating request). At most one nudge in
+// flight, and at most one per NUDGE_MIN_INTERVAL_MS — duplicates are no-ops
+// server-side (guarded claims), this just keeps the Studio quiet.
+export const NUDGE_MIN_INTERVAL_MS = 20_000
+
+export type NudgeState = { inFlight: boolean; lastNudgeAt: number | null }
+
+export function shouldNudgeRun(run: Pick<DesignRunDto, 'status' | 'stalled'> | null, state: NudgeState, now: number): boolean {
+  if (!runIsActive(run) || !run?.stalled || state.inFlight) return false
+  return state.lastNudgeAt === null || now - state.lastNudgeAt >= NUDGE_MIN_INTERVAL_MS
+}
+
 // Generation designs one concept per step: k = the concepts already settled
 // (accepted or rejected) + 1, capped at the run's concept count.
 export function designingConceptNumber(run: Pick<DesignRunDto, 'conceptCount' | 'concepts'>): number {

@@ -75,9 +75,9 @@ export async function POST(req: Request, { params }: Params) {
       try {
         await chainOrFail(createServerClient(), ctx.sessionId, run.id)
       } catch (err) {
-        // chainOrFail already fails the run when the trigger fetch itself
-        // fails; this is a backstop against an unexpected throw so the run
-        // never sits queued silently instead of getting marked retryable.
+        // chainOrFail marks a refused kickoff stalled (the Studio / cron
+        // nudge it) and fails a misconfigured one; this is a backstop against
+        // an unexpected throw so the run never sits queued silently.
         console.error('[design:runs:create] chain kickoff threw unexpectedly', err)
         await failActiveRun(createServerClient(), run.id, STEP_CHAIN_ERROR)
       }

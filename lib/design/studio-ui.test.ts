@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { DesignConceptDto } from './run-types'
 import type { DesignInputDto } from './studio-types'
 import {
+  NUDGE_MIN_INTERVAL_MS,
+  shouldNudgeRun,
   PREVIEW_VIEWPORTS,
   apiFailureInfo,
   applicableConcepts,
@@ -234,5 +236,29 @@ describe('Studio UI helpers (audit UI fixes)', () => {
     const later = stabilizeSignedUrls({ url: u('3') }, cache, SIGNED_URL_REUSE_MS + 1)
     expect(later.url).toBe(u('3'))
     expect(stabilizeSignedUrls(null, cache, 0)).toBeNull()
+  })
+})
+
+describe('shouldNudgeRun (the Studio restarting a stalled self-chain)', () => {
+  const now = 1_000_000
+  const idle = { inFlight: false, lastNudgeAt: null }
+  it('nudges an active, stalled run when nothing is in flight', () => {
+    expect(shouldNudgeRun({ status: 'refining', stalled: true }, idle, now)).toBe(true)
+    expect(shouldNudgeRun({ status: 'queued', stalled: true }, idle, now)).toBe(true)
+  })
+  it('never nudges a run that is not stalled (a step holds a claim, or the chain is moving)', () => {
+    expect(shouldNudgeRun({ status: 'refining', stalled: false }, idle, now)).toBe(false)
+  })
+  it('never nudges a finished run or no run', () => {
+    for (const status of ['ready', 'applied', 'cancelled', 'error'] as const) expect(shouldNudgeRun({ status, stalled: true }, idle, now)).toBe(false)
+    expect(shouldNudgeRun(null, idle, now)).toBe(false)
+  })
+  it('keeps at most one nudge in flight', () => {
+    expect(shouldNudgeRun({ status: 'refining', stalled: true }, { inFlight: true, lastNudgeAt: null }, now)).toBe(false)
+  })
+  it('debounces to one nudge per NUDGE_MIN_INTERVAL_MS', () => {
+    const run = { status: 'refining' as const, stalled: true }
+    expect(shouldNudgeRun(run, { inFlight: false, lastNudgeAt: now - NUDGE_MIN_INTERVAL_MS + 1 }, now)).toBe(false)
+    expect(shouldNudgeRun(run, { inFlight: false, lastNudgeAt: now - NUDGE_MIN_INTERVAL_MS }, now)).toBe(true)
   })
 })

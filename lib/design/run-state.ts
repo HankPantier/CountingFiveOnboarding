@@ -16,7 +16,7 @@ import { displayHost, isPlainObject } from './input-validation'
 import { parseRenderMetrics } from './metrics'
 import { isClaimLive, parseConceptReview } from './review'
 import { parseScreenshots } from './screenshots'
-import { INPUT_KIND_LABELS, type DesignInputKind, type ThemeBlobShas } from './studio-types'
+import { INPUT_KIND_LABELS, RUN_ACTIVE_STATUSES, type DesignInputKind, type ThemeBlobShas } from './studio-types'
 import { DEFAULT_RUN_PAGE, DESIGN_STEP_MAX_LIFETIME_MS, MAX_RUN_INPUTS, type RunBaseSnapshot, type RunStage } from './run-types'
 
 export { parseScreenshots } from './screenshots'
@@ -104,6 +104,48 @@ export function nextAction(run: RunLite, concepts: ConceptLite[]): NextAction {
   const next = ordered.find((c) => c.status === 'pending' && c.bundle !== null)
   if (!next) return hasStalledConcept(concepts) ? { kind: 'stalled' } : { kind: 'finalize' }
   return parseConceptReview(next.critique) ? { kind: 'resume', conceptId: next.id } : { kind: 'render', conceptId: next.id }
+}
+
+// ── Stalled chains ──────────────────────────────────────────────────────────
+// Vercel's recursion protection answers a deployment's ~5th self-call in one
+// chain with 508, so a run's self-chain regularly stops between steps. That
+// is not a failure: the run stays active and is NUDGED (the Studio poll, else
+// the sweep cron) — a request from outside the chain starts a fresh one.
+//
+// A run is STALLED when a step would do something if called (nextAction is
+// actionable — not 'wait', which is how a live claim / in-flight unit shows,
+// nor 'stop') AND either the chain recorded that it could not start the next
+// step (a chainStalledAt marker in base_snapshot, still newer than every
+// write to the run and its concepts) or nothing has been written for
+// RUN_STALL_IDLE_MS (a healthy chain claims the next unit within seconds).
+export const RUN_STALL_IDLE_MS = 45_000
+
+// The marker is written with the run's updated_at set to the same instant, so
+// ANY later write (a step's transition, heartbeat or concept settle) makes it
+// stale — it never needs clearing.
+export function chainStalledAt(baseSnapshot: unknown): string | null {
+  if (!isPlainObject(baseSnapshot)) return null
+  const at = baseSnapshot.chainStalledAt
+  return typeof at === 'string' && Number.isFinite(Date.parse(at)) ? at : null
+}
+
+export type StallRunLite = RunLite & Pick<Tables<'design_runs'>, 'updated_at' | 'base_snapshot'>
+
+// The latest write to the run or any of its concepts (ms), or null.
+export function lastRunProgressAt(run: Pick<StallRunLite, 'updated_at'>, concepts: Pick<ConceptLite, 'updated_at'>[]): number | null {
+  const stamps = [run.updated_at, ...concepts.map((c) => c.updated_at)].map((s) => Date.parse(s)).filter(Number.isFinite)
+  return stamps.length > 0 ? Math.max(...stamps) : null
+}
+
+export function isRunStalled(run: StallRunLite, concepts: ConceptLite[], now: number): boolean {
+  if (!(RUN_ACTIVE_STATUSES as readonly string[]).includes(run.status)) return false
+  const action = nextAction(run, concepts)
+  if (action.kind === 'wait' || action.kind === 'stop') return false
+  const last = lastRunProgressAt(run, concepts)
+  if (last === null) return true
+  const marker = chainStalledAt(run.base_snapshot)
+  if (marker !== null && Date.parse(marker) >= last) return true
+  return now - last > RUN_STALL_IDLE_MS
 }
 
 export type RetryPlan =

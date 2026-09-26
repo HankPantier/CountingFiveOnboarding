@@ -8,6 +8,7 @@ import { reconcileStuckTarget, finalizeBlogBatchIfDone } from '@/lib/content/blo
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
 import { sweepStuckDesignRows } from '@/lib/design/sweep'
+import { nudgeStalledDesignRuns } from '@/lib/design/run-nudge'
 import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
@@ -124,10 +125,21 @@ export async function GET(req: Request) {
   const [research, pages, ideas, socials, oneoffs, audits, newPages] =
     sweep ?? [null, null, null, null, null, null, null]
 
+  // Design Studio runs whose self-chain stopped (Vercel's recursion protection
+  // refuses a deployment's ~5th self-call per chain with 508) are nudged
+  // FIRST — a step call from here starts a fresh chain, so a run finishes even
+  // with no Studio tab open. Only runs where a step would act and none holds
+  // a claim (isRunStalled), so nothing in progress is double-run. Fail-soft.
+  const designNudge = await nudgeStalledDesignRuns(supabase)
+  if (designNudge.nudged.length || designNudge.refused) {
+    console.warn(`[sweep-stuck-jobs] design runs nudged=${designNudge.nudged.length} refused=${designNudge.refused}`)
+  }
+
   // Design Studio (migration 078): captures, runs and concepts whose worker
-  // died mid-flight. Fail-soft — the helper logs and counts 0, never throws,
-  // so the self-heal steps below always run.
-  const designSwept = await sweepStuckDesignRows(supabase)
+  // died mid-flight — except the runs just nudged (resumed, not dead).
+  // Fail-soft — the helper logs and counts 0, never throws, so the self-heal
+  // steps below always run.
+  const designSwept = await sweepStuckDesignRows(supabase, Date.now(), { skipRunIds: designNudge.nudged })
   if (designSwept.inputs || designSwept.runs || designSwept.concepts) {
     console.warn(
       `[sweep-stuck-jobs] design inputs=${designSwept.inputs} runs=${designSwept.runs} concepts=${designSwept.concepts}`

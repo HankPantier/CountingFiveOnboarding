@@ -46,7 +46,10 @@ async function runStepInBackground(target: StepTarget, runId: string): Promise<v
 //   Bearer CRON_SECRET (the self-chain): just advance.
 //   Admin: a failed run is RETRIED from its first unfinished stage; an active
 //   run is nudged (a stalled chain restarts; duplicate calls are no-ops thanks
-//   to the guarded claims); a finished run is a 409.
+//   to the guarded claims); a finished run is a 409. The Studio poll nudges
+//   automatically when the run DTO says `stalled` (Vercel refused the chain's
+//   next self-call — see run-trigger.ts); the sweep cron does the same via
+//   the Bearer path when no tab is open (run-nudge.ts).
 export async function POST(req: Request, { params }: { params: Promise<{ id: string; runId: string }> }) {
   const { id, runId } = await params
   const caller = await authorizeStep(req, id)
