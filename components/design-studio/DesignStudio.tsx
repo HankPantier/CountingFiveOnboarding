@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesignStudioState } from '@/lib/design/studio-types'
 import type { DesignRunDto } from '@/lib/design/run-types'
-import { RUN_POLL_MS, SIGNED_VIEW_STALE_MS, runIsActive, shouldNudgeRun, startSequentialPoll, stabilizeSignedUrls, type NudgeState, type SignedUrlCache } from '@/lib/design/studio-ui'
+import { NUDGE_TIMEOUT_MS, RUN_POLL_MS, SIGNED_VIEW_STALE_MS, nudgeStepUrl, runIsActive, shouldNudgeRun, startSequentialPoll, stabilizeSignedUrls, type NudgeState, type SignedUrlCache } from '@/lib/design/studio-ui'
 import DesignChat from './DesignChat'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
@@ -90,7 +90,9 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
       // nudge is retried on a later poll, and the sweep cron is the backstop.
       if (run && shouldNudgeRun(run, nudge.current, Date.now())) {
         nudge.current = { inFlight: true, lastNudgeAt: Date.now() }
-        void designApi(`/api/edit/${sessionId}/design/runs/${run.id}/step`, { method: 'POST' })
+        // Flagged as a nudge: the route 409s (never retries) a run that is no
+        // longer active by the time this lands.
+        void designApi(nudgeStepUrl(sessionId, run.id), { method: 'POST', signal: AbortSignal.timeout(NUDGE_TIMEOUT_MS) })
           .catch(() => {})
           .finally(() => {
             nudge.current = { ...nudge.current, inFlight: false }

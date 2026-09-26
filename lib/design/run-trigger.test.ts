@@ -31,6 +31,7 @@ describe('designStepUrl', () => {
   it('builds the step route URL (adds https:// for a bare VERCEL_URL)', () => {
     expect(designStepUrl('http://localhost:3000/', SID, RID)).toBe(`http://localhost:3000/api/edit/${SID}/design/runs/${RID}/step`)
     expect(designStepUrl('x.vercel.app', SID, RID)).toBe(`https://x.vercel.app/api/edit/${SID}/design/runs/${RID}/step`)
+    expect(designStepUrl('http://localhost:3000', SID, RID, { nudge: true })).toBe(`http://localhost:3000/api/edit/${SID}/design/runs/${RID}/step?nudge=1`)
   })
 })
 
@@ -50,6 +51,13 @@ describe('triggerDesignStep', () => {
     expect(url).toBe(`http://localhost:3000/api/edit/${SID}/design/runs/${RID}/step`)
     expect(init.method).toBe('POST')
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer s3cret')
+  })
+  it('flags a nudge on the URL (the step route then 409s a run that is no longer active)', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')
+    vi.stubEnv('CRON_SECRET', 's3cret')
+    fetchMock.mockResolvedValue(new Response(null, { status: 202 }))
+    await triggerDesignStep(SID, RID, { nudge: true })
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(`http://localhost:3000/api/edit/${SID}/design/runs/${RID}/step?nudge=1`)
   })
   it('adds the Vercel protection-bypass header only when the secret is set', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000')

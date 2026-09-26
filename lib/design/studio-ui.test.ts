@@ -3,6 +3,7 @@ import type { DesignConceptDto } from './run-types'
 import type { DesignInputDto } from './studio-types'
 import {
   NUDGE_MIN_INTERVAL_MS,
+  nudgeStepUrl,
   shouldNudgeRun,
   PREVIEW_VIEWPORTS,
   apiFailureInfo,
@@ -236,6 +237,12 @@ describe('Studio UI helpers (audit UI fixes)', () => {
     const later = stabilizeSignedUrls({ url: u('3') }, cache, SIGNED_URL_REUSE_MS + 1)
     expect(later.url).toBe(u('3'))
     expect(stabilizeSignedUrls(null, cache, 0)).toBeNull()
+  })
+})
+
+describe('nudgeStepUrl', () => {
+  it('flags the step call as a nudge so the route never retries a failed run', () => {
+    expect(nudgeStepUrl('s1', 'r1')).toBe('/api/edit/s1/design/runs/r1/step?nudge=1')
   })
 })
 

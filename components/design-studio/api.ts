@@ -1,6 +1,6 @@
 // Client-side fetch helper for the Design Studio routes: JSON or multipart in,
 // typed JSON out. A non-2xx response throws with the route's own { error }.
-type ApiInit = { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; json?: unknown; form?: FormData }
+type ApiInit = { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; json?: unknown; form?: FormData; signal?: AbortSignal }
 
 // The platform itself can reject an oversized request body before it ever
 // reaches our route (a non-JSON 413), so that status gets a specific,
@@ -23,7 +23,7 @@ export class DesignApiError extends Error {
 export async function designApi<T = unknown>(url: string, init: ApiInit = {}): Promise<T> {
   const headers: HeadersInit | undefined = init.json !== undefined ? { 'Content-Type': 'application/json' } : undefined
   const body: BodyInit | undefined = init.json !== undefined ? JSON.stringify(init.json) : init.form
-  const res = await fetch(url, { method: init.method ?? 'GET', headers, body })
+  const res = await fetch(url, { method: init.method ?? 'GET', headers, body, signal: init.signal })
   const data: unknown = await res.json().catch(() => null)
   if (!res.ok) {
     const jsonMessage = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string' ? data.error : null

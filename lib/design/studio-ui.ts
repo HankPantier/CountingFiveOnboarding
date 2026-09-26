@@ -64,6 +64,16 @@ export function runIsActive(run: Pick<DesignRunDto, 'status'> | null): boolean {
 // flight, and at most one per NUDGE_MIN_INTERVAL_MS — duplicates are no-ops
 // server-side (guarded claims), this just keeps the Studio quiet.
 export const NUDGE_MIN_INTERVAL_MS = 20_000
+// The nudge POST is flagged (`?nudge=1`) so the step route never RETRIES a run
+// that failed between the poll and the nudge — only an explicit Retry does.
+export const NUDGE_PARAM = 'nudge'
+// A hung nudge must not leave `inFlight` stuck (the step route answers 202
+// straight away; its work runs in after()).
+export const NUDGE_TIMEOUT_MS = 20_000
+
+export function nudgeStepUrl(sessionId: string, runId: string): string {
+  return `/api/edit/${sessionId}/design/runs/${runId}/step?${NUDGE_PARAM}=1`
+}
 
 export type NudgeState = { inFlight: boolean; lastNudgeAt: number | null }
 

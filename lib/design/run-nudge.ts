@@ -14,7 +14,10 @@ import { RUN_ACTIVE_STATUSES } from './studio-types'
 
 export const DESIGN_RUN_NUDGE_MAX_IDLE_MS = 60 * 60 * 1000
 export const MAX_DESIGN_NUDGES_PER_TICK = 5
-const ACTIVE_RUN_SCAN_LIMIT = 50
+// One active run per session (partial unique index), so this is ample; the
+// scan also skips runs idle past the nudge ceiling in SQL so they can't crowd
+// out nudgeable ones.
+const ACTIVE_RUN_SCAN_LIMIT = 200
 
 export type NudgeCandidateRun = StallRunLite & { id: string; session_id: string }
 export type NudgeCandidateConcept = ConceptLite & { run_id: string }
@@ -40,7 +43,7 @@ export function pickStalledRuns(
     .map(({ run }) => run)
 }
 
-type Trigger = (sessionId: string, runId: string) => Promise<TriggerResult>
+type Trigger = (sessionId: string, runId: string, opts: { nudge?: boolean }) => Promise<TriggerResult>
 
 export async function nudgeStalledDesignRuns(
   db: SupabaseClient<Database>,
@@ -53,6 +56,7 @@ export async function nudgeStalledDesignRuns(
       .from('design_runs')
       .select('id, session_id, status, stage, concept_count, updated_at, base_snapshot')
       .in('status', [...RUN_ACTIVE_STATUSES])
+      .gt('updated_at', new Date(now - DESIGN_RUN_NUDGE_MAX_IDLE_MS).toISOString())
       .order('updated_at', { ascending: true })
       .limit(ACTIVE_RUN_SCAN_LIMIT)
     if (error) throw new Error(error.message)
@@ -66,7 +70,9 @@ export async function nudgeStalledDesignRuns(
       )
     if (conceptError) throw new Error(conceptError.message)
     for (const run of pickStalledRuns(runs, concepts ?? [], now)) {
-      const outcome = await trigger(run.session_id, run.id)
+      // Flagged as a nudge: the Bearer path only ever advances (never retries),
+      // and a run that stopped being active meanwhile is a 409 (refused).
+      const outcome = await trigger(run.session_id, run.id, { nudge: true })
       if (outcome === 'started') result.nudged.push(run.id)
       else result.refused += 1
     }

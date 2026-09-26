@@ -14,13 +14,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { RUN_ACTIVE_STATUSES } from './studio-types'
 import { markRunChainStalled, transitionRun } from './run-store'
+import { NUDGE_PARAM } from './studio-ui'
 
 export const STEP_CHAIN_ERROR = 'Couldn’t start the next background step — press Retry.'
 const TRIGGER_TIMEOUT_MS = 15_000
 
-export function designStepUrl(baseUrl: string, sessionId: string, runId: string): string {
+// `nudge`: flag the call as a nudge (the sweep cron) — the step route then
+// 409s a run that is no longer active instead of accepting a no-op.
+export function designStepUrl(baseUrl: string, sessionId: string, runId: string, opts: { nudge?: boolean } = {}): string {
   const base = (baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`).replace(/\/+$/, '')
-  return `${base}/api/edit/${sessionId}/design/runs/${runId}/step`
+  return `${base}/api/edit/${sessionId}/design/runs/${runId}/step${opts.nudge ? `?${NUDGE_PARAM}=1` : ''}`
 }
 
 // started: the step route accepted (2xx). refused: a non-2xx (e.g. 508),
@@ -28,7 +31,7 @@ export function designStepUrl(baseUrl: string, sessionId: string, runId: string)
 // or CRON_SECRET — nothing can.
 export type TriggerResult = 'started' | 'refused' | 'misconfigured'
 
-export async function triggerDesignStep(sessionId: string, runId: string): Promise<TriggerResult> {
+export async function triggerDesignStep(sessionId: string, runId: string, opts: { nudge?: boolean } = {}): Promise<TriggerResult> {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
   const cronSecret = process.env.CRON_SECRET
   if (!baseUrl || !cronSecret) {
@@ -41,7 +44,7 @@ export async function triggerDesignStep(sessionId: string, runId: string): Promi
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
   if (bypass) headers['x-vercel-protection-bypass'] = bypass
   try {
-    const res = await fetch(designStepUrl(baseUrl, sessionId, runId), {
+    const res = await fetch(designStepUrl(baseUrl, sessionId, runId, opts), {
       method: 'POST',
       headers,
       signal: AbortSignal.timeout(TRIGGER_TIMEOUT_MS),
