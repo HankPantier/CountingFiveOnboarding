@@ -8,7 +8,23 @@
 // GitHub App. WordPress never holds a GitHub token.
 // ---------------------------------------------------------------------------
 
-import { readBinaryFile, MAIN_BRANCH, type BinaryBlob } from '@/lib/github/repo-files'
+import {
+  FileNotFoundError,
+  listTree,
+  MAIN_BRANCH,
+  readBlobBySha,
+  type BinaryBlob,
+} from '@/lib/github/repo-files'
+
+// A hero image should never be this large; guard so a bad path can't pin memory.
+export const MAX_ASSET_BYTES = 15 * 1024 * 1024
+
+export class AssetTooLargeError extends Error {
+  constructor(public path: string, public size: number) {
+    super(`Asset too large: ${path}`)
+    this.name = 'AssetTooLargeError'
+  }
+}
 
 export type HeroImage = {
   url: string
@@ -42,7 +58,19 @@ export function isAllowedAssetPath(rawPath: string): string | null {
   return normalized
 }
 
-// Read image bytes from the published branch through the GitHub App.
+// Read image bytes from the published branch through the GitHub App. The size
+// comes from the (ETag-cached) tree listing, so an oversized blob is refused
+// BEFORE it is downloaded and buffered — the limit actually bounds memory.
 export async function readRepoAsset(githubRepo: string, path: string): Promise<BinaryBlob> {
-  return readBinaryFile(githubRepo, path, MAIN_BRANCH)
+  const dir = path.slice(0, path.lastIndexOf('/') + 1)
+  const entry = (await listTree(githubRepo, MAIN_BRANCH, dir)).find(
+    (e) => e.type === 'blob' && e.path === path
+  )
+  if (!entry) throw new FileNotFoundError(path)
+  if (typeof entry.size === 'number' && entry.size > MAX_ASSET_BYTES) {
+    throw new AssetTooLargeError(path, entry.size)
+  }
+  const content = await readBlobBySha(githubRepo, entry.sha)
+  if (content.byteLength > MAX_ASSET_BYTES) throw new AssetTooLargeError(path, content.byteLength)
+  return { path, content, sha: entry.sha, size: content.byteLength }
 }

@@ -440,15 +440,49 @@ export async function readBinaryFile(
   }
 }
 
-// Read a blob's bytes directly by its sha (one getBlob call). Blobs are
-// content-addressed, so a caller that already has the sha from a tree listing
-// skips the getContent lookup entirely — and the result is immutable/cacheable.
+// Blobs are content-addressed, so a (repo, sha) -> bytes entry never goes stale.
+// A bounded LRU (by total bytes, small blobs only) lets repeat readers — the
+// WordPress feed re-reading every post on each poll, the design snapshot, the
+// document export — skip getBlob entirely, sparing the shared App quota.
+const BLOB_CACHE_MAX_BYTES = 32 * 1024 * 1024
+const BLOB_CACHE_MAX_ENTRY_BYTES = 1024 * 1024
+const blobCache = new Map<string, Buffer>()
+let blobCacheBytes = 0
+
+function blobCacheGet(key: string): Buffer | undefined {
+  const hit = blobCache.get(key)
+  if (!hit) return undefined
+  blobCache.delete(key)
+  blobCache.set(key, hit)
+  return hit
+}
+
+function blobCacheSet(key: string, buf: Buffer): void {
+  if (buf.length > BLOB_CACHE_MAX_ENTRY_BYTES || blobCache.has(key)) return
+  blobCache.set(key, buf)
+  blobCacheBytes += buf.length
+  while (blobCacheBytes > BLOB_CACHE_MAX_BYTES) {
+    const oldest = blobCache.keys().next().value
+    if (oldest === undefined) break
+    blobCacheBytes -= blobCache.get(oldest)?.length ?? 0
+    blobCache.delete(oldest)
+  }
+}
+
+// Read a blob's bytes directly by its sha (one getBlob call, or none when
+// cached). A caller that already has the sha from a tree listing skips the
+// getContent lookup entirely. Returns a copy, so callers may mutate freely.
 export async function readBlobBySha(slug: string, sha: string): Promise<Buffer> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
+  const key = `${owner}/${repo}:${sha}`
+  const cached = blobCacheGet(key)
+  if (cached) return Buffer.from(cached)
   try {
     const blob = await withRateLimitRetry(() => octokit.git.getBlob({ owner, repo, file_sha: sha }))
-    return Buffer.from(blob.data.content, blob.data.encoding as BufferEncoding)
+    const buf = Buffer.from(blob.data.content, blob.data.encoding as BufferEncoding)
+    blobCacheSet(key, Buffer.from(buf))
+    return buf
   } catch (err) {
     if (isRequestError(err) && (err.status === 404 || err.status === 422)) {
       throw new FileNotFoundError(sha)

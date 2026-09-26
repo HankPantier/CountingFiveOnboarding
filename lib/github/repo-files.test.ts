@@ -575,6 +575,22 @@ describe('readTextBlobs', () => {
   })
 })
 
+describe('readTextBlobs cache', () => {
+  it('re-reads of an immutable blob sha skip getBlob (feed polls)', async () => {
+    getBlob.mockImplementation(async ({ file_sha }: { file_sha: string }) => ({
+      data: { content: Buffer.from(`post-${file_sha}`).toString('base64'), encoding: 'base64' },
+    }))
+    const entries = [
+      { path: 'content/posts/a.md', sha: 'feedA' },
+      { path: 'content/posts/b.md', sha: 'feedB' },
+    ]
+    const first = await readTextBlobs('site', entries)
+    const second = await readTextBlobs('site', entries)
+    expect(second).toEqual(first)
+    expect(getBlob).toHaveBeenCalledTimes(2)
+  })
+})
+
 describe('revertLastPublish', () => {
   const publishHead = {
     data: {

@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server'
 import { resolveSite, verifyBearer } from '@/lib/wordpress/sites'
-import { isAllowedAssetPath, readRepoAsset } from '@/lib/wordpress/assets'
+import { AssetTooLargeError, isAllowedAssetPath, readRepoAsset } from '@/lib/wordpress/assets'
 import { FileNotFoundError } from '@/lib/github/repo-files'
 
 // Reads binary blobs from the private repo through the GitHub App and streams
 // them to the WP plugin (which sends the same bearer). Node.js runtime required.
 export const runtime = 'nodejs'
 export const maxDuration = 60
-
-// A hero image should never be this large; guard so a bad path can't pin memory.
-const MAX_ASSET_BYTES = 15 * 1024 * 1024
 
 const CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -39,10 +36,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ site: st
   if (!safePath) return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
 
   try {
+    // readRepoAsset refuses an oversized blob from its tree size, before
+    // downloading it (AssetTooLargeError -> 413).
     const blob = await readRepoAsset(site.github_repo, safePath)
-    if (blob.size > MAX_ASSET_BYTES) {
-      return NextResponse.json({ error: 'Asset too large' }, { status: 413 })
-    }
     return new Response(new Uint8Array(blob.content), {
       status: 200,
       headers: {
@@ -55,6 +51,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ site: st
   } catch (err) {
     if (err instanceof FileNotFoundError) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+    if (err instanceof AssetTooLargeError) {
+      return NextResponse.json({ error: 'Asset too large' }, { status: 413 })
     }
     // Log the real cause; return a generic message (this endpoint is called by
     // external WordPress hosts — never echo internal/GitHub error detail).
