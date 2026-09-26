@@ -8,6 +8,7 @@ import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { StaleShaError } from '@/lib/github/repo-files'
 import { DEFAULT_CAPABILITIES } from '@/lib/design/run-types'
 import { newReview, UNMEASURED_WARNING } from '@/lib/design/review'
+import { LEGACY_KEEP_UNCHECKED_ERROR } from '@/lib/design/commit-version'
 
 const m = vi.hoisted(() => ({
   gate: vi.fn(),
@@ -247,5 +248,24 @@ describe('render hard gates (P4)', () => {
     const res = await call()
     expect(res.status).toBe(200)
     expect(((await res.json()) as { warnings: string[] }).warnings[0]).toMatch(/not checked for contrast/)
+  })
+
+  const WITH_LEGACY_CSS = { ...BEFORE, texts: { ...BEFORE.texts, 'content/design-overrides.css': '[data-block="hero"] h1 { color: #fff; }\n' } }
+
+  it('allows keep-legacy for an UNMEASURED concept even when the draft has legacy CSS — nothing was rendered to refuse it against', async () => {
+    m.getConcept.mockResolvedValue(makeConceptRow({ status: 'ready', critique: null }))
+    m.snapshot.mockReset().mockResolvedValueOnce(WITH_LEGACY_CSS).mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
+    const res = await call({ removeLegacyOverrides: false })
+    expect(res.status).toBe(200)
+    expect((m.apply.mock.calls[0][0] as { removeLegacy: boolean }).removeLegacy).toBe(false)
+  })
+
+  it('422s keep-legacy for a MEASURED concept when the draft has legacy CSS, with the reworded message', async () => {
+    m.getConcept.mockResolvedValue(withMetrics(CLEAN))
+    m.snapshot.mockReset().mockResolvedValueOnce(WITH_LEGACY_CSS).mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
+    const res = await call({ removeLegacyOverrides: false })
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toBe(LEGACY_KEEP_UNCHECKED_ERROR)
+    expect(m.apply).not.toHaveBeenCalled()
   })
 })

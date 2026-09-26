@@ -82,7 +82,8 @@ export async function POST(req: Request, { params }: Params) {
     // that couldn't be rendered is allowed, with a warning.
     const run = await getRun(db, ctx.sessionId, concept.run_id)
     const baseline = run ? (parseBaseSnapshot(run.base_snapshot).metrics ?? null) : null
-    const gate = applyRenderGate(parseConceptReview(concept.critique), baseline)
+    const review = parseConceptReview(concept.critique)
+    const gate = applyRenderGate(review, baseline)
     if (!gate.ok) return NextResponse.json({ error: renderGateMessage(gate.failures), failures: gate.failures }, { status: 422 })
 
     const committed = await commitDesignVersion(db, {
@@ -96,8 +97,12 @@ export async function POST(req: Request, { params }: Params) {
       conceptId: concept.id,
       screenshots: parseScreenshots(concept.screenshots),
       // Concept renders (and so the gate above) compose with legacy hand CSS
-      // removed; keeping it is refused when the draft actually has some.
-      gateRenderedWithoutLegacy: true,
+      // removed; keeping it is refused when the draft actually has some — but
+      // only when this concept was ACTUALLY rendered (metrics exist). A
+      // never-rendered concept (review.metrics === null, the "unmeasured"
+      // gate warning above) was never composed either way, so there is
+      // nothing to refuse keep-legacy against.
+      gateRenderedWithoutLegacy: review?.metrics != null,
     })
     if (!committed.ok) {
       return NextResponse.json(committed.stale ? { error: committed.error, stale: true } : { error: committed.error }, { status: committed.status })

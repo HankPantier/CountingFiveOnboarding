@@ -47,7 +47,7 @@ export const APPLIED_VERSION_UNRECORDED = 'The design was applied to the draft, 
 export const NO_BASELINE_ERROR =
   'The Studio has no v0 baseline of this site yet (importing the current design failed), so nothing can be committed — the first commit would otherwise become v0 and the original design could never be restored. Fix the draft theme files (Controls tab or the file editor), then Refresh.'
 export const LEGACY_KEEP_UNCHECKED_ERROR =
-  'This concept was render-checked with the legacy overrides removed. Keeping them was never checked against the new palette, so it can’t be applied that way — apply with “Remove legacy overrides” on, or apply it and then refine in the chat (whose previews keep them).'
+  'Keeping legacy overrides isn’t supported for a concept previewed without them — apply with “Remove legacy overrides”, or refine the current design in the chat.'
 
 export type CommitTarget = { sessionId: string; jobId: string; githubRepo: string; adminId: string; adminEmail?: string; adminName?: string }
 
