@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { VALID } from '../__fixtures__/valid-bundle'
-import { buildReportHtml, escapeHtml, safeHex, safeRelativePath, summarize, summaryText, type AbCallStats, type AbConcept, type AbReport } from './report'
+import { buildReportHtml, escapeHtml, safeHex, safeRelativePath, summarize, summaryText, type AbCallStats, type AbConcept, type AbCritique, type AbReport, type AbRevision } from './report'
 
 const stats = (over: Partial<AbCallStats> = {}): AbCallStats => ({
   latencyMs: 10_000,
@@ -29,6 +29,12 @@ function concept(over: Partial<AbConcept>): AbConcept {
     critique: { scores: SCORES, mean: 4, passed: true, summary: 'ok', issues: [] },
     critiqueStats: stats({ costUsd: 0.25, latencyMs: 5_000 }),
     critiqueErrors: [],
+    revisions: [],
+    loopOutcome: null,
+    finalCritique: over.finalCritique !== undefined ? over.finalCritique : (over.critique !== undefined ? over.critique : { scores: SCORES, mean: 4, passed: true, summary: 'ok', issues: [] }),
+    finalBundle: null,
+    finalShots: [],
+    finalChecks: [],
     ...over,
   }
 }
@@ -44,6 +50,7 @@ function report(concepts: AbConcept[]): AbReport {
     pages: ['/'],
     primaryPage: '/',
     conceptsPerModel: 2,
+    maxRevisions: 0,
     capUsd: 15,
     spentUsd: 3,
     capHit: false,
@@ -75,13 +82,18 @@ describe('summarize', () => {
       skipped: 0,
       critiqued: 2,
       meanCriticScore: 3.5,
-      passRate: 0.5,
+      firstDraftPassRate: 0.5,
+      finalCritiqued: 2,
+      meanFinalCriticScore: 3.5,
+      finalPassRate: 0.5,
+      revisionsUsed: 0,
       meanLatencyMs: 20_000,
       conceptUsd: 3,
+      reviseUsd: 0,
       criticUsd: 0.5,
       totalUsd: 3.5,
     })
-    expect(rows[1]).toMatchObject({ model: 'B', attempted: 1, valid: 0, failed: 1, skipped: 1, critiqued: 0, meanCriticScore: null, passRate: null, meanLatencyMs: 10_000, totalUsd: 0.5 })
+    expect(rows[1]).toMatchObject({ model: 'B', attempted: 1, valid: 0, failed: 1, skipped: 1, critiqued: 0, meanCriticScore: null, firstDraftPassRate: null, finalPassRate: null, meanLatencyMs: 10_000, totalUsd: 0.5 })
     const text = summaryText(rows)
     expect(text.split('\n')).toHaveLength(4)
     expect(text).toContain('50%')
@@ -133,7 +145,7 @@ describe('escaping', () => {
     const html = buildReportHtml(report([concept({}), concept({ model: 'B' })]))
     expect(html).toContain('--n:2')
     expect(html.match(/<section class="col">/g)).toHaveLength(2)
-    expect(html).toContain('Mean critic score')
+    expect(html).toContain('First-draft pass rate')
   })
 })
 
@@ -146,5 +158,76 @@ describe('report header', () => {
     expect(flagged).toContain('the judge is also a compared model')
     const off = buildReportHtml({ ...report([concept({})]), criticModel: null })
     expect(off).toContain('Judge: none (--no-critic)')
+  })
+})
+
+const k = (mean: number, passed: boolean): AbCritique => ({ scores: SCORES, mean, passed, summary: '', issues: [] })
+const round = (n: number, over: Partial<AbRevision> = {}): AbRevision => ({
+  round: n,
+  status: 'valid',
+  name: `v${n}`,
+  errors: [],
+  notes: [],
+  stats: stats({ costUsd: 0.5, latencyMs: 20_000 }),
+  shots: [],
+  critiqueStatus: 'done',
+  critique: null,
+  critiqueStats: stats({ costUsd: 0.1 }),
+  ...over,
+})
+
+describe('summarize with the --revise loop', () => {
+  it('reports first-draft and final pass rates, revisions used and revise / critic spend', () => {
+    const rows = summarize(
+      report([
+        // failed first, passed after 2 revisions
+        concept({ critique: k(3, false), finalCritique: k(4, true), loopOutcome: 'passed', revisions: [round(1, { critique: k(3.5, false) }), round(2, { critique: k(4, true) })] }),
+        // passed first draft, no revision
+        concept({ position: 1, critique: k(4.2, true), finalCritique: k(4.2, true), loopOutcome: 'passed' }),
+        // failed first; its only revision could not be rendered ⇒ final uncritiqued
+        concept({ position: 2, critique: k(2.5, false), finalCritique: null, loopOutcome: 'not_rendered', revisions: [round(1, { critiqueStatus: 'not_rendered', critiqueStats: null })] }),
+        // failed first; the revision was invalid ⇒ final = first draft
+        concept({ position: 3, critique: k(3, false), finalCritique: k(3, false), loopOutcome: 'invalid_revision', revisions: [round(1, { status: 'invalid', name: null, critiqueStatus: 'not_valid', critiqueStats: null })] }),
+      ])
+    )
+    expect(rows[0]).toMatchObject({
+      critiqued: 4,
+      firstDraftPassRate: 0.25,
+      meanCriticScore: 3.18, // (3 + 4.2 + 2.5 + 3) / 4 = 3.175
+      finalCritiqued: 3,
+      finalPassRate: 0.667,
+      meanFinalCriticScore: 3.73, // (4 + 4.2 + 3) / 3
+      revisionsUsed: 3, // the invalid round does not count
+      reviseUsd: 2, // 4 revise calls × $0.50
+      criticUsd: 1.2, // 4 first-draft × $0.25 + 2 revision critiques × $0.10
+      totalUsd: 7.2, // concepts 4 × $1 + revise 2 + critic 1.2
+    })
+    const text = summaryText(rows)
+    expect(text).toContain('first-draft pass')
+    expect(text).toContain('final pass')
+    expect(text).toContain('67%')
+  })
+
+  it('renders the loop per concept, escaped', () => {
+    const evil = '<script>x</script>'
+    const html = buildReportHtml({
+      ...report([
+        concept({
+          critique: k(3, false),
+          finalCritique: k(4, true),
+          loopOutcome: 'passed',
+          revisions: [round(1, { name: evil, errors: [evil], critique: { ...k(4, true), summary: evil } })],
+          finalBundle: { ...VALID, name: evil },
+          finalShots: [{ page: '/', viewport: 'desktop', file: 'concepts/A/c1-r1-home-desktop.webp' }],
+        }),
+      ]),
+      maxRevisions: 2,
+    })
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('Revise loop')
+    expect(html).toContain('after 1 revision')
+    expect(html).toContain('revise loop up to 2 rounds')
+    expect(html).toContain('Final pass rate')
+    expect(html).toContain('src="concepts/A/c1-r1-home-desktop.webp"')
   })
 })
