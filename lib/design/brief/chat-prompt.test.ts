@@ -24,7 +24,8 @@ describe('buildChatSystemStatic', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
     expect(s).not.toMatch(/mirrored to the MBP automatically/)
     expect(s).toContain('Your commits do NOT update the MBP')
-    expect(s).toMatch(/applying a concept, restoring or capturing a version, or editing Controls/)
+    expect(s).toMatch(/applying a concept, restoring a version, clicking “Sync palette & fonts to MBP” in Versions, or editing Controls/)
+    expect(s).not.toMatch(/capturing a version/)
   })
   it('states the font lock per tier', () => {
     expect(buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })).toContain('FONTS: LOCKED')

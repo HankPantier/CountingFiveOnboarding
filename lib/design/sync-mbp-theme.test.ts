@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
-import { paletteSummary, typographySummary, toPaletteData, syncMbpTheme } from './sync-mbp-theme'
+import { paletteSummary, typographySummary, toPaletteData, syncMbpTheme, parseThemeForMbp } from './sync-mbp-theme'
 
 vi.mock('@/lib/session/schema-cas', () => ({ updateSessionWithCas: vi.fn(async () => null) }))
 
@@ -50,7 +50,7 @@ describe('syncMbpTheme palette read failure', () => {
   it('does not overwrite swatch names when the palette read errors', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const { client, update } = fakeSupabase({ data: null, error: { message: 'blip' } })
-    await syncMbpTheme(client, { sessionId: 's', jobId: 'j', brand })
+    expect(await syncMbpTheme(client, { sessionId: 's', jobId: 'j', brand })).toBe(false)
     expect(update).not.toHaveBeenCalled()
     warn.mockRestore()
   })
@@ -60,9 +60,24 @@ describe('syncMbpTheme palette read failure', () => {
       data: { palette: { primary: { hex: '#000000', name: 'Harbor Navy' } } },
       error: null,
     })
-    await syncMbpTheme(client, { sessionId: 's', jobId: 'j', brand })
+    expect(await syncMbpTheme(client, { sessionId: 's', jobId: 'j', brand })).toBe(true)
     expect(update).toHaveBeenCalledTimes(1)
     const written = (update.mock.calls[0] as unknown as [{ palette: Record<string, { name: string }> }])[0]
     expect(written.palette.primary.name).toBe('Harbor Navy')
+  })
+})
+
+describe('parseThemeForMbp', () => {
+  it('reads the palette and normalizes typography', () => {
+    const r = parseThemeForMbp(JSON.stringify({ palette }), JSON.stringify({ typography: { headingFont: 'Fraunces' } }))
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.brand.palette.primary).toBe('#003b71')
+      expect(r.design.typography).toMatchObject({ headingFont: 'Fraunces', bodyFont: 'Public Sans' })
+    }
+  })
+  it('refuses bad JSON or an incomplete palette', () => {
+    expect(parseThemeForMbp('{', '{}').ok).toBe(false)
+    expect(parseThemeForMbp(JSON.stringify({ palette: { primary: '#000000' } }), '{}').ok).toBe(false)
   })
 })
