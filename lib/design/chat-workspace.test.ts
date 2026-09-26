@@ -4,6 +4,7 @@ import { bundleFromRepoFiles } from './bundle-files'
 import { DRAFT_FILES } from './__fixtures__/theme-texts'
 import { DEFAULT_CAPABILITIES, type DesignCapabilities } from './run-types'
 import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR } from './chat-workspace'
+import { REGION_BEGIN, REGION_END } from './bundle-files'
 import { PREVIEWS_PER_TURN } from './chat-types'
 
 const SHAS = { 'content/brand.json': 'a'.repeat(40), 'content/design.json': 'b'.repeat(40) }
@@ -33,16 +34,33 @@ describe('ChatWorkspace edits', () => {
     expect(w.apply({ kind: 'palette', patch: { primary: current().palette.primary } })).toMatchObject({ ok: true, changed: false })
     expect(w.isStaged()).toBe(false)
   })
+  it('a CSS edit that sanitizes to the staged fragment is a no-op (no phantom revision)', () => {
+    const w = ws()
+    expect(w.apply({ kind: 'css', target: 'service-cards', css: '[data-block="service-cards"] { gap: 2rem; }' })).toMatchObject({ ok: true, changed: true })
+    const staged = w.bundle()
+    // Different raw text, same sanitized CSS.
+    expect(w.apply({ kind: 'css', target: 'service-cards', css: '/* again */ [data-block="service-cards"]{gap:2rem}' })).toEqual({ ok: true, changed: false, notes: [], budget: null })
+    expect(w.revision()).toBe(1)
+    expect(w.bundle()).toBe(staged)
+    expect(w.pendingSummary().split(', ')).toHaveLength(1)
+  })
   it('refuses a contrast-breaking palette and keeps the working copy', () => {
     const w = ws()
+    const before = w.bundle()
     const r = w.apply({ kind: 'palette', patch: { nearBlack: current().palette.nearWhite } })
     expect(r.ok).toBe(false)
     expect(!r.ok && r.error).toMatch(/contrast/)
     expect(w.revision()).toBe(0)
+    expect(w.bundle()).toBe(before)
+    expect(w.isStaged()).toBe(false)
   })
   it('refuses font changes below L2 with a clear message, allows them at L2', () => {
     const other = CURATED_FONTS.find((f) => f !== current().typography.headingFont) as string
-    expect(ws().apply({ kind: 'fonts', patch: { headingFont: other } })).toEqual({ ok: false, error: FONTS_LOCKED_TOOL_ERROR })
+    const locked = ws()
+    const before = locked.bundle()
+    expect(locked.apply({ kind: 'fonts', patch: { headingFont: other } })).toEqual({ ok: false, error: FONTS_LOCKED_TOOL_ERROR })
+    expect(locked.bundle()).toBe(before)
+    expect(locked.revision()).toBe(0)
     const w2 = ws({ caps: L2 })
     expect(w2.apply({ kind: 'fonts', patch: { headingFont: other } }).ok).toBe(true)
     expect(w2.bundle().typography.headingFont).toBe(other)
@@ -52,9 +70,11 @@ describe('ChatWorkspace edits', () => {
     const r = w.apply({ kind: 'css', target: 'service-cards', css: '[data-block="service-cards"] .u-card { box-shadow: none; }' })
     expect(r).toMatchObject({ ok: true, changed: true })
     expect(r.ok && r.budget).toMatch(/^service-cards: \d+\/60 lines/)
+    const staged = w.bundle()
     const bad = w.apply({ kind: 'css', target: 'service-cards', css: '.u-card { box-shadow: none; }' })
     expect(bad.ok).toBe(false)
     expect(w.revision()).toBe(1)
+    expect(w.bundle()).toBe(staged)
   })
 })
 
@@ -131,5 +151,21 @@ describe('ChatWorkspace previews + commits', () => {
     const r = w.renderedFiles()
     expect(r.ok && r.files.overridesCss).toContain('/* hand */')
     expect(r.ok && r.files.overridesCss).toContain('design-studio:service-cards')
+  })
+  it('rebases on its own commit: after committing a fragment on a legacy draft, later renders keep ONE managed region + the hand CSS', () => {
+    const legacy = '/* hand */\n[data-block="hero"] h1 { color: var(--color-primary); }\n'
+    const w = ws({ draftFiles: { ...DRAFT_FILES, overridesCss: legacy } })
+    w.apply({ kind: 'css', target: 'service-cards', css: '[data-block="service-cards"] { gap: 2rem; }' })
+    w.markCommitted({ ...SHAS, 'content/design-overrides.css': 'e'.repeat(40) }, 'ver-1')
+    w.apply({ kind: 'css', target: 'hero', css: '[data-block="hero"] { padding-block: 4rem; }' })
+    const r = w.renderedFiles()
+    if (!r.ok) throw new Error(r.errors.join(' '))
+    const css = r.files.overridesCss
+    expect(css.split(REGION_BEGIN).length - 1).toBe(1)
+    expect(css.split(REGION_END).length - 1).toBe(1)
+    expect(css.split('/* hand */').length - 1).toBe(1)
+    expect(css).toContain('[data-block="hero"] h1 { color: var(--color-primary); }')
+    expect(css).toContain('design-studio:service-cards')
+    expect(css).toContain('design-studio:hero')
   })
 })

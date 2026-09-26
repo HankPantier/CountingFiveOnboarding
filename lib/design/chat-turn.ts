@@ -2,10 +2,12 @@
 // design-chat turn = one request:
 //   prepareChatTurn — validate + load everything BEFORE streaming (typed 4xx):
 //     the draft theme (409s), this turn's attachments (400 if missing), the
-//     capability tier, the brand brief inputs, the persisted history; then it
-//     saves the user message and builds the working copy + both prompt blocks.
+//     capability tier, the brand brief inputs, the persisted history; it builds
+//     the working copy + both prompt blocks and only THEN saves the user
+//     message (a failure before that stores nothing).
 //   streamChatTurn — the Sonnet tool loop (chatProviderOptions('medium'),
-//     cached static system block + per-turn block), then — once every queued
+//     cached static system block + per-turn block; bounded by steps AND by the
+//     turn deadline — see CHAT_WRAP_UP_MS), then — once every queued
 //     tool execute has settled — the end-of-turn auto-commit of anything still
 //     staged (streamed as data-design-commit; discarded if the stream failed),
 //     then the assistant message is persisted. Usage is summed per step and
@@ -29,6 +31,7 @@ import {
   streamText,
   type LanguageModel,
   type LanguageModelUsage,
+  type ModelMessage,
 } from 'ai'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
@@ -53,6 +56,7 @@ import {
   type ChatRequest,
 } from './chat-history'
 import { insertChatMessage, listChatMessages } from './chat-store'
+import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
 import { chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_MAX_STEPS, DEFAULT_CHAT_PAGE, TURN_BUDGET_MS, type DesignChatMessage } from './chat-types'
 import { ChatWorkspace } from './chat-workspace'
@@ -90,9 +94,28 @@ export type TurnIo = {
   commitVersion: CommitVersionFn
   preview: ChatToolDeps['preview']
   // PF1: the exact per-page time check (baseline cached or not) — chatPreviewDeps.
-  previewFits?: ChatToolDeps['previewFits']
+  previewFits: ChatToolDeps['previewFits']
   persistAssistant: (row: { id: string; content: string; parts: unknown[]; versionId: string | null }) => Promise<void>
   recordUsage: (usage: LanguageModelUsage) => Promise<void>
+  // The turn's clock (tests inject one); defaults to Date.now.
+  now?: () => number
+}
+
+// The model loop's time limits, against the turn deadline (TURN_BUDGET_MS after
+// the request started; the route's maxDuration leaves 60 s past it):
+//   - no further model step starts once less than CHAT_COMMIT_RESERVE_MS is
+//     left (stopWhen), so drain → the auto-commit → persistence → usage always
+//     get their reserve;
+//   - from CHAT_WRAP_UP_MS before that, steps are offered no tools, so the
+//     model's last step is its reply instead of a half-finished plan;
+//   - a step still running AT the deadline is aborted (the stream then counts
+//     as failed and staged edits are discarded, never half-committed).
+export const CHAT_WRAP_UP_MS = 60_000
+export const CHAT_TURN_TIMEOUT_ERROR = 'The reply ran out of time, so it was stopped.'
+const CONVERSION_FAILED_ERROR = 'The conversation could not be prepared for the assistant — nothing was changed. Try again, or clear the chat if it keeps happening.'
+
+export function chatStepTools(now: () => number, turnDeadlineAt: number): { activeTools: [] } | undefined {
+  return now() >= turnDeadlineAt - CHAT_COMMIT_RESERVE_MS - CHAT_WRAP_UP_MS ? { activeTools: [] } : undefined
 }
 
 const MISSING_ATTACHMENT = 'An attached image could not be found — attach it again.'
@@ -139,16 +162,12 @@ export async function prepareChatTurn(
   // Null signers: the model's context never carries a signed URL.
   const prior = rows.map((r) => rowToChatMessage(r, { preview: () => null, attachment: () => null }))
 
-  const userRow = await insertChatMessage(db, {
-    sessionId: actor.sessionId,
-    role: 'user',
-    content: request.text,
-    parts: [{ type: 'text', text: request.text }],
-    attachmentIds: request.attachmentIds,
-    createdBy: actor.adminId,
-  })
+  // Everything the turn needs is built BEFORE the user message is stored, so
+  // a failure here can't leave a user message with no reply. The row id is
+  // generated here and written with the insert.
+  const userId = randomUUID()
   const userMessage: DesignChatMessage = {
-    id: userRow.id,
+    id: userId,
     role: 'user',
     parts: [{ type: 'text', text: request.text }],
     metadata: { attachments: request.attachmentIds.map((id) => ({ id, url: null })) },
@@ -177,22 +196,30 @@ export async function prepareChatTurn(
 
   const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null)
   const page = request.page ?? DEFAULT_CHAT_PAGE
-  return {
-    ok: true,
-    turn: {
-      assistantId: randomUUID(),
-      userMessage,
-      history: withAttachmentImages(trimmed, images),
-      workspace: new ChatWorkspace({ current: current.bundle, draftFiles, draftShas: snapshot.shas, caps, model: INTERACTIVE_CHAT_MODEL }),
-      staticSystem: buildChatSystemStatic({ firmName: firmNameFrom(draft.files.brandText), schema, designMd: designMd?.content ?? null, caps }),
-      turnContext: buildChatTurnContext({ bundle: current.bundle, latestVersionNo: latest?.version_no ?? null, drift: drift.status, page, lastTurnNote: lastTurnNote(prior) }),
-      page,
-      target: actor,
-      baselineTheme: composedThemeFromFiles(draft.files),
-      baselineShas: snapshot.shas,
-      startedAt,
-    },
+  const turn: PreparedTurn = {
+    assistantId: randomUUID(),
+    userMessage,
+    history: withAttachmentImages(trimmed, images),
+    workspace: new ChatWorkspace({ current: current.bundle, draftFiles, draftShas: snapshot.shas, caps, model: INTERACTIVE_CHAT_MODEL }),
+    staticSystem: buildChatSystemStatic({ firmName: firmNameFrom(draft.files.brandText), schema, designMd: designMd?.content ?? null, caps }),
+    turnContext: buildChatTurnContext({ bundle: current.bundle, latestVersionNo: latest?.version_no ?? null, drift: drift.status, page, lastTurnNote: lastTurnNote(prior) }),
+    page,
+    target: actor,
+    baselineTheme: composedThemeFromFiles(draft.files),
+    baselineShas: snapshot.shas,
+    startedAt,
   }
+
+  await insertChatMessage(db, {
+    id: userId,
+    sessionId: actor.sessionId,
+    role: 'user',
+    content: request.text,
+    parts: [{ type: 'text', text: request.text }],
+    attachmentIds: request.attachmentIds,
+    createdBy: actor.adminId,
+  })
+  return { ok: true, turn }
 }
 
 function addCount(a: number | undefined, b: number | undefined): number | undefined {
@@ -219,20 +246,36 @@ function addUsage(a: LanguageModelUsage, b: LanguageModelUsage): LanguageModelUs
 
 export async function streamChatTurn(turn: PreparedTurn, io: TurnIo): Promise<Response> {
   const ws = turn.workspace
+  const now = io.now ?? Date.now
   const turnDeadlineAt = turn.startedAt + TURN_BUDGET_MS
   const commit = (summary: string) => commitWorkspace(ws, { summary, target: turn.target, commitVersion: io.commitVersion })
   const { tools, drain } = createDesignChatToolset(ws, {
     defaultPage: turn.page,
-    timeLeftMs: () => turnDeadlineAt - Date.now(),
+    timeLeftMs: () => turnDeadlineAt - now(),
     preview: io.preview,
-    ...(io.previewFits ? { previewFits: io.previewFits } : {}),
+    previewFits: io.previewFits,
     commit,
   })
   // The SAME tools object converts the history, so earlier previews go
-  // through toModelOutput (text only).
-  const messages = await convertToModelMessages(turn.history, { tools, ignoreIncompleteToolCalls: true })
+  // through toModelOutput (text only). The user message is already stored: if
+  // the conversion fails, store a short reply too so it never stands alone.
+  let messages: ModelMessage[]
+  try {
+    messages = await convertToModelMessages(turn.history, { tools, ignoreIncompleteToolCalls: true })
+  } catch (err) {
+    console.error('[design-chat] history conversion failed', err)
+    try {
+      await io.persistAssistant({ id: turn.assistantId, content: CONVERSION_FAILED_ERROR, parts: [{ type: 'text', text: CONVERSION_FAILED_ERROR }], versionId: null })
+    } catch (persistErr) {
+      console.error('[design-chat] the error reply could not be saved', persistErr)
+    }
+    return NextResponse.json({ error: CONVERSION_FAILED_ERROR }, { status: 500 })
+  }
   let streamFailed = false
   let usage: LanguageModelUsage | null = null
+  // The hard stop: a model step still running at the deadline is aborted.
+  const deadline = new AbortController()
+  const deadlineTimer = setTimeout(() => deadline.abort(new Error(CHAT_TURN_TIMEOUT_ERROR)), Math.max(0, turnDeadlineAt - now()))
 
   const stream = createUIMessageStream<DesignChatMessage>({
     originalMessages: [turn.userMessage],
@@ -249,7 +292,9 @@ export async function streamChatTurn(turn: PreparedTurn, io: TurnIo): Promise<Re
           messages,
           tools,
           maxOutputTokens: CHAT_MAX_OUTPUT_TOKENS,
-          stopWhen: stepCountIs(CHAT_MAX_STEPS),
+          stopWhen: [stepCountIs(CHAT_MAX_STEPS), () => now() >= turnDeadlineAt - CHAT_COMMIT_RESERVE_MS],
+          prepareStep: () => chatStepTools(now, turnDeadlineAt),
+          abortSignal: deadline.signal,
           onError: () => {
             streamFailed = true
           },
@@ -272,6 +317,7 @@ export async function streamChatTurn(turn: PreparedTurn, io: TurnIo): Promise<Re
         streamFailed = true
         writer.write({ type: 'error', errorText: logAndFormatAiStreamError('design-chat', err) })
       } finally {
+        clearTimeout(deadlineTimer)
         const spent = usage
         if (spent) {
           try {

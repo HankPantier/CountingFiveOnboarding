@@ -16,7 +16,7 @@ vi.mock('./chat-preview', async (orig) => ({
 
 import { CHAT_COMMIT_RESERVE_MS, CHAT_PREVIEW_FAILED_ERROR, CHAT_PREVIEW_NO_TIME_ERROR, chatPreviewRenderMs, type ChatPreviewResult } from './chat-preview'
 import { PREVIEWS_PER_TURN, TURN_BUDGET_MS, type RenderPreviewOutput } from './chat-types'
-import { MIN_PREVIEW_TIME_MS, PREVIEW_LIMIT_ERROR, PREVIEW_TIME_ERROR, buildDesignChatTools, chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
+import { MIN_PREVIEW_TIME_MS, PREVIEW_LIMIT_ERROR, PREVIEW_TIME_ERROR, chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
 
 beforeEach(() => {
   vi.resetAllMocks()
@@ -36,11 +36,12 @@ function setup(over: Partial<ChatToolDeps> = {}) {
   const deps: ChatToolDeps = {
     defaultPage: '/',
     timeLeftMs: () => 200_000,
+    previewFits: () => true,
     preview: vi.fn(async () => preview),
     commit: vi.fn(async () => ({ ok: true as const, versionId: 'ver-9', versionNo: 9, changedPaths: [], warnings: [] })),
     ...over,
   }
-  return { ws, deps, tools: buildDesignChatTools(ws, deps) }
+  return { ws, deps, tools: createDesignChatToolset(ws, deps).tools }
 }
 
 describe('edit tools', () => {
@@ -206,7 +207,7 @@ describe('drain (the turn awaits it before the auto-commit)', () => {
     const r = bundleFromRepoFiles(DRAFT_FILES, { name: 'Harbor v3', source: 'chat' })
     if (!r.ok) throw new Error('fixture')
     const ws = new ChatWorkspace({ current: r.bundle, draftFiles: DRAFT_FILES, draftShas: {}, caps: DEFAULT_CAPABILITIES, model: 'claude-sonnet-5' })
-    const { tools, drain } = createDesignChatToolset(ws, { defaultPage: '/', timeLeftMs: () => 500_000, preview, commit })
+    const { tools, drain } = createDesignChatToolset(ws, { defaultPage: '/', timeLeftMs: () => 500_000, previewFits: () => true, preview, commit })
     const tick = () => new Promise((res) => setTimeout(res, 0))
     let drained = false
     void exec(tools.render_preview, {}, 'r1')
@@ -259,7 +260,7 @@ describe('chatPreviewDeps', () => {
     expect(d.timeLeftMs()).toBeGreaterThan(0)
     m.cached.mockReturnValue(true)
     expect(d.previewFits('/about')).toBe(true)
-    expect(m.cached).toHaveBeenCalledWith(SID, SHAS, '/about')
+    expect(m.cached).toHaveBeenCalledWith(SID, TURN, SHAS, '/about')
     m.cached.mockReturnValue(false)
     expect(d.previewFits('/about')).toBe(false)
   })

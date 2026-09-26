@@ -75,6 +75,10 @@ export class ChatWorkspace {
       []
     )
     if (!v.ok) return { ok: false, error: v.errors.join(' ').slice(0, 1500) }
+    // The sanitizer may normalize the edit away (e.g. CSS that sanitizes to the
+    // fragment already staged): compare what WOULD be staged, so a no-op never
+    // bumps the revision (which would stale the preview and re-commit nothing).
+    if (sameLevers(v.concept.bundle, this.working)) return { ok: true, changed: false, notes: [], budget: null }
     this.working = { ...v.concept.bundle, name: this.working.name, meta: { source: 'chat', model: this.init.model } }
     this.rev++
     this.pending.push(describeChatEdit(edit))

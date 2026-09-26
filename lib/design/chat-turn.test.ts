@@ -15,7 +15,29 @@ const m = vi.hoisted(() => ({
   download: vi.fn(),
   caps: vi.fn(),
   readOptional: vi.fn(),
+  turnContextThrows: false,
+  convertThrows: false,
 }))
+vi.mock('ai', async (orig) => {
+  const a = (await orig()) as typeof import('ai')
+  return {
+    ...a,
+    convertToModelMessages: (...args: Parameters<typeof a.convertToModelMessages>) => {
+      if (m.convertThrows) throw new Error('unsupported part')
+      return a.convertToModelMessages(...args)
+    },
+  }
+})
+vi.mock('./brief/chat-prompt', async (orig) => {
+  const a = (await orig()) as typeof import('./brief/chat-prompt')
+  return {
+    ...a,
+    buildChatTurnContext: (...args: Parameters<typeof a.buildChatTurnContext>) => {
+      if (m.turnContextThrows) throw new Error('prompt build failed')
+      return a.buildChatTurnContext(...args)
+    },
+  }
+})
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r) }))
 vi.mock('./store', async (orig) => ({ ...((await orig()) as object), latestVersion: (...a: unknown[]) => m.latest(...a), readSessionSchema: (...a: unknown[]) => m.schema(...a) }))
 vi.mock('./chat-store', () => ({ listChatMessages: (...a: unknown[]) => m.list(...a), insertChatMessage: (...a: unknown[]) => m.insert(...a) }))
@@ -26,7 +48,9 @@ vi.mock('./apply-bundle', async (orig) => ({ ...((await orig()) as object), read
 import { bundleFromRepoFiles } from './bundle-files'
 import { ChatWorkspace } from './chat-workspace'
 import { composedThemeFromFiles } from './composed-theme'
-import { prepareChatTurn, streamChatTurn, type PreparedTurn, type TurnIo } from './chat-turn'
+import { CHAT_WRAP_UP_MS, prepareChatTurn, streamChatTurn, type PreparedTurn, type TurnIo } from './chat-turn'
+import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
+import { TURN_BUDGET_MS } from './chat-types'
 import type { DesignChatMessage } from './chat-types'
 
 const A1 = '0b6f1c2e-5d4a-4e8b-9c1d-2f3a4b5c6d7e'
@@ -38,6 +62,8 @@ const SNAP = { shas: SHAS, texts: { 'content/brand.json': BRAND_TEXT, 'content/d
 
 beforeEach(() => {
   vi.resetAllMocks()
+  m.turnContextThrows = false
+  m.convertThrows = false
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   m.snapshot.mockResolvedValue(SNAP)
@@ -71,9 +97,10 @@ describe('prepareChatTurn', () => {
   it('saves the user message, inlines this turn’s image, and builds the prompt blocks', async () => {
     const r = await prepareChatTurn(DB, ACTOR, req(), 1000)
     if (!r.ok) throw new Error(r.error)
-    expect(m.insert.mock.calls[0][1]).toMatchObject({ sessionId: SID, role: 'user', content: 'Make these cards calmer', attachmentIds: [A1], createdBy: 'admin-1' })
     const last = r.turn.history[r.turn.history.length - 1]
-    expect(last.id).toBe('user-row-1')
+    expect(m.insert.mock.calls[0][1]).toMatchObject({ id: last.id, sessionId: SID, role: 'user', content: 'Make these cards calmer', attachmentIds: [A1], createdBy: 'admin-1' })
+    expect(last.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(r.turn.userMessage.id).toBe(last.id)
     expect(last.parts).toContainEqual({ type: 'file', mediaType: 'image/webp', url: `data:image/webp;base64,${Buffer.from([1, 2, 3]).toString('base64')}` })
     expect(r.turn.workspace.bundle().name).toBe('Harbor v3')
     expect(r.turn.turnContext).toContain('the latest is v3')
@@ -81,6 +108,11 @@ describe('prepareChatTurn', () => {
     expect(r.turn.page).toBe('/')
     expect(r.turn.startedAt).toBe(1000)
     expect(r.turn.assistantId).toMatch(/^[0-9a-f-]{36}$/)
+  })
+  it('builds the whole turn BEFORE storing the user message — a failure stores nothing (no orphan user row)', async () => {
+    m.turnContextThrows = true
+    await expect(prepareChatTurn(DB, ACTOR, req(), 0)).rejects.toThrow('prompt build failed')
+    expect(m.insert).not.toHaveBeenCalled()
   })
   it('re-sends the previous user turn’s images, notes older ones, and carries a blocked last turn', async () => {
     m.list.mockResolvedValue([
@@ -132,10 +164,13 @@ describe('streamChatTurn', () => {
   const ERROR_STEP: LanguageModelV3StreamPart[] = [{ type: 'stream-start', warnings: [] }, { type: 'error', error: new Error('overloaded') }]
 
   // One scripted stream per model step (step 1, step 2, …; the last repeats).
-  function model(steps: LanguageModelV3StreamPart[][]) {
+  function model(steps: LanguageModelV3StreamPart[][], onStep?: (i: number) => void) {
     let i = 0
     return new MockLanguageModelV3({
-      doStream: async () => ({ stream: simulateReadableStream({ chunks: steps[Math.min(i++, steps.length - 1)] }) }),
+      doStream: async () => {
+        onStep?.(i)
+        return { stream: simulateReadableStream({ chunks: steps[Math.min(i++, steps.length - 1)] }) }
+      },
     })
   }
   function turn(): PreparedTurn {
@@ -168,6 +203,7 @@ describe('streamChatTurn', () => {
         css: { blocks: {} },
       })),
       preview: vi.fn<TurnIo['preview']>(),
+      previewFits: vi.fn<TurnIo['previewFits']>(() => true),
       persistAssistant: vi.fn<TurnIo['persistAssistant']>(async () => {}),
       recordUsage: vi.fn<TurnIo['recordUsage']>(async () => {}),
     }
@@ -254,5 +290,65 @@ describe('streamChatTurn', () => {
     ])
     await (await streamChatTurn(turn(), { ...deps, previewFits: () => false })).text()
     expect(deps.preview).not.toHaveBeenCalled()
+  })
+  it('orphan guard: a history that can’t be converted gets a short stored reply and a 500, never a lone user message', async () => {
+    m.convertThrows = true
+    const t = turn()
+    const deps = io([TEXT_STEP])
+    const res = await streamChatTurn(t, deps)
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ error: expect.stringMatching(/could not be prepared/) })
+    expect(deps.persistAssistant).toHaveBeenCalledWith(expect.objectContaining({ id: t.assistantId, versionId: null, content: expect.stringMatching(/could not be prepared/) }))
+    expect(deps.model.doStreamCalls).toHaveLength(0)
+  })
+
+  describe('time limits (injected clock)', () => {
+    it('starts no model step once only the commit reserve is left — the staged edit is still auto-committed, persisted and billed', async () => {
+      const t = turn()
+      let clock = t.startedAt
+      const deps = io([TOOL_STEP, TEXT_STEP])
+      // Step 1 "takes" until the commit reserve is all that is left.
+      const timed = { ...deps, model: model([TOOL_STEP, TEXT_STEP], (i) => { if (i === 0) clock = t.startedAt + TURN_BUDGET_MS - CHAT_COMMIT_RESERVE_MS }), now: () => clock }
+      const body = await (await streamChatTurn(t, timed)).text()
+      expect(timed.model.doStreamCalls).toHaveLength(1)
+      expect(body).toContain('"status":"committed"')
+      expect(deps.commitVersion).toHaveBeenCalledTimes(1)
+      await vi.waitFor(() => expect(deps.persistAssistant).toHaveBeenCalled())
+      expect(deps.recordUsage).toHaveBeenCalledTimes(1)
+    })
+    it('keeps looping while there is time', async () => {
+      const t = turn()
+      const deps = io([TOOL_STEP, TEXT_STEP])
+      await (await streamChatTurn(t, { ...deps, now: () => t.startedAt })).text()
+      expect(deps.model.doStreamCalls).toHaveLength(2)
+    })
+    it('offers no tools in the wrap-up window, so the last step is the reply', async () => {
+      const t = turn()
+      const deps = io([TEXT_STEP])
+      const clock = t.startedAt + TURN_BUDGET_MS - CHAT_COMMIT_RESERVE_MS - CHAT_WRAP_UP_MS + 1
+      await (await streamChatTurn(t, { ...deps, now: () => clock })).text()
+      expect(deps.model.doStreamCalls[0].tools ?? []).toEqual([])
+      const early = io([TEXT_STEP])
+      await (await streamChatTurn(turn(), { ...early, now: () => t.startedAt })).text()
+      expect((early.model.doStreamCalls[0].tools ?? []).length).toBeGreaterThan(0)
+    })
+    it('aborts a step still running at the deadline; the turn still finishes and is persisted', async () => {
+      const t = { ...turn(), startedAt: Date.now() + 50 - TURN_BUDGET_MS }
+      const hanging = new MockLanguageModelV3({
+        doStream: async (opts) => ({
+          stream: new ReadableStream<LanguageModelV3StreamPart>({
+            start(c) {
+              c.enqueue({ type: 'stream-start', warnings: [] })
+              opts.abortSignal?.addEventListener('abort', () => c.error(opts.abortSignal?.reason))
+            },
+          }),
+        }),
+      })
+      const deps = io([TEXT_STEP])
+      const body = await (await streamChatTurn(t, { ...deps, model: hanging })).text()
+      expect(body).toMatch(/"type":"(error|abort)"/)
+      expect(deps.commitVersion).not.toHaveBeenCalled()
+      await vi.waitFor(() => expect(deps.persistAssistant).toHaveBeenCalled())
+    })
   })
 })

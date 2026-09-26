@@ -4,8 +4,8 @@
 // URLs, the WebP bytes for the model, and render metrics. The render checks
 // are baseline-diffed against the TURN-START draft on the same page (P4
 // semantics: a defect the site already has never blocks), measured once per
-// (session, theme blobs, page) — measure-only, never stored, never shown to
-// the model — and cached in-process.
+// (session, turn, theme blobs, page) — measure-only, never stored, never shown
+// to the model — and cached in-process for the rest of that turn.
 //
 // Time (PF1): every render is bounded by RENDER_DEADLINE_MS, so a preview
 // costs 2 renders when the baseline is cached and 4 when it isn't. The tool
@@ -66,14 +66,17 @@ export function __resetChatBaselineCacheForTests(): void {
 
 // Keyed by the page as the caller asked for it (so the tool can ask
 // isChatBaselineCached before any network call); a differently-spelled path to
-// the same page only costs an extra measurement. Scoped to the session: two
-// clients can share identical theme blobs but never a preview site.
-export function baselineCacheKey(shas: ThemeBlobShas, pagePath: string, sessionId = ''): string {
-  return `${sessionId}|${THEME_FILE_PATHS.map((p) => shas[p] ?? '-').join(':')}|${pagePath}`
+// the same page only costs an extra measurement. Scoped to the session (two
+// clients can share identical theme blobs but never a preview site) AND to the
+// turn: the live page shell can change between turns without the theme blobs
+// changing, so a baseline is only reused by the previews of the turn that
+// measured it.
+export function baselineCacheKey(sessionId: string, turnId: string, shas: ThemeBlobShas, pagePath: string): string {
+  return `${sessionId}|${turnId}|${THEME_FILE_PATHS.map((p) => shas[p] ?? '-').join(':')}|${pagePath}`
 }
 
-export function isChatBaselineCached(sessionId: string, shas: ThemeBlobShas, pagePath: string): boolean {
-  return baselineCache.has(baselineCacheKey(shas, pagePath, sessionId))
+export function isChatBaselineCached(sessionId: string, turnId: string, shas: ThemeBlobShas, pagePath: string): boolean {
+  return baselineCache.has(baselineCacheKey(sessionId, turnId, shas, pagePath))
 }
 
 function remember(key: string, metrics: RenderMetrics): void {
@@ -123,7 +126,7 @@ export async function renderChatPreview(args: {
   }
   if (!loaded.ok) return failed(loaded.reason)
 
-  const key = baselineCacheKey(args.baselineShas, args.page, args.target.sessionId)
+  const key = baselineCacheKey(args.target.sessionId, args.turnId, args.baselineShas, args.page)
   let baseline = baselineCache.get(key) ?? null
   if (args.turnDeadlineAt !== undefined && !chatPreviewFits({ now: Date.now(), turnDeadlineAt: args.turnDeadlineAt, baselineCached: baseline !== null })) {
     return failed(CHAT_PREVIEW_NO_TIME_ERROR)
@@ -142,7 +145,8 @@ export async function renderChatPreview(args: {
         store: false,
       })
       baseline = measured.metrics
-      // Only a complete baseline is cached; a partial one is retried next time.
+      // Only a complete baseline is cached; a partial one is retried next time
+      // (and the gate treats the viewports it lacks as unmeasured — chat-gate).
       if (baseline && baseline.viewports.length === 2) remember(key, baseline)
     }
 

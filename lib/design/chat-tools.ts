@@ -53,7 +53,7 @@ export type ChatToolDeps = {
   commit: (summary: string) => Promise<CommitOutput>
   // PF1: whether a preview of `page` started now still leaves
   // CHAT_COMMIT_RESERVE_MS (baseline cached or not). chatPreviewDeps provides it.
-  previewFits?: (page: string) => boolean
+  previewFits: (page: string) => boolean
 }
 
 // One turn's binding of render_preview to renderChatPreview (see header).
@@ -64,12 +64,12 @@ export function chatPreviewDeps(args: {
   baselineTheme: ComposedTheme
   baselineShas: ThemeBlobShas
   turnDeadlineAt: number
-}): Pick<ChatToolDeps, 'timeLeftMs' | 'preview'> & { previewFits: (page: string) => boolean } {
+}): Pick<ChatToolDeps, 'timeLeftMs' | 'preview' | 'previewFits'> {
   const { db, target, turnId, baselineTheme, baselineShas, turnDeadlineAt } = args
   return {
     timeLeftMs: () => turnDeadlineAt - Date.now(),
     previewFits: (page) =>
-      chatPreviewFits({ now: Date.now(), turnDeadlineAt, baselineCached: isChatBaselineCached(target.sessionId, baselineShas, page) }),
+      chatPreviewFits({ now: Date.now(), turnDeadlineAt, baselineCached: isChatBaselineCached(target.sessionId, turnId, baselineShas, page) }),
     preview: (page, previewNo, theme) => renderChatPreview({ db, target, turnId, previewNo, page, theme, baselineTheme, baselineShas, turnDeadlineAt }),
   }
 }
@@ -178,7 +178,7 @@ export function createDesignChatToolset(ws: ChatWorkspace, deps: ChatToolDeps) {
           const path = page ?? deps.defaultPage
           // PF1: the end-of-turn auto-commit always keeps its reserve.
           if (deps.timeLeftMs() < MIN_PREVIEW_TIME_MS) return { ok: false, error: PREVIEW_TIME_ERROR }
-          if (deps.previewFits && !deps.previewFits(path)) return { ok: false, error: PREVIEW_TIME_ERROR }
+          if (!deps.previewFits(path)) return { ok: false, error: PREVIEW_TIME_ERROR }
           // A working copy that can't become theme files costs no slot.
           const revision = ws.revision()
           const theme = chatPreviewTheme(ws.renderedFiles())
@@ -237,8 +237,4 @@ export function createDesignChatToolset(ws: ChatWorkspace, deps: ChatToolDeps) {
     }),
   }
   return { tools, drain }
-}
-
-export function buildDesignChatTools(ws: ChatWorkspace, deps: ChatToolDeps) {
-  return createDesignChatToolset(ws, deps).tools
 }

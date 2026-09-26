@@ -57,11 +57,22 @@ describe('renderChatPreview', () => {
     expect(m.render).toHaveBeenCalledTimes(3) // baseline cached for the same blobs + page
   })
   it('a different page or draft re-measures the baseline', () => {
-    expect(baselineCacheKey(SHAS, '/')).not.toBe(baselineCacheKey(SHAS, '/services'))
-    expect(baselineCacheKey(SHAS, '/')).not.toBe(baselineCacheKey({ 'content/brand.json': 'b'.repeat(40) }, '/'))
+    expect(baselineCacheKey(SID, TURN, SHAS, '/')).not.toBe(baselineCacheKey(SID, TURN, SHAS, '/services'))
+    expect(baselineCacheKey(SID, TURN, SHAS, '/')).not.toBe(baselineCacheKey(SID, TURN, { 'content/brand.json': 'b'.repeat(40) }, '/'))
   })
-  it('scopes the baseline cache to the session', () => {
-    expect(baselineCacheKey(SHAS, '/', 'a')).not.toBe(baselineCacheKey(SHAS, '/', 'b'))
+  it('scopes the baseline cache to the session and the turn', () => {
+    expect(baselineCacheKey('a', TURN, SHAS, '/')).not.toBe(baselineCacheKey('b', TURN, SHAS, '/'))
+    expect(baselineCacheKey(SID, TURN, SHAS, '/')).not.toBe(baselineCacheKey(SID, 'other-turn', SHAS, '/'))
+  })
+  it('never reuses a baseline measured in an earlier turn', async () => {
+    await renderChatPreview(args())
+    expect(isChatBaselineCached(SID, TURN, SHAS, '/')).toBe(true)
+    const NEXT = '9e0f1a2b-3c4d-4e5f-8a6b-7c8d9e0f1a2b'
+    expect(isChatBaselineCached(SID, NEXT, SHAS, '/')).toBe(false)
+    m.render.mockClear()
+    await renderChatPreview(args({ turnId: NEXT }))
+    expect(m.render).toHaveBeenCalledTimes(2) // baseline re-measured + the preview
+    expect((m.render.mock.calls[0][0] as { store?: boolean }).store).toBe(false)
   })
   it('reports an unloadable page without rendering', async () => {
     m.shell.mockResolvedValue({ ok: false, reason: 'No preview URL is set for this client.' })
@@ -92,13 +103,22 @@ describe('renderChatPreview', () => {
         : { shots: [SHOT], images: [], desktopWebp: null, metrics: METRICS, error: null }
     )
     await renderChatPreview(args())
-    expect(isChatBaselineCached(SID, SHAS, '/')).toBe(false)
+    expect(isChatBaselineCached(SID, TURN, SHAS, '/')).toBe(false)
     await renderChatPreview(args({ previewNo: 2 }))
     expect(m.render).toHaveBeenCalledTimes(4)
   })
+  it('returns an incomplete baseline as is (the gate treats its missing viewport as unmeasured)', async () => {
+    const partial = { v: 1, viewports: [{ viewport: 'desktop' }] }
+    m.render.mockImplementation(async (a: { store?: boolean }) =>
+      a.store === false
+        ? { shots: [], images: [], desktopWebp: null, metrics: partial, error: 'The render timed out.' }
+        : { shots: [SHOT], images: [], desktopWebp: null, metrics: METRICS, error: null }
+    )
+    expect((await renderChatPreview(args())).baseline).toEqual(partial)
+  })
 
   it('PF1: reports the baseline cache state and refuses a preview that would eat the commit reserve', async () => {
-    expect(isChatBaselineCached(SID, SHAS, '/')).toBe(false)
+    expect(isChatBaselineCached(SID, TURN, SHAS, '/')).toBe(false)
     expect(chatPreviewRenderMs(false)).toBe(4 * 45_000)
     expect(chatPreviewRenderMs(true)).toBe(2 * 45_000)
     expect(CHAT_COMMIT_RESERVE_MS).toBe(45_000)
@@ -109,7 +129,7 @@ describe('renderChatPreview', () => {
     expect(m.render).not.toHaveBeenCalled()
 
     await renderChatPreview(args())
-    expect(isChatBaselineCached(SID, SHAS, '/')).toBe(true)
+    expect(isChatBaselineCached(SID, TURN, SHAS, '/')).toBe(true)
     // Cached needs 90 s + 45 s: 200 s left is enough.
     const ok = await renderChatPreview(args({ previewNo: 2, turnDeadlineAt: Date.now() + 200_000 }))
     expect(ok.error).toBeNull()
