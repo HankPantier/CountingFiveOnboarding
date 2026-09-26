@@ -35,7 +35,7 @@ export const STYLE_AXES = {
   },
   nav: {
     attribute: 'data-c5-nav',
-    summary: 'Top navigation: bordered = hairline under the bar, inverted = primary-colour bar with light text.',
+    summary: 'Top navigation: bordered = strong brand rule under the bar, inverted = primary-colour bar with light text.',
     values: ['default', 'bordered', 'inverted'],
   },
   footer: {
