@@ -5,6 +5,8 @@ import { stampProvenance } from '@/lib/mbp/provenance'
 import type { GapItem } from '@/types/gap-item'
 import type { SessionSchema } from '@/types/session-schema'
 import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
+import { isBaseStale } from '@/lib/mbp/suggestion-guards'
+import type { MbpSuggestionBase } from '@/types/mbp'
 
 type Supabase = ReturnType<typeof createServerClient>
 
@@ -31,11 +33,18 @@ export async function applyMbpUpdate(
   // `appends` pushes one item onto the array at each path. The push happens on
   // the FRESH row inside the compare-and-swap, so two approvals appending to the
   // same array both land instead of the second overwriting the first.
-  options?: { appliedPaths?: string[]; appends?: Record<string, unknown> }
-): Promise<{ success: boolean; error?: string }> {
+  // `expect` lists base snapshots that must still match the FRESH row (checked
+  // inside the compare-and-swap): if any differs, nothing is written and the
+  // stale paths are returned so the caller can refuse a stale suggestion.
+  options?: { appliedPaths?: string[]; appends?: Record<string, unknown>; expect?: MbpSuggestionBase[] }
+): Promise<{ success: boolean; error?: string; stale?: string[] }> {
+  let stale: string[] = []
   try {
     await updateSessionWithCas(supabase, sessionId, current => {
       let schema = (current.schema_data as Record<string, unknown>) ?? {}
+
+      stale = (options?.expect ?? []).filter(b => isBaseStale(b, schema)).map(b => b.path)
+      if (stale.length > 0) return { skip: true, result: null }
       const overridePaths: string[] = []
 
       for (const [fieldPath, value] of Object.entries(updates)) {
@@ -84,5 +93,6 @@ export async function applyMbpUpdate(
     console.error('[applyMbpUpdate] write failed:', err)
     return { success: false, error: "Couldn't save the change" }
   }
+  if (stale.length > 0) return { success: false, stale, error: 'Changed since suggested' }
   return { success: true }
 }

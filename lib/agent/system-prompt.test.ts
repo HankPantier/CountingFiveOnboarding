@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSystemPrompt, serializeSchemaFull } from './system-prompt'
+import { buildSystemPrompt, buildSystemPromptParts, serializeSchemaFull } from './system-prompt'
 import type { Database } from '@/types/database'
 
 type Session = Pick<
@@ -78,5 +78,29 @@ describe('serializeSchemaFull', () => {
     const out = serializeSchemaFull({ technical: { registrar: 'NameCheap', registrarPin: '4455' } })
     expect(out).toContain('NameCheap')
     expect(out).not.toContain('4455')
+  })
+})
+
+describe('buildSystemPromptParts — cache ordering', () => {
+  it('keeps the stable block identical across phases, schema writes, gaps and notes', () => {
+    const a = buildSystemPromptParts(session({ current_phase: 3, schema_data: { _meta: { mode: 'staff' }, business: { name: 'A' } } }))
+    const b = buildSystemPromptParts(session({
+      current_phase: 4,
+      schema_data: { _meta: { mode: 'staff' }, business: { name: 'B', tagline: 'new' } },
+      call_notes: 'notes',
+      gap_list: [{ field: 'business.tagline', tier: 1, resolved: false }] as unknown as Session['gap_list'],
+    }))
+    expect(a.stable).toBe(b.stable)
+    expect(a.dynamic).not.toBe(b.dynamic)
+  })
+
+  it('puts the phase and collected data only in the later dynamic block', () => {
+    const parts = buildSystemPromptParts(session({ current_phase: 4, schema_data: { _meta: { mode: 'staff' }, business: { name: 'Acme CPA' } } }))
+    expect(parts.stable).not.toContain('Acme CPA')
+    expect(parts.stable).not.toContain('CURRENT PHASE: 4')
+    expect(parts.stable).toContain('GUARDRAILS:')
+    expect(parts.dynamic.startsWith('CURRENT PHASE: 4')).toBe(true)
+    expect(parts.dynamic).toContain('Acme CPA')
+    expect(buildSystemPrompt(session({ current_phase: 4 }))).toContain('TOOL INSTRUCTIONS:')
   })
 })

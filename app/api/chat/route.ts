@@ -3,7 +3,7 @@ import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
-import { buildSystemPrompt } from '@/lib/agent/system-prompt'
+import { buildSystemPromptParts } from '@/lib/agent/system-prompt'
 import { validatePhaseAdvance } from '@/lib/agent/phase-validators'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { applyChatUpdates, resolveGapsAfterUpdate, sanitizeChatUpdates } from '@/lib/agent/chat-updates'
@@ -11,9 +11,9 @@ import { readJsonBody } from '@/app/api/_json'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import type { SessionSchema } from '@/types/session-schema'
 import { recordTokenUsage } from '@/lib/content/token-usage'
-import { extractCacheUsage } from '@/lib/content/cache-control'
+import { CACHE_EPHEMERAL, extractCacheUsage } from '@/lib/content/cache-control'
 import { INTERACTIVE_CHAT_MODEL, FAST_MODEL, FAST_CHAT_PROVIDER_OPTIONS, chatProviderOptions } from '@/lib/content/generation-tuning'
-import { aiStreamErrorMessage } from '@/lib/ai/ai-error'
+import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { asJson } from '@/lib/supabase/json-typed'
 import { z } from 'zod'
@@ -147,7 +147,10 @@ export async function POST(req: Request) {
       }
     }
 
-    const systemPrompt = buildSystemPrompt(session)
+    // Stable rules first (cache breakpoint), then the per-turn phase/schema
+    // block — a schema write between turns never invalidates the cached prefix.
+    const systemParts = buildSystemPromptParts(session)
+    const systemPrompt = `${systemParts.stable}\n\n${systemParts.dynamic}`
     const trimmed = trimMessages(messages)
     const modelMessages = await convertToModelMessages(trimmed)
 
@@ -184,7 +187,10 @@ export async function POST(req: Request) {
     const result = streamText({
       model,
       providerOptions,
-      system: systemPrompt,
+      system: [
+        { role: 'system', content: systemParts.stable, providerOptions: CACHE_EPHEMERAL },
+        { role: 'system', content: systemParts.dynamic },
+      ],
       messages: modelMessages,
       tools: {
         update_session_data: {
@@ -223,8 +229,8 @@ export async function POST(req: Request) {
       // A mid-stream failure (Anthropic error, tool throw, timeout) fires neither
       // onFinish nor onAbort — without this the lock strands for up to 3 minutes
       // and every retry gets a 429 "Already processing". Release it here too.
-      onError: async ({ error: streamError }) => {
-        console.error('[chat] stream error:', streamError)
+      // Logging/classification happens once, in the response onError below.
+      onError: async () => {
         try {
           await supabase.from('sessions').update({ processing: false }).eq('id', sessionId)
         } catch (err) {
@@ -278,10 +284,12 @@ export async function POST(req: Request) {
 
     // Surface a real, safe message to the client instead of the SDK default
     // (which masks stream errors as an empty string → a bare "— please try
-    // again." banner with no explanation). Classify Claude/Anthropic outages so
-    // the client's error banner tells the user it's a provider issue + next steps.
+    // again." banner with no explanation). logAndFormatAiStreamError logs the
+    // real error under the [ai-error] tag, raises the credit-exhausted admin
+    // banner when that's the cause, and classifies provider outages for the
+    // client's error banner.
     return result.toUIMessageStreamResponse({
-      onError: (error) => aiStreamErrorMessage(error),
+      onError: (error) => logAndFormatAiStreamError('onboarding-chat', error),
     })
   } catch (err) {
     await supabase.from('sessions').update({ processing: false }).eq('id', sessionId)

@@ -34,12 +34,40 @@ export interface ApplyAuditEditResult {
   applied: string[]
 }
 
+// Per-audit write queue. The AI SDK runs every tool call in a step
+// concurrently, so two edit_audit calls in one step would both read the same
+// `result`, and the second whole-JSONB write would silently drop the first.
+// audit_runs has no version column to compare-and-set against, so edits to the
+// same audit are chained here: each read-modify-write starts only after the
+// previous one has written. Entries are removed once their chain drains.
+const editQueues = new Map<string, Promise<unknown>>()
+
+function serializePerAudit<T>(auditId: string, task: () => Promise<T>): Promise<T> {
+  const prev = editQueues.get(auditId) ?? Promise.resolve()
+  const run = prev.then(task, task)
+  const tail = run.catch(() => undefined)
+  editQueues.set(auditId, tail)
+  void tail.then(() => {
+    if (editQueues.get(auditId) === tail) editQueues.delete(auditId)
+  })
+  return run
+}
+
 // Single write path for audit report edits — used by the report edit chat tool
 // (app/api/audits/[id]/chat). Applies each dotted fieldPath to
 // `audit_runs.result` via deepSetPath (which handles array-index segments like
 // `intelligence.niche_services.detected_niches.0.note`), then writes the JSONB
-// back. Never touches denormalized score columns.
-export async function applyAuditEdit(
+// back. Never touches denormalized score columns. Calls for the same audit are
+// serialized (see serializePerAudit) so concurrent tool calls never lose edits.
+export function applyAuditEdit(
+  supabase: Supabase,
+  auditId: string,
+  updates: Record<string, unknown>
+): Promise<ApplyAuditEditResult> {
+  return serializePerAudit(auditId, () => applyAuditEditNow(supabase, auditId, updates))
+}
+
+async function applyAuditEditNow(
   supabase: Supabase,
   auditId: string,
   updates: Record<string, unknown>
@@ -98,6 +126,9 @@ export async function applyAuditEdit(
     .update({ result: asJson(result as unknown as AuditResult) })
     .eq('id', auditId)
 
-  if (error) return { success: false, applied: [], error: error.message }
+  if (error) {
+    console.error('[audit-edit] write failed:', error.message)
+    return { success: false, applied: [], error: "Couldn't save the edit — try again." }
+  }
   return { success: true, applied }
 }
