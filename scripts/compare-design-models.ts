@@ -266,6 +266,7 @@ async function main() {
     for (const viewport of VIEWPORTS) {
       try {
         const r = await renderComposed({ html, shellOrigin: shell.origin, viewport, crops: false, metrics: true })
+        if (!r.fontsReady) notes.push(`Fonts not ready — ${fileBase} ${page} ${viewport} was captured with the webfonts that had loaded.`)
         if (r.sample) measured.push(evaluatePageSample(viewport, r.sample))
         const fold = r.shots.find((s) => s.kind === 'fold')
         if (!fold) continue
