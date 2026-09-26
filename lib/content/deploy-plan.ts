@@ -4,8 +4,9 @@
 // protect yet). Every LATER push must not silently revert what operators, the
 // editor, Theme Studio or the Design Studio changed on draft since:
 //
-//   - site config (brand/design/nav/blog/client-center + the theme files) is
-//     never overwritten once it exists on draft — only created when absent;
+//   - site config (brand/design/nav/blog/client-center + the theme files:
+//     src/styles/theme.css and, on T1+ templates, src/app/fonts.generated.ts)
+//     is never overwritten once it exists on draft — only created when absent;
 //   - redirects.csv is MERGED (new generated rows appended; editor-added 301s
 //     and rows an operator deliberately removed are left alone);
 //   - every other generated file is pushed only when its current draft blob is
@@ -35,6 +36,10 @@ export const SITE_CONFIG_PATHS: ReadonlySet<string> = new Set([
   'content/client-center.json',
   'content/design-overrides.css',
   'src/styles/theme.css',
+  // FONTS_MODULE_PATH (lib/design/drift.ts). A literal, not an import: this
+  // module is imported by client components and must not drag in the theme
+  // generators drift.ts pulls in. deploy-plan.test.ts asserts they're equal.
+  'src/app/fonts.generated.ts',
 ])
 
 export type SkipReason =

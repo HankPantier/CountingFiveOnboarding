@@ -66,6 +66,10 @@ import { deriveImageStyleSuffix } from '@/lib/content/visual-style-derivation'
 import { resolveStockPhotos, buildCreditsMarkdown, type ResolvedStockPhoto } from '@/lib/content/stock-photo-resolver'
 import { collectPageImageRefs, computeImageCoverage } from '@/lib/content/image-coverage'
 import { activeTeam } from '@/lib/content/active-team'
+import { themeDeployEntries } from '@/lib/content/theme-deploy-entries'
+import { TEMPLATE_MARKER_PATH } from '@/lib/design/capabilities'
+import type { BrandJson } from '@/types/brand-json'
+import type { DesignJson } from '@/types/design-json'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
@@ -110,6 +114,11 @@ export type DeployContext = {
   siteUrl: string
   booking: { provider: 'none' | 'calendly' | 'iframe'; url: string }
   author: { authorName: string; authorEmail: string }
+  // The exact brand/design objects written to content/brand.json + design.json.
+  // The theme files (theme.css, + the fonts module on T1+ templates) are
+  // generated from these at push-planning time, once the draft's template
+  // marker is known — see themeDeployEntries().
+  theme: { brandJson: BrandJson; designJson: DesignJson }
 }
 
 export type PushOutcome =
@@ -750,6 +759,7 @@ export async function assembleContentPackage(
       siteUrl: session.website_url.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://'),
       booking: { provider: siteSettings.bookingProvider, url: siteSettings.bookingUrl },
       author: { authorName: actor.name, authorEmail: actor.email ?? DEFAULT_COMMIT_AUTHOR.email },
+      theme: { brandJson, designJson },
     }
   }
 
@@ -795,6 +805,8 @@ export type DeployState = {
   draftBlobs: Map<string, string>
   baseline: Record<string, string> | null
   redirects: { draft: string | null; lastDeployed: string | null }
+  /** The draft's c5-template.json text (template capabilities); null when absent. */
+  markerText: string | null
 }
 
 async function readTextBySha(slug: string, sha: string | null | undefined): Promise<string | null> {
@@ -839,7 +851,8 @@ export async function loadDeployState(slug: string): Promise<DeployState> {
         draft: await readTextBySha(slug, draftBlobs.get(REDIRECTS_CSV_PATH)),
         lastDeployed: await readTextBySha(slug, baseline[REDIRECTS_CSV_PATH]),
       }
-  return { draftBlobs, baseline, redirects }
+  const markerText = await readTextBySha(slug, draftBlobs.get(TEMPLATE_MARKER_PATH))
+  return { draftBlobs, baseline, redirects, markerText }
 }
 
 // Decide what a push of this deliverable may write (see deploy-plan.ts). The
@@ -847,8 +860,14 @@ export async function loadDeployState(slug: string): Promise<DeployState> {
 // re-deploy keeps; the push re-plans itself if draft moves in between.
 export async function planDeliverablePush(deploy: DeployContext): Promise<DeployPlan> {
   const state = await loadDeployState(deploy.githubRepo)
+  // The theme files join the package here, not at assembly: whether the fonts
+  // module ships depends on the DRAFT's template marker. They come from a fixed
+  // two-path allowlist (never through the content/ + public/ entries filter),
+  // and a fresh array is built per plan — deploy.entries is never mutated, so a
+  // StaleShaError re-plan can't append them twice.
+  const theme = themeDeployEntries({ ...deploy.theme, markerText: state.markerText })
   return planDeployPush({
-    entries: deploy.entries,
+    entries: [...deploy.entries, ...theme],
     draftBlobs: state.draftBlobs,
     baseline: state.baseline,
     redirects: state.redirects,
