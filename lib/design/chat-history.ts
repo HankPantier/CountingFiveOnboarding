@@ -3,6 +3,7 @@
 // never reasoning), DB row → UI message, and the history the model sees —
 // trimmed to a budget, with attachment images only on the last 2 user turns.
 import type { Tables } from '@/types/database'
+import { checkPagePath } from '@/lib/theme-preview/page-path'
 import { isPlainObject, isUuid } from './input-validation'
 import {
   CHAT_TEXT_MAX,
@@ -31,12 +32,26 @@ export function parseChatRequest(raw: unknown): { ok: true; request: ChatRequest
   if (attachmentIds.length > MAX_ATTACHMENTS_PER_MESSAGE) return { ok: false, error: `Attach at most ${MAX_ATTACHMENTS_PER_MESSAGE} images per message.` }
   let page: string | null = null
   if (raw.page !== undefined && raw.page !== null) {
-    if (typeof raw.page !== 'string' || !raw.page.startsWith('/') || raw.page.startsWith('//') || raw.page.length > MAX_PAGE_PATH_LENGTH) {
-      return { ok: false, error: 'page must be a site path like /services.' }
-    }
-    page = raw.page
+    const checked = parseChatPage(raw.page)
+    if (!checked.ok) return checked
+    page = checked.page
   }
   return { ok: true, request: { text, attachmentIds, page } }
+}
+
+const PAGE_ERROR = 'page must be a site path like /services.'
+
+// The page the admin is on: the SAME rules the renderer's
+// resolvePreviewPageUrl applies (decode first, then reject \ ? #, dot or empty
+// segments, protocol-relative or cross-origin paths — CLAUDE.md rule 8),
+// checked here so a bad page is a 400 before anything is stored. The decoded
+// path is kept; one that still holds a '%' is refused so a later decode is a
+// no-op.
+function parseChatPage(value: unknown): { ok: true; page: string } | { ok: false; error: string } {
+  if (typeof value !== 'string' || value.length > MAX_PAGE_PATH_LENGTH) return { ok: false, error: PAGE_ERROR }
+  const checked = checkPagePath(value)
+  if (!checked.ok || checked.path.includes('%')) return { ok: false, error: PAGE_ERROR }
+  return { ok: true, page: checked.path }
 }
 
 export function messageText(m: Pick<DesignChatMessage, 'parts'>): string {
@@ -131,13 +146,17 @@ export function imageTurnIds(messages: DesignChatMessage[]): string[] {
   return messages.filter((m) => m.role === 'user').slice(-IMAGE_USER_TURNS).map((m) => m.id)
 }
 
+// Inlines `images` on the image turns ONLY (imageTurnIds — the last
+// IMAGE_USER_TURNS user turns of `messages`); images passed for any other turn
+// are ignored, and every other turn that had attachments gets a text note.
 export function withAttachmentImages(
   messages: DesignChatMessage[],
   images: Record<string, { mediaType: string; base64: string }[]>
 ): DesignChatMessage[] {
+  const imageTurns = new Set(imageTurnIds(messages))
   return messages.map((m) => {
     if (m.role !== 'user') return m
-    const inline = images[m.id] ?? []
+    const inline = imageTurns.has(m.id) ? (images[m.id] ?? []) : []
     if (inline.length > 0) {
       const files: Parts = inline.map((i) => ({ type: 'file' as const, mediaType: i.mediaType, url: `data:${i.mediaType};base64,${i.base64}` }))
       return { ...m, parts: [...m.parts, ...files] }
@@ -154,10 +173,11 @@ export function withAttachmentImages(
 export function lastTurnNote(messages: DesignChatMessage[]): string | null {
   const last = [...messages].reverse().find((m) => m.role === 'assistant')
   if (!last) return null
-  for (const p of last.parts) {
-    if (p.type === 'data-design-commit' && p.data.status === 'blocked') {
-      return `NOTE: your previous turn's changes were NOT saved (${p.data.error}). Nothing from that turn is on the draft — redo them if the admin still wants them.`
-    }
+  // Stored parts come back from jsonb — read them defensively.
+  for (const p of last.parts as unknown[]) {
+    if (!isPlainObject(p) || p.type !== 'data-design-commit' || !isPlainObject(p.data) || p.data.status !== 'blocked') continue
+    const error = typeof p.data.error === 'string' && p.data.error.trim() ? p.data.error : 'the save was refused'
+    return `NOTE: your previous turn's changes were NOT saved (${error}). Nothing from that turn is on the draft — redo them if the admin still wants them.`
   }
   return null
 }
