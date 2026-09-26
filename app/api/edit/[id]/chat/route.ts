@@ -20,6 +20,7 @@ import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { sanitizeGeneratedText, humanizeDashes } from '@/lib/content/anti-slop-validator'
 import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
+import { checkChatSpendLimit } from '@/lib/ai/chat-spend-limit'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
@@ -74,6 +75,11 @@ export async function POST(
   }
 
   const supabase = createServerClient()
+
+  // Per-user spend ceiling (lowest for Site Owners), checked before any model
+  // call or GitHub read — see lib/ai/chat-spend-limit.ts.
+  const overLimit = await checkChatSpendLimit(supabase, user)
+  if (overLimit) return overLimit
 
   // The live working copy of the file. Every tool edits this in memory, commits
   // to the draft branch, then advances the sha so the next tool builds on the
@@ -189,10 +195,15 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
   // The page is its own system block AFTER the cached one: it changes with every
   // edit, so keeping it out of the marked prefix lets follow-up turns re-read
   // tools + instructions + firm context from cache.
-  const systemFile = `THE FILE BEING EDITED (${path}):
+  const systemFile = `THE FILE BEING EDITED (${path}) — as it was at the START of this request. Every successful tool call in this run changes it; the tool results are authoritative for what changed since, so never rebuild content (e.g. a set_faq list) that re-adds text an earlier tool removed:
 """
 ${workingContent}
 """`
+
+  // Phrases remove_text cleared earlier in this run. set_faq rebuilds the FAQ
+  // from the model's view of the file (the start-of-run snapshot above), so it
+  // can quietly write a removed phrase back — re-check these after it commits.
+  const removedThisRun: { find: string; caseInsensitive: boolean }[] = []
 
   const result = streamText({
       model: anthropic(INTERACTIVE_CHAT_MODEL),
@@ -319,7 +330,20 @@ ${workingContent}
               return { error: err instanceof Error ? err.message : 'Failed to save the FAQ.' }
             }
             const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
-            return { success: true, count: faqItems.length, ...(noGoWarning.length ? { noGoWarning } : {}) }
+            const residual = removedThisRun
+              .map(r => ({ find: r.find, remaining: countPhrase(workingContent, r.find, r.caseInsensitive) }))
+              .filter(r => r.remaining > 0)
+            return {
+              success: true,
+              count: faqItems.length,
+              ...(noGoWarning.length ? { noGoWarning } : {}),
+              ...(residual.length
+                ? {
+                    residual,
+                    residualNote: 'This FAQ re-added text removed earlier in this run. Run remove_text again for these phrases.',
+                  }
+                : {}),
+            }
           },
         },
         remove_text: {
@@ -361,6 +385,9 @@ ${workingContent}
               } catch (err) {
                 return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
               }
+            }
+            for (const r of removals as { find: string; replace?: string }[]) {
+              if (r.find && r.find.trim() !== '' && !r.replace) removedThisRun.push({ find: r.find, caseInsensitive: ci })
             }
             // Page-scoped edit only, but a phrase living in a firm-wide source
             // (brand.json or the firm profile) reappears on the next rebuild —
@@ -447,21 +474,31 @@ ${workingContent}
             } catch (err) {
               return { error: err instanceof Error ? err.message : 'Failed to update brand.json.' }
             }
-            await insertMbpSuggestion(supabase, {
-              sessionId: sessionId,
-              origin: 'content_edit',
-              sourceRef: path,
-              summary: `Update firm ${field}`,
-              changes,
-              schema: rawSchema,
-            })
+            let mbpFlagged = false
+            try {
+              mbpFlagged = (
+                await insertMbpSuggestion(supabase, {
+                  sessionId: sessionId,
+                  origin: 'content_edit',
+                  sourceRef: path,
+                  summary: `Update firm ${field}`,
+                  changes,
+                  schema: rawSchema,
+                })
+              ).filed
+            } catch (err) {
+              console.error('[edit-chat] firm-contact MBP suggestion failed:', err)
+            }
+            const site = patched
+              ? 'Updated site-wide (brand.json). Publish to push it live.'
+              : 'brand.json was not changed (missing, unreadable, or already up to date); the site picks up the profile value at the next rebuild.'
             return {
               success: true,
               brandJsonUpdated: patched,
-              mbpFlagged: true,
-              note: patched
-                ? 'Updated site-wide (brand.json) and flagged the firm profile for review. Publish to push it live.'
-                : 'Flagged the firm profile for review; it will apply the next time the site is rebuilt.',
+              mbpFlagged,
+              note: mbpFlagged
+                ? `${site} Flagged the firm profile (MBP) for review.`
+                : `${site} Could NOT flag the firm profile (MBP) for review — tell the admin it needs a manual update.`,
             }
           },
         },

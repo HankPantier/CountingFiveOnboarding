@@ -13,6 +13,7 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { extractCacheUsage } from '@/lib/content/cache-control'
 import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
+import { checkChatSpendLimit } from '@/lib/ai/chat-spend-limit'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
 import { normalizeSlug } from '../../create-page/_slug'
 import { buildStarterPage, generateNewPage } from '@/lib/content/new-page-generator'
@@ -72,6 +73,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (body instanceof NextResponse) return body
   const { messages } = body
   const supabase = createServerClient()
+
+  // Per-user spend ceiling, checked before any model call or GitHub work —
+  // see lib/ai/chat-spend-limit.ts.
+  const overLimit = await checkChatSpendLimit(supabase, user)
+  if (overLimit) return overLimit
 
   try {
     await ensureDraftBranch(githubRepo)
