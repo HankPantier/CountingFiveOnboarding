@@ -30,7 +30,7 @@ ${styleLever(caps)}`
 }
 
 function styleLever(caps: DesignCapabilities): string {
-  if (!styleAxesUnlocked(caps)) return '- Never emit a "style" field (style axes are not available on this site).'
+  if (!styleAxesUnlocked(caps)) return '- Never emit a "style" field (style axes are not available to you).'
   return `- style (optional): template style presets — { <axis>: <value> }; omit an axis (or use "default") to keep the default look. Prefer a preset over hand CSS for the same effect. Axes:
 ${styleAxesSummary()}
   When an axis is set, css.blocks.<id> may also be prefixed by it, e.g. html[data-c5-cards="flat"] [data-block="service-cards"] … (attribute = data-c5-<kebab axis>).`
