@@ -399,9 +399,20 @@ describe('writeFile', () => {
     expect(createOrUpdateFileContents).toHaveBeenCalledTimes(2)
   })
 
+  it('does not pre-read the branch (a lagged read of our own last commit is not a conflict)', async () => {
+    // A lagged branch read would still show the blob before our previous
+    // commit; the Contents API enforces `sha` itself, so no read happens.
+    getContent.mockResolvedValue({ data: { type: 'file', sha: 'previousBlob', content: '', encoding: 'base64' } })
+    createOrUpdateFileContents.mockResolvedValueOnce({ data: { commit: { sha: 'c' }, content: { sha: 'b2' } } })
+    const res = await writeFile('site', 'content/pages/a.md', 'x', 'draft', 'm', { expectedSha: 'justWritten' })
+    expect(res).toEqual({ commitSha: 'c', blobSha: 'b2' })
+    expect(getContent).not.toHaveBeenCalled()
+    expect(createOrUpdateFileContents.mock.calls[0][0]).toMatchObject({ sha: 'justWritten' })
+    getContent.mockReset()
+  })
+
   it('maps a 409 caused by a real sha change to StaleShaError', async () => {
     getContent
-      .mockResolvedValueOnce({ data: { type: 'file', sha: 's1', content: '', encoding: 'base64' } })
       .mockResolvedValueOnce({ data: { type: 'file', sha: 's2', content: Buffer.from('new').toString('base64'), encoding: 'base64' } })
     createOrUpdateFileContents.mockRejectedValueOnce(reqError(409, 'conflict'))
     const err = await writeFile('site', 'content/pages/a.md', 'x', 'draft', 'm', { expectedSha: 's1' }).catch(

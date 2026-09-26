@@ -638,9 +638,12 @@ const WRITE_FILE_ATTEMPTS = 3
 
 // Write or create a file on the given branch. If expectedSha is supplied and
 // does not match the file's current sha on the branch, throws StaleShaError
-// with the remote content so the caller can present a conflict UI. A 409 from
-// the Contents API is either a real sha mismatch (→ StaleShaError) or the branch
-// moving under a concurrent commit (→ retried with jitter).
+// with the remote content so the caller can present a conflict UI. The
+// Contents API enforces `sha` atomically, so there is NO pre-read: a branch read
+// right after the caller's own commit can still return the previous tip and
+// would raise a spurious conflict. The file is read only after the API rejects
+// the write — a 409 is either a real sha mismatch (→ StaleShaError) or the
+// branch moving under a concurrent commit (→ retried with jitter).
 export async function writeFile(
   slug: string,
   path: string,
@@ -662,11 +665,10 @@ export async function writeFile(
     }
   }
 
-  if (options.expectedSha !== undefined) {
+  // An empty expectedSha can never match a real blob — report the conflict.
+  if (options.expectedSha === '') {
     const existing = await readCurrentOrStale()
-    if (existing.sha !== options.expectedSha) {
-      throw new StaleShaError(path, existing.sha, existing.content)
-    }
+    throw new StaleShaError(path, existing.sha, existing.content)
   }
 
   const payload: Parameters<typeof octokit.repos.createOrUpdateFileContents>[0] = {
@@ -690,14 +692,17 @@ export async function writeFile(
         blobSha: res.data.content?.sha ?? '',
       }
     } catch (err) {
-      if (!isRequestError(err) || err.status !== 409) throw err
-      if (options.expectedSha !== undefined) {
-        // Distinguish a real lost update from a ref race: re-read the file.
+      if (!isRequestError(err)) throw err
+      const guarded = options.expectedSha !== undefined
+      // 409 = sha mismatch or ref race; 404/422 on a guarded write = the file
+      // is gone or the sha isn't its blob. Read now to tell them apart.
+      if (guarded && (err.status === 409 || err.status === 404 || err.status === 422)) {
         const existing = await readCurrentOrStale()
         if (existing.sha !== options.expectedSha) {
           throw new StaleShaError(path, existing.sha, existing.content)
         }
       }
+      if (err.status !== 409) throw err
       if (attempt >= WRITE_FILE_ATTEMPTS) throw err
       const delay = 250 * attempt + Math.floor(Math.random() * 250)
       console.warn(`[github] writeFile ${slug}:${path}: 409 (attempt ${attempt}/${WRITE_FILE_ATTEMPTS}) — retrying in ${delay}ms`)
