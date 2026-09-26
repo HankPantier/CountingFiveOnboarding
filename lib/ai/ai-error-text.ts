@@ -78,3 +78,26 @@ export function classifyAiErrorText(text: string | null | undefined): AiErrorInf
     ? { isProviderIssue: true, kind, userMessage: aiErrorMessageFor(kind) }
     : { isProviderIssue: false, kind: 'unknown', userMessage: aiErrorMessageFor('unknown') }
 }
+
+// DefaultChatTransport (ai SDK) surfaces a non-2xx fetch response by throwing
+// `new Error(await response.text())` — so a 429/500 with a JSON body like
+// `{ "error": "You've reached..." }` (e.g. the chat spend-limit ceiling in
+// lib/ai/chat-spend-limit.ts) reaches useChat()'s `error.message` as the raw
+// JSON string, and components render it verbatim in AiIssueNotice. Unwrap that
+// JSON envelope back into its human-readable text; anything that isn't a JSON
+// object with a string `error` field (plain text, malformed JSON) passes
+// through unchanged.
+export function unwrapChatErrorMessage(message: string): string {
+  const trimmed = message.trim()
+  if (!trimmed.startsWith('{')) return message
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+      const err = (parsed as { error?: unknown }).error
+      if (typeof err === 'string' && err.trim()) return err
+    }
+  } catch {
+    // Malformed JSON-looking text — fall through to the original message.
+  }
+  return message
+}

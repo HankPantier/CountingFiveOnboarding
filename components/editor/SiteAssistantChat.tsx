@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
+import { unwrapChatErrorMessage } from '@/lib/ai/ai-error-text'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
 
 type GenStatus = 'generating' | 'complete' | 'error'
@@ -168,7 +169,7 @@ export default function SiteAssistantChat({
         </div>
       )}
 
-      {error && <AiIssueNotice message={error.message} />}
+      {error && <AiIssueNotice message={unwrapChatErrorMessage(error.message)} />}
 
       {status === 'ready' && committed && (
         <p className="border-t border-success/30 bg-success/10 px-4 py-2 font-body text-xs text-success">
