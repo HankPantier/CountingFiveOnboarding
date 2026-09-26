@@ -27,9 +27,12 @@ export interface DraftCriticInput {
 // scored_at stamped). It does not touch the DB or the content — persistence and
 // any auto-remediation are the caller's job (see reviewAndMaybeRegen in
 // content-generator). Fail-soft: any error (generation, parse) resolves to null.
+// `opts.timeoutMs` bounds the whole critic call (both parse attempts); callers
+// running inside a shared invocation (after()) clip it to the time left.
 export async function scoreDraft(
   input: DraftCriticInput,
   model: string = CRITIC_MODEL,
+  opts?: { timeoutMs?: number },
 ): Promise<CriticReview | null> {
   const body = input.contentMarkdown?.trim()
   if (!body) return null
@@ -87,7 +90,11 @@ Return ONLY JSON:
     parseCritic,
     8000,
     { task: 'content', stage: 'critic', sessionId: input.sessionId, contentJobId: input.contentJobId, pageUrl: input.pageUrl },
-    { model, providerOptions: GENERATION_PROVIDER_OPTIONS },
+    {
+      model,
+      providerOptions: GENERATION_PROVIDER_OPTIONS,
+      ...(opts?.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    },
   )
 
   if (!parsed) return null
