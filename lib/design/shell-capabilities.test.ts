@@ -4,7 +4,7 @@ const m = vi.hoisted(() => ({ siteUrl: vi.fn(), get: vi.fn() }))
 vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: (a: unknown) => m.siteUrl(a) }))
 vi.mock('@/lib/audit/crawl', () => ({ safeGet: (u: string) => m.get(u) }))
 
-import { SHELL_READ_DEADLINE_MS, __resetShellCapabilitiesCacheForTests, parseShellCapabilities, readShellCapabilities } from './shell-capabilities'
+import { SHELL_READ_DEADLINE_MS, UNVERIFIED_TTL_MS, __resetShellCapabilitiesCacheForTests, parseShellCapabilities, readShellCapabilities } from './shell-capabilities'
 
 const page = (meta: string) => ({ status: 200, contentType: 'text/html', finalUrl: 'https://a.test/', body: `<html><head>${meta}</head></html>` })
 
@@ -52,15 +52,22 @@ describe('readShellCapabilities', () => {
     ['final 3xx (redirect chain gave up)', () => m.get.mockResolvedValue({ ...page(''), status: 301 })],
     ['non-html', () => m.get.mockResolvedValue({ ...page(''), contentType: 'application/json' })],
     ['throws', () => m.get.mockRejectedValue(new Error('boom'))],
-  ])('is unverified (and uncached) on %s', async (_n, arrange) => {
+  ])('is unverified (negative-cached for 15s only) on %s', async (_n, arrange) => {
     arrange()
     const args = { jobId: 'j', githubRepo: 'o/r' }
     expect(await readShellCapabilities(args, 1000)).toEqual({ status: 'unverified' })
-    // The failure must not be cached: a later successful read within the TTL
-    // hits the network again and verifies.
+    // Within the short negative TTL the failure is served from cache (no
+    // second preview-URL read or fetch).
+    const siteUrlCalls = m.siteUrl.mock.calls.length
+    const getCalls = m.get.mock.calls.length
     m.siteUrl.mockReset().mockResolvedValue('https://a.test')
     m.get.mockReset().mockResolvedValue(page('<meta name="c5-capabilities" content="fonts">'))
-    expect(await readShellCapabilities(args, 2000)).toEqual({ status: 'verified', capabilities: ['fonts'] })
+    expect(await readShellCapabilities(args, 1000 + UNVERIFIED_TTL_MS - 1)).toEqual({ status: 'unverified' })
+    expect(m.siteUrl).not.toHaveBeenCalled()
+    expect(m.get).not.toHaveBeenCalled()
+    expect(siteUrlCalls + getCalls).toBeGreaterThan(0)
+    // After it, the next read hits the network again and verifies.
+    expect(await readShellCapabilities(args, 1000 + UNVERIFIED_TTL_MS)).toEqual({ status: 'verified', capabilities: ['fonts'] })
     expect(m.get).toHaveBeenCalledTimes(1)
   })
   describe('overall deadline', () => {
@@ -77,7 +84,23 @@ describe('readShellCapabilities', () => {
       await vi.advanceTimersByTimeAsync(1)
       expect(settled).toEqual({ status: 'unverified' })
       m.get.mockReset().mockResolvedValue(page('<meta name="c5-capabilities" content="fonts">'))
-      expect(await readShellCapabilities(args, 2000)).toEqual({ status: 'verified', capabilities: ['fonts'] })
+      expect(await readShellCapabilities(args, 1000 + UNVERIFIED_TTL_MS)).toEqual({ status: 'verified', capabilities: ['fonts'] })
+    })
+    it('with the real clock: unverified is cached ~15s, verified 60s (fake timers)', async () => {
+      vi.setSystemTime(new Date('2026-09-26T12:00:00Z'))
+      const args = { jobId: 'j2', githubRepo: 'o/r' }
+      m.get.mockResolvedValue(null)
+      expect(await readShellCapabilities(args)).toEqual({ status: 'unverified' })
+      await vi.advanceTimersByTimeAsync(UNVERIFIED_TTL_MS - 1000)
+      expect(await readShellCapabilities(args)).toEqual({ status: 'unverified' })
+      expect(m.get).toHaveBeenCalledTimes(1)
+      m.get.mockResolvedValue(page('<meta name="c5-capabilities" content="fonts">'))
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await readShellCapabilities(args)).toEqual({ status: 'verified', capabilities: ['fonts'] })
+      expect(m.get).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(await readShellCapabilities(args)).toEqual({ status: 'verified', capabilities: ['fonts'] })
+      expect(m.get).toHaveBeenCalledTimes(2)
     })
     it('a hung preview-url read also hits the deadline', async () => {
       m.siteUrl.mockReturnValue(new Promise(() => {}))

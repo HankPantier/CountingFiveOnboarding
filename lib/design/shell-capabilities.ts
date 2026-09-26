@@ -4,8 +4,10 @@
 // Absent meta on a reachable page = a template that predates T1 → []. An
 // unreachable page is 'unverified' (callers keep the draft tier — see
 // intersectWithShell). Verified reads are cached per job + repo for 60 s;
-// failures (incl. the overall SHELL_READ_DEADLINE_MS timeout) are never cached. Never throws: the fetch goes through the same
-// SSRF-guarded, timeout-bounded safeGet the preview shell uses.
+// 'unverified' results (incl. the overall SHELL_READ_DEADLINE_MS timeout) get
+// a short 15 s negative cache, so a down/protected preview doesn't cost up to
+// 6 s on every read within one chat turn. Never throws: the fetch goes through
+// the same SSRF-guarded, timeout-bounded safeGet the preview shell uses.
 import { safeGet } from '@/lib/audit/crawl'
 import { getPreviewSiteUrl } from '@/lib/theme-preview/site-url'
 
@@ -16,6 +18,7 @@ const TOKEN_RE = /^[a-z0-9][a-z0-9-]{0,39}$/
 const MAX_TOKENS = 20
 const MAX_SCAN = 200_000
 const TTL_MS = 60_000
+export const UNVERIFIED_TTL_MS = 15_000
 const CACHE_MAX = 200
 const cache = new Map<string, { at: number; value: ShellCapabilities }>()
 
@@ -75,7 +78,7 @@ export async function readShellCapabilities(
 ): Promise<ShellCapabilities> {
   const key = `${args.jobId}\u0000${args.githubRepo}`
   const hit = cache.get(key)
-  if (hit && now - hit.at < TTL_MS) return hit.value
+  if (hit && now - hit.at < (hit.value.status === 'verified' ? TTL_MS : UNVERIFIED_TTL_MS)) return hit.value
 
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<ShellCapabilities>((resolve) => {
@@ -87,7 +90,6 @@ export async function readShellCapabilities(
   } finally {
     clearTimeout(timer)
   }
-  if (value.status !== 'verified') return value
   if (cache.size >= CACHE_MAX) cache.clear()
   cache.set(key, { at: now, value })
   return value
