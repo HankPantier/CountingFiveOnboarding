@@ -1,6 +1,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
+import { styleAxisHtmlAttributes, type StyleAxes } from '@/lib/design/style-axes'
 
 // The four files the theme editor owns in a client site repo. brand.json +
 // design.json are the source of truth; theme.css is regenerated from them (never
@@ -22,6 +23,8 @@ export type ThemeSources = {
   darkSections: boolean
   spacing: DesignJson['spacing']
   radius: DesignJson['radius']
+  /** Design Studio style axes (normalized, non-default only; absent = all default). */
+  style?: StyleAxes
   /** The client's committed theme.css on draft — the real artifact the preview renders. */
   themeCss: string
   /** Per-client design-overrides.css on draft. */
@@ -43,6 +46,20 @@ export function normalizeTypography(
   const googleFontsUrl =
     t?.googleFontsUrl || gfUrl(Array.from(new Set([headingFont, bodyFont, accentFont])))
   return { headingFont, bodyFont, accentFont, googleFontsUrl }
+}
+
+// The <html> attributes a draft-theme preview sets on the live shell: the
+// treatment flags plus every style-axis attribute (null removes a live axis the
+// draft no longer sets). Mirrors lib/design/composed-theme.ts so the Controls
+// preview and the design render route match every other composition site.
+export function themeSourcesHtmlAttributes(
+  sources: Pick<ThemeSources, 'headlineStyle' | 'eyebrowStyle' | 'style'>,
+): Record<string, string | null> {
+  return {
+    'data-headline': sources.headlineStyle,
+    'data-eyebrow': sources.eyebrowStyle,
+    ...styleAxisHtmlAttributes(sources.style),
+  }
 }
 
 export type PreviewUrlInfo = {

@@ -7,6 +7,7 @@ import { resolvePreviewPageUrl } from '@/lib/theme-preview/page-path'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
 import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { loadDraftThemeSources } from '@/lib/design/theme-sources'
+import { themeSourcesHtmlAttributes } from '@/app/api/edit/[id]/theme/_theme'
 import type { ViewportKey } from '@/lib/design/render/harden'
 import { toWebp, designStoragePath, storeDesignImage, signDesignPaths } from '@/lib/design/storage'
 import { requireDesignAdmin } from '../_design'
@@ -101,7 +102,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       themeCss: sources.themeCss,
       overridesCss: sources.overridesCss,
       typography: sources.typography,
-      htmlAttributes: { 'data-headline': sources.headlineStyle, 'data-eyebrow': sources.eyebrowStyle },
+      htmlAttributes: themeSourcesHtmlAttributes(sources),
     })
 
     const result = await renderComposed({ html, shellOrigin: shell.origin, viewport, crops: viewport === 'desktop' && body.crops !== false })

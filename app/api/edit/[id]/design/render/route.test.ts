@@ -10,7 +10,7 @@ vi.mock('../_design', () => ({ requireDesignAdmin: (id: string) => gate(id) }))
 vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: async () => 'https://bblcpa.vercel.app/' }))
 const shellOrigin = { value: 'https://bblcpa.vercel.app/' }
 vi.mock('@/lib/theme-preview/build-preview-shell', () => ({
-  buildPreviewShell: async () => ({ ok: true, origin: shellOrigin.value, shellHtml: '<html><head><!--__C5_THEME_SLOT__--></head><body></body></html>' }),
+  buildPreviewShell: async () => ({ ok: true, origin: shellOrigin.value, shellHtml: '<html data-c5-footer="brand"><head><!--__C5_THEME_SLOT__--></head><body></body></html>' }),
 }))
 vi.mock('@/lib/design/theme-sources', () => ({
   loadDraftThemeSources: async () => ({
@@ -21,6 +21,7 @@ vi.mock('@/lib/design/theme-sources', () => ({
       typography: { headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces', googleFontsUrl: 'https://fonts.googleapis.com/css2?family=Inter' },
       headlineStyle: 'serif',
       eyebrowStyle: 'standard',
+      style: { cards: 'flat', nav: 'inverted' },
     },
   }),
 }))
@@ -113,6 +114,16 @@ describe('POST /design/render', () => {
     expect(body.path).toBe('/services')
     expect(body.timings.renderMs).toBe(900)
     expect(body.timings.steps).toEqual({ newContext: 3, route: 1, newPage: 2, setContent: 400, settle: 50, fonts: 30, fold: 80 })
+  })
+
+  it("applies the draft's style axes to <html> and removes live axes the draft does not set", async () => {
+    const res = await POST(req({ path: '/', viewport: 'desktop' }), params)
+    expect(res.status).toBe(200)
+    const call = render.mock.calls[0][0] as { html: string }
+    const htmlTag = /<html\b[^>]*>/.exec(call.html)?.[0] ?? ''
+    expect(htmlTag).toContain('data-c5-cards="flat"')
+    expect(htmlTag).toContain('data-c5-nav="inverted"')
+    expect(htmlTag).not.toContain('data-c5-footer')
   })
 
   it('maps RendererUnavailableError to 503', async () => {
