@@ -98,6 +98,19 @@ export const OUTLINE_PROVIDER_OPTIONS = {
   } satisfies AnthropicProviderOptions,
 }
 
+// Medium-effort background option for generateMbpJson callers whose output
+// meaningfully affects audit scoring/narrative quality but isn't the
+// published-content writer (which stays at GENERATION_PROVIDER_OPTIONS/high).
+// Sits between OUTLINE_PROVIDER_OPTIONS (low, cheap classification/extraction)
+// and the high-effort writer tiers — used by audit-intelligence passes whose
+// judgment feeds a client-facing score or the final narrative.
+export const BACKGROUND_MEDIUM_PROVIDER_OPTIONS = {
+  anthropic: {
+    thinking: { type: 'adaptive', display: 'omitted' },
+    effort: 'medium',
+  } satisfies AnthropicProviderOptions,
+}
+
 // Effort ladder for RETRIES. A first attempt keeps today's quality exactly —
 // high effort, unchanged. What changes is what a *failed* page gets next.
 //

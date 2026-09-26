@@ -3,6 +3,7 @@
 // content is original or syndicated/white-labeled and what to do about it.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
+import { OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import type { AuditResult, ContentLibraryFormat, ContentLibraryIntelligence } from '../types'
 
 export const ARTICLE_URL_RE = /\/(blog|resources?|insights?|articles?|news|posts?|quick-?reads?|magazine)\b/i
@@ -99,6 +100,9 @@ ${sampleText}`
       },
       1200,
       ctx,
+      // Short syndication/originality judgment over a handful of samples, not
+      // a scored headline section — low effort.
+      { providerOptions: OUTLINE_PROVIDER_OPTIONS },
     )
     if (judged) {
       syndication_assessment = judged.syndication_assessment

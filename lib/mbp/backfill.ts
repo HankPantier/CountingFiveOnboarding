@@ -4,6 +4,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { serializeSchemaFull } from '@/lib/agent/system-prompt'
+import { OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import type { Json } from '@/types/database'
 import type { SessionSchema } from '@/types/session-schema'
 import type { MbpChangeOp, MbpSuggestionChanges } from '@/types/mbp'
@@ -129,7 +130,11 @@ Return ONLY JSON:
 { "changes": [ { "fieldPath": "...", "op": "set" | "append", "proposedValue": "...", "rationale": "..." } ] }`,
     parseBackfill,
     8000,
-    { task: 'onboarding', stage: 'mbp', sessionId }
+    { task: 'onboarding', stage: 'mbp', sessionId },
+    // Background derivation that only files pending suggestions for admin
+    // review, not the content writer — low effort, matching the
+    // impact-review/pre-gen-enrichment callers of similar weight.
+    { providerOptions: OUTLINE_PROVIDER_OPTIONS }
   )
 
   if (!result || result.changes.length === 0) return { created: 0 }

@@ -6,6 +6,7 @@ import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { deepSetPath, getByPath } from '@/lib/mbp/schema-write'
 import { stampProvenance } from '@/lib/mbp/provenance'
 import { serializeSchemaFull } from '@/lib/agent/system-prompt'
+import { OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import type { SessionSchema } from '@/types/session-schema'
 import type { Json } from '@/types/database'
 import type { MbpChangeOp, MbpSuggestionChanges } from '@/types/mbp'
@@ -114,6 +115,10 @@ export async function preGenEnrichMbp(sessionId: string): Promise<{ created: num
     parseEnrich,
     8000,
     { task: 'onboarding', stage: 'mbp', sessionId },
+    // Background derivation (files pending suggestions / auto-applies only
+    // empty+high-confidence fields), not the content writer — low effort,
+    // matching the impact-review/backfill callers of similar weight.
+    { providerOptions: OUTLINE_PROVIDER_OPTIONS },
   )
 
   if (!result || result.changes.length === 0) return { created: 0, applied: 0 }

@@ -5,6 +5,7 @@
 // in the structured inputs passed in — no new facts.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
+import { BACKGROUND_MEDIUM_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { CATEGORY_META } from '../report-format'
 import type {
   AuditIntelligence,
@@ -148,5 +149,10 @@ Provide 4-6 recommendations, ordered most-impactful first. Return only the JSON.
 STRUCTURED FINDINGS:
 ${buildContext(result, intel)}`
 
-  return generateMbpJson<NarrativeIntelligence>(prompt, validate, 4000, ctx)
+  // Medium effort: this is the client-facing executive summary, per-section
+  // commentary, and prioritized recommendations — the report's closing
+  // synthesis of every other pass, not a cheap classification call.
+  return generateMbpJson<NarrativeIntelligence>(prompt, validate, 4000, ctx, {
+    providerOptions: BACKGROUND_MEDIUM_PROVIDER_OPTIONS,
+  })
 }

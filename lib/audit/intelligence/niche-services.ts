@@ -5,6 +5,7 @@
 // 0–100 score + A–F grade ourselves (deterministic) from the sub-scores.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
+import { BACKGROUND_MEDIUM_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { getGrade } from '../scoring'
 import type { CorpusPage } from '../corpus'
 import type {
@@ -175,12 +176,20 @@ export async function analyzeNicheServices(
     console.warn('[niche-services] no crawlable text corpus — niche content cannot be captured')
     return null
   }
+  // Medium effort: this section is the sample's centerpiece — the headline
+  // score/grade the client sees plus the per-niche/service rewrite guidance —
+  // so it warrants more than the cheap classification passes elsewhere in the
+  // audit pipeline.
   const result = await generateMbpJson<NicheServicesResult>(
     buildPrompt(corpus, siteName),
     validate,
     6000,
     ctx,
-    { attempts: NICHE_ATTEMPTS, accept: (r) => hasNicheContent(r.niche_services) },
+    {
+      attempts: NICHE_ATTEMPTS,
+      accept: (r) => hasNicheContent(r.niche_services),
+      providerOptions: BACKGROUND_MEDIUM_PROVIDER_OPTIONS,
+    },
   )
   if (!result) {
     console.warn(`[niche-services] no usable result after ${NICHE_ATTEMPTS} attempts`)

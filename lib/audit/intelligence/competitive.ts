@@ -4,6 +4,7 @@
 // a Serper key — returns null (section omitted) without one.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
+import { BACKGROUND_MEDIUM_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { getGrade } from '../scoring'
 import { serperEnabled, serperSearch } from '../serper-search'
 import type { CompetitiveIntelligence, DetectedNiche, KeywordRanking } from '../types'
@@ -67,6 +68,8 @@ Return JSON: { "keywords": [ up to ${MAX_KEYWORDS} realistic buyer search querie
     },
     600,
     ctx,
+    // Cheap keyword derivation, not a judged/scored section — low effort.
+    { providerOptions: OUTLINE_PROVIDER_OPTIONS },
   )
   return result?.keywords ?? null
 }
@@ -122,6 +125,9 @@ Return JSON:
 }
 Return only the JSON.`
 
+  // Medium effort: this judgment (AI-search presence + local SEO) feeds the
+  // section's headline sub-scores and client-facing commentary directly —
+  // more than the mechanical keyword derivation above warrants.
   return generateMbpJson(
     prompt,
     (parsed) => {
@@ -140,6 +146,7 @@ Return only the JSON.`
     },
     900,
     ctx,
+    { providerOptions: BACKGROUND_MEDIUM_PROVIDER_OPTIONS },
   )
 }
 
