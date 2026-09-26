@@ -3,7 +3,7 @@ import type { ToolExecutionOptions } from 'ai'
 import { SID } from './__fixtures__/rows'
 import { DRAFT_FILES } from './__fixtures__/theme-texts'
 import { bundleFromRepoFiles } from './bundle-files'
-import { DEFAULT_CAPABILITIES } from './run-types'
+import { DEFAULT_CAPABILITIES, type DesignCapabilities } from './run-types'
 import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR } from './chat-workspace'
 import type { ComposedTheme } from './composed-theme'
 
@@ -27,10 +27,12 @@ async function exec<I>(t: { execute?: (input: I, o: ToolExecutionOptions) => unk
   if (!t.execute) throw new Error('tool has no execute')
   return (await t.execute(input, OPTS(id))) as Record<string, unknown>
 }
-function setup(over: Partial<ChatToolDeps> = {}) {
+const L3: DesignCapabilities = { level: 3, source: 'marker', templateVersion: '3', capabilities: ['fonts', 'style-axes'] }
+
+function setup(over: Partial<ChatToolDeps> = {}, caps: DesignCapabilities = DEFAULT_CAPABILITIES) {
   const r = bundleFromRepoFiles(DRAFT_FILES, { name: 'Harbor v3', source: 'chat' })
   if (!r.ok) throw new Error('fixture')
-  const ws = new ChatWorkspace({ current: r.bundle, draftFiles: DRAFT_FILES, draftShas: {}, caps: DEFAULT_CAPABILITIES, model: 'claude-sonnet-5' })
+  const ws = new ChatWorkspace({ current: r.bundle, draftFiles: DRAFT_FILES, draftShas: {}, caps, model: 'claude-sonnet-5' })
   const shot = { viewport: 'desktop' as const, path: `design/${SID}/renders/chat/t-p1-desktop.webp`, width: 1440, height: 900, url: 'https://signed/p1' }
   const preview: ChatPreviewResult = { shots: [shot], images: [{ viewport: 'desktop', webp: Buffer.from('webp-bytes') }], metrics: null, baseline: null, error: null }
   const deps: ChatToolDeps = {
@@ -57,10 +59,26 @@ describe('edit tools', () => {
     expect(await exec(tools.set_treatments, { darkSections: true })).toMatchObject({ ok: true })
     expect(ws.isStaged()).toBe(true)
   })
-  it('has no style_axes tool (P6b)', () => {
+  it('has a set_style_axes tool that stages a change at L3', async () => {
+    const { ws, tools } = setup({}, L3)
+    expect(await exec(tools.set_style_axes, { nav: 'inverted' })).toMatchObject({ ok: true, changed: true })
+    expect(ws.bundle().style).toEqual({ nav: 'inverted' })
+    expect(ws.isStaged()).toBe(true)
+  })
+  it('lists exactly the edit + preview + commit tools, including set_style_axes', () => {
     const { tools } = setup()
     expect(Object.keys(tools).sort()).toEqual(
-      ['commit_version', 'remove_block_css', 'render_preview', 'set_block_css', 'set_fonts', 'set_palette', 'set_tokens', 'set_treatments']
+      [
+        'commit_version',
+        'remove_block_css',
+        'render_preview',
+        'set_block_css',
+        'set_fonts',
+        'set_palette',
+        'set_style_axes',
+        'set_tokens',
+        'set_treatments',
+      ]
     )
   })
 })

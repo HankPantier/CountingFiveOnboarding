@@ -8,7 +8,7 @@
 // the request (P5 R1: no staged state between turns, no migration).
 import type { DesignBundle } from './bundle'
 import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from './bundle-files'
-import { fontsUnlocked } from './capabilities'
+import { fontsUnlocked, styleAxesUnlocked } from './capabilities'
 import { applyChatEdit, describeChatEdit, fragmentOf, sameLevers, type ChatEdit, type CssFragmentKey } from './chat-edits'
 import { PREVIEWS_PER_TURN } from './chat-types'
 import { checkConceptCandidate } from './concept-validate'
@@ -19,6 +19,8 @@ import type { ThemeBlobShas } from './studio-types'
 
 export const FONTS_LOCKED_TOOL_ERROR =
   'Fonts are locked on this site (its template is below L2) — nothing was changed. Express type through the type-scale custom properties, tracking and treatments instead.'
+export const STYLE_LOCKED_TOOL_ERROR =
+  'Style presets are locked on this site (its template is below L3) — nothing was changed. Use tokens, treatments and block CSS instead.'
 
 export type WorkspaceInit = { current: DesignBundle; draftFiles: RepoThemeFiles; draftShas: ThemeBlobShas; caps: DesignCapabilities; model: string }
 export type EditOutcome = { ok: true; changed: boolean; notes: string[]; budget: string | null } | { ok: false; error: string }
@@ -67,6 +69,7 @@ export class ChatWorkspace {
 
   apply(edit: ChatEdit): EditOutcome {
     if (edit.kind === 'fonts' && !fontsUnlocked(this.caps)) return { ok: false, error: FONTS_LOCKED_TOOL_ERROR }
+    if (edit.kind === 'style' && !styleAxesUnlocked(this.caps)) return { ok: false, error: STYLE_LOCKED_TOOL_ERROR }
     const candidate = applyChatEdit(this.working, edit)
     if (sameLevers(candidate, this.working)) return { ok: true, changed: false, notes: [], budget: null }
     const v = checkConceptCandidate(

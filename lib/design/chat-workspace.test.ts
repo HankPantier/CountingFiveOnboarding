@@ -3,12 +3,13 @@ import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { bundleFromRepoFiles } from './bundle-files'
 import { DRAFT_FILES } from './__fixtures__/theme-texts'
 import { DEFAULT_CAPABILITIES, type DesignCapabilities } from './run-types'
-import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR } from './chat-workspace'
+import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR, STYLE_LOCKED_TOOL_ERROR } from './chat-workspace'
 import { REGION_BEGIN, REGION_END } from './bundle-files'
 import { PREVIEWS_PER_TURN } from './chat-types'
 
 const SHAS = { 'content/brand.json': 'a'.repeat(40), 'content/design.json': 'b'.repeat(40) }
 const L2: DesignCapabilities = { level: 2, source: 'marker', templateVersion: '2', capabilities: ['fonts'] }
+const L3: DesignCapabilities = { level: 3, source: 'marker', templateVersion: '3', capabilities: ['fonts', 'style-axes'] }
 function current() {
   const r = bundleFromRepoFiles(DRAFT_FILES, { name: 'Harbor v3', source: 'chat' })
   if (!r.ok) throw new Error(r.errors.join(' '))
@@ -64,6 +65,19 @@ describe('ChatWorkspace edits', () => {
     const w2 = ws({ caps: L2 })
     expect(w2.apply({ kind: 'fonts', patch: { headingFont: other } }).ok).toBe(true)
     expect(w2.bundle().typography.headingFont).toBe(other)
+  })
+  it('refuses style-axis changes below L3 with a clear message, allows them at L3', () => {
+    const locked = ws({ caps: L2 })
+    const before = locked.bundle()
+    expect(locked.apply({ kind: 'style', patch: { cards: 'flat' } })).toEqual({ ok: false, error: STYLE_LOCKED_TOOL_ERROR })
+    expect(locked.bundle()).toBe(before)
+    expect(locked.revision()).toBe(0)
+    const w3 = ws({ caps: L3 })
+    const r = w3.apply({ kind: 'style', patch: { cards: 'flat' } })
+    expect(r).toMatchObject({ ok: true, changed: true })
+    const rendered = w3.renderedFiles()
+    expect(rendered.ok).toBe(true)
+    expect(rendered.ok && rendered.files.designText).toContain('"cards": "flat"')
   })
   it('sanitizes block CSS and reports its budget; rejects unscoped CSS', () => {
     const w = ws()

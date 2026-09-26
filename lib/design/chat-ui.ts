@@ -17,6 +17,7 @@ const EDIT_LABELS: Record<string, string> = {
   set_fonts: 'Fonts',
   set_tokens: 'Spacing & shape',
   set_treatments: 'Treatments',
+  set_style_axes: 'Style presets',
   set_block_css: 'Block CSS',
   remove_block_css: 'Removed CSS',
 }

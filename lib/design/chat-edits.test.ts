@@ -9,6 +9,11 @@ describe('applyChatEdit', () => {
     expect(applyChatEdit(VALID, { kind: 'treatments', patch: { darkSections: false } }).treatments.darkSections).toBe(false)
     expect(applyChatEdit(VALID, { kind: 'fonts', patch: { accentFont: 'Public Sans' } }).typography.accentFont).toBe('Public Sans')
   })
+  it('merges style-axis patches, canonicalizing away default values', () => {
+    const styled = applyChatEdit(VALID, { kind: 'style', patch: { cards: 'flat' } })
+    expect(styled.style).toEqual({ cards: 'flat' })
+    expect(applyChatEdit(styled, { kind: 'style', patch: { cards: 'default' } }).style).toBeUndefined()
+  })
   it('merges partial spacing / radius maps', () => {
     const b = applyChatEdit(VALID, { kind: 'tokens', patch: { density: 'airy', radius: { lg: '24px' }, spacing: { xl: '64px' } } })
     expect(b.tokens).toMatchObject({ density: 'airy', radius: { ...VALID.tokens.radius, lg: '24px' }, spacing: { ...VALID.tokens.spacing, xl: '64px' } })
@@ -36,6 +41,7 @@ describe('sameLevers / describeChatEdit', () => {
   })
   it('names what an edit touches', () => {
     expect(describeChatEdit({ kind: 'palette', patch: { action: '#0a7c86', nearWhite: '#ffffff' } })).toBe('palette (action, nearWhite)')
+    expect(describeChatEdit({ kind: 'style', patch: { cards: 'flat', nav: 'bordered' } })).toBe('style (cards, nav)')
     expect(describeChatEdit({ kind: 'css', target: 'service-cards', css: 'x' })).toBe('service-cards CSS')
     expect(describeChatEdit({ kind: 'remove-css', target: 'global' })).toBe('removed global CSS')
   })

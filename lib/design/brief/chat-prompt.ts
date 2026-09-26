@@ -10,7 +10,8 @@
 // buildFirmContext): no _meta, no mbp_content.
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import type { DesignBundle } from '../bundle'
-import { fontsUnlocked } from '../capabilities'
+import { fontsUnlocked, styleAxesUnlocked } from '../capabilities'
+import { styleAxesSummary } from '../style-axes'
 import { PREVIEWS_PER_TURN } from '../chat-types'
 import type { DesignCapabilities } from '../run-types'
 import type { DriftStatus } from '../studio-types'
@@ -42,12 +43,18 @@ const TOOLS = `YOUR TOOLS
 - remove_block_css({ target }) — deletes one fragment.
 - render_preview({ page? }) — defaults to the page the admin is on.
 - commit_version({ summary }) — one line for the version list.
-- Style presets for cards, buttons and sections are not available yet.`
+- set_style_axes({ sectionRhythm?, cards?, buttons?, heroScale?, imageTreatment?, nav?, footer?, accentUsage? }) — template style presets (see the STYLE AXES line); "default" restores an axis. Prefer a preset over block CSS for the same effect.`
 
 function fontsLine(caps: DesignCapabilities): string {
   return fontsUnlocked(caps)
     ? `FONTS: unlocked — any of: ${CURATED_FONTS.join(', ')}.`
     : 'FONTS: LOCKED on this site (its template predates live fonts). set_fonts will be refused — express type through the type-scale custom properties, tracking and treatments instead.'
+}
+
+function styleLine(caps: DesignCapabilities): string {
+  return styleAxesUnlocked(caps)
+    ? `STYLE AXES: unlocked —\n${styleAxesSummary()}`
+    : 'STYLE AXES: LOCKED on this site (its template predates style presets). set_style_axes will be refused — use tokens, treatments and block CSS instead.'
 }
 
 export function buildChatSystemStatic(args: { firmName: string; schema: unknown; designMd: string | null; caps: DesignCapabilities }): string {
@@ -56,6 +63,7 @@ export function buildChatSystemStatic(args: { firmName: string; schema: unknown;
     RULES,
     TOOLS,
     fontsLine(args.caps),
+    styleLine(args.caps),
     TOKEN_CONTRACT,
     blockCatalogHint(),
     CSS_RULES_SECTION,
