@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "defaults": {
+    "headingFont": "Public Sans",
+    "bodyFont": "Public Sans",
+    "accentFont": "Fraunces"
+  },
+  "mono": "Geist Mono",
+  "fonts": [
+    {
+      "family": "Bitter",
+      "importName": "Bitter",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "DM Sans",
+      "importName": "DM_Sans",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "DM Serif Display",
+      "importName": "DM_Serif_Display",
+      "weights": [
+        "400"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Fraunces",
+      "importName": "Fraunces",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Geist Mono",
+      "importName": "Geist_Mono",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": false
+    },
+    {
+      "family": "IBM Plex Sans",
+      "importName": "IBM_Plex_Sans",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "IBM Plex Serif",
+      "importName": "IBM_Plex_Serif",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Inter",
+      "importName": "Inter",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Karla",
+      "importName": "Karla",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Libre Caslon Text",
+      "importName": "Libre_Caslon_Text",
+      "weights": [
+        "400",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Libre Franklin",
+      "importName": "Libre_Franklin",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Lora",
+      "importName": "Lora",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Manrope",
+      "importName": "Manrope",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": false
+    },
+    {
+      "family": "Merriweather",
+      "importName": "Merriweather",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Nunito",
+      "importName": "Nunito",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Nunito Sans",
+      "importName": "Nunito_Sans",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Open Sans",
+      "importName": "Open_Sans",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Playfair Display",
+      "importName": "Playfair_Display",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Plus Jakarta Sans",
+      "importName": "Plus_Jakarta_Sans",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Public Sans",
+      "importName": "Public_Sans",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Source Sans 3",
+      "importName": "Source_Sans_3",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    },
+    {
+      "family": "Source Serif 4",
+      "importName": "Source_Serif_4",
+      "weights": [
+        "400",
+        "500",
+        "700"
+      ],
+      "italic": true
+    }
+  ]
+}
