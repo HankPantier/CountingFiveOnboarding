@@ -55,4 +55,12 @@ describe('pickRepresentativePages', () => {
       expect(r.picks.find((p) => p.key === 'about')?.path).toBe(`/${slug}`)
     }
   })
+
+  it('offers the block specimen last when the site supports it', () => {
+    const paths = ['content/pages/home.md', 'content/pages/contact.md']
+    expect(pickRepresentativePages(paths).picks.map((p) => p.key)).not.toContain('specimen')
+    const { picks, pages } = pickRepresentativePages(paths, { specimen: true })
+    expect(picks.at(-1)).toEqual({ key: 'specimen', path: '/design-specimen' })
+    expect(pages).not.toContain('/design-specimen')
+  })
 })
