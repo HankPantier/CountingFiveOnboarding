@@ -2,7 +2,8 @@
 // (counting-five-client-template src/lib/theme/style-axes.ts), parity-tested
 // against its docs/design/style-axes.json (__fixtures__/style-axes.template.json).
 // Template T2: design.json `style` → <html data-c5-*> → src/styles/style-axes.css.
-import { z } from 'zod'
+// Zod-free on purpose (it reaches the Theme Studio client chunk via
+// compose-srcdoc); the zod input schema lives in style-axes-schema.ts.
 
 export const DEFAULT_AXIS_VALUE = 'default'
 
@@ -59,19 +60,6 @@ export function styleAxesJson(): string {
 }
 
 export const STYLE_AXIS_ATTRIBUTES: readonly string[] = STYLE_AXIS_NAMES.map((a) => STYLE_AXES[a].attribute)
-
-export const StyleAxesInputSchema = z
-  .object({
-    sectionRhythm: z.enum(STYLE_AXES.sectionRhythm.values).optional(),
-    cards: z.enum(STYLE_AXES.cards.values).optional(),
-    buttons: z.enum(STYLE_AXES.buttons.values).optional(),
-    heroScale: z.enum(STYLE_AXES.heroScale.values).optional(),
-    imageTreatment: z.enum(STYLE_AXES.imageTreatment.values).optional(),
-    nav: z.enum(STYLE_AXES.nav.values).optional(),
-    footer: z.enum(STYLE_AXES.footer.values).optional(),
-    accentUsage: z.enum(STYLE_AXES.accentUsage.values).optional(),
-  })
-  .strict()
 
 const isAxisValue = (axis: StyleAxis, v: unknown): boolean =>
   typeof v === 'string' && (STYLE_AXES[axis].values as readonly string[]).includes(v)

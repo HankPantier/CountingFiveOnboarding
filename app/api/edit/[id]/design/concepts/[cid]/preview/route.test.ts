@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextResponse } from 'next/server'
 import { CID, SID, makeConceptRow } from '@/lib/design/__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT } from '@/lib/design/__fixtures__/theme-texts'
+import { STYLE_AXIS_ATTRIBUTES } from '@/lib/design/style-axes'
 
 const m = vi.hoisted(() => ({ gate: vi.fn(), getConcept: vi.fn(), snapshot: vi.fn() }))
 vi.mock('../../../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
@@ -46,8 +47,12 @@ describe('GET /design/concepts/[cid]/preview', () => {
   })
   it('returns the composed theme the default apply would write (legacy removed)', async () => {
     const { theme } = await (await call()).json()
-    expect(theme.htmlAttributes).toMatchObject({ 'data-headline': 'serif', 'data-eyebrow': 'mono' })
-    expect(theme.htmlAttributes['data-c5-cards']).toBeNull() // style axes: null = remove the live attr // VALID treatments
+    expect(theme.htmlAttributes).toEqual({
+      'data-headline': 'serif',
+      'data-eyebrow': 'mono',
+      // style axes: null = remove the live attr
+      ...Object.fromEntries(STYLE_AXIS_ATTRIBUTES.map((a) => [a, null])),
+    }) // VALID treatments
     expect(theme.typography.accentFont).toBe('Fraunces')
     expect(theme.themeCss.length).toBeGreaterThan(100)
     expect(theme.overridesCss).toContain('/* design-studio:hero */')

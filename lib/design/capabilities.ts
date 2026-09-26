@@ -99,9 +99,12 @@ export function enforceCapabilities(
     out = { ...out, typography: { ...current.typography } }
     notes.push(FONT_LOCK_NOTE)
   }
-  if (!styleAxesUnlocked(caps) && out.style !== undefined) {
+  // Mirror the fonts lever: below L3 keep whatever style the site already has
+  // (a draft design.json may carry axes even when the effective tier is lower)
+  // and only note when the concept actually tried to change it.
+  if (!styleAxesUnlocked(caps) && !sameStyle(out.style, current.style)) {
     const { style: _dropped, ...rest } = out
-    out = rest
+    out = current.style ? { ...rest, style: { ...current.style } } : rest
     notes.push(STYLE_LOCK_NOTE)
   }
   return { bundle: out, notes }

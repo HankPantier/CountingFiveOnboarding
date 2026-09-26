@@ -6,7 +6,8 @@ import { z } from 'zod'
 import { PALETTE_ROLES, HEX_RE, LENGTH_RE } from '@/lib/editor/theme-edit'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { CSS_TARGETS } from './css-targets'
-import { StyleAxesInputSchema, canonicalStyle } from './style-axes'
+import { canonicalStyle } from './style-axes'
+import { StyleAxesInputSchema } from './style-axes-schema'
 
 export const BUNDLE_SOURCES = ['baseline', 'concept', 'chat', 'revert', 'import'] as const
 

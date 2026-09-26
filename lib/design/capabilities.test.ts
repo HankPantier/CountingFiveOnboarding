@@ -103,6 +103,21 @@ describe('style axes (L3+)', () => {
   it('below L3 an unchanged style is not a violation', () => {
     expect(capabilityViolations(styled, styled, L2)).toEqual([])
   })
+  it('below L3 a bundle keeping the site\'s existing style is left alone', () => {
+    const r = enforceCapabilities(styled, styled, L2)
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.notes).toEqual([])
+    expect(capabilityViolations(r.bundle, styled, L2)).toEqual([])
+  })
+  it('below L3 a style change is restored to the site\'s current style with a note', () => {
+    const r = enforceCapabilities({ ...VALID, style: { nav: 'inverted' as const } }, styled, L2)
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.notes.join(' ')).toContain('Style axes are not available on this site yet')
+    expect(capabilityViolations(r.bundle, styled, L2)).toEqual([])
+    const dropped = enforceCapabilities(VALID, styled, L2)
+    expect(dropped.bundle.style).toEqual({ cards: 'flat' })
+    expect(dropped.notes).toHaveLength(1)
+  })
   it('below L2 both fonts and style are reported', () => {
     const both = { ...styled, typography: { ...VALID.typography, headingFont: OTHER_FONT } }
     expect(capabilityViolations(both, VALID, DEFAULT_CAPABILITIES)).toHaveLength(2)
