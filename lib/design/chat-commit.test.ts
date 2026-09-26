@@ -59,7 +59,12 @@ describe('commitWorkspace', () => {
       summary: 'Chat: Calmer navy',
       commitMessage: 'Design Studio chat: Calmer navy (a@x.com)',
       screenshots: [],
+      bundle: { name: 'Calmer navy' },
     })
+    // The name comes from THIS commit's summary, not the seed bundle's own
+    // name ("Harbor v3", set by the `workspace()` fixture) — that carried
+    // over verbatim before this fix, so every chat version showed it.
+    expect(commitVersion.mock.calls[0][0].bundle.name).not.toBe('Harbor v3')
     expect(ws.isStaged()).toBe(false)
     expect(ws.draftShas()).toEqual(NEXT)
     expect(ws.lastVersionId()).toBe('ver-9')
@@ -81,7 +86,7 @@ describe('commitWorkspace', () => {
     ws.recordPreview({ metrics: CLEAN, baseline: CLEAN, shots: [shot] })
     const out = await commitWorkspace(ws, { summary: '', target: TARGET, commitVersion })
     expect(out).toMatchObject({ ok: true, warnings: [] })
-    expect(commitVersion.mock.calls[0][0]).toMatchObject({ screenshots: [shot], summary: 'Chat: palette (primary)' })
+    expect(commitVersion.mock.calls[0][0]).toMatchObject({ screenshots: [shot], summary: 'Chat: palette (primary)', bundle: { name: 'palette (primary)' } })
   })
   it('surfaces a refusal (stale / contrast) and keeps the change staged', async () => {
     commitVersion.mockResolvedValueOnce({ ok: false, status: 409, error: 'The theme changed while applying — refresh the Studio and try again.', stale: true })

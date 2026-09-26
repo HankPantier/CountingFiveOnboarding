@@ -12,6 +12,7 @@ import type { CommitOutput, DesignCommitData } from './chat-types'
 import { chatCommitGate, chatGateMessage } from './chat-gate'
 import type { ChatWorkspace } from './chat-workspace'
 import type { CommitTarget, CommitVersionArgs, CommitVersionResult } from './commit-version'
+import { deriveChatVersionName } from './version-name'
 
 export type CommitVersionFn = (args: CommitVersionArgs) => Promise<CommitVersionResult>
 
@@ -31,9 +32,13 @@ export async function commitWorkspace(
   // What is committed is fixed here, before the await: an edit landing during
   // the commit stays staged instead of being marked committed unwritten.
   const at = { revision: ws.revision(), bundle: ws.bundle() }
+  // The stored version's name comes from THIS commit's summary, not the
+  // seed bundle's name (which `at.bundle.name` still carries) — otherwise
+  // every chat version in a chain shows the draft's original name.
+  const namedBundle = { ...at.bundle, name: deriveChatVersionName(summary) }
   const result = await args.commitVersion({
     target: args.target,
-    bundle: at.bundle,
+    bundle: namedBundle,
     source: 'chat',
     removeLegacy: false,
     syncMbp: false,

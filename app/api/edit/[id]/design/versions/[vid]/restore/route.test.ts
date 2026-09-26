@@ -47,7 +47,18 @@ describe('POST /design/versions/[vid]/restore', () => {
     const a = m.commit.mock.calls[0][1] as { source: string; removeLegacy: boolean; summary: string; bundle: { meta: { source: string }; name: string }; screenshots: unknown[] }
     expect(a).toMatchObject({ source: 'revert', removeLegacy: false, summary: 'Restored v2 “Harbor Ledger”' })
     expect(a.bundle.meta.source).toBe('revert')
+    // The version's own name is "Restored v{k} — {original name}" (fits the
+    // cap here), NOT the original bundle's name carried over verbatim.
+    expect(a.bundle.name).toBe('Restored v2 — Harbor Ledger')
     expect(a.screenshots).toEqual([SHOT])
+  })
+  it('names a restored version "Restored v{k}" alone when the original name would blow the cap', async () => {
+    const longName = 'B'.repeat(50) // fits the bundle's own 60-char cap, but not alongside "Restored v2 — "
+    m.getVersion.mockResolvedValue(makeVersionRow({ id: VID, version_no: 2, source: 'concept', bundle: asJson({ ...VALID, name: longName }), screenshots: asJson([SHOT]) }))
+    const res = await call()
+    expect(res.status).toBe(200)
+    const a = m.commit.mock.calls[0][1] as { bundle: { name: string } }
+    expect(a.bundle.name).toBe('Restored v2')
   })
   it('passes a commit refusal through (stale → stale: true)', async () => {
     m.commit.mockResolvedValue({ ok: false, status: 409, error: 'The theme changed while applying — refresh the Studio and try again.', stale: true })

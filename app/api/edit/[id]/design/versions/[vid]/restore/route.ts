@@ -5,6 +5,7 @@ import { parseDesignBundle } from '@/lib/design/bundle'
 import { isUuid } from '@/lib/design/input-validation'
 import { parseScreenshots } from '@/lib/design/screenshots'
 import { getVersion } from '@/lib/design/store'
+import { deriveRestoreVersionName } from '@/lib/design/version-name'
 import { requireDesignAdmin } from '../../../_design'
 
 export const runtime = 'nodejs'
@@ -51,9 +52,13 @@ export async function POST(_req: Request, { params }: Params) {
       return NextResponse.json({ error: `v${row.version_no} can no longer be restored: ${parsed.errors.join(' ')}`.slice(0, 500) }, { status: 422 })
     }
     const name = parsed.bundle.name
+    // The restored version's own name is "Restored v{k}[ — {original name}]",
+    // not the original bundle's name carried over verbatim (which would show
+    // as e.g. "Baseline" on every restore of v0).
+    const restoredName = deriveRestoreVersionName(row.version_no, name)
     const committed = await commitDesignVersion(db, {
       target: { sessionId: ctx.sessionId, jobId: ctx.jobId, githubRepo: ctx.githubRepo, adminId: ctx.adminId, adminEmail: ctx.adminEmail, adminName: ctx.adminName },
-      bundle: { ...parsed.bundle, meta: { source: 'revert' } },
+      bundle: { ...parsed.bundle, name: restoredName, meta: { source: 'revert' } },
       source: 'revert',
       removeLegacy: false,
       syncMbp: true,
