@@ -8,7 +8,7 @@ vi.mock('../storage', async (orig) => ({ ...((await orig()) as object), storeDes
 vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: (a: unknown) => m.siteUrl(a) }))
 vi.mock('@/lib/theme-preview/build-preview-shell', () => ({ buildPreviewShell: (u: string) => m.shell(u) }))
 
-import { loadRenderShell, renderAndStoreFolds, renderErrorMessage } from './render-folds'
+import { loadRenderShell, renderAndStoreFolds, renderErrorMessage, renderFoldsTo } from './render-folds'
 import type { ComposedTheme } from '../composed-theme'
 
 const THEME: ComposedTheme = {
@@ -74,6 +74,25 @@ describe('renderAndStoreFolds', () => {
     const r = await renderAndStoreFolds(args())
     expect(r.shots).toHaveLength(1)
     expect(r.error).toBe('The render timed out.')
+  })
+})
+
+describe('renderFoldsTo', () => {
+  it('stores under any design folder and returns each fold’s WebP bytes', async () => {
+    m.render.mockImplementation(async () => ({ shots: [{ kind: 'fold', png }], sample: null }))
+    const r = await renderFoldsTo({ db: {} as never, sessionId: SID, folder: ['renders', 'chat'], name: 'turn-1-p1', shell: SHELL, theme: THEME })
+    expect(r.shots.map((s) => s.path)).toEqual([`design/${SID}/renders/chat/turn-1-p1-desktop.webp`, `design/${SID}/renders/chat/turn-1-p1-mobile.webp`])
+    expect(r.images.map((i) => i.viewport)).toEqual(['desktop', 'mobile'])
+    expect(r.images[1].webp.subarray(8, 12).toString('ascii')).toBe('WEBP')
+  })
+  it('store: false measures only — no upload, no shots', async () => {
+    const sample = { viewportWidth: 390, scrollWidth: 390, docHeight: 2000, offenders: [], text: [], blocks: [] }
+    m.render.mockImplementation(async () => ({ shots: [{ kind: 'fold', png }], sample }))
+    const r = await renderFoldsTo({ db: {} as never, sessionId: SID, folder: ['renders', 'chat'], name: 'baseline', shell: SHELL, theme: THEME, metrics: true, store: false })
+    expect(m.store).not.toHaveBeenCalled()
+    expect(r.shots).toEqual([])
+    expect(r.images).toEqual([])
+    expect(r.metrics?.viewports.map((v) => v.viewport)).toEqual(['desktop', 'mobile'])
   })
 })
 

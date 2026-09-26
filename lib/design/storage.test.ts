@@ -7,6 +7,7 @@ import {
   signDesignPaths,
   removeDesignPaths,
   downloadDesignImage,
+  attachmentStoragePath,
   SCREENSHOT_MAX_EDGE,
 } from './storage'
 
@@ -144,5 +145,13 @@ describe('downloadDesignImage', () => {
   it('throws on a storage error', async () => {
     const f = fakeDb({ data: null, error: { message: 'not found' } })
     await expect(downloadDesignImage(f.db, `design/${SID}/inputs/a.webp`)).rejects.toThrow('downloadDesignImage failed')
+  })
+})
+
+describe('attachmentStoragePath', () => {
+  it('builds design/{sid}/attachments/{uuid}.webp and refuses anything but a uuid', () => {
+    const sid = '7ce3c00a-f6ad-41f3-86cc-6bdfc3af7184'
+    expect(attachmentStoragePath(sid, '0B6F1C2E-5D4A-4E8B-9C1D-2F3A4B5C6D7E')).toBe(`design/${sid}/attachments/0b6f1c2e-5d4a-4e8b-9c1d-2f3a4b5c6d7e.webp`)
+    expect(() => attachmentStoragePath(sid, '../x')).toThrow()
   })
 })

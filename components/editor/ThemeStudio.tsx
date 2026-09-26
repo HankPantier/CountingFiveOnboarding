@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ThemePreview from './ThemePreview'
-import ThemeChat from './ThemeChat'
 import DesignStudio from '@/components/design-studio/DesignStudio'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
@@ -36,8 +35,9 @@ const STUDIO_TABS: { key: StudioTab; label: string }[] = [
   { key: 'controls', label: 'Controls' },
 ]
 
-// Admin-only Theme Studio: a live 1:1 preview of the client's site (left) beside
-// the AI theme assistant (right). The preview fetches a real deployed URL — the
+// Admin-only Theme Studio. Two tabs: Studio (the Design Studio — concepts,
+// the AI revision chat, versions) and Controls (a live 1:1 preview of the
+// client's site with direct color/font controls). The preview fetches a real deployed URL — the
 // operator's override (e.g. a Vercel preview deploy before DNS cutover) or the
 // canonical site.config.ts siteUrl — and re-skins it with the pending draft
 // theme. Changes publish through the editor's existing Review changes → Publish.
@@ -55,7 +55,7 @@ export default function ThemeStudio({
   publishing: boolean
   canPublish: boolean
   onPublish: () => void
-  // Called after the assistant commits a theme change, so the parent editor can
+  // Called after a theme change lands on the draft, so the parent editor can
   // refresh its publish status / Review changes count.
   onCommitted: () => void
 }) {
@@ -266,10 +266,17 @@ export default function ThemeStudio({
       </div>
       {tab === 'studio' && (
         <div id="theme-panel-studio" role="tabpanel" aria-labelledby="theme-tab-studio" className="flex min-h-0 flex-1">
-          <DesignStudio sessionId={sessionId} />
+          <DesignStudio
+            sessionId={sessionId}
+            onThemeChanged={() => {
+              // Refresh the Controls preview AND the parent editor's publish status.
+              void loadSources().catch(() => {})
+              onCommitted()
+            }}
+          />
         </div>
       )}
-      {/* Controls stays mounted while hidden so the preview and ThemeChat keep their state. */}
+      {/* Controls stays mounted while hidden so the preview keeps its state. */}
       <div
         id="theme-panel-controls"
         role="tabpanel"
@@ -282,7 +289,7 @@ export default function ThemeStudio({
           <div className="min-w-0">
             <h1 className="font-heading text-sm font-semibold text-brand-navy">Theme &amp; styling</h1>
             <p className="font-body text-xs text-text-muted">
-              Live preview. Click a color to pick a new one or choose fonts below — or ask the assistant for roundness, spacing, or a block&rsquo;s look. Then Publish.
+              Live preview. Click a color to pick a new one or choose fonts below. For AI changes, use Studio → Revise with AI. Then Publish.
             </p>
           </div>
           <button
@@ -374,16 +381,6 @@ export default function ThemeStudio({
             />
           </>
         ) : null}
-      </div>
-      <div className="w-[360px] shrink-0">
-        <ThemeChat
-          sessionId={sessionId}
-          onEdited={() => {
-            // Refresh the preview AND the parent editor's publish status.
-            void loadSources().catch(() => {})
-            onCommitted()
-          }}
-        />
       </div>
       </div>
     </div>

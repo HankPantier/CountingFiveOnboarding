@@ -13,19 +13,26 @@ describe('Vercel packaging (R7)', () => {
     ['/api/edit/\\[id\\]/design/runs/\\[runId\\]/step', [...LIGHTNING, ...CHROMIUM]],
     ['/api/edit/\\[id\\]/design/concepts/\\[cid\\]/apply', LIGHTNING],
     ['/api/edit/\\[id\\]/design/concepts/\\[cid\\]/preview', LIGHTNING],
+    ['/api/edit/\\[id\\]/design/versions/\\[vid\\]/restore', LIGHTNING],
+    ['/api/edit/\\[id\\]/design/versions/import', LIGHTNING],
     ['/api/edit/\\[id\\]/design/render', CHROMIUM],
-    ['/api/edit/\\[id\\]/theme/chat', LIGHTNING],
+    ['/api/edit/\\[id\\]/design/chat', [...LIGHTNING, ...CHROMIUM]],
   ])('%s traces its native dependencies', (route, globs) => {
     expect(includes[route]).toEqual(expect.arrayContaining(globs))
   })
 
-  const HEAVY = /^import[^\n]*from '@\/lib\/design\/(css-sanitizer|bundle-files|apply-bundle|concept-validate|concept-generator|run-orchestrator|model-call|critic|concept-reviser|run-gather|refine-stage|render\/render-composed|render\/render-folds)'/m
+  const HEAVY = /^import[^\n]*from '@\/lib\/design\/(css-sanitizer|bundle-files|apply-bundle|commit-version|chat-workspace|chat-preview|chat-tools|chat-commit|chat-turn|concept-validate|concept-generator|run-orchestrator|model-call|critic|concept-reviser|run-gather|refine-stage|render\/render-composed|render\/render-folds)'/m
   it.each([
     'app/api/edit/[id]/design/runs/route.ts',
     'app/api/edit/[id]/design/runs/[runId]/cancel/route.ts',
     'app/api/edit/[id]/design/runs/[runId]/step/route.ts',
     'app/api/edit/[id]/design/concepts/[cid]/apply/route.ts',
     'app/api/edit/[id]/design/concepts/[cid]/preview/route.ts',
+    'app/api/edit/[id]/design/versions/[vid]/restore/route.ts',
+    'app/api/edit/[id]/design/versions/import/route.ts',
+    'app/api/edit/[id]/design/attachments/route.ts',
+    'app/api/edit/[id]/design/attachments/[attachmentId]/route.ts',
+    'app/api/edit/[id]/design/chat/route.ts',
   ])('%s never statically imports a native-backed module', (file) => {
     const src = readFileSync(path.join(process.cwd(), file), 'utf-8')
     expect(src).not.toMatch(HEAVY)
@@ -40,6 +47,17 @@ describe('Vercel packaging (R7)', () => {
     const src = readFileSync(path.join(process.cwd(), 'app/api/edit/[id]/design/route.ts'), 'utf-8')
     expect(src).not.toMatch(HEAVY)
     expect(src).toContain("export const runtime = 'nodejs'")
+  })
+
+  it('concept apply reaches the commit path only by lazy import', () => {
+    const src = readFileSync(path.join(process.cwd(), 'app/api/edit/[id]/design/concepts/[cid]/apply/route.ts'), 'utf-8')
+    expect(src).toContain("await import('@/lib/design/commit-version')")
+  })
+
+  it('the chat turn is reached only through the chat route’s lazy import', () => {
+    const src = readFileSync(path.join(process.cwd(), 'app/api/edit/[id]/design/chat/route.ts'), 'utf-8')
+    expect(src).toContain("await import('@/lib/design/chat-turn')")
+    expect(src).toContain('export const maxDuration = 600')
   })
 
   it('the critique loop is reached only through the step route’s lazy orchestrator import', () => {

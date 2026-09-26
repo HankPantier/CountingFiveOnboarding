@@ -9,6 +9,11 @@ import { CSS_TARGETS } from './css-targets'
 
 export const BUNDLE_SOURCES = ['baseline', 'concept', 'chat', 'revert', 'import'] as const
 
+// The bundle `name` cap — also the target length for names derived at commit
+// time (chat: from the turn's summary; revert: "Restored v{k}[ — {name}]"),
+// see version-name.ts.
+export const BUNDLE_NAME_MAX_LENGTH = 60
+
 const hex = z.string().regex(HEX_RE, 'must be a #rrggbb hex colour').transform((s) => s.toLowerCase())
 const length = z.string().regex(LENGTH_RE, 'must be a CSS length like 16px or 1.5rem')
 const font = z.string().refine((f) => CURATED_FONTS.includes(f), 'must be a font from the curated list')
@@ -20,7 +25,7 @@ const paletteShape = Object.fromEntries(PALETTE_ROLES.map((r) => [r, hex])) as R
 
 export const DesignBundleSchema = z.object({
   schemaVersion: z.literal(1),
-  name: z.string().trim().min(1).max(60),
+  name: z.string().trim().min(1).max(BUNDLE_NAME_MAX_LENGTH),
   tagline: z.string().max(160).default(''),
   rationale: z.string().max(2000).default(''),
   moves: z.array(z.string().max(200)).max(6).default([]),

@@ -13,6 +13,7 @@ import {
   MISSING_THEME_FILES_ERROR,
   readDraftThemeSnapshot,
   readDraftThemeTexts,
+  readThemeSnapshotAt,
   themeTextsFromSnapshot,
   __resetThemeBlobCacheForTests,
 } from './theme-snapshot'
@@ -62,6 +63,24 @@ describe('readDraftThemeSnapshot', () => {
     m.listTree.mockResolvedValue(TREE.map((e) => (e.path === 'src/styles/theme.css' ? { ...e, sha: D } : e)))
     await readDraftThemeSnapshot('o/r')
     expect(m.readTextBlobs).toHaveBeenLastCalledWith('o/r', [{ path: 'src/styles/theme.css', sha: D, type: 'blob' }])
+  })
+})
+
+describe('readThemeSnapshotAt', () => {
+  it('reads the four theme files at the given blob shas without touching the branch', async () => {
+    const snap = await readThemeSnapshotAt('o/r', { 'content/brand.json': A, 'content/design.json': B, 'content/other.json': C })
+    expect(m.listTree).not.toHaveBeenCalled()
+    expect(m.ensure).not.toHaveBeenCalled()
+    expect(snap).toEqual({
+      shas: { 'content/brand.json': A, 'content/design.json': B },
+      texts: { 'content/brand.json': 'text:content/brand.json', 'content/design.json': 'text:content/design.json' },
+    })
+  })
+  it('shares the sha cache with readDraftThemeSnapshot', async () => {
+    await readDraftThemeSnapshot('o/r')
+    m.readTextBlobs.mockClear()
+    await readThemeSnapshotAt('o/r', { 'content/brand.json': A })
+    expect(m.readTextBlobs).not.toHaveBeenCalled()
   })
 })
 

@@ -29,7 +29,19 @@ export async function readDraftThemeSnapshot(githubRepo: string): Promise<DraftT
   await ensureDraftBranch(githubRepo)
   const wanted = new Set<string>(THEME_FILE_PATHS)
   const entries = (await listTree(githubRepo, DRAFT_BRANCH)).filter((e) => e.type === 'blob' && wanted.has(e.path))
+  return snapshotFromEntries(githubRepo, entries)
+}
 
+// The theme files AT given blob shas (no branch read): blobs are immutable, so
+// this is exact even right after a commit, when a branch read can still lag.
+// Only the four theme paths are kept. For callers that already know the base
+// they built on (a chat turn committing twice).
+export async function readThemeSnapshotAt(githubRepo: string, blobShas: ThemeBlobShas): Promise<DraftThemeSnapshot> {
+  const entries = THEME_FILE_PATHS.flatMap((path) => (blobShas[path] ? [{ path, sha: blobShas[path] }] : []))
+  return snapshotFromEntries(githubRepo, entries)
+}
+
+async function snapshotFromEntries(githubRepo: string, entries: { path: string; sha: string }[]): Promise<DraftThemeSnapshot> {
   const shas: ThemeBlobShas = {}
   for (const e of entries) shas[e.path] = e.sha
 

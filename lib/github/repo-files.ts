@@ -305,11 +305,12 @@ export async function pushEntriesToBranch(
 // + theme.css) that must never land half-applied. Each file may carry an
 // expectedSha; if the blob sha in the commit's base tree differs (a concurrent
 // edit), we throw StaleShaError before committing anything — re-checked on every
-// ref-race retry. Returns the new commit sha plus each written path's new blob
-// sha so a caller can advance its working shas.
+// ref-race retry. `expectedSha: null` means the file must NOT exist yet (a
+// concurrent creation → StaleShaError). Returns the new commit sha plus each
+// written path's new blob sha so a caller can advance its working shas.
 export async function writeFiles(
   slug: string,
-  files: { path: string; content: string; expectedSha?: string }[],
+  files: { path: string; content: string; expectedSha?: string | null }[],
   branch: string,
   message: string,
   options: { authorName?: string; authorEmail?: string } = {}

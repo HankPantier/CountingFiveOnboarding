@@ -11,6 +11,7 @@ import {
   deleteInput,
   getBaselineOrCreate,
   getInput,
+  getVersion,
   insertVersion,
   latestVersion,
   listInputs,
@@ -235,5 +236,18 @@ describe('readSessionSchema', () => {
     const f = fakeSupabase({ sessions: [{ data: { schema_data: { websiteUrl: 'x.com' } } }] })
     expect(await readSessionSchema(f.client, SID)).toEqual({ websiteUrl: 'x.com' })
     expect(f.opsFor('sessions')).toContainEqual(['eq', 'id', SID])
+  })
+})
+
+describe('getVersion', () => {
+  it('reads one full version row scoped by id AND session; null when absent', async () => {
+    const f = fakeSupabase({ design_versions: [{ data: makeVersionRow({ id: 'ver-2', version_no: 2 }) }, { data: null }] })
+    expect((await getVersion(f.client, SID, 'ver-2'))?.version_no).toBe(2)
+    expect(f.opsFor('design_versions')).toEqual([['select', '*'], ['eq', 'id', 'ver-2'], ['eq', 'session_id', SID], ['maybeSingle']])
+    expect(await getVersion(f.client, SID, 'nope')).toBeNull()
+  })
+  it('throws on a DB error', async () => {
+    const f = fakeSupabase({ design_versions: [{ error: { message: 'boom' } }] })
+    await expect(getVersion(f.client, SID, 'x')).rejects.toThrow(/getVersion/)
   })
 })

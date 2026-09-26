@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DesignStudioState } from '@/lib/design/studio-types'
 import type { DesignRunDto } from '@/lib/design/run-types'
 import { RUN_POLL_MS, runIsActive, startSequentialPoll } from '@/lib/design/studio-ui'
+import DesignChat from './DesignChat'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
 import RunPanel from './RunPanel'
@@ -13,9 +14,9 @@ import { SECONDARY_BTN } from './styles'
 
 // Admin-only Design Studio (Theme Studio → Studio tab). P3: generate and
 // compare concepts, preview them live, and apply one to the draft; inputs and
-// versions from P2. All state comes from GET /design; while a run is active
+// versions from P2; P5: the revision chat, restore and capture. All state comes from GET /design; while a run is active
 // the Studio polls GET /design/runs and reloads everything when it settles.
-export default function DesignStudio({ sessionId }: { sessionId: string }) {
+export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId: string; onThemeChanged?: () => void }) {
   const [state, setState] = useState<DesignStudioState | null>(null)
   const [run, setRun] = useState<DesignRunDto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -38,6 +39,13 @@ export default function DesignStudio({ sessionId }: { sessionId: string }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
   }, [load])
+
+  // A concept apply, chat commit, restore or capture changed the draft theme:
+  // reload the Studio and let Theme Studio refresh Controls + the publish count.
+  const themeChanged = useCallback(() => {
+    void load()
+    onThemeChanged?.()
+  }, [load, onThemeChanged])
 
   const active = runIsActive(run)
   useEffect(() => {
@@ -64,7 +72,7 @@ export default function DesignStudio({ sessionId }: { sessionId: string }) {
       <div className="flex items-center justify-between gap-3 border-b border-border-default bg-surface-card px-6 py-2.5">
         <div className="min-w-0">
           <h1 className="font-heading text-sm font-semibold text-brand-navy">Design Studio</h1>
-          <p className="font-body text-xs text-text-muted">Generate distinct design concepts, compare them on the real site, and apply one to the draft.</p>
+          <p className="font-body text-xs text-text-muted">Generate concepts, compare them on the real site, apply one, then refine it in the chat.</p>
         </div>
         <button
           type="button"
@@ -88,14 +96,25 @@ export default function DesignStudio({ sessionId }: { sessionId: string }) {
       {!state && loading ? (
         <div className="flex flex-1 items-center justify-center font-body text-sm text-text-muted">Loading the Design Studio…</div>
       ) : state ? (
-        <div className="grid flex-1 items-start gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid flex-1 items-start gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="flex min-w-0 flex-col gap-4">
-            {/* Keyed by run so a new run starts with fresh selection / applied state. */}
-            {run && <RunPanel key={run.id} sessionId={sessionId} run={run} onChanged={load} />}
+            {/* Keyed by run so a new run starts with fresh selection / applied state.
+                PF10: only an apply changes the theme — cancel / retry just reload. */}
+            {run && <RunPanel key={run.id} sessionId={sessionId} run={run} onChanged={load} onApplied={onThemeChanged} />}
             <RunLauncher sessionId={sessionId} inputs={state.inputs} disabled={active} onStarted={load} />
             <InputsPanel sessionId={sessionId} inputs={state.inputs} suggestions={state.suggestions} onChanged={load} />
           </div>
-          <VersionsPanel versions={state.versions} drift={state.drift} baseline={state.baseline} themeCssStale={state.themeCssStale} />
+          <div className="flex min-w-0 flex-col gap-4">
+            <DesignChat sessionId={sessionId} page="/" onCommitted={themeChanged} />
+            <VersionsPanel
+              sessionId={sessionId}
+              versions={state.versions}
+              drift={state.drift}
+              baseline={state.baseline}
+              themeCssStale={state.themeCssStale}
+              onChanged={themeChanged}
+            />
+          </div>
         </div>
       ) : null}
     </div>

@@ -94,6 +94,21 @@ export function makeRunRow(overrides: Partial<Tables<'design_runs'>> = {}): Tabl
   }
 }
 
+export function makeChatRow(overrides: Partial<Tables<'design_chat_messages'>> = {}): Tables<'design_chat_messages'> {
+  return {
+    id: '6c7d8e9f-0a1b-4c2d-8e3f-4a5b6c7d8e9f',
+    session_id: SID,
+    role: 'user',
+    content: 'Make these cards calmer',
+    parts: asJson([{ type: 'text', text: 'Make these cards calmer' }]),
+    attachment_ids: [],
+    version_id: null,
+    created_by: 'admin-1',
+    created_at: '2026-09-25T12:00:00.000Z',
+    ...overrides,
+  }
+}
+
 export function makeConceptRow(overrides: Partial<Tables<'design_concepts'>> = {}): Tables<'design_concepts'> {
   return {
     id: CID,

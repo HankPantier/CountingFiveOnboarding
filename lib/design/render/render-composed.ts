@@ -58,6 +58,7 @@ import {
 } from './browser'
 import { parseRawPageSample, type RawPageSample } from '../metrics'
 import { PAGE_METRICS_SCRIPT } from './page-metrics-script'
+import { RENDER_DEADLINE_MS } from '../run-types'
 
 export type RenderShot = { kind: 'fold' | 'next' | 'block'; selector?: string; png: Buffer }
 export type RenderResult = {
@@ -91,7 +92,7 @@ const SCREENSHOT_TIMEOUT_MS = 10_000
 // shots.
 const RESET_TIMEOUT_MS = 2_000
 const IDLE_HTML = '<!doctype html><title>idle</title>'
-const DEFAULT_DEADLINE_MS = 45_000
+const DEFAULT_DEADLINE_MS = RENDER_DEADLINE_MS
 // A render that only gets the lock with less than this much of its deadline
 // left fails fast as a 'queue' timeout instead of starting: it would most
 // likely time out mid-render and recycle a healthy bundle, which cascades

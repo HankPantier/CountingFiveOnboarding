@@ -8,7 +8,7 @@ import { CHROME_COMPONENTS, CSS_TARGETS, HTML_STATE_ATTRS } from '../css-targets
 import { fontsUnlocked } from '../capabilities'
 import type { DesignCapabilities } from '../run-types'
 
-const TOKEN_CONTRACT = `TOKEN CONTRACT (theme.css is regenerated from your palette + tokens; never restate it)
+export const TOKEN_CONTRACT = `TOKEN CONTRACT (theme.css is regenerated from your palette + tokens; never restate it)
 - Colour variables: --color-primary(-foreground), --color-secondary(-foreground), --color-accent(-foreground) (from complementary), --color-background, --color-foreground, --color-muted(-foreground), --color-card(-foreground), --color-border, --color-input, --color-ring (from action), --color-action / --color-action-foreground, --color-primary-hex, --color-near-black, --color-near-white, --color-complementary.
 - Spacing --c5-space-xs … --c5-space-2xl; radius --radius-sm/md/lg/pill and --radius; fonts --font-heading, --font-body, --font-accent.
 - Type scale --type-display, --type-h1 … --type-h4, --type-body-lg, --type-small, --type-caption, --tracking-display, --tracking-tight; utilities .t-display, .t-h1 … .t-h4, .t-body-lg, .t-small, .t-kicker.

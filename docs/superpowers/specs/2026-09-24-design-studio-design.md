@@ -242,6 +242,15 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - `onFinish` auto-commits anything staged.
 - Attachments route, AnnotateCanvas (boxes, arrows, pins), and version restore/import routes.
 - **Replaces the old ThemeChat.**
+- **Accepted deviations (recorded 2026-09-25):**
+  - **No `style_axes` tool** until P6b. `DesignBundle` has no `style` field yet, and `set_fonts` is refused below L2.
+  - **Staged edits live only within a turn.** Each turn commits them or reports why not in a `data-design-commit` part, and the next turn's context repeats that note. A stream error or hard-deadline abort discards staged edits. The chat has no migration and no cross-turn staging.
+  - **Chat commits never sync the MBP** (CLAUDE.md MBP rule). Human-clicked paths still sync: concept apply, restore, capture, and Controls.
+  - **Chat commits keep hand CSS** (`removeLegacy: false`). They pass the workspace's expected blob shas, so the sha guard is the only staleness check and two commits per turn work.
+  - **Chat render gate:** it diffs against the turn-start draft render, cached per turn. Unmeasured or incomplete viewports produce a warning, not a block.
+  - **Route limits:** `maxDuration` 600 and a 540 s turn budget. The model stops at the commit reserve, and there is a hard abort at the deadline.
+  - **Cost:** a turn costs about $0.10–0.15 with previews. Previews are stored under `design/{sid}/renders/chat/`.
+  - **Clear chat keeps preview renders,** because versions use them as thumbnails. Two tabs have no lock; the second commit gets a stale 409.
 
 ### T1 — Template: marker + fonts module + accentFont
 Platform follow-up **P6a**: font generator golden, manifest parity test, fonts unlocked at L2.

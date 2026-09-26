@@ -314,6 +314,33 @@ describe('writeFiles', () => {
     ).rejects.toBeInstanceOf(StaleShaError)
     expect(createBlob).toHaveBeenCalledTimes(1)
   })
+
+  it('expectedSha null = must be absent: a concurrently created file → StaleShaError, nothing committed', async () => {
+    getRef.mockResolvedValue({ data: { object: { sha: 'tip' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'tree' } } })
+    createBlob.mockResolvedValue({ data: { sha: 'nb' } })
+    getContent
+      .mockResolvedValueOnce({ data: { type: 'file', sha: 'created' } }) // exists at the tip
+      .mockResolvedValueOnce({ data: { type: 'file', sha: 'created', content: '', encoding: 'base64' } })
+    await expect(
+      writeFiles('site', [{ path: 'content/design-overrides.css', content: 'x', expectedSha: null }], 'draft', 'm')
+    ).rejects.toBeInstanceOf(StaleShaError)
+    expect(createTree).not.toHaveBeenCalled()
+    expect(createCommit).not.toHaveBeenCalled()
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('expectedSha null passes when the file is still absent', async () => {
+    getRef.mockResolvedValue({ data: { object: { sha: 'tip' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'tree' } } })
+    createBlob.mockResolvedValue({ data: { sha: 'nb' } })
+    createTree.mockResolvedValue({ data: { sha: 'nt' } })
+    createCommit.mockResolvedValue({ data: { sha: 'nc' } })
+    updateRef.mockResolvedValue({ data: {} })
+    getContent.mockRejectedValueOnce(notFound())
+    const r = await writeFiles('site', [{ path: 'content/design-overrides.css', content: 'x', expectedSha: null }], 'draft', 'm')
+    expect(r).toEqual({ commitSha: 'nc', blobs: { 'content/design-overrides.css': 'nb' } })
+  })
 })
 
 describe('writeFile', () => {
