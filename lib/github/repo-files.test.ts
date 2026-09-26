@@ -13,14 +13,16 @@ const pullsList = vi.fn()
 const pullsCreate = vi.fn()
 const createBlob = vi.fn()
 const getBlob = vi.fn()
+const getTree = vi.fn()
+const listCommits = vi.fn()
 const createRef = vi.fn()
 const reposGetCommit = vi.fn()
 const createOrUpdateFileContents = vi.fn()
 
 vi.mock('./app-client', () => ({
   getOctokit: () => ({
-    repos: { getContent, compareCommits, merge, getCommit: reposGetCommit, createOrUpdateFileContents },
-    git: { getRef, getCommit, createTree, createCommit, updateRef, createBlob, getBlob, createRef },
+    repos: { getContent, compareCommits, merge, getCommit: reposGetCommit, createOrUpdateFileContents, listCommits },
+    git: { getRef, getCommit, createTree, createCommit, updateRef, createBlob, getBlob, createRef, getTree },
     pulls: { list: pullsList, create: pullsCreate },
   }),
   resolveRepo: () => ({ owner: 'cf', repo: 'site' }),
@@ -42,6 +44,7 @@ import {
     mergeDraftToMain,
   syncMainIntoDraft,
   getDraftHeadSha,
+  findLastDeployCommitSha,
   FileNotFoundError,
   StaleShaError,
   AssetExistsError,
@@ -286,6 +289,48 @@ describe('pushEntriesToBranch', () => {
     expect(res).toEqual({ commitSha: 'newCommit', fileCount: 1 })
   })
 
+  it('validates many guarded entries against ONE base-tree read', async () => {
+    getRef.mockResolvedValue({ data: { object: { sha: 'guardTip' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'guardTree' } } })
+    const entries: { path: string; content: string; expectedBlobSha: string | null }[] = Array.from(
+      { length: 10 },
+      (_, i) => ({ path: `content/pages/p${i}.md`, content: `new ${i}`, expectedBlobSha: `s${i}` })
+    )
+    entries.push({ path: 'content/pages/fresh.md', content: 'x', expectedBlobSha: null })
+    getTree.mockResolvedValue({
+      data: {
+        tree: entries
+          .filter((e) => e.expectedBlobSha)
+          .map((e) => ({ path: e.path, sha: e.expectedBlobSha, type: 'blob' })),
+      },
+    })
+    await pushEntriesToBranch('site', 'draft', entries, 'm')
+    expect(getTree).toHaveBeenCalledTimes(1)
+    expect(getContent).not.toHaveBeenCalled()
+    expect(updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('a tree-read mismatch still aborts with StaleShaError before committing', async () => {
+    getRef.mockResolvedValue({ data: { object: { sha: 'guardTip2' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'guardTree2' } } })
+    const entries = Array.from({ length: 10 }, (_, i) => ({
+      path: `content/pages/q${i}.md`,
+      content: `new ${i}`,
+      expectedBlobSha: `s${i}`,
+    }))
+    getTree.mockResolvedValue({
+      data: {
+        tree: entries.map((e, i) => ({ path: e.path, sha: i === 3 ? 'operatorEdit' : e.expectedBlobSha, type: 'blob' })),
+      },
+    })
+    getContent
+      .mockResolvedValueOnce({ data: { type: 'file', sha: 'operatorEdit' } })
+      .mockResolvedValueOnce({ data: { type: 'file', sha: 'operatorEdit', content: '', encoding: 'base64' } })
+    await expect(pushEntriesToBranch('site', 'draft', entries, 'm')).rejects.toBeInstanceOf(StaleShaError)
+    expect(getContent.mock.calls[0][0]).toMatchObject({ path: 'content/pages/q3.md', ref: 'guardTip2' })
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
   it('expectedBlobSha: null requires the path to be absent', async () => {
     getContent.mockResolvedValueOnce({ data: { type: 'file', sha: 'exists' } })
     getContent.mockResolvedValueOnce({ data: { type: 'file', sha: 'exists', content: '', encoding: 'base64' } })
@@ -475,5 +520,24 @@ describe('readTextBlobs', () => {
       { path: 'b.md', content: 'body-2' },
     ])
     expect(getContent).not.toHaveBeenCalled()
+  })
+})
+
+describe('findLastDeployCommitSha', () => {
+  it('returns the newest deploy commit touching brand.md, ignoring editor commits', async () => {
+    listCommits.mockResolvedValueOnce({
+      data: [
+        { sha: 'edit1', commit: { message: 'Update brand.md via admin' } },
+        { sha: 'dep2', commit: { message: 'Deploy packaged content via admin (a@x)' } },
+        { sha: 'dep1', commit: { message: 'Deploy packaged content via admin' } },
+      ],
+    })
+    expect(await findLastDeployCommitSha('site')).toBe('dep2')
+    expect(listCommits.mock.calls[0][0]).toMatchObject({ sha: 'draft', path: 'content/brand.md' })
+  })
+
+  it('returns null for a never-deployed site', async () => {
+    listCommits.mockResolvedValueOnce({ data: [] })
+    expect(await findLastDeployCommitSha('site')).toBeNull()
   })
 })

@@ -2,6 +2,7 @@ import { RequestError } from '@octokit/request-error'
 import { getOctokit, resolveRepo } from './app-client'
 import { withRateLimitRetry } from './rate-limit'
 import { conditionalGet } from './conditional'
+import { DEPLOY_COMMIT_PREFIX, DEPLOY_MANIFEST_PATH } from './deploy-commit'
 import type { BrandJson } from '@/types/brand-json'
 
 // How many blobs to upload at once when pushing a deliverable. Kept low so a
@@ -258,6 +259,10 @@ async function createBlobs(
   return out
 }
 
+// Above this many guarded entries, pushEntriesToBranch validates against one
+// recursive tree read of the base commit rather than a getContent per path.
+const GUARD_TREE_THRESHOLD = 8
+
 export type PushEntry = {
   path: string
   content: string | Buffer
@@ -291,6 +296,17 @@ export async function pushEntriesToBranch(
     guarded.length === 0
       ? undefined
       : async (base) => {
+          // A re-deployed package guards hundreds of entries: read the base
+          // tree once instead of one getContent per path. The per-path check
+          // still runs for a mismatch, so the error carries the current text.
+          if (guarded.length > GUARD_TREE_THRESHOLD) {
+            const shas = new Map((await listTreeAtCommit(slug, base)).map((t) => [t.path, t.sha]))
+            for (const e of guarded) {
+              if ((shas.get(e.path) ?? null) === (e.expectedBlobSha ?? null)) continue
+              await assertBlobSha(slug, e.path, e.expectedBlobSha ?? null, base, true)
+            }
+            return
+          }
           for (const e of guarded) {
             await assertBlobSha(slug, e.path, e.expectedBlobSha ?? null, base, true)
           }
@@ -1172,6 +1188,54 @@ export async function getDraftHeadSha(slug: string): Promise<string | null> {
   return ref.object.sha ?? null
 }
 
+// The newest "Deploy packaged content" commit reachable from draft, or null when
+// the site has never had a package pushed. Every package writes the
+// LLM-generated content/brand.md, so the path-filtered history is short and the
+// deploy commits are in it. Publishing merges draft into main and a draft reset
+// points draft at main, so the commit stays reachable either way.
+export async function findLastDeployCommitSha(slug: string, maxPages = 3): Promise<string | null> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const perPage = 100
+  for (let page = 1; page <= maxPages; page++) {
+    const list = await withRateLimitRetry(() =>
+      octokit.repos.listCommits({
+        owner,
+        repo,
+        sha: DRAFT_BRANCH,
+        path: 'content/brand.md',
+        per_page: perPage,
+        page,
+      })
+    )
+    for (const c of list.data) {
+      if ((c.commit.message ?? '').startsWith(DEPLOY_COMMIT_PREFIX)) return c.sha
+    }
+    if (list.data.length < perPage) break
+  }
+  return null
+}
+
+// Blob entries of the full tree at an (immutable) commit sha.
+export async function listTreeAtCommit(slug: string, commitSha: string): Promise<TreeEntry[]> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const commit = await conditionalGet(`commit-obj:${owner}/${repo}:${commitSha}`, (headers) =>
+    octokit.git.getCommit({ owner, repo, commit_sha: commitSha, headers }),
+    { immutable: true }
+  )
+  const tree = await conditionalGet(`tree:${owner}/${repo}:${commit.tree.sha}`, (headers) =>
+    octokit.git.getTree({ owner, repo, tree_sha: commit.tree.sha, recursive: 'true', headers }),
+    { immutable: true }
+  )
+  return tree.tree
+    .filter(
+      (n): n is { path: string; sha: string; type: 'blob'; size?: number } =>
+        typeof n.path === 'string' && typeof n.sha === 'string' && n.type === 'blob'
+    )
+    .map((n) => ({ path: n.path, sha: n.sha, type: n.type, size: n.size }))
+}
+
 export type RevertResult =
   | { reverted: true; revertedTo: string }
   | { reverted: false; reason: string }
@@ -1313,7 +1377,9 @@ export async function getDraftChanges(slug: string): Promise<{ files: ChangedFil
     }
   }
 
-  const files: ChangedFile[] = (cmp.data.files ?? []).map((f) => {
+  const files: ChangedFile[] = (cmp.data.files ?? [])
+    .filter((f) => f.filename !== DEPLOY_MANIFEST_PATH)
+    .map((f) => {
     const attr = attribution.get(f.filename) ?? null
     return {
       path: f.filename,

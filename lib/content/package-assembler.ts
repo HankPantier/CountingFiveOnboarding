@@ -20,10 +20,17 @@ import type { RedirectIssue } from '@/lib/content/redirect-map-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
 import { resumableUpload, RESUMABLE_THRESHOLD } from '@/lib/supabase/resumable-upload'
 import { githubErrorMessage } from '@/lib/github/error-hint'
+import { DEPLOY_COMMIT_PREFIX } from '@/lib/github/deploy-commit'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
+  findLastDeployCommitSha,
+  FileNotFoundError,
+  listTree,
+  listTreeAtCommit,
   pushEntriesToBranch,
+  readBlobBySha,
+  StaleShaError,
   patchSiteConfigSiteUrl,
   patchSiteConfigBooking,
   removeStaleStaticSitemap,
@@ -63,6 +70,16 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
 import { selectUnfinishedPages } from './generation-state'
+import {
+  DEPLOY_MANIFEST_PATH,
+  REDIRECTS_CSV_PATH,
+  isPackageOwnedPath,
+  parseDeployManifest,
+  planDeployPush,
+  previewPreservedFiles,
+  type DeployPlan,
+  type SkippedFile,
+} from './deploy-plan'
 
 const OG_IMAGES_README = `# OG Images
 
@@ -96,7 +113,7 @@ export type DeployContext = {
 }
 
 export type PushOutcome =
-  | { ok: true; commitSha: string; fileCount: number }
+  | { ok: true; commitSha: string; fileCount: number; firstDeploy: boolean; skipped: SkippedFile[] }
   | { ok: false; error: string }
 
 export type PackageResult =
@@ -669,7 +686,8 @@ export async function assembleContentPackage(
     return {
       ok: false,
       status: 500,
-      error: `Failed to upload package: ${uploadError instanceof Error ? uploadError.message : 'unknown error'}`,
+      // The raw Storage message stays in the log above, never in the response.
+      error: 'Failed to upload the package to storage',
     }
   }
 
@@ -697,7 +715,7 @@ export async function assembleContentPackage(
     return {
       ok: false,
       status: 500,
-      error: `Failed to upload plain content: ${(txtUploadError ?? docxUploadError)?.message ?? 'unknown error'}`,
+      error: 'Failed to upload the plain-content files to storage',
     }
   }
 
@@ -771,24 +789,112 @@ export async function assembleContentPackage(
   }
 }
 
+// Draft-branch state a (re-)deploy is planned against. `baseline` is null only
+// when the site has never had a package pushed (first deploy).
+export type DeployState = {
+  draftBlobs: Map<string, string>
+  baseline: Record<string, string> | null
+  redirects: { draft: string | null; lastDeployed: string | null }
+}
+
+async function readTextBySha(slug: string, sha: string | null | undefined): Promise<string | null> {
+  if (!sha) return null
+  try {
+    return (await readBlobBySha(slug, sha)).toString('utf-8')
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return null
+    throw err
+  }
+}
+
+export async function loadDeployState(slug: string): Promise<DeployState> {
+  await ensureDraftBranch(slug)
+  const tree = await listTree(slug, DRAFT_BRANCH)
+  const draftBlobs = new Map(tree.filter((t) => t.type === 'blob').map((t) => [t.path, t.sha]))
+
+  let baseline: Record<string, string> | null = null
+  const manifestSha = draftBlobs.get(DEPLOY_MANIFEST_PATH)
+  if (manifestSha) {
+    const text = await readTextBySha(slug, manifestSha)
+    baseline = text ? (parseDeployManifest(text)?.blobs ?? null) : null
+  }
+  if (baseline === null) {
+    // Pre-manifest deploys were unguarded overlays, so the tree of the last
+    // deploy commit is exactly what the pipeline generated.
+    const lastDeploy = await findLastDeployCommitSha(slug)
+    if (lastDeploy) {
+      baseline = {}
+      for (const t of await listTreeAtCommit(slug, lastDeploy)) {
+        if (isPackageOwnedPath(t.path)) baseline[t.path] = t.sha
+      }
+    }
+  }
+  // A manifest we couldn't read still proves the site was deployed — never
+  // fall back to the first-deploy overlay in that case.
+  if (baseline === null && manifestSha) baseline = {}
+
+  const redirects = baseline === null
+    ? { draft: null, lastDeployed: null }
+    : {
+        draft: await readTextBySha(slug, draftBlobs.get(REDIRECTS_CSV_PATH)),
+        lastDeployed: await readTextBySha(slug, baseline[REDIRECTS_CSV_PATH]),
+      }
+  return { draftBlobs, baseline, redirects }
+}
+
+// Decide what a push of this deliverable may write (see deploy-plan.ts). The
+// package route runs this before responding so the operator sees the files a
+// re-deploy keeps; the push re-plans itself if draft moves in between.
+export async function planDeliverablePush(deploy: DeployContext): Promise<DeployPlan> {
+  const state = await loadDeployState(deploy.githubRepo)
+  return planDeployPush({
+    entries: deploy.entries,
+    draftBlobs: state.draftBlobs,
+    baseline: state.baseline,
+    redirects: state.redirects,
+  })
+}
+
+// The "before" view: whether the site was deployed already and which files a
+// re-package would keep as they are on draft. Needs no assembly.
+export async function previewRedeploy(
+  slug: string
+): Promise<{ previouslyDeployed: boolean; preserved: SkippedFile[] }> {
+  const state = await loadDeployState(slug)
+  return {
+    previouslyDeployed: state.baseline !== null,
+    preserved: previewPreservedFiles(state.draftBlobs, state.baseline),
+  }
+}
+
 // Push an assembled deliverable's content/ + public/ files to the linked repo's
 // draft branch. Decoupled from assembly so it can run in a background after()
 // task (route) or be awaited (CLI). Self-contained and non-throwing: returns a
 // PushOutcome rather than throwing, since a GitHub hiccup must never surface as
-// an assembly failure.
-export async function pushAssembledDeliverable(deploy: DeployContext): Promise<PushOutcome> {
-  const { githubRepo, entries, siteUrl, booking, author } = deploy
+// an assembly failure. A first deploy overlays everything; a re-deploy only
+// writes what nobody changed on draft since the last package (see
+// deploy-plan.ts) and reports the rest as skipped.
+export async function pushAssembledDeliverable(
+  deploy: DeployContext,
+  precomputedPlan?: DeployPlan
+): Promise<PushOutcome> {
+  const { githubRepo, siteUrl, booking, author } = deploy
+  const message = `${DEPLOY_COMMIT_PREFIX} via admin${author.authorEmail ? ` (${author.authorEmail})` : ''}`
   try {
-    await ensureDraftBranch(githubRepo)
-    const pushed = await pushEntriesToBranch(
-      githubRepo,
-      DRAFT_BRANCH,
-      entries,
-      `Deploy packaged content via admin${author.authorEmail ? ` (${author.authorEmail})` : ''}`,
-      author
-    )
+    let plan = precomputedPlan ?? (await planDeliverablePush(deploy))
+    let pushed: { commitSha: string; fileCount: number }
+    try {
+      pushed = await pushEntriesToBranch(githubRepo, DRAFT_BRANCH, plan.push, message, author)
+    } catch (err) {
+      // Draft moved between planning and committing (an edit landed) — plan
+      // again against the new state instead of overwriting it.
+      if (!(err instanceof StaleShaError)) throw err
+      plan = await planDeliverablePush(deploy)
+      pushed = await pushEntriesToBranch(githubRepo, DRAFT_BRANCH, plan.push, message, author)
+    }
     console.warn(
-      `[content-job] Pushed ${pushed.fileCount} file(s) to ${githubRepo}@${DRAFT_BRANCH} (${pushed.commitSha.slice(0, 7)})`
+      `[content-job] Pushed ${pushed.fileCount} file(s) to ${githubRepo}@${DRAFT_BRANCH} (${pushed.commitSha.slice(0, 7)})` +
+        (plan.firstDeploy ? '' : ` — re-deploy kept ${plan.skipped.length} draft file(s) as-is`)
     )
     // Point the dynamic sitemap (and other siteConfig consumers) at the
     // canonical host, and drop any stale static sitemap a prior package left
@@ -808,7 +914,13 @@ export async function pushAssembledDeliverable(deploy: DeployContext): Promise<P
     } catch (err) {
       console.warn(`[content-job] Stale sitemap cleanup failed for ${githubRepo}:`, err)
     }
-    return { ok: true, commitSha: pushed.commitSha, fileCount: pushed.fileCount }
+    return {
+      ok: true,
+      commitSha: pushed.commitSha,
+      fileCount: pushed.fileCount,
+      firstDeploy: plan.firstDeploy,
+      skipped: plan.skipped,
+    }
   } catch (err) {
     const error = githubErrorMessage(err, githubRepo)
     console.error(`[content-job] Push to ${githubRepo} failed:`, error)

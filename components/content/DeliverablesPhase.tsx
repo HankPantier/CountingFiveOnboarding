@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import NavCurationPhase from './NavCurationPhase'
 import PackageDownloadBar from './PackageDownloadBar'
+import RedeployNotice from './RedeployNotice'
+import type { SkippedFile } from '@/lib/content/deploy-plan'
 import ProgressBar from '@/components/ui/ProgressBar'
 import { useTaskProgress } from '@/components/ui/use-task-progress'
 import { packageErrorMessage } from '@/lib/content/package-error-message'
@@ -67,6 +69,10 @@ export default function DeliverablesPhase({
   const [deployState, setDeployState] = useState<'idle' | 'deploying' | 'deployed' | 'unknown'>('idle')
   const [linkWarnings, setLinkWarnings] = useState<string[]>([])
   const [redirectIssues, setRedirectIssues] = useState<Array<{ severity: string; oldUrl: string; reason: string }>>([])
+  // Re-deploy safety: before a re-package, which draft files would be kept
+  // as-is (GET /package); after one, which ones the push actually skipped.
+  const [redeployPreview, setRedeployPreview] = useState<{ previouslyDeployed: boolean; preserved: SkippedFile[] } | null>(null)
+  const [preservedAfter, setPreservedAfter] = useState<SkippedFile[] | null>(null)
   const [approval, setApproval] = useState<ApprovalSnapshot | null>(null)
   // Bumped to force an immediate approval re-poll (e.g. after "Approve all
   // remaining"), since the poll interval stops once everything is approved.
@@ -115,6 +121,24 @@ export default function DeliverablesPhase({
   const [importStatus, setImportStatus] = useState<LibrarySelectionStatus | null>(null)
   const [importsRunning, setImportsRunning] = useState(false)
   const importsRunningRef = useRef(false)
+
+  useEffect(() => {
+    if (!githubRepo) return
+    let cancelled = false
+    fetch(`/api/content-jobs/${contentJobId}/package`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data || typeof data.previouslyDeployed !== 'boolean') return
+        setRedeployPreview({
+          previouslyDeployed: data.previouslyDeployed,
+          preserved: Array.isArray(data.preserved) ? data.preserved : [],
+        })
+      })
+      .catch(() => {
+        // Preview is advisory — the push itself still guards every file.
+      })
+    return () => { cancelled = true }
+  }, [contentJobId, githubRepo])
 
   // Poll the approval state so the assemble button knows whether the gate
   // would reject. Stops polling once everything's approved.
@@ -318,6 +342,7 @@ export default function DeliverablesPhase({
       setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
       setRedirectIssues(Array.isArray(data.redirectIssues) ? data.redirectIssues : [])
       setImageMissing(Array.isArray(data.imageCoverage?.missing) ? data.imageCoverage.missing : [])
+      setPreservedAfter(data.firstDeploy === false && Array.isArray(data.preservedFiles) ? data.preservedFiles : null)
       setPackaged(true)
       if (data.pushScheduled) void trackDeploy(baselineSha)
     } catch (err) {
@@ -334,7 +359,9 @@ export default function DeliverablesPhase({
     // Going live is high-impact and hard to undo — confirm before the chain runs.
     if (
       !window.confirm(
-        'Publish this site live? This assembles the content and pushes it to the live site — visitors will see it once Vercel finishes deploying.'
+        redeployPreview?.previouslyDeployed
+          ? `Re-publish this site live? This re-assembles the content and pushes it to the live site. Draft edits are kept: ${redeployPreview.preserved.length} file(s) changed since the last package (site settings, edited or moved pages) are not overwritten.`
+          : 'Publish this site live? This assembles the content and pushes it to the live site — visitors will see it once Vercel finishes deploying.'
       )
     ) {
       return
@@ -402,6 +429,7 @@ export default function DeliverablesPhase({
         ? pkgData.imageCoverage.missing
         : []
       setImageMissing(missingImages)
+      setPreservedAfter(pkgData.firstDeploy === false && Array.isArray(pkgData.preservedFiles) ? pkgData.preservedFiles : null)
       setPackaged(true)
       if (!pkgData.pushScheduled) {
         throw new Error('No repo push was scheduled — confirm a GitHub repo is linked above.')
@@ -769,6 +797,10 @@ export default function DeliverablesPhase({
             </div>
           )}
 
+          {redeployPreview?.previouslyDeployed && !packaged && (
+            <RedeployNotice files={redeployPreview.preserved} when="before" />
+          )}
+
           {deployStep !== 'live' && (
             <button
               onClick={runFullDeploy}
@@ -901,6 +933,8 @@ export default function DeliverablesPhase({
               Couldn&rsquo;t confirm the repo deploy from here — it may still be finishing. Check the content editor for the latest <span className="font-mono">draft</span> commit; the download below works regardless.
             </div>
           )}
+
+          {preservedAfter && <RedeployNotice files={preservedAfter} when="after" />}
 
           {redirectIssues.length > 0 && (
             <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
