@@ -19,6 +19,7 @@ const FILE_LABELS: Record<string, string> = {
   'content/design.json': 'design.json (fonts, tokens, treatments)',
   'src/styles/theme.css': 'theme.css',
   'content/design-overrides.css': 'design-overrides.css',
+  'src/app/fonts.generated.ts': 'fonts module (live fonts)',
 }
 
 function formatWhen(iso: string): string {
