@@ -37,7 +37,7 @@ import {
   type RunPatch,
 } from './run-store'
 import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
-import { CONCEPT_STOPPED_MID_REVIEW, inputCaption, inputLabel, nextAction, parseBaseSnapshot, selectRunInputs, usablePriors } from './run-state'
+import { CONCEPT_STOPPED_MID_REVIEW, currentSiteCaption, inputAdminText, inputCaption, inputLabel, nextAction, parseBaseSnapshot, selectRunInputs, usablePriors } from './run-state'
 import type { RunStatus } from './studio-types'
 import { MAX_PROMPT_IMAGES, type RunBaseSnapshot } from './run-types'
 import { critiqueUnit, finishConceptUnit, renderUnit, reviseUnit } from './refine-stage'
@@ -238,7 +238,7 @@ async function generateStage(
     const images: PromptImage[] = []
     let currentShots = base.screenshots
     let currentMetrics = base.metrics ?? null
-    const beforeCaption = `The client's CURRENT design of ${base.pagePath} (desktop, 1440 px) — the "before" to improve on.`
+    const beforeCaption = currentSiteCaption(base.pagePath)
     const storedBefore = base.screenshots.find((s) => s.viewport === 'desktop')
     if (storedBefore) {
       try {
@@ -273,8 +273,7 @@ async function generateStage(
         continue
       }
       try {
-        const adminText = [row.label ? `Label: ${row.label}` : '', row.notes ? `Notes: ${row.notes}` : ''].filter(Boolean).join('\n')
-        images.push({ caption: inputCaption(row), adminText: adminText || null, bytes: await downloadDesignImage(db, row.storage_path), mediaType: 'image/webp' })
+        images.push({ caption: inputCaption(row), adminText: inputAdminText(row), bytes: await downloadDesignImage(db, row.storage_path), mediaType: 'image/webp' })
       } catch (err) {
         console.warn('[design-run] input image download failed', err)
         notes.push(`Input skipped — ${inputLabel(row)}: its image could not be read`)

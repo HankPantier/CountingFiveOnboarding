@@ -61,3 +61,6 @@ raw-docs/screenshots/
 
 # Brainstorm visual-companion artifacts
 .superpowers/
+
+# Local script output (e.g. scripts/compare-design-models.ts → tmp/design-ab/)
+/tmp/
