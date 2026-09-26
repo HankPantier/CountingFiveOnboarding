@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 'ai'
+import { streamText, convertToModelMessages, stepCountIs } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
@@ -12,6 +12,7 @@ import { trimMessages } from '@/lib/agent/trim-messages'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
+import { isUiMessageArray, readJsonBody } from '@/app/api/_json'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_MESSAGES_PER_HOUR = 60
@@ -39,7 +40,12 @@ export async function POST(
     )
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  const body = await readJsonBody<{ messages?: unknown }>(req)
+  if (body instanceof NextResponse) return body
+  if (!isUiMessageArray(body.messages)) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+  const messages = body.messages
   const supabase = createServerClient()
 
   // Never select mbp_content — only the parsed schema_data reaches Claude.

@@ -1,3 +1,4 @@
+import type { UIMessage } from 'ai'
 import { NextResponse } from 'next/server'
 
 // Parse a JSON request body, returning a typed 400 NextResponse on malformed
@@ -17,4 +18,21 @@ export async function readJsonBody<T = unknown>(
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
+}
+
+// Shape check for a useChat request's `messages`: an array of objects each with
+// a string `role` and a `parts` array. Chat routes run this before touching the
+// messages so a malformed body is a 400, not a crash in trimMessages /
+// convertToModelMessages.
+export function isUiMessageArray(value: unknown): value is UIMessage[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (m: unknown) =>
+        !!m &&
+        typeof m === 'object' &&
+        typeof (m as { role?: unknown }).role === 'string' &&
+        Array.isArray((m as { parts?: unknown }).parts)
+    )
+  )
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { NextResponse } from 'next/server'
-import { readJsonBody } from './_json'
+import { isUiMessageArray, readJsonBody } from './_json'
 
 const post = (body: string) =>
   new Request('http://test/x', { method: 'POST', body })
@@ -24,5 +24,16 @@ describe('readJsonBody', () => {
     const res = await readJsonBody(new Request('http://test/x', { method: 'POST' }))
     expect(res).toBeInstanceOf(NextResponse)
     expect((res as NextResponse).status).toBe(400)
+  })
+})
+
+describe('isUiMessageArray', () => {
+  it('accepts useChat messages and rejects malformed shapes', () => {
+    expect(isUiMessageArray([{ role: 'user', parts: [{ type: 'text', text: 'hi' }] }])).toBe(true)
+    expect(isUiMessageArray([])).toBe(true)
+    expect(isUiMessageArray(undefined)).toBe(false)
+    expect(isUiMessageArray('hi')).toBe(false)
+    expect(isUiMessageArray([{ role: 'user' }])).toBe(false)
+    expect(isUiMessageArray([null])).toBe(false)
   })
 })
