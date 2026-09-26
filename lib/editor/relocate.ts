@@ -101,6 +101,12 @@ export function frontmatterUrl(content: string): string | null {
   return value || null
 }
 
+// RFC 4180 quoting for one redirects.csv field — a comma, quote or newline in a
+// url must never shift columns or inject a row.
+export function csvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+}
+
 // Append 301 redirect rows to content/redirects.csv (creating it if absent),
 // skipping any from-url that already has one. `reason` is the CSV note column;
 // callers pass a fixed string (never client input) so it can't corrupt the CSV.
@@ -124,7 +130,7 @@ export async function appendRedirects(
   let added = false
   for (const { from, to } of pairs) {
     if (existing.has(from)) continue
-    content += `${from},${to},301,${reason}\n`
+    content += `${[from, to, '301', reason].map(csvField).join(',')}\n`
     added = true
   }
   if (added) {
@@ -170,7 +176,7 @@ export async function relocateFile(
     throw new DestinationOccupiedError(fromUrl, toUrl)
   }
 
-  await moveFile(
+  const { commitSha } = await moveFile(
     ctx.githubRepo,
     fromPath,
     toPath,
@@ -179,12 +185,16 @@ export async function relocateFile(
     `Move ${fromUrl} → ${toUrl} via admin${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
     author(ctx)
   )
-  const moved = await readFile(ctx.githubRepo, toPath, DRAFT_BRANCH)
+  // Read the moved file AT the move commit, not the branch: a branch read right
+  // after the commit can still return the pre-move tip (FileNotFound → 500
+  // after the page already moved, with no canonical fix or 301). The move
+  // reuses the blob, so its sha is expectedSha.
+  const moved = await readFile(ctx.githubRepo, toPath, commitSha || DRAFT_BRANCH)
   const fixed = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
-  let blobSha = moved.sha
+  let blobSha = expectedSha
   if (fixed !== moved.content) {
     const w = await writeFile(ctx.githubRepo, toPath, fixed, DRAFT_BRANCH, `Update canonical for ${toUrl}`, {
-      expectedSha: moved.sha,
+      expectedSha,
       ...author(ctx),
     })
     blobSha = w.blobSha

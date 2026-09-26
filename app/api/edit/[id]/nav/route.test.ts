@@ -173,6 +173,37 @@ describe('POST /api/edit/[id]/nav — move validation', () => {
     expect(h.moveFile).toHaveBeenCalledTimes(1)
   })
 
+  it('does not 500 when the branch read lags right after the move', async () => {
+    seed('content/pages/a.md', '/a')
+    // After the move the branch still reports the old tip: the moved file is
+    // "not found". The route must use the source blob it already holds.
+    h.moveFile.mockImplementationOnce(async (_repo: string, from: string, to: string) => {
+      h.moveCalls.push([from, to])
+      return { commitSha: 'commit' }
+    })
+
+    const res = await POST(req([{ from: '/a', to: '/services/a' }]), { params })
+
+    expect(res.status).toBe(200)
+    const canonical = h.writeFile.mock.calls.find((c) => c[1] === 'content/pages/services--a.md')
+    expect(canonical?.[2]).toContain('url: /services/a')
+    expect(canonical?.[5]).toMatchObject({ expectedSha: 'sha-content/pages/a.md' })
+    expect(h.writeFile.mock.calls.some((c) => c[1] === 'content/redirects.csv')).toBe(true)
+  })
+
+  it.each([
+    ['protocol-relative host', '//evil.example'],
+    ['comma (CSV column shift)', '/a,b'],
+    ['newline (CSV row injection)', '/x\n/evil'],
+    ['double-dash filename separator', '/services--a'],
+  ])('ignores a move whose destination is not a clean page path (%s)', async (_label, to) => {
+    seed('content/pages/about.md', '/about')
+    const res = await POST(req([{ from: '/about', to }]), { params })
+    expect(res.status).toBe(200)
+    expect(h.moveFile).not.toHaveBeenCalled()
+    expect(h.writeFile.mock.calls.some((c) => c[1] === 'content/redirects.csv')).toBe(false)
+  })
+
   it('maps a moveFile AssetExistsError to 422', async () => {
     seed('content/pages/a.md', '/a')
     h.moveFile.mockImplementationOnce(async () => {
