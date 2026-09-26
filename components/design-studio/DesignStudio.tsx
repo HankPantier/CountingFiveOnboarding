@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesignStudioState } from '@/lib/design/studio-types'
 import type { DesignRunDto } from '@/lib/design/run-types'
-import { RUN_POLL_MS, runIsActive, startSequentialPoll } from '@/lib/design/studio-ui'
+import { RUN_POLL_MS, SIGNED_VIEW_STALE_MS, runIsActive, startSequentialPoll, stabilizeSignedUrls, type SignedUrlCache } from '@/lib/design/studio-ui'
 import DesignChat from './DesignChat'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
@@ -22,21 +22,43 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Request ordering: loads are triggered from many places with very different
+  // latencies, so only the LATEST load may set state, and a run snapshot from
+  // an older request (load or poll) never replaces a newer one.
+  const loadSeq = useRef(0)
+  const runSeq = useRef(0)
+  const lastLoadAt = useRef(0)
+  // Keeps each screenshot's signed URL stable across polls (no re-download).
+  const urlCache = useRef<SignedUrlCache>(new Map())
+
   const load = useCallback(async () => {
+    const loadId = ++loadSeq.current
+    const runId = ++runSeq.current
     try {
-      const next = await designApi<DesignStudioState>(`/api/edit/${sessionId}/design`)
+      const raw = await designApi<DesignStudioState>(`/api/edit/${sessionId}/design`)
+      if (loadId !== loadSeq.current) return
+      const next = stabilizeSignedUrls(raw, urlCache.current, Date.now())
+      lastLoadAt.current = Date.now()
       setState(next)
-      setRun(next.run)
+      if (runId === runSeq.current) setRun(next.run)
       setError(null)
     } catch (err) {
-      setError(errorMessage(err, 'Failed to load the Design Studio'))
+      if (loadId === loadSeq.current) setError(errorMessage(err, 'Failed to load the Design Studio'))
     } finally {
-      setLoading(false)
+      if (loadId === loadSeq.current) setLoading(false)
     }
   }, [sessionId])
 
+  // A Studio left open past the signed-URL lifetime reloads when shown again.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && lastLoadAt.current > 0 && Date.now() - lastLoadAt.current > SIGNED_VIEW_STALE_MS) void load()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [load])
+
+  useEffect(() => {
     void load()
   }, [load])
 
@@ -54,10 +76,14 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
     // Each request settles before the next is scheduled; a failed request is
     // transient (the poller keeps going), a settled run stops it.
     const stop = startSequentialPoll(async () => {
+      const runId = ++runSeq.current
       const res = await designApi<{ run: DesignRunDto | null }>(`/api/edit/${sessionId}/design/runs`)
       if (cancelled) return false
-      setRun(res.run)
-      if (runIsActive(res.run)) return true
+      // A load started meanwhile owns the run state; keep polling until it lands.
+      if (runId !== runSeq.current) return true
+      const run = stabilizeSignedUrls(res.run, urlCache.current, Date.now())
+      setRun(run)
+      if (runIsActive(run)) return true
       void load()
       return false
     }, RUN_POLL_MS)

@@ -166,3 +166,58 @@ export function applyGateFailures(body: unknown): string[] {
   const list = (body as Record<string, unknown>).failures
   return Array.isArray(list) ? list.filter((f): f is string => typeof f === 'string') : []
 }
+
+// Focus trap (modal dialogs): where Tab / Shift+Tab should land, given the
+// index of the focused element among the dialog's focusables (-1 = focus is
+// on the dialog itself or outside it). null = let the browser move focus.
+export function trapFocusIndex(current: number, count: number, shift: boolean): number | null {
+  if (count <= 0) return null
+  if (current < 0) return shift ? count - 1 : 0
+  if (shift && current === 0) return count - 1
+  if (!shift && current === count - 1) return 0
+  return null
+}
+
+export const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), canvas[tabindex], [tabindex]:not([tabindex="-1"])'
+
+// A scroll box counts as "at the bottom" within this many px (streamed output
+// keeps it pinned there; once the reader scrolls up it stays put).
+export const NEAR_BOTTOM_PX = 48
+export function isNearBottom(scrollTop: number, clientHeight: number, scrollHeight: number, slack: number = NEAR_BOTTOM_PX): boolean {
+  return scrollHeight - (scrollTop + clientHeight) <= slack
+}
+
+// Signed Storage URLs carry a fresh token on every response, so re-rendering
+// a polled DTO re-downloads every screenshot. The cache keeps the FIRST URL
+// seen for each object (keyed by the URL without its query) until it is
+// SIGNED_URL_REUSE_MS old — well inside the 1 h signing TTL — then adopts the
+// next fresh one. Pure: returns a new value; `cache` is the caller's (a ref).
+export const SIGNED_URL_REUSE_MS = 45 * 60 * 1000
+const SIGNED_URL_RE = /\/storage\/v1\/object\/sign\//
+export type SignedUrlCache = Map<string, { url: string; at: number }>
+
+export function stabilizeSignedUrls<T>(value: T, cache: SignedUrlCache, now: number, maxAgeMs: number = SIGNED_URL_REUSE_MS): T {
+  const walk = (v: unknown): unknown => {
+    if (typeof v === 'string') {
+      if (!SIGNED_URL_RE.test(v)) return v
+      const key = v.split('?')[0]
+      const hit = cache.get(key)
+      if (hit && now - hit.at < maxAgeMs) return hit.url
+      cache.set(key, { url: v, at: now })
+      return v
+    }
+    if (Array.isArray(v)) return v.map(walk)
+    if (v && typeof v === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [k, x] of Object.entries(v)) out[k] = walk(x)
+      return out
+    }
+    return v
+  }
+  return walk(value) as T
+}
+
+// Signed URLs are 1 h: a view left open longer (tab in the background over
+// lunch) reloads its data when it becomes visible again after this long.
+export const SIGNED_VIEW_STALE_MS = 50 * 60 * 1000

@@ -203,3 +203,36 @@ describe('startSequentialPoll', () => {
     expect(idle).not.toHaveBeenCalled()
   })
 })
+
+describe('Studio UI helpers (audit UI fixes)', () => {
+  it('trapFocusIndex wraps Tab at both ends and enters from outside', async () => {
+    const { trapFocusIndex } = await import('./studio-ui')
+    expect(trapFocusIndex(2, 3, false)).toBe(0)
+    expect(trapFocusIndex(0, 3, true)).toBe(2)
+    expect(trapFocusIndex(1, 3, false)).toBeNull()
+    expect(trapFocusIndex(-1, 3, false)).toBe(0)
+    expect(trapFocusIndex(-1, 3, true)).toBe(2)
+    expect(trapFocusIndex(-1, 0, false)).toBeNull()
+  })
+
+  it('isNearBottom pins only when the reader is at the end', async () => {
+    const { isNearBottom } = await import('./studio-ui')
+    expect(isNearBottom(560, 440, 1000)).toBe(true)
+    expect(isNearBottom(530, 440, 1000)).toBe(true)
+    expect(isNearBottom(100, 440, 1000)).toBe(false)
+  })
+
+  it('stabilizeSignedUrls keeps the first URL per object until it ages out', async () => {
+    const { stabilizeSignedUrls, SIGNED_URL_REUSE_MS } = await import('./studio-ui')
+    const cache = new Map()
+    const u = (tok: string) => `https://x.supabase.co/storage/v1/object/sign/session-assets/design/s/a.webp?token=${tok}`
+    const first = stabilizeSignedUrls({ run: { shots: [{ url: u('1') }] }, other: 'https://elsewhere/x?token=9' }, cache, 0)
+    const second = stabilizeSignedUrls({ run: { shots: [{ url: u('2') }] }, other: 'https://elsewhere/x?token=10' }, cache, 60_000)
+    expect(second.run.shots[0].url).toBe(u('1'))
+    expect(second.other).toBe('https://elsewhere/x?token=10')
+    expect(first.run.shots[0].url).toBe(u('1'))
+    const later = stabilizeSignedUrls({ url: u('3') }, cache, SIGNED_URL_REUSE_MS + 1)
+    expect(later.url).toBe(u('3'))
+    expect(stabilizeSignedUrls(null, cache, 0)).toBeNull()
+  })
+})
