@@ -63,11 +63,12 @@ function fontHead(typography: Partial<PreviewTypography> | undefined): { link: s
   if (!typography) return { link: '', vars: DEFAULT_FONT_VARS }
   const { headingFont, bodyFont, accentFont, googleFontsUrl } = typography
   const link = googleFontsUrl ? `<link rel="stylesheet" href="${attrSafe(googleFontsUrl)}">` : ''
+  // !important: the template layout aliases --font-body-loaded (and, T1+, any shared-family role) with an INLINE <html style>, which beats any non-important stylesheet — without it a chosen body font never shows in the preview.
   const vars =
     `:root{` +
-    `--font-heading-loaded:"${attrSafe(headingFont || 'Public Sans')}",system-ui,sans-serif;` +
-    `--font-body-loaded:"${attrSafe(bodyFont || 'Public Sans')}",system-ui,sans-serif;` +
-    `--font-accent-loaded:"${attrSafe(accentFont || 'Fraunces')}",Georgia,"Times New Roman",serif;}`
+    `--font-heading-loaded:"${attrSafe(headingFont || 'Public Sans')}",system-ui,sans-serif !important;` +
+    `--font-body-loaded:"${attrSafe(bodyFont || 'Public Sans')}",system-ui,sans-serif !important;` +
+    `--font-accent-loaded:"${attrSafe(accentFont || 'Fraunces')}",Georgia,"Times New Roman",serif !important;}`
   return { link, vars }
 }
 

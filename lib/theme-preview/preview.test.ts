@@ -89,6 +89,18 @@ describe('composePreviewSrcDoc', () => {
     expect(doc2).toContain('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora')
   })
 
+  it("font vars beat the shell's inline --font-body-loaded alias (!important)", () => {
+    const shellHtml = `<html style="--font-body-loaded: var(--font-heading-loaded)"><head>${THEME_SLOT}</head><body></body></html>`
+    const doc = composePreviewSrcDoc({
+      shellHtml,
+      themeCss: '',
+      overridesCss: '',
+      typography: { headingFont: 'Lora', bodyFont: 'Inter', accentFont: 'Fraunces', googleFontsUrl: '' },
+    })
+    expect(doc).toContain('--font-body-loaded:"Inter",system-ui,sans-serif !important;')
+    expect(doc).toContain('--font-heading-loaded:"Lora",system-ui,sans-serif !important;')
+  })
+
   // Regression: legacy design.json omits accentFont (added later for Ink & Clay).
   // A partial typography must fall back per-field, never throw at mount.
   it('does not throw and falls back per-field when a font slot is missing', () => {
