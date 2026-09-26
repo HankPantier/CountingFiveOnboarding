@@ -6,7 +6,8 @@ vi.mock('./truncate-to-token-budget', () => ({ checkTokenBudget: vi.fn() }))
 vi.mock('./token-usage', () => ({ recordTokenUsage: vi.fn(async () => {}) }))
 
 import { generateText } from 'ai'
-import { refineBlogIdea } from './blog-idea-refiner'
+import { refineBlogIdea, REFINE_CALL_TIMEOUT_MS } from './blog-idea-refiner'
+import { PUBLISHED_CONTENT_MODEL } from './generation-tuning'
 
 const mockGen = vi.mocked(generateText)
 
@@ -37,6 +38,22 @@ describe('refineBlogIdea', () => {
     expect(res?.title).toBe(IDEA.title)
     expect(res?.suggested_external_links).toEqual([{ url: 'https://www.sba.gov/', title: 'SBA' }])
     expect(mockGen).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs Sonnet 5 at explicit low effort with a per-call timeout that fits the 60s route', async () => {
+    // Omitting providerOptions means Sonnet 5's default: adaptive thinking at
+    // effort 'high', which starved the small JSON budget and outran the route.
+    mockGen.mockResolvedValueOnce(reply(JSON.stringify(IDEA)))
+    await refineBlogIdea({ seed: 'self-care for owners' })
+    const call = mockGen.mock.calls[0][0] as unknown as {
+      model: string
+      providerOptions?: { anthropic?: { effort?: string } }
+      abortSignal?: AbortSignal
+    }
+    expect(call.model).toBe(PUBLISHED_CONTENT_MODEL)
+    expect(call.providerOptions?.anthropic?.effort).toBe('low')
+    expect(call.abortSignal).toBeInstanceOf(AbortSignal)
+    expect(REFINE_CALL_TIMEOUT_MS * 2).toBeLessThan(60_000)
   })
 
   it('parses fenced JSON', async () => {
