@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { requireAuditAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { runAuditJob } from '@/lib/audit/worker'
+import { isCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 600
@@ -15,9 +16,7 @@ const RUNNING_STATES = '(crawling,analyzing,researching,scoring,rendering)'
 //   1. Authorized user — an admin, or an auditor who owns this audit.
 //   2. Bearer CRON_SECRET — reserved for an internal/scheduled trigger.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const cronSecret = process.env.CRON_SECRET
-  const authHeader = req.headers.get('Authorization')
-  const isInternalChain = !!cronSecret && authHeader === `Bearer ${cronSecret}`
+  const isInternalChain = isCronBearer(req)
 
   const { id } = await params
 

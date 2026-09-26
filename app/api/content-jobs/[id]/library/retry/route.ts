@@ -5,6 +5,7 @@ import {
   runLibrarySelectionsForJob,
   getLibrarySelectionStatus,
 } from '@/lib/content/library-inclusion'
+import { isCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 600
@@ -17,9 +18,7 @@ export const maxDuration = 600
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  const cronSecret = process.env.CRON_SECRET
-  const authHeader = req.headers.get('Authorization')
-  const isInternalChain = !!cronSecret && authHeader === `Bearer ${cronSecret}`
+  const isInternalChain = isCronBearer(req)
   if (!isInternalChain) {
     const ctx = await requireContentJobAccess(id)
     if (ctx instanceof NextResponse) return ctx

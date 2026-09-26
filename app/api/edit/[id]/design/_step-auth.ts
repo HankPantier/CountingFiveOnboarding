@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { isUuid } from '@/lib/design/input-validation'
 import { requireDesignAdmin } from './_design'
+import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 export type StepTarget = { sessionId: string; jobId: string; githubRepo: string }
 export type StepCaller = { kind: 'cron'; target: StepTarget } | { kind: 'admin'; target: StepTarget; adminId: string }
@@ -21,9 +22,8 @@ export async function authorizeStep(req: Request, sessionId: string): Promise<St
     return { kind: 'admin', target: { sessionId: ctx.sessionId, jobId: ctx.jobId, githubRepo: ctx.githubRepo }, adminId: ctx.adminId }
   }
 
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  if (header !== `Bearer ${cronSecret}`) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const denied = requireCronBearer(req)
+  if (denied) return denied
   if (!isUuid(sessionId)) return NextResponse.json({ error: 'Invalid session id' }, { status: 400 })
 
   const { data: job, error } = await createServerClient()

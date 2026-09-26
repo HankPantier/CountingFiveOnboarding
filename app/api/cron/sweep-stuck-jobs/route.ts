@@ -8,6 +8,7 @@ import { reconcileStuckTarget } from '@/lib/content/blog-batch-runner'
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
 import { sweepStuckDesignRows } from '@/lib/design/sweep'
+import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,14 +33,10 @@ const PAGE_STUCK_THRESHOLD_MS = ORPHAN_RECLAIM_MS
 const DRAFT_STUCK_THRESHOLD_MS = 10 * 60 * 1000
 
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronBearer(req)
+  if (denied) return denied
+  // Non-empty here (requireCronBearer fails closed); reused for self-calls.
+  const cronSecret = process.env.CRON_SECRET as string
 
   const supabase = createServerClient()
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString()
