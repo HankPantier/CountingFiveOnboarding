@@ -38,6 +38,39 @@ export function reconcileStuckTarget(
   return attempts < maxAttempts ? 'pending' : 'error'
 }
 
+// A batch's final status from its targets' statuses, or null while any target
+// is still pending/generating. Pure so the rule is testable.
+export function settledBatchStatus(targetStatuses: string[]): 'complete' | 'error' | null {
+  if (targetStatuses.some((s) => s === 'pending' || s === 'generating')) return null
+  const completed = targetStatuses.filter((s) => s === 'complete').length
+  const errored = targetStatuses.filter((s) => s === 'error').length
+  return completed === 0 && errored > 0 ? 'error' : 'complete'
+}
+
+// Settle blog_batches.status once every target is terminal. Idempotent — safe
+// from the runner's own completion path AND from the stuck-job sweep, which
+// settles orphaned 'generating' targets after the runner that owned them died
+// (before, the batch then showed "generating" forever: no pending target left
+// meant no runner ever came back to finalize it). Returns the status written.
+export async function finalizeBlogBatchIfDone(
+  supabase: ReturnType<typeof createServerClient>,
+  batchId: string
+): Promise<'complete' | 'error' | null> {
+  const { data: rows, error } = await supabase
+    .from('blog_batch_targets')
+    .select('status')
+    .eq('batch_id', batchId)
+  if (error || !rows?.length) return null
+  const status = settledBatchStatus(rows.map((r) => r.status))
+  if (!status) return null
+  await supabase
+    .from('blog_batches')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', batchId)
+    .neq('status', status)
+  return status
+}
+
 export async function runBlogBatch(batchId: string): Promise<void> {
   const supabase = createServerClient()
 
@@ -198,11 +231,7 @@ export async function runBlogBatch(batchId: string): Promise<void> {
   if (allDone) {
     const completed = rows.filter((t) => t.status === 'complete').length
     const errored = rows.filter((t) => t.status === 'error').length
-    const status = completed === 0 && errored > 0 ? 'error' : 'complete'
-    await supabase
-      .from('blog_batches')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', batchId)
+    await finalizeBlogBatchIfDone(supabase, batchId)
     console.warn(`[blog-batch] Batch ${batchId} done: complete=${completed} error=${errored}`)
   }
 }

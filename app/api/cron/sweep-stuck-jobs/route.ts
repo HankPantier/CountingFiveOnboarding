@@ -4,7 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { resumePlan } from '@/lib/content/resume-targets'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS } from '@/lib/content/content-generator'
-import { reconcileStuckTarget } from '@/lib/content/blog-batch-runner'
+import { reconcileStuckTarget, finalizeBlogBatchIfDone } from '@/lib/content/blog-batch-runner'
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
 import { sweepStuckDesignRows } from '@/lib/design/sweep'
@@ -147,10 +147,12 @@ export async function GET(req: Request) {
   let batchTargetsSwept = 0
   const { data: stuckTargets } = await supabase
     .from('blog_batch_targets')
-    .select('id, resource_idea_id, attempts')
+    .select('id, batch_id, resource_idea_id, attempts')
     .eq('status', 'generating')
     .lt('updated_at', cutoff)
     .limit(200)
+  // Batches whose targets this pass settled to a terminal status.
+  const settledBatchIds = new Set<string>()
   if (stuckTargets?.length) {
     const ideaIds = stuckTargets.map((t) => t.resource_idea_id).filter((x): x is string => !!x)
     const { data: stuckIdeas } = ideaIds.length
@@ -174,6 +176,17 @@ export async function GET(req: Request) {
         .eq('status', 'generating')
         .select('id')
       batchTargetsSwept += moved?.length ?? 0
+      if (moved?.length && next !== 'pending') settledBatchIds.add(t.batch_id)
+    }
+  }
+  // A batch whose last live target was just settled here has no runner coming
+  // back to finalize it (the resume below only re-runs batches with pending
+  // targets) — settle its status now so it doesn't read "generating" forever.
+  for (const batchId of settledBatchIds) {
+    try {
+      await finalizeBlogBatchIfDone(supabase, batchId)
+    } catch (err) {
+      console.error('[sweep-stuck-jobs] batch finalize failed for', batchId, err)
     }
   }
 
