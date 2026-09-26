@@ -16,8 +16,15 @@ import { createDesignCaller, MIN_CALL_TIMEOUT_MS, type StopReason } from './mode
 export { DEADLINE_SAFETY_MS, ESTIMATED_TOKENS_PER_IMAGE } from './model-call'
 export type { StopReason } from './model-call'
 
-// Cap for the first concept call's attempts; the actual timeout is dynamic.
-export const FIRST_ATTEMPT_CAP_MS = 300_000
+// Cap for the first concept call's attempts (the high-effort attempt and its
+// low-effort retry); the actual timeout is dynamic. 180 s, not 300 s: normal
+// Opus concepts finish in 56–123 s (5.9k–13.1k output tokens at ~106–112
+// tok/s), while a runaway high-effort attempt that fills the 24k budget runs
+// ~300 s at ~80 tok/s and returns nothing usable. At 180 s such an attempt
+// fails fast and the low-effort retry (~60 s measured) still lands, and the
+// worst case — both attempts at the cap + the 150 s repair (510 s) — fits the
+// step's 540 s model budget minus the 20 s safety.
+export const FIRST_ATTEMPT_CAP_MS = 180_000
 // Cap for the repair call; the actual timeout is dynamic.
 export const REPAIR_CALL_TIMEOUT_MS = 150_000
 export const MIN_REPAIR_TIMEOUT_MS = MIN_CALL_TIMEOUT_MS

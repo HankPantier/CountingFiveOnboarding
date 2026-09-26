@@ -38,6 +38,11 @@ export type GenerateJsonOptions = JsonPromptInput & {
   // caller can record token usage / budget checks. Its own errors are swallowed
   // and never fail the attempt.
   onAttempt?: (usage: Usage, finishReason: string) => void | Promise<void>
+  // Called once per attempt that FAILED (the model call threw — timeout abort,
+  // provider error — or its text did not parse). finishReason is 'error' when
+  // the call itself threw, else the call's finish reason (e.g. 'length').
+  // Observation only: its own errors are swallowed.
+  onAttemptFailed?: (info: { attempt: 1 | 2; finishReason: string; error: unknown }) => void
   // Called BEFORE each model call (1 = first, 2 = the larger-budget retry).
   // Returning false skips that call — a cost cap or an invocation deadline.
   // A throw counts as false. A skipped first attempt resolves to null.
@@ -88,7 +93,12 @@ export async function generateJson(opts: GenerateJsonOptions): Promise<unknown |
         }
       }
       return { ok: true, value: extractJson(result.text) }
-    } catch {
+    } catch (error) {
+      try {
+        opts.onAttemptFailed?.({ attempt: attemptNo, finishReason, error })
+      } catch {
+        // observation must never fail the generation
+      }
       return { ok: false, finishReason }
     }
   }

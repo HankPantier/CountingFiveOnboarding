@@ -9,7 +9,9 @@
 //   • exact usage recorded under the caller's token stage (+ cache split);
 //   • an ESTIMATED cost (input + the attempt's full maxOutputTokens) for any
 //     attempt started but never reported (aborted / failed mid-flight) — added
-//     to the run's spend so the cap stays honest, never to token_usage.
+//     to the run's spend so the cap stays honest, never to token_usage;
+//   • one console.warn per attempt with its duration and finish reason (or why
+//     it failed — e.g. a timeout abort), so a slow / runaway attempt is visible.
 import { anthropic } from '@ai-sdk/anthropic'
 import type { LanguageModelUsage, ModelMessage } from 'ai'
 import { generateJson, type GenerateJsonOptions } from '@/lib/content/json-generation'
@@ -59,7 +61,27 @@ export type DesignCaller = {
 
 // One generateJson call's attempt bookkeeping: the estimate of every started
 // attempt, in order; the first `accounted + estimated` of them are settled.
-type CallTracker = { started: number[]; accounted: number; estimated: number; inputUsd: number }
+type CallTracker = {
+  started: number[]
+  accounted: number
+  estimated: number
+  inputUsd: number
+  // The attempt in flight (for the per-attempt duration log).
+  current: { attempt: 1 | 2; at: number } | null
+}
+
+const MAX_LOGGED_ERROR_CHARS = 200
+
+// Why an attempt threw, for the log: a timeout abort by name, else the message.
+export function attemptFailureReason(error: unknown): string {
+  // Duck-typed: covers Error and DOMException (AbortSignal.timeout's reason).
+  if (typeof error === 'object' && error !== null && typeof (error as { name?: unknown }).name === 'string') {
+    const { name, message } = error as { name: string; message?: unknown }
+    if (name === 'TimeoutError' || name === 'AbortError') return 'aborted (timeout)'
+    return `${name}: ${String(message ?? '')}`.slice(0, MAX_LOGGED_ERROR_CHARS)
+  }
+  return String(error).slice(0, MAX_LOGGED_ERROR_CHARS)
+}
 
 // ~4 chars per token of prompt text + a flat cost per image part, priced at
 // the model's uncached input rate.
@@ -103,7 +125,10 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
     console.warn(`[${opts.logTag}] aborted attempt — estimated cost $${usd.toFixed(4)} (input + max output) added to run`)
   }
 
-  const account = (tracker: CallTracker) => async (usage: LanguageModelUsage | undefined): Promise<void> => {
+  const secs = (tracker: CallTracker): string => (tracker.current ? `${((now() - tracker.current.at) / 1000).toFixed(1)}s` : '?s')
+
+  const account = (tracker: CallTracker) => async (usage: LanguageModelUsage | undefined, finishReason: string): Promise<void> => {
+    console.warn(`[${opts.logTag}] attempt ${tracker.current?.attempt ?? '?'} (${modelId}) finished in ${secs(tracker)} — finish=${finishReason}, out=${usage?.outputTokens ?? '?'} tokens`)
     tracker.accounted++
     const cache = extractCacheUsage(usage)
     state.spent += estimateCostUsd(
@@ -130,7 +155,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
   }
 
   const call = async (messages: ModelMessage[], cfg: DesignCallConfig): Promise<unknown | null> => {
-    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, inputUsd: estimateInputUsd(opts.system, messages, modelId) }
+    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, inputUsd: estimateInputUsd(opts.system, messages, modelId), current: null }
     const { capMs, ...budgets } = cfg
     const genOpts: GenerateJsonOptions = {
       model,
@@ -148,11 +173,16 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
           return false
         }
         genOpts.timeoutMs = p.timeoutMs
+        tracker.current = { attempt, at: now() }
         const maxOutputTokens = attempt === 2 ? (budgets.retryBudget ?? budgets.firstBudget) : budgets.firstBudget
         tracker.started.push(tracker.inputUsd + estimateCostUsd(modelId, 0, maxOutputTokens))
         return true
       },
       onAttempt: account(tracker),
+      onAttemptFailed: ({ attempt, finishReason, error }) => {
+        const why = finishReason === 'error' ? attemptFailureReason(error) : `unparseable output (finish=${finishReason})`
+        console.warn(`[${opts.logTag}] attempt ${attempt} (${modelId}) failed after ${secs(tracker)} — ${why}`)
+      },
     }
     try {
       return await generateJson(genOpts)
