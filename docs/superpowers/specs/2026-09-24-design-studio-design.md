@@ -216,6 +216,10 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - Apply dialog with "Remove legacy overrides" (default on).
 - **Accepted deviations (recorded 2026-09-25):**
   - With no `c5-template.json`, a site is **L1**, so treatments count as a base lever. They shipped fleet-wide on 09-08. Fonts stay locked until L2, and style axes until L3.
+  - **Capabilities come from the draft marker only** (recorded in the 09-26 audit fix wave). The spec's intersection with the deployed shell's `<meta name="c5-capabilities">` is deferred to T1, because no template emits that meta yet. Until then a draft rolled to a newer tier than `main` can commit a lever (e.g. fonts) the live-shell preview can't show; the risk is bounded because fonts need L2 and no client repo is at L2 yet.
+  - **Keep-legacy concept applies are refused when the draft has hand CSS outside the region** (09-26 audit). Concept renders compose with legacy CSS removed, so the apply gate never measured a kept-legacy composition. Rather than re-render at apply time, `commitDesignVersion` 422s that case; with no legacy CSS the two compositions are identical and keep-legacy applies normally.
+  - **The managed region has a 16 KB / 400-line total cap** on top of the per-fragment caps, enforced in `bundleToRepoFiles` (09-26 audit).
+  - **No commit without a v0 baseline** (09-26 audit): if the baseline import failed, every commit path 409s until the draft is fixed, so a concept or chat commit can never become v0.
   - MBP data enters the prompt only through `buildBrandVoiceBlock` / `buildFirmContext`, not `serializeSchema()`, which is private to the onboarding chat. The hygiene is the same: no `_meta`, no `mbp_content`, and a test checks nothing leaks.
   - Concepts render **one after another**, one per step invocation, because the single-process Chromium renderer handles one render at a time anyway.
   - The render pass reuses the `refining` status (migration 078 has no `rendering`).
@@ -245,12 +249,15 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - **Accepted deviations (recorded 2026-09-25):**
   - **No `style_axes` tool** until P6b. `DesignBundle` has no `style` field yet, and `set_fonts` is refused below L2.
   - **Staged edits live only within a turn.** Each turn commits them or reports why not in a `data-design-commit` part, and the next turn's context repeats that note. A stream error or hard-deadline abort discards staged edits. The chat has no migration and no cross-turn staging.
-  - **Chat commits never sync the MBP** (CLAUDE.md MBP rule). Human-clicked paths still sync: concept apply, restore, capture, and Controls.
+  - **Chat commits never sync the MBP** (CLAUDE.md MBP rule). Human-clicked paths still sync: concept apply, restore, Controls, and the Versions panel's **Sync palette & fonts to MBP** (`POST design/sync-mbp`, added in the 09-26 audit), which mirrors the whole draft. Capture records a version only; it never synced.
   - **Chat commits keep hand CSS** (`removeLegacy: false`). They pass the workspace's expected blob shas, so the sha guard is the only staleness check and two commits per turn work.
-  - **Chat render gate:** it diffs against the turn-start draft render, cached per turn. Unmeasured or incomplete viewports produce a warning, not a block.
+  - **Chat render gate:** it diffs against the turn-start draft render, cached per turn. Unmeasured or incomplete viewports produce a warning, not a block. A **failed** preview is sticky (09-26 audit): later edits can't be committed — by `commit_version` or the auto-commit — until a preview of a newer revision passes. An unpreviewed change with no failed preview behind it still commits with the "not previewed" warning.
   - **Route limits:** `maxDuration` 600 and a 540 s turn budget. The model stops at the commit reserve, and there is a hard abort at the deadline.
   - **Cost:** a turn costs about $0.10–0.15 with previews. Previews are stored under `design/{sid}/renders/chat/`.
-  - **Clear chat keeps preview renders,** because versions use them as thumbnails. Two tabs have no lock; the second commit gets a stale 409.
+  - **Clear chat removes its preview renders except those a version uses as a thumbnail** (09-26 audit; it used to keep them all). Two tabs have no lock; the second commit gets a stale 409.
+  - **Restoring a baseline or captured version writes its recorded `design-overrides.css` back verbatim** (read by the blob sha in `applied_blobs`), so hand CSS removed by a later apply returns. Other restores keep the current hand CSS and warn when the file differs from the version's.
+  - **Storage orphans** (`/design/render` outputs, never-sent attachments) are removed hourly by the sweep cron after a day.
+  - **No per-function memory in `vercel.json`** for the Chromium routes (P1 listed 3009 MB). The P1 smoke passed on the default size, and a per-function memory setting depends on the Vercel plan / Fluid compute configuration, so it is left to the project's dashboard setting. Revisit if a render OOMs.
 
 ### T1 — Template: marker + fonts module + accentFont
 Platform follow-up **P6a**: font generator golden, manifest parity test, fonts unlocked at L2.

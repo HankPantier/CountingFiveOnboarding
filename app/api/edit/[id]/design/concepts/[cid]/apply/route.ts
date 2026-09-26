@@ -95,6 +95,9 @@ export async function POST(req: Request, { params }: Params) {
       commitMessage: `Design Studio: apply concept "${bundle.name}" (${ctx.adminEmail ?? 'admin'})`,
       conceptId: concept.id,
       screenshots: parseScreenshots(concept.screenshots),
+      // Concept renders (and so the gate above) compose with legacy hand CSS
+      // removed; keeping it is refused when the draft actually has some.
+      gateRenderedWithoutLegacy: true,
     })
     if (!committed.ok) {
       return NextResponse.json(committed.stale ? { error: committed.error, stale: true } : { error: committed.error }, { status: committed.status })

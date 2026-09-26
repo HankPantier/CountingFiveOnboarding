@@ -31,14 +31,37 @@ export function toPaletteData(palette: BrandJson['palette'], existing: PaletteDa
   return out
 }
 
+// The draft's brand.json + design.json texts → what syncMbpTheme needs, or an
+// error when the palette can't be read (the human-clicked "Sync to MBP").
+export function parseThemeForMbp(
+  brandText: string,
+  designText: string
+): { ok: true; brand: BrandJson; design: DesignJson } | { ok: false; error: string } {
+  let brand: BrandJson
+  let design: DesignJson
+  try {
+    brand = JSON.parse(brandText) as BrandJson
+    design = JSON.parse(designText) as DesignJson
+  } catch {
+    return { ok: false, error: 'brand.json / design.json is not valid JSON.' }
+  }
+  const palette = brand?.palette as Record<string, unknown> | undefined
+  if (!palette || !PALETTE_ROLES.every((r) => typeof palette[r] === 'string')) {
+    return { ok: false, error: 'brand.json has no complete palette to mirror.' }
+  }
+  return { ok: true, brand, design: { ...design, typography: normalizeTypography(design?.typography) } }
+}
+
 // Pass `brand` only when the palette changed and `design` only when fonts or
-// treatments changed — matching what was actually committed.
+// treatments changed — matching what was actually committed. Resolves true
+// when every write it attempted landed (best-effort: never throws).
 export async function syncMbpTheme(
   supabase: SupabaseClient<Database>,
   args: { sessionId: string; jobId: string; brand?: BrandJson; design?: DesignJson }
-): Promise<void> {
+): Promise<boolean> {
   const { sessionId, jobId, brand, design } = args
-  if (!brand && !design) return
+  if (!brand && !design) return true
+  let ok = true
   try {
     await updateSessionWithCas(supabase, sessionId, (session) => {
       let schema = (session.schema_data ?? {}) as Record<string, unknown>
@@ -47,16 +70,32 @@ export async function syncMbpTheme(
       return { update: { schema_data: asJson(schema) }, result: null }
     })
   } catch (err) {
+    ok = false
     console.warn('[theme] MBP sync failed (theme saved):', err)
   }
   if (brand) {
     try {
-      const { data: job } = await supabase.from('content_jobs').select('palette').eq('id', jobId).maybeSingle()
+      const { data: job, error: readErr } = await supabase
+        .from('content_jobs')
+        .select('palette')
+        .eq('id', jobId)
+        .maybeSingle()
+      // A failed read must not be mistaken for "no palette": re-keying from
+      // null would reset every operator swatch name to its role name.
+      if (readErr) {
+        console.warn('[theme] content_jobs.palette read failed; palette sync skipped (theme saved):', readErr.message)
+        return false
+      }
       const nextPalette = toPaletteData(brand.palette, (job?.palette as PaletteData | null) ?? null)
       const { error } = await supabase.from('content_jobs').update({ palette: asJson(nextPalette) }).eq('id', jobId)
-      if (error) console.warn('[theme] content_jobs.palette sync failed (theme saved):', error.message)
+      if (error) {
+        ok = false
+        console.warn('[theme] content_jobs.palette sync failed (theme saved):', error.message)
+      }
     } catch (err) {
+      ok = false
       console.warn('[theme] content_jobs.palette sync failed (theme saved):', err)
     }
   }
+  return ok
 }

@@ -8,6 +8,7 @@ import { reconcileStuckTarget, finalizeBlogBatchIfDone } from '@/lib/content/blo
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
 import { sweepStuckDesignRows } from '@/lib/design/sweep'
+import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,14 +33,10 @@ const PAGE_STUCK_THRESHOLD_MS = ORPHAN_RECLAIM_MS
 const DRAFT_STUCK_THRESHOLD_MS = 10 * 60 * 1000
 
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronBearer(req)
+  if (denied) return denied
+  // Non-empty here (requireCronBearer fails closed); reused for self-calls.
+  const cronSecret = process.env.CRON_SECRET as string
 
   const supabase = createServerClient()
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString()
@@ -135,6 +132,21 @@ export async function GET(req: Request) {
     console.warn(
       `[sweep-stuck-jobs] design inputs=${designSwept.inputs} runs=${designSwept.runs} concepts=${designSwept.concepts}`
     )
+  }
+  // Design Studio storage orphans (unreferenced /design/render outputs and
+  // never-sent chat attachments), once an hour. Lazy: storage pulls in sharp.
+  // Fail-soft like the row sweep.
+  let designOrphans = { renders: 0, attachments: 0 }
+  try {
+    const { isStorageSweepSlot, sweepDesignStorageOrphans, designStorageSweepDeps } = await import('@/lib/design/storage-sweep')
+    if (isStorageSweepSlot(Date.now())) {
+      designOrphans = await sweepDesignStorageOrphans(designStorageSweepDeps(supabase))
+      if (designOrphans.renders || designOrphans.attachments) {
+        console.warn(`[sweep-stuck-jobs] design storage orphans removed renders=${designOrphans.renders} attachments=${designOrphans.attachments}`)
+      }
+    }
+  } catch (err) {
+    console.error('[sweep-stuck-jobs] design storage sweep unavailable:', err)
   }
 
   // blog_batch_targets stuck at 'generating' (worker died between claim and
@@ -567,5 +579,5 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed,
-    researchResumed, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, cutoff })
+    researchResumed, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, designRendersRemoved: designOrphans.renders, designAttachmentsRemoved: designOrphans.attachments, cutoff })
 }

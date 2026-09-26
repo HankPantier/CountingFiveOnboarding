@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { DesignConceptDto } from '@/lib/design/run-types'
 import { conceptStatusLabel } from '@/lib/design/critique-ui'
 import ApplyDialog from './ApplyDialog'
@@ -24,7 +24,17 @@ export default function ConceptCards({
   onSelect: (id: string) => void
   onApplied: (versionNo: number, warnings: string[]) => void | Promise<void>
 }) {
+  // One apply dialog at a time: while it is open every Apply… is disabled, so
+  // an in-flight apply can never be unmounted by opening another concept's
+  // dialog (its result or gate failure would be lost).
   const [applyingId, setApplyingId] = useState<string | null>(null)
+  const applyButtons = useRef<Record<string, HTMLButtonElement | null>>({})
+  const returnFocusTo = useRef<string | null>(null)
+  useEffect(() => {
+    if (applyingId !== null || !returnFocusTo.current) return
+    applyButtons.current[returnFocusTo.current]?.focus()
+    returnFocusTo.current = null
+  }, [applyingId])
 
   return (
     <ul className="grid gap-3 lg:grid-cols-3">
@@ -87,7 +97,16 @@ export default function ConceptCards({
                 >
                   {selected ? 'Previewing' : 'Preview'}
                 </button>
-                <button type="button" aria-label={`Apply ${c.name}…`} onClick={() => setApplyingId(c.id)} disabled={applyingId === c.id} className={PRIMARY_BTN_SM}>
+                <button
+                  ref={(el) => {
+                    applyButtons.current[c.id] = el
+                  }}
+                  type="button"
+                  aria-label={`Apply ${c.name}…`}
+                  onClick={() => setApplyingId(c.id)}
+                  disabled={applyingId !== null}
+                  className={PRIMARY_BTN_SM}
+                >
                   Apply…
                 </button>
               </div>
@@ -96,7 +115,10 @@ export default function ConceptCards({
               <ApplyDialog
                 sessionId={sessionId}
                 concept={c}
-                onCancel={() => setApplyingId(null)}
+                onCancel={() => {
+                  returnFocusTo.current = c.id
+                  setApplyingId(null)
+                }}
                 onApplied={async (versionNo, warnings) => {
                   setApplyingId(null)
                   await onApplied(versionNo, warnings)

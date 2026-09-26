@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
+import { isCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 // Must match BLOG_BATCH_ROUTE_MAX_DURATION_MS (the runner budgets against it).
@@ -16,9 +17,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // An empty CRON_SECRET simply disables path 1; it never becomes a bypass
 // because the request then falls through to the session gate.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const cronSecret = process.env.CRON_SECRET
-  const authHeader = req.headers.get('Authorization')
-  const isInternalChain = !!cronSecret && authHeader === `Bearer ${cronSecret}`
+  const isInternalChain = isCronBearer(req)
 
   const { id } = await params
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'Invalid batch id' }, { status: 400 })

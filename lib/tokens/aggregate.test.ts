@@ -1,23 +1,48 @@
 import { describe, it, expect } from 'vitest'
-import { summarize, byClient, byUser, byUserClient, dailySeries, dailySeriesByUser, type UsageRow } from './aggregate'
+import { summarize, byClient, byUser, byUserClient, dailySeries, dailySeriesByUser, rowCost, usageWindowStartIso, modelTotalsCost, type UsageRow } from './aggregate'
+import { estimateCostUsd } from '@/lib/content/token-pricing'
 
 const SONNET = 'claude-sonnet-4-6' // $3/$15 per 1M in/out
 const HAIKU = 'claude-haiku-4-5-20251001' // $1/$5 per 1M in/out
 
+// Fixture rows carry the cost recordTokenUsage would have stored for an
+// uncached call, unless a test pins cost_usd explicitly.
 function row(over: Partial<UsageRow>): UsageRow {
-  return {
+  const base: UsageRow = {
     task: 'content',
     stage: 'content',
     model: SONNET,
     input_tokens: 0,
     output_tokens: 0,
+    cost_usd: null,
     session_id: null,
     audit_id: null,
     created_by: null,
     created_at: '2026-06-17T00:00:00.000Z',
     ...over,
   }
+  if (over.cost_usd === undefined) {
+    base.cost_usd = estimateCostUsd(base.model, base.input_tokens, base.output_tokens)
+  }
+  return base
 }
+
+describe('rowCost', () => {
+  it('uses the stored cache-aware cost_usd, not a re-price of raw input/output', () => {
+    // 1M input of which 900k were cache reads: stored cost prices reads at 0.1x.
+    const stored = estimateCostUsd(SONNET, 1_000_000, 0, 900_000, 0)
+    const r = row({ input_tokens: 1_000_000, cost_usd: stored })
+    expect(rowCost(r)).toBeCloseTo(stored, 9)
+    expect(rowCost(r)).toBeLessThan(estimateCostUsd(SONNET, 1_000_000, 0))
+    expect(summarize([r], NOW).allTime.cost).toBeCloseTo(stored, 9)
+  })
+
+  it('accepts numeric-as-string and treats null/garbage as 0', () => {
+    expect(rowCost(row({ cost_usd: '1.250000' }))).toBeCloseTo(1.25, 9)
+    expect(rowCost(row({ cost_usd: null, input_tokens: 5 }))).toBe(0)
+    expect(rowCost(row({ cost_usd: 'NaN' }))).toBe(0)
+  })
+})
 
 const NOW = Date.parse('2026-06-17T12:00:00.000Z')
 
@@ -221,5 +246,29 @@ describe('dailySeries', () => {
     const audit = dailySeries(rows, 'audit')
     expect(audit).toHaveLength(1)
     expect(audit[0].date).toBe('2026-06-15')
+  })
+})
+
+describe('usageWindowStartIso', () => {
+  it('matches summarize window boundaries', () => {
+    expect(usageWindowStartIso('allTime', NOW)).toBeNull()
+    expect(usageWindowStartIso('thisMonth', NOW)).toBe('2026-06-01T00:00:00.000Z')
+    expect(usageWindowStartIso('last30', NOW)).toBe('2026-05-18T12:00:00.000Z')
+  })
+})
+
+describe('modelTotalsCost', () => {
+  it('sums the RPC cost_usd when present (post-079)', () => {
+    expect(
+      modelTotalsCost([
+        { model: SONNET, input_tokens: 1_000_000, output_tokens: 0, cost_usd: '0.4' },
+        { model: HAIKU, input_tokens: 0, output_tokens: 0, cost_usd: 0.1 },
+      ]),
+    ).toBeCloseTo(0.5, 9)
+  })
+
+  it('falls back to re-pricing tokens when the RPC predates 079', () => {
+    expect(modelTotalsCost([{ model: SONNET, input_tokens: 1_000_000, output_tokens: 1_000_000 }])).toBeCloseTo(18, 6)
+    expect(modelTotalsCost(null)).toBe(0)
   })
 })

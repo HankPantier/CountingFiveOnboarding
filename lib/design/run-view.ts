@@ -2,7 +2,7 @@
 // Signing is best-effort (thumbnails just go missing), DB errors throw.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
-import { latestRun, listConcepts } from './run-store'
+import { latestRun, listConceptsForView } from './run-store'
 import { signDesignPaths } from './storage'
 import { runScreenshotPaths, toRunDto } from './run-dto'
 import type { DesignRunDto } from './run-types'
@@ -10,7 +10,7 @@ import type { DesignRunDto } from './run-types'
 export async function loadLatestRunDto(db: SupabaseClient<Database>, sessionId: string): Promise<DesignRunDto | null> {
   const run = await latestRun(db, sessionId)
   if (!run) return null
-  const concepts = await listConcepts(db, run.id)
+  const concepts = await listConceptsForView(db, run.id)
   let signed: Record<string, string> = {}
   try {
     signed = await signDesignPaths(db, runScreenshotPaths(run, concepts))

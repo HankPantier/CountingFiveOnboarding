@@ -4,6 +4,7 @@ import { render } from '@react-email/render'
 import { createServerClient } from '@/lib/supabase/server'
 import ClientReminderEmail from '@/emails/ClientReminderEmail'
 import AdminReminderEmail from '@/emails/AdminReminderEmail'
+import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 const INACTIVITY_THRESHOLD_DAYS = 3
 // Stop nagging after this many reminders — a session dormant through three
@@ -11,16 +12,9 @@ const INACTIVITY_THRESHOLD_DAYS = 3
 const MAX_REMINDERS = 3
 
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    // Fail closed: an unset secret would otherwise compare against
-    // "Bearer undefined", which an attacker could match.
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  // Fail closed (unset secret → 500) + constant-time bearer compare.
+  const denied = requireCronBearer(req)
+  if (denied) return denied
 
   // Guard the email config up front — a missing from-address used to surface
   // only at the second send, after the client email had already gone out.

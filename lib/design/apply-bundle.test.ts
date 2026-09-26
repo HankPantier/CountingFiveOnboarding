@@ -67,6 +67,16 @@ describe('applyBundleToDraft', () => {
     }
   })
 
+  it('writes a verbatim design-overrides.css (baseline restore), even over a malformed current region', async () => {
+    files.set('content/design-overrides.css', { content: '/* design-studio:begin */\n/* design-studio:begin */\n', sha: 'so' })
+    const ORIGINAL = '/* hand polish */\n[data-block="hero"] h1 { letter-spacing: -0.01em; }\n'
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, overridesVerbatim: ORIGINAL })
+    expect(r.ok).toBe(true)
+    const changes = writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha?: string }[]
+    const overrides = changes.find((c) => c.path === 'content/design-overrides.css')
+    expect(overrides).toMatchObject({ content: ORIGINAL, expectedSha: 'so' })
+  })
+
   it('returns 409 when brand.json or design.json is missing', async () => {
     files.delete('content/design.json')
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR })

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { DesignConceptDto } from '@/lib/design/run-types'
 import { apiFailureInfo, applyErrorMessage, applyGateFailures } from '@/lib/design/studio-ui'
 import { DesignApiError, designApi, errorMessage } from './api'
-import { PRIMARY_BTN_SM, SECONDARY_BTN_SM } from './styles'
+import { FOCUS, PRIMARY_BTN_SM, SECONDARY_BTN_SM } from './styles'
 
 type ApplyResult = { ok: true; versionId: string; versionNo: number; commitSha: string | null; changedPaths: string[]; warnings: string[] }
 
@@ -28,6 +28,12 @@ export default function ApplyDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [failures, setFailures] = useState<string[]>([])
+  // The Apply… button that opened this is now disabled, so focus would fall
+  // to <body>: move it into the dialog instead.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    dialogRef.current?.focus()
+  }, [])
 
   const apply = async () => {
     setBusy(true)
@@ -49,7 +55,16 @@ export default function ApplyDialog({
 
   const headingId = `apply-${concept.id}-heading`
   return (
-    <div role="dialog" aria-labelledby={headingId} className="mt-2 flex flex-col gap-2 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 p-3">
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-labelledby={headingId}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && !busy) onCancel()
+      }}
+      className={`mt-2 flex flex-col gap-2 rounded-lg border border-brand-cyan/40 bg-brand-cyan/5 p-3 ${FOCUS}`}
+    >
       <p id={headingId} className="font-heading text-xs font-semibold text-brand-navy">
         Apply “{concept.name}” to the draft site?
       </p>
@@ -61,7 +76,7 @@ export default function ApplyDialog({
         <input type="checkbox" checked={removeLegacy} onChange={(e) => setRemoveLegacy(e.target.checked)} disabled={busy} className="mt-0.5 accent-brand-cyan" />
         <span>
           <span className="font-semibold text-text-primary">Remove legacy overrides</span> — replace any hand-written rules in design-overrides.css with
-          this concept’s CSS (recommended).
+          this concept’s CSS (recommended). The render checks ran without them, so keeping them is refused when the draft has any.
         </span>
       </label>
       {error && (

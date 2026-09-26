@@ -8,7 +8,14 @@ import {
 import { clientName } from '@/lib/admin/command-index'
 import { fetchAllPages } from '@/lib/admin/paginate'
 import { TERMINAL_AUDIT_STATUSES } from '@/lib/admin/home-stats'
-import { summarize, byClient, type UsageRow, type AuditMeta } from '@/lib/tokens/aggregate'
+import {
+  summarize,
+  byClient,
+  usageWindowStartIso,
+  USAGE_ROW_COLUMNS,
+  type UsageRow,
+  type AuditMeta,
+} from '@/lib/tokens/aggregate'
 import type { Json } from '@/types/database'
 
 // Mirrors the badge labels on /admin/content — kept local so the tools file
@@ -312,19 +319,20 @@ export async function buildAssistantTools(user: CurrentUser) {
       }) => {
         if (!user.isAdmin) return { error: 'not_authorized' as const }
         const supabase = createServerClient()
-        // Paginated: PostgREST caps each response at 1000 rows, so a single
-        // select silently under-reported spend once usage passed 1000 calls.
+        const win = window ?? 'thisMonth'
+        // The window is pushed into the query (the table grows with every
+        // chat step and Design Studio call). Paginated: PostgREST caps each
+        // response at 1000 rows, so a single select under-reports spend.
+        const sinceIso = usageWindowStartIso(win, Date.now())
         const [usage, sessions, auditRuns] = await Promise.all([
-          fetchAllPages<UsageRow>((from, to) =>
-            supabase
-              .from('token_usage')
-              .select(
-                'task, stage, model, input_tokens, output_tokens, session_id, audit_id, created_by, created_at'
-              )
+          fetchAllPages<UsageRow>((from, to) => {
+            let q = supabase.from('token_usage').select(USAGE_ROW_COLUMNS)
+            if (sinceIso) q = q.gte('created_at', sinceIso)
+            return q
               .order('created_at', { ascending: false })
               .order('id', { ascending: true })
               .range(from, to)
-          ),
+          }),
           fetchAllPages<{ id: string; website_url: string | null }>((from, to) =>
             supabase.from('sessions').select('id, website_url').order('id').range(from, to)
           ),
@@ -342,7 +350,6 @@ export async function buildAssistantTools(user: CurrentUser) {
           audits[a.id] = { sessionId: a.session_id, siteName: a.site_name, domain: a.domain }
         }
 
-        const win = window ?? 'thisMonth'
         const summary = summarize(rows, Date.now())
         const totals =
           win === 'allTime' ? summary.allTime : win === 'last30' ? summary.last30 : summary.thisMonth
@@ -355,13 +362,13 @@ export async function buildAssistantTools(user: CurrentUser) {
         }
         if (!name) return base
 
-        // Per-client figures are all-time (byClient is not windowed) — noted so
-        // the model phrases it as lifetime spend for that client.
+        // Rows are already limited to the window, so the per-client figure is
+        // spend for that client within the same window.
         const client = byClient(rows, labels, audits).find(c => fuzzyIncludes(c.label, name))
         return {
           ...base,
           client: client
-            ? { label: client.label, allTimeCost: round2(client.total.cost), calls: client.total.calls }
+            ? { label: client.label, windowCost: round2(client.total.cost), calls: client.total.calls }
             : null,
         }
       },

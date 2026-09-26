@@ -25,7 +25,7 @@ export async function commitWorkspace(
 ): Promise<CommitOutput> {
   if (!ws.isStaged()) return { ok: true, unchanged: true }
   const preview = ws.currentPreview()
-  const gate = chatCommitGate(preview)
+  const gate = chatCommitGate(preview, ws.latestPreview())
   if (!gate.ok) return { ok: false, error: chatGateMessage(gate.failures), failures: gate.failures }
 
   const summary = (args.summary.trim() || ws.pendingSummary() || 'theme update').slice(0, 300)

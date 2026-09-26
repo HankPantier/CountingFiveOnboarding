@@ -12,6 +12,7 @@ import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 import { parseDesignBundle, type DesignBundle } from './bundle'
 import { sanitizeDesignCss } from './css-sanitizer'
 import { CSS_TARGETS, isCssTarget, type CssTarget } from './css-targets'
+import { totalCssErrors } from './css-budget'
 
 export const REGION_BEGIN = '/* design-studio:begin */'
 export const REGION_END = '/* design-studio:end */'
@@ -109,6 +110,14 @@ export function composeRegion(css: DesignBundle['css']): string {
   return `${REGION_BEGIN}\n${parts.join('\n')}\n${REGION_END}\n`
 }
 
+// Whether design-overrides.css holds hand-written CSS OUTSIDE the Studio
+// region (comments, incl. the managed header, don't count). A malformed region
+// counts as legacy — nothing outside it can be told apart safely.
+export function hasLegacyOverrides(overridesCss: string): boolean {
+  const outside = removeRegion(overridesCss)
+  return outside.replace(/\/\*[\s\S]*?\*\//g, '').trim() !== ''
+}
+
 export function bundleFromRepoFiles(
   files: RepoThemeFiles,
   meta: { name: string; source: DesignBundle['meta']['source'] }
@@ -183,6 +192,8 @@ export function bundleToRepoFiles(
     else errors.push(...r.errors.map((e) => `css.blocks.${key}: ${e}`))
   }
   if (errors.length) return { ok: false, errors }
+  const totalErrors = totalCssErrors([clean.global, ...Object.values(clean.blocks)])
+  if (totalErrors.length) return { ok: false, errors: totalErrors }
 
   const nextBrand: BrandJson = { ...brand, palette: { ...brand.palette, ...bundle.palette } }
 

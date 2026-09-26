@@ -5,7 +5,7 @@
 // --single-process --no-zygote, the @sparticuz/chromium production mode).
 import { describe, it, expect, afterAll, beforeAll } from 'vitest'
 import { renderComposed } from './render-composed'
-import { closeBrowserForTests } from './browser'
+import { closeBrowserForTests, getRenderPage } from './browser'
 import { evaluatePageSample } from '../metrics'
 
 export const HAS_CHROME = !!process.env.CHROMIUM_EXECUTABLE_PATH
@@ -69,6 +69,15 @@ export function defineRealChromeSuite(label: string, extraArgs: string | null): 
       expect(vm.contrast.map((f) => f.text)).not.toContain('Readable body copy')
       expect(vm.overflow).not.toBeNull()
       expect(vm.hidden).toContainEqual({ key: 'block:feature-grid#0', reason: 'display' })
+    }, 60_000)
+
+    it('never runs page scripts, while our CDP evaluate still works', async () => {
+      const { page } = await getRenderPage()
+      // A fresh document: setContent reuses the current one, whose meta CSP
+      // from an earlier render would otherwise block the script on its own.
+      await page.goto('about:blank')
+      await page.setContent('<div id="probe">untouched</div><script>document.getElementById("probe").textContent = "ran"</script>')
+      expect(await page.evaluate(() => document.getElementById('probe')?.textContent)).toBe('untouched')
     }, 60_000)
 
     it('does not flag overflow that html/body clip horizontally (decorative bleed)', async () => {

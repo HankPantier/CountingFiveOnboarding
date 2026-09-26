@@ -61,9 +61,18 @@ export default function VersionsPanel({
   }
   const restore = (v: DesignVersionDto) =>
     run(async () => {
-      const res = await designApi<{ versionNo: number }>(`/api/edit/${sessionId}/design/versions/${v.id}/restore`, { method: 'POST', json: {} })
-      return `Restored v${v.versionNo} to the draft as v${res.versionNo}.`
+      const res = await designApi<{ versionNo: number; warnings?: string[] }>(`/api/edit/${sessionId}/design/versions/${v.id}/restore`, {
+        method: 'POST',
+        json: {},
+      })
+      const warnings = (res.warnings ?? []).join(' ')
+      return `Restored v${v.versionNo} to the draft as v${res.versionNo}.${warnings ? ` ${warnings}` : ''}`
     }, 'Failed to restore the version')
+  const syncMbp = () =>
+    run(async () => {
+      await designApi(`/api/edit/${sessionId}/design/sync-mbp`, { method: 'POST', json: {} })
+      return 'The MBP now lists the draft’s palette and fonts.'
+    }, 'Failed to sync the MBP')
   const capture = () =>
     run(async () => {
       const res = await designApi<{ versionNo: number }>(`/api/edit/${sessionId}/design/versions/import`, { method: 'POST', json: {} })
@@ -80,6 +89,17 @@ export default function VersionsPanel({
           Every design applied from the Studio becomes a version. v0 is the draft as it was when the Studio first opened. Restoring re-applies an older
           version as a new one.
         </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <InlineConfirm
+            label="Sync palette & fonts to MBP"
+            prompt="Copy the draft’s palette and fonts into the MBP?"
+            confirmLabel="Sync"
+            busy={busy}
+            onConfirm={syncMbp}
+            tone="neutral"
+          />
+          <span className="font-body text-[11px] text-text-muted">Chat revisions don’t update the MBP on their own.</span>
+        </div>
       </div>
 
       {message && (
@@ -133,7 +153,17 @@ export default function VersionsPanel({
                 {i === 0 ? (
                   <span className="rounded-pill bg-brand-cyan/10 px-2 py-0.5 font-heading text-[10px] font-semibold text-brand-navy">Latest</span>
                 ) : (
-                  <InlineConfirm label="Restore" prompt={`Restore v${v.versionNo} to the draft?`} confirmLabel="Restore" busy={busy} onConfirm={() => restore(v)} />
+                  <InlineConfirm
+                    label="Restore"
+                    prompt={
+                      v.source === 'baseline' || v.source === 'import'
+                        ? `Restore v${v.versionNo}, including its design-overrides.css exactly as recorded?`
+                        : `Restore v${v.versionNo} to the draft? Hand-written CSS outside the Studio region stays as it is now.`
+                    }
+                    confirmLabel="Restore"
+                    busy={busy}
+                    onConfirm={() => restore(v)}
+                  />
                 )}
               </div>
               <p className="mt-1 font-body text-[11px] text-text-muted">

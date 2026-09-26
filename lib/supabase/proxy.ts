@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { checkCronBearer } from '@/lib/auth/cron-bearer'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -27,9 +28,7 @@ export async function updateSession(request: NextRequest) {
 
   // CRON_SECRET validation — defense in depth; individual routes also validate
   if (request.nextUrl.pathname.startsWith('/api/cron/')) {
-    const secret = process.env.CRON_SECRET
-    const authHeader = request.headers.get('Authorization')
-    if (!secret || authHeader !== `Bearer ${secret}`) {
+    if (checkCronBearer(request.headers.get('Authorization')) !== 'ok') {
       return new NextResponse('Unauthorized', { status: 401 })
     }
   }

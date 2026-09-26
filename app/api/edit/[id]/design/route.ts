@@ -6,7 +6,7 @@ import { computeDrift, isThemeCssStale, toBlobMap } from '@/lib/design/drift'
 import { readDraftThemeSnapshot } from '@/lib/design/theme-snapshot'
 import { getBaselineOrCreate, listInputs, listVersions, readSessionSchema, type BaselineSource } from '@/lib/design/store'
 import { signDesignPaths } from '@/lib/design/storage'
-import { buildInputSuggestions, toInputDto, toVersionDto, versionScreenshotPaths } from '@/lib/design/studio-dto'
+import { buildInputSuggestions, toInputDto, toVersionDto, versionThumbnailPaths } from '@/lib/design/studio-dto'
 import type { BaselineStatus, DesignStudioState } from '@/lib/design/studio-types'
 import { loadLatestRunDto } from '@/lib/design/run-view'
 import type { DesignRunDto } from '@/lib/design/run-types'
@@ -74,7 +74,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const paths = [
       ...inputs.flatMap((i) => (i.storage_path ? [i.storage_path] : [])),
-      ...versionRows.flatMap(versionScreenshotPaths),
+      ...versionThumbnailPaths(versionRows),
     ]
     let signed: Record<string, string> = {}
     try {

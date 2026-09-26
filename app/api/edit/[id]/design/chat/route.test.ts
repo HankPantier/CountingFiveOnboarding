@@ -5,10 +5,14 @@ import { SID, makeChatRow } from '@/lib/design/__fixtures__/rows'
 
 const A1 = '0b6f1c2e-5d4a-4e8b-9c1d-2f3a4b5c6d7e'
 const PREVIEW = `design/${SID}/renders/chat/t-p1-desktop.webp`
-const m = vi.hoisted(() => ({ gate: vi.fn(), list: vi.fn(), clear: vi.fn(), sign: vi.fn(), remove: vi.fn(), run: vi.fn() }))
+const m = vi.hoisted(() => ({ gate: vi.fn(), list: vi.fn(), clear: vi.fn(), sign: vi.fn(), remove: vi.fn(), run: vi.fn(), versionPaths: vi.fn() }))
 vi.mock('../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
-vi.mock('@/lib/design/chat-store', () => ({ listChatMessages: (...a: unknown[]) => m.list(...a), clearChatHistory: (...a: unknown[]) => m.clear(...a) }))
+vi.mock('@/lib/design/chat-store', () => ({
+  listChatMessages: (...a: unknown[]) => m.list(...a),
+  clearChatHistory: (...a: unknown[]) => m.clear(...a),
+  versionScreenshotPathSet: (...a: unknown[]) => m.versionPaths(...a),
+}))
 vi.mock('@/lib/design/storage', async (orig) => ({
   ...((await orig()) as object),
   signDesignPaths: (...a: unknown[]) => m.sign(...a),
@@ -33,6 +37,7 @@ beforeEach(() => {
   ])
   m.sign.mockImplementation(async (_db: unknown, paths: string[]) => Object.fromEntries(paths.map((p) => [p, `https://signed/${p}`])))
   m.run.mockResolvedValue(new Response('stream'))
+  m.versionPaths.mockResolvedValue(new Set())
 })
 
 describe('design/chat route', () => {
@@ -92,6 +97,22 @@ describe('design/chat route', () => {
     m.remove.mockRejectedValue(new Error('storage down'))
     const res = await DELETE(new Request('http://x', { method: 'DELETE' }), params)
     expect(await res.json()).toEqual({ ok: true, deleted: 2 })
+    expect(m.remove).toHaveBeenCalledWith({}, [`design/${SID}/attachments/${A1}.webp`])
+  })
+  it('DELETE also removes preview renders, except those a version uses as its thumbnail', async () => {
+    const OTHER = `design/${SID}/renders/chat/t-p2-desktop.webp`
+    const FOREIGN = 'design/99999999-9999-4999-8999-999999999999/renders/chat/x.webp'
+    const shots = (paths: string[]) =>
+      asJson([{ type: 'tool-render_preview', toolCallId: 'c', state: 'output-available', input: {}, output: { ok: true, shots: paths.map((path) => ({ viewport: 'desktop', path, width: 1440, height: 900 })) } }])
+    m.clear.mockResolvedValue([makeChatRow({ id: 'a', role: 'assistant', parts: shots([PREVIEW, OTHER, FOREIGN]) })])
+    m.versionPaths.mockResolvedValue(new Set([PREVIEW]))
+    await DELETE(new Request('http://x', { method: 'DELETE' }), params)
+    expect(m.remove).toHaveBeenCalledWith({}, [OTHER])
+  })
+  it('DELETE keeps every preview render when the version lookup fails', async () => {
+    m.clear.mockResolvedValue([makeChatRow({ id: 'a', role: 'assistant', attachment_ids: [A1], parts: asJson([{ type: 'tool-render_preview', toolCallId: 'c', state: 'output-available', input: {}, output: { ok: true, shots: [{ viewport: 'desktop', path: PREVIEW, width: 1440, height: 900 }] } }]) })])
+    m.versionPaths.mockRejectedValue(new Error('db'))
+    await DELETE(new Request('http://x', { method: 'DELETE' }), params)
     expect(m.remove).toHaveBeenCalledWith({}, [`design/${SID}/attachments/${A1}.webp`])
   })
 })

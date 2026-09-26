@@ -42,4 +42,15 @@ describe('loadLatestRunDto', () => {
 
     expect(dto?.currentScreenshots).toEqual([{ viewport: 'desktop', url: `https://signed/${CUR.path}`, width: 1440, height: 900 }])
   })
+
+  it('never selects initial_bundle for the polled concept list', async () => {
+    const run = makeRunRow()
+    const f = fakeSupabase({ design_runs: [{ data: run }], design_concepts: [{ data: [] }] })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await loadLatestRunDto(f.client, SID)
+    const select = f.opsFor('design_concepts')[0]
+    expect(select[0]).toBe('select')
+    expect(String(select[1])).not.toContain('initial_bundle')
+    expect(String(select[1])).toContain('critique')
+  })
 })

@@ -7,6 +7,13 @@ import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
 
 export async function getPreviewSiteUrl(args: { jobId: string; githubRepo: string }): Promise<string | null> {
   const supabase = createServerClient()
-  const { data: job } = await supabase.from('content_jobs').select('preview_url').eq('id', args.jobId).single()
+  const { data: job, error } = await supabase
+    .from('content_jobs')
+    .select('preview_url')
+    .eq('id', args.jobId)
+    .maybeSingle()
+  // Never silently fall back to the MAIN siteUrl on a DB error: before DNS
+  // cutover that is the client's OLD live site. Callers map throws to 5xx.
+  if (error) throw new Error(`content_jobs preview_url read failed: ${error.message}`)
   return job?.preview_url ?? (await readSiteConfigSiteUrl(args.githubRepo, MAIN_BRANCH))
 }

@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { paletteSummary, typographySummary, toPaletteData } from './sync-mbp-theme'
+import { describe, it, expect, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/database'
+import { paletteSummary, typographySummary, toPaletteData, syncMbpTheme, parseThemeForMbp } from './sync-mbp-theme'
+
+vi.mock('@/lib/session/schema-cas', () => ({ updateSessionWithCas: vi.fn(async () => null) }))
 
 const palette = {
   primary: '#003b71',
@@ -27,5 +31,53 @@ describe('MBP theme summaries', () => {
     const out = toPaletteData(palette, { primary: { hex: '#000000', name: 'Harbor Navy' } } as never)
     expect(out.primary).toEqual({ hex: '#003b71', name: 'Harbor Navy' })
     expect(out.action).toEqual({ hex: '#00c1de', name: 'action' })
+  })
+})
+
+describe('syncMbpTheme palette read failure', () => {
+  function fakeSupabase(readResult: { data: unknown; error: { message: string } | null }) {
+    const update = vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) }))
+    const client = {
+      from: vi.fn(() => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => readResult }) }),
+        update,
+      })),
+    }
+    return { client: client as unknown as SupabaseClient<Database>, update }
+  }
+  const brand = { palette } as never
+
+  it('does not overwrite swatch names when the palette read errors', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { client, update } = fakeSupabase({ data: null, error: { message: 'blip' } })
+    expect(await syncMbpTheme(client, { sessionId: 's', jobId: 'j', brand })).toBe(false)
+    expect(update).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('re-keys and writes the palette on a clean read', async () => {
+    const { client, update } = fakeSupabase({
+      data: { palette: { primary: { hex: '#000000', name: 'Harbor Navy' } } },
+      error: null,
+    })
+    expect(await syncMbpTheme(client, { sessionId: 's', jobId: 'j', brand })).toBe(true)
+    expect(update).toHaveBeenCalledTimes(1)
+    const written = (update.mock.calls[0] as unknown as [{ palette: Record<string, { name: string }> }])[0]
+    expect(written.palette.primary.name).toBe('Harbor Navy')
+  })
+})
+
+describe('parseThemeForMbp', () => {
+  it('reads the palette and normalizes typography', () => {
+    const r = parseThemeForMbp(JSON.stringify({ palette }), JSON.stringify({ typography: { headingFont: 'Fraunces' } }))
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.brand.palette.primary).toBe('#003b71')
+      expect(r.design.typography).toMatchObject({ headingFont: 'Fraunces', bodyFont: 'Public Sans' })
+    }
+  })
+  it('refuses bad JSON or an incomplete palette', () => {
+    expect(parseThemeForMbp('{', '{}').ok).toBe(false)
+    expect(parseThemeForMbp(JSON.stringify({ palette: { primary: '#000000' } }), '{}').ok).toBe(false)
   })
 })

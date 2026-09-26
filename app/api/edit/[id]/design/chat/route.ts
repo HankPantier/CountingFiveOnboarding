@@ -3,7 +3,7 @@ import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { parseChatRequest, previewPathsInParts, rowToChatMessage } from '@/lib/design/chat-history'
-import { clearChatHistory, listChatMessages } from '@/lib/design/chat-store'
+import { clearChatHistory, listChatMessages, versionScreenshotPathSet } from '@/lib/design/chat-store'
 import type { DesignChatMessage, DesignChatRequestBody } from '@/lib/design/chat-types'
 import { CHAT_ENGINE_UNAVAILABLE_ERROR } from '@/lib/design/chat-ui'
 import { attachmentStoragePath, removeDesignPaths, signDesignPaths } from '@/lib/design/storage'
@@ -42,8 +42,8 @@ function isOwnChatPreviewPath(sessionId: string, p: string): boolean {
 //   GET    — the persisted history, attachment + preview images freshly signed.
 //   POST   — one turn: { text, attachmentIds?, page? } → a UI message stream.
 //            The heavy turn module (sanitizer + renderer) is lazy-loaded.
-//   DELETE — clear the history and its sent attachments. Preview renders are
-//            kept: chat versions show them as thumbnails.
+//   DELETE — clear the history, its sent attachments and its preview renders
+//            — except renders a version still uses as its thumbnail.
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params
   const ctx = await requireDesignAdmin(id)
@@ -121,12 +121,21 @@ export async function DELETE(_req: Request, { params }: Params) {
   try {
     const db = createServerClient()
     const rows = await clearChatHistory(db, ctx.sessionId)
-    const paths = rows.flatMap((r) =>
+    const attachmentPaths = rows.flatMap((r) =>
       r.attachment_ids.flatMap((a) => {
         const p = safeAttachmentPath(ctx.sessionId, a)
         return p ? [p] : []
       })
     )
+    let previewPaths: string[] = []
+    try {
+      const keep = await versionScreenshotPathSet(db, ctx.sessionId)
+      previewPaths = rows.flatMap((r) => previewPathsInParts(r.parts).filter((p) => isOwnChatPreviewPath(ctx.sessionId, p) && !keep.has(p)))
+    } catch (err) {
+      // Unknown which renders versions use — keep them all rather than guess.
+      console.warn('[design:chat] version screenshot lookup failed; preview renders kept:', err)
+    }
+    const paths = [...new Set([...attachmentPaths, ...previewPaths])]
     if (paths.length > 0) {
       try {
         await removeDesignPaths(db, paths)

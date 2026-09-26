@@ -56,6 +56,15 @@ export function versionScreenshotPaths(row: Pick<DesignVersionListRow, 'screensh
   return out
 }
 
+// A chat turn auto-commits a version, so the list grows quickly; signing every
+// thumbnail of up to 200 versions on each Studio load is wasteful. Only the
+// newest versions get signed thumbnails (older rows still list, unthumbed).
+export const SIGNED_VERSION_THUMBNAILS = 30
+
+export function versionThumbnailPaths(rows: Pick<DesignVersionListRow, 'screenshots'>[]): string[] {
+  return rows.slice(0, SIGNED_VERSION_THUMBNAILS).flatMap(versionScreenshotPaths)
+}
+
 function bundleName(name: string | null): string {
   return name && name.trim() ? name : 'Untitled design'
 }

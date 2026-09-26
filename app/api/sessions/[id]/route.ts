@@ -8,6 +8,7 @@ import { normalizeGapField } from '@/lib/mbp/completeness'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { GapItem } from '@/types/gap-item'
 import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
+import { sessionStoragePrefixes } from '@/lib/session/storage-prefixes'
 
 type StorageBucket = ReturnType<ReturnType<typeof createServerClient>['storage']['from']>
 
@@ -47,17 +48,15 @@ export async function DELETE(
   const { data: session } = await supabase.from('sessions').select('id').eq('id', id).single()
   if (!session) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Remove uploaded files, generated PDFs/MDs, and assembled content packages
-  // from storage. Listing is paginated + recursive (list() caps at 100 by
+  // Remove uploaded files, generated PDFs/MDs, assembled content packages and
+  // Design Studio images (design/{id}/**) from storage. Listing is paginated + recursive (list() caps at 100 by
   // default and doesn't descend into sub-folders).
   const bucket = supabase.storage.from('session-assets')
   let filesToRemove: string[]
   try {
-    const lists = await Promise.all([
-      listAllFiles(bucket, `sessions/${id}`),
-      listAllFiles(bucket, `pdfs/${id}`),
-      listAllFiles(bucket, `content-packages/${id}`),
-    ])
+    const lists = await Promise.all(
+      sessionStoragePrefixes(id).map(prefix => listAllFiles(bucket, prefix)),
+    )
     filesToRemove = lists.flat()
   } catch (err) {
     console.error('[DELETE session] storage list failed:', err)
