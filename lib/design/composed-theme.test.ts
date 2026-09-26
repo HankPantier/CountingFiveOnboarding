@@ -11,11 +11,12 @@ describe('composedThemeFromFiles', () => {
     expect(t.typography.headingFont).toBe('Fraunces')
     expect(t.typography.accentFont).toBe('Fraunces') // normalizeTypography default
     expect(t.typography.googleFontsUrl).toContain('fonts.googleapis.com')
-    expect(t.htmlAttributes).toEqual({ 'data-headline': 'serif', 'data-eyebrow': 'mono' })
+    expect(t.htmlAttributes).toMatchObject({ 'data-headline': 'serif', 'data-eyebrow': 'mono' })
   })
   it('falls back to defaults on unparseable design.json', () => {
     const t = composedThemeFromFiles({ designText: '{', themeCss: '', overridesCss: '' })
-    expect(t.htmlAttributes).toEqual({ 'data-headline': 'sans', 'data-eyebrow': 'standard' })
+    expect(t.htmlAttributes).toMatchObject({ 'data-headline': 'sans', 'data-eyebrow': 'standard' })
+    expect(t.htmlAttributes['data-c5-cards']).toBeNull()
     expect(t.typography.headingFont).toBe('Public Sans')
   })
   it('injects the theme into the shell and rewrites the treatment attributes', () => {
@@ -23,5 +24,17 @@ describe('composedThemeFromFiles', () => {
     const doc = composeThemeDoc('<html data-headline="sans"><head></head><body></body></html>', t)
     expect(doc).toContain('data-headline="serif"')
     expect(doc).toContain(':root{--c:1}')
+  })
+  it('sets every style-axis attribute: chosen values, null for the rest', () => {
+    const t = composedThemeFromFiles({ designText: '{"style":{"cards":"flat"}}', themeCss: '', overridesCss: '' })
+    expect(t.htmlAttributes['data-c5-cards']).toBe('flat')
+    expect(t.htmlAttributes['data-c5-nav']).toBeNull()
+    expect(Object.keys(t.htmlAttributes).filter((k) => k.startsWith('data-c5-'))).toHaveLength(8)
+  })
+  it('the composed doc removes live axis attributes the design does not set', () => {
+    const t = composedThemeFromFiles({ designText: '{"style":{"cards":"flat"}}', themeCss: '', overridesCss: '' })
+    const doc = composeThemeDoc('<html lang="en" data-c5-nav="bordered"><head></head><body></body></html>', t)
+    expect(doc).not.toContain('data-c5-nav')
+    expect(doc).toContain('data-c5-cards="flat"')
   })
 })

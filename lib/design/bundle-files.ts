@@ -5,7 +5,7 @@
 // that is replaced wholesale on every apply. Nothing here touches the network.
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
-import { patchDesignFlags } from '@/lib/editor/theme-edit'
+import { patchDesignFlags, patchDesignStyle } from '@/lib/editor/theme-edit'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
@@ -14,6 +14,7 @@ import { parseDesignBundle, type DesignBundle } from './bundle'
 import { sanitizeDesignCss } from './css-sanitizer'
 import { CSS_TARGETS, isCssTarget, type CssTarget } from './css-targets'
 import { totalCssErrors } from './css-budget'
+import { DEFAULT_AXIS_VALUE, STYLE_AXIS_NAMES, normalizeStyleAxes, type StyleAxes } from './style-axes'
 
 export const REGION_BEGIN = '/* design-studio:begin */'
 export const REGION_END = '/* design-studio:end */'
@@ -151,6 +152,7 @@ export function bundleFromRepoFiles(
       eyebrowStyle: design.eyebrowStyle ?? 'standard',
       darkSections: design.darkSections ?? false,
     },
+    style: normalizeStyleAxes(design.style),
     css: region.css,
     meta: { source: meta.source },
   })
@@ -219,6 +221,12 @@ export function bundleToRepoFiles(
   // Theme Studio controls write them.
   const flagged = patchDesignFlags(serialize(merged), bundle.treatments)
   if (!flagged.ok) return { ok: false, errors: [flagged.reason] }
+  // Style axes: the bundle is the WHOLE design, so write every axis (absent =
+  // default → deleted). An all-default bundle on a style-less design.json is a
+  // no-op, keeping untouched files byte-identical.
+  const fullStyle = Object.fromEntries(STYLE_AXIS_NAMES.map((a) => [a, bundle.style?.[a] ?? DEFAULT_AXIS_VALUE])) as StyleAxes
+  const styled = patchDesignStyle(flagged.next, fullStyle)
+  if (!styled.ok) return { ok: false, errors: [styled.reason] }
 
   const base = (opts.removeLegacy ? MANAGED_HEADER : removeRegion(normalizedOverrides)).trimEnd()
   const region = composeRegion(clean)
@@ -228,12 +236,12 @@ export function bundleToRepoFiles(
     ok: true,
     files: {
       brandText: serialize(nextBrand),
-      designText: flagged.next,
-      themeCss: generateThemeCss(nextBrand, flagged.design),
+      designText: styled.next,
+      themeCss: generateThemeCss(nextBrand, styled.design),
       overridesCss,
       // L2+ drafts only (caller decides from the DRAFT marker): the generated
       // next/font module, always derived — never hand-edited.
-      ...(opts.fontsModule ? { fontsModule: generateFontsModule(flagged.design.typography).source } : {}),
+      ...(opts.fontsModule ? { fontsModule: generateFontsModule(styled.design.typography).source } : {}),
     },
     // The sanitized, canonical fragments that were actually written — later
     // phases should store this, not the bundle's pre-sanitize css, as the

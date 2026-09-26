@@ -248,3 +248,78 @@ describe('bundleToRepoFiles — total CSS cap', () => {
     if (!r.ok) expect(r.errors).toEqual([expect.stringMatching(/^css \(total\): The CSS has \d+ lines \(max 400\)\.$/)])
   })
 })
+
+describe('style axes (P6b)', () => {
+  const baseline = () => {
+    const r = bundleFromRepoFiles({ brandText, designText, overridesCss: '' }, { name: 'Current site', source: 'baseline' })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    return r.bundle
+  }
+  const withStyle = (style: Record<string, string>) => JSON.stringify({ ...JSON.parse(designText), style }, null, 2) + '\n'
+
+  it('reads design.json style into the bundle (canonical)', () => {
+    const r = bundleFromRepoFiles(
+      { brandText, designText: withStyle({ cards: 'flat', nav: 'default', bogus: 'x' }), overridesCss: '' },
+      { name: 'Current site', source: 'baseline' }
+    )
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+  })
+
+  it('an invalid hand-edited axis value is dropped, not fatal', () => {
+    const r = bundleFromRepoFiles({ brandText, designText: withStyle({ cards: 'wobbly' }), overridesCss: '' }, { name: 'x', source: 'baseline' })
+    expect(r.ok && r.bundle.style).toBeUndefined()
+  })
+
+  it('writes the bundle style with replace semantics', () => {
+    const current = { brandText, designText: withStyle({ cards: 'flat' }), overridesCss: '' }
+    const r = bundleToRepoFiles({ ...baseline(), style: { nav: 'inverted' } }, current, { removeLegacy: true })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(JSON.parse(r.files.designText).style).toEqual({ nav: 'inverted' })
+  })
+
+  it('a style-less bundle removes the style key', () => {
+    const current = { brandText, designText: withStyle({ cards: 'flat' }), overridesCss: '' }
+    const r = bundleToRepoFiles({ ...baseline(), style: undefined }, current, { removeLegacy: true })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect('style' in JSON.parse(r.files.designText)).toBe(false)
+  })
+
+  it('style never touches theme.css (R1)', () => {
+    const plain = bundleToRepoFiles(baseline(), { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    const styled = bundleToRepoFiles({ ...baseline(), style: { cards: 'flat', nav: 'inverted' } }, { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    if (!plain.ok || !styled.ok) throw new Error('failed')
+    expect(styled.files.themeCss).toBe(plain.files.themeCss)
+  })
+
+  it('R1: a round trip is idempotent on canonical output (style absent ⇒ design.json bytes unchanged)', () => {
+    const once = bundleToRepoFiles(baseline(), { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    if (!once.ok) throw new Error('failed')
+    expect('style' in JSON.parse(once.files.designText)).toBe(false)
+    const x = { brandText: once.files.brandText, designText: once.files.designText, overridesCss: once.files.overridesCss }
+    const back = bundleFromRepoFiles(x, { name: 'Current site', source: 'baseline' })
+    if (!back.ok) throw new Error('failed')
+    const twice = bundleToRepoFiles(back.bundle, x, { removeLegacy: false })
+    if (!twice.ok) throw new Error('failed')
+    expect(twice.files.designText).toBe(x.designText)
+    expect(twice.files.brandText).toBe(x.brandText)
+    expect(twice.files.themeCss).toBe(once.files.themeCss)
+  })
+
+  it('R1: a styled design round-trips byte-identically once canonical', () => {
+    const once = bundleToRepoFiles({ ...baseline(), style: { cards: 'flat' } }, { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    if (!once.ok) throw new Error('failed')
+    const x = { brandText: once.files.brandText, designText: once.files.designText, overridesCss: once.files.overridesCss }
+    const back = bundleFromRepoFiles(x, { name: 'Current site', source: 'baseline' })
+    if (!back.ok) throw new Error('failed')
+    expect(back.bundle.style).toEqual({ cards: 'flat' })
+    const twice = bundleToRepoFiles(back.bundle, x, { removeLegacy: false })
+    expect(twice.ok && twice.files.designText).toBe(x.designText)
+  })
+
+  it('the fonts module still derives from the written typography', () => {
+    const b = { ...VALID, style: { cards: 'flat' as const } }
+    const r = bundleToRepoFiles(b, { brandText, designText, overridesCss: '' }, { removeLegacy: true, fontsModule: true })
+    expect(r.ok && r.files.fontsModule).toBe(generateFontsModule(VALID.typography).source)
+  })
+})

@@ -4,7 +4,7 @@
 // depend on `caps` ONLY through fontsUnlocked().
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
-import { CHROME_COMPONENTS, CSS_TARGETS, HTML_STATE_ATTRS } from '../css-targets'
+import { CHROME_COMPONENTS, CSS_TARGETS, TREATMENT_STATE_ATTRS } from '../css-targets'
 import { fontsUnlocked } from '../capabilities'
 import type { DesignCapabilities } from '../run-types'
 
@@ -30,7 +30,7 @@ ${typography}
 
 export const CSS_RULES_SECTION = `CSS RULES (enforced by a strict sanitizer — a violating concept is rejected)
 - Block targets: ${CSS_TARGETS.filter((t) => !(CHROME_COMPONENTS as readonly string[]).includes(t)).join(', ')} (selector [data-block="<id>"]); chrome targets: ${CHROME_COMPONENTS.join(', ')} (selector [data-component="<id>"]).
-- css.blocks.<id> may ONLY contain selectors that start with that target's own attribute selector, optionally prefixed by an html state: html[${HTML_STATE_ATTRS.join(']/html[')}] (values: data-headline="sans|serif", data-eyebrow="standard|mono").
+- css.blocks.<id> may ONLY contain selectors that start with that target's own attribute selector, optionally prefixed by an html state: html[${TREATMENT_STATE_ATTRS.join(']/html[')}] (values: data-headline="sans|serif", data-eyebrow="standard|mono").
 - css.global may target any of the above, plus :root custom properties named --c5-*, --type-*, --tracking-*, --shadow-*, --overlay-*, --duration-* (never --color-* or --font-*).
 - EVERY selector, in css.global and every css.blocks.<id> alike, MUST START with one of those scopes: [data-block="<id>"], [data-component="<id>"], or :root (for custom properties only). Never write a bare class or element selector — not .u-card, not .u-card-interactive:hover, not .t-kicker, not h2 — and never invent a new utility class. The composition utilities named in the TOKEN CONTRACT (.u-card, .u-card-interactive, .u-frame, .u-icon-square, .t-display, .t-h1…, .t-kicker, etc.) already exist in theme.css — reference them in markup if the block catalog does so, but do NOT write a rule whose selector IS one of them; style the effect you want through the scoped [data-block]/[data-component] selector instead.
 - No CSS escapes (backslashes, \\) anywhere in the output — not in a selector, not in a content string, not in a property value. If you need a literal character, use the plain character itself.

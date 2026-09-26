@@ -7,7 +7,6 @@ import {
   capabilityViolations,
   enforceCapabilities,
   fontsUnlocked,
-  hasStyleField,
   intersectWithShell,
   parseTemplateMarker,
   specimenUnlocked,
@@ -82,11 +81,35 @@ describe('font lock', () => {
   })
 })
 
-describe('hasStyleField', () => {
-  it('detects a style key on a raw model object', () => {
-    expect(hasStyleField({ style: { cards: 'flat' } })).toBe(true)
-    expect(hasStyleField({ name: 'x' })).toBe(false)
-    expect(hasStyleField(null)).toBe(false)
+describe('style axes (L3+)', () => {
+  const L3 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.2', capabilities: ['fonts', 'style-axes'] }))
+  const styled = { ...VALID, style: { cards: 'flat' as const } }
+  it('below L3 the generator drops the style with a note', () => {
+    const r = enforceCapabilities(styled, VALID, L2)
+    expect(r.bundle.style).toBeUndefined()
+    expect(r.notes.join(' ')).toContain('Style axes are not available on this site yet')
+  })
+  it('at L3 the style is kept', () => {
+    const r = enforceCapabilities(styled, VALID, L3)
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.notes).toEqual([])
+  })
+  it('apply rejects a style change below L3, allows it at L3', () => {
+    const v = capabilityViolations(styled, VALID, L2)
+    expect(v).toHaveLength(1)
+    expect(v[0]).toContain('Style axes are locked')
+    expect(capabilityViolations(styled, VALID, L3)).toEqual([])
+  })
+  it('below L3 an unchanged style is not a violation', () => {
+    expect(capabilityViolations(styled, styled, L2)).toEqual([])
+  })
+  it('below L2 both fonts and style are reported', () => {
+    const both = { ...styled, typography: { ...VALID.typography, headingFont: OTHER_FONT } }
+    expect(capabilityViolations(both, VALID, DEFAULT_CAPABILITIES)).toHaveLength(2)
+    const r = enforceCapabilities(both, VALID, DEFAULT_CAPABILITIES)
+    expect(r.notes).toHaveLength(2)
+    expect(r.bundle.typography).toEqual(VALID.typography)
+    expect(r.bundle.style).toBeUndefined()
   })
 })
 

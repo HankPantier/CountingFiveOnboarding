@@ -72,7 +72,7 @@ export function fragmentOf(css: DesignBundle['css'], target: CssFragmentKey): st
   return body && body.trim() ? body : null
 }
 
-const levers = (b: DesignBundle) => JSON.stringify({ p: b.palette, t: b.typography, k: b.tokens, r: b.treatments, c: b.css })
+const levers = (b: DesignBundle) => JSON.stringify({ p: b.palette, t: b.typography, k: b.tokens, r: b.treatments, s: b.style ?? {}, c: b.css })
 export function sameLevers(a: DesignBundle, b: DesignBundle): boolean {
   return levers(a) === levers(b)
 }

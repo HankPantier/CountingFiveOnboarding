@@ -2,8 +2,9 @@
 // honours. The template declares them in c5-template.json on the DRAFT branch
 // ({ templateVersion, capabilities[] }); absent/malformed ⇒ L1 (palette,
 // tokens, CSS, treatments). Effective tier = draft marker ∩ the deployed
-// shell's <meta name="c5-capabilities"> (intersectWithShell, P6a). DesignBundle has no `style` field until P6b, so a model-emitted style
-// key is always stripped by the concept validator (hasStyleField).
+// shell's <meta name="c5-capabilities"> (intersectWithShell, P6a). Fonts (L2+)
+// and `style` (L3+) are stripped by the generator and rejected on apply below
+// their tier.
 import type { DesignBundle } from './bundle'
 import { isPlainObject } from './input-validation'
 import { DEFAULT_CAPABILITIES, type CapabilityLevel, type DesignCapabilities } from './run-types'
@@ -18,6 +19,9 @@ const MAX_CAPABILITIES = 20
 const MAX_TOKEN_LENGTH = 40
 const FONT_LOCK_NOTE = 'Fonts are locked on this site (template below L2) — kept the current typography.'
 const FONT_LOCK_VIOLATION = 'Fonts are locked on this site (template below L2) — this design changes the typography.'
+const STYLE_LOCK_NOTE = 'Style axes are not available on this site yet — the concept’s style settings were dropped.'
+const STYLE_LOCK_VIOLATION = 'Style axes are locked on this site (template below L3) — this design sets style presets.'
+const sameStyle = (a: DesignBundle['style'], b: DesignBundle['style']): boolean => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
 
 export function capabilityLevel(caps: string[]): CapabilityLevel {
   if (!caps.includes(CAPABILITY_FONTS)) return 1
@@ -79,10 +83,6 @@ export function intersectWithShell(draft: DesignCapabilities, shell: ShellCapabi
   return { ...draft, capabilities, level: capabilityLevel(capabilities), shell: 'verified' }
 }
 
-export function hasStyleField(raw: unknown): boolean {
-  return isPlainObject(raw) && 'style' in raw
-}
-
 function sameTypography(a: DesignBundle['typography'], b: DesignBundle['typography']): boolean {
   return a.headingFont === b.headingFont && a.bodyFont === b.bodyFont && a.accentFont === b.accentFont
 }
@@ -93,13 +93,25 @@ export function enforceCapabilities(
   current: DesignBundle,
   caps: DesignCapabilities
 ): { bundle: DesignBundle; notes: string[] } {
-  if (fontsUnlocked(caps) || sameTypography(bundle.typography, current.typography)) return { bundle, notes: [] }
-  return { bundle: { ...bundle, typography: { ...current.typography } }, notes: [FONT_LOCK_NOTE] }
+  let out = bundle
+  const notes: string[] = []
+  if (!fontsUnlocked(caps) && !sameTypography(out.typography, current.typography)) {
+    out = { ...out, typography: { ...current.typography } }
+    notes.push(FONT_LOCK_NOTE)
+  }
+  if (!styleAxesUnlocked(caps) && out.style !== undefined) {
+    const { style: _dropped, ...rest } = out
+    out = rest
+    notes.push(STYLE_LOCK_NOTE)
+  }
+  return { bundle: out, notes }
 }
 
 // Apply side: REJECT what the tier doesn't allow (never silently rewrite a
 // design the admin chose).
 export function capabilityViolations(bundle: DesignBundle, current: DesignBundle, caps: DesignCapabilities): string[] {
-  if (!fontsUnlocked(caps) && !sameTypography(bundle.typography, current.typography)) return [FONT_LOCK_VIOLATION]
-  return []
+  const v: string[] = []
+  if (!fontsUnlocked(caps) && !sameTypography(bundle.typography, current.typography)) v.push(FONT_LOCK_VIOLATION)
+  if (!styleAxesUnlocked(caps) && !sameStyle(bundle.style, current.style)) v.push(STYLE_LOCK_VIOLATION)
+  return v
 }

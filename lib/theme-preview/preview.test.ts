@@ -167,6 +167,11 @@ describe('setHtmlAttributes', () => {
     expect(out).toContain('data-headline="&quot;&gt;&lt;script&gt;x&lt;/script&gt;"')
   })
 
+  it('sets and removes style-axis attributes', () => {
+    const out = setHtmlAttributes('<html lang="en" data-c5-nav="bordered"><head></head></html>', { 'data-c5-nav': null, 'data-c5-cards': 'flat' })
+    expect(out).toContain('<html lang="en" data-c5-cards="flat">')
+  })
+
   it('only touches the first <html> tag', () => {
     const doc = `${html}<!-- <html data-headline="sans"> -->`
     const out = setHtmlAttributes(doc, { 'data-headline': 'serif' })
