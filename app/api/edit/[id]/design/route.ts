@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH } from '@/app/api/edit/[id]/theme/_theme'
-import { computeDrift, isFontsModuleStale, isThemeCssStale, mergeAppliedBlobs, themeFilePaths, toBlobMap } from '@/lib/design/drift'
+import { computeDrift, draftFontsModuleKind, isFontsModuleStale, isThemeCssStale, mergeAppliedBlobs, themeFilePaths, toBlobMap } from '@/lib/design/drift'
 import { readDesignCapabilities } from '@/lib/design/capabilities-read'
 import { fontsUnlocked } from '@/lib/design/capabilities'
 import { readDraftThemeSnapshot } from '@/lib/design/theme-snapshot'
@@ -107,6 +107,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       baseline,
       themeCssStale: isThemeCssStale(snapshot.texts),
       fontsModuleStale: fontsUnlocked(draftCaps) ? isFontsModuleStale(snapshot.texts) : null,
+      fontsModuleKind: fontsUnlocked(draftCaps) ? draftFontsModuleKind(snapshot.texts) : null,
       inputs: inputs.map((i) => toInputDto(i, signed)),
       suggestions: buildInputSuggestions(schema),
       run,

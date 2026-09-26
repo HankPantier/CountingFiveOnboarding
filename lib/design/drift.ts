@@ -7,7 +7,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
-import { generateFontsModule } from '@/lib/content/font-module-generator'
+import { fontsModuleKind, generateFontsModule, type FontsModuleKind } from '@/lib/content/font-module-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH, normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 import type { DesignCapabilities } from './run-types'
 import { fontsUnlocked } from './capabilities'
@@ -78,6 +78,13 @@ export function isFontsModuleStale(texts: Partial<Record<SnapshotPath, string>>)
   } catch {
     return null
   }
+}
+
+// The draft fonts module's kind (DEFAULT fleet seed vs SYNCED from
+// design.json); null when absent or unrecognised.
+export function draftFontsModuleKind(texts: Partial<Record<SnapshotPath, string>>): FontsModuleKind | null {
+  const moduleText = texts[FONTS_MODULE_PATH]
+  return moduleText === undefined ? null : fontsModuleKind(moduleText)
 }
 
 // The FULL post-apply blob map (the applied_blobs contract): the four theme

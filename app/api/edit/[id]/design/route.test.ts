@@ -164,6 +164,8 @@ describe('GET /design', () => {
       const body = await (await call()).json()
       expect(m.caps).toHaveBeenCalledWith('o/r')
       expect(body.fontsModuleStale).toBe(true)
+      // The fleet-seeded DEFAULT module (never synced from design.json).
+      expect(body.fontsModuleKind).toBe('default')
       // v0 records the module on L2 drafts (the applied_blobs contract).
       const args = m.getBaselineOrCreate.mock.calls[0][1] as { appliedBlobs: unknown }
       expect(args.appliedBlobs).toEqual({ ...SHAS, [FONTS]: FONTS_SHA })
@@ -174,13 +176,16 @@ describe('GET /design', () => {
       const design = JSON.parse(TEXTS['content/design.json']) as { typography?: Record<string, string> }
       const fresh = generateFontsModule(normalizeTypography(design.typography)).source
       m.snapshot.mockResolvedValue({ shas: { ...SHAS, [FONTS]: FONTS_SHA }, texts: { ...TEXTS, [FONTS]: fresh } })
-      expect((await (await call()).json()).fontsModuleStale).toBe(false)
+      const body = await (await call()).json()
+      expect(body.fontsModuleStale).toBe(false)
+      expect(body.fontsModuleKind).toBe('synced')
     })
 
     it('fontsModuleStale is null on an L1 draft, and v0 / drift ignore the module there', async () => {
       m.snapshot.mockResolvedValue({ shas: { ...SHAS, [FONTS]: FONTS_SHA }, texts: { ...TEXTS, [FONTS]: generateFontsModule().source } })
       const body = await (await call()).json()
       expect(body.fontsModuleStale).toBeNull()
+      expect(body.fontsModuleKind).toBeNull()
       const args = m.getBaselineOrCreate.mock.calls[0][1] as { appliedBlobs: unknown }
       expect(args.appliedBlobs).toEqual(SHAS)
       expect(body.drift.status).toBe('in-sync')

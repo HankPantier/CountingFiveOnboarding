@@ -139,6 +139,7 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
               baseline={state.baseline}
               themeCssStale={state.themeCssStale}
               fontsModuleStale={state.fontsModuleStale}
+              fontsModuleKind={state.fontsModuleKind}
               onChanged={themeChanged}
             />
           </div>

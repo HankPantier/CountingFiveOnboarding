@@ -37,6 +37,7 @@ export default function VersionsPanel({
   baseline,
   themeCssStale,
   fontsModuleStale,
+  fontsModuleKind,
   onChanged,
 }: {
   sessionId: string
@@ -45,6 +46,7 @@ export default function VersionsPanel({
   baseline: BaselineStatus
   themeCssStale: boolean | null
   fontsModuleStale: boolean | null
+  fontsModuleKind: 'default' | 'synced' | null
   onChanged: () => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -146,11 +148,23 @@ export default function VersionsPanel({
 
       {fontsModuleStale === true && (
         <div role="status" className="rounded-lg border border-border-default bg-surface-subtle px-3 py-2 font-body text-xs text-text-secondary">
-          <p className="font-heading font-semibold text-text-primary">The live fonts are out of date</p>
-          <p className="mt-0.5">
-            src/app/fonts.generated.ts doesn’t match design.json, so the live site still loads older fonts. The next Studio apply, chat commit or
-            Controls change regenerates it — and the fonts change on the live site when you publish.
-          </p>
+          {fontsModuleKind === 'default' ? (
+            <>
+              <p className="font-heading font-semibold text-text-primary">The fonts module isn’t synced yet</p>
+              <p className="mt-0.5">
+                The fonts module hasn’t been synced from design.json yet — the next Studio apply, chat commit or Controls change generates it, and
+                it goes live when you publish.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-heading font-semibold text-text-primary">The live fonts are out of date</p>
+              <p className="mt-0.5">
+                src/app/fonts.generated.ts doesn’t match design.json, so the live site still loads older fonts. The next Studio apply, chat commit
+                or Controls change regenerates it — and the fonts change on the live site when you publish.
+              </p>
+            </>
+          )}
         </div>
       )}
 

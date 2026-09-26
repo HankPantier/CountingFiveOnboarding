@@ -88,6 +88,10 @@ export type DesignStudioState = {
   // true = the committed src/app/fonts.generated.ts ≠ what design.json generates
   // (L2+ drafts only); null = not applicable / can't tell.
   fontsModuleStale: boolean | null
+  // Which fonts module the draft has (L2+ drafts only): 'default' = the fleet-
+  // seeded module (today's live fonts, never synced from design.json);
+  // 'synced' = generated from design.json; null = not applicable / unrecognised.
+  fontsModuleKind: 'default' | 'synced' | null
   inputs: DesignInputDto[]
   suggestions: InputSuggestions
   run: DesignRunDto | null // the latest design run (P3)

@@ -7,6 +7,7 @@ import {
   computeDrift,
   isThemeCssStale,
   isFontsModuleStale,
+  draftFontsModuleKind,
   mergeAppliedBlobs,
   themeFilePaths,
   toBlobMap,
@@ -105,6 +106,12 @@ describe('fonts module file contract', () => {
     const current = { ...FOUR, [FONTS_MODULE_PATH]: SHA('f') }
     const latest = { versionNo: 4, appliedBlobs: { ...FOUR, [FONTS_MODULE_PATH]: SHA('e') } }
     expect(computeDrift(current, latest, themeFilePaths(L2))).toEqual({ status: 'drifted', changedPaths: [FONTS_MODULE_PATH], sinceVersion: 4 })
+  })
+  it('draftFontsModuleKind reports default / synced / null', () => {
+    expect(draftFontsModuleKind({ [FONTS_MODULE_PATH]: generateFontsModule().source })).toBe('default')
+    expect(draftFontsModuleKind({ [FONTS_MODULE_PATH]: generateFontsModule({}).source })).toBe('synced')
+    expect(draftFontsModuleKind({ [FONTS_MODULE_PATH]: 'export {}' })).toBeNull()
+    expect(draftFontsModuleKind({})).toBeNull()
   })
   it('isFontsModuleStale compares the module to design.json typography', () => {
     const design = JSON.stringify({ typography: { headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' } })
