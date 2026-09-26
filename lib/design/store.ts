@@ -254,6 +254,11 @@ async function latestVersionNo(db: Db, sessionId: string): Promise<number | null
   return data ? data.version_no : null
 }
 
+// Whether the session has any version at all (the v0 baseline comes first).
+export async function hasAnyVersion(db: Db, sessionId: string): Promise<boolean> {
+  return (await latestVersionNo(db, sessionId)) !== null
+}
+
 // version_no = max + 1, retried on a unique violation (a concurrent insert
 // took the number) up to INSERT_VERSION_ATTEMPTS times.
 export async function insertVersion(db: Db, v: NewDesignVersion): Promise<DesignVersionRow> {

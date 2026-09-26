@@ -35,7 +35,11 @@ vi.mock('@/lib/design/theme-snapshot', async (orig) => ({
 vi.mock('@/lib/design/capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
 vi.mock('@/lib/design/apply-bundle', () => ({ applyBundleToDraft: (a: unknown) => m.apply(a) }))
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
-vi.mock('@/lib/design/store', async (orig) => ({ ...((await orig()) as object), insertVersion: (...a: unknown[]) => m.insertVersion(...a) }))
+vi.mock('@/lib/design/store', async (orig) => ({
+  ...((await orig()) as object),
+  insertVersion: (...a: unknown[]) => m.insertVersion(...a),
+  hasAnyVersion: async () => true,
+}))
 
 import { VersionConflictError } from '@/lib/design/store'
 import { POST } from './route'

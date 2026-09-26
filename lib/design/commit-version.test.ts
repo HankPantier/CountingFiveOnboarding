@@ -13,18 +13,24 @@ const m = vi.hoisted(() => ({
   apply: vi.fn(),
   sync: vi.fn(async (..._a: unknown[]) => {}),
   insertVersion: vi.fn(),
+  hasAnyVersion: vi.fn(),
 }))
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r), readThemeSnapshotAt: (r: string, s: unknown) => m.snapshotAt(r, s) }))
 vi.mock('./capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
 vi.mock('./apply-bundle', () => ({ applyBundleToDraft: (a: unknown) => m.apply(a) }))
 vi.mock('./sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
-vi.mock('./store', async (orig) => ({ ...((await orig()) as object), insertVersion: (...a: unknown[]) => m.insertVersion(...a) }))
+vi.mock('./store', async (orig) => ({
+  ...((await orig()) as object),
+  insertVersion: (...a: unknown[]) => m.insertVersion(...a),
+  hasAnyVersion: (...a: unknown[]) => m.hasAnyVersion(...a),
+}))
 
 import { VersionConflictError } from './store'
 import {
   APPLIED_VERSION_NUMBER_UNRECORDED,
   APPLIED_VERSION_UNRECORDED,
   LEGACY_KEEP_UNCHECKED_ERROR,
+  NO_BASELINE_ERROR,
   STALE_THEME_ERROR,
   commitDesignVersion,
   type CommitVersionArgs,
@@ -69,6 +75,7 @@ beforeEach(() => {
   m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
   m.apply.mockResolvedValue(APPLIED)
   m.insertVersion.mockResolvedValue(makeVersionRow({ id: 'ver-5', version_no: 5, source: 'chat' }))
+  m.hasAnyVersion.mockResolvedValue(true)
 })
 
 describe('commitDesignVersion', () => {
@@ -87,6 +94,14 @@ describe('commitDesignVersion', () => {
   // applyBundleToDraft (whose writeFiles sha guard is the ONLY staleness
   // check) — no snapshot-vs-expected pre-comparison that a lagging read could
   // false-409.
+  it('refuses to commit while there is no v0 baseline (a failed import would make this commit v0)', async () => {
+    m.hasAnyVersion.mockResolvedValue(false)
+    const r = await commitDesignVersion(DB, args())
+    expect(r).toEqual({ ok: false, status: 409, error: NO_BASELINE_ERROR })
+    expect(m.apply).not.toHaveBeenCalled()
+    expect(m.insertVersion).not.toHaveBeenCalled()
+  })
+
   it('refuses to keep legacy hand CSS the caller’s render gate never measured (concept apply)', async () => {
     m.snapshot.mockReset().mockResolvedValue({
       shas: BEFORE_SHAS,

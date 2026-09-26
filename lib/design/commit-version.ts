@@ -34,7 +34,7 @@ import { capabilityViolations } from './capabilities'
 import { readDesignCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs } from './drift'
 import type { RunScreenshot } from './run-types'
-import { insertVersion, VersionConflictError, type DesignVersionRow } from './store'
+import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
 import { syncMbpTheme } from './sync-mbp-theme'
 import { readDraftThemeSnapshot, readThemeSnapshotAt, themeTextsFromSnapshot } from './theme-snapshot'
@@ -44,6 +44,8 @@ type Db = SupabaseClient<Database>
 export const STALE_THEME_ERROR = 'The theme changed while applying — refresh the Studio and try again.'
 export const APPLIED_VERSION_NUMBER_UNRECORDED = 'The design was applied to the draft, but its version number could not be recorded — refresh the Studio.'
 export const APPLIED_VERSION_UNRECORDED = 'The design was applied to the draft, but its version could not be recorded — refresh the Studio.'
+export const NO_BASELINE_ERROR =
+  'The Studio has no v0 baseline of this site yet (importing the current design failed), so nothing can be committed — the first commit would otherwise become v0 and the original design could never be restored. Fix the draft theme files (Controls tab or the file editor), then Refresh.'
 export const LEGACY_KEEP_UNCHECKED_ERROR =
   'This concept was render-checked with the legacy overrides removed. Keeping them was never checked against the new palette, so it can’t be applied that way — apply with “Remove legacy overrides” on, or apply it and then refine in the chat (whose previews keep them).'
 
@@ -80,6 +82,9 @@ export type CommitVersionResult =
 
 export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Promise<CommitVersionResult> {
   const { target, bundle, expectedShas } = args
+  // v0 must record the ORIGINAL design. If its import failed (e.g. an
+  // uncurated font), refuse rather than let this commit become v0.
+  if (!(await hasAnyVersion(db, target.sessionId))) return { ok: false, status: 409, error: NO_BASELINE_ERROR }
   const before = expectedShas
     ? await readThemeSnapshotAt(target.githubRepo, expectedShas)
     : await readDraftThemeSnapshot(target.githubRepo)
