@@ -153,6 +153,12 @@ async function setupBundle(browser: Browser): Promise<RenderBundle> {
     viewport: { width: VIEWPORTS.desktop.width, height: VIEWPORTS.desktop.height },
     deviceScaleFactor: VIEWPORTS.desktop.deviceScaleFactor,
     serviceWorkers: 'block',
+    // Page scripts never run: the shell comes from a client-controlled site,
+    // and the regex strippers + meta CSP are only defence in depth. Our own
+    // page.evaluate() calls (fonts wait, metrics, scroll) run through CDP and
+    // still work — the real-Chrome suite asserts metrics + an inline <script>
+    // that must NOT execute.
+    javaScriptEnabled: false,
   })
   const page = await context.newPage()
   page.setDefaultTimeout(PAGE_TIMEOUT_MS)
