@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const m = vi.hoisted(() => ({ siteUrl: vi.fn(), get: vi.fn() }))
 vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: (a: unknown) => m.siteUrl(a) }))
 vi.mock('@/lib/audit/crawl', () => ({ safeGet: (u: string) => m.get(u) }))
 
-import { __resetShellCapabilitiesCacheForTests, parseShellCapabilities, readShellCapabilities } from './shell-capabilities'
+import { SHELL_READ_DEADLINE_MS, __resetShellCapabilitiesCacheForTests, parseShellCapabilities, readShellCapabilities } from './shell-capabilities'
 
 const page = (meta: string) => ({ status: 200, contentType: 'text/html', finalUrl: 'https://a.test/', body: `<html><head>${meta}</head></html>` })
 
@@ -35,6 +35,8 @@ describe('readShellCapabilities', () => {
     expect(m.get).toHaveBeenCalledWith('https://a.test')
     await readShellCapabilities(args, 50_000)
     expect(m.get).toHaveBeenCalledTimes(1)
+    // A cache hit makes no preview-URL (DB/GitHub) read either.
+    expect(m.siteUrl).toHaveBeenCalledTimes(1)
     await readShellCapabilities(args, 62_000)
     expect(m.get).toHaveBeenCalledTimes(2)
   })
@@ -47,6 +49,7 @@ describe('readShellCapabilities', () => {
     ['preview url read throws', () => m.siteUrl.mockRejectedValue(new Error('db down'))],
     ['blocked fetch', () => m.get.mockResolvedValue(null)],
     ['http 503', () => m.get.mockResolvedValue({ ...page(''), status: 503 })],
+    ['final 3xx (redirect chain gave up)', () => m.get.mockResolvedValue({ ...page(''), status: 301 })],
     ['non-html', () => m.get.mockResolvedValue({ ...page(''), contentType: 'application/json' })],
     ['throws', () => m.get.mockRejectedValue(new Error('boom'))],
   ])('is unverified (and uncached) on %s', async (_n, arrange) => {
@@ -59,5 +62,28 @@ describe('readShellCapabilities', () => {
     m.get.mockReset().mockResolvedValue(page('<meta name="c5-capabilities" content="fonts">'))
     expect(await readShellCapabilities(args, 2000)).toEqual({ status: 'verified', capabilities: ['fonts'] })
     expect(m.get).toHaveBeenCalledTimes(1)
+  })
+  describe('overall deadline', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+    it('a hung fetch resolves unverified at the deadline and is not cached', async () => {
+      m.get.mockReturnValue(new Promise(() => {}))
+      const args = { jobId: 'j', githubRepo: 'o/r' }
+      const p = readShellCapabilities(args, 1000)
+      let settled: unknown = 'pending'
+      void p.then((v) => (settled = v))
+      await vi.advanceTimersByTimeAsync(SHELL_READ_DEADLINE_MS - 1)
+      expect(settled).toBe('pending')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(settled).toEqual({ status: 'unverified' })
+      m.get.mockReset().mockResolvedValue(page('<meta name="c5-capabilities" content="fonts">'))
+      expect(await readShellCapabilities(args, 2000)).toEqual({ status: 'verified', capabilities: ['fonts'] })
+    })
+    it('a hung preview-url read also hits the deadline', async () => {
+      m.siteUrl.mockReturnValue(new Promise(() => {}))
+      const p = readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' }, 1000)
+      await vi.advanceTimersByTimeAsync(SHELL_READ_DEADLINE_MS)
+      expect(await p).toEqual({ status: 'unverified' })
+    })
   })
 })
