@@ -14,6 +14,7 @@ import {
   hasLegacyOverrides,
 } from './bundle-files'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
+import { CHROME_COMPONENTS, CSS_TARGETS } from './css-targets'
 import { VALID } from './__fixtures__/valid-bundle'
 
 const FIX = path.join(__dirname, '..', 'content', '__fixtures__')
@@ -221,5 +222,18 @@ describe('managed region — malformed marker hardening', () => {
     const result = removeRegion(css)
     expect(result).not.toMatch(/\n{3,}/)
     expect(result).toBe(`${before}\n\n${after}`.trimEnd())
+  })
+})
+
+describe('bundleToRepoFiles — total CSS cap', () => {
+  it('rejects a bundle whose fragments each fit but together exceed the region total', () => {
+    const blocks: Record<string, string> = {}
+    for (const key of CSS_TARGETS) {
+      const sel = (CHROME_COMPONENTS as readonly string[]).includes(key) ? `[data-component="${key}"]` : `[data-block="${key}"]`
+      blocks[key] = Array.from({ length: 6 }, (_, i) => `${sel} .x${i} { margin: 0; }`).join('\n')
+    }
+    const r = bundleToRepoFiles({ ...VALID, css: { blocks } }, { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors).toEqual([expect.stringMatching(/^css \(total\): The CSS has \d+ lines \(max 400\)\.$/)])
   })
 })

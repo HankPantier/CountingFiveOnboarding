@@ -10,7 +10,7 @@
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
 import { CSS_TARGETS } from '../css-targets'
-import { MAX_TARGET_BYTES, MAX_TARGET_LINES, countCssLines, cssByteLength, cssCaps, type CssSizeScope } from '../css-budget'
+import { MAX_TARGET_BYTES, MAX_TARGET_LINES, MAX_TOTAL_BYTES, MAX_TOTAL_LINES, countCssLines, cssByteLength, cssCaps, totalCssSize, type CssSizeScope } from '../css-budget'
 import { PASS_MIN_DISTINCTIVENESS, PASS_MIN_MEAN, PASS_MIN_SCORE, RUBRIC_KEYS, RUBRIC_LABELS, type CritiqueRecord } from '../critique'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
@@ -61,10 +61,13 @@ export function formatCssBudget(css: DesignBundle['css']): string {
     const body = css.blocks[key]
     if (body?.trim()) row(`css.blocks.${key}`, body, 'target')
   }
+  const total = totalCssSize([css.global, ...Object.values(css.blocks)])
+  const totalTight = total.lines >= MAX_TOTAL_LINES * 0.8 || total.bytes >= MAX_TOTAL_BYTES * 0.8 ? ' — near the cap' : ''
   return [
-    'CSS BUDGET — hard caps (the sanitizer rejects the whole revision if any fragment is over):',
+    'CSS BUDGET — hard caps (the sanitizer rejects the whole revision if any fragment, or the total, is over):',
     ...(rows.length ? rows : ['- (no CSS yet)']),
     `- any other block: ${MAX_TARGET_LINES} lines, ${fmt(MAX_TARGET_BYTES)} bytes each`,
+    `- TOTAL across all fragments: ${total.lines}/${MAX_TOTAL_LINES} lines, ${fmt(total.bytes)}/${fmt(MAX_TOTAL_BYTES)} bytes${totalTight}`,
     'Stay within budget: tighten or drop rules rather than add them, and prefer editing existing rules to writing new ones. Lines are counted after the sanitizer reformats the CSS: every selector list, declaration and closing brace (incl. @media) is its own line, blank lines are dropped — one-line rules save nothing. A fragment near its cap has no room to grow.',
   ].join('\n')
 }

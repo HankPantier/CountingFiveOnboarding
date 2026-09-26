@@ -7,6 +7,11 @@ export const MAX_GLOBAL_BYTES = 16_000
 export const MAX_GLOBAL_LINES = 400
 export const MAX_TARGET_BYTES = 4_000
 export const MAX_TARGET_LINES = 60
+// Spec: 16 KB / 400 lines for the WHOLE managed region (global + every
+// target), on top of the per-fragment caps — otherwise ~25 targets could
+// write ~116 KB into design-overrides.css.
+export const MAX_TOTAL_BYTES = 16_000
+export const MAX_TOTAL_LINES = 400
 
 export type CssSizeScope = 'global' | 'target'
 
@@ -22,7 +27,27 @@ export const countCssLines = (css: string): number => css.trim().split('\n').len
 export const cssTooLargeError = (maxBytes: number): string => `The CSS is too large (max ${maxBytes} bytes).`
 export const cssTooManyLinesError = (lines: number, maxLines: number): string => `The CSS has ${lines} lines (max ${maxLines}).`
 
+// The whole region's size over its fragments (already sanitized).
+export function totalCssSize(fragments: (string | undefined)[]): { bytes: number; lines: number } {
+  let bytes = 0
+  let lines = 0
+  for (const f of fragments) {
+    if (!f?.trim()) continue
+    bytes += cssByteLength(f)
+    lines += countCssLines(f)
+  }
+  return { bytes, lines }
+}
+
+export function totalCssErrors(fragments: (string | undefined)[]): string[] {
+  const { bytes, lines } = totalCssSize(fragments)
+  const errors: string[] = []
+  if (bytes > MAX_TOTAL_BYTES) errors.push(`css (total): ${cssTooLargeError(MAX_TOTAL_BYTES)}`)
+  if (lines > MAX_TOTAL_LINES) errors.push(`css (total): ${cssTooManyLinesError(lines, MAX_TOTAL_LINES)}`)
+  return errors
+}
+
 // A size-cap error as bundleToRepoFiles reports it ("css.global: …" /
-// "css.blocks.<key>: …"), optionally unprefixed.
-const SIZE_ERROR = /^(?:css\.(?:global|blocks\.[a-z-]+): )?The CSS (?:is too large \(max \d+ bytes\)|has \d+ lines \(max \d+\))\.$/
+// "css.blocks.<key>: …" / "css (total): …"), optionally unprefixed.
+const SIZE_ERROR = /^(?:css(?:\.(?:global|blocks\.[a-z-]+)| \(total\)): )?The CSS (?:is too large \(max \d+ bytes\)|has \d+ lines \(max \d+\))\.$/
 export const isCssSizeCapError = (error: string): boolean => SIZE_ERROR.test(error)
