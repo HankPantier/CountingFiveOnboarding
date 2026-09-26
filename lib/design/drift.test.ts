@@ -1,7 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { THEME_FILE_PATHS, computeDrift, isThemeCssStale, mergeAppliedBlobs, toBlobMap } from './drift'
+import {
+  THEME_FILE_PATHS,
+  FONTS_MODULE_PATH,
+  computeDrift,
+  isThemeCssStale,
+  isFontsModuleStale,
+  draftFontsModuleKind,
+  mergeAppliedBlobs,
+  themeFilePaths,
+  toBlobMap,
+} from './drift'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
+import { parseTemplateMarker } from './capabilities'
 
 const A = 'a'.repeat(40)
 const B = 'b'.repeat(40)
@@ -68,6 +80,51 @@ describe('isThemeCssStale', () => {
   it('is null when it cannot tell', () => {
     expect(isThemeCssStale({ 'content/design.json': design })).toBeNull()
     expect(isThemeCssStale({ 'content/brand.json': '{nope', 'content/design.json': design })).toBeNull()
+  })
+})
+
+const SHA = (c: string) => c.repeat(40)
+const L1 = parseTemplateMarker(null)
+const L2 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.1', capabilities: ['fonts'] }))
+const FOUR = { 'content/brand.json': SHA('a'), 'content/design.json': SHA('b'), 'src/styles/theme.css': SHA('c'), 'content/design-overrides.css': SHA('d') }
+
+describe('fonts module file contract', () => {
+  it('tracks the fonts module only on L2+ drafts', () => {
+    expect(themeFilePaths(L1)).toEqual(THEME_FILE_PATHS)
+    expect(themeFilePaths(L2)).toEqual([...THEME_FILE_PATHS, FONTS_MODULE_PATH])
+  })
+  it('mergeAppliedBlobs includes the fonts sha only when asked for its path', () => {
+    const shas = { ...FOUR, [FONTS_MODULE_PATH]: SHA('e') }
+    expect(mergeAppliedBlobs(shas, {})).toEqual(FOUR)
+    expect(mergeAppliedBlobs(shas, { [FONTS_MODULE_PATH]: SHA('f') }, themeFilePaths(L2))).toEqual({ ...FOUR, [FONTS_MODULE_PATH]: SHA('f') })
+  })
+  it('a pre-P6a version (no fonts sha) is not drifted by the fonts module', () => {
+    const current = { ...FOUR, [FONTS_MODULE_PATH]: SHA('e') }
+    expect(computeDrift(current, { versionNo: 3, appliedBlobs: FOUR }, themeFilePaths(L2)).status).toBe('in-sync')
+  })
+  it('a version that recorded the fonts sha detects a changed module', () => {
+    const current = { ...FOUR, [FONTS_MODULE_PATH]: SHA('f') }
+    const latest = { versionNo: 4, appliedBlobs: { ...FOUR, [FONTS_MODULE_PATH]: SHA('e') } }
+    expect(computeDrift(current, latest, themeFilePaths(L2))).toEqual({ status: 'drifted', changedPaths: [FONTS_MODULE_PATH], sinceVersion: 4 })
+  })
+  it('draftFontsModuleKind reports default / synced / null', () => {
+    expect(draftFontsModuleKind({ [FONTS_MODULE_PATH]: generateFontsModule().source })).toBe('default')
+    expect(draftFontsModuleKind({ [FONTS_MODULE_PATH]: generateFontsModule({}).source })).toBe('synced')
+    expect(draftFontsModuleKind({ [FONTS_MODULE_PATH]: 'export {}' })).toBeNull()
+    expect(draftFontsModuleKind({})).toBeNull()
+  })
+  it('isFontsModuleStale compares the module to design.json typography', () => {
+    const design = JSON.stringify({ typography: { headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' } })
+    const fresh = generateFontsModule({ headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' }).source
+    expect(isFontsModuleStale({ 'content/design.json': design, [FONTS_MODULE_PATH]: fresh })).toBe(false)
+    expect(isFontsModuleStale({ 'content/design.json': design, [FONTS_MODULE_PATH]: 'old' })).toBe(true)
+    expect(isFontsModuleStale({ 'content/design.json': design })).toBeNull()
+    expect(isFontsModuleStale({ 'content/design.json': '{bad', [FONTS_MODULE_PATH]: fresh })).toBeNull()
+  })
+  it('a DEFAULT-kind module is stale against a design.json with typography, even when the fonts match (PF5: not yet synced)', () => {
+    const design = JSON.stringify({ typography: { headingFont: 'Public Sans', bodyFont: 'Public Sans', accentFont: 'Fraunces' } })
+    const defaultModule = generateFontsModule().source
+    expect(isFontsModuleStale({ 'content/design.json': design, [FONTS_MODULE_PATH]: defaultModule })).toBe(true)
   })
 })
 

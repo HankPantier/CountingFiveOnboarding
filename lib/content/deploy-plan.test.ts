@@ -7,7 +7,9 @@ import {
   parseDeployManifest,
   planDeployPush,
   previewPreservedFiles,
+  SITE_CONFIG_PATHS,
 } from './deploy-plan'
+import { FONTS_MODULE_PATH } from '@/lib/design/drift'
 
 const sha = (s: string) => gitBlobSha(s)
 
@@ -206,5 +208,82 @@ describe('isPackageOwnedPath', () => {
     expect(isPackageOwnedPath('content/posts/hello.md')).toBe(false)
     expect(isPackageOwnedPath('content/drafts/pages/x.md')).toBe(false)
     expect(isPackageOwnedPath('src/styles/theme.css')).toBe(false)
+  })
+})
+
+describe('theme files as site config (Task 18b)', () => {
+  const THEME = 'src/styles/theme.css'
+  const FONTS = 'src/app/fonts.generated.ts'
+
+  it('the fonts-module literal equals FONTS_MODULE_PATH', () => {
+    expect(FONTS).toBe(FONTS_MODULE_PATH)
+    expect(SITE_CONFIG_PATHS.has(FONTS_MODULE_PATH)).toBe(true)
+    expect(SITE_CONFIG_PATHS.has(THEME)).toBe(true)
+  })
+
+  it('a first deploy overlays theme.css + the fonts module over the template defaults and records their shas', () => {
+    const plan = planDeployPush({
+      entries: [
+        { path: 'content/pages/a.md', content: 'A' },
+        { path: THEME, content: 'generated css' },
+        { path: FONTS, content: 'synced fonts' },
+      ],
+      draftBlobs: new Map([
+        [THEME, sha('template css')],
+        [FONTS, sha('default fonts')],
+      ]),
+      baseline: null,
+    })
+    expect(plan.firstDeploy).toBe(true)
+    expect(plan.push).toEqual(
+      expect.arrayContaining([
+        { path: THEME, content: 'generated css' },
+        { path: FONTS, content: 'synced fonts' },
+      ])
+    )
+    // Unguarded overlay: no expectedBlobSha on either.
+    for (const p of [THEME, FONTS]) expect(plan.push.find((e) => e.path === p)).not.toHaveProperty('expectedBlobSha')
+    const manifest = plan.push.find((e) => e.path === DEPLOY_MANIFEST_PATH)
+    expect(parseDeployManifest(String(manifest?.content))?.blobs).toMatchObject({
+      [THEME]: sha('generated css'),
+      [FONTS]: sha('synced fonts'),
+    })
+  })
+
+  it('a later deploy never overwrites a fonts module present on draft', () => {
+    const plan = planDeployPush({
+      entries: [{ path: FONTS, content: 'pipeline fonts' }],
+      draftBlobs: new Map([[FONTS, sha('studio fonts')]]),
+      baseline: { [FONTS]: sha('first deploy fonts') },
+    })
+    expect(plan.push.find((e) => e.path === FONTS)).toBeUndefined()
+    expect(plan.skipped).toEqual([{ path: FONTS, reason: 'site-config' }])
+  })
+
+  it('a later deploy with identical module content neither writes nor reports it', () => {
+    const plan = planDeployPush({
+      entries: [{ path: FONTS, content: 'same fonts' }],
+      draftBlobs: new Map([[FONTS, sha('same fonts')]]),
+      baseline: {},
+    })
+    expect(plan.push.find((e) => e.path === FONTS)).toBeUndefined()
+    expect(plan.skipped).toEqual([])
+  })
+
+  it('a later deploy creates the module when it is absent on draft (must-not-exist guard)', () => {
+    const plan = planDeployPush({
+      entries: [{ path: FONTS, content: 'pipeline fonts' }],
+      draftBlobs: new Map(),
+      baseline: {},
+    })
+    expect(plan.push.find((e) => e.path === FONTS)).toEqual({ path: FONTS, content: 'pipeline fonts', expectedBlobSha: null })
+  })
+
+  it('previewPreservedFiles lists the module as site-config on a previously deployed draft', () => {
+    const out = previewPreservedFiles(new Map([[FONTS, 'f'], [THEME, 't']]), {})
+    expect(out).toEqual([
+      { path: FONTS, reason: 'site-config' },
+      { path: THEME, reason: 'site-config' },
+    ])
   })
 })

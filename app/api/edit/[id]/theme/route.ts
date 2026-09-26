@@ -17,6 +17,10 @@ import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
 import { loadDraftThemeSources } from '@/lib/design/theme-sources'
+import { readDesignCapabilities } from '@/lib/design/capabilities-read'
+import { fontsUnlocked } from '@/lib/design/capabilities'
+import { FONTS_MODULE_PATH } from '@/lib/design/drift'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { BRAND_PATH, DESIGN_PATH, THEME_CSS_PATH, normalizeTypography } from './_theme'
 
 export const runtime = 'nodejs'
@@ -47,7 +51,8 @@ type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch; fl
 
 // PATCH — direct (non-AI) theme edits from the Theme Studio pickers. Applies a
 // palette and/or typography change: commits brand.json/design.json + the
-// regenerated theme.css to the draft branch in ONE commit, then syncs the MBP
+// regenerated theme.css (+ on L2+ drafts the regenerated fonts module) to the
+// draft branch in ONE commit, then syncs the MBP
 // (free-text brand fields + structured content_jobs.palette). Admin-only.
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -136,6 +141,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       { path: BRAND_PATH, content: brandChanged ? brandText : brandFile.content, expectedSha: brandFile.sha },
       { path: DESIGN_PATH, content: designChanged ? designText : designFile.content, expectedSha: designFile.sha },
     ]
+    // L2+ drafts: the live fonts come from the generated next/font module, so
+    // regenerate it from the FINAL design.json on every theme write (same as
+    // theme.css) and guard it — an absent module must still be absent.
+    if (fontsUnlocked(await readDesignCapabilities(githubRepo))) {
+      const fontsFile = (await load(FONTS_MODULE_PATH, true))!
+      const fontsModule = generateFontsModule(normalizeTypography(design.typography)).source
+      changes.push({ path: FONTS_MODULE_PATH, content: fontsModule, expectedSha: fontsFile.sha || null })
+    }
 
     const changedParts = [
       brandChanged && 'palette',

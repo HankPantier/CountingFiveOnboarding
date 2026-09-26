@@ -12,6 +12,7 @@ import {
   normalizeTypography,
   type ThemeSources,
 } from '@/app/api/edit/[id]/theme/_theme'
+import { normalizeStyleAxes } from './style-axes'
 
 async function readOr(githubRepo: string, path: string, fallback: string): Promise<string> {
   try {
@@ -54,6 +55,7 @@ export async function loadDraftThemeSources(
       darkSections: design.darkSections ?? false,
       spacing: design.spacing,
       radius: design.radius,
+      style: normalizeStyleAxes(design.style),
       themeCss,
       overridesCss,
     },

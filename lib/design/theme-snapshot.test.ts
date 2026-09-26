@@ -38,6 +38,20 @@ beforeEach(() => {
   )
 })
 
+describe('readDraftThemeSnapshot — fonts module', () => {
+  it('includes the fonts module when present, and excludes unrelated files', async () => {
+    m.listTree.mockResolvedValue([
+      ...TREE,
+      { path: 'src/app/fonts.generated.ts', sha: 'f'.repeat(40), type: 'blob' },
+      { path: 'src/app/page.tsx', sha: 'g'.repeat(40), type: 'blob' },
+    ])
+    const snap = await readDraftThemeSnapshot('o/r')
+    expect(snap.shas['src/app/fonts.generated.ts']).toBe('f'.repeat(40))
+    expect(snap.texts['src/app/fonts.generated.ts']).toBe('text:src/app/fonts.generated.ts')
+    expect(snap.shas['src/app/page.tsx']).toBeUndefined()
+  })
+})
+
 describe('readDraftThemeSnapshot', () => {
   it('returns blob shas + texts for the theme files only', async () => {
     const snap = await readDraftThemeSnapshot('o/r')

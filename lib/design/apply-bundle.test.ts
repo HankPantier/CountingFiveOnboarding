@@ -24,6 +24,8 @@ import { readFile } from '@/lib/github/repo-files'
 import { applyBundleToDraft } from './apply-bundle'
 import { readRegion } from './bundle-files'
 import { VALID } from './__fixtures__/valid-bundle'
+import { FONTS_MODULE_PATH } from './drift'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
 
 const FIX = path.join(__dirname, '..', 'content', '__fixtures__')
 const AUTHOR = { name: 'Admin', email: 'a@example.com' }
@@ -180,5 +182,55 @@ describe('applyBundleToDraft', () => {
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, base: { shas: {}, texts: {} } })
     expect(r).toMatchObject({ ok: false, status: 409 })
     expect(writeFiles).not.toHaveBeenCalled()
+  })
+})
+
+describe('fonts module (L2+ drafts)', () => {
+  const E40 = 'e'.repeat(40)
+  const ARGS = { githubRepo: 'o/r', removeLegacy: false, message: 'm', author: AUTHOR }
+  const interBundle = { ...VALID, typography: { headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' } }
+  const FRESH = generateFontsModule({ headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' }).source
+
+  it('writes the regenerated module with its sha guard when fontsModule is set', async () => {
+    files.set(FONTS_MODULE_PATH, { content: 'old', sha: E40 })
+    const r = await applyBundleToDraft({ ...ARGS, bundle: interBundle, fontsModule: true })
+    expect(r.ok && r.changedPaths).toContain('src/app/fonts.generated.ts')
+    const written = writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha: unknown }[]
+    const fonts = written.find((w) => w.path === 'src/app/fonts.generated.ts')
+    expect(fonts).toEqual({ path: 'src/app/fonts.generated.ts', content: FRESH, expectedSha: E40 })
+  })
+
+  it('never touches (or reads) the module on an L1 draft', async () => {
+    files.set(FONTS_MODULE_PATH, { content: 'old', sha: E40 })
+    vi.mocked(readFile).mockClear()
+    await applyBundleToDraft({ ...ARGS, bundle: interBundle })
+    const written = writeFiles.mock.calls[0][1] as { path: string }[]
+    expect(written.map((w) => w.path)).not.toContain('src/app/fonts.generated.ts')
+    expect(vi.mocked(readFile).mock.calls.map((c) => c[1])).not.toContain(FONTS_MODULE_PATH)
+  })
+
+  it('base mode guards an unchanged module as a same-blob entry', async () => {
+    const BASE_WITH_FRESH_FONTS = {
+      shas: { 'content/brand.json': 'B1', 'content/design.json': 'D1', [FONTS_MODULE_PATH]: E40 },
+      texts: {
+        'content/brand.json': files.get('content/brand.json')?.content ?? '',
+        'content/design.json': files.get('content/design.json')?.content ?? '',
+        [FONTS_MODULE_PATH]: FRESH,
+      },
+    }
+    const r = await applyBundleToDraft({ ...ARGS, bundle: interBundle, fontsModule: true, base: BASE_WITH_FRESH_FONTS })
+    const written = writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha: unknown }[]
+    expect(written.find((w) => w.path === 'src/app/fonts.generated.ts')).toEqual({ path: FONTS_MODULE_PATH, content: FRESH, expectedSha: E40 })
+    expect(r.ok && r.changedPaths).not.toContain('src/app/fonts.generated.ts')
+  })
+
+  it('base mode: a module absent from the base is written as must-not-exist (null)', async () => {
+    const base = {
+      shas: { 'content/brand.json': 'B1', 'content/design.json': 'D1' },
+      texts: { 'content/brand.json': files.get('content/brand.json')?.content ?? '', 'content/design.json': files.get('content/design.json')?.content ?? '' },
+    }
+    await applyBundleToDraft({ ...ARGS, bundle: interBundle, fontsModule: true, base })
+    const written = writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha: unknown }[]
+    expect(written.find((w) => w.path === FONTS_MODULE_PATH)).toEqual({ path: FONTS_MODULE_PATH, content: FRESH, expectedSha: null })
   })
 })

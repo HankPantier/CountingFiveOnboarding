@@ -13,7 +13,7 @@ const m = vi.hoisted(() => ({
   list: vi.fn(),
   insert: vi.fn(),
   download: vi.fn(),
-  caps: vi.fn(),
+  effective: vi.fn(),
   readOptional: vi.fn(),
   turnContextThrows: false,
   convertThrows: false,
@@ -42,7 +42,7 @@ vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), re
 vi.mock('./store', async (orig) => ({ ...((await orig()) as object), latestVersion: (...a: unknown[]) => m.latest(...a), readSessionSchema: (...a: unknown[]) => m.schema(...a) }))
 vi.mock('./chat-store', () => ({ listChatMessages: (...a: unknown[]) => m.list(...a), insertChatMessage: (...a: unknown[]) => m.insert(...a) }))
 vi.mock('./storage', async (orig) => ({ ...((await orig()) as object), downloadDesignImage: (...a: unknown[]) => m.download(...a) }))
-vi.mock('./capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
+vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('./apply-bundle', async (orig) => ({ ...((await orig()) as object), readOptional: (...a: unknown[]) => m.readOptional(...a) }))
 
 import { bundleFromRepoFiles } from './bundle-files'
@@ -72,7 +72,7 @@ beforeEach(() => {
   m.list.mockResolvedValue([])
   m.insert.mockImplementation(async (_db: unknown, row: { role: string }) => makeChatRow({ id: 'user-row-1', role: row.role }))
   m.download.mockResolvedValue(new Uint8Array([1, 2, 3]))
-  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
+  m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.readOptional.mockResolvedValue(null)
 })
 
@@ -83,6 +83,19 @@ describe('prepareChatTurn', () => {
     m.snapshot.mockResolvedValue({ shas: {}, texts: {} })
     expect(await prepareChatTurn(DB, ACTOR, req(), Date.now())).toMatchObject({ ok: false, status: 409 })
     expect(m.insert).not.toHaveBeenCalled()
+  })
+  it('drift tracks the fonts module only on L2+ drafts (draft marker, not the shell)', async () => {
+    const FONTS = 'src/app/fonts.generated.ts'
+    const L2 = { level: 2 as const, source: 'marker' as const, templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    m.latest.mockResolvedValue(makeVersionRow({ version_no: 3, bundle: asJson({ name: 'Harbor v3' }), applied_blobs: asJson({ ...SHAS, [FONTS]: '1'.repeat(40) }) }))
+    m.snapshot.mockResolvedValue({ ...SNAP, shas: { ...SHAS, [FONTS]: '2'.repeat(40) } })
+    const l1 = await prepareChatTurn(DB, ACTOR, req(), 0)
+    if (!l1.ok) throw new Error(l1.error)
+    expect(l1.turn.turnContext).not.toContain('changed outside the Studio')
+    m.effective.mockResolvedValue({ draft: L2, effective: DEFAULT_CAPABILITIES })
+    const l2 = await prepareChatTurn(DB, ACTOR, req(), 0)
+    if (!l2.ok) throw new Error(l2.error)
+    expect(l2.turn.turnContext).toContain('changed outside the Studio')
   })
   it('409s malformed override markers', async () => {
     m.snapshot.mockResolvedValue({ ...SNAP, texts: { ...SNAP.texts, 'content/design-overrides.css': '/* design-studio:end */' } })

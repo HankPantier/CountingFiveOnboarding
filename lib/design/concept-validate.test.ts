@@ -4,6 +4,7 @@ import { VALID } from './__fixtures__/valid-bundle'
 import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
 import { checkConceptCandidate, parseConceptsEnvelope, validateConceptBundle, type ConceptContext } from './concept-validate'
 import { DEFAULT_CAPABILITIES } from './run-types'
+import { parseTemplateMarker } from './capabilities'
 
 const CTX: ConceptContext = { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: 'claude-opus-5-5' }
 const OTHER_FONT = CURATED_FONTS.find((f) => f !== 'Public Sans' && f !== 'Fraunces') as string
@@ -37,9 +38,28 @@ describe('validateConceptBundle', () => {
     if (!r.ok) expect(r.errors.join(' ')).toContain('palette.primary')
   })
 
-  it('strips a style field with a note', () => {
+  it('drops a style field below L3 with a note', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), style: { cards: 'flat' } }, CTX)
-    expect(r.ok && r.concept.notes).toEqual([expect.stringContaining('Style axes')])
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.concept.bundle.style).toBeUndefined()
+    expect(r.concept.notes).toEqual([expect.stringContaining('Style axes are not available on this site yet')])
+    expect(JSON.parse(r.concept.files.designText).style).toBeUndefined()
+  })
+
+  it('keeps a style field at L3 and writes it to design.json', () => {
+    const L3 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.2', capabilities: ['fonts', 'style-axes'] }))
+    const r = validateConceptBundle({ ...rawOf(VALID), style: { cards: 'flat' } }, { ...CTX, caps: L3 })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.concept.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.concept.notes).toEqual([])
+    expect(JSON.parse(r.concept.files.designText).style).toEqual({ cards: 'flat' })
+  })
+
+  it('rejects an unknown style axis value', () => {
+    const r = validateConceptBundle({ ...rawOf(VALID), style: { cards: 'wobbly' } }, CTX)
+    expect(r.ok).toBe(false)
   })
 
   it('restores the current fonts below L2 with a note', () => {

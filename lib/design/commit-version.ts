@@ -17,7 +17,7 @@
 //      session never silently mutates schema_data). A chat-made design reaches
 //      the MBP through the Versions panel's human-clicked "Sync palette &
 //      fonts to MBP" (POST design/sync-mbp), which mirrors the whole draft.
-//   5. the FULL post-apply four-file blob map (the applied_blobs contract)
+//   5. the FULL post-apply blob map — four theme files, plus the fonts module on L2+ drafts (the applied_blobs contract)
 //   6. insertVersion (version_no = max + 1, 23505 retry)
 // Render gates are the CALLER's job (concept: its stored review metrics; chat:
 // the turn's latest preview; restore: none — the version was on the draft
@@ -30,9 +30,9 @@ import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
 import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
-import { capabilityViolations } from './capabilities'
-import { readDesignCapabilities } from './capabilities-read'
-import { mergeAppliedBlobs } from './drift'
+import { capabilityViolations, fontsUnlocked, keepLockedStyle } from './capabilities'
+import { readEffectiveCapabilities } from './capabilities-read'
+import { mergeAppliedBlobs, themeFilePaths } from './drift'
 import type { RunScreenshot } from './run-types'
 import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
@@ -81,7 +81,7 @@ export type CommitVersionResult =
   | { ok: false; status: 409 | 422; error: string; stale?: true }
 
 export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Promise<CommitVersionResult> {
-  const { target, bundle, expectedShas } = args
+  const { target, expectedShas } = args
   // v0 must record the ORIGINAL design. If its import failed (e.g. an
   // uncurated font), refuse rather than let this commit become v0.
   if (!(await hasAnyVersion(db, target.sessionId))) return { ok: false, status: 409, error: NO_BASELINE_ERROR }
@@ -94,15 +94,22 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     return { ok: false, status: 422, error: LEGACY_KEEP_UNCHECKED_ERROR }
   }
 
-  // Only the fonts matter for the capability check, so the overrides file
+  // Only the fonts + style matter for the capability check, so the overrides file
   // (and any malformed region in it) is irrelevant here.
   const current = bundleFromRepoFiles(
     { brandText: draft.files.brandText, designText: draft.files.designText, overridesCss: '' },
     { name: 'Current design', source: 'baseline' }
   )
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}` }
-  const violations = capabilityViolations(bundle, current.bundle, await readDesignCapabilities(target.githubRepo))
+  const capRead = await readEffectiveCapabilities({ githubRepo: target.githubRepo, jobId: target.jobId })
+  // Below L3 a style-less bundle (pre-P6b version/concept) keeps the draft's
+  // axes: render + record the filled bundle, or the replace-semantics render
+  // would delete them from design.json.
+  const bundle = keepLockedStyle(args.bundle, current.bundle, capRead.effective)
+  const violations = capabilityViolations(bundle, current.bundle, capRead.effective)
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
+  // File contract follows the DRAFT marker (what the next build ships).
+  const paths = themeFilePaths(capRead.draft)
 
   let result: Awaited<ReturnType<typeof applyBundleToDraft>>
   try {
@@ -112,6 +119,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       removeLegacy: args.removeLegacy,
       message: args.commitMessage,
       author: { name: target.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: target.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email },
+      fontsModule: fontsUnlocked(capRead.draft),
       ...(expectedShas ? { base: before } : {}),
       ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
     })
@@ -122,7 +130,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   if (!result.ok) return { ok: false, status: result.status, error: result.error }
 
   if (args.skipIfUnchanged && result.changedPaths.length === 0) {
-    return { ok: true, version: null, commitSha: null, changedPaths: [], appliedBlobs: mergeAppliedBlobs(before.shas, {}), css: result.css }
+    return { ok: true, version: null, commitSha: null, changedPaths: [], appliedBlobs: mergeAppliedBlobs(before.shas, {}, paths), css: result.css }
   }
 
   if (args.syncMbp) {
@@ -134,20 +142,20 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     })
   }
 
-  // applied_blobs MUST be the full four-file map (drift compares to it).
+  // applied_blobs MUST be the full theme-file map (drift compares to it).
   // With a base, the commit was guarded against every base blob, so base +
   // written IS the draft's theme now. Without one, written blobs win: right
   // after updateRef the (ETag-conditional) tree read can still return the
   // pre-commit tip, so the snapshot only fills the files this commit didn't touch.
   let appliedBlobs: ThemeBlobShas
   if (expectedShas) {
-    appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs)
+    appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs, paths)
   } else {
     try {
-      appliedBlobs = mergeAppliedBlobs((await readDraftThemeSnapshot(target.githubRepo)).shas, result.blobs)
+      appliedBlobs = mergeAppliedBlobs((await readDraftThemeSnapshot(target.githubRepo)).shas, result.blobs, paths)
     } catch (err) {
       console.warn('[design:commit] post-apply snapshot failed, using before + written shas:', err)
-      appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs)
+      appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs, paths)
     }
   }
 

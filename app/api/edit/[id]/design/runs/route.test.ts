@@ -6,7 +6,7 @@ const m = vi.hoisted(() => ({
   gate: vi.fn(),
   listInputs: vi.fn(),
   snapshot: vi.fn(),
-  caps: vi.fn(),
+  effective: vi.fn(),
   createRun: vi.fn(),
   chainOrFail: vi.fn(async (..._a: unknown[]) => {}),
   failActiveRun: vi.fn(async (..._a: unknown[]) => {}),
@@ -18,7 +18,7 @@ vi.mock('../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) })
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
 vi.mock('@/lib/design/store', () => ({ listInputs: (...a: unknown[]) => m.listInputs(...a) }))
 vi.mock('@/lib/design/theme-snapshot', () => ({ readDraftThemeSnapshot: (r: string) => m.snapshot(r) }))
-vi.mock('@/lib/design/capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
+vi.mock('@/lib/design/capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('@/lib/design/run-store', async (orig) => ({ ...((await orig()) as object), createRun: (...a: unknown[]) => m.createRun(...a) }))
 vi.mock('@/lib/design/run-trigger', () => ({
   chainOrFail: (...a: unknown[]) => m.chainOrFail(...a),
@@ -42,7 +42,7 @@ beforeEach(() => {
   m.gate.mockResolvedValue({ sessionId: SID, jobId: 'job-1', githubRepo: 'o/r', adminId: 'admin-1', user: { isAdmin: true } })
   m.listInputs.mockResolvedValue([makeInputRow({ capture_status: 'ok', storage_path: `design/${SID}/inputs/a.webp` })])
   m.snapshot.mockResolvedValue({ shas: { 'content/brand.json': 'a'.repeat(40) }, texts: {} })
-  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
+  m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.createRun.mockResolvedValue(makeRunRow())
   m.loadRun.mockResolvedValue(null)
 })

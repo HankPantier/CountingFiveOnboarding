@@ -37,6 +37,10 @@ export type DesignCapabilities = {
   source: 'default' | 'marker'
   templateVersion: string | null
   capabilities: string[]
+  // How the tier was checked against the DEPLOYED shell's c5-capabilities
+  // meta: 'verified' = intersected; 'unverified' = shell unreachable, draft
+  // tier kept. Absent on draft-only reads and pre-P6a run snapshots.
+  shell?: 'verified' | 'unverified'
 }
 export const DEFAULT_CAPABILITIES: DesignCapabilities = { level: 1, source: 'default', templateVersion: null, capabilities: [] }
 

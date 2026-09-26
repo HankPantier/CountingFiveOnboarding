@@ -1,9 +1,9 @@
 // Server-only (bundle-files → css-sanitizer → lightningcss). Turns ONE raw
 // model concept into a canonical, safe DesignBundle — or a list of errors the
 // repair retry can quote back to the model:
-//   1. strip `style` (no style axes before P6b) + force schemaVersion/meta
+//   1. force schemaVersion/meta
 //   2. zod (parseDesignBundle)
-//   3. capability tier (fonts locked below L2 → current fonts, with a note)
+//   3. capability tier (fonts below L2 / style below L3 → current, with a note)
 //   4. palette freedom "keep" → the current palette, with a note
 //   5. render the repo files with removeLegacy (sanitizes every CSS fragment)
 //   6. checkThemeContrast (the same hard gate apply uses)
@@ -13,7 +13,7 @@ import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from './bundle-files'
 import type { PriorConcept } from './brief'
-import { enforceCapabilities, hasStyleField } from './capabilities'
+import { enforceCapabilities } from './capabilities'
 import { isNearDuplicate } from './distinctness'
 import { isPlainObject } from './input-validation'
 import type { DesignCapabilities, PaletteFreedom } from './run-types'
@@ -28,7 +28,6 @@ export type ConceptContext = {
 export type ValidConcept = { bundle: DesignBundle; files: RenderedThemeFiles; notes: string[] }
 export type ConceptValidation = { ok: true; concept: ValidConcept } | { ok: false; errors: string[] }
 
-const STYLE_NOTE = 'Style axes are not available on this site yet — the concept’s style settings were dropped.'
 const KEEP_NOTE = 'Palette freedom is "keep" — the current palette was restored.'
 
 export function parseConceptsEnvelope(value: unknown): unknown[] | null {
@@ -45,8 +44,6 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
   if (!isPlainObject(raw)) return { ok: false, errors: ['The concept is not a JSON object.'] }
   const notes: string[] = []
   const candidate: Record<string, unknown> = { ...raw }
-  if (hasStyleField(raw)) notes.push(STYLE_NOTE)
-  delete candidate.style
   delete candidate.meta
   delete candidate.schemaVersion
 

@@ -39,6 +39,17 @@ function isRequestError(err: unknown): err is RequestError {
   return err instanceof RequestError
 }
 
+// Template-only files that must never reach a client repo.
+// content/.template-default marks the template's OWN placeholder content: its
+// presence gates template-only tests (they assert the template defaults) in
+// counting-five-client-template. Seeded into a client repo it would make those
+// tests run against real client content and fail the site's CI.
+const TEMPLATE_ONLY_PATHS: ReadonlySet<string> = new Set(['content/.template-default'])
+
+export function isTemplateOnlyPath(path: string): boolean {
+  return TEMPLATE_ONLY_PATHS.has(path)
+}
+
 export function resolveTemplateSlug(): string {
   // Fully-qualified default: the target repo slug may carry an explicit owner
   // that differs from GITHUB_ORG, so don't rely on the bare-name owner default.
@@ -113,7 +124,7 @@ export async function seedRepoFromTemplate(
   // Read & Write" and re-seed if you want them included.
   const isWorkflowPath = (p: string) => p.startsWith('.github/workflows/')
   const skippedWorkflowFiles = allBlobs.filter((b) => isWorkflowPath(b.path)).length
-  const blobs = allBlobs.filter((b) => !isWorkflowPath(b.path))
+  const blobs = allBlobs.filter((b) => !isWorkflowPath(b.path) && !isTemplateOnlyPath(b.path))
   if (skippedWorkflowFiles > 0) {
     console.warn(`[seed-repo] Skipping ${skippedWorkflowFiles} .github/workflows file(s) — App lacks Workflows permission`)
   }

@@ -5,6 +5,9 @@ import { NextResponse } from 'next/server'
 import { SID, makeInputRow, makeVersionListRow, makeVersionRow } from '@/lib/design/__fixtures__/rows'
 import { MALFORMED_REGION_ERROR } from '@/lib/design/bundle-files'
 import { asJson } from '@/lib/supabase/json-typed'
+import { DEFAULT_CAPABILITIES } from '@/lib/design/run-types'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
+import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 
 const m = vi.hoisted(() => ({
   gate: vi.fn(),
@@ -15,6 +18,7 @@ const m = vi.hoisted(() => ({
   getBaselineOrCreate: vi.fn(),
   sign: vi.fn(async (_s: unknown, paths: string[]) => Object.fromEntries(paths.map((p) => [p, `https://signed/${p}`]))),
   loadRun: vi.fn(),
+  caps: vi.fn(),
 }))
 
 vi.mock('./_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
@@ -27,6 +31,7 @@ vi.mock('@/lib/design/store', () => ({
   getBaselineOrCreate: (...a: unknown[]) => m.getBaselineOrCreate(...a),
 }))
 vi.mock('@/lib/design/storage', () => ({ signDesignPaths: (s: unknown, p: string[]) => m.sign(s, p) }))
+vi.mock('@/lib/design/capabilities-read', () => ({ readDesignCapabilities: (repo: string) => m.caps(repo) }))
 vi.mock('@/lib/design/run-view', () => ({ loadLatestRunDto: (...a: unknown[]) => m.loadRun(...a) }))
 
 import { GET } from './route'
@@ -51,6 +56,7 @@ beforeEach(() => {
   m.listVersions.mockReset().mockResolvedValue([makeVersionListRow({ applied_blobs: asJson(SHAS) })])
   m.getBaselineOrCreate.mockReset().mockResolvedValue({ status: 'created', latest: makeVersionRow({ applied_blobs: asJson(SHAS) }) })
   m.loadRun.mockReset().mockResolvedValue(null)
+  m.caps.mockReset().mockResolvedValue(DEFAULT_CAPABILITIES)
 })
 
 describe('GET /design', () => {
@@ -145,5 +151,52 @@ describe('GET /design', () => {
     const res = await call()
     expect(res.status).toBe(200)
     expect((await res.json()).run).toBeNull()
+  })
+
+  describe('fonts module (L2+ drafts)', () => {
+    const L2 = { level: 2, source: 'marker', templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    const FONTS = 'src/app/fonts.generated.ts'
+    const FONTS_SHA = 'f'.repeat(40)
+
+    it('fontsModuleStale is true when the module does not match design.json on an L2 draft', async () => {
+      m.caps.mockResolvedValue(L2)
+      m.snapshot.mockResolvedValue({ shas: { ...SHAS, [FONTS]: FONTS_SHA }, texts: { ...TEXTS, [FONTS]: generateFontsModule().source } })
+      const body = await (await call()).json()
+      expect(m.caps).toHaveBeenCalledWith('o/r')
+      expect(body.fontsModuleStale).toBe(true)
+      // The fleet-seeded DEFAULT module (never synced from design.json).
+      expect(body.fontsModuleKind).toBe('default')
+      // v0 records the module on L2 drafts (the applied_blobs contract).
+      const args = m.getBaselineOrCreate.mock.calls[0][1] as { appliedBlobs: unknown }
+      expect(args.appliedBlobs).toEqual({ ...SHAS, [FONTS]: FONTS_SHA })
+    })
+
+    it('fontsModuleStale is false when the module matches design.json on an L2 draft', async () => {
+      m.caps.mockResolvedValue(L2)
+      const design = JSON.parse(TEXTS['content/design.json']) as { typography?: Record<string, string> }
+      const fresh = generateFontsModule(normalizeTypography(design.typography)).source
+      m.snapshot.mockResolvedValue({ shas: { ...SHAS, [FONTS]: FONTS_SHA }, texts: { ...TEXTS, [FONTS]: fresh } })
+      const body = await (await call()).json()
+      expect(body.fontsModuleStale).toBe(false)
+      expect(body.fontsModuleKind).toBe('synced')
+    })
+
+    it('fontsModuleStale is null on an L1 draft, and v0 / drift ignore the module there', async () => {
+      m.snapshot.mockResolvedValue({ shas: { ...SHAS, [FONTS]: FONTS_SHA }, texts: { ...TEXTS, [FONTS]: generateFontsModule().source } })
+      const body = await (await call()).json()
+      expect(body.fontsModuleStale).toBeNull()
+      expect(body.fontsModuleKind).toBeNull()
+      const args = m.getBaselineOrCreate.mock.calls[0][1] as { appliedBlobs: unknown }
+      expect(args.appliedBlobs).toEqual(SHAS)
+      expect(body.drift.status).toBe('in-sync')
+    })
+
+    it('an L2 draft drifts when the module changed after a version that recorded it', async () => {
+      m.caps.mockResolvedValue(L2)
+      m.listVersions.mockResolvedValue([makeVersionListRow({ applied_blobs: asJson({ ...SHAS, [FONTS]: '1'.repeat(40) }) })])
+      m.snapshot.mockResolvedValue({ shas: { ...SHAS, [FONTS]: FONTS_SHA }, texts: TEXTS })
+      const body = await (await call()).json()
+      expect(body.drift).toMatchObject({ status: 'drifted', changedPaths: [FONTS] })
+    })
   })
 })

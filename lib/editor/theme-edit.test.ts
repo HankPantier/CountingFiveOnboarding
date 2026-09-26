@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as themeEdit from './theme-edit'
-import { patchBrandPalette, patchDesignTypography, patchDesignFlags } from './theme-edit'
+import { patchBrandPalette, patchDesignTypography, patchDesignFlags, patchDesignStyle } from './theme-edit'
 
 const BRAND = JSON.stringify(
   {
@@ -121,5 +121,25 @@ describe('dead theme-chat helpers', () => {
   it('are gone (the design-overrides region is owned by the Design Studio)', () => {
     expect('patchDesignTokens' in themeEdit).toBe(false)
     expect('upsertBlockOverride' in themeEdit).toBe(false)
+  })
+})
+
+describe('patchDesignStyle', () => {
+  const base = JSON.stringify({ typography: {}, roundness: 'pill' }, null, 2) + '\n'
+  it('writes non-default axes and deletes defaults (omit-at-default)', () => {
+    const r = patchDesignStyle(base, { cards: 'flat', nav: 'default' })
+    expect(r.ok && r.design.style).toEqual({ cards: 'flat' })
+    const back = r.ok ? patchDesignStyle(r.next, { cards: 'default' }) : null
+    expect(back?.ok && back.design.style).toBeUndefined()
+    expect(back?.ok && back.next).toBe(base)
+  })
+  it('an all-default patch on a design without style is a no-op', () => {
+    const r = patchDesignStyle(base, { cards: 'default' })
+    expect(r.ok && r.changed).toBe(false)
+  })
+  it('rejects unknown axes / values and empty patches', () => {
+    expect(patchDesignStyle(base, { cards: 'wobbly' } as never).ok).toBe(false)
+    expect(patchDesignStyle(base, { glitter: 'x' } as never).ok).toBe(false)
+    expect(patchDesignStyle(base, {}).ok).toBe(false)
   })
 })

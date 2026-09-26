@@ -29,3 +29,20 @@ describe('parseDesignBundle', () => {
     if (!r.ok) expect(r.errors.join(' ')).toContain(path)
   })
 })
+
+describe('parseDesignBundle — style axes (P6b)', () => {
+  it('canonicalizes style: default axes dropped', () => {
+    const r = parseDesignBundle({ ...VALID, style: { cards: 'flat', nav: 'default' } })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+  })
+  it('an all-default style becomes undefined', () => {
+    const r = parseDesignBundle({ ...VALID, style: { cards: 'default' } })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(r.bundle.style).toBeUndefined()
+    expect('style' in r.bundle).toBe(false)
+  })
+  it('rejects an unknown axis value', () => {
+    expect(parseDesignBundle({ ...VALID, style: { cards: 'wobbly' } }).ok).toBe(false)
+  })
+})

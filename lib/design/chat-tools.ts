@@ -7,7 +7,7 @@
 // model the screenshots via toModelOutput — from an in-request cache, so images
 // reach the model only in the turn that rendered them (history is text). It
 // never throws (PF4). commit_version delegates to the injected commit
-// (chat-commit.ts). No style_axes tool until P6b.
+// (chat-commit.ts). set_style_axes is refused below L3 by the workspace.
 //
 // chatPreviewDeps binds render_preview to renderChatPreview for one turn: the
 // SERVER-generated turn id (the assistant message id — never model- or
@@ -19,6 +19,7 @@ import { z } from 'zod'
 import type { Database } from '@/types/database'
 import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
 import { CSS_FRAGMENT_KEYS, type ChatEdit } from './chat-edits'
+import { StyleAxesInputSchema } from './style-axes-schema'
 import { COMMIT_FAILED_ERROR } from './chat-commit'
 import { previewCheck } from './chat-gate'
 import {
@@ -159,6 +160,12 @@ export function createDesignChatToolset(ws: ChatWorkspace, deps: ChatToolDeps) {
         darkSections: z.boolean().optional(),
       }),
       execute: async (patch) => edit({ kind: 'treatments', patch }),
+    }),
+    set_style_axes: tool({
+      description:
+        'Stage template style presets (section rhythm, cards, buttons, hero scale, images, nav, footer, accent). "default" restores an axis. Refused on sites whose style axes are locked.',
+      inputSchema: StyleAxesInputSchema,
+      execute: async (patch) => edit({ kind: 'style', patch }),
     }),
     set_block_css: tool({
       description: 'Replace ONE target’s whole CSS fragment (a block id, a chrome id, or "global"). Sanitized immediately; see the CSS rules.',

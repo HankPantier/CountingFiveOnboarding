@@ -5,7 +5,13 @@ import type { PreviewPage } from '@/lib/design/pages'
 import { designApi } from './api'
 import { FIELD } from './styles'
 
-const PICK_LABELS: Record<PreviewPage['key'], string> = { home: 'Home', service: 'Service page', about: 'About', contact: 'Contact' }
+const PICK_LABELS: Record<PreviewPage['key'], string> = {
+  home: 'Home',
+  service: 'Service page',
+  about: 'About',
+  contact: 'Contact',
+  specimen: 'Block specimen (every block)',
+}
 
 // Which page of the client's site a run renders (default: home). Options come
 // from GET design/pages (the draft's content pages + representative picks).

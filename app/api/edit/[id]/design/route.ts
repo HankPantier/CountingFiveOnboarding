@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH } from '@/app/api/edit/[id]/theme/_theme'
-import { computeDrift, isThemeCssStale, toBlobMap } from '@/lib/design/drift'
+import { computeDrift, draftFontsModuleKind, isFontsModuleStale, isThemeCssStale, mergeAppliedBlobs, themeFilePaths, toBlobMap } from '@/lib/design/drift'
+import { readDesignCapabilities } from '@/lib/design/capabilities-read'
+import { fontsUnlocked } from '@/lib/design/capabilities'
 import { readDraftThemeSnapshot } from '@/lib/design/theme-snapshot'
 import { getBaselineOrCreate, listInputs, listVersions, readSessionSchema, type BaselineSource } from '@/lib/design/store'
 import { signDesignPaths } from '@/lib/design/storage'
@@ -18,7 +20,7 @@ const NO_THEME_FILES = 'This site has no brand.json / design.json yet — there 
 
 // GET — the Design Studio's full state for one client: versions (newest
 // first), drift of the draft theme vs the latest version, whether theme.css is
-// stale, the design inputs (with signed thumbnails) and MBP-derived input
+// stale (and, on L2+ drafts, whether the fonts module is), the design inputs (with signed thumbnails) and MBP-derived input
 // suggestions. On the first load it imports the current draft as v0; if that
 // import fails (malformed override markers, an uncurated font, …) the state
 // still loads with baseline.status = 'error'. Admin-only.
@@ -34,6 +36,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       readSessionSchema(supabase, ctx.sessionId),
       listInputs(supabase, ctx.sessionId),
     ])
+    // After the snapshot (it ensured the draft branch). The DRAFT marker decides
+    // which files the theme contract tracks (the fonts module on L2+).
+    const draftCaps = await readDesignCapabilities(ctx.githubRepo)
+    const themePaths = themeFilePaths(draftCaps)
 
     const brandText = snapshot.texts[BRAND_PATH]
     const designText = snapshot.texts[DESIGN_PATH]
@@ -60,7 +66,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       sessionId: ctx.sessionId,
       createdBy: ctx.adminId,
       source,
-      appliedBlobs: snapshot.shas,
+      appliedBlobs: mergeAppliedBlobs(snapshot.shas, {}, themePaths),
     })
     const baseline: BaselineStatus =
       outcome.status === 'error' ? { status: 'error', error: outcome.error } : { status: 'ok', created: outcome.status === 'created' }
@@ -69,7 +75,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const latestRow = versionRows[0] ?? null
     const drift = computeDrift(
       snapshot.shas,
-      latestRow ? { versionNo: latestRow.version_no, appliedBlobs: toBlobMap(latestRow.applied_blobs) } : null
+      latestRow ? { versionNo: latestRow.version_no, appliedBlobs: toBlobMap(latestRow.applied_blobs) } : null,
+      themePaths
     )
 
     const paths = [
@@ -99,6 +106,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       drift,
       baseline,
       themeCssStale: isThemeCssStale(snapshot.texts),
+      fontsModuleStale: fontsUnlocked(draftCaps) ? isFontsModuleStale(snapshot.texts) : null,
+      fontsModuleKind: fontsUnlocked(draftCaps) ? draftFontsModuleKind(snapshot.texts) : null,
       inputs: inputs.map((i) => toInputDto(i, signed)),
       suggestions: buildInputSuggestions(schema),
       run,

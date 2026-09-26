@@ -9,14 +9,14 @@ import { DEFAULT_CAPABILITIES } from './run-types'
 const m = vi.hoisted(() => ({
   snapshot: vi.fn(),
   snapshotAt: vi.fn(),
-  caps: vi.fn(),
+  effective: vi.fn(),
   apply: vi.fn(),
   sync: vi.fn(async (..._a: unknown[]) => {}),
   insertVersion: vi.fn(),
   hasAnyVersion: vi.fn(),
 }))
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r), readThemeSnapshotAt: (r: string, s: unknown) => m.snapshotAt(r, s) }))
-vi.mock('./capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
+vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('./apply-bundle', () => ({ applyBundleToDraft: (a: unknown) => m.apply(a) }))
 vi.mock('./sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
 vi.mock('./store', async (orig) => ({
@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   m.snapshot.mockResolvedValueOnce(BEFORE).mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
   m.snapshotAt.mockImplementation(async (_r: string, shas: Record<string, string>) => ({ shas, texts: BEFORE.texts }))
-  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
+  m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.apply.mockResolvedValue(APPLIED)
   m.insertVersion.mockResolvedValue(makeVersionRow({ id: 'ver-5', version_no: 5, source: 'chat' }))
   m.hasAnyVersion.mockResolvedValue(true)
@@ -167,6 +167,81 @@ describe('commitDesignVersion', () => {
     const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, typography: { ...VALID.typography, headingFont: other } } }))
     expect(r).toMatchObject({ ok: false, status: 422 })
     expect(m.apply).not.toHaveBeenCalled()
+  })
+
+  describe('fonts module (P6a: file contract = draft marker, gate = draft ∩ shell)', () => {
+    const L2 = { level: 2 as const, source: 'marker' as const, templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    const FONTS = 'src/app/fonts.generated.ts'
+    const otherFont = () => CURATED_FONTS.find((f) => f !== 'Public Sans' && f !== 'Fraunces') as string
+
+    it('fonts unlocked at L2 (draft ∩ shell): apply writes the module and appliedBlobs records it', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: L2 })
+      m.apply.mockResolvedValue({ ...APPLIED, blobs: { ...APPLIED.blobs, [FONTS]: '9'.repeat(40) }, changedPaths: [...APPLIED.changedPaths, FONTS] })
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, typography: { ...VALID.typography, headingFont: otherFont() } } }))
+      expect(r.ok).toBe(true)
+      expect(m.apply.mock.calls[0][0]).toMatchObject({ fontsModule: true })
+      const v = m.insertVersion.mock.calls[0][1] as { appliedBlobs: Record<string, string> }
+      expect(v.appliedBlobs).toEqual({ ...AFTER_SHAS, 'content/brand.json': 'c'.repeat(40), [FONTS]: '9'.repeat(40) })
+    })
+
+    it('fonts locked when the live shell is L1: 422 and nothing applied', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: DEFAULT_CAPABILITIES })
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, typography: { ...VALID.typography, headingFont: otherFont() } } }))
+      expect(r).toMatchObject({ ok: false, status: 422 })
+      expect(m.apply).not.toHaveBeenCalled()
+    })
+
+    it('L2 draft with an L1 shell and NO font change still writes/guards the module (file contract follows the draft)', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: DEFAULT_CAPABILITIES })
+      const r = await commitDesignVersion(DB, args())
+      expect(r.ok).toBe(true)
+      expect(m.apply.mock.calls[0][0]).toMatchObject({ fontsModule: true })
+    })
+
+    it('L1 draft records four files: fontsModule false and no fonts key even if the snapshot has one', async () => {
+      m.snapshot
+        .mockReset()
+        .mockResolvedValueOnce({ shas: { ...BEFORE_SHAS, [FONTS]: '8'.repeat(40) }, texts: BEFORE.texts })
+        .mockResolvedValueOnce({ shas: { ...AFTER_SHAS, [FONTS]: '8'.repeat(40) }, texts: {} })
+      const r = await commitDesignVersion(DB, args())
+      expect(m.apply.mock.calls[0][0]).toMatchObject({ fontsModule: false })
+      expect(r.ok && r.appliedBlobs).not.toHaveProperty(FONTS)
+      const v = m.insertVersion.mock.calls[0][1] as { appliedBlobs: Record<string, string> }
+      expect(v.appliedBlobs).not.toHaveProperty(FONTS)
+    })
+
+    it('skipIfUnchanged on an L2 draft returns the base map incl. the module', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: L2 })
+      m.snapshot.mockReset().mockResolvedValue({ shas: { ...BEFORE_SHAS, [FONTS]: '8'.repeat(40) }, texts: BEFORE.texts })
+      m.apply.mockResolvedValue({ ...APPLIED, commitSha: null, blobs: {}, changedPaths: [] })
+      const r = await commitDesignVersion(DB, args({ skipIfUnchanged: true }))
+      expect(r).toMatchObject({ ok: true, version: null, appliedBlobs: { ...BEFORE_SHAS, [FONTS]: '8'.repeat(40) } })
+    })
+  })
+
+  describe('style axes below L3 (pre-P6b bundles keep the current axes)', () => {
+    const L2 = { level: 2 as const, source: 'marker' as const, templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    const STYLED_DESIGN = JSON.stringify({ ...JSON.parse(DESIGN_TEXT), style: { cards: 'flat', nav: 'bordered' } }, null, 2)
+    beforeEach(() => {
+      m.effective.mockResolvedValue({ draft: L2, effective: L2 })
+      m.snapshot.mockReset()
+        .mockResolvedValueOnce({ shas: BEFORE_SHAS, texts: { ...BEFORE.texts, 'content/design.json': STYLED_DESIGN } })
+        .mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
+    })
+
+    it('restoring a style-less version on an L2 site with axes applies + records the current axes (no 422, no wipe)', async () => {
+      const { style: _none, ...styleLess } = VALID
+      const r = await commitDesignVersion(DB, args({ source: 'revert', bundle: { ...styleLess, meta: { source: 'revert' } } }))
+      expect(r.ok).toBe(true)
+      expect((m.apply.mock.calls[0][0] as { bundle: { style?: unknown } }).bundle.style).toEqual({ cards: 'flat', nav: 'bordered' })
+      expect((m.insertVersion.mock.calls[0][1] as { bundle: { style?: unknown } }).bundle.style).toEqual({ cards: 'flat', nav: 'bordered' })
+    })
+
+    it('applying a bundle that explicitly changes the style is still rejected below L3', async () => {
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, style: { cards: 'elevated' }, meta: { source: 'concept' } } }))
+      expect(r).toMatchObject({ ok: false, status: 422 })
+      expect(m.apply).not.toHaveBeenCalled()
+    })
   })
 
   it('passes an apply refusal (contrast) through with its status', async () => {

@@ -43,7 +43,7 @@ import { readOptional } from './apply-bundle'
 import { DESIGN_MD_PATH } from './brief/brand'
 import { buildChatSystemStatic, buildChatTurnContext } from './brief/chat-prompt'
 import { bundleFromRepoFiles, type RepoThemeFiles } from './bundle-files'
-import { readDesignCapabilities } from './capabilities-read'
+import { readEffectiveCapabilities } from './capabilities-read'
 import { commitWorkspace, finishTurnCommit, type CommitVersionFn } from './chat-commit'
 import {
   historyForModel,
@@ -62,7 +62,7 @@ import { CHAT_MAX_OUTPUT_TOKENS, CHAT_MAX_STEPS, DEFAULT_CHAT_PAGE, TURN_BUDGET_
 import { ChatWorkspace } from './chat-workspace'
 import { commitDesignVersion, type CommitTarget } from './commit-version'
 import { composedThemeFromFiles, type ComposedTheme } from './composed-theme'
-import { computeDrift, toBlobMap } from './drift'
+import { computeDrift, themeFilePaths, toBlobMap } from './drift'
 import { isPlainObject } from './input-validation'
 import { firmNameFrom } from './run-gather'
 import { attachmentStoragePath, downloadDesignImage } from './storage'
@@ -153,12 +153,13 @@ export async function prepareChatTurn(
     }
   }
 
-  const [caps, schema, designMd, rows] = await Promise.all([
-    readDesignCapabilities(actor.githubRepo),
+  const [capRead, schema, designMd, rows] = await Promise.all([
+    readEffectiveCapabilities({ githubRepo: actor.githubRepo, jobId: actor.jobId }),
     readSessionSchema(db, actor.sessionId),
     readOptional(actor.githubRepo, DESIGN_MD_PATH),
     listChatMessages(db, actor.sessionId),
   ])
+  const caps = capRead.effective
   // Null signers: the model's context never carries a signed URL.
   const prior = rows.map((r) => rowToChatMessage(r, { preview: () => null, attachment: () => null }))
 
@@ -194,7 +195,7 @@ export async function prepareChatTurn(
     if (loaded.length > 0) images[id] = loaded
   }
 
-  const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null)
+  const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null, themeFilePaths(capRead.draft))
   const page = request.page ?? DEFAULT_CHAT_PAGE
   const turn: PreparedTurn = {
     assistantId: randomUUID(),

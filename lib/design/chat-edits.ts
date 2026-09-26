@@ -4,6 +4,7 @@
 // acceptable.
 import type { DesignBundle } from './bundle'
 import { CSS_TARGETS, type CssTarget } from './css-targets'
+import { canonicalStyle, type StyleAxes } from './style-axes'
 
 export type CssFragmentKey = CssTarget | 'global'
 export const CSS_FRAGMENT_KEYS = ['global', ...CSS_TARGETS] as const
@@ -21,6 +22,7 @@ export type ChatEdit =
   | { kind: 'fonts'; patch: Partial<DesignBundle['typography']> }
   | { kind: 'tokens'; patch: TokensPatch }
   | { kind: 'treatments'; patch: Partial<DesignBundle['treatments']> }
+  | { kind: 'style'; patch: StyleAxes }
   | { kind: 'css'; target: CssFragmentKey; css: string }
   | { kind: 'remove-css'; target: CssFragmentKey }
 
@@ -48,6 +50,8 @@ export function applyChatEdit(b: DesignBundle, e: ChatEdit): DesignBundle {
       return { ...b, typography: { ...b.typography, ...defined(e.patch) } }
     case 'treatments':
       return { ...b, treatments: { ...b.treatments, ...defined(e.patch) } }
+    case 'style':
+      return { ...b, style: canonicalStyle({ ...(b.style ?? {}), ...defined(e.patch) }) }
     case 'tokens': {
       const { spacing, radius, ...rest } = e.patch
       return {
@@ -72,7 +76,7 @@ export function fragmentOf(css: DesignBundle['css'], target: CssFragmentKey): st
   return body && body.trim() ? body : null
 }
 
-const levers = (b: DesignBundle) => JSON.stringify({ p: b.palette, t: b.typography, k: b.tokens, r: b.treatments, c: b.css })
+const levers = (b: DesignBundle) => JSON.stringify({ p: b.palette, t: b.typography, k: b.tokens, r: b.treatments, s: b.style ?? {}, c: b.css })
 export function sameLevers(a: DesignBundle, b: DesignBundle): boolean {
   return levers(a) === levers(b)
 }
@@ -82,6 +86,7 @@ export function describeChatEdit(e: ChatEdit): string {
     case 'palette':
     case 'fonts':
     case 'treatments':
+    case 'style':
       return `${e.kind} (${Object.keys(defined(e.patch)).join(', ')})`
     case 'tokens':
       return `tokens (${Object.keys(defined(e.patch)).join(', ')})`

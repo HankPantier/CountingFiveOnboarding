@@ -33,6 +33,11 @@ describe('chatBlocks', () => {
       { kind: 'notice', tone: 'error', text: 'Not saved — x', items: ['f1'] },
     ])
   })
+  it('labels a set_style_axes tool part "Style presets"', () => {
+    expect(chatBlocks(msg([{ type: 'tool-set_style_axes', toolCallId: 'a', state: 'output-available', input: { nav: 'inverted' }, output: { ok: true, changed: true } }]))).toEqual([
+      { kind: 'edit', label: 'Style presets', ok: true, detail: 'nav' },
+    ])
+  })
   it('reports a failed preview and an auto-commit', () => {
     expect(chatBlocks(msg([{ type: 'tool-render_preview', toolCallId: 'x', state: 'output-available', input: {}, output: { ok: false, error: 'The render timed out.' } }]))).toEqual([
       { kind: 'notice', tone: 'warning', text: 'Preview failed: The render timed out.', items: [] },

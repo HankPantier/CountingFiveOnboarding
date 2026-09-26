@@ -1,13 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { VALID } from './__fixtures__/valid-bundle'
+import { DRAFT_FILES } from './__fixtures__/theme-texts'
+import { bundleToRepoFiles } from './bundle-files'
 import {
   capabilitiesFromJson,
+  capabilityLevel,
   capabilityViolations,
   enforceCapabilities,
   fontsUnlocked,
-  hasStyleField,
+  intersectWithShell,
+  keepLockedStyle,
   parseTemplateMarker,
+  specimenUnlocked,
   styleAxesUnlocked,
 } from './capabilities'
 import { DEFAULT_CAPABILITIES } from './run-types'
@@ -79,10 +84,89 @@ describe('font lock', () => {
   })
 })
 
-describe('hasStyleField', () => {
-  it('detects a style key on a raw model object', () => {
-    expect(hasStyleField({ style: { cards: 'flat' } })).toBe(true)
-    expect(hasStyleField({ name: 'x' })).toBe(false)
-    expect(hasStyleField(null)).toBe(false)
+describe('style axes (L3+)', () => {
+  const L3 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.2', capabilities: ['fonts', 'style-axes'] }))
+  const styled = { ...VALID, style: { cards: 'flat' as const } }
+  it('below L3 the generator drops the style with a note', () => {
+    const r = enforceCapabilities(styled, VALID, L2)
+    expect(r.bundle.style).toBeUndefined()
+    expect(r.notes.join(' ')).toContain('Style axes are not available on this site yet')
+  })
+  it('at L3 the style is kept', () => {
+    const r = enforceCapabilities(styled, VALID, L3)
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.notes).toEqual([])
+  })
+  it('apply rejects a style change below L3, allows it at L3', () => {
+    const v = capabilityViolations(styled, VALID, L2)
+    expect(v).toHaveLength(1)
+    expect(v[0]).toContain('Style axes are locked')
+    expect(capabilityViolations(styled, VALID, L3)).toEqual([])
+  })
+  it('below L3 an unchanged style is not a violation', () => {
+    expect(capabilityViolations(styled, styled, L2)).toEqual([])
+  })
+  it('below L3 a bundle keeping the site\'s existing style is left alone', () => {
+    const r = enforceCapabilities(styled, styled, L2)
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.notes).toEqual([])
+    expect(capabilityViolations(r.bundle, styled, L2)).toEqual([])
+  })
+  it('below L3 a style change is restored to the site\'s current style with a note', () => {
+    const r = enforceCapabilities({ ...VALID, style: { nav: 'inverted' as const } }, styled, L2)
+    expect(r.bundle.style).toEqual({ cards: 'flat' })
+    expect(r.notes.join(' ')).toContain('Style axes are not available on this site yet')
+    expect(capabilityViolations(r.bundle, styled, L2)).toEqual([])
+  })
+  it('below L3 an ABSENT style (pre-P6b version/concept) keeps the current axes silently', () => {
+    const kept = enforceCapabilities(VALID, styled, L2)
+    expect(kept.bundle.style).toEqual({ cards: 'flat' })
+    expect(kept.notes).toEqual([])
+    expect(capabilityViolations(VALID, styled, L2)).toEqual([])
+    expect(keepLockedStyle(VALID, styled, L2).style).toEqual({ cards: 'flat' })
+  })
+  it('rendering keepLockedStyle(style-less bundle) below L3 keeps the axes in design.json', () => {
+    const designText = JSON.stringify({ ...JSON.parse(DRAFT_FILES.designText), style: { cards: 'flat' } })
+    const r = bundleToRepoFiles(keepLockedStyle(VALID, styled, L2), { ...DRAFT_FILES, designText }, { removeLegacy: false })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(JSON.parse(r.files.designText).style).toEqual({ cards: 'flat' })
+  })
+  it('at L3+ an absent style is left absent (all default), and an explicit change below L3 is still rejected', () => {
+    expect(keepLockedStyle(VALID, styled, L3).style).toBeUndefined()
+    expect(capabilityViolations({ ...VALID, style: { nav: 'inverted' as const } }, styled, L2)).toHaveLength(1)
+  })
+  it('below L2 both fonts and style are reported', () => {
+    const both = { ...styled, typography: { ...VALID.typography, headingFont: OTHER_FONT } }
+    expect(capabilityViolations(both, VALID, DEFAULT_CAPABILITIES)).toHaveLength(2)
+    const r = enforceCapabilities(both, VALID, DEFAULT_CAPABILITIES)
+    expect(r.notes).toHaveLength(2)
+    expect(r.bundle.typography).toEqual(VALID.typography)
+    expect(r.bundle.style).toBeUndefined()
+  })
+})
+
+describe('intersectWithShell', () => {
+  const L4 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.2', capabilities: ['fonts', 'style-axes', 'specimen'] }))
+  it('keeps only what the deployed shell also declares', () => {
+    const c = intersectWithShell(L4, { status: 'verified', capabilities: ['fonts'] })
+    expect(c).toMatchObject({ level: 2, capabilities: ['fonts'], shell: 'verified', source: 'marker', templateVersion: '2026.09.2' })
+  })
+  it('a shell with no meta drops the site to L1', () => {
+    expect(intersectWithShell(L4, { status: 'verified', capabilities: [] }).level).toBe(1)
+  })
+  it('never raises the draft tier', () => {
+    expect(intersectWithShell(L2, { status: 'verified', capabilities: ['fonts', 'style-axes', 'specimen'] }).level).toBe(2)
+  })
+  it('an unverified shell keeps the draft tier (flagged)', () => {
+    expect(intersectWithShell(L4, { status: 'unverified' })).toEqual({ ...L4, shell: 'unverified' })
+  })
+  it('round-trips through capabilitiesFromJson', () => {
+    const c = intersectWithShell(L4, { status: 'verified', capabilities: ['fonts', 'style-axes'] })
+    expect(capabilitiesFromJson(JSON.parse(JSON.stringify(c)))).toEqual(c)
+  })
+  it('exposes the tier helpers', () => {
+    expect(capabilityLevel(['fonts', 'style-axes', 'specimen'])).toBe(4)
+    expect(specimenUnlocked(L4)).toBe(true)
+    expect(specimenUnlocked(L2)).toBe(false)
   })
 })

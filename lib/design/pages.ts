@@ -2,15 +2,20 @@
 // renders by default (ported from the retired export-brief's
 // pickRepresentativePages). Home is always first; then one service page
 // (prefer a deep /services/* page — it carries the richest blocks), an
-// about/team page, and contact. Missing roles are skipped.
+// about/team page, and contact. Missing roles are skipped. …and, on L4 sites,
+// the template's /design-specimen (every block once).
 import { contentPathToUrl } from '@/lib/editor/content-paths'
 
-export type PreviewPage = { key: 'home' | 'service' | 'about' | 'contact'; path: string }
+export const SPECIMEN_PATH = '/design-specimen'
+export type PreviewPage = { key: 'home' | 'service' | 'about' | 'contact' | 'specimen'; path: string }
 
 const ABOUT_RE = /^\/(about|about-us|who-we-are|our-firm|our-story|team|our-team)$/
 const CONTACT_RE = /^\/contact(-us)?$/
 
-export function pickRepresentativePages(contentPaths: string[]): { picks: PreviewPage[]; pages: string[] } {
+export function pickRepresentativePages(
+  contentPaths: string[],
+  opts: { specimen?: boolean } = {}
+): { picks: PreviewPage[]; pages: string[] } {
   const pages = Array.from(
     new Set(
       contentPaths
@@ -28,5 +33,6 @@ export function pickRepresentativePages(contentPaths: string[]): { picks: Previe
   if (about) picks.push({ key: 'about', path: about })
   const contact = pages.find((u) => CONTACT_RE.test(u))
   if (contact) picks.push({ key: 'contact', path: contact })
+  if (opts.specimen) picks.push({ key: 'specimen', path: SPECIMEN_PATH })
   return { picks, pages }
 }

@@ -6,6 +6,7 @@
 import type { DesignJson } from '@/types/design-json'
 import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
+import { styleAxisHtmlAttributes } from './style-axes'
 
 export type ComposedTheme = {
   themeCss: string
@@ -29,6 +30,7 @@ export function composedThemeFromFiles(files: { designText: string; themeCss: st
     htmlAttributes: {
       'data-headline': design.headlineStyle ?? 'sans',
       'data-eyebrow': design.eyebrowStyle ?? 'standard',
+      ...styleAxisHtmlAttributes(design.style),
     },
   }
 }

@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { PALETTE_ROLES, HEX_RE, LENGTH_RE } from '@/lib/editor/theme-edit'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { CSS_TARGETS } from './css-targets'
+import { canonicalStyle } from './style-axes'
+import { StyleAxesInputSchema } from './style-axes-schema'
 
 export const BUNDLE_SOURCES = ['baseline', 'concept', 'chat', 'revert', 'import'] as const
 
@@ -43,6 +45,12 @@ export const DesignBundleSchema = z.object({
     eyebrowStyle: z.enum(['standard', 'mono']),
     darkSections: z.boolean(),
   }),
+  // Template style axes (L3+ only — below L3 the site's current style is held:
+  // enforceCapabilities restores it, apply rejects a change, and an absent
+  // style means "keep current" via keepLockedStyle). Canonicalized in parseDesignBundle (defaults dropped, undefined
+  // when all default). No zod .transform here: it would make the inferred key
+  // required and break every DesignBundle literal that omits `style`.
+  style: StyleAxesInputSchema.optional(),
   css: z.object({
     global: z.string().optional(),
     blocks: z.partialRecord(z.enum(CSS_TARGETS), z.string()),
@@ -56,6 +64,10 @@ export function parseDesignBundle(
   input: unknown
 ): { ok: true; bundle: DesignBundle } | { ok: false; errors: string[] } {
   const r = DesignBundleSchema.safeParse(input)
-  if (r.success) return { ok: true, bundle: r.data }
+  if (r.success) {
+    const style = canonicalStyle(r.data.style)
+    const { style: _raw, ...rest } = r.data
+    return { ok: true, bundle: style ? { ...rest, style } : rest }
+  }
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) }
 }

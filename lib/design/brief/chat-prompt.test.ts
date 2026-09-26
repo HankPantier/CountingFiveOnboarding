@@ -5,6 +5,7 @@ import { CSS_RULES_SECTION, TOKEN_CONTRACT } from './contract'
 import { buildChatSystemStatic, buildChatTurnContext } from './chat-prompt'
 
 const L2: DesignCapabilities = { level: 2, source: 'marker', templateVersion: '2', capabilities: ['fonts'] }
+const L3: DesignCapabilities = { level: 3, source: 'marker', templateVersion: '3', capabilities: ['fonts', 'style-axes'] }
 const SCHEMA = { business: { name: 'Acme CPA' }, _meta: { secret: 'zzz-meta-secret' }, mbp_content: 'zzz-raw-mbp' }
 const base = { firmName: 'Acme CPA', schema: SCHEMA, designMd: null }
 
@@ -14,11 +15,11 @@ describe('buildChatSystemStatic', () => {
   })
   it('carries the tools, the CSS rules and the token contract', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
-    for (const t of ['set_palette', 'set_fonts', 'set_tokens', 'set_treatments', 'set_block_css', 'remove_block_css', 'render_preview', 'commit_version']) expect(s).toContain(t)
+    for (const t of ['set_palette', 'set_fonts', 'set_tokens', 'set_treatments', 'set_style_axes', 'set_block_css', 'remove_block_css', 'render_preview', 'commit_version'])
+      expect(s).toContain(t)
     expect(s).toContain(CSS_RULES_SECTION)
     expect(s).toContain(TOKEN_CONTRACT)
     expect(s).toContain('at most 2 times per turn')
-    expect(s).not.toContain('style_axes')
   })
   it('says chat commits do NOT update the MBP, and how the admin mirrors it', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
@@ -30,6 +31,13 @@ describe('buildChatSystemStatic', () => {
   it('states the font lock per tier', () => {
     expect(buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })).toContain('FONTS: LOCKED')
     expect(buildChatSystemStatic({ ...base, caps: L2 })).toContain('FONTS: unlocked')
+  })
+  it('states the style-axes lock per tier', () => {
+    expect(buildChatSystemStatic({ ...base, caps: L2 })).toContain('STYLE AXES: LOCKED')
+    const s = buildChatSystemStatic({ ...base, caps: L3 })
+    expect(s).toContain('set_style_axes(')
+    expect(s).toContain('STYLE AXES: unlocked')
+    expect(s).not.toContain('Style presets for cards, buttons and sections are not available yet.')
   })
   it('never leaks _meta or mbp_content', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })

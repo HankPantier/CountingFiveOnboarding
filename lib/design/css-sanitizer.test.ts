@@ -22,6 +22,10 @@ describe('sanitizeDesignCss — accepts', () => {
   it('a treatment-state prefix on html', () => {
     ok('html[data-headline="serif"] [data-block="hero"] h1 { letter-spacing: -0.02em; }')
   })
+  it('a style-axis state prefix on html (P6b)', () => {
+    ok('html[data-c5-cards="flat"] [data-block="hero"] h1 { letter-spacing: -0.02em; }')
+    ok('html[data-c5-nav="inverted"][data-headline="serif"] [data-component="navbar"] a { color: var(--color-primary); }', { kind: 'target', target: 'navbar' })
+  })
   it('@media / @supports / @container wrapping scoped rules', () => {
     ok('@media (min-width: 768px) { [data-block="hero"] { padding-block: 6rem; } }')
     ok('@supports (display: grid) { [data-block="hero"] { display: grid; } }')
@@ -75,6 +79,7 @@ describe('sanitizeDesignCss — rejects', () => {
     ['other block', '[data-block="faq-accordion"] { color: red; }'],
     ['unknown html attr', 'html[data-foo="x"] [data-block="hero"] { color: red; }'],
     ['html alone', 'html[data-headline="serif"] { color: red; }'],
+    ['unknown data-c5 html attr', 'html[data-c5-wobble="x"] [data-block="hero"] { color: red; }'],
     [':root in target scope', ':root { --c5-x: 1px; }'],
   ])('bad selector: %s', (_n, css) => {
     expect(errs(css)).toMatch(/selector/i)

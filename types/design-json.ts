@@ -21,6 +21,9 @@ export type DesignJson = {
   headlineStyle?: 'sans' | 'serif'
   eyebrowStyle?: 'standard' | 'mono'
   darkSections?: boolean
+  /** Design Studio style axes (template T2, L3+). Omitted at default. Keys/values
+   * per lib/design/style-axes.ts; kept loose here so types/ stays dependency-free. */
+  style?: Record<string, string>
   spacing: {
     xs: string
     sm: string

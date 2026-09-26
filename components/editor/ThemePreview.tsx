@@ -5,7 +5,7 @@ import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import ThemeControls, { type FlagsPatch } from './ThemeControls'
-import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
+import { themeSourcesHtmlAttributes, type ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
 
 // Live 1:1 preview: the client's REAL deployed homepage (shellHtml) re-skinned
 // with the pending draft theme.css + design-overrides.css. The controls bar lets
@@ -38,13 +38,11 @@ export default function ThemePreview({
         overridesCss: sources.overridesCss,
         typography: sources.typography,
         // The shell carries the LIVE treatment attributes; override them with
-        // the draft values so treatment toggles preview instantly.
-        htmlAttributes: {
-          'data-headline': sources.headlineStyle,
-          'data-eyebrow': sources.eyebrowStyle,
-        },
+        // the draft values so treatment toggles (and the draft's style axes)
+        // preview instantly.
+        htmlAttributes: themeSourcesHtmlAttributes(sources),
       }),
-    [shellHtml, sources.themeCss, sources.overridesCss, sources.typography, sources.headlineStyle, sources.eyebrowStyle]
+    [shellHtml, sources]
   )
 
   return (

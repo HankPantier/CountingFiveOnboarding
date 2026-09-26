@@ -17,7 +17,7 @@
 //                       image when there are reference images).
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
-import { fontsUnlocked } from '../capabilities'
+import { fontsUnlocked, styleAxesUnlocked } from '../capabilities'
 import { MAX_PROMPT_IMAGES, type DesignCapabilities, type PaletteFreedom } from '../run-types'
 import { ART_DIRECTION } from './art-direction'
 import { blockCatalogHint } from './block-catalog'
@@ -62,7 +62,7 @@ export type BuiltPrompt = { staticPrefix: string; parts: DynamicPart[]; sharedPa
 const prefixCache = new Map<string, string>()
 
 export function buildStaticPrefix(caps: DesignCapabilities): string {
-  const key = fontsUnlocked(caps) ? 'fonts' : 'fonts-locked'
+  const key = `${fontsUnlocked(caps) ? 'f' : '-'}${styleAxesUnlocked(caps) ? 's' : '-'}`
   let prefix = prefixCache.get(key)
   if (prefix === undefined) {
     prefix = [ART_DIRECTION, blockCatalogHint(), buildContract(caps)].join('\n\n')
@@ -85,8 +85,8 @@ export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: Desi
 }
 
 function currentDesignJson(current: DesignBundle): string {
-  const { palette, typography, tokens, treatments } = current
-  return JSON.stringify({ palette, typography, tokens, treatments })
+  const { palette, typography, tokens, treatments, style } = current
+  return JSON.stringify({ palette, typography, tokens, treatments, ...(style ? { style } : {}) })
 }
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
@@ -149,7 +149,7 @@ export function conceptSummaryLines(priors: PriorConcept[]): string[] {
         `- Concept ${position + 1} "${clip(bundle.name, 60)}"${bundle.tagline ? ` — ${clip(bundle.tagline, 120)}` : ''}`,
         `  Palette: ${hexes}`,
         `  Type: heading ${typography.headingFont} / body ${typography.bodyFont} / accent ${typography.accentFont}; roundness ${tokens.roundness}, density ${tokens.density}, feel ${tokens.visualFeel}`,
-        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}`,
+        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}${bundle.style ? ` · style ${JSON.stringify(bundle.style)}` : ''}`,
         ...(moves ? [`  Moves: ${moves}`] : []),
       ].join('\n')
     })
