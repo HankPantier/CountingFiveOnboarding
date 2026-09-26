@@ -63,6 +63,22 @@ export async function isAttachmentReferenced(db: Db, sessionId: string, attachme
   return (data ?? []).length > 0
 }
 
+// Every storage path a design version of this session uses as a screenshot
+// (chat versions reuse their chat preview renders), so clearing the chat
+// never deletes a version's thumbnail.
+export async function versionScreenshotPathSet(db: Db, sessionId: string): Promise<Set<string>> {
+  const { data, error } = await db.from('design_versions').select('screenshots').eq('session_id', sessionId)
+  if (error) throw chatError('versionScreenshotPathSet', error)
+  const out = new Set<string>()
+  for (const row of data ?? []) {
+    if (!Array.isArray(row.screenshots)) continue
+    for (const s of row.screenshots) {
+      if (s && typeof s === 'object' && !Array.isArray(s) && typeof s.path === 'string') out.add(s.path)
+    }
+  }
+  return out
+}
+
 export async function clearChatHistory(db: Db, sessionId: string): Promise<ChatMessageRow[]> {
   const { data, error } = await db.from('design_chat_messages').delete().eq('session_id', sessionId).select('*')
   if (error) throw chatError('clearChatHistory', error)
