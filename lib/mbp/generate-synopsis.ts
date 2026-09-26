@@ -10,6 +10,8 @@ import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema
 // Sonnet 5 (writing-tuned) — a short, infrequent, admin-triggered summary where
 // capturing the firm's tone accurately matters more than shaving a few cents.
 const SYNOPSIS_MODEL = PUBLISHED_CONTENT_MODEL
+// The synopsis route has maxDuration 120; leave room for the CAS write after.
+const SYNOPSIS_TIMEOUT_MS = 90_000
 
 type Supabase = ReturnType<typeof createServerClient>
 
@@ -53,6 +55,7 @@ Ground every statement in the profile — never invent facts. If something centr
       maxOutputTokens: 4000,
       providerOptions: GENERATION_PROVIDER_OPTIONS,
       maxRetries: 2,
+      abortSignal: AbortSignal.timeout(SYNOPSIS_TIMEOUT_MS),
     })
     text = res.text
     finishReason = res.finishReason

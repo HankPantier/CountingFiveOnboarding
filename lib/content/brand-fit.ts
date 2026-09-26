@@ -4,6 +4,7 @@ import { buildBrandVoiceBlock } from './brand-voice'
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
 import { FAST_MODEL } from './generation-tuning'
+import { HELPER_CALL_CAP_MS } from './generation-budget'
 
 const BRAND_FIT_MODEL = FAST_MODEL
 
@@ -63,6 +64,8 @@ Return ONLY JSON:
       prompt,
       maxOutputTokens: 500,
       maxRetries: 4,
+      // Haiku helper on a request path: a hang must not hold the route.
+      abortSignal: AbortSignal.timeout(HELPER_CALL_CAP_MS),
     })
     await recordTokenUsage({
       task: 'content',

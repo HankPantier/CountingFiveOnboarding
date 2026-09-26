@@ -4,6 +4,7 @@ import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
 import { OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
+import { RESOURCE_CALL_CAP_MS } from './generation-budget'
 import { extractJson } from './extract-json'
 import type { SessionSchema } from '@/types/session-schema'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
@@ -142,6 +143,8 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
     maxOutputTokens: 8000,
     providerOptions: OUTLINE_PROVIDER_OPTIONS,
     maxRetries: 4,
+    // Bounds the call and its retry backoff well inside the 300s route.
+    abortSignal: AbortSignal.timeout(RESOURCE_CALL_CAP_MS),
   })
 
   // Sanitize the visible prose the model produced (answers, questions, E-E-A-T
