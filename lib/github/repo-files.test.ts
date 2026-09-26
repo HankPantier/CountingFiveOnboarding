@@ -432,6 +432,46 @@ describe('revertFileToMain', () => {
     expect(createOrUpdateFileContents).not.toHaveBeenCalled()
   })
 
+  it('reverts a rename in ONE commit: deletes the new path and restores the old one', async () => {
+    const newPath = 'content/drafts/pages/x.md'
+    const oldPath = 'content/pages/x.md'
+    getContent.mockImplementation(async ({ path, ref }: { path: string; ref: string }) => {
+      if (path === newPath && ref === 'main') throw notFound()
+      if (path === newPath) return { data: { type: 'file', sha: 'movedBlob' } } // draft + base
+      if (path === oldPath && ref === 'main') return { data: { type: 'file', sha: 'liveBlob' } }
+      throw notFound() // old path absent on draft + base
+    })
+    getRef.mockResolvedValue({ data: { object: { sha: 'tip' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'tree' } } })
+    createTree.mockResolvedValue({ data: { sha: 'nt' } })
+    createCommit.mockResolvedValue({ data: { sha: 'nc' } })
+    updateRef.mockResolvedValue({})
+
+    const res = await revertFileToMain('site', newPath, 'movedBlob', {}, oldPath)
+
+    expect(res).toEqual({ reverted: true, commitSha: 'nc', action: 'restored' })
+    expect(createTree).toHaveBeenCalledTimes(1)
+    expect(createTree.mock.calls[0][0].tree).toEqual([
+      { path: newPath, mode: '100644', type: 'blob', sha: null },
+      { path: oldPath, mode: '100644', type: 'blob', sha: 'liveBlob' },
+    ])
+    expect(createOrUpdateFileContents).not.toHaveBeenCalled()
+    getContent.mockReset()
+  })
+
+  it('rename revert 409s when the moved copy was edited since the list loaded', async () => {
+    getContent.mockImplementation(async ({ path, ref }: { path: string; ref: string }) => {
+      if (path === 'content/drafts/pages/x.md' && ref === 'draft') return { data: { type: 'file', sha: 'editedAgain' } }
+      if (path === 'content/pages/x.md' && ref === 'main') return { data: { type: 'file', sha: 'liveBlob' } }
+      throw notFound()
+    })
+    await expect(
+      revertFileToMain('site', 'content/drafts/pages/x.md', 'movedBlob', {}, 'content/pages/x.md')
+    ).rejects.toBeInstanceOf(StaleShaError)
+    expect(createTree).not.toHaveBeenCalled()
+    getContent.mockReset()
+  })
+
   it('409s (StaleShaError) when the draft moved since the caller looked', async () => {
     getContent
       .mockResolvedValueOnce({ data: { type: 'file', sha: 'liveBlob' } })

@@ -1529,14 +1529,51 @@ export type RevertFileResult = {
 // The restore points draft's tree entry at MAIN'S BLOB SHA (Git Data API) —
 // never a utf-8 decode/re-encode — so binary files (images) round-trip intact.
 // A concurrent edit (draft sha moved) surfaces as StaleShaError → 409.
+//
+// A RENAME (compare reports one entry: `path` = new name, `previousPath` = old)
+// must revert both sides together, or the undo deletes the page: pass
+// `previousPath` and both paths are set to their live state in ONE commit —
+// the new path removed (guarded at its draft sha), the old path restored to
+// main's blob (guarded as absent / at its draft sha).
 export async function revertFileToMain(
   slug: string,
   path: string,
   expectedSha: string,
-  options: { authorName?: string; authorEmail?: string } = {}
+  options: { authorName?: string; authorEmail?: string } = {},
+  previousPath: string | null = null
 ): Promise<RevertFileResult> {
   const name = path.split('/').pop() ?? path
   const attribution = options.authorEmail ? ` (${options.authorEmail})` : ''
+
+  if (previousPath && previousPath !== path) {
+    const [liveNew, draftNew, liveOld, draftOld] = await Promise.all([
+      currentSha(slug, path, MAIN_BRANCH),
+      currentSha(slug, path, DRAFT_BRANCH),
+      currentSha(slug, previousPath, MAIN_BRANCH),
+      currentSha(slug, previousPath, DRAFT_BRANCH),
+    ])
+    if (draftNew !== null && expectedSha && draftNew !== expectedSha) {
+      throw new StaleShaError(path, draftNew, '')
+    }
+    const writes: TreeWrite[] = []
+    if (draftNew !== liveNew) writes.push({ path, sha: liveNew })
+    if (draftOld !== liveOld) writes.push({ path: previousPath, sha: liveOld })
+    if (writes.length === 0) return { reverted: true, commitSha: '', action: 'restored' }
+    const oldName = previousPath.split('/').pop() ?? previousPath
+    const commitSha = await commitTreeWrites(
+      slug,
+      DRAFT_BRANCH,
+      `revertFileToMain ${slug}:${previousPath}→${path}`,
+      writes,
+      `Revert rename ${oldName} → ${name} to live via admin${attribution}`,
+      { authorName: options.authorName, authorEmail: options.authorEmail },
+      async (base) => {
+        await assertBlobSha(slug, path, draftNew, base, false)
+        await assertBlobSha(slug, previousPath, draftOld, base, false)
+      }
+    )
+    return { reverted: true, commitSha, action: 'restored' }
+  }
 
   const liveSha = await currentSha(slug, path, MAIN_BRANCH)
   const draftSha = await currentSha(slug, path, DRAFT_BRANCH)

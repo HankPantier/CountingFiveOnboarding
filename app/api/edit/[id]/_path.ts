@@ -39,3 +39,14 @@ export function safeAssetPath(raw: string): string | null {
   if (!ASSET_PREFIXES.some((p) => normalized.startsWith(p))) return null
   return normalized
 }
+
+// Page/post markdown any content-capable user may write or revert. Everything
+// else under content/ is site configuration (nav.json, brand.json, design.json,
+// design-overrides.css, client-center.json, redirects.csv, …) that has its own
+// gated route (nav, theme, client-center, site-settings) — touching it raw
+// would bypass those routes' validation and the Site Owner/editor lockdown.
+export const CONTENT_MD_RE = /^content\/(?:drafts\/)?(?:pages|posts)\/[^/]+\.md$/
+
+// Config no one may raw-write or revert, admins included: nav.json must go
+// through /nav (it relocates pages + adds 301s atomically with the nav change).
+export const ADMIN_BLOCKED_CONFIG: ReadonlySet<string> = new Set(['content/nav.json'])
