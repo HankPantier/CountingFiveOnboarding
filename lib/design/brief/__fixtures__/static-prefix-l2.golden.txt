@@ -11,6 +11,7 @@ The template already ships a deliberate design language. Make it sing in this fi
 
 NON-NEGOTIABLES
 - A timid recolor is a failure. The floor is already good; each concept needs a clear point of view for THIS firm — a signature accent treatment, a section rhythm, a considered image treatment.
+- Signature CSS: every concept includes 2–3 scoped css.blocks moves — e.g. the hero, one card family (service-cards, feature-grid or content-cards), the section headings of a content block — and each one implements a named entry in moves[] (name its block in that move). Tokens and treatments alone read as a recolor. Keep every fragment within the CSS limits in the contract.
 - Restyle only: never change the component tree, the HTML structure or the block markup. Style through the tokens and the [data-block] / [data-component] selectors in the contract.
 - Accessibility: every text/background pairing meets WCAG AA (at least 4.5:1 for body text). A concept whose palette fails contrast is rejected.
 - Shadows are tinted with the brand's primary / near-black (navy-tinted) — never pure black rgba(0,0,0,…).
