@@ -34,6 +34,7 @@ import {
   writeFiles,
   writeFile,
   revertFileToMain,
+  revertLastPublish,
   fastForwardDraftToMain,
   ensureDraftBranch,
   walkNewCommitFileStats,
@@ -571,6 +572,33 @@ describe('readTextBlobs', () => {
       { path: 'b.md', content: 'body-2' },
     ])
     expect(getContent).not.toHaveBeenCalled()
+  })
+})
+
+describe('revertLastPublish', () => {
+  const publishHead = {
+    data: {
+      sha: 'mergeM',
+      parents: [{ sha: 'preM' }, { sha: 'draftTip' }],
+      commit: { message: 'Publish draft to live' },
+    },
+  }
+
+  it('aborts without forcing when main moved after the publish-merge check', async () => {
+    reposGetCommit.mockResolvedValueOnce(publishHead)
+    getRef.mockResolvedValueOnce({ data: { object: { sha: 'secondPublish' } } })
+    const res = await revertLastPublish('site')
+    expect(res.reverted).toBe(false)
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('forces main back to the first parent when the head is unchanged', async () => {
+    reposGetCommit.mockResolvedValueOnce(publishHead)
+    getRef.mockResolvedValueOnce({ data: { object: { sha: 'mergeM' } } })
+    updateRef.mockResolvedValueOnce({})
+    const res = await revertLastPublish('site')
+    expect(res).toEqual({ reverted: true, revertedTo: 'preM' })
+    expect(updateRef).toHaveBeenCalledWith(expect.objectContaining({ ref: 'heads/main', sha: 'preM', force: true }))
   })
 })
 

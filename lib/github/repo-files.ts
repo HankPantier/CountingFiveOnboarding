@@ -1148,7 +1148,7 @@ async function isPublishMergeHead(slug: string) {
   )
   const isPublish =
     head.parents.length === 2 && head.commit.message.startsWith(PUBLISH_MERGE_MESSAGE)
-  return { isPublish, parentSha: head.parents[0]?.sha ?? null }
+  return { isPublish, parentSha: head.parents[0]?.sha ?? null, headSha: head.sha }
 }
 
 export async function getStatus(slug: string): Promise<RepoStatus> {
@@ -1251,11 +1251,22 @@ export type RevertResult =
 export async function revertLastPublish(slug: string): Promise<RevertResult> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
-  const { isPublish, parentSha } = await isPublishMergeHead(slug)
+  const { isPublish, parentSha, headSha } = await isPublishMergeHead(slug)
   if (!isPublish || !parentSha) {
     return {
       reverted: false,
       reason: 'The live branch tip is not a publish merge — nothing safe to revert.',
+    }
+  }
+  // The rollback is a forced ref update, which would silently discard anything
+  // that reached main after the check above (another tab's Publish). Re-read
+  // the live ref uncached right before forcing and abort if it moved, so the
+  // check-then-force window is one round-trip instead of the whole request.
+  const current = await octokit.git.getRef({ owner, repo, ref: `heads/${MAIN_BRANCH}` })
+  if (current.data.object.sha !== headSha) {
+    return {
+      reverted: false,
+      reason: 'The live site changed while rolling back (another publish landed). Reload and try again.',
     }
   }
   await octokit.git.updateRef({
