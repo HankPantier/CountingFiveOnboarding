@@ -125,13 +125,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
 
     // Regenerate theme.css from the final brand + design, then commit the
-    // changed source files together so nothing lands half-applied.
+    // source files together so nothing lands half-applied. EVERY input is
+    // guarded: theme.css is derived from both brand.json and design.json, so
+    // the unchanged one rides along with its current content (a no-op write)
+    // purely to lock its sha, and an absent theme.css must still be absent (a
+    // concurrent Design Studio apply that created it wins → 409, not clobbered).
     const themeCss = generateThemeCss(brand, design)
-    const changes: { path: string; content: string; expectedSha?: string }[] = [
-      { path: THEME_CSS_PATH, content: themeCss, expectedSha: themeFile.sha || undefined },
+    const changes: { path: string; content: string; expectedSha: string | null }[] = [
+      { path: THEME_CSS_PATH, content: themeCss, expectedSha: themeFile.sha || null },
+      { path: BRAND_PATH, content: brandChanged ? brandText : brandFile.content, expectedSha: brandFile.sha },
+      { path: DESIGN_PATH, content: designChanged ? designText : designFile.content, expectedSha: designFile.sha },
     ]
-    if (brandChanged) changes.push({ path: BRAND_PATH, content: brandText, expectedSha: brandFile.sha })
-    if (designChanged) changes.push({ path: DESIGN_PATH, content: designText, expectedSha: designFile.sha })
 
     const changedParts = [
       brandChanged && 'palette',
