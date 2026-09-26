@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { patchBrandPalette, patchDesignTokens, patchDesignTypography, patchDesignFlags, upsertBlockOverride } from './theme-edit'
+import * as themeEdit from './theme-edit'
+import { patchBrandPalette, patchDesignTypography, patchDesignFlags } from './theme-edit'
 
 const BRAND = JSON.stringify(
   {
@@ -61,26 +62,6 @@ describe('patchBrandPalette', () => {
   })
 })
 
-describe('patchDesignTokens', () => {
-  it('sets a radius value', () => {
-    const r = patchDesignTokens(DESIGN, { radius: { lg: '4px' } })
-    if (!r.ok) throw new Error(r.reason)
-    expect(r.design.radius.lg).toBe('4px')
-    expect(r.design.radius.pill).toBe('9999px') // untouched
-  })
-
-  it('rejects a non-length radius value', () => {
-    const r = patchDesignTokens(DESIGN, { radius: { lg: 'round' } })
-    expect(r.ok).toBe(false)
-  })
-
-  it('rejects an unknown enum', () => {
-    // @ts-expect-error — exercising the runtime guard with a bad value
-    const r = patchDesignTokens(DESIGN, { roundness: 'blobby' })
-    expect(r.ok).toBe(false)
-  })
-})
-
 describe('patchDesignTypography', () => {
   it('changes a font slot and rebuilds the Google Fonts URL from all families', () => {
     const r = patchDesignTypography(DESIGN, { headingFont: 'Inter' })
@@ -136,33 +117,9 @@ describe('patchDesignFlags', () => {
   })
 })
 
-describe('upsertBlockOverride', () => {
-  it('appends a scoped rule for a known block', () => {
-    const r = upsertBlockOverride('', 'hero', '[data-block="hero"] h1 { font-size: 3.5rem; }')
-    if (!r.ok) throw new Error(r.reason)
-    expect(r.next).toContain('/* theme-editor:hero */')
-    expect(r.next).toContain('font-size: 3.5rem')
-  })
-
-  it('replaces the prior rule for the same block instead of stacking', () => {
-    const first = upsertBlockOverride('', 'hero', 'a{}')
-    if (!first.ok) throw new Error(first.reason)
-    const second = upsertBlockOverride(first.next, 'hero', 'b{}')
-    if (!second.ok) throw new Error(second.reason)
-    // Count the exact start marker "/* theme-editor:hero */" — the end marker
-    // "/* /theme-editor:hero */" has a leading slash, so it won't match.
-    expect(second.next.match(/\/\* theme-editor:hero \*\//g)?.length).toBe(1)
-    expect(second.next).toContain('b{}')
-    expect(second.next).not.toContain('a{}')
-  })
-
-  it('rejects an unknown block', () => {
-    const r = upsertBlockOverride('', 'not-a-block', 'a{}')
-    expect(r.ok).toBe(false)
-  })
-
-  it('rejects @import and remote url()', () => {
-    expect(upsertBlockOverride('', 'hero', '@import url(http://evil.test/x.css);').ok).toBe(false)
-    expect(upsertBlockOverride('', 'hero', 'a{background:url(https://evil.test/x.png)}').ok).toBe(false)
+describe('dead theme-chat helpers', () => {
+  it('are gone (the design-overrides region is owned by the Design Studio)', () => {
+    expect('patchDesignTokens' in themeEdit).toBe(false)
+    expect('upsertBlockOverride' in themeEdit).toBe(false)
   })
 })

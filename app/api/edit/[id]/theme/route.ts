@@ -22,7 +22,7 @@ import { BRAND_PATH, DESIGN_PATH, THEME_CSS_PATH, normalizeTypography } from './
 export const runtime = 'nodejs'
 
 // GET the client site's current theme sources from the draft branch — feeds the
-// Theme Studio preview + the token panel. Admin-only, same gate as the theme chat.
+// Theme Studio preview + the token panel. Admin-only (same gate as PATCH).
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const ctx = await resolveEditContext(id)
@@ -167,7 +167,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       ),
     })
   } catch (err) {
-    // A concurrent theme edit (another tab / the theme chat) moved one of the
+    // A concurrent theme edit (another tab / a Design Studio apply) moved one of the
     // files since we read it — a conflict, not a server error.
     if (err instanceof StaleShaError) {
       return NextResponse.json(
