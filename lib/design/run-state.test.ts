@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { asJson } from '@/lib/supabase/json-typed'
 import { makeConceptRow, makeInputRow, makeRunRow } from './__fixtures__/rows'
-import { hasStalledConcept, nextAction, parseBaseSnapshot, parseScreenshots, planRetry, selectRunInputs, usablePriors, CONCEPT_STILL_REFINING } from './run-state'
+import { currentSiteCaption, hasStalledConcept, inputAdminText, nextAction, parseBaseSnapshot, parseScreenshots, planRetry, selectRunInputs, usablePriors, CONCEPT_STILL_REFINING } from './run-state'
 import { newReview } from './review'
 import { DESIGN_STEP_MAX_LIFETIME_MS } from './run-types'
 
@@ -240,5 +240,16 @@ describe('planRetry — a concept still parked from an earlier Retry (PF3)', () 
     const now = Date.parse('2026-09-25T12:00:00.000Z')
     const plan = planRetry(makeRunRow({ status: 'error', stage: 'critique' }), [loop('b', 1, { next: 'critique' }, 'pending'), loop('a', 0, { next: 'revise' }, 'error')], now)
     expect(plan).toMatchObject({ ok: true, resumeConceptIds: ['a', 'b'], resetConceptIds: [] })
+  })
+})
+
+describe('prompt captions (shared by the orchestrator and the A/B script)', () => {
+  it('captions the current-site render', () => {
+    expect(currentSiteCaption('/services')).toBe('The client\'s CURRENT design of /services (desktop, 1440 px) — the "before" to improve on.')
+  })
+  it('joins an input\'s label + notes, or null when it has neither', () => {
+    expect(inputAdminText(makeInputRow({ label: 'Rival', notes: 'love the hero' }))).toBe('Label: Rival\nNotes: love the hero')
+    expect(inputAdminText(makeInputRow({ label: null, notes: 'n' }))).toBe('Notes: n')
+    expect(inputAdminText(makeInputRow({ label: null, notes: null }))).toBeNull()
   })
 })

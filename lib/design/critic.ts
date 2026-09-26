@@ -26,6 +26,9 @@ export type CritiqueConceptArgs = {
   attribution: { sessionId: string; contentJobId: string; createdBy: string | null }
   now?: () => number
   onSpend?: (totalUsd: number) => void
+  // The judge model (default DESIGN_MODEL). Only the design-model A/B script
+  // overrides it (CRITIC_MODEL — the same judge for every model under test).
+  model?: string
 }
 
 export type CritiqueConceptResult = {
@@ -48,6 +51,7 @@ export async function critiqueConcept(args: CritiqueConceptArgs): Promise<Critiq
     attribution: args.attribution,
     now,
     onSpend: args.onSpend,
+    ...(args.model ? { model: args.model } : {}),
   })
   const shared = args.prompt.sharedPartCount
   const messages = buildCachedPartsMessages(args.prompt.staticPrefix, args.prompt.parts, {
@@ -64,7 +68,7 @@ export async function critiqueConcept(args: CritiqueConceptArgs): Promise<Critiq
   })
   const money = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd() }
   if (raw === null) return { ...money, critique: null, errors: [], stoppedReason: caller.stopReason() ?? 'no_output' }
-  const parsed = parseCritiqueAnswer(raw, { iteration: args.iteration, model: DESIGN_MODEL, at: new Date(now()).toISOString() })
+  const parsed = parseCritiqueAnswer(raw, { iteration: args.iteration, model: args.model ?? DESIGN_MODEL, at: new Date(now()).toISOString() })
   if (!parsed.ok) return { ...money, critique: null, errors: parsed.errors, stoppedReason: 'no_output' }
   return { ...money, critique: parsed.record, errors: [], stoppedReason: null }
 }

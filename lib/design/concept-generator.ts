@@ -39,6 +39,9 @@ export type GenerateConceptArgs = {
   now?: () => number
   // Called with the running spend (exact + estimated) every time it changes.
   onSpend?: (totalUsd: number) => void
+  // The model to design with (default DESIGN_MODEL, via createDesignCaller).
+  // Only the design-model A/B script overrides it.
+  model?: string
 }
 
 export type GeneratedConcept = {
@@ -76,6 +79,7 @@ export async function generateConcept(args: GenerateConceptArgs): Promise<Genera
     attribution: args.attribution,
     now: args.now,
     onSpend: args.onSpend,
+    ...(args.model ? { model: args.model } : {}),
   })
   const notes: string[] = []
 

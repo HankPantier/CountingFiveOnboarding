@@ -210,6 +210,18 @@ export function inputCaption(row: InputRow): string {
   return host ? `${kind} screenshot (${host})` : `${kind}`
 }
 
+// The caption of the current-site "before" render in a concept prompt.
+export function currentSiteCaption(pagePath: string): string {
+  return `The client's CURRENT design of ${pagePath} (desktop, 1440 px) — the "before" to improve on.`
+}
+
+// An input image's admin label + notes for the prompt (fenced by the brief
+// builder as untrusted data), or null when it has neither.
+export function inputAdminText(row: InputRow): string | null {
+  const text = [row.label ? `Label: ${row.label}` : '', row.notes ? `Notes: ${row.notes}` : ''].filter(Boolean).join('\n')
+  return text || null
+}
+
 // The run's chosen inputs, in the admin's order, split into usable (captured,
 // not archived, under the cap) and skipped-with-a-reason. Never blocks a run.
 export function selectRunInputs(rows: InputRow[], inputIds: string[]): InputSelection {

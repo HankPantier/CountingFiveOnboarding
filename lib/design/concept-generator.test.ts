@@ -18,6 +18,7 @@ import {
   type GenerateConceptArgs,
 } from './concept-generator'
 import { DEFAULT_CAPABILITIES } from './run-types'
+import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
 
 const A = rawOf(VALID)
 const OXBLOOD: typeof VALID = {
@@ -115,6 +116,21 @@ describe('generateConcept', () => {
     // 540 − 0 − 20 safety = 520 s → capped at the 300 s first-attempt cap.
     expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS])
     expect(FIRST_ATTEMPT_CAP_MS).toBe(300_000)
+  })
+
+  it('defaults to DESIGN_MODEL; a model override reaches the call, the pricing and the usage row (A/B script)', async () => {
+    scripted = [{ concepts: [A] }]
+    await generateConcept(args())
+    expect((m.generateJson.mock.calls[0][0] as { model: { modelId: string } }).model.modelId).toBe(DESIGN_MODEL)
+
+    m.generateJson.mockClear()
+    m.record.mockClear()
+    scripted = [{ concepts: [A] }]
+    const r = await generateConcept(args({ model: 'claude-fable-5-1' }))
+    expect((m.generateJson.mock.calls[0][0] as { model: { modelId: string } }).model.modelId).toBe('claude-fable-5-1')
+    expect(m.record).toHaveBeenCalledWith(expect.objectContaining({ stage: 'design_concept', model: 'claude-fable-5-1' }))
+    // Fable 5.1 at $10/$50: 10k in + 5k out = $0.35.
+    expect(r.costUsd).toBeCloseTo(0.35, 6)
   })
 
   it('repairs an invalid concept, once, as a follow-up turn', async () => {

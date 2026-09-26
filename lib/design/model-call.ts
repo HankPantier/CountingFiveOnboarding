@@ -37,6 +37,9 @@ export type DesignCallerOptions = {
   now?: () => number
   // Called with the running spend (exact + estimated) every time it changes.
   onSpend?: (totalUsd: number) => void
+  // The model to call, price and record (default DESIGN_MODEL). Only the
+  // design-model A/B script (scripts/compare-design-models.ts) overrides it.
+  model?: string
 }
 
 export type DesignCallConfig = Pick<GenerateJsonOptions, 'firstBudget' | 'retryBudget' | 'providerOptions' | 'retryProviderOptions' | 'label'> & {
@@ -60,7 +63,7 @@ type CallTracker = { started: number[]; accounted: number; estimated: number; in
 
 // ~4 chars per token of prompt text + a flat cost per image part, priced at
 // the model's uncached input rate.
-export function estimateInputUsd(system: string, messages: ModelMessage[]): number {
+export function estimateInputUsd(system: string, messages: ModelMessage[], modelId: string = DESIGN_MODEL): number {
   let chars = system.length
   let images = 0
   for (const msg of messages) {
@@ -74,13 +77,14 @@ export function estimateInputUsd(system: string, messages: ModelMessage[]): numb
     }
   }
   const tokens = Math.ceil(chars / 4) + images * ESTIMATED_TOKENS_PER_IMAGE
-  return estimateCostUsd(DESIGN_MODEL, tokens, 0)
+  return estimateCostUsd(modelId, tokens, 0)
 }
 
 export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
   const now = opts.now ?? Date.now
   const state: { spent: number; estimated: number; stop: StopReason | null } = { spent: 0, estimated: 0, stop: null }
-  const model = anthropic(DESIGN_MODEL)
+  const modelId = opts.model ?? DESIGN_MODEL
+  const model = anthropic(modelId)
 
   const plan = (capMs: number): DesignPlan => {
     if (opts.costSoFarUsd + state.spent >= opts.costCapUsd) return { ok: false, reason: 'cost_cap' }
@@ -103,7 +107,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
     tracker.accounted++
     const cache = extractCacheUsage(usage)
     state.spent += estimateCostUsd(
-      DESIGN_MODEL,
+      modelId,
       usage?.inputTokens ?? 0,
       usage?.outputTokens ?? 0,
       cache.cacheReadInputTokens,
@@ -117,7 +121,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
       sessionId: opts.attribution.sessionId,
       contentJobId: opts.attribution.contentJobId,
       createdBy: opts.attribution.createdBy,
-      model: DESIGN_MODEL,
+      model: modelId,
       inputTokens: usage?.inputTokens,
       outputTokens: usage?.outputTokens,
       ...cache,
@@ -126,7 +130,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
   }
 
   const call = async (messages: ModelMessage[], cfg: DesignCallConfig): Promise<unknown | null> => {
-    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, inputUsd: estimateInputUsd(opts.system, messages) }
+    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, inputUsd: estimateInputUsd(opts.system, messages, modelId) }
     const { capMs, ...budgets } = cfg
     const genOpts: GenerateJsonOptions = {
       model,
@@ -145,7 +149,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
         }
         genOpts.timeoutMs = p.timeoutMs
         const maxOutputTokens = attempt === 2 ? (budgets.retryBudget ?? budgets.firstBudget) : budgets.firstBudget
-        tracker.started.push(tracker.inputUsd + estimateCostUsd(DESIGN_MODEL, 0, maxOutputTokens))
+        tracker.started.push(tracker.inputUsd + estimateCostUsd(modelId, 0, maxOutputTokens))
         return true
       },
       onAttempt: account(tracker),

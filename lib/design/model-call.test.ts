@@ -98,4 +98,19 @@ describe('createDesignCaller', () => {
     expect(caller.spentUsd()).toBeCloseTo(expected, 8)
     expect(m.record).not.toHaveBeenCalled()
   })
+
+  it('prices and records an overridden model; estimateInputUsd defaults to DESIGN_MODEL pricing', async () => {
+    m.generateJson.mockImplementation(async (o: Opts & { model: { modelId: string } }) => {
+      expect(o.model.modelId).toBe('claude-fable-5-1')
+      await o.beforeAttempt?.(1)
+      await o.onAttempt?.(USAGE, 'stop')
+      return { ok: 1 }
+    })
+    const caller = createDesignCaller(opts({ model: 'claude-fable-5-1' }))
+    await caller.call(MSG, CFG)
+    expect(m.record).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-fable-5-1' }))
+    // Fable 5.1 at $10/$50: 10k in + 5k out = $0.35.
+    expect(caller.spentUsd()).toBeCloseTo(0.35, 6)
+    expect(estimateInputUsd('SYS', MSG, 'claude-fable-5-1')).toBeCloseTo(estimateInputUsd('SYS', MSG) * 2.5, 10)
+  })
 })

@@ -5,6 +5,7 @@ vi.mock('@/lib/content/json-generation', () => ({ generateJson: (o: unknown) => 
 vi.mock('@/lib/content/token-usage', () => ({ recordTokenUsage: (a: unknown) => m.record(a) }))
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: (id: string) => ({ modelId: id }) }))
 
+import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
 import { CRITIC_SYSTEM_PROMPT } from './brief/critique-prompt'
 import { CRITIQUE_OUTPUT_TOKENS, critiqueConcept, type CritiqueConceptArgs } from './critic'
 
@@ -82,5 +83,17 @@ describe('critiqueConcept', () => {
     const r = await critiqueConcept(args({ costSoFarUsd: 4 }))
     expect(r).toMatchObject({ critique: null, stoppedReason: 'cost_cap', costUsd: 0 })
     expect(m.record).not.toHaveBeenCalled()
+  })
+})
+
+describe('critiqueConcept model override', () => {
+  it('defaults to DESIGN_MODEL and judges with an override (CRITIC_MODEL in the A/B script) when given', async () => {
+    const d = await critiqueConcept(args())
+    expect((seen as unknown as { model: { modelId: string } }).model.modelId).toBe(DESIGN_MODEL)
+    expect(d.critique?.model).toBe(DESIGN_MODEL)
+    const o = await critiqueConcept(args({ model: 'claude-sonnet-5' }))
+    expect((seen as unknown as { model: { modelId: string } }).model.modelId).toBe('claude-sonnet-5')
+    expect(o.critique?.model).toBe('claude-sonnet-5')
+    expect(m.record).toHaveBeenLastCalledWith(expect.objectContaining({ stage: 'design_critique', model: 'claude-sonnet-5' }))
   })
 })
