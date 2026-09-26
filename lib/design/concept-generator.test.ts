@@ -113,9 +113,9 @@ describe('generateConcept', () => {
     expect(opts.messages).toHaveLength(1)
     expect(opts.firstBudget).toBe(24_000)
     expect(opts.retryBudget).toBe(24_000)
-    // 540 − 0 − 20 safety = 520 s → capped at the 300 s first-attempt cap.
+    // 540 − 0 − 20 safety = 520 s → capped at the 180 s first-attempt cap.
     expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS])
-    expect(FIRST_ATTEMPT_CAP_MS).toBe(300_000)
+    expect(FIRST_ATTEMPT_CAP_MS).toBe(180_000)
   })
 
   it('defaults to DESIGN_MODEL; a model override reaches the call, the pricing and the usage row (A/B script)', async () => {
@@ -222,18 +222,38 @@ describe('generateConcept', () => {
       expect(r.concept).not.toBeNull()
     })
 
-    it('with the 540 s budget and a 10 s gather, is capped at 300 s', async () => {
+    it('with the 540 s budget and a 10 s gather, is capped at 180 s', async () => {
       scripted = [{ concepts: [A] }]
       clock = NOW + 10_000 // gather time already spent
       await generateConcept(args({ deadline: NOW + 540_000 }))
-      expect(timeouts).toEqual([300_000])
+      expect(timeouts).toEqual([180_000])
+    })
+
+    it('a runaway first attempt at the cap + its retry at the cap + the full repair still fit the 540 s step budget', () => {
+      expect(2 * FIRST_ATTEMPT_CAP_MS + REPAIR_CALL_TIMEOUT_MS).toBeLessThanOrEqual(540_000 - DEADLINE_SAFETY_MS)
+    })
+
+    it('an aborted high-effort first attempt leaves room for the low-effort retry at the full cap', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      m.generateJson.mockImplementationOnce(async (opts: Opts) => {
+        if (!(await opts.beforeAttempt?.(1))) return null
+        timeouts.push(opts.timeoutMs as number)
+        clock += FIRST_ATTEMPT_CAP_MS // runs to the cap and is aborted: no usage
+        if (!(await opts.beforeAttempt?.(2))) return null
+        timeouts.push(opts.timeoutMs as number)
+        await opts.onAttempt?.(USAGE, 'stop')
+        return { concepts: [A] }
+      })
+      const r = await generateConcept(args({ deadline: NOW + 540_000 }))
+      expect(timeouts).toEqual([180_000, 180_000])
+      expect(r.concept).not.toBeNull()
     })
 
     it('with a very long gather, gets ≈ the remaining time (under the cap)', async () => {
       scripted = [{ concepts: [A] }]
-      clock = NOW + 300_000
+      clock = NOW + 400_000
       await generateConcept(args({ deadline: NOW + 540_000 }))
-      expect(timeouts).toEqual([540_000 - 300_000 - DEADLINE_SAFETY_MS])
+      expect(timeouts).toEqual([540_000 - 400_000 - DEADLINE_SAFETY_MS])
     })
   })
 
@@ -326,7 +346,7 @@ describe('generateConcept', () => {
       m.generateJson.mockImplementationOnce(async (opts: Opts) => {
         if (!(await opts.beforeAttempt?.(1))) return null
         timeouts.push(opts.timeoutMs as number)
-        clock += 300_000
+        clock += 360_000
         await opts.onAttempt?.(USAGE, 'length') // truncated → parse failure → retry
         if (!(await opts.beforeAttempt?.(2))) return null
         timeouts.push(opts.timeoutMs as number)
@@ -334,8 +354,8 @@ describe('generateConcept', () => {
         return { concepts: [A] }
       })
       const r = await generateConcept(args())
-      // 540 − 300 − 20 = 220 s, under the 300 s first-call cap.
-      expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS, 220_000])
+      // 540 − 360 − 20 = 160 s, under the 180 s first-call cap.
+      expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS, 160_000])
       expect(r.concept).not.toBeNull()
       expect(r.costUsd).toBeCloseTo(0.28, 6)
     })

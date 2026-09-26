@@ -310,3 +310,63 @@ describe('renderComposed render mutex (mocked browser)', () => {
     await expect(renderComposed({ ...ARGS, viewport: 'desktop', deadlineMs: 2_000 })).resolves.toBeTruthy()
   }, 10_000)
 })
+
+describe('renderComposed bounded settle + webfont waits (mocked browser)', () => {
+  it('a webfont that never arrives costs FONTS_WAIT_MS, then the render captures with fontsReady: false', async () => {
+    const { FONTS_WAIT_MS } = await import('./render-composed')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      bundle.page.evaluate.mockImplementationOnce(() => new Promise(() => {})) // document.fonts.ready never settles
+      const p = renderComposed({ ...ARGS, viewport: 'desktop' })
+      await vi.advanceTimersByTimeAsync(FONTS_WAIT_MS + 10)
+      const r = await p
+      expect(r.fontsReady).toBe(false)
+      expect(r.shots[0].kind).toBe('fold')
+      expect(r.steps.fonts).toBeGreaterThanOrEqual(FONTS_WAIT_MS)
+      expect(r.steps.fonts).toBeLessThan(FONTS_WAIT_MS + 1_000)
+      expect(recycleMock).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('webfonts not ready'))
+    } finally {
+      vi.useRealTimers()
+      warn.mockRestore()
+    }
+  })
+
+  it('fontsReady is true when document.fonts.ready settles', async () => {
+    bundle.page.evaluate.mockImplementationOnce((async () => true) as unknown as () => Promise<number>)
+    const r = await renderComposed({ ...ARGS, viewport: 'desktop' })
+    expect(r.fontsReady).toBe(true)
+  })
+
+  it('a network-idle wait that ignores its own timeout is still bounded at 3 s', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      bundle.page.waitForLoadState.mockImplementationOnce(() => new Promise(() => {}))
+      const p = renderComposed({ ...ARGS, viewport: 'desktop' })
+      await vi.advanceTimersByTimeAsync(3_010)
+      const r = await p
+      expect(r.shots[0].kind).toBe('fold')
+      expect(r.steps.settle).toBeLessThan(4_000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('names a suspended process when a bounded wait overshoots by wall clock (the 143 s "settle")', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const realNow = Date.now
+    let skew = 0
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew)
+    try {
+      bundle.page.waitForLoadState.mockImplementationOnce(async () => {
+        skew = 143_000 // the wall clock jumps while the wait is in flight
+      })
+      await renderComposed({ ...ARGS, viewport: 'desktop' })
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/step "settle" took \d+ms against a 3000ms bound — the process was likely suspended/))
+    } finally {
+      spy.mockRestore()
+      warn.mockRestore()
+    }
+  })
+})

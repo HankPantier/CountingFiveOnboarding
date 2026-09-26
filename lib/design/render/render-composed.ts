@@ -69,6 +69,9 @@ export type RenderResult = {
   // The in-page metrics sample (metrics: true), taken at scroll 0 before the
   // fold; null when not requested or when the bounded evaluate failed.
   sample: RawPageSample | null
+  // false ⇒ document.fonts.ready did not settle within FONTS_WAIT_MS; the
+  // shots use whatever fonts had loaded by then.
+  fontsReady: boolean
 }
 
 const MAX_BLOCK_CROPS = 3
@@ -80,6 +83,14 @@ const NEXT_SHOT_HEIGHT_FACTOR = 1.2
 // a "nice to have" wait, not a correctness gate, so a slow-polling asset must
 // not stall the whole render.
 const SETTLE_WAIT_MS = 3_000
+// Bound for the webfont wait (document.fonts.ready). A font that never
+// arrives must not stall a render: past this, the page is captured with
+// whatever fonts loaded, and the result says fontsReady: false.
+export const FONTS_WAIT_MS = 3_000
+// A bounded wait whose WALL time overshoots its bound by more than this was
+// not slow on its own: the process was suspended (e.g. the machine slept) or
+// its event loop was blocked. Logged so the step timings aren't misread.
+const STALL_SLACK_MS = 10_000
 // page.evaluate() has no native timeout (unlike screenshot()/setContent()),
 // so a wedged in-page call (e.g. under --single-process contention) would
 // otherwise hang until the OVERALL deadline below catches it. Each evaluate
@@ -167,6 +178,12 @@ async function captureViewport(cdp: RenderBundle['cdp']): Promise<Buffer> {
     () => new Error(`Viewport screenshot did not finish within ${SCREENSHOT_TIMEOUT_MS}ms`)
   )
   return Buffer.from(shot.data, 'base64')
+}
+
+function warnIfStalled(step: string, wallMs: number, boundMs: number): void {
+  if (wallMs > boundMs + STALL_SLACK_MS) {
+    console.warn(`[design-render] step "${step}" took ${wallMs}ms against a ${boundMs}ms bound — the process was likely suspended (machine asleep) or its event loop blocked`)
+  }
 }
 
 function boundedEvaluate<T>(promise: Promise<T>, fallback: T): Promise<T> {
@@ -270,11 +287,24 @@ export async function renderComposed(args: {
     // beyond 'load' is only a bounded best-effort wait (step 'settle').
     await page.setContent(hardenForRender(args.html, args.shellOrigin), { waitUntil: 'load', timeout: PAGE_TIMEOUT_MS })
     mark('settle')
-    await page.waitForLoadState('networkidle', { timeout: SETTLE_WAIT_MS }).catch(() => {})
+    // Playwright's own timeout, raced by ours too, so this nice-to-have wait
+    // can never outlast its bound.
+    await withTimeout(
+      page.waitForLoadState('networkidle', { timeout: SETTLE_WAIT_MS }).catch(() => {}),
+      SETTLE_WAIT_MS,
+      () => undefined
+    )
+    warnIfStalled('settle', Date.now() - stepStart, SETTLE_WAIT_MS)
     mark('fonts')
     // CDP evaluate is not subject to the page CSP; wait for webfonts so type
     // renders, but bounded — a webfont that never resolves must not hang.
-    await boundedEvaluate(page.evaluate(() => document.fonts.ready.then(() => undefined)), undefined)
+    const fontsReady = await withTimeout(
+      page.evaluate(() => document.fonts.ready.then(() => true)),
+      FONTS_WAIT_MS,
+      () => false
+    )
+    warnIfStalled('fonts', Date.now() - stepStart, FONTS_WAIT_MS)
+    if (!fontsReady) console.warn(`[design-render] webfonts not ready after ${FONTS_WAIT_MS}ms — capturing with the fonts that loaded`)
     let sample: RawPageSample | null = null
     if (args.metrics) {
       mark('metrics')
@@ -323,7 +353,7 @@ export async function renderComposed(args: {
     if (!reset) suspect = true
     steps[currentStep] = Date.now() - stepStart
 
-    return { shots, timings: { launchMs, renderMs: Date.now() - t0 }, blockedRequests, steps, sample }
+    return { shots, timings: { launchMs, renderMs: Date.now() - t0 }, blockedRequests, steps, sample, fontsReady }
   }
 
   try {

@@ -88,6 +88,20 @@ describe('generateJson', () => {
     expect(onAttempt).toHaveBeenCalledWith({ inputTokens: 10, outputTokens: 20 }, 'stop')
   })
 
+  it('reports each failed attempt to onAttemptFailed (thrown call → error, bad parse → its finish reason); its own errors are swallowed', async () => {
+    const abort = new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    mockGen.mockRejectedValueOnce(abort).mockResolvedValueOnce(reply('{"a":1', 'length'))
+    const seen: { attempt: number; finishReason: string; error: unknown }[] = []
+    const onAttemptFailed = vi.fn((info: { attempt: 1 | 2; finishReason: string; error: unknown }) => {
+      seen.push(info)
+      throw new Error('logger broke')
+    })
+    expect(await generateJson({ ...base, firstBudget: 1000, retryBudget: 2000, onAttemptFailed })).toBeNull()
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).toMatchObject({ attempt: 1, finishReason: 'error', error: abort })
+    expect(seen[1]).toMatchObject({ attempt: 2, finishReason: 'length' })
+  })
+
   it('sends messages instead of prompt when given (multi-part callers)', async () => {
     mockGen.mockResolvedValueOnce(reply('{"a":1}'))
     const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'hi' }] }]

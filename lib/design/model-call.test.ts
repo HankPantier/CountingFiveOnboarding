@@ -5,13 +5,14 @@ vi.mock('@/lib/content/json-generation', () => ({ generateJson: (o: unknown) => 
 vi.mock('@/lib/content/token-usage', () => ({ recordTokenUsage: (a: unknown) => m.record(a) }))
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: (id: string) => ({ modelId: id }) }))
 
-import { createDesignCaller, DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS, estimateInputUsd, type DesignCallerOptions } from './model-call'
+import { attemptFailureReason, createDesignCaller, DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS, estimateInputUsd, type DesignCallerOptions } from './model-call'
 
 type Opts = {
   system?: string
   timeoutMs?: number
   beforeAttempt?: (n: 1 | 2) => boolean | Promise<boolean>
   onAttempt?: (usage: unknown, finish: string) => void | Promise<void>
+  onAttemptFailed?: (info: { attempt: 1 | 2; finishReason: string; error: unknown }) => void
   [k: string]: unknown
 }
 const USAGE = { inputTokens: 10_000, outputTokens: 5_000, inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -112,5 +113,34 @@ describe('createDesignCaller', () => {
     // Fable 5.1 at $10/$50: 10k in + 5k out = $0.35.
     expect(caller.spentUsd()).toBeCloseTo(0.35, 6)
     expect(estimateInputUsd('SYS', MSG, 'claude-fable-5-1')).toBeCloseTo(estimateInputUsd('SYS', MSG) * 2.5, 10)
+  })
+})
+
+describe('per-attempt log', () => {
+  it('logs each attempt’s duration and finish reason, and why a failed one failed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let clock = NOW
+    m.generateJson.mockImplementation(async (o: Opts) => {
+      await o.beforeAttempt?.(1)
+      clock += 180_000
+      o.onAttemptFailed?.({ attempt: 1, finishReason: 'error', error: new DOMException('The operation was aborted due to timeout', 'TimeoutError') })
+      await o.beforeAttempt?.(2)
+      clock += 61_500
+      await o.onAttempt?.(USAGE, 'length')
+      o.onAttemptFailed?.({ attempt: 2, finishReason: 'length', error: new SyntaxError('bad json') })
+      return null
+    })
+    const caller = createDesignCaller(opts({ logTag: 'design-concept', now: () => clock }))
+    await caller.call(MSG, { ...CFG, retryBudget: 8_000 })
+    const lines = warn.mock.calls.map((c) => String(c[0]))
+    expect(lines).toContain('[design-concept] attempt 1 (claude-opus-5-5) failed after 180.0s — aborted (timeout)')
+    expect(lines).toContain('[design-concept] attempt 2 (claude-opus-5-5) finished in 61.5s — finish=length, out=5000 tokens')
+    expect(lines).toContain('[design-concept] attempt 2 (claude-opus-5-5) failed after 61.5s — unparseable output (finish=length)')
+  })
+
+  it('names a timeout abort, else the error, clipped', () => {
+    expect(attemptFailureReason(new DOMException('x', 'AbortError'))).toBe('aborted (timeout)')
+    expect(attemptFailureReason(new Error('socket hang up'))).toBe('Error: socket hang up')
+    expect(attemptFailureReason('x'.repeat(500))).toHaveLength(200)
   })
 })
