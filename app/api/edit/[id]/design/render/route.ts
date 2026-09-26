@@ -52,6 +52,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
   }
 
+  if (body.crops !== undefined && typeof body.crops !== 'boolean') {
+    return NextResponse.json({ error: 'crops must be true or false.' }, { status: 400 })
+  }
+
   const viewport = (body.viewport ?? 'desktop') as ViewportKey
   if (viewport !== 'desktop' && viewport !== 'mobile') {
     return NextResponse.json({ error: 'viewport must be desktop or mobile.' }, { status: 400 })

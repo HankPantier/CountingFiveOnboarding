@@ -86,6 +86,14 @@ describe('POST /design/render', () => {
     expect(call.crops).toBe(false)
   })
 
+  it('rejects a non-boolean crops with 400, before rendering', async () => {
+    for (const crops of ['false', 0, null, {}]) {
+      const res = await POST(req({ path: '/', viewport: 'desktop', crops }), params)
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'crops must be true or false.' })
+    }
+    expect(render).not.toHaveBeenCalled()
+  })
   it('rejects an unknown viewport with 400', async () => {
     const res = await POST(req({ viewport: 'tablet' }), params)
     expect(res.status).toBe(400)

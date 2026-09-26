@@ -26,7 +26,6 @@ import {
   APPLIED_VERSION_UNRECORDED,
   STALE_THEME_ERROR,
   commitDesignVersion,
-  sameThemeBlobs,
   type CommitVersionArgs,
 } from './commit-version'
 
@@ -69,13 +68,6 @@ beforeEach(() => {
   m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
   m.apply.mockResolvedValue(APPLIED)
   m.insertVersion.mockResolvedValue(makeVersionRow({ id: 'ver-5', version_no: 5, source: 'chat' }))
-})
-
-describe('sameThemeBlobs', () => {
-  it('compares the four theme files only (absent = absent)', () => {
-    expect(sameThemeBlobs(BEFORE_SHAS, { ...BEFORE_SHAS, 'content/other.json': 'x'.repeat(40) })).toBe(true)
-    expect(sameThemeBlobs(BEFORE_SHAS, { 'content/brand.json': 'a'.repeat(40) })).toBe(false)
-  })
 })
 
 describe('commitDesignVersion', () => {

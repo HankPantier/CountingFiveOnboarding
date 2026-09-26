@@ -5,6 +5,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { parseChatRequest, previewPathsInParts, rowToChatMessage } from '@/lib/design/chat-history'
 import { clearChatHistory, listChatMessages } from '@/lib/design/chat-store'
 import type { DesignChatMessage, DesignChatRequestBody } from '@/lib/design/chat-types'
+import { CHAT_ENGINE_UNAVAILABLE_ERROR } from '@/lib/design/chat-ui'
 import { attachmentStoragePath, removeDesignPaths, signDesignPaths } from '@/lib/design/storage'
 import { requireDesignAdmin } from '../_design'
 
@@ -98,7 +99,7 @@ export async function POST(req: Request, { params }: Params) {
     ;({ runDesignChatTurn } = await import('@/lib/design/chat-turn')) // lightningcss + chromium — lazy, traced
   } catch (err) {
     console.error('[design:chat] failed to load the chat engine', err)
-    return NextResponse.json({ error: 'The design chat is unavailable right now.' }, { status: 503 })
+    return NextResponse.json({ error: CHAT_ENGINE_UNAVAILABLE_ERROR }, { status: 503 })
   }
 
   try {

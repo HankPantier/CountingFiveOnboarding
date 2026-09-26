@@ -2,14 +2,12 @@ import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { computeDrift, mergeAppliedBlobs, toBlobMap } from '@/lib/design/drift'
-import { insertVersion, latestVersion, VersionConflictError } from '@/lib/design/store'
+import { CAPTURED_NAME, insertVersion, latestVersion, VersionConflictError } from '@/lib/design/store'
 import { readDraftThemeSnapshot, themeTextsFromSnapshot } from '@/lib/design/theme-snapshot'
 import { requireDesignAdmin } from '../../_design'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
-
-export const CAPTURED_NAME = 'Captured draft'
 
 interface CaptureVersionResponse {
   ok: true

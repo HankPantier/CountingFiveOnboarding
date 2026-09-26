@@ -136,9 +136,10 @@ function ChatBody({
     onError: (err) => {
       const sent = inFlight.current
       inFlight.current = null
-      // PF12: a 4xx is refused before anything is stored — drop the optimistic
-      // user bubble and put its text + attachments back in the composer.
-      if (!(err instanceof ChatRequestError) || !restoresComposer(err.status) || !sent) return
+      // PF12: a 4xx (or the pre-engine 503) is refused before anything is
+      // stored — drop the optimistic user bubble and put its text +
+      // attachments back in the composer.
+      if (!(err instanceof ChatRequestError) || !restoresComposer(err.status, err.message) || !sent) return
       setMessages((ms) => (ms.length > 0 && ms[ms.length - 1].role === 'user' ? ms.slice(0, -1) : ms))
       setText((t) => (t.trim() ? t : sent.text))
       setPending((p) => [...sent.attachments, ...p])

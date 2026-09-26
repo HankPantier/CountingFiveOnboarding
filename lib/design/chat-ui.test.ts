@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { DesignChatMessage } from './chat-types'
-import { chatBlocks, chatRequestErrorText, committedVersionNos, lastAssistant, messageCommitted, restoresComposer } from './chat-ui'
+import { CHAT_ENGINE_UNAVAILABLE_ERROR, chatBlocks, chatRequestErrorText, committedVersionNos, lastAssistant, messageCommitted, restoresComposer } from './chat-ui'
 
 const msg = (parts: unknown[], role: 'user' | 'assistant' = 'assistant'): DesignChatMessage => ({ id: 'm', role, parts: parts as DesignChatMessage['parts'] })
 
@@ -72,5 +72,12 @@ describe('pre-stream request errors (PF12)', () => {
     expect(restoresComposer(499)).toBe(true)
     expect(restoresComposer(500)).toBe(false)
     expect(restoresComposer(503)).toBe(false)
+  })
+  it('also restores it for the pre-engine 503 (nothing stored), recognized by its exact text', () => {
+    const text = chatRequestErrorText(503, JSON.stringify({ error: CHAT_ENGINE_UNAVAILABLE_ERROR }))
+    expect(text).toBe(CHAT_ENGINE_UNAVAILABLE_ERROR)
+    expect(restoresComposer(503, text)).toBe(true)
+    expect(restoresComposer(503, 'The chat request failed (503).')).toBe(false)
+    expect(restoresComposer(500, CHAT_ENGINE_UNAVAILABLE_ERROR)).toBe(false)
   })
 })

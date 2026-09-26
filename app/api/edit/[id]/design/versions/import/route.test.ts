@@ -15,7 +15,8 @@ vi.mock('@/lib/design/store', async (orig) => ({
 }))
 
 import { VersionConflictError } from '@/lib/design/store'
-import { CAPTURED_NAME, POST } from './route'
+import { CAPTURED_NAME } from '@/lib/design/store'
+import { POST } from './route'
 
 const call = () => POST(new Request('http://x/api', { method: 'POST' }), { params: Promise.resolve({ id: SID }) })
 const V3 = { 'content/brand.json': 'a'.repeat(40), 'content/design.json': 'b'.repeat(40) }

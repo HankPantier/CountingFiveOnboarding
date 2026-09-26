@@ -125,7 +125,13 @@ export function chatRequestErrorText(status: number, body: string): string {
   return `The chat request failed (${status}).`
 }
 
-// A 4xx is refused before the user message is stored, so the composer gets its
-// text and attachments back to fix and resend. A 5xx may have stored the
+// The route's 503 when the chat engine module fails to load — sent BEFORE
+// anything is stored (the route imports it from here, so the two can't drift).
+export const CHAT_ENGINE_UNAVAILABLE_ERROR = 'The design chat is unavailable right now.'
+
+// A 4xx is refused before the user message is stored, and so is the route's
+// pre-engine 503 (recognized by its exact text) — the composer gets its text
+// and attachments back to fix and resend. Any other 5xx may have stored the
 // message (and referenced its attachments), so it stays in the transcript.
-export const restoresComposer = (status: number): boolean => status >= 400 && status < 500
+export const restoresComposer = (status: number, errorText = ''): boolean =>
+  (status >= 400 && status < 500) || (status === 503 && errorText === CHAT_ENGINE_UNAVAILABLE_ERROR)

@@ -19,6 +19,8 @@ export type DesignVersionRow = Tables<'design_versions'>
 const UNIQUE_VIOLATION = '23505'
 export const INSERT_VERSION_ATTEMPTS = 3
 export const BASELINE_SUMMARY = 'Baseline — imported from the current draft'
+// The name of a version recorded by "Capture as version" (POST design/versions/import).
+export const CAPTURED_NAME = 'Captured draft'
 
 export class VersionConflictError extends Error {
   constructor(sessionId: string) {

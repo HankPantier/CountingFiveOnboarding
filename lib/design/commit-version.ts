@@ -30,7 +30,7 @@ import type { DesignBundle } from './bundle'
 import { bundleFromRepoFiles } from './bundle-files'
 import { capabilityViolations } from './capabilities'
 import { readDesignCapabilities } from './capabilities-read'
-import { THEME_FILE_PATHS, mergeAppliedBlobs } from './drift'
+import { mergeAppliedBlobs } from './drift'
 import type { RunScreenshot } from './run-types'
 import { insertVersion, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
@@ -66,10 +66,6 @@ export type CommitVersionArgs = {
 export type CommitVersionResult =
   | { ok: true; version: DesignVersionRow | null; commitSha: string | null; changedPaths: string[]; appliedBlobs: ThemeBlobShas; css: DesignBundle['css'] }
   | { ok: false; status: 409 | 422; error: string; stale?: true }
-
-export function sameThemeBlobs(a: ThemeBlobShas, b: ThemeBlobShas): boolean {
-  return THEME_FILE_PATHS.every((p) => (a[p] ?? null) === (b[p] ?? null))
-}
 
 export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Promise<CommitVersionResult> {
   const { target, bundle, expectedShas } = args
