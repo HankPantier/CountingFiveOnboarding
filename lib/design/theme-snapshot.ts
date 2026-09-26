@@ -1,14 +1,15 @@
-// Server-only. The draft branch's four theme files as { path → blob sha } plus
-// their texts, for drift detection, the v0 baseline import and the stale
-// theme.css check. One listTree (conditional getRef + cached tree — cheap and
-// rate-limit friendly) gives the shas; texts are read by sha and cached in
-// process, since blobs are immutable.
+// Server-only. The draft branch's theme files as { path → blob sha } plus
+// their texts — the four theme files plus the generated fonts module (present
+// on T1+ templates) — for drift detection, the v0 baseline import and the
+// stale theme.css / fonts-module checks. One listTree (conditional getRef +
+// cached tree — cheap and rate-limit friendly) gives the shas; texts are read
+// by sha and cached in process, since blobs are immutable.
 import { DRAFT_BRANCH, ensureDraftBranch, listTree, readTextBlobs } from '@/lib/github/repo-files'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
-import { THEME_FILE_PATHS, type ThemeFilePath } from './drift'
+import { SNAPSHOT_PATHS, type SnapshotPath } from './drift'
 import type { ThemeBlobShas } from './studio-types'
 
-export type DraftThemeSnapshot = { shas: ThemeBlobShas; texts: Partial<Record<ThemeFilePath, string>> }
+export type DraftThemeSnapshot = { shas: ThemeBlobShas; texts: Partial<Record<SnapshotPath, string>> }
 
 const CACHE_MAX = 64
 const blobTextCache = new Map<string, string>()
@@ -27,17 +28,17 @@ function remember(sha: string, text: string): void {
 
 export async function readDraftThemeSnapshot(githubRepo: string): Promise<DraftThemeSnapshot> {
   await ensureDraftBranch(githubRepo)
-  const wanted = new Set<string>(THEME_FILE_PATHS)
+  const wanted = new Set<string>(SNAPSHOT_PATHS)
   const entries = (await listTree(githubRepo, DRAFT_BRANCH)).filter((e) => e.type === 'blob' && wanted.has(e.path))
   return snapshotFromEntries(githubRepo, entries)
 }
 
 // The theme files AT given blob shas (no branch read): blobs are immutable, so
 // this is exact even right after a commit, when a branch read can still lag.
-// Only the four theme paths are kept. For callers that already know the base
-// they built on (a chat turn committing twice).
+// Only the theme snapshot paths are kept. For callers that already know the
+// base they built on (a chat turn committing twice).
 export async function readThemeSnapshotAt(githubRepo: string, blobShas: ThemeBlobShas): Promise<DraftThemeSnapshot> {
-  const entries = THEME_FILE_PATHS.flatMap((path) => (blobShas[path] ? [{ path, sha: blobShas[path] }] : []))
+  const entries = SNAPSHOT_PATHS.flatMap((path) => (blobShas[path] ? [{ path, sha: blobShas[path] }] : []))
   return snapshotFromEntries(githubRepo, entries)
 }
 
@@ -53,8 +54,8 @@ async function snapshotFromEntries(githubRepo: string, entries: { path: string; 
     }
   }
 
-  const texts: Partial<Record<ThemeFilePath, string>> = {}
-  for (const p of THEME_FILE_PATHS) {
+  const texts: Partial<Record<SnapshotPath, string>> = {}
+  for (const p of SNAPSHOT_PATHS) {
     const sha = shas[p]
     const text = sha ? blobTextCache.get(sha) : undefined
     if (text !== undefined) texts[p] = text

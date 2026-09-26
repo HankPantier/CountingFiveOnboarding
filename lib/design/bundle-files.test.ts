@@ -14,6 +14,7 @@ import {
   hasLegacyOverrides,
 } from './bundle-files'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { CHROME_COMPONENTS, CSS_TARGETS } from './css-targets'
 import { VALID } from './__fixtures__/valid-bundle'
 
@@ -222,6 +223,16 @@ describe('managed region — malformed marker hardening', () => {
     const result = removeRegion(css)
     expect(result).not.toMatch(/\n{3,}/)
     expect(result).toBe(`${before}\n\n${after}`.trimEnd())
+  })
+})
+
+describe('fonts module (L2+ drafts)', () => {
+  it('derives the fonts module from the bundle typography only when asked', () => {
+    const b = { ...VALID, typography: { headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' } }
+    const off = bundleToRepoFiles(b, { brandText, designText, overridesCss: '' }, { removeLegacy: true })
+    expect(off.ok && off.files.fontsModule).toBeUndefined()
+    const on = bundleToRepoFiles(b, { brandText, designText, overridesCss: '' }, { removeLegacy: true, fontsModule: true })
+    expect(on.ok && on.files.fontsModule).toBe(generateFontsModule({ headingFont: 'Inter', bodyFont: 'Inter', accentFont: 'Fraunces' }).source)
   })
 })
 

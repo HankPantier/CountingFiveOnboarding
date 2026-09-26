@@ -7,6 +7,7 @@ import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { patchDesignFlags } from '@/lib/editor/theme-edit'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 import { parseDesignBundle, type DesignBundle } from './bundle'
@@ -20,7 +21,7 @@ export const MANAGED_HEADER =
   '/* design-overrides.css — managed by the Revaltus Design Studio.\n * The design-studio region below is regenerated on every apply; edit it through the Studio. */\n'
 
 export type RepoThemeFiles = { brandText: string; designText: string; overridesCss: string }
-export type RenderedThemeFiles = { brandText: string; designText: string; themeCss: string; overridesCss: string }
+export type RenderedThemeFiles = { brandText: string; designText: string; themeCss: string; overridesCss: string; fontsModule?: string }
 // readRegion's throw-free signal: `ok: false` means the file's design-studio
 // markers are malformed (never guessed at — see regionStatus below).
 export type ReadRegionResult = { ok: true; css: DesignBundle['css'] } | { ok: false }
@@ -158,7 +159,7 @@ export function bundleFromRepoFiles(
 export function bundleToRepoFiles(
   bundle: DesignBundle,
   current: RepoThemeFiles,
-  opts: { removeLegacy: boolean }
+  opts: { removeLegacy: boolean; fontsModule?: boolean }
 ): { ok: true; files: RenderedThemeFiles; css: DesignBundle['css'] } | { ok: false; errors: string[] } {
   let brand: BrandJson
   let design: DesignJson
@@ -230,6 +231,9 @@ export function bundleToRepoFiles(
       designText: flagged.next,
       themeCss: generateThemeCss(nextBrand, flagged.design),
       overridesCss,
+      // L2+ drafts only (caller decides from the DRAFT marker): the generated
+      // next/font module, always derived — never hand-edited.
+      ...(opts.fontsModule ? { fontsModule: generateFontsModule(flagged.design.typography).source } : {}),
     },
     // The sanitized, canonical fragments that were actually written — later
     // phases should store this, not the bundle's pre-sanitize css, as the
