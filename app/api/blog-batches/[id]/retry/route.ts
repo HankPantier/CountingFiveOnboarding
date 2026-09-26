@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { getCurrentUser, getAccessibleSessionIds, hasCapability } from '@/lib/auth/access'
 import { runBlogBatch } from '@/lib/content/blog-batch-runner'
+import { internalError } from '@/lib/api/errors'
 
 export const runtime = 'nodejs'
 // Must match BLOG_BATCH_ROUTE_MAX_DURATION_MS (the runner budgets against it).
@@ -73,20 +74,39 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ retried: 0 })
   }
 
+  // Reset each idea's lock, but NEVER one that is mid-draft: a library run
+  // reuses the batch target's idea, so an idea can be 'running' under another
+  // worker while this target reads 'error'. Flipping it to idle let this runner
+  // re-claim it — two concurrent drafts of one idea, racing commits to the same
+  // draft branch. Only targets whose idea was actually reset are retried.
   const ideaIds = targets.map((t) => t.resource_idea_id).filter((v): v is string => !!v)
+  let retryable = targets
   if (ideaIds.length) {
-    await supabase
+    const { data: reset, error: resetErr } = await supabase
       .from('resource_ideas')
       .update({ draft_status: 'idle', draft_error: null, updated_at: new Date().toISOString() })
       .in('id', ideaIds)
+      .neq('draft_status', 'running')
+      .select('id')
+    if (resetErr) return internalError('blog-batch retry', resetErr, 'Could not reset the drafts for retry')
+    const resetIds = new Set((reset ?? []).map((r) => r.id))
+    retryable = targets.filter((t) => !t.resource_idea_id || resetIds.has(t.resource_idea_id))
   }
+  const inFlight = targets.length - retryable.length
+  if (retryable.length === 0) {
+    return NextResponse.json(
+      { error: 'These articles are still being drafted — retry once they finish.' },
+      { status: 409 }
+    )
+  }
+
   await supabase
     .from('blog_batch_targets')
     // A human retry grants a fresh auto-retry budget (attempts → 0).
     .update({ status: 'pending', error: null, attempts: 0, updated_at: new Date().toISOString() })
     .in(
       'id',
-      targets.map((t) => t.id)
+      retryable.map((t) => t.id)
     )
   await supabase
     .from('blog_batches')
@@ -101,5 +121,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   })
 
-  return NextResponse.json({ retried: targets.length })
+  return NextResponse.json({ retried: retryable.length, ...(inFlight ? { skippedInFlight: inFlight } : {}) })
 }
