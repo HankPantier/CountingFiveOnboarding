@@ -8,6 +8,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { CURATED_FONTS, gfUrl } from '@/lib/content/type-pairing-catalog'
+import { DEFAULT_AXIS_VALUE, STYLE_AXES, STYLE_AXIS_NAMES, type StyleAxes } from '@/lib/design/style-axes'
 
 export const HEX_RE = /^#[0-9a-fA-F]{6}$/
 export const PALETTE_ROLES = [
@@ -152,6 +153,36 @@ export function patchDesignFlags(designJsonText: string, patch: DesignFlagsPatch
     else next.darkSections = true
   }
 
+  const nextText = serialize(next)
+  return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
+}
+
+// ---------------------------------------------------------------------------
+// Style axes (template T2). Merge-patch: provided axes only; 'default' deletes
+// the axis; an empty result deletes `style` — so an untouched design.json
+// stays byte-identical (omit-at-default, like the treatment flags).
+// ---------------------------------------------------------------------------
+export function patchDesignStyle(designJsonText: string, patch: StyleAxes): DesignPatchResult {
+  let design: DesignJson
+  try {
+    design = JSON.parse(designJsonText) as DesignJson
+  } catch {
+    return { ok: false, reason: 'content/design.json is not valid JSON.' }
+  }
+  const entries = Object.entries(patch).filter(([, v]) => v !== undefined) as [string, string][]
+  if (entries.length === 0) return { ok: false, reason: 'No style changes were provided.' }
+
+  const style: Record<string, string> = { ...(design.style ?? {}) }
+  for (const [axis, value] of entries) {
+    if (!(STYLE_AXIS_NAMES as string[]).includes(axis)) return { ok: false, reason: `Unknown style axis: ${axis}.` }
+    const values = STYLE_AXES[axis as keyof typeof STYLE_AXES].values as readonly string[]
+    if (!values.includes(value)) return { ok: false, reason: `${axis} must be one of ${values.join(', ')}.` }
+    if (value === DEFAULT_AXIS_VALUE) delete style[axis]
+    else style[axis] = value
+  }
+  const next: DesignJson = { ...design }
+  if (Object.keys(style).length) next.style = style
+  else delete next.style
   const nextText = serialize(next)
   return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
 }
