@@ -54,6 +54,11 @@ describe('reviseConcept', () => {
     expect(r.costUsd).toBeCloseTo(0.28, 6) // 20k × $4 + 10k × $20 per M
     expect(r.stoppedReason).toBeNull()
   })
+  it('adds the self-consistency notes to the revision (P7)', async () => {
+    const r = await reviseConcept(args())
+    expect(r.notes).toContainEqual(expect.stringMatching(/^Signature CSS: only 1 scoped css.blocks move/))
+    expect(r.concept?.notes).toEqual(r.notes)
+  })
   it('an invalid revision is no concept, with our validation errors — and no repair call', async () => {
     answer = { concepts: [{ ...rawOf(REVISED), palette: { ...VALID.palette, primary: 'blue' } }] }
     const r = await reviseConcept(args())

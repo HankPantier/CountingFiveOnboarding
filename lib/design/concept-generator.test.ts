@@ -274,6 +274,24 @@ describe('generateConcept', () => {
     expect(r.notes).toContain('Harbor Ledger: Style axes are not available on this site yet — the concept’s style settings were dropped.')
   })
 
+  it('adds the self-consistency notes to a valid concept — never a rejection (P7)', async () => {
+    scripted = [{ concepts: [{ ...A, moves: ['Serif editorial headlines'], treatments: { ...VALID.treatments, headlineStyle: 'sans' } }] }]
+    const r = await generateConcept(args())
+    expect(r.concept).not.toBeNull()
+    expect(m.generateJson).toHaveBeenCalledTimes(1) // no repair turn for wording
+    expect(r.notes).toContainEqual(expect.stringMatching(/^Harbor Ledger: Claim check: the description promises serif headlines/))
+    expect(r.notes).toContainEqual(expect.stringMatching(/^Harbor Ledger: Signature CSS: only 1 scoped css.blocks move/))
+  })
+
+  it('quotes the claim-check notes in the repair turn of an otherwise invalid concept', async () => {
+    // A near-duplicate of a prior (so it parses, and gets the repair turn) that also over-claims.
+    scripted = [{ concepts: [{ ...B, name: 'Echo', moves: ['Dark sections throughout'] }] }, { concepts: [C] }]
+    await generateConcept(args({ priors: [{ position: 1, bundle: OXBLOOD }] }))
+    const repair = String((m.generateJson.mock.calls[1][0] as Opts).messages[2].content)
+    expect(repair).toContain('too similar to concept 2')
+    expect(repair).toContain('Also make its description and its levers agree: Claim check: the description promises dark (ink) sections')
+  })
+
   describe('dynamic repair timeout', () => {
     it('vetoes the repair when under 90 s would remain for it', async () => {
       // 540 − 440 − 20 safety = 80 s < 90 s minimum.

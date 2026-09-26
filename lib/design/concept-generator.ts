@@ -10,7 +10,7 @@
 import { buildCachedPartsMessages, type DynamicPart } from '@/lib/content/cache-control'
 import { GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
 import { DESIGN_SYSTEM_PROMPT, type PriorConcept } from './brief'
-import { checkConceptCandidate, parseConceptsEnvelope, type ConceptContext, type ValidConcept } from './concept-validate'
+import { checkConceptCandidate, parseConceptsEnvelope, rawConsistencyNotes, withConsistencyNotes, type ConceptContext, type ValidConcept } from './concept-validate'
 import { createDesignCaller, MIN_CALL_TIMEOUT_MS, type StopReason } from './model-call'
 
 export { DEADLINE_SAFETY_MS, ESTIMATED_TOKENS_PER_IMAGE } from './model-call'
@@ -83,10 +83,11 @@ export async function generateConcept(args: GenerateConceptArgs): Promise<Genera
   })
   const notes: string[] = []
 
-  // Validation + distinctness against every already-accepted concept.
+  // Validation + distinctness against every already-accepted concept, then
+  // the self-consistency notes (never a rejection — concept-consistency.ts).
   const check = (raw: unknown, prefix = ''): Slot => {
     const v = checkConceptCandidate(raw, args.context, args.priors, prefix)
-    return v.ok ? { concept: v.concept, errors: [] } : { concept: null, errors: v.errors }
+    return v.ok ? { concept: withConsistencyNotes(v.concept, args.context.caps), errors: [] } : { concept: null, errors: v.errors }
   }
 
   const done = (slot: Slot): GeneratedConcept => {
@@ -134,8 +135,10 @@ export async function generateConcept(args: GenerateConceptArgs): Promise<Genera
 
   const raw = raws[0]
   const name = raw && typeof raw === 'object' && typeof (raw as { name?: unknown }).name === 'string' ? ` ("${(raw as { name: string }).name.slice(0, 60)}")` : ''
+  const claims = rawConsistencyNotes(raw, args.context)
   const request = [
     `Your concept${name} cannot be used: ${clipErrors(slot.errors)}`,
+    ...(claims.length > 0 ? [`Also make its description and its levers agree: ${clipErrors(claims)}`] : []),
     'Replace it, keeping every rule above.',
     'Return ONLY JSON: {"concepts":[ exactly 1 replacement concept ]}',
   ].join('\n')
