@@ -1,13 +1,14 @@
 import { createServerClient } from '@/lib/supabase/server'
-import { generateResourceDraft } from './resource-draft-generator'
+import { generateResourceDraft, RESOURCE_DRAFT_MIN_VIABLE_MS } from './resource-draft-generator'
 import { createBudget, runWithPool } from './generation-budget'
 import { resumeEndpointFor } from './resume-targets'
 
 // Must match the maxDuration on /api/content-jobs/[id]/library/{run,retry}.
 const LIBRARY_ROUTE_MAX_DURATION_MS = 600_000
 // One selection = a resource draft (up to 2 model calls) plus an inline social
-// generation plus an MBP impact review. Don't start one without room to finish.
-const LIBRARY_MIN_VIABLE_MS = 180_000
+// generation plus an MBP impact review. Don't start one without room to finish;
+// the draft is also handed the invocation deadline so it can't overrun it.
+const LIBRARY_MIN_VIABLE_MS = RESOURCE_DRAFT_MIN_VIABLE_MS
 // Auto-retry cap: a selection that has failed this many draft attempts is left
 // `error` for a human "Retry failed" (which resets the counter) instead of being
 // re-drafted by the cron/chain every 5 minutes forever, burning tokens.
@@ -389,7 +390,7 @@ export async function runLibrarySelectionsForJob(contentJobId: string): Promise<
             .eq('id', sel.id)
         }
 
-        const result = await generateResourceDraft(ideaId)
+        const result = await generateResourceDraft(ideaId, { deadlineAt: Date.now() + budget.remaining() })
         if (result.status === 'complete') {
           await mark(supabase, sel.id, 'complete', null)
         } else if (result.status === 'error') {

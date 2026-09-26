@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { scoreDraft, type DraftCriticInput } from './draft-critic'
+import { scoreDraft, criticTimeoutFor, type DraftCriticInput } from './draft-critic'
 import {
   criticFailsThreshold,
   buildCriticGuidance,
@@ -235,7 +235,7 @@ export async function finalizeGenerationIfComplete(
   return true
 }
 
-type GeneratedResult = {
+export type GeneratedResult = {
   content: string
   metadata: {
     meta_title: string
@@ -926,7 +926,15 @@ async function reviewAndMaybeRegen(
     .single()
   const priorAttempts = readCriticRegenAttempts(existing?.critic_review)
 
-  const review = await scoreDraft(input)
+  // The critic runs in after(), inside the same invocation as the page. Clip its
+  // Opus call to what's left before the function is killed; too little → skip
+  // (no verdict beats Opus tokens spent on a call that can't finish).
+  const criticTimeout = criticTimeoutFor(deadlineAt)
+  if (criticTimeout === null) {
+    console.warn(`[draft-critic] not enough invocation time left to score ${input.pageUrl} — skipping critic`)
+    return
+  }
+  const review = await scoreDraft(input, undefined, { timeoutMs: criticTimeout })
   if (!review) return
 
   // Solid page, or the regen budget is already spent → record the verdict.
@@ -946,17 +954,18 @@ async function reviewAndMaybeRegen(
     return
   }
 
-  // Weak draft with budget left: one informed rewrite, then re-score. skipCritic
-  // stops the regeneration from recursively scheduling another critic pass, and
-  // countAttempt:false keeps it out of the transient-error retry budget (a critic
-  // rewrite is not a failed attempt).
+  // Weak draft with budget left: one informed rewrite, then re-score.
+  // rewritePageForCritic never claims or demotes the row and never schedules
+  // another critic pass: a failed rewrite keeps the original complete page
+  // untouched and only the flag below is recorded.
   const guidance = buildCriticGuidance(review)
   let regen: { status: 'complete' | 'error' | 'skipped' }
   try {
-    regen = await generateSinglePage(input.contentJobId, outlineId, undefined, {
+    regen = await rewritePageForCritic({
+      contentJobId: input.contentJobId,
+      outlineId,
+      pageId: input.pageId,
       revisionGuidance: guidance,
-      skipCritic: true,
-      countAttempt: false,
       deadlineAt,
     })
   } catch (err) {
@@ -981,12 +990,17 @@ async function reviewAndMaybeRegen(
     .eq('id', input.pageId)
     .single()
 
-  const rescored = fresh?.content_markdown
-    ? await scoreDraft({
-        ...input,
-        contentMarkdown: fresh.content_markdown,
-        targetKeyword: fresh.target_keyword ?? input.targetKeyword,
-      })
+  const rescoreTimeout = criticTimeoutFor(deadlineAt)
+  const rescored = fresh?.content_markdown && rescoreTimeout !== null
+    ? await scoreDraft(
+        {
+          ...input,
+          contentMarkdown: fresh.content_markdown,
+          targetKeyword: fresh.target_keyword ?? input.targetKeyword,
+        },
+        undefined,
+        { timeoutMs: rescoreTimeout },
+      )
     : null
   const finalReview = rescored ?? review
   await persist({
@@ -1084,6 +1098,169 @@ async function loadPageGenContext(
   }
 }
 
+type OutlineRow = {
+  id: string
+  page_url: string
+  page_title: string
+  sections: Json
+  target_keyword: string | null
+  admin_approved: boolean | null
+  cta: Json | null
+  angle: string | null
+}
+
+const OUTLINE_SELECT = 'id, page_url, page_title, sections, target_keyword, admin_approved, cta, angle'
+
+// The generateAndFinalizePage input for one outline, shared by the bulk/regenerate
+// path and the critic's rewrite so both prompt the model identically.
+function buildFinalizeInput(
+  outline: OutlineRow,
+  ctx: PageGenContext,
+  contentJobId: string,
+  extra: Pick<FinalizePageInput, 'revisionGuidance' | 'attemptNumber' | 'callTimeoutMs' | 'deadlineAt'>
+): FinalizePageInput {
+  // Research was batch-loaded into ctx.researchByUrl once per job (no per-page
+  // SELECT). A missing entry (row absent) behaves like the old null fetch.
+  const research = ctx.researchByUrl.get(outline.page_url) ?? null
+  return {
+    pageTitle: outline.page_title,
+    pageUrl: outline.page_url,
+    outlineSections: outline.sections,
+    targetKeyword: outline.target_keyword ?? research?.target_keyword ?? outline.page_title.toLowerCase(),
+    secondaryKeywords: (research?.secondary_keywords as string[]) ?? [],
+    existingContent: research?.existing_content ?? null,
+    competitorRefs:
+      (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? [],
+    schema: ctx.schema,
+    palette: ctx.palette,
+    websiteUrl: ctx.websiteUrl,
+    cta: normalizeCta(outline.cta),
+    contentJobId,
+    sessionId: ctx.sessionId,
+    sitemapUrls: ctx.sitemapUrls,
+    angle: outline.angle,
+    ...extra,
+  }
+}
+
+// The generated_pages columns a finished generation writes (content + metadata +
+// word counts). Status/approval columns are the caller's decision.
+function pageContentFields(result: GeneratedResult, outlineSections: Json) {
+  const sections = (outlineSections as Array<{ word_count?: number }>) ?? []
+  const wcTarget = targetWordCount(sections)
+  return {
+    content_markdown: result.content,
+    meta_title: result.metadata.meta_title,
+    meta_description: result.metadata.meta_description,
+    target_keyword: result.metadata.target_keyword,
+    secondary_keywords: asJson(result.metadata.secondary_keywords),
+    url_slug: result.metadata.url_slug,
+    canonical_url: result.metadata.canonical_url,
+    answer_block: result.metadata.answer_block,
+    schema_markup_type: result.metadata.schema_markup_type,
+    eeat_signals: asJson(result.metadata.eeat_signals),
+    internal_links: asJson(result.metadata.internal_links),
+    faq_block: asJson(result.metadata.faq_block),
+    llm_citation_note: result.metadata.llm_citation_note,
+    hero_block: result.metadata.hero_block,
+    hero_variant: result.metadata.hero_variant,
+    hero_image: result.metadata.hero_image,
+    hero_image_alt: result.metadata.hero_image_alt,
+    hero_subhead: result.metadata.hero_subhead,
+    hero_image_query: result.metadata.hero_image_query,
+    word_count_actual: countWords(result.content),
+    word_count_target: wcTarget || null,
+  }
+}
+
+export type CriticRewriteDeps = {
+  supabase?: ReturnType<typeof createServerClient>
+  generate?: (input: FinalizePageInput) => Promise<GeneratedResult>
+  loadContext?: (
+    supabase: ReturnType<typeof createServerClient>,
+    contentJobId: string
+  ) => Promise<PageGenContext | null>
+}
+
+// The critic's one quality rewrite of an ALREADY-COMPLETE page. Unlike
+// generateSinglePage it never claims the row (no flip to 'running') and never
+// writes on failure: a thrown/timed-out call or a degraded (unparseable/empty)
+// result leaves the page's body, metadata and 'complete' status exactly as they
+// were, so a good page can't be demoted to 'error' and silently drop out of the
+// package. Only a clean result is written, fenced on the snapshot taken first
+// (still complete, still unapproved, same generation_started_at) so a manual
+// regenerate or an admin approval that happened meanwhile always wins.
+export async function rewritePageForCritic(
+  args: {
+    contentJobId: string
+    outlineId: string
+    pageId: string
+    revisionGuidance: string
+    deadlineAt: number
+  },
+  deps: CriticRewriteDeps = {}
+): Promise<{ status: 'complete' | 'error' | 'skipped'; error?: string }> {
+  const supabase = deps.supabase ?? createServerClient()
+  const generate = deps.generate ?? generateAndFinalizePage
+  const loadContext = deps.loadContext ?? loadPageGenContext
+
+  const { data: page } = await supabase
+    .from('generated_pages')
+    .select('id, generation_status, generation_started_at, admin_approved_content, generation_attempts')
+    .eq('id', args.pageId)
+    .single()
+  if (!page || page.generation_status !== 'complete' || page.admin_approved_content) {
+    return { status: 'skipped', error: 'Page is no longer an unapproved complete draft' }
+  }
+
+  const { data: outline } = await supabase
+    .from('page_outlines')
+    .select(OUTLINE_SELECT)
+    .eq('id', args.outlineId)
+    .single()
+  if (!outline) return { status: 'error', error: 'Outline not found' }
+  const ctx = await loadContext(supabase, args.contentJobId)
+  if (!ctx) return { status: 'error', error: 'Content job or session not found' }
+
+  let result: GeneratedResult
+  try {
+    result = await generate(
+      buildFinalizeInput(outline, ctx, args.contentJobId, {
+        revisionGuidance: args.revisionGuidance,
+        attemptNumber: page.generation_attempts || 1,
+        callTimeoutMs: callTimeoutFor(args.deadlineAt, PER_CALL_CAP_MS),
+        deadlineAt: args.deadlineAt,
+      })
+    )
+  } catch (err) {
+    console.error(`[draft-critic] rewrite failed for ${outline.page_url} — keeping the original page:`, err)
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
+  }
+  if (result.degraded) {
+    console.warn(`[draft-critic] rewrite degraded for ${outline.page_url} — keeping the original page`)
+    return { status: 'error', error: 'Rewrite came back unparseable or empty' }
+  }
+
+  let write = supabase
+    .from('generated_pages')
+    .update({ ...pageContentFields(result, outline.sections), admin_approved_content: false, generation_error: null })
+    .eq('id', page.id)
+    .eq('generation_status', 'complete')
+    .eq('admin_approved_content', false)
+  write = page.generation_started_at
+    ? write.eq('generation_started_at', page.generation_started_at)
+    : write.is('generation_started_at', null)
+  const { data: written, error: writeErr } = await write.select('id')
+  if (writeErr) {
+    console.error(`[draft-critic] rewrite write failed for ${outline.page_url}: ${writeErr.message}`)
+    return { status: 'error', error: 'Rewrite could not be saved' }
+  }
+  if (!written?.length) {
+    return { status: 'skipped', error: 'Page changed during the rewrite — kept the newer version' }
+  }
+  return { status: 'complete' }
+}
+
 export async function generateSinglePage(
   contentJobId: string,
   outlineId: string,
@@ -1109,7 +1286,7 @@ export async function generateSinglePage(
 
   const { data: outline, error: outlineErr } = await supabase
     .from('page_outlines')
-    .select('id, page_url, page_title, sections, target_keyword, admin_approved, cta, angle')
+    .select(OUTLINE_SELECT)
     .eq('id', outlineId)
     .single()
 
@@ -1123,8 +1300,7 @@ export async function generateSinglePage(
   if (!ctx) {
     return { status: 'error', pageUrl: outline.page_url, error: 'Content job or session not found' }
   }
-  const { sitemapUrls, schema, palette } = ctx
-  const cta = normalizeCta(outline.cta)
+  const { schema } = ctx
 
   const { data: genPage } = await supabase
     .from('generated_pages')
@@ -1173,43 +1349,18 @@ export async function generateSinglePage(
   }
 
   try {
-    // Research was batch-loaded into ctx.researchByUrl once per job (no per-page
-    // SELECT). A missing entry (row absent) behaves like the old null fetch.
-    const research = ctx.researchByUrl.get(outline.page_url) ?? null
-
-    const targetKeyword =
-      outline.target_keyword ?? research?.target_keyword ?? outline.page_title.toLowerCase()
-    const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
-    const competitorRefs =
-      (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? []
-    const existingContent = research?.existing_content ?? null
-
-    const result = await generateAndFinalizePage({
-      pageTitle: outline.page_title,
-      pageUrl: outline.page_url,
-      outlineSections: outline.sections,
-      targetKeyword,
-      secondaryKeywords,
-      existingContent,
-      competitorRefs,
-      schema,
-      palette,
-      websiteUrl: ctx.websiteUrl,
-      cta,
-      contentJobId,
-      sessionId: ctx.sessionId,
-      sitemapUrls,
-      angle: outline.angle,
+    const genInput = buildFinalizeInput(outline, ctx, contentJobId, {
       revisionGuidance: opts?.revisionGuidance,
       // The claim above already incremented, so this row's count IS this attempt.
       attemptNumber: attemptNo,
       callTimeoutMs: callTimeoutFor(deadlineAt, opts?.callTimeoutMs ?? PER_CALL_CAP_MS),
       deadlineAt,
     })
+    const { competitorRefs } = genInput
+    const result = await generateAndFinalizePage(genInput)
 
-    const sections = (outline.sections as Array<{ word_count?: number }>) ?? []
-    const wcTarget = targetWordCount(sections)
-    const wcActual = countWords(result.content)
+    const contentFields = pageContentFields(result, outline.sections)
+    const { word_count_actual: wcActual, word_count_target: wcTarget } = contentFields
 
     // A degraded result (JSON never parsed / empty body) is saved for salvage but
     // marked 'error' — not 'complete' — so it surfaces in the UI + ERRORS.md and
@@ -1221,27 +1372,7 @@ export async function generateSinglePage(
     const { data: written, error: writeErr } = await supabase
       .from('generated_pages')
       .update({
-        content_markdown: result.content,
-        meta_title: result.metadata.meta_title,
-        meta_description: result.metadata.meta_description,
-        target_keyword: result.metadata.target_keyword,
-        secondary_keywords: asJson(result.metadata.secondary_keywords),
-        url_slug: result.metadata.url_slug,
-        canonical_url: result.metadata.canonical_url,
-        answer_block: result.metadata.answer_block,
-        schema_markup_type: result.metadata.schema_markup_type,
-        eeat_signals: asJson(result.metadata.eeat_signals),
-        internal_links: asJson(result.metadata.internal_links),
-        faq_block: asJson(result.metadata.faq_block),
-        llm_citation_note: result.metadata.llm_citation_note,
-        hero_block: result.metadata.hero_block,
-        hero_variant: result.metadata.hero_variant,
-        hero_image: result.metadata.hero_image,
-        hero_image_alt: result.metadata.hero_image_alt,
-        hero_subhead: result.metadata.hero_subhead,
-        hero_image_query: result.metadata.hero_image_query,
-        word_count_actual: wcActual,
-        word_count_target: wcTarget || null,
+        ...contentFields,
         admin_approved_content: false,  // re-review required after every generation
         generation_status: degraded ? 'error' : 'complete',
         generation_error: degraded ? degradedReason : null,  // clear prior failure on a clean (re)generation
@@ -1303,7 +1434,7 @@ export async function generateSinglePage(
       console.error(`[content-gen] Degraded (marked error): ${outline.page_title} (${outline.page_url})`)
       return { status: 'error', pageUrl: outline.page_url, error: degradedReason }
     }
-    console.warn(`[content-gen] Complete: ${outline.page_title} (${wcActual} words / target ${wcTarget})`)
+    console.warn(`[content-gen] Complete: ${outline.page_title} (${wcActual} words / target ${wcTarget ?? 0})`)
     return { status: 'complete', pageUrl: outline.page_url }
   } catch (err) {
     // Tag the failure kind. Every failure used to land as one opaque string, so a

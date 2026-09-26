@@ -124,7 +124,8 @@ RULES:
         sessionId: ctx?.sessionId,
         stage: 'brand',
         pageUrl: 'brand-doc',
-        model: 'claude-sonnet-5',
+        // Record the model actually called, so a tier swap prices it correctly.
+        model: PUBLISHED_CONTENT_MODEL,
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,
       })

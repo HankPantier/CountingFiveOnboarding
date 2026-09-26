@@ -13,10 +13,17 @@ import { generateJson } from './json-generation'
 import { activeTeam } from './active-team'
 import { asJson } from '@/lib/supabase/json-typed'
 import type { SessionSchema } from '@/types/session-schema'
-import { FAST_MODEL } from './generation-tuning'
+import { FAST_MODEL, PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { HELPER_CALL_CAP_MS, RESOURCE_CALL_CAP_MS, clipToDeadline, msUntil } from './generation-budget'
 
 const RESOLVE_MODEL = FAST_MODEL
-const ONEOFF_MODEL = 'claude-sonnet-5'
+const ONEOFF_MODEL = PUBLISHED_CONTENT_MODEL
+// generateOneOff runs in after() under the oneoff route's maxDuration 300. Every
+// model call is clipped to this budget so the claimed 'running' row is always
+// settled (complete or error) before the function can be killed.
+export const ONEOFF_BUDGET_MS = 240_000
+// Only retry a truncated first pass while this much budget is left.
+const ONEOFF_MIN_RETRY_MS = 45_000
 
 export type OneOffContext = { pageUrl?: string; teamMemberName?: string }
 export type OneOffOption = { label: string; text: string }
@@ -52,6 +59,8 @@ TEAM MEMBERS: ${args.teamNames.join(', ') || '(none)'}
 Return JSON: { "pageUrl": "exact url from the list or null", "teamMemberName": "exact name from the list or null" }`,
     firstBudget: 300,
     retryBudget: 600,
+    // Haiku helper: a hang must not eat the main generation's budget.
+    timeoutMs: HELPER_CALL_CAP_MS,
     label: 'oneoff-resolve',
     onAttempt: async (usage) => {
       await recordTokenUsage({
@@ -83,6 +92,7 @@ export async function generateOneOff(
   generationId: string
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; error?: string }> {
   const supabase = createServerClient()
+  const deadlineAt = Date.now() + ONEOFF_BUDGET_MS
 
   const { data: row } = await supabase
     .from('oneoff_generations')
@@ -202,7 +212,11 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
         model: anthropic(ONEOFF_MODEL),
         prompt: genPrompt,
         maxOutputTokens,
+        // Low effort: without providerOptions Sonnet 5 thinks at 'high', which
+        // ate the small JSON budget and truncated the options array.
+        providerOptions: OUTLINE_PROVIDER_OPTIONS,
         maxRetries: 4,
+        abortSignal: AbortSignal.timeout(clipToDeadline(deadlineAt, RESOURCE_CALL_CAP_MS)),
       })
       checkTokenBudget('oneoff', generationId, usage?.inputTokens, 5000)
       await recordTokenUsage({
@@ -228,7 +242,7 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
     }
 
     let res = await attempt(4000)
-    if (!res.ok) {
+    if (!res.ok && msUntil(deadlineAt) >= ONEOFF_MIN_RETRY_MS) {
       console.warn(
         `[oneoff] Parse failed (finish=${res.finishReason}) — retrying with larger budget. Raw: ${res.text.slice(0, 200)}`
       )

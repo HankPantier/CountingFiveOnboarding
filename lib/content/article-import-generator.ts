@@ -6,6 +6,7 @@ import { isUrlPubliclyFetchable } from '@/lib/audit/ssrf-guard'
 import { safeGetBinary } from '@/lib/audit/crawl'
 import { checkTokenBudget, truncateToTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
+import { HELPER_CALL_CAP_MS } from './generation-budget'
 import { DRAFT_BRANCH, pushEntriesToBranch, StaleShaError } from '@/lib/github/repo-files'
 import { buildCrossLinkIndex, type InternalLinkTarget } from './internal-link-targets'
 import { insertReverseLinks } from './reverse-linker'
@@ -183,7 +184,14 @@ Return ONLY a JSON array (possibly empty):
 
   let text: string
   try {
-    const res = await generateText({ model: anthropic(LINK_MODEL), prompt, maxOutputTokens: 1500, maxRetries: 4 })
+    // Bounded: the selection row is claimed 'drafting' while this runs.
+    const res = await generateText({
+      model: anthropic(LINK_MODEL),
+      prompt,
+      maxOutputTokens: 1500,
+      maxRetries: 4,
+      abortSignal: AbortSignal.timeout(HELPER_CALL_CAP_MS),
+    })
     text = res.text
     checkTokenBudget('article-import-links', args.pageUrl, res.usage?.inputTokens, 5000)
     await recordTokenUsage({

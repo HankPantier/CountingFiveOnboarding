@@ -4,10 +4,16 @@ import { createServerClient } from '@/lib/supabase/server'
 import { generateResourceDraft } from '@/lib/content/resource-draft-generator'
 import { checkBrandFit, OFF_BRAND_MARKER } from '@/lib/content/brand-fit'
 import { CONTENT_TYPES, asContentType, hasCaseStudyData } from '@/lib/content/content-types'
+import { RESERVE_MS } from '@/lib/content/generation-budget'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+// The detached draft (after()) shares this budget: draft + JSON retry + anti-slop
+// regeneration + social + commit. 300s could not fit that worst case, so the
+// function was killed with the idea stuck 'running'. Keep in sync with
+// DRAFT_ROUTE_MAX_DURATION_MS below.
+export const maxDuration = 600
+const DRAFT_ROUTE_MAX_DURATION_MS = 600_000
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_NOTES_LENGTH = 500
@@ -21,6 +27,8 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string; ideaId: string }> }
 ) {
+  // The invocation's work deadline; the draft's model calls are clipped to it.
+  const deadlineAt = Date.now() + DRAFT_ROUTE_MAX_DURATION_MS - RESERVE_MS
   const { id, ideaId } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
@@ -133,7 +141,7 @@ export async function POST(
 
   after(async () => {
     try {
-      await generateResourceDraft(ideaId, { force: true })
+      await generateResourceDraft(ideaId, { force: true, deadlineAt })
     } catch (err) {
       console.error('[resource-draft] Trigger failed:', err)
     }

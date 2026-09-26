@@ -6,6 +6,7 @@ import { checkTokenBudget, truncateToTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { titleFromSlug } from './internal-link-targets'
 import { FAST_MODEL } from './generation-tuning'
+import { HELPER_CALL_CAP_MS, clipToDeadline, msUntil } from './generation-budget'
 
 // Find-passage is a narrow extraction/rewrite task (return one verbatim
 // sentence plus a minimally edited copy), not content authoring — Haiku is
@@ -15,6 +16,8 @@ const MAX_CANDIDATES = 5
 const MAX_INSERTIONS = 3
 const READ_CONCURRENCY = 5
 const CANDIDATE_BODY_TOKENS = 2400
+// Don't start another find-passage call with less than this before the deadline.
+const MIN_FIND_PASSAGE_MS = 10_000
 
 // A post edit ready for pushEntriesToBranch, fenced on the sha that was read.
 export type ReverseLinkEntry = { path: string; content: string; expectedBlobSha?: string | null }
@@ -151,6 +154,7 @@ async function findPassage(args: {
   newPost: ReverseLinkNewPost
   contentJobId: string
   sessionId: string
+  deadlineAt?: number
 }): Promise<FindPassageResponse | null> {
   const { candidate, newPost } = args
   const url = `/resources/${newPost.slug}`
@@ -181,6 +185,8 @@ Return ONLY JSON:
     prompt,
     maxOutputTokens: 800,
     maxRetries: 4,
+    // Haiku helper: a hang must not hold the caller's invocation.
+    abortSignal: AbortSignal.timeout(clipToDeadline(args.deadlineAt, HELPER_CALL_CAP_MS)),
   })
 
   checkTokenBudget('reverse-link', `/resources/${candidate.slug}`, usage?.inputTokens, 5000)
@@ -263,6 +269,8 @@ export async function insertReverseLinks(args: {
   newPost: ReverseLinkNewPost
   contentJobId: string
   sessionId: string
+  // Absolute deadline (epoch ms); no new model call starts close to it.
+  deadlineAt?: number
 }): Promise<{
   results: ReverseLinkResult[]
   entries: ReverseLinkEntry[]
@@ -275,6 +283,7 @@ export async function insertReverseLinks(args: {
 
   for (const candidate of candidates) {
     if (results.length >= MAX_INSERTIONS) break
+    if (msUntil(args.deadlineAt) < MIN_FIND_PASSAGE_MS) break
 
     let response: FindPassageResponse | null = null
     try {
@@ -283,6 +292,7 @@ export async function insertReverseLinks(args: {
         newPost,
         contentJobId: args.contentJobId,
         sessionId: args.sessionId,
+        deadlineAt: args.deadlineAt,
       })
     } catch (err) {
       console.warn(`[reverse-link] Model call failed for ${candidate.slug}:`, err)
