@@ -2,14 +2,14 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { serializeSchemaFull } from '@/lib/agent/system-prompt'
-import { GENERATION_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
+import { GENERATION_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from '@/lib/content/generation-tuning'
 import { recordTokenUsage } from '@/lib/content/token-usage'
 import { asJson } from '@/lib/supabase/json-typed'
 import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
 
 // Sonnet 5 (writing-tuned) — a short, infrequent, admin-triggered summary where
 // capturing the firm's tone accurately matters more than shaving a few cents.
-const SYNOPSIS_MODEL = 'claude-sonnet-5'
+const SYNOPSIS_MODEL = PUBLISHED_CONTENT_MODEL
 
 type Supabase = ReturnType<typeof createServerClient>
 

@@ -3,12 +3,12 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
-import { OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
 import { extractJson } from './extract-json'
 import type { SessionSchema } from '@/types/session-schema'
 import type { FaqItem, InternalLink } from '@/lib/editor/structured-fields'
 
-const MODEL = 'claude-sonnet-5'
+const MODEL = PUBLISHED_CONTENT_MODEL
 
 export type SeoField = 'faq' | 'answer' | 'eeat' | 'links'
 

@@ -7,6 +7,7 @@ import { headCheckUrls, type ExternalLink } from './link-checker'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { generateJson } from './json-generation'
+import { PUBLISHED_CONTENT_MODEL, GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { listTree, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { asJson } from '@/lib/supabase/json-typed'
 import { CONTENT_TYPES, asContentType, type ContentType } from './content-types'
@@ -27,7 +28,10 @@ const TYPE_IDEA_GUIDANCE: Record<ContentType, string> = {
     'These are client case studies — each idea must map to a REAL client success story the firm can substantiate (see the stories below). Do NOT propose case studies the firm has no evidence for.',
 }
 
-const IDEA_MODEL = 'claude-sonnet-5'
+const IDEA_MODEL = PUBLISHED_CONTENT_MODEL
+// Runs in after() under the brainstorm route's maxDuration 300: two capped
+// attempts plus the link head-checks and inserts must fit inside it.
+const IDEA_CALL_TIMEOUT_MS = 110_000
 const DEFAULT_IDEA_COUNT = 9
 const SEEDED_IDEA_COUNT = 5
 
@@ -251,8 +255,15 @@ Return ONLY a JSON array of ${count} objects:
     model: anthropic(IDEA_MODEL),
     system: 'You are an SEO and content strategist for CPA firms. Return JSON only, no prose.',
     prompt,
-    firstBudget: 4000,
-    retryBudget: 8000,
+    // Explicit effort: with no providerOptions Sonnet 5 thinks at 'high' by
+    // default anyway, and that thinking starved the old 4000/8000 budgets. Keep
+    // high effort for the scored brainstorm, give it room, and drop to low
+    // effort on the truncation retry (same pattern as brand-doc / outlines).
+    firstBudget: 12000,
+    retryBudget: 16000,
+    providerOptions: GENERATION_PROVIDER_OPTIONS,
+    retryProviderOptions: OUTLINE_PROVIDER_OPTIONS,
+    timeoutMs: IDEA_CALL_TIMEOUT_MS,
     label: 'resource-ideas',
     onAttempt: async (usage) => {
       checkTokenBudget('resource-ideas', contentJobId, usage?.inputTokens, 5000)
