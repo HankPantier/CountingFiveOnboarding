@@ -3,6 +3,11 @@
 // package-assembler.ts: "Deploy packaged content via admin (...)").
 export const DEPLOY_COMMIT_PREFIX = 'Deploy packaged content'
 
+// Bookkeeping file committed with every package push: path → the blob the
+// pipeline last wrote there (see lib/content/deploy-plan.ts). Not site content,
+// so the editor's "Unpublished changes" list hides it.
+export const DEPLOY_MANIFEST_PATH = '.revaltus/deploy-manifest.json'
+
 // True when any of the given draft commit messages is a deploy-content commit.
 // The publish confirmation checks this across ALL commits that draft is ahead of
 // main by — NOT just HEAD — because the publish pipeline stacks automated

@@ -4,6 +4,7 @@ import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { buildBrandVoiceBlock, buildFirmContext } from './brand-voice'
 import { truncateToTokenBudget } from './truncate-to-token-budget'
 import { CRITIC_MODEL, GENERATION_PROVIDER_OPTIONS } from './generation-tuning'
+import { RESERVE_MS } from './generation-budget'
 import { parseCritic, criticFailsThreshold, type CriticReview, type ParsedCritic } from './critic-review'
 import type { SessionSchema } from '@/types/session-schema'
 import type { Json } from '@/types/database'
@@ -21,15 +22,33 @@ export interface DraftCriticInput {
   contentJobId: string
 }
 
+// The critic runs in after(), inside the same invocation as the page/draft.
+// `deadlineAt` is that invocation's work deadline (maxDuration - RESERVE_MS), so
+// the function is killed at deadlineAt + RESERVE_MS. The Opus call must end
+// CRITIC_KILL_MARGIN_MS before that; below CRITIC_MIN_CALL_MS it isn't worth starting.
+export const CRITIC_CALL_CAP_MS = 110_000
+export const CRITIC_KILL_MARGIN_MS = 15_000
+export const CRITIC_MIN_CALL_MS = 30_000
+
+/** Timeout for one critic call, or null when too little invocation time is left. */
+export function criticTimeoutFor(deadlineAt: number, now: number = Date.now()): number | null {
+  const left = deadlineAt + RESERVE_MS - CRITIC_KILL_MARGIN_MS - now
+  if (left < CRITIC_MIN_CALL_MS) return null
+  return Math.min(CRITIC_CALL_CAP_MS, left)
+}
+
 // Draft-gate critic scorer (run via Next.js `after()` once a page completes).
 // Grades the finished page against the outline's promise, the firm's voice/facts,
 // and the competitor reference, and RETURNS the verdict (with critic_model +
 // scored_at stamped). It does not touch the DB or the content — persistence and
 // any auto-remediation are the caller's job (see reviewAndMaybeRegen in
 // content-generator). Fail-soft: any error (generation, parse) resolves to null.
+// `opts.timeoutMs` bounds the whole critic call (both parse attempts); callers
+// running inside a shared invocation (after()) clip it to the time left.
 export async function scoreDraft(
   input: DraftCriticInput,
   model: string = CRITIC_MODEL,
+  opts?: { timeoutMs?: number },
 ): Promise<CriticReview | null> {
   const body = input.contentMarkdown?.trim()
   if (!body) return null
@@ -87,7 +106,11 @@ Return ONLY JSON:
     parseCritic,
     8000,
     { task: 'content', stage: 'critic', sessionId: input.sessionId, contentJobId: input.contentJobId, pageUrl: input.pageUrl },
-    { model, providerOptions: GENERATION_PROVIDER_OPTIONS },
+    {
+      model,
+      providerOptions: GENERATION_PROVIDER_OPTIONS,
+      ...(opts?.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+    },
   )
 
   if (!parsed) return null
@@ -107,8 +130,21 @@ Return ONLY JSON:
 // outlineSections is the idea (title/angle/rationale), so promise_fulfillment /
 // outline_coverage grade whether the post delivered on its premise. Fail-soft:
 // any error (generation, parse, write) leaves the completed draft untouched.
-export async function reviewResourceDraft(input: DraftCriticInput): Promise<void> {
-  const review = await scoreDraft(input)
+export async function reviewResourceDraft(
+  input: DraftCriticInput,
+  // Work deadline of the invocation this after() runs in; clips the Opus call.
+  deadlineAt?: number,
+): Promise<void> {
+  let timeoutMs: number | undefined
+  if (deadlineAt !== undefined) {
+    const t = criticTimeoutFor(deadlineAt)
+    if (t === null) {
+      console.warn(`[resource-critic] not enough invocation time left to score ${input.pageUrl} — skipping`)
+      return
+    }
+    timeoutMs = t
+  }
+  const review = await scoreDraft(input, undefined, { timeoutMs })
   if (!review) return
   const supabase = createServerClient()
   const { error } = await supabase

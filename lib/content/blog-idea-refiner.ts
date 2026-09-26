@@ -2,6 +2,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { generateJson } from './json-generation'
+import { PUBLISHED_CONTENT_MODEL, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
 import { CONTENT_TYPES, asContentType, type ContentType } from './content-types'
 import { asIndustry, INDUSTRY_OPTIONS, type Industry } from './industries'
 import type { ExternalLink } from './link-checker'
@@ -23,7 +24,12 @@ const TYPE_REFINE_GUIDANCE: Record<ContentType, string> = {
 // is later fanned out to many clients. There is NO client/MBP context here on
 // purpose — per-client voice is applied downstream by generateResourceDraft,
 // once specific clients are selected.
-const REFINE_MODEL = 'claude-sonnet-5'
+const REFINE_MODEL = PUBLISHED_CONTENT_MODEL
+// The refine route has maxDuration 60. Each attempt is capped, and the retry
+// only starts while the pair still fits, so a slow call ends in a clean 502
+// instead of a killed function (bodyless 504) and double spend.
+export const REFINE_CALL_TIMEOUT_MS = 25_000
+const REFINE_RETRY_CUTOFF_MS = 25_000
 
 export type RefinedBlogIdea = {
   title: string
@@ -111,10 +117,15 @@ export async function refineBlogIdea(input: RefineBlogIdeaInput): Promise<Refine
   // Shared robust JSON generation: one call + tolerant parse + a single
   // larger-budget retry on a truncated `length` finish, all with SDK backoff.
   // This is an interactive button click, so — unlike the async page/resource
-  // generators — we deliberately skip high-effort adaptive thinking (no
-  // providerOptions) to stay snappy.
+  // generators — it runs at LOW effort to stay snappy. Omitting providerOptions
+  // does NOT do that: Sonnet 5 defaults to adaptive thinking at effort 'high',
+  // which ate the small JSON budget and ran past the 60s route.
+  const startedAt = Date.now()
   const parsed = (await generateJson({
     model: anthropic(REFINE_MODEL),
+    providerOptions: OUTLINE_PROVIDER_OPTIONS,
+    timeoutMs: REFINE_CALL_TIMEOUT_MS,
+    beforeAttempt: (n) => n === 1 || Date.now() - startedAt < REFINE_RETRY_CUTOFF_MS,
     system: 'You are an SEO and content strategist for CPA firms. Return JSON only, no prose.',
     prompt,
     firstBudget: 2000,

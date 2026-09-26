@@ -19,7 +19,17 @@ const EDITABLE_SECTIONS: { id: string; path: string; label: string }[] = [
 // complete current intelligence bundle and edits it on behalf of an internal
 // admin. It must never touch deterministic scores/findings — those come from a
 // re-run, and applyAuditEdit rejects any non-intelligence path anyway.
-export function buildAuditEditPrompt(result: AuditResult): string {
+//
+// Split in two for prompt caching: `stable` (instructions — constant for this
+// audit) is sent first with a cache breakpoint; `current` carries the
+// intelligence JSON, which every edit_audit rewrites, so it goes in a later
+// system block and never invalidates the cached instructions.
+export interface AuditEditPromptParts {
+  stable: string
+  current: string
+}
+
+export function buildAuditEditPrompt(result: AuditResult): AuditEditPromptParts {
   const intelligence = result.intelligence
   const hasIntel = intelligence && Object.keys(intelligence).length > 0
 
@@ -28,14 +38,13 @@ export function buildAuditEditPrompt(result: AuditResult): string {
     ? JSON.stringify(intelligence, null, 2)
     : '(no intelligence sections were generated for this audit)'
 
-  return `You are a site-audit report editing assistant for Revaltus, a web design firm for CPA firms.
+  const stable = `You are a site-audit report editing assistant for Revaltus, a web design firm for CPA firms.
 You help an internal admin refine the AI-written intelligence sections of a completed audit for ${result.site_name || result.domain} (${result.url}).
 
 EDITABLE SECTIONS (dotted path roots under result.intelligence):
 ${sectionList}
 
-CURRENT INTELLIGENCE (complete, current values):
-${intelJson}
+The complete, current values are in the CURRENT INTELLIGENCE block that follows these instructions.
 
 YOUR JOB:
 - Make the targeted edits the admin asks for by calling edit_audit with exact dotted field paths.
@@ -56,4 +65,9 @@ GUARDRAILS:
 - Never ask for or accept a registrar/hosting password — direct to a secure channel.
 
 TOOL: edit_audit { updates: { "<intelligence.path>": value } }`.trim()
+
+  const current = `CURRENT INTELLIGENCE (complete, current values):
+${intelJson}`
+
+  return { stable, current }
 }

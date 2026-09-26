@@ -26,6 +26,18 @@ describe('chatCommitGate', () => {
   it('no preview of the current change → allowed with a warning', () => {
     expect(chatCommitGate(null)).toEqual({ ok: true, warnings: [CHAT_UNPREVIEWED_WARNING] })
   })
+  it('a failed preview of an EARLIER revision is sticky: an unpreviewed edit after it is refused', () => {
+    const g = chatCommitGate(null, { metrics: OVERFLOW, baseline: CLEAN })
+    expect(g.ok).toBe(false)
+    expect(!g.ok && g.failures[0]).toContain('wider than the screen')
+  })
+  it('an unpreviewed edit after a CLEAN (or unmeasured) earlier preview keeps the unpreviewed warning', () => {
+    expect(chatCommitGate(null, { metrics: CLEAN, baseline: CLEAN })).toEqual({ ok: true, warnings: [CHAT_UNPREVIEWED_WARNING] })
+    expect(chatCommitGate(null, { metrics: null, baseline: CLEAN })).toEqual({ ok: true, warnings: [CHAT_UNPREVIEWED_WARNING] })
+  })
+  it('a preview of the current revision decides, whatever an earlier one said', () => {
+    expect(chatCommitGate({ metrics: CLEAN, baseline: CLEAN }, { metrics: OVERFLOW, baseline: CLEAN })).toEqual({ ok: true, warnings: [] })
+  })
   it('a failing preview blocks; a clean one passes silently', () => {
     const g = chatCommitGate({ metrics: OVERFLOW, baseline: CLEAN })
     expect(g.ok).toBe(false)

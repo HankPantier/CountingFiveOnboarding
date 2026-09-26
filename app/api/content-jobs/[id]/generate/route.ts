@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { runContentGeneration } from '@/lib/content/content-generator'
+import { isCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 600
@@ -14,10 +15,7 @@ export async function POST(
   //   1. Admin session — when a human clicks Restart in the UI.
   //   2. Bearer CRON_SECRET — when runContentGeneration chains itself across
   //      function lifecycles for jobs too large to finish in one invocation.
-  const cronSecret = process.env.CRON_SECRET
-  const authHeader = req.headers.get('Authorization')
-  const isInternalChain =
-    !!cronSecret && authHeader === `Bearer ${cronSecret}`
+  const isInternalChain = isCronBearer(req)
 
   const { id } = await params
 

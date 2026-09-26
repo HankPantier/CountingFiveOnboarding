@@ -2,6 +2,7 @@ import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { NextResponse } from 'next/server'
+import { toolError, ToolUserError } from '@/lib/api/tool-error'
 import { z } from 'zod'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
@@ -20,6 +21,7 @@ import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { sanitizeGeneratedText, humanizeDashes } from '@/lib/content/anti-slop-validator'
 import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
+import { checkChatSpendLimit } from '@/lib/ai/chat-spend-limit'
 import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
@@ -64,6 +66,12 @@ export async function POST(
   if (!(user.isAdmin || isSiteOwner(user))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  // Site Owners are locked out of firm-wide config elsewhere (denySiteOwnerConfig on
+  // the site-wide routes) — the AI editor's update_firm_contact tool writes the same
+  // shared brand.json, so it must not be reachable from an owner's session either.
+  // Excluding the tool (rather than just refusing inside it) also keeps the system
+  // prompt from advertising it below.
+  const canEditFirmContact = !isSiteOwner(user)
 
   const body = await readJsonBody<{ messages: UIMessage[]; path?: string }>(req)
   if (body instanceof NextResponse) return body
@@ -74,6 +82,11 @@ export async function POST(
   }
 
   const supabase = createServerClient()
+
+  // Per-user spend ceiling (lowest for Site Owners), checked before any model
+  // call or GitHub read — see lib/ai/chat-spend-limit.ts.
+  const overLimit = await checkChatSpendLimit(supabase, user)
+  if (overLimit) return overLimit
 
   // The live working copy of the file. Every tool edits this in memory, commits
   // to the draft branch, then advances the sha so the next tool builds on the
@@ -115,7 +128,7 @@ export async function POST(
     // build` at deploy time. The tool executors catch this throw and return the
     // message to the model, which can retry with the value properly quoted.
     const yamlError = validateFrontmatterYaml(scrubbed)
-    if (yamlError) throw new Error(yamlError)
+    if (yamlError) throw new ToolUserError(yamlError)
     const res = await writeFile(githubRepo, path!, scrubbed, DRAFT_BRANCH, message, {
       expectedSha: workingSha,
       ...commitAuthor,
@@ -155,8 +168,7 @@ BATCH your work: a request usually implies MANY edits (rewrite several sentences
 - apply_edits({ edits: [{ find, replace, all? }] }) — apply MANY exact find/replace rewrites in ONE commit. This is the DEFAULT for any multi-part edit. Each \`find\` is an EXACT snippet copied verbatim from the file (matching whitespace, punctuation, casing); it must match exactly ONE place unless all=true. All finds are matched against the SAME current file, so don't target text that another edit in the same batch rewrites. The result lists which edits applied and which missed (re-copy an exact snippet for any miss).
 - apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Use apply_edit for LAYOUT changes to a \`<!-- block: ... -->\` annotation. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
 - remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
-- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)
-- update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.
+- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)${canEditFirmContact ? '\n- update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.' : ''}
 
 LAYOUT CHANGES (via apply_edit on the annotation comment)
 Every section's layout is set by an HTML comment before its \`##\` heading, e.g.
@@ -170,10 +182,10 @@ Almost any layout request is just editing that comment's \`variant\` (or moving/
 Only use these block ids and variants: ${BLOCK_CATALOG_HINT}. An edit that produces an unknown block id or an invalid variant is rejected — the tool tells you why, so fix it and retry.
 
 FIRM-WIDE CONTACT (phone, fax, email, hours, address)
-These are NOT page-specific — they render on every page (footer, contact page, on-page schema) from one shared source. When the admin asks to change any of them, FIRST ask whether to apply it firm-wide or only mention it on this page:
+These are NOT page-specific — they render on every page (footer, contact page, on-page schema) from one shared source.${canEditFirmContact ? ` When the admin asks to change any of them, FIRST ask whether to apply it firm-wide or only mention it on this page:
 "Should I update the {phone/email/…} everywhere (footer, contact page, and every page's schema), or just here on this page?"
 - Everywhere → call update_firm_contact. It updates the shared brand.json now (publish pushes it live everywhere) and flags the firm profile (MBP) for review. Say you've updated it site-wide and flagged the profile — never say the MBP itself was changed.
-- Just this page → use apply_edit on this file only.
+- Just this page → use apply_edit on this file only.` : ` You do NOT have a tool to change these firm-wide (that's managed by the agency, not from this editor). If the admin asks to change the phone, fax, email, hours, or address everywhere, tell them: "Firm contact details are managed by your agency — ask them to update it." You may still use apply_edit to change how a value is displayed on this one page only, if asked.`}
 
 RULES
 - Make ONLY what the admin asks for. Never invent facts (credentials, numbers, named people, dates) not supported by the firm profile above or the existing file.
@@ -189,10 +201,15 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
   // The page is its own system block AFTER the cached one: it changes with every
   // edit, so keeping it out of the marked prefix lets follow-up turns re-read
   // tools + instructions + firm context from cache.
-  const systemFile = `THE FILE BEING EDITED (${path}):
+  const systemFile = `THE FILE BEING EDITED (${path}) — as it was at the START of this request. Every successful tool call in this run changes it; the tool results are authoritative for what changed since, so never rebuild content (e.g. a set_faq list) that re-adds text an earlier tool removed:
 """
 ${workingContent}
 """`
+
+  // Phrases remove_text cleared earlier in this run. set_faq rebuilds the FAQ
+  // from the model's view of the file (the start-of-run snapshot above), so it
+  // can quietly write a removed phrase back — re-check these after it commits.
+  const removedThisRun: { find: string; caseInsensitive: boolean }[] = []
 
   const result = streamText({
       model: anthropic(INTERACTIVE_CHAT_MODEL),
@@ -234,7 +251,7 @@ ${workingContent}
             try {
               await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
             } catch (err) {
-              return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
+              return toolError('edit:chat', err, 'Failed to save the edit.')
             }
             const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
             return { success: true, replacements: res.count, ...(noGoWarning.length ? { noGoWarning } : {}) }
@@ -278,7 +295,7 @@ ${workingContent}
               try {
                 await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
               } catch (err) {
-                return { error: err instanceof Error ? err.message : 'Failed to save the edits.' }
+                return toolError('edit:chat', err, 'Failed to save the edits.')
               }
             }
             const noGoWarning = changed ? findNoGoHits(workingContent, noGoPhrases) : []
@@ -316,10 +333,23 @@ ${workingContent}
             try {
               await commitWorking(next, `Edit FAQ on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
             } catch (err) {
-              return { error: err instanceof Error ? err.message : 'Failed to save the FAQ.' }
+              return toolError('edit:chat', err, 'Failed to save the FAQ.')
             }
             const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
-            return { success: true, count: faqItems.length, ...(noGoWarning.length ? { noGoWarning } : {}) }
+            const residual = removedThisRun
+              .map(r => ({ find: r.find, remaining: countPhrase(workingContent, r.find, r.caseInsensitive) }))
+              .filter(r => r.remaining > 0)
+            return {
+              success: true,
+              count: faqItems.length,
+              ...(noGoWarning.length ? { noGoWarning } : {}),
+              ...(residual.length
+                ? {
+                    residual,
+                    residualNote: 'This FAQ re-added text removed earlier in this run. Run remove_text again for these phrases.',
+                  }
+                : {}),
+            }
           },
         },
         remove_text: {
@@ -359,8 +389,11 @@ ${workingContent}
               try {
                 await commitWorking(res.next, `Remove text on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
               } catch (err) {
-                return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
+                return toolError('edit:chat', err, 'Failed to save the edit.')
               }
+            }
+            for (const r of removals as { find: string; replace?: string }[]) {
+              if (r.find && r.find.trim() !== '' && !r.replace) removedThisRun.push({ find: r.find, caseInsensitive: ci })
             }
             // Page-scoped edit only, but a phrase living in a firm-wide source
             // (brand.json or the firm profile) reappears on the next rebuild —
@@ -392,7 +425,11 @@ ${workingContent}
             }
           },
         },
-        update_firm_contact: {
+        // Site Owners never get this tool (see canEditFirmContact above) — it
+        // writes the shared brand.json, which denySiteOwnerConfig locks out of
+        // every other site-wide config route. Spread it in only for admins/
+        // managers/editors so an owner's session can't even attempt the call.
+        ...(canEditFirmContact ? { update_firm_contact: {
           description:
             'Apply a firm-wide contact change (phone, fax, email, hours, or address). Updates the shared brand.json (publishable now) AND files a pending MBP suggestion. Only call after the admin confirms "everywhere".',
           inputSchema: z.object({
@@ -445,26 +482,36 @@ ${workingContent}
               const r = await patchBrandJsonContact(githubRepo, DRAFT_BRANCH, contactPatch, commitAuthor)
               patched = r.patched
             } catch (err) {
-              return { error: err instanceof Error ? err.message : 'Failed to update brand.json.' }
+              return toolError('edit:chat', err, 'Failed to update brand.json.')
             }
-            await insertMbpSuggestion(supabase, {
-              sessionId: sessionId,
-              origin: 'content_edit',
-              sourceRef: path,
-              summary: `Update firm ${field}`,
-              changes,
-              schema: rawSchema,
-            })
+            let mbpFlagged = false
+            try {
+              mbpFlagged = (
+                await insertMbpSuggestion(supabase, {
+                  sessionId: sessionId,
+                  origin: 'content_edit',
+                  sourceRef: path,
+                  summary: `Update firm ${field}`,
+                  changes,
+                  schema: rawSchema,
+                })
+              ).filed
+            } catch (err) {
+              console.error('[edit-chat] firm-contact MBP suggestion failed:', err)
+            }
+            const site = patched
+              ? 'Updated site-wide (brand.json). Publish to push it live.'
+              : 'brand.json was not changed (missing, unreadable, or already up to date); the site picks up the profile value at the next rebuild.'
             return {
               success: true,
               brandJsonUpdated: patched,
-              mbpFlagged: true,
-              note: patched
-                ? 'Updated site-wide (brand.json) and flagged the firm profile for review. Publish to push it live.'
-                : 'Flagged the firm profile for review; it will apply the next time the site is rebuilt.',
+              mbpFlagged,
+              note: mbpFlagged
+                ? `${site} Flagged the firm profile (MBP) for review.`
+                : `${site} Could NOT flag the firm profile (MBP) for review — tell the admin it needs a manual update.`,
             }
           },
-        },
+        } } : {}),
         suggest_mbp_update: {
           description:
             'Queue a pending MBP suggestion (for admin review) when the conversation surfaces a durable, verifiable fact or brand-voice/writing rule not already in the profile. Only call after the admin confirms. Does NOT change the profile.',
@@ -500,7 +547,7 @@ ${workingContent}
               // Return the failure to the model instead of throwing — an uncaught
               // throw here would surface to the client as the generic "hit an
               // error" banner even though the page edit itself may have succeeded.
-              return { error: err instanceof Error ? err.message : 'Failed to file the MBP suggestion.' }
+              return toolError('edit:chat', err, 'Failed to file the MBP suggestion.')
             }
           },
         },

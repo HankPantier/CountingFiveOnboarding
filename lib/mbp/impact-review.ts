@@ -4,6 +4,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { serializeSchemaFull } from '@/lib/agent/system-prompt'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { getByPath } from '@/lib/mbp/schema-write'
+import { OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import type { MbpChangeOp, MbpSuggestionChanges, MbpSuggestionOrigin } from '@/types/mbp'
 
 export interface ImpactReviewInput {
@@ -11,6 +12,8 @@ export interface ImpactReviewInput {
   origin: MbpSuggestionOrigin
   sourceRef: string
   changedText: string
+  // Ceiling for the review call; callers inside a budgeted run clip it to what's left.
+  timeoutMs?: number
 }
 
 const CHANGED_TEXT_CAP = 4000
@@ -91,7 +94,12 @@ ${changedText.slice(0, CHANGED_TEXT_CAP)}
     parseReview,
     undefined,
     { task: 'onboarding', stage: 'mbp', sessionId },
-    { cachePrefix, cacheTtl: '1h' },
+    {
+      cachePrefix,
+      cacheTtl: '1h',
+      providerOptions: OUTLINE_PROVIDER_OPTIONS,
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+    },
   )
 
   if (!result || !result.hasImpact || result.changes.length === 0) return

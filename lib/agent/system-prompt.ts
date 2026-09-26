@@ -19,7 +19,19 @@ export function getMode(session: Session): AgentMode {
   return meta?.mode === 'staff' ? 'staff' : 'client'
 }
 
-export function buildSystemPrompt(session: Session): string {
+// The onboarding system prompt in two blocks, for prompt caching:
+// - `stable`: role, tool/freeform/transition rules, tone, guardrails. Depends
+//   only on the session's mode, so it is byte-identical across turns and phases
+//   and carries the cache breakpoint.
+// - `dynamic`: current phase + its instructions, the collected schema (rewritten
+//   by every update_session_data), audit context, call notes, gap list. Sent as
+//   a LATER system block so a schema write never invalidates the cached prefix.
+export interface SystemPromptParts {
+  stable: string
+  dynamic: string
+}
+
+export function buildSystemPromptParts(session: Session): SystemPromptParts {
   const schema = session.schema_data ?? {}
   const gaps = (session.gap_list as GapItem[]) ?? []
   const phase = session.current_phase
@@ -41,17 +53,9 @@ export function buildSystemPrompt(session: Session): string {
     : 'the client'
   const toneBlock = mode === 'staff' ? STAFF_TONE_BLOCK : CLIENT_TONE_BLOCK
 
-  return `You are an AI onboarding agent for Revaltus, a web design firm for CPA firms.
+  const stable = `You are an AI onboarding agent for Revaltus, a web design firm for CPA firms.
 Your job is to capture a complete onboarding profile by talking to ${audience}.
-
-CURRENT PHASE: ${phase}
-${phaseInstructions}
-
-COLLECTED DATA SO FAR:
-${sparseSchema}
-${auditContextBlock}
-${callNotesBlock}
-${gapInstructions}
+The CURRENT PHASE, its instructions, and the COLLECTED DATA SO FAR follow these standing rules in a separate block.
 
 TOOL INSTRUCTIONS:
 - Call update_session_data whenever new information is confirmed or provided
@@ -60,7 +64,7 @@ TOOL INSTRUCTIONS:
 - The tool result reports phaseAdvanced (true/false). If it returns a "blocked" reason, the phase did NOT advance — that reason is an INTERNAL diagnostic for you only. Never repeat, quote, or paraphrase it to the user. Silently do what it says (collect the named field, or re-present the current step's questions in plain language), then retry. Do not claim you've moved on.
 
 CAPTURING FREEFORM INFORMATION:
-- The user may volunteer facts about the firm that fit none of the fields above. Never discard them — everything useful for building the site must be preserved.
+- The user may volunteer facts about the firm that fit none of the fields below. Never discard them — everything useful for building the site must be preserved.
 - If a volunteered fact maps to a structured field, file it there via update_session_data.
 - If it partially maps or is ambiguous, ask ONE brief clarifying question to place it correctly, then file it.
 - If it clearly fits no structured field, store it in additional.otherDetails via update_session_data. This field is a single accumulating string: read its current value from COLLECTED DATA SO FAR and send the existing text plus the new note (append), never overwrite what's already there. Keep it as concise notes.
@@ -76,6 +80,25 @@ GUARDRAILS:
 - If something is not advancing on your end, do NOT tell the user, apologize for an internal error, or ask them for internal artifacts (there is no document or file the user needs to "pull up" that they weren't already given). Just re-present the current step's actual questions in plain language and keep going.
 - Never ask for or accept a registrar/hosting password — direct to a secure channel
 - One follow-up probe per thin answer max — then record and move on`.trim()
+
+  const dynamic = `CURRENT PHASE: ${phase}
+${phaseInstructions}
+
+COLLECTED DATA SO FAR:
+${sparseSchema}
+${auditContextBlock}
+${callNotesBlock}
+${gapInstructions}`.trim()
+
+  return { stable, dynamic }
+}
+
+// Single-string form (stable block, then the per-turn block) — for token
+// estimates and tests. The chat route sends the two parts as separate system
+// blocks so the stable one can be cached.
+export function buildSystemPrompt(session: Session): string {
+  const { stable, dynamic } = buildSystemPromptParts(session)
+  return `${stable}\n\n${dynamic}`
 }
 
 const CLIENT_TONE_BLOCK = `TONE AND STYLE:

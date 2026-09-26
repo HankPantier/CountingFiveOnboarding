@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import { summarizeEditRun } from '@/lib/editor/edit-run-summary'
+import { unwrapChatErrorMessage } from '@/lib/ai/ai-error-text'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
 
 export default function ContentChat({
@@ -105,7 +106,7 @@ export default function ContentChat({
         <div ref={bottomRef} />
       </div>
 
-      {error && <AiIssueNotice message={error.message} onRetry={lastSent ? retryLast : undefined} />}
+      {error && <AiIssueNotice message={unwrapChatErrorMessage(error.message)} onRetry={lastSent ? retryLast : undefined} />}
 
       {status === 'ready' && !error && runSummary && (runSummary.failed > 0 || runSummary.incomplete) && (
         <p className="px-4 py-2 text-xs text-warning-strong font-body bg-warning/10 border-t border-warning/30">

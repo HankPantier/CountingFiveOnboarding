@@ -10,8 +10,8 @@ import { WRITING_EXAMPLES } from './exemplars'
 import { checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
-import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
-import { RESOURCE_CALL_CAP_MS } from './generation-budget'
+import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
+import { RESOURCE_CALL_CAP_MS, clipToDeadline, msUntil } from './generation-budget'
 import { extractJson } from './extract-json'
 import { deriveImageStyleSuffix } from './visual-style-derivation'
 import { resolveStockPhotos, type ImageRef } from './stock-photo-resolver'
@@ -47,7 +47,34 @@ import type { PaletteData } from '@/types/palette'
 import type { ExternalLink } from './link-checker'
 import { arr } from './schema-coerce'
 
-const DRAFT_MODEL = 'claude-sonnet-5'
+const DRAFT_MODEL = PUBLISHED_CONTENT_MODEL
+
+// Time budget for one draft. The whole pipeline (draft call, JSON retry,
+// anti-slop regeneration, social, commit, status write) must fit before
+// `deadlineAt`, or the function is killed with the idea claimed 'running'.
+// Model work stops POST_MODEL_RESERVE_MS early so the commit + status write
+// (or the error write that releases the claim) always happen.
+const POST_MODEL_RESERVE_MS = 30_000
+// Don't start the first draft call with less than this (a cut-short Sonnet call
+// burns tokens and ends in an error anyway).
+const MIN_DRAFT_CALL_MS = 45_000
+// Optional steps only start with enough time left to finish them.
+const MIN_JSON_RETRY_MS = 60_000
+const MIN_ANTI_SLOP_REGEN_MS = 150_000 // a full regeneration = draft + possible JSON retry
+const MIN_SOCIAL_MS = 45_000
+const MIN_AFTER_COMMIT_STEP_MS = 30_000 // MBP impact review / reverse links
+// Default budget for callers that don't pass a deadline.
+export const RESOURCE_DRAFT_DEFAULT_BUDGET_MS = 240_000
+// Runners (blog batch, library) don't START a draft with less than this left:
+// room for the first draft call plus a JSON retry or social, and the commit.
+// Anything that still doesn't fit is skipped by the deadline checks above, so
+// the draft always ends in a written outcome instead of a killed function.
+export const RESOURCE_DRAFT_MIN_VIABLE_MS = 240_000
+
+/** Is there time left to start a step that needs `minMs`? Pure for tests. */
+export function canStartDraftStep(deadlineAt: number, minMs: number, now: number = Date.now()): boolean {
+  return msUntil(deadlineAt, now) >= minMs
+}
 
 type DraftFrontmatter = {
   title: string
@@ -99,6 +126,8 @@ async function generateDraftContent(args: {
   contentJobId: string
   sessionId: string
   flaggedPhrases?: string[]
+  // Absolute deadline (epoch ms) for model work; every call is clipped to it.
+  deadlineAt: number
 }): Promise<DraftResult | null> {
   const { idea, schema, contentType } = args
   const firmName = schema.business?.name ?? 'the firm'
@@ -197,7 +226,8 @@ ${args.internalTargets
       // Hard ceiling, bounding the maxRetries backoff above too. Without it a
       // stalled draft consumed the whole function and left its selection row
       // claimed as 'drafting' with nobody working on it.
-      abortSignal: AbortSignal.timeout(RESOURCE_CALL_CAP_MS),
+      // Also clipped to the draft's deadline so it can't outlive the invocation.
+      abortSignal: AbortSignal.timeout(clipToDeadline(args.deadlineAt, RESOURCE_CALL_CAP_MS)),
     })
 
     const cache = extractCacheUsage(usage)
@@ -261,11 +291,13 @@ ${args.internalTargets
   // "Draft generation returned unparseable output" error into a transparent
   // self-heal, so an operator no longer has to click retry.
   let res = await attempt(24000, GENERATION_PROVIDER_OPTIONS)
-  if (!res.ok) {
+  if (!res.ok && canStartDraftStep(args.deadlineAt, MIN_JSON_RETRY_MS)) {
     console.warn(
       `[resource-draft] JSON parse failed for "${idea.title}" (finish=${res.finishReason}) — retrying with larger budget`
     )
     res = await attempt(32000, OUTLINE_PROVIDER_OPTIONS)
+  } else if (!res.ok) {
+    console.warn(`[resource-draft] JSON parse failed for "${idea.title}" and no time is left for a retry`)
   }
   if (res.ok) return res.result
   console.error(
@@ -450,14 +482,46 @@ export function pickPostSlug(args: {
   return slug
 }
 
+// Persist a NEW idea's slug before anything is committed. The slug used to be
+// saved only in the final 'complete' write, after the commit: if that write
+// failed (or the function died in between), the retry saw no slug, found its own
+// just-committed post in the cross-link index as "taken", and minted `<slug>-2`
+// — a second copy of the article. Reserving it first makes the retry reuse it
+// (pickPostSlug returns existingSlug) and overwrite its own file. Fenced on
+// `slug IS NULL`; if another worker reserved one first, that slug wins.
+export async function reserveIdeaSlug(
+  supabase: ReturnType<typeof createServerClient>,
+  ideaId: string,
+  slug: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('resource_ideas')
+    .update({ slug, updated_at: new Date().toISOString() })
+    .eq('id', ideaId)
+    .is('slug', null)
+    .select('slug')
+  if (error) {
+    console.error(`[resource-draft] Slug reservation failed for idea ${ideaId}:`, error.message)
+    throw new Error('Could not reserve the post slug — will retry')
+  }
+  if (data?.length) return slug
+  const { data: row } = await supabase.from('resource_ideas').select('slug').eq('id', ideaId).single()
+  if (row?.slug) return row.slug
+  throw new Error('Could not reserve the post slug — will retry')
+}
+
 export async function generateResourceDraft(
   ideaId: string,
   // `force` re-drafts an idea whose draft already completed (an explicit
   // operator "Re-draft"). Without it a `complete` idea is never re-claimed —
   // background runners (batch / library) re-entering on a finished idea skip.
-  opts?: { force?: boolean }
+  // `deadlineAt` (epoch ms) is when this draft must be finished — the caller's
+  // invocation budget. Defaults to RESOURCE_DRAFT_DEFAULT_BUDGET_MS from now.
+  opts?: { force?: boolean; deadlineAt?: number }
 ): Promise<{ status: 'complete' | 'error' | 'skipped'; slug?: string; error?: string }> {
   const supabase = createServerClient()
+  const deadlineAt = opts?.deadlineAt ?? Date.now() + RESOURCE_DRAFT_DEFAULT_BUDGET_MS
+  const modelDeadline = deadlineAt - POST_MODEL_RESERVE_MS
 
   const { data: idea } = await supabase
     .from('resource_ideas')
@@ -503,6 +567,9 @@ export async function generateResourceDraft(
   // field in the case-study gate, a malformed JSON column) lands in the catch
   // and releases the lock as 'error' instead of stranding the idea 'running'.
   try {
+    if (!canStartDraftStep(modelDeadline, MIN_DRAFT_CALL_MS)) {
+      throw new Error('Not enough time left in this run to draft the article — it will be retried')
+    }
     const externalLinks = arr(idea.external_links as ExternalLink[] | null)
     const secondaryKeywords = arr(idea.secondary_keywords as string[] | null)
 
@@ -533,12 +600,13 @@ export async function generateResourceDraft(
 
     // Slug: reuse this idea's slug on a re-draft (overwrite its own post);
     // otherwise derive from the title and dodge OTHER posts' slugs.
-    const slug = pickPostSlug({
+    const picked = pickPostSlug({
       title: idea.title,
       ideaId,
       existingSlug: idea.slug,
       takenSlugs: postSlugs,
     })
+    const slug = idea.slug ? picked : await reserveIdeaSlug(supabase, ideaId, picked)
 
     let result = await generateDraftContent({
       idea,
@@ -550,12 +618,17 @@ export async function generateResourceDraft(
       schema,
       contentJobId: idea.content_job_id,
       sessionId: idea.session_id,
+      deadlineAt: modelDeadline,
     })
     if (!result) throw new Error('Draft generation returned unparseable output')
 
     const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
     const validation = validateContent(result.body, [...noGoPhrases, ...clientAvoidPhrases(schema)])
-    if (!validation.passed) {
+    if (!validation.passed && !canStartDraftStep(modelDeadline, MIN_ANTI_SLOP_REGEN_MS)) {
+      console.warn(
+        `[resource-draft] Anti-slop flagged "${idea.title}": ${validation.flagged.join(' | ')} — no time left to regenerate, keeping the first draft`
+      )
+    } else if (!validation.passed) {
       console.warn(
         `[resource-draft] Anti-slop flagged "${idea.title}": ${validation.flagged.join(' | ')} — retrying`
       )
@@ -570,6 +643,7 @@ export async function generateResourceDraft(
         contentJobId: idea.content_job_id,
         sessionId: idea.session_id,
         flaggedPhrases: validation.flagged,
+        deadlineAt: modelDeadline,
       })
       if (retry) result = retry
     }
@@ -669,6 +743,9 @@ export async function generateResourceDraft(
     // failure just means the admin backfills via the panel's button.
     let socialPath: string | null = null
     try {
+      if (!canStartDraftStep(modelDeadline, MIN_SOCIAL_MS)) {
+        throw new Error('no time left in this run (backfill from the Resources panel)')
+      }
       const social = await generateSocialJson({
         schema,
         title: fm.title,
@@ -679,6 +756,7 @@ export async function generateResourceDraft(
         contentJobId: idea.content_job_id,
         sessionId: idea.session_id,
         slug,
+        deadlineAt: modelDeadline,
       })
       if (social) {
         socialPath = socialPathForSlug(slug)
@@ -725,12 +803,17 @@ export async function generateResourceDraft(
     // office, or positioning shift worth reflecting in the MBP. Non-fatal: a
     // review failure must never regress the already-published draft.
     try {
-      await reviewContentForMbpImpact({
-        sessionId: idea.session_id,
-        origin: 'resource',
-        sourceRef: `resource post: ${fm.title}`,
-        changedText: result.body,
-      })
+      if (canStartDraftStep(deadlineAt, MIN_AFTER_COMMIT_STEP_MS)) {
+        await reviewContentForMbpImpact({
+          sessionId: idea.session_id,
+          origin: 'resource',
+          sourceRef: `resource post: ${fm.title}`,
+          changedText: result.body,
+          timeoutMs: clipToDeadline(deadlineAt, 110_000),
+        })
+      } else {
+        console.warn(`[mbp-impact] Skipped for "${fm.title}" — no time left in this run`)
+      }
     } catch (err) {
       console.error('[mbp-impact] resource draft review failed:', err)
     }
@@ -756,7 +839,7 @@ export async function generateResourceDraft(
           schema,
           sessionId: idea.session_id,
           contentJobId: idea.content_job_id,
-        }).catch((err) => console.error('[resource-critic] review failed:', err)),
+        }, deadlineAt).catch((err) => console.error('[resource-critic] review failed:', err)),
       )
     } catch (hookErr) {
       console.warn('[resource-critic] could not schedule review:', hookErr)
@@ -775,6 +858,9 @@ export async function generateResourceDraft(
     // inbound links become orphaned — there is no app-level post-delete flow to
     // hook cleanup onto, so this is an accepted, documented limitation.
     try {
+      if (!canStartDraftStep(deadlineAt, MIN_AFTER_COMMIT_STEP_MS)) {
+        throw new Error('no time left in this run')
+      }
       const { results, entries: reverseEntries } = await insertReverseLinks({
         githubRepo: job.github_repo,
         newPost: {
@@ -787,6 +873,7 @@ export async function generateResourceDraft(
         },
         contentJobId: idea.content_job_id,
         sessionId: idea.session_id,
+        deadlineAt,
       })
       if (reverseEntries.length > 0) {
         await pushEntriesToBranch(

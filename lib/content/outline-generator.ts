@@ -12,7 +12,7 @@ import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-bud
 import { recordTokenUsage } from './token-usage'
 import { buildCachedMessages, extractCacheUsage } from './cache-control'
 import { extractJson } from './extract-json'
-import { OUTLINE_PRIMARY_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { OUTLINE_PRIMARY_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
 import { createBudget, runWithPool, OUTLINE_CALL_CAP_MS } from './generation-budget'
 
 // Must match the maxDuration on /api/content-jobs/[id]/outlines/{generate,regenerate-all}.
@@ -26,7 +26,7 @@ import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
 import { asJson } from '@/lib/supabase/json-typed'
 
-const OUTLINE_MODEL = 'claude-sonnet-5'
+const OUTLINE_MODEL = PUBLISHED_CONTENT_MODEL
 
 // Strip scheme + trailing slash so a sitemap's http:// URL still matches the
 // crawler's final https:// URL for the same page.

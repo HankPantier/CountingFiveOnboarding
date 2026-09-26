@@ -223,7 +223,7 @@ export function createDesignChatToolset(ws: ChatWorkspace, deps: ChatToolDeps) {
       },
     }),
     commit_version: tool({
-      description: 'Save the staged design to the draft as a new version. Refused while the latest preview fails a render check.',
+      description: 'Save the staged design to the draft as a new version. Refused while the latest preview failed a render check, until a newer preview passes.',
       inputSchema: z.object({ summary: z.string().min(1).max(300).describe('One line for the version list') }),
       execute: ({ summary }): Promise<CommitOutput> =>
         run(async () => {

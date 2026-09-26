@@ -5,6 +5,7 @@
 // — returns null (section omitted) without one, or when no results come back.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
+import { BACKGROUND_MEDIUM_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { serperEnabled, serperSearch, type SerperOrganicResult } from '../serper-search'
 import type {
   ContentFootprintItem,
@@ -162,9 +163,13 @@ ${blocks.join('\n')}`
   // Retry the synthesis (search results are already in the prompt, so retries
   // only re-run the model) until the niche gap is populated, falling back to the
   // best partial brief if it stays empty.
+  // Medium effort: this is a genuine synthesis across several noisy search-result
+  // blocks (reputation, personnel, affiliations, niche gap) — the external-vs-
+  // on-site niche gap is the whole reason this brief exists (see hasNicheGap).
   const result = await generateMbpJson<DigitalIntelligence>(prompt, validate, 4000, ctx, {
     attempts: DIGITAL_INTEL_ATTEMPTS,
     accept: hasNicheGap,
+    providerOptions: BACKGROUND_MEDIUM_PROVIDER_OPTIONS,
   })
   if (result && !hasNicheGap(result)) {
     console.warn(`[digital-intel] brief captured but niche gap still empty after ${DIGITAL_INTEL_ATTEMPTS} attempts`)

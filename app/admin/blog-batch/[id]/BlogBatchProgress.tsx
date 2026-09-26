@@ -9,6 +9,7 @@ import type {
 import type { ClientOption } from '../new/NewBatchFlow'
 import DeleteBatchButton from '../DeleteBatchButton'
 import AddClientsPanel from './AddClientsPanel'
+import { retryErrorMessage } from './_retry-error'
 
 const STATUS_META: Record<BlogBatchTargetStatus, { icon: string; cls: string; label: string }> = {
   pending: { icon: '○', cls: 'text-text-muted', label: 'Queued' },
@@ -34,6 +35,7 @@ export default function BlogBatchProgress({
   const [retrying, setRetrying] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
+  const [retryError, setRetryError] = useState<string | null>(null)
   // Bumped after a retry/add to restart polling (the interval self-stops at rest).
   const [reloadNonce, setReloadNonce] = useState(0)
 
@@ -78,13 +80,19 @@ export default function BlogBatchProgress({
   async function retryFailed(sessionId?: string) {
     if (sessionId) setRetryingId(sessionId)
     else setRetrying(true)
+    setRetryError(null)
     try {
       const res = await fetch(`/api/blog-batches/${batchId}/retry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sessionId ? { sessionId } : {}),
       })
-      if (res.ok) setReloadNonce((n) => n + 1)
+      if (res.ok) {
+        setReloadNonce((n) => n + 1)
+        return
+      }
+      const message = retryErrorMessage(res.status, await res.json().catch(() => null))
+      if (message) setRetryError(message)
     } catch {
       // Transient — the user can click again.
     } finally {
@@ -97,13 +105,19 @@ export default function BlogBatchProgress({
   // reclassified) content type — overwrites that client's existing draft.
   async function regenerateOne(sessionId: string) {
     setRegeneratingId(sessionId)
+    setRetryError(null)
     try {
       const res = await fetch(`/api/blog-batches/${batchId}/retry`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, force: true }),
       })
-      if (res.ok) setReloadNonce((n) => n + 1)
+      if (res.ok) {
+        setReloadNonce((n) => n + 1)
+        return
+      }
+      const message = retryErrorMessage(res.status, await res.json().catch(() => null))
+      if (message) setRetryError(message)
     } catch {
       // Transient — the user can click again.
     } finally {
@@ -153,6 +167,10 @@ export default function BlogBatchProgress({
         {counts.skipped > 0 ? ` · ${counts.skipped} skipped` : ''}
         {counts.inFlight > 0 ? ' · generating…' : ''}
       </p>
+
+      {retryError && (
+        <p className="mb-4 rounded-card bg-error/10 px-3 py-2 font-body text-sm text-error">{retryError}</p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <AddClientsPanel

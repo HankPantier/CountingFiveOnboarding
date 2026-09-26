@@ -24,6 +24,7 @@ type CompetitorRef = { url: string; title: string; excerpt: string }
 async function main() {
   const { createClient } = await import('@supabase/supabase-js')
   const { scoreDraft } = await import('../lib/content/draft-critic')
+  const { PUBLISHED_CONTENT_MODEL, CRITIC_MODEL } = await import('../lib/content/generation-tuning')
   type SessionSchema = import('../types/session-schema').SessionSchema
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -36,8 +37,8 @@ async function main() {
 
   const args = process.argv.slice(2)
   const limit = Number(args[0] ?? 5) || 5
-  const modelA = args[1] ?? 'claude-sonnet-5'
-  const modelB = args[2] ?? 'claude-opus-5-5'
+  const modelA = args[1] ?? PUBLISHED_CONTENT_MODEL
+  const modelB = args[2] ?? CRITIC_MODEL
 
   const { data: pages, error } = await supabase
     .from('generated_pages')

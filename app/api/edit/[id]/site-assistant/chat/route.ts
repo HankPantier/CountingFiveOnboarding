@@ -3,6 +3,7 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { after, NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
+import { toolError } from '@/lib/api/tool-error'
 import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
 import { safePath } from '../../_path'
@@ -13,6 +14,7 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { extractCacheUsage } from '@/lib/content/cache-control'
 import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
+import { checkChatSpendLimit } from '@/lib/ai/chat-spend-limit'
 import { buildBrandVoiceBlock } from '@/lib/content/brand-voice'
 import { normalizeSlug } from '../../create-page/_slug'
 import { buildStarterPage, generateNewPage } from '@/lib/content/new-page-generator'
@@ -21,6 +23,7 @@ import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
 import { DestinationOccupiedError, relocateFile } from '@/lib/editor/relocate'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
+import { buildNicheSuggestions } from '@/lib/mbp/niche-suggestions'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -72,6 +75,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { messages } = body
   const supabase = createServerClient()
 
+  // Per-user spend ceiling, checked before any model call or GitHub work —
+  // see lib/ai/chat-spend-limit.ts.
+  const overLimit = await checkChatSpendLimit(supabase, user)
+  if (overLimit) return overLimit
+
   try {
     await ensureDraftBranch(githubRepo)
   } catch (err) {
@@ -113,7 +121,7 @@ YOUR TOOLS
 - delete_page({ path }) — permanently remove a page (content/pages or content/posts) from the draft and strip its nav link. Pass the exact path from list_site_pages.
 - move_page({ fromPath, toUrl, navAction? }) — relocate a page: reclassify a page ↔ blog post (Resources) or reparent it under another page. A blog post that was created as a page (e.g. content/pages/careers--foo.md at /careers/foo) becomes a Resource by moving it to /resources/foo with navAction "remove" (posts show on the Resources index, not the top nav). Reparent a page by moving it to a new parent URL with navAction "retarget" (default — its nav link follows). Adds a 301 redirect automatically.
 - set_nav({ contents }) — replace the whole nav.json (a JSON string with { "primary": [ { "label", "url", "children"? } ], "cta"? }). Use only for explicit reordering/nesting beyond what create/delete already handle.
-- file_mbp_suggestion({ summary, removedNiches?, addedNiches? }) — after the operator confirms an audience change, file a PENDING Master Business Profile suggestion to update the firm's target niches for admin approval. NEVER present this as done — it only queues a suggestion.
+- file_mbp_suggestion({ summary, removedNiches?, addedNiches? }) — after the operator confirms an audience change, file PENDING Master Business Profile suggestions for admin approval: each removed niche is marked dropped and each added niche is a separate addition (never a whole-list replace). NEVER present this as done — it only queues suggestions.
 
 RULES
 - Never claim success when a tool returns an error — tell the operator plainly and offer to retry.
@@ -167,7 +175,7 @@ RULES
               })
             return { pages: entries, nav: nav ?? { primary: [] } }
           } catch (err) {
-            return { error: err instanceof Error ? err.message : 'Failed to list pages.' }
+            return toolError('site-assistant', err, 'Failed to list pages.')
           }
         },
       },
@@ -227,7 +235,8 @@ RULES
               .select('id')
               .single()
             if (error || !row) {
-              return { success: true, url, generationError: error?.message ?? 'AI draft could not be scheduled — the blank page was created.' }
+              if (error) console.error('[site-assistant] new_page_generations insert failed:', error)
+              return { success: true, url, generationError: 'AI draft could not be scheduled — the blank page was created.' }
             }
             after(async () => {
               try {
@@ -241,7 +250,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'The navigation changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to create the page.' }
+            return toolError('site-assistant', err, 'Failed to create the page.')
           }
         },
       },
@@ -271,7 +280,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'That page changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to delete the page.' }
+            return toolError('site-assistant', err, 'Failed to delete the page.')
           }
         },
       },
@@ -348,7 +357,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'That page changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to move the page.' }
+            return toolError('site-assistant', err, 'Failed to move the page.')
           }
         },
       },
@@ -402,7 +411,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'The navigation changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to save the navigation.' }
+            return toolError('site-assistant', err, 'Failed to save the navigation.')
           }
         },
       },
@@ -437,32 +446,31 @@ RULES
           if (removed.size === 0 && added.length === 0) {
             return { error: 'Nothing to change — pass removedNiches and/or addedNiches.' }
           }
-          const current = (schema.niches ?? []).filter((n) => n?.name)
-          const next = [
-            ...current.filter((n) => !removed.has(n.name.trim().toLowerCase())),
-            ...added.map((n) => ({
-              name: n.name.trim(),
-              description: n.description?.trim() ?? '',
-              valueProp: n.valueProp?.trim() ?? '',
-            })),
-          ]
-          const { filed } = await insertMbpSuggestion(supabase, {
-            sessionId,
-            origin: 'site_structure',
-            summary,
-            changes: [
-              {
-                fieldPath: 'niches',
-                op: 'set',
-                proposedValue: next,
-                rationale: 'Audience pages changed on the live site; sync the MBP target niches.',
-              },
-            ],
-            schema: rawSchema,
-          })
-          return filed
-            ? { success: true, note: 'Pending MBP suggestion filed for admin approval.' }
-            : { error: 'Could not file the MBP suggestion.' }
+          const { suggestions, skipped } = buildNicheSuggestions(schema, removed, added)
+          if (suggestions.length === 0) {
+            return { error: `Nothing to change in the profile — ${skipped.join('; ') || 'no matching niches'}.` }
+          }
+          // Per-item changes, never a whole-array set: an old snapshot of the
+          // niches list would clobber every niche edit approved in between.
+          let filedCount = 0
+          for (const sug of suggestions) {
+            const { filed } = await insertMbpSuggestion(supabase, {
+              sessionId,
+              origin: 'site_structure',
+              summary: sug.summary ?? summary,
+              changes: sug.changes,
+              schema: rawSchema,
+            })
+            if (filed) filedCount += 1
+          }
+          if (filedCount === 0) return { error: 'Could not file the MBP suggestion.' }
+          return {
+            success: true,
+            filed: filedCount,
+            ...(filedCount < suggestions.length ? { failed: suggestions.length - filedCount } : {}),
+            ...(skipped.length ? { skipped } : {}),
+            note: `${filedCount} pending MBP suggestion${filedCount === 1 ? '' : 's'} filed for admin approval.`,
+          }
         },
       },
     },

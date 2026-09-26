@@ -53,6 +53,15 @@ export function toPathname(url: string): string | null {
   return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
 }
 
+// A root-relative page url safe to relocate a page to and write into
+// redirects.csv: one or more clean slug segments ([A-Za-z0-9-], no '--', which
+// is the nested-filename separator). Rejects protocol-relative `//host`, empty
+// segments, CSV-breaking characters (`,` `"` newlines) and regex specials.
+export function isCleanPageUrl(url: string): boolean {
+  if (!/^(?:\/[A-Za-z0-9-]+)+$/.test(url)) return false
+  return !url.split('/').some((seg) => seg.includes('--'))
+}
+
 // Seed editor items from a loaded nav: originalUrl = url, slug = last segment.
 export function toEditItems(items: NavItem[]): EditNavItem[] {
   return items.map((it) => ({

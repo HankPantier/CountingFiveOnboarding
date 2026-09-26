@@ -4,8 +4,9 @@ import { recordTokenUsage, type TokenContext } from '@/lib/content/token-usage'
 import { extractJson } from '@/lib/content/extract-json'
 import { buildCachedMessages, extractCacheUsage } from '@/lib/content/cache-control'
 import type { CacheTtl } from '@/lib/content/token-pricing'
+import { PUBLISHED_CONTENT_MODEL } from '@/lib/content/generation-tuning'
 
-const MBP_JSON_MODEL = 'claude-sonnet-5'
+const MBP_JSON_MODEL = PUBLISHED_CONTENT_MODEL
 
 // Hard ceiling on a single generation. Without it an AI SDK call has no timeout
 // and can hang indefinitely — which, in the audit intelligence stage (many

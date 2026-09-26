@@ -1,6 +1,7 @@
 import { after, NextResponse } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { runResearchPipeline } from '@/lib/content/research-pipeline'
+import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 // Must match RESEARCH_ROUTE_MAX_DURATION_MS.
@@ -14,11 +15,8 @@ type SitemapPage = { url: string; title: string; status: string; parent?: string
 // unset). Re-runs every page still pending/error; complete pages are skipped
 // by the pipeline and in-flight ones are protected by its per-row claim.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  if (req.headers.get('authorization') !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronBearer(req)
+  if (denied) return denied
 
   const { id } = await params
   const supabase = createServerClient()

@@ -3,6 +3,7 @@ import { resolveEditContext } from '../../_helpers'
 import { buildPreviewShell } from '@/lib/theme-preview/build-preview-shell'
 import { getPreviewSiteUrl } from '@/lib/theme-preview/site-url'
 import { resolvePreviewPageUrl } from '@/lib/theme-preview/page-path'
+import { internalError } from '@/lib/api/errors'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -22,7 +23,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const siteUrl = await getPreviewSiteUrl({ jobId: ctx.jobId, githubRepo })
+  let siteUrl: string | null
+  try {
+    siteUrl = await getPreviewSiteUrl({ jobId: ctx.jobId, githubRepo })
+  } catch (err) {
+    return internalError('theme-shell', err, 'Could not look up the preview URL.')
+  }
   if (!siteUrl) {
     return NextResponse.json(
       { error: 'No preview URL is set for this client. Add one above to preview the site.' },

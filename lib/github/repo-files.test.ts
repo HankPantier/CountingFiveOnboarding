@@ -13,14 +13,16 @@ const pullsList = vi.fn()
 const pullsCreate = vi.fn()
 const createBlob = vi.fn()
 const getBlob = vi.fn()
+const getTree = vi.fn()
+const listCommits = vi.fn()
 const createRef = vi.fn()
 const reposGetCommit = vi.fn()
 const createOrUpdateFileContents = vi.fn()
 
 vi.mock('./app-client', () => ({
   getOctokit: () => ({
-    repos: { getContent, compareCommits, merge, getCommit: reposGetCommit, createOrUpdateFileContents },
-    git: { getRef, getCommit, createTree, createCommit, updateRef, createBlob, getBlob, createRef },
+    repos: { getContent, compareCommits, merge, getCommit: reposGetCommit, createOrUpdateFileContents, listCommits },
+    git: { getRef, getCommit, createTree, createCommit, updateRef, createBlob, getBlob, createRef, getTree },
     pulls: { list: pullsList, create: pullsCreate },
   }),
   resolveRepo: () => ({ owner: 'cf', repo: 'site' }),
@@ -32,6 +34,7 @@ import {
   writeFiles,
   writeFile,
   revertFileToMain,
+  revertLastPublish,
   fastForwardDraftToMain,
   ensureDraftBranch,
   walkNewCommitFileStats,
@@ -42,6 +45,7 @@ import {
     mergeDraftToMain,
   syncMainIntoDraft,
   getDraftHeadSha,
+  findLastDeployCommitSha,
   FileNotFoundError,
   StaleShaError,
   AssetExistsError,
@@ -286,6 +290,48 @@ describe('pushEntriesToBranch', () => {
     expect(res).toEqual({ commitSha: 'newCommit', fileCount: 1 })
   })
 
+  it('validates many guarded entries against ONE base-tree read', async () => {
+    getRef.mockResolvedValue({ data: { object: { sha: 'guardTip' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'guardTree' } } })
+    const entries: { path: string; content: string; expectedBlobSha: string | null }[] = Array.from(
+      { length: 10 },
+      (_, i) => ({ path: `content/pages/p${i}.md`, content: `new ${i}`, expectedBlobSha: `s${i}` })
+    )
+    entries.push({ path: 'content/pages/fresh.md', content: 'x', expectedBlobSha: null })
+    getTree.mockResolvedValue({
+      data: {
+        tree: entries
+          .filter((e) => e.expectedBlobSha)
+          .map((e) => ({ path: e.path, sha: e.expectedBlobSha, type: 'blob' })),
+      },
+    })
+    await pushEntriesToBranch('site', 'draft', entries, 'm')
+    expect(getTree).toHaveBeenCalledTimes(1)
+    expect(getContent).not.toHaveBeenCalled()
+    expect(updateRef).toHaveBeenCalledTimes(1)
+  })
+
+  it('a tree-read mismatch still aborts with StaleShaError before committing', async () => {
+    getRef.mockResolvedValue({ data: { object: { sha: 'guardTip2' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'guardTree2' } } })
+    const entries = Array.from({ length: 10 }, (_, i) => ({
+      path: `content/pages/q${i}.md`,
+      content: `new ${i}`,
+      expectedBlobSha: `s${i}`,
+    }))
+    getTree.mockResolvedValue({
+      data: {
+        tree: entries.map((e, i) => ({ path: e.path, sha: i === 3 ? 'operatorEdit' : e.expectedBlobSha, type: 'blob' })),
+      },
+    })
+    getContent
+      .mockResolvedValueOnce({ data: { type: 'file', sha: 'operatorEdit' } })
+      .mockResolvedValueOnce({ data: { type: 'file', sha: 'operatorEdit', content: '', encoding: 'base64' } })
+    await expect(pushEntriesToBranch('site', 'draft', entries, 'm')).rejects.toBeInstanceOf(StaleShaError)
+    expect(getContent.mock.calls[0][0]).toMatchObject({ path: 'content/pages/q3.md', ref: 'guardTip2' })
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
   it('expectedBlobSha: null requires the path to be absent', async () => {
     getContent.mockResolvedValueOnce({ data: { type: 'file', sha: 'exists' } })
     getContent.mockResolvedValueOnce({ data: { type: 'file', sha: 'exists', content: '', encoding: 'base64' } })
@@ -354,9 +400,20 @@ describe('writeFile', () => {
     expect(createOrUpdateFileContents).toHaveBeenCalledTimes(2)
   })
 
+  it('does not pre-read the branch (a lagged read of our own last commit is not a conflict)', async () => {
+    // A lagged branch read would still show the blob before our previous
+    // commit; the Contents API enforces `sha` itself, so no read happens.
+    getContent.mockResolvedValue({ data: { type: 'file', sha: 'previousBlob', content: '', encoding: 'base64' } })
+    createOrUpdateFileContents.mockResolvedValueOnce({ data: { commit: { sha: 'c' }, content: { sha: 'b2' } } })
+    const res = await writeFile('site', 'content/pages/a.md', 'x', 'draft', 'm', { expectedSha: 'justWritten' })
+    expect(res).toEqual({ commitSha: 'c', blobSha: 'b2' })
+    expect(getContent).not.toHaveBeenCalled()
+    expect(createOrUpdateFileContents.mock.calls[0][0]).toMatchObject({ sha: 'justWritten' })
+    getContent.mockReset()
+  })
+
   it('maps a 409 caused by a real sha change to StaleShaError', async () => {
     getContent
-      .mockResolvedValueOnce({ data: { type: 'file', sha: 's1', content: '', encoding: 'base64' } })
       .mockResolvedValueOnce({ data: { type: 'file', sha: 's2', content: Buffer.from('new').toString('base64'), encoding: 'base64' } })
     createOrUpdateFileContents.mockRejectedValueOnce(reqError(409, 'conflict'))
     const err = await writeFile('site', 'content/pages/a.md', 'x', 'draft', 'm', { expectedSha: 's1' }).catch(
@@ -385,6 +442,46 @@ describe('revertFileToMain', () => {
     ])
     expect(createBlob).not.toHaveBeenCalled()
     expect(createOrUpdateFileContents).not.toHaveBeenCalled()
+  })
+
+  it('reverts a rename in ONE commit: deletes the new path and restores the old one', async () => {
+    const newPath = 'content/drafts/pages/x.md'
+    const oldPath = 'content/pages/x.md'
+    getContent.mockImplementation(async ({ path, ref }: { path: string; ref: string }) => {
+      if (path === newPath && ref === 'main') throw notFound()
+      if (path === newPath) return { data: { type: 'file', sha: 'movedBlob' } } // draft + base
+      if (path === oldPath && ref === 'main') return { data: { type: 'file', sha: 'liveBlob' } }
+      throw notFound() // old path absent on draft + base
+    })
+    getRef.mockResolvedValue({ data: { object: { sha: 'tip' } } })
+    getCommit.mockResolvedValue({ data: { tree: { sha: 'tree' } } })
+    createTree.mockResolvedValue({ data: { sha: 'nt' } })
+    createCommit.mockResolvedValue({ data: { sha: 'nc' } })
+    updateRef.mockResolvedValue({})
+
+    const res = await revertFileToMain('site', newPath, 'movedBlob', {}, oldPath)
+
+    expect(res).toEqual({ reverted: true, commitSha: 'nc', action: 'restored' })
+    expect(createTree).toHaveBeenCalledTimes(1)
+    expect(createTree.mock.calls[0][0].tree).toEqual([
+      { path: newPath, mode: '100644', type: 'blob', sha: null },
+      { path: oldPath, mode: '100644', type: 'blob', sha: 'liveBlob' },
+    ])
+    expect(createOrUpdateFileContents).not.toHaveBeenCalled()
+    getContent.mockReset()
+  })
+
+  it('rename revert 409s when the moved copy was edited since the list loaded', async () => {
+    getContent.mockImplementation(async ({ path, ref }: { path: string; ref: string }) => {
+      if (path === 'content/drafts/pages/x.md' && ref === 'draft') return { data: { type: 'file', sha: 'editedAgain' } }
+      if (path === 'content/pages/x.md' && ref === 'main') return { data: { type: 'file', sha: 'liveBlob' } }
+      throw notFound()
+    })
+    await expect(
+      revertFileToMain('site', 'content/drafts/pages/x.md', 'movedBlob', {}, 'content/pages/x.md')
+    ).rejects.toBeInstanceOf(StaleShaError)
+    expect(createTree).not.toHaveBeenCalled()
+    getContent.mockReset()
   })
 
   it('409s (StaleShaError) when the draft moved since the caller looked', async () => {
@@ -475,5 +572,67 @@ describe('readTextBlobs', () => {
       { path: 'b.md', content: 'body-2' },
     ])
     expect(getContent).not.toHaveBeenCalled()
+  })
+})
+
+describe('readTextBlobs cache', () => {
+  it('re-reads of an immutable blob sha skip getBlob (feed polls)', async () => {
+    getBlob.mockImplementation(async ({ file_sha }: { file_sha: string }) => ({
+      data: { content: Buffer.from(`post-${file_sha}`).toString('base64'), encoding: 'base64' },
+    }))
+    const entries = [
+      { path: 'content/posts/a.md', sha: 'feedA' },
+      { path: 'content/posts/b.md', sha: 'feedB' },
+    ]
+    const first = await readTextBlobs('site', entries)
+    const second = await readTextBlobs('site', entries)
+    expect(second).toEqual(first)
+    expect(getBlob).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('revertLastPublish', () => {
+  const publishHead = {
+    data: {
+      sha: 'mergeM',
+      parents: [{ sha: 'preM' }, { sha: 'draftTip' }],
+      commit: { message: 'Publish draft to live' },
+    },
+  }
+
+  it('aborts without forcing when main moved after the publish-merge check', async () => {
+    reposGetCommit.mockResolvedValueOnce(publishHead)
+    getRef.mockResolvedValueOnce({ data: { object: { sha: 'secondPublish' } } })
+    const res = await revertLastPublish('site')
+    expect(res.reverted).toBe(false)
+    expect(updateRef).not.toHaveBeenCalled()
+  })
+
+  it('forces main back to the first parent when the head is unchanged', async () => {
+    reposGetCommit.mockResolvedValueOnce(publishHead)
+    getRef.mockResolvedValueOnce({ data: { object: { sha: 'mergeM' } } })
+    updateRef.mockResolvedValueOnce({})
+    const res = await revertLastPublish('site')
+    expect(res).toEqual({ reverted: true, revertedTo: 'preM' })
+    expect(updateRef).toHaveBeenCalledWith(expect.objectContaining({ ref: 'heads/main', sha: 'preM', force: true }))
+  })
+})
+
+describe('findLastDeployCommitSha', () => {
+  it('returns the newest deploy commit touching brand.md, ignoring editor commits', async () => {
+    listCommits.mockResolvedValueOnce({
+      data: [
+        { sha: 'edit1', commit: { message: 'Update brand.md via admin' } },
+        { sha: 'dep2', commit: { message: 'Deploy packaged content via admin (a@x)' } },
+        { sha: 'dep1', commit: { message: 'Deploy packaged content via admin' } },
+      ],
+    })
+    expect(await findLastDeployCommitSha('site')).toBe('dep2')
+    expect(listCommits.mock.calls[0][0]).toMatchObject({ sha: 'draft', path: 'content/brand.md' })
+  })
+
+  it('returns null for a never-deployed site', async () => {
+    listCommits.mockResolvedValueOnce({ data: [] })
+    expect(await findLastDeployCommitSha('site')).toBeNull()
   })
 })

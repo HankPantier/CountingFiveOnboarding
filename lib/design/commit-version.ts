@@ -12,9 +12,11 @@
 //      against a snapshot, which can still show the pre-commit tip right after
 //      a commit and would false-409 a chat turn's second commit).
 //   4. syncMbpTheme (palette → brand.primaryColors, fonts → brand.typography),
-//      only when `syncMbp` — human-clicked commits (concept apply, restore,
-//      capture) pass true; chat commits pass false (CLAUDE.md: an interactive
-//      AI session never silently mutates schema_data).
+//      only when `syncMbp` — human-clicked commits (concept apply, restore)
+//      pass true; chat commits pass false (CLAUDE.md: an interactive AI
+//      session never silently mutates schema_data). A chat-made design reaches
+//      the MBP through the Versions panel's human-clicked "Sync palette &
+//      fonts to MBP" (POST design/sync-mbp), which mirrors the whole draft.
 //   5. the FULL post-apply four-file blob map (the applied_blobs contract)
 //   6. insertVersion (version_no = max + 1, 23505 retry)
 // Render gates are the CALLER's job (concept: its stored review metrics; chat:
@@ -27,12 +29,12 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
-import { bundleFromRepoFiles } from './bundle-files'
+import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
 import { capabilityViolations } from './capabilities'
 import { readDesignCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs } from './drift'
 import type { RunScreenshot } from './run-types'
-import { insertVersion, VersionConflictError, type DesignVersionRow } from './store'
+import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
 import { syncMbpTheme } from './sync-mbp-theme'
 import { readDraftThemeSnapshot, readThemeSnapshotAt, themeTextsFromSnapshot } from './theme-snapshot'
@@ -42,6 +44,10 @@ type Db = SupabaseClient<Database>
 export const STALE_THEME_ERROR = 'The theme changed while applying — refresh the Studio and try again.'
 export const APPLIED_VERSION_NUMBER_UNRECORDED = 'The design was applied to the draft, but its version number could not be recorded — refresh the Studio.'
 export const APPLIED_VERSION_UNRECORDED = 'The design was applied to the draft, but its version could not be recorded — refresh the Studio.'
+export const NO_BASELINE_ERROR =
+  'The Studio has no v0 baseline of this site yet (importing the current design failed), so nothing can be committed — the first commit would otherwise become v0 and the original design could never be restored. Fix the draft theme files (Controls tab or the file editor), then Refresh.'
+export const LEGACY_KEEP_UNCHECKED_ERROR =
+  'Keeping legacy overrides isn’t supported for a concept previewed without them — apply with “Remove legacy overrides”, or refine the current design in the chat.'
 
 export type CommitTarget = { sessionId: string; jobId: string; githubRepo: string; adminId: string; adminEmail?: string; adminName?: string }
 
@@ -51,7 +57,7 @@ export type CommitVersionArgs = {
   source: 'concept' | 'chat' | 'revert'
   removeLegacy: boolean
   // Mirror the applied palette/fonts into schema_data. true for human-clicked
-  // commits (concept apply, restore, capture); false for chat commits.
+  // commits (concept apply, restore); false for chat commits.
   syncMbp: boolean
   summary: string
   commitMessage: string
@@ -61,6 +67,13 @@ export type CommitVersionArgs = {
   // appliedBlobs). Becomes the apply base + its sha guard — see the header.
   expectedShas?: ThemeBlobShas
   skipIfUnchanged?: boolean
+  // The caller's render gate measured the composition WITH legacy hand CSS
+  // removed (concept apply). When the commit keeps it (removeLegacy false) and
+  // the draft actually has some, what would be written was never rendered —
+  // refuse (422) instead of committing an unchecked composition.
+  gateRenderedWithoutLegacy?: boolean
+  // Restore only: the exact design-overrides.css to write (see applyBundleToDraft).
+  overridesVerbatim?: string
 }
 
 export type CommitVersionResult =
@@ -69,11 +82,17 @@ export type CommitVersionResult =
 
 export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Promise<CommitVersionResult> {
   const { target, bundle, expectedShas } = args
+  // v0 must record the ORIGINAL design. If its import failed (e.g. an
+  // uncurated font), refuse rather than let this commit become v0.
+  if (!(await hasAnyVersion(db, target.sessionId))) return { ok: false, status: 409, error: NO_BASELINE_ERROR }
   const before = expectedShas
     ? await readThemeSnapshotAt(target.githubRepo, expectedShas)
     : await readDraftThemeSnapshot(target.githubRepo)
   const draft = themeTextsFromSnapshot(before)
   if (!draft.ok) return { ok: false, status: 409, error: draft.error }
+  if (args.gateRenderedWithoutLegacy && !args.removeLegacy && hasLegacyOverrides(draft.files.overridesCss)) {
+    return { ok: false, status: 422, error: LEGACY_KEEP_UNCHECKED_ERROR }
+  }
 
   // Only the fonts matter for the capability check, so the overrides file
   // (and any malformed region in it) is irrelevant here.
@@ -94,6 +113,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       message: args.commitMessage,
       author: { name: target.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: target.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email },
       ...(expectedShas ? { base: before } : {}),
+      ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
     })
   } catch (err) {
     if (err instanceof StaleShaError) return { ok: false, status: 409, error: STALE_THEME_ERROR, stale: true }

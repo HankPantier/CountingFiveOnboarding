@@ -7,6 +7,7 @@
 // returns null (section omitted) without one.
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import type { TokenContext } from '@/lib/content/token-usage'
+import { OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { serperEnabled, serperSearch, type SerperOrganicResult } from '../serper-search'
 import type { CompetitorEntity, CompetitorIntelligence, DetectedNiche } from '../types'
 
@@ -62,6 +63,8 @@ Return JSON: { "queries": [ up to ${MAX_QUERIES} Google searches that would surf
     },
     400,
     ctx,
+    // Cheap query derivation, not a judged/scored section — low effort.
+    { providerOptions: OUTLINE_PROVIDER_OPTIONS },
   )
   return result?.queries ?? null
 }
@@ -122,6 +125,9 @@ Up to ${MAX_COMPETITORS}. Use "" for any field you can't infer from the snippet 
     validateCompetitors,
     1500,
     ctx,
+    // Mechanical extraction of structured entities from search snippets, not a
+    // judged/scored section — low effort.
+    { providerOptions: OUTLINE_PROVIDER_OPTIONS },
   )
   return result?.competitors ?? null
 }

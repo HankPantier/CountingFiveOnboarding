@@ -108,11 +108,19 @@ export class ChatWorkspace {
   // preview theme was taken); an edit that landed during the render makes the
   // recorded preview stale, so it never gates CSS it didn't render.
   recordPreview(p: Omit<WorkspacePreview, 'revision'>, revision: number = this.rev): void {
+    // Never let a preview of an OLDER revision (a slow render finishing after
+    // a newer one) replace the newer result.
+    if (this.preview && this.preview.revision > revision) return
     this.preview = { ...p, revision }
   }
   // The preview of the CURRENT working copy, or null (never previewed / edited since).
   currentPreview(): WorkspacePreview | null {
     return this.preview && this.preview.revision === this.rev ? this.preview : null
+  }
+  // The most recent preview of ANY revision (the commit gate keeps a failed
+  // one sticky until a newer revision is previewed).
+  latestPreview(): WorkspacePreview | null {
+    return this.preview
   }
 
   // `at` = the revision + bundle that was actually committed (captured before

@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
+import { streamText, convertToModelMessages, stepCountIs, type TextUIPart } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
@@ -11,6 +11,7 @@ import { trimMessages } from '@/lib/agent/trim-messages'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { z } from 'zod'
 import { NextResponse } from 'next/server'
+import { isUiMessageArray, readJsonBody } from '@/app/api/_json'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MAX_MESSAGES_PER_HOUR = 60
@@ -27,11 +28,16 @@ export async function POST(
   // Admins + assigned managers pass the session gate, but only admins may edit.
   const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
-  if (auth.user.role !== 'admin') {
+  if (!auth.user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  const body = await readJsonBody<{ messages?: unknown }>(req)
+  if (body instanceof NextResponse) return body
+  if (!isUiMessageArray(body.messages)) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+  const messages = body.messages
   const supabase = createServerClient()
 
   const { data: session, error } = await supabase

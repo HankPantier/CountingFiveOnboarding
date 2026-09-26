@@ -2,6 +2,7 @@ import { RequestError } from '@octokit/request-error'
 import { getOctokit, resolveRepo } from './app-client'
 import { withRateLimitRetry } from './rate-limit'
 import { conditionalGet } from './conditional'
+import { DEPLOY_COMMIT_PREFIX, DEPLOY_MANIFEST_PATH } from './deploy-commit'
 import type { BrandJson } from '@/types/brand-json'
 
 // How many blobs to upload at once when pushing a deliverable. Kept low so a
@@ -258,6 +259,10 @@ async function createBlobs(
   return out
 }
 
+// Above this many guarded entries, pushEntriesToBranch validates against one
+// recursive tree read of the base commit rather than a getContent per path.
+const GUARD_TREE_THRESHOLD = 8
+
 export type PushEntry = {
   path: string
   content: string | Buffer
@@ -291,6 +296,17 @@ export async function pushEntriesToBranch(
     guarded.length === 0
       ? undefined
       : async (base) => {
+          // A re-deployed package guards hundreds of entries: read the base
+          // tree once instead of one getContent per path. The per-path check
+          // still runs for a mismatch, so the error carries the current text.
+          if (guarded.length > GUARD_TREE_THRESHOLD) {
+            const shas = new Map((await listTreeAtCommit(slug, base)).map((t) => [t.path, t.sha]))
+            for (const e of guarded) {
+              if ((shas.get(e.path) ?? null) === (e.expectedBlobSha ?? null)) continue
+              await assertBlobSha(slug, e.path, e.expectedBlobSha ?? null, base, true)
+            }
+            return
+          }
           for (const e of guarded) {
             await assertBlobSha(slug, e.path, e.expectedBlobSha ?? null, base, true)
           }
@@ -424,15 +440,49 @@ export async function readBinaryFile(
   }
 }
 
-// Read a blob's bytes directly by its sha (one getBlob call). Blobs are
-// content-addressed, so a caller that already has the sha from a tree listing
-// skips the getContent lookup entirely — and the result is immutable/cacheable.
+// Blobs are content-addressed, so a (repo, sha) -> bytes entry never goes stale.
+// A bounded LRU (by total bytes, small blobs only) lets repeat readers — the
+// WordPress feed re-reading every post on each poll, the design snapshot, the
+// document export — skip getBlob entirely, sparing the shared App quota.
+const BLOB_CACHE_MAX_BYTES = 32 * 1024 * 1024
+const BLOB_CACHE_MAX_ENTRY_BYTES = 1024 * 1024
+const blobCache = new Map<string, Buffer>()
+let blobCacheBytes = 0
+
+function blobCacheGet(key: string): Buffer | undefined {
+  const hit = blobCache.get(key)
+  if (!hit) return undefined
+  blobCache.delete(key)
+  blobCache.set(key, hit)
+  return hit
+}
+
+function blobCacheSet(key: string, buf: Buffer): void {
+  if (buf.length > BLOB_CACHE_MAX_ENTRY_BYTES || blobCache.has(key)) return
+  blobCache.set(key, buf)
+  blobCacheBytes += buf.length
+  while (blobCacheBytes > BLOB_CACHE_MAX_BYTES) {
+    const oldest = blobCache.keys().next().value
+    if (oldest === undefined) break
+    blobCacheBytes -= blobCache.get(oldest)?.length ?? 0
+    blobCache.delete(oldest)
+  }
+}
+
+// Read a blob's bytes directly by its sha (one getBlob call, or none when
+// cached). A caller that already has the sha from a tree listing skips the
+// getContent lookup entirely. Returns a copy, so callers may mutate freely.
 export async function readBlobBySha(slug: string, sha: string): Promise<Buffer> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
+  const key = `${owner}/${repo}:${sha}`
+  const cached = blobCacheGet(key)
+  if (cached) return Buffer.from(cached)
   try {
     const blob = await withRateLimitRetry(() => octokit.git.getBlob({ owner, repo, file_sha: sha }))
-    return Buffer.from(blob.data.content, blob.data.encoding as BufferEncoding)
+    const buf = Buffer.from(blob.data.content, blob.data.encoding as BufferEncoding)
+    blobCacheSet(key, Buffer.from(buf))
+    return buf
   } catch (err) {
     if (isRequestError(err) && (err.status === 404 || err.status === 422)) {
       throw new FileNotFoundError(sha)
@@ -622,9 +672,12 @@ const WRITE_FILE_ATTEMPTS = 3
 
 // Write or create a file on the given branch. If expectedSha is supplied and
 // does not match the file's current sha on the branch, throws StaleShaError
-// with the remote content so the caller can present a conflict UI. A 409 from
-// the Contents API is either a real sha mismatch (→ StaleShaError) or the branch
-// moving under a concurrent commit (→ retried with jitter).
+// with the remote content so the caller can present a conflict UI. The
+// Contents API enforces `sha` atomically, so there is NO pre-read: a branch read
+// right after the caller's own commit can still return the previous tip and
+// would raise a spurious conflict. The file is read only after the API rejects
+// the write — a 409 is either a real sha mismatch (→ StaleShaError) or the
+// branch moving under a concurrent commit (→ retried with jitter).
 export async function writeFile(
   slug: string,
   path: string,
@@ -646,11 +699,10 @@ export async function writeFile(
     }
   }
 
-  if (options.expectedSha !== undefined) {
+  // An empty expectedSha can never match a real blob — report the conflict.
+  if (options.expectedSha === '') {
     const existing = await readCurrentOrStale()
-    if (existing.sha !== options.expectedSha) {
-      throw new StaleShaError(path, existing.sha, existing.content)
-    }
+    throw new StaleShaError(path, existing.sha, existing.content)
   }
 
   const payload: Parameters<typeof octokit.repos.createOrUpdateFileContents>[0] = {
@@ -674,14 +726,17 @@ export async function writeFile(
         blobSha: res.data.content?.sha ?? '',
       }
     } catch (err) {
-      if (!isRequestError(err) || err.status !== 409) throw err
-      if (options.expectedSha !== undefined) {
-        // Distinguish a real lost update from a ref race: re-read the file.
+      if (!isRequestError(err)) throw err
+      const guarded = options.expectedSha !== undefined
+      // 409 = sha mismatch or ref race; 404/422 on a guarded write = the file
+      // is gone or the sha isn't its blob. Read now to tell them apart.
+      if (guarded && (err.status === 409 || err.status === 404 || err.status === 422)) {
         const existing = await readCurrentOrStale()
         if (existing.sha !== options.expectedSha) {
           throw new StaleShaError(path, existing.sha, existing.content)
         }
       }
+      if (err.status !== 409) throw err
       if (attempt >= WRITE_FILE_ATTEMPTS) throw err
       const delay = 250 * attempt + Math.floor(Math.random() * 250)
       console.warn(`[github] writeFile ${slug}:${path}: 409 (attempt ${attempt}/${WRITE_FILE_ATTEMPTS}) — retrying in ${delay}ms`)
@@ -1127,7 +1182,7 @@ async function isPublishMergeHead(slug: string) {
   )
   const isPublish =
     head.parents.length === 2 && head.commit.message.startsWith(PUBLISH_MERGE_MESSAGE)
-  return { isPublish, parentSha: head.parents[0]?.sha ?? null }
+  return { isPublish, parentSha: head.parents[0]?.sha ?? null, headSha: head.sha }
 }
 
 export async function getStatus(slug: string): Promise<RepoStatus> {
@@ -1172,6 +1227,54 @@ export async function getDraftHeadSha(slug: string): Promise<string | null> {
   return ref.object.sha ?? null
 }
 
+// The newest "Deploy packaged content" commit reachable from draft, or null when
+// the site has never had a package pushed. Every package writes the
+// LLM-generated content/brand.md, so the path-filtered history is short and the
+// deploy commits are in it. Publishing merges draft into main and a draft reset
+// points draft at main, so the commit stays reachable either way.
+export async function findLastDeployCommitSha(slug: string, maxPages = 3): Promise<string | null> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const perPage = 100
+  for (let page = 1; page <= maxPages; page++) {
+    const list = await withRateLimitRetry(() =>
+      octokit.repos.listCommits({
+        owner,
+        repo,
+        sha: DRAFT_BRANCH,
+        path: 'content/brand.md',
+        per_page: perPage,
+        page,
+      })
+    )
+    for (const c of list.data) {
+      if ((c.commit.message ?? '').startsWith(DEPLOY_COMMIT_PREFIX)) return c.sha
+    }
+    if (list.data.length < perPage) break
+  }
+  return null
+}
+
+// Blob entries of the full tree at an (immutable) commit sha.
+export async function listTreeAtCommit(slug: string, commitSha: string): Promise<TreeEntry[]> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  const commit = await conditionalGet(`commit-obj:${owner}/${repo}:${commitSha}`, (headers) =>
+    octokit.git.getCommit({ owner, repo, commit_sha: commitSha, headers }),
+    { immutable: true }
+  )
+  const tree = await conditionalGet(`tree:${owner}/${repo}:${commit.tree.sha}`, (headers) =>
+    octokit.git.getTree({ owner, repo, tree_sha: commit.tree.sha, recursive: 'true', headers }),
+    { immutable: true }
+  )
+  return tree.tree
+    .filter(
+      (n): n is { path: string; sha: string; type: 'blob'; size?: number } =>
+        typeof n.path === 'string' && typeof n.sha === 'string' && n.type === 'blob'
+    )
+    .map((n) => ({ path: n.path, sha: n.sha, type: n.type, size: n.size }))
+}
+
 export type RevertResult =
   | { reverted: true; revertedTo: string }
   | { reverted: false; reason: string }
@@ -1182,11 +1285,22 @@ export type RevertResult =
 export async function revertLastPublish(slug: string): Promise<RevertResult> {
   const octokit = getOctokit()
   const { owner, repo } = resolveRepo(slug)
-  const { isPublish, parentSha } = await isPublishMergeHead(slug)
+  const { isPublish, parentSha, headSha } = await isPublishMergeHead(slug)
   if (!isPublish || !parentSha) {
     return {
       reverted: false,
       reason: 'The live branch tip is not a publish merge — nothing safe to revert.',
+    }
+  }
+  // The rollback is a forced ref update, which would silently discard anything
+  // that reached main after the check above (another tab's Publish). Re-read
+  // the live ref uncached right before forcing and abort if it moved, so the
+  // check-then-force window is one round-trip instead of the whole request.
+  const current = await octokit.git.getRef({ owner, repo, ref: `heads/${MAIN_BRANCH}` })
+  if (current.data.object.sha !== headSha) {
+    return {
+      reverted: false,
+      reason: 'The live site changed while rolling back (another publish landed). Reload and try again.',
     }
   }
   await octokit.git.updateRef({
@@ -1313,7 +1427,9 @@ export async function getDraftChanges(slug: string): Promise<{ files: ChangedFil
     }
   }
 
-  const files: ChangedFile[] = (cmp.data.files ?? []).map((f) => {
+  const files: ChangedFile[] = (cmp.data.files ?? [])
+    .filter((f) => f.filename !== DEPLOY_MANIFEST_PATH)
+    .map((f) => {
     const attr = attribution.get(f.filename) ?? null
     return {
       path: f.filename,
@@ -1463,14 +1579,51 @@ export type RevertFileResult = {
 // The restore points draft's tree entry at MAIN'S BLOB SHA (Git Data API) —
 // never a utf-8 decode/re-encode — so binary files (images) round-trip intact.
 // A concurrent edit (draft sha moved) surfaces as StaleShaError → 409.
+//
+// A RENAME (compare reports one entry: `path` = new name, `previousPath` = old)
+// must revert both sides together, or the undo deletes the page: pass
+// `previousPath` and both paths are set to their live state in ONE commit —
+// the new path removed (guarded at its draft sha), the old path restored to
+// main's blob (guarded as absent / at its draft sha).
 export async function revertFileToMain(
   slug: string,
   path: string,
   expectedSha: string,
-  options: { authorName?: string; authorEmail?: string } = {}
+  options: { authorName?: string; authorEmail?: string } = {},
+  previousPath: string | null = null
 ): Promise<RevertFileResult> {
   const name = path.split('/').pop() ?? path
   const attribution = options.authorEmail ? ` (${options.authorEmail})` : ''
+
+  if (previousPath && previousPath !== path) {
+    const [liveNew, draftNew, liveOld, draftOld] = await Promise.all([
+      currentSha(slug, path, MAIN_BRANCH),
+      currentSha(slug, path, DRAFT_BRANCH),
+      currentSha(slug, previousPath, MAIN_BRANCH),
+      currentSha(slug, previousPath, DRAFT_BRANCH),
+    ])
+    if (draftNew !== null && expectedSha && draftNew !== expectedSha) {
+      throw new StaleShaError(path, draftNew, '')
+    }
+    const writes: TreeWrite[] = []
+    if (draftNew !== liveNew) writes.push({ path, sha: liveNew })
+    if (draftOld !== liveOld) writes.push({ path: previousPath, sha: liveOld })
+    if (writes.length === 0) return { reverted: true, commitSha: '', action: 'restored' }
+    const oldName = previousPath.split('/').pop() ?? previousPath
+    const commitSha = await commitTreeWrites(
+      slug,
+      DRAFT_BRANCH,
+      `revertFileToMain ${slug}:${previousPath}→${path}`,
+      writes,
+      `Revert rename ${oldName} → ${name} to live via admin${attribution}`,
+      { authorName: options.authorName, authorEmail: options.authorEmail },
+      async (base) => {
+        await assertBlobSha(slug, path, draftNew, base, false)
+        await assertBlobSha(slug, previousPath, draftOld, base, false)
+      }
+    )
+    return { reverted: true, commitSha, action: 'restored' }
+  }
 
   const liveSha = await currentSha(slug, path, MAIN_BRANCH)
   const draftSha = await currentSha(slug, path, DRAFT_BRANCH)

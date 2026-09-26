@@ -71,6 +71,16 @@ export default function ThemeStudio({
   const [contrastWarnings, setContrastWarnings] = useState<string[]>([])
   // Controls (today's UI) stays the default; Studio is the Design Studio.
   const [tab, setTab] = useState<StudioTab>('controls')
+  // Once opened, the Studio stays mounted (hidden) like Controls: a chat turn
+  // that commits while the admin is on Controls still reaches onThemeChanged,
+  // so the Controls preview and the publish count refresh.
+  const [studioOpened, setStudioOpened] = useState(false)
+  const tabRefs = useRef<Partial<Record<StudioTab, HTMLButtonElement | null>>>({})
+  const selectTab = useCallback((next: StudioTab, focus = false) => {
+    setTab(next)
+    if (next === 'studio') setStudioOpened(true)
+    if (focus) tabRefs.current[next]?.focus()
+  }, [])
 
   const loadSources = useCallback(async () => {
     const res = await fetch(`/api/edit/${sessionId}/theme`)
@@ -245,16 +255,36 @@ export default function ThemeStudio({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div role="tablist" aria-label="Theme Studio mode" className="flex items-center gap-1 border-b border-border-default bg-surface-card px-6 py-1.5">
+      <div
+        role="tablist"
+        aria-label="Theme Studio mode"
+        onKeyDown={(e) => {
+          // WAI-ARIA tabs: arrows / Home / End move between tabs (one Tab stop).
+          const i = STUDIO_TABS.findIndex((t) => t.key === tab)
+          let j = -1
+          if (e.key === 'ArrowRight') j = (i + 1) % STUDIO_TABS.length
+          else if (e.key === 'ArrowLeft') j = (i - 1 + STUDIO_TABS.length) % STUDIO_TABS.length
+          else if (e.key === 'Home') j = 0
+          else if (e.key === 'End') j = STUDIO_TABS.length - 1
+          if (j < 0) return
+          e.preventDefault()
+          selectTab(STUDIO_TABS[j].key, true)
+        }}
+        className="flex items-center gap-1 border-b border-border-default bg-surface-card px-6 py-1.5"
+      >
         {STUDIO_TABS.map((t) => (
           <button
             key={t.key}
+            ref={(el) => {
+              tabRefs.current[t.key] = el
+            }}
             type="button"
             role="tab"
             id={`theme-tab-${t.key}`}
             aria-selected={tab === t.key}
             aria-controls={`theme-panel-${t.key}`}
-            onClick={() => setTab(t.key)}
+            tabIndex={tab === t.key ? 0 : -1}
+            onClick={() => selectTab(t.key)}
             className={[
               'rounded-pill px-3.5 py-1 font-heading text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan',
               tab === t.key ? 'bg-brand-navy text-text-inverse' : 'text-text-secondary hover:bg-surface-subtle hover:text-brand-navy',
@@ -264,8 +294,14 @@ export default function ThemeStudio({
           </button>
         ))}
       </div>
-      {tab === 'studio' && (
-        <div id="theme-panel-studio" role="tabpanel" aria-labelledby="theme-tab-studio" className="flex min-h-0 flex-1">
+      {studioOpened && (
+        <div
+          id="theme-panel-studio"
+          role="tabpanel"
+          aria-labelledby="theme-tab-studio"
+          hidden={tab !== 'studio'}
+          className={tab === 'studio' ? 'flex min-h-0 flex-1' : 'hidden'}
+        >
           <DesignStudio
             sessionId={sessionId}
             onThemeChanged={() => {

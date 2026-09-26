@@ -1,11 +1,12 @@
-import { streamText, convertToModelMessages, stepCountIs, type UIMessage, type TextUIPart } from 'ai'
+import { streamText, convertToModelMessages, stepCountIs, type TextUIPart } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireAuditAccess } from '@/lib/auth/access'
 import { buildAuditEditPrompt } from '@/lib/audit/edit-prompt'
 import { applyAuditEdit } from '@/lib/audit/apply-edit'
 import { recordTokenUsage } from '@/lib/content/token-usage'
-import { extractCacheUsage } from '@/lib/content/cache-control'
+import { CACHE_EPHEMERAL, extractCacheUsage } from '@/lib/content/cache-control'
+import { isUiMessageArray, readJsonBody } from '@/app/api/_json'
 import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/generation-tuning'
 import { trimMessages } from '@/lib/agent/trim-messages'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
@@ -31,7 +32,12 @@ export async function POST(
   const auth = await requireAuditAccess(id)
   if (auth instanceof NextResponse) return auth
 
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  const body = await readJsonBody<{ messages?: unknown }>(req)
+  if (body instanceof NextResponse) return body
+  if (!isUiMessageArray(body.messages)) {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+  const messages = body.messages
   const supabase = createServerClient()
 
   const { data: run, error } = await supabase
@@ -71,10 +77,16 @@ export async function POST(
     }
   }
 
+  // Stable instructions first (cache breakpoint), then the intelligence JSON,
+  // which every edit rewrites — so an edit never invalidates the cached prefix.
+  const prompt = buildAuditEditPrompt(run.result as unknown as AuditResult)
   const result = streamText({
     model: anthropic(INTERACTIVE_CHAT_MODEL),
     providerOptions: chatProviderOptions('low'),
-    system: buildAuditEditPrompt(run.result as unknown as AuditResult),
+    system: [
+      { role: 'system', content: prompt.stable, providerOptions: CACHE_EPHEMERAL },
+      { role: 'system', content: prompt.current },
+    ],
     messages: await convertToModelMessages(trimMessages(messages)),
     tools: {
       edit_audit: {

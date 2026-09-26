@@ -19,7 +19,8 @@ import {
 } from './run-types'
 
 type RunRow = Tables<'design_runs'>
-type ConceptRow = Tables<'design_concepts'>
+// The DTO never reads initial_bundle, so the poll path may omit it.
+type ConceptRow = Omit<Tables<'design_concepts'>, 'initial_bundle'>
 
 function oneOf<T extends string>(list: readonly T[], value: string, fallback: T): T {
   return (list as readonly string[]).includes(value) ? (value as T) : fallback

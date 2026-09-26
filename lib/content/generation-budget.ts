@@ -28,7 +28,26 @@ export const RESERVE_MS = 90_000
 // Smaller ceilings for the lighter pipelines (measured `stage='resource'` output
 // p50 3,468 tokens vs 8,424 for a page body; outlines p50 881).
 export const RESOURCE_CALL_CAP_MS = 120_000
+// Ceiling for the small Haiku helper calls (reverse-link, brand-fit, link
+// injection, resolve). Their p99 is a few seconds; this only catches hangs.
+export const HELPER_CALL_CAP_MS = 30_000
 export const OUTLINE_CALL_CAP_MS = 90_000
+
+/**
+ * Timeout for one model call: `capMs`, shrunk to what's left before the absolute
+ * `deadlineAt` (epoch ms). Never returns <= 0 (AbortSignal.timeout throws on a
+ * negative value); callers that must not start a doomed call check
+ * `msUntil(deadlineAt)` first.
+ */
+export function clipToDeadline(deadlineAt: number | undefined, capMs: number, now: number = Date.now()): number {
+  if (deadlineAt === undefined) return capMs
+  return Math.max(1, Math.min(capMs, deadlineAt - now))
+}
+
+/** Milliseconds left before `deadlineAt` (Infinity when there is no deadline). */
+export function msUntil(deadlineAt: number | undefined, now: number = Date.now()): number {
+  return deadlineAt === undefined ? Infinity : deadlineAt - now
+}
 
 export interface GenerationBudget {
   /** Milliseconds left before this invocation must stop working. */

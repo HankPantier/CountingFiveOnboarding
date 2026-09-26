@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
-import { safePath } from '../_path'
+import { safePath, CONTENT_MD_RE, ADMIN_BLOCKED_CONFIG } from '../_path'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import {
@@ -14,17 +14,9 @@ import {
 
 export const runtime = 'nodejs'
 
-// Page/post markdown the generic writer may touch. Everything else under
-// content/ is site configuration (nav.json, brand.json, design.json,
-// design-overrides.css, client-center.json, redirects.csv, …) that has its own
-// gated route (nav, theme, client-center, site-settings) — writing it raw here
-// would bypass those routes' validation and the Site Owner/editor lockdown.
-const CONTENT_MD_RE = /^content\/(?:drafts\/)?(?:pages|posts)\/[^/]+\.md$/
-
-// Admins (superusers) may still raw-edit other content/ files from the code
-// view, EXCEPT nav.json, which must go through /nav (it relocates pages + adds
-// 301s atomically with the nav change).
-const ADMIN_BLOCKED_CONFIG = new Set(['content/nav.json'])
+// Non-admins may write page/post markdown only (CONTENT_MD_RE). Admins
+// (superusers) may still raw-edit other content/ files from the code view,
+// EXCEPT ADMIN_BLOCKED_CONFIG (nav.json).
 
 type WriteBody = {
   path?: string

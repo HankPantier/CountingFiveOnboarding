@@ -4,6 +4,9 @@ const h = vi.hoisted(() => ({
   allowed: null as string[] | null,
   targets: [{ id: 't1', resource_idea_id: 'idea-1', session_id: 'sess-1' }],
   filters: [] as Array<{ table: string; method: string; args: unknown[] }>,
+  updateFilters: [] as Array<{ table: string; method: string; args: unknown[] }>,
+  // Ideas the fenced reset actually matched (i.e. not mid-draft).
+  resetIdeas: [{ id: 'idea-1' }] as Array<{ id: string }>,
   after: vi.fn(),
   runBlogBatch: vi.fn(),
 }))
@@ -25,8 +28,8 @@ vi.mock('@/lib/supabase/server', () => ({
     from: (table: string) => {
       let kind: 'select' | 'update' = 'select'
       const builder: Record<string, unknown> = {
+        // `.update(...).select('id')` returns the updated rows — stay an update.
         select() {
-          kind = 'select'
           return builder
         },
         update() {
@@ -35,15 +38,21 @@ vi.mock('@/lib/supabase/server', () => ({
         },
         eq(...args: unknown[]) {
           if (kind === 'select') h.filters.push({ table, method: 'eq', args })
+          else h.updateFilters.push({ table, method: 'eq', args })
           return builder
         },
         in(...args: unknown[]) {
           if (kind === 'select') h.filters.push({ table, method: 'in', args })
+          else h.updateFilters.push({ table, method: 'in', args })
+          return builder
+        },
+        neq(...args: unknown[]) {
+          h.updateFilters.push({ table, method: 'neq', args })
           return builder
         },
         single: async () => (table === 'blog_batches' ? { data: { id: 'b1' } } : { data: null }),
         then(resolve: (v: unknown) => void) {
-          if (kind === 'update') resolve({ error: null })
+          if (kind === 'update') resolve({ data: table === 'resource_ideas' ? h.resetIdeas : null, error: null })
           else resolve({ data: table === 'blog_batch_targets' ? h.targets : [] })
         },
       }
@@ -64,6 +73,8 @@ beforeEach(() => {
   h.allowed = null
   h.targets = [{ id: 't1', resource_idea_id: 'idea-1', session_id: SESSION }]
   h.filters = []
+  h.updateFilters = []
+  h.resetIdeas = [{ id: 'idea-1' }]
   h.after.mockReset()
   h.runBlogBatch.mockReset()
 })
@@ -88,6 +99,32 @@ describe('POST /api/blog-batches/[id]/retry', () => {
     expect(targetStatusFilter()).toEqual([
       { table: 'blog_batch_targets', method: 'eq', args: ['status', 'error'] },
     ])
+  })
+
+  it('never resets an idea that is mid-draft (fenced on draft_status != running)', async () => {
+    await post({})
+    expect(h.updateFilters).toContainEqual({ table: 'resource_ideas', method: 'neq', args: ['draft_status', 'running'] })
+  })
+
+  it('refuses (409) and starts no runner while the only failed target\'s idea is still being drafted', async () => {
+    // A library run holds idea-1 'running'; the fenced reset matches nothing.
+    h.resetIdeas = []
+    const res = await post({})
+    expect(res.status).toBe(409)
+    expect(h.after).not.toHaveBeenCalled()
+    expect(h.updateFilters.some((f) => f.table === 'blog_batch_targets')).toBe(false)
+  })
+
+  it('retries only the targets whose idea was reset, reporting the in-flight ones', async () => {
+    h.targets = [
+      { id: 't1', resource_idea_id: 'idea-1', session_id: SESSION },
+      { id: 't2', resource_idea_id: 'idea-2', session_id: SESSION },
+    ]
+    h.resetIdeas = [{ id: 'idea-1' }]
+    const res = await post({})
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ retried: 1, skippedInFlight: 1 })
+    expect(h.updateFilters).toContainEqual({ table: 'blog_batch_targets', method: 'in', args: ['id', ['t1']] })
   })
 
   it('force is ignored without a single sessionId (falls back to errored-only)', async () => {

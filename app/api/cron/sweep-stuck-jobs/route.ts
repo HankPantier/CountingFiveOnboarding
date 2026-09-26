@@ -4,10 +4,11 @@ import { createServerClient } from '@/lib/supabase/server'
 import { resumePlan } from '@/lib/content/resume-targets'
 import { runWhoisLookup } from '@/lib/whois/lookup'
 import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS } from '@/lib/content/content-generator'
-import { reconcileStuckTarget } from '@/lib/content/blog-batch-runner'
+import { reconcileStuckTarget, finalizeBlogBatchIfDone } from '@/lib/content/blog-batch-runner'
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
 import { sweepStuckDesignRows } from '@/lib/design/sweep'
+import { requireCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -32,14 +33,10 @@ const PAGE_STUCK_THRESHOLD_MS = ORPHAN_RECLAIM_MS
 const DRAFT_STUCK_THRESHOLD_MS = 10 * 60 * 1000
 
 export async function GET(req: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = requireCronBearer(req)
+  if (denied) return denied
+  // Non-empty here (requireCronBearer fails closed); reused for self-calls.
+  const cronSecret = process.env.CRON_SECRET as string
 
   const supabase = createServerClient()
   const cutoff = new Date(Date.now() - STUCK_THRESHOLD_MS).toISOString()
@@ -136,6 +133,21 @@ export async function GET(req: Request) {
       `[sweep-stuck-jobs] design inputs=${designSwept.inputs} runs=${designSwept.runs} concepts=${designSwept.concepts}`
     )
   }
+  // Design Studio storage orphans (unreferenced /design/render outputs and
+  // never-sent chat attachments), once an hour. Lazy: storage pulls in sharp.
+  // Fail-soft like the row sweep.
+  let designOrphans = { renders: 0, attachments: 0 }
+  try {
+    const { isStorageSweepSlot, sweepDesignStorageOrphans, designStorageSweepDeps } = await import('@/lib/design/storage-sweep')
+    if (isStorageSweepSlot(Date.now())) {
+      designOrphans = await sweepDesignStorageOrphans(designStorageSweepDeps(supabase))
+      if (designOrphans.renders || designOrphans.attachments) {
+        console.warn(`[sweep-stuck-jobs] design storage orphans removed renders=${designOrphans.renders} attachments=${designOrphans.attachments}`)
+      }
+    }
+  } catch (err) {
+    console.error('[sweep-stuck-jobs] design storage sweep unavailable:', err)
+  }
 
   // blog_batch_targets stuck at 'generating' (worker died between claim and
   // terminal write) are invisible to future chained runs, which only select
@@ -147,10 +159,12 @@ export async function GET(req: Request) {
   let batchTargetsSwept = 0
   const { data: stuckTargets } = await supabase
     .from('blog_batch_targets')
-    .select('id, resource_idea_id, attempts')
+    .select('id, batch_id, resource_idea_id, attempts')
     .eq('status', 'generating')
     .lt('updated_at', cutoff)
     .limit(200)
+  // Batches whose targets this pass settled to a terminal status.
+  const settledBatchIds = new Set<string>()
   if (stuckTargets?.length) {
     const ideaIds = stuckTargets.map((t) => t.resource_idea_id).filter((x): x is string => !!x)
     const { data: stuckIdeas } = ideaIds.length
@@ -174,6 +188,17 @@ export async function GET(req: Request) {
         .eq('status', 'generating')
         .select('id')
       batchTargetsSwept += moved?.length ?? 0
+      if (moved?.length && next !== 'pending') settledBatchIds.add(t.batch_id)
+    }
+  }
+  // A batch whose last live target was just settled here has no runner coming
+  // back to finalize it (the resume below only re-runs batches with pending
+  // targets) — settle its status now so it doesn't read "generating" forever.
+  for (const batchId of settledBatchIds) {
+    try {
+      await finalizeBlogBatchIfDone(supabase, batchId)
+    } catch (err) {
+      console.error('[sweep-stuck-jobs] batch finalize failed for', batchId, err)
     }
   }
 
@@ -554,5 +579,5 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed,
-    researchResumed, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, cutoff })
+    researchResumed, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, designRendersRemoved: designOrphans.renders, designAttachmentsRemoved: designOrphans.attachments, cutoff })
 }

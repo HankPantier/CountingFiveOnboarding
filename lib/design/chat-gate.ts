@@ -44,10 +44,24 @@ export function previewCheck(metrics: RenderMetrics | null, baseline: RenderMetr
 
 export type ChatGate = RenderGate
 
+type GatePreview = { metrics: RenderMetrics | null; baseline: RenderMetrics | null }
+
 // `preview` = the workspace's preview of its CURRENT revision (null when the
-// change was never previewed).
-export function chatCommitGate(preview: { metrics: RenderMetrics | null; baseline: RenderMetrics | null } | null): ChatGate {
-  if (!preview) return { ok: true, warnings: [CHAT_UNPREVIEWED_WARNING] }
+// change was never previewed or was edited since). `latest` = the most recent
+// preview of ANY revision. A failed preview is sticky: when the current
+// revision is unpreviewed and the latest preview (of an earlier revision)
+// failed, the commit is refused until a newer revision is previewed — an edit
+// after a failed preview never slips past the gate unchecked (the sanitizer
+// relies on this gate for residual hiding vectors). An unpreviewed change with
+// no failed preview behind it is still allowed, with the unpreviewed warning.
+export function chatCommitGate(preview: GatePreview | null, latest: GatePreview | null = null): ChatGate {
+  if (!preview) {
+    if (latest) {
+      const last = chatCommitGate(latest)
+      if (!last.ok) return last
+    }
+    return { ok: true, warnings: [CHAT_UNPREVIEWED_WARNING] }
+  }
   if (!preview.metrics) return metricsRenderGate(null, preview.baseline, CHAT_WORDING)
   const m = comparable(preview.metrics, preview.baseline)
   if (!m) return { ok: true, warnings: unmeasuredWarnings(null) }

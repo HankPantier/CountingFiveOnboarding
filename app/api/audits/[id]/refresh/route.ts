@@ -2,6 +2,7 @@ import { after, NextResponse } from 'next/server'
 import { requireAuditAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { refreshAuditJob } from '@/lib/audit/worker'
+import { isCronBearer } from '@/lib/auth/cron-bearer'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300
@@ -11,9 +12,7 @@ export const maxDuration = 300
 // re-merge the social recommendations. No re-crawl and no re-scoring: scores,
 // findings, and page analysis are preserved. Same two auth paths as /run.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const cronSecret = process.env.CRON_SECRET
-  const authHeader = req.headers.get('Authorization')
-  const isInternalChain = !!cronSecret && authHeader === `Bearer ${cronSecret}`
+  const isInternalChain = isCronBearer(req)
 
   const { id } = await params
 

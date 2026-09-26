@@ -7,6 +7,7 @@ vi.mock('../serper-search', () => ({
 }))
 
 import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { OUTLINE_PROVIDER_OPTIONS } from '@/lib/content/generation-tuning'
 import { serperEnabled, serperSearch } from '../serper-search'
 import { analyzeCompetitors } from './competitors'
 import type { DetectedNiche } from '../types'
@@ -49,6 +50,11 @@ describe('analyzeCompetitors', () => {
     const out = await analyzeCompetitors(input)
     expect(out?.competitors).toHaveLength(2)
     expect(out?.competitors[0].name).toBe('Smith CPA')
+
+    // Both the query-derivation and entity-extraction passes are cheap
+    // classification/extraction, not a scored/judged section — low effort.
+    expect(mockGen.mock.calls[0][4]?.providerOptions).toBe(OUTLINE_PROVIDER_OPTIONS)
+    expect(mockGen.mock.calls[1][4]?.providerOptions).toBe(OUTLINE_PROVIDER_OPTIONS)
 
     // The candidate list (indented host lines) should hold only the two
     // non-filtered hosts — never the own domain or the directory host. (The

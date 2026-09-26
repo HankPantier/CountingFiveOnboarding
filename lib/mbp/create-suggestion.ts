@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { getByPath } from '@/lib/mbp/schema-write'
+import { isApprovableSuggestionPath, isWholeArraySet } from '@/lib/mbp/suggestion-guards'
 import type { MbpChangeOp, MbpSuggestionChanges, MbpSuggestionOrigin } from '@/types/mbp'
 
 type Supabase = ReturnType<typeof createServerClient>
@@ -11,6 +12,10 @@ export interface SuggestionChangeInput {
   op?: MbpChangeOp
   proposedValue: unknown
   rationale: string
+  // Snapshot this path's current value as the approval guard (see
+  // MbpSuggestionBase) — e.g. `niches[2].name` for a drop of niches[2]. Whole-
+  // array sets are guarded on their own path automatically.
+  basePath?: string
 }
 
 export interface CreateSuggestionInput {
@@ -30,9 +35,16 @@ export interface CreateSuggestionInput {
 export async function insertMbpSuggestion(
   supabase: Supabase,
   input: CreateSuggestionInput
-): Promise<{ filed: boolean }> {
-  const { sessionId, origin, sourceRef = null, summary, changes, schema = {} } = input
-  if (!changes.length) return { filed: false }
+): Promise<{ filed: boolean; error?: string }> {
+  const { sessionId, origin, sourceRef = null, summary, schema = {} } = input
+  // Server-owned `_meta` markers (and off-schema paths) are never suggestible —
+  // the approve route skips them too, but refusing here keeps them out of the
+  // review panel entirely.
+  const rejected = input.changes.filter(c => !isApprovableSuggestionPath(c.fieldPath)).map(c => c.fieldPath)
+  const changes = input.changes.filter(c => isApprovableSuggestionPath(c.fieldPath))
+  if (!changes.length) {
+    return { filed: false, ...(rejected.length ? { error: `Not an editable profile field: ${rejected.join(', ')}` } : {}) }
+  }
 
   // Dedupe by field + op. For appends we also key on the proposed item so two
   // genuinely different new entries each get their own slot, while re-proposing
@@ -48,11 +60,15 @@ export async function insertMbpSuggestion(
 
   const changeMap: MbpSuggestionChanges = {}
   for (const c of changes) {
+    const op: MbpChangeOp = c.op === 'append' ? 'append' : 'set'
+    const currentValue = getByPath(schema, c.fieldPath)
+    const basePath = c.basePath ?? (isWholeArraySet(op, c.proposedValue, currentValue) ? c.fieldPath : undefined)
     changeMap[c.fieldPath] = {
-      op: c.op === 'append' ? 'append' : 'set',
-      currentValue: getByPath(schema, c.fieldPath),
+      op,
+      currentValue,
       proposedValue: c.proposedValue,
       rationale: c.rationale,
+      ...(basePath ? { base: { path: basePath, value: getByPath(schema, basePath) ?? null } } : {}),
     }
   }
 
