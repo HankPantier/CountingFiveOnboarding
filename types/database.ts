@@ -14,24 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      ai_service_status: {
-        Row: {
-          id: boolean
-          credit_exhausted_at: string | null
-          updated_at: string
-        }
-        Insert: {
-          id?: boolean
-          credit_exhausted_at?: string | null
-          updated_at?: string
-        }
-        Update: {
-          id?: boolean
-          credit_exhausted_at?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       admins: {
         Row: {
           capabilities: string[]
@@ -59,40 +41,69 @@ export type Database = {
         }
         Relationships: []
       }
-      manager_clients: {
+      ai_service_status: {
         Row: {
-          created_at: string
-          id: string
-          manager_id: string
-          session_id: string
+          credit_exhausted_at: string | null
+          id: boolean
+          updated_at: string
         }
         Insert: {
-          created_at?: string
-          id?: string
-          manager_id: string
-          session_id: string
+          credit_exhausted_at?: string | null
+          id?: boolean
+          updated_at?: string
         }
         Update: {
-          created_at?: string
+          credit_exhausted_at?: string | null
+          id?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      assets: {
+        Row: {
+          asset_category: string | null
+          file_name: string
+          file_size_bytes: number | null
+          id: string
+          metadata: Json | null
+          mime_type: string
+          public_url: string | null
+          session_id: string
+          storage_path: string
+          uploaded_at: string
+        }
+        Insert: {
+          asset_category?: string | null
+          file_name: string
+          file_size_bytes?: number | null
           id?: string
-          manager_id?: string
+          metadata?: Json | null
+          mime_type: string
+          public_url?: string | null
+          session_id: string
+          storage_path: string
+          uploaded_at?: string
+        }
+        Update: {
+          asset_category?: string | null
+          file_name?: string
+          file_size_bytes?: number | null
+          id?: string
+          metadata?: Json | null
+          mime_type?: string
+          public_url?: string | null
           session_id?: string
+          storage_path?: string
+          uploaded_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "manager_clients_manager_id_fkey"
-            columns: ["manager_id"]
-            isOneToOne: false
-            referencedRelation: "admins"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "manager_clients_session_id_fkey"
+            foreignKeyName: "assets_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       audit_batches: {
@@ -278,119 +289,16 @@ export type Database = {
           },
         ]
       }
-      assets: {
-        Row: {
-          asset_category: string | null
-          file_name: string
-          file_size_bytes: number | null
-          id: string
-          metadata: Json | null
-          mime_type: string
-          public_url: string | null
-          session_id: string
-          storage_path: string
-          uploaded_at: string
-        }
-        Insert: {
-          asset_category?: string | null
-          file_name: string
-          file_size_bytes?: number | null
-          id?: string
-          metadata?: Json | null
-          mime_type: string
-          public_url: string | null
-          session_id: string
-          storage_path: string
-          uploaded_at?: string
-        }
-        Update: {
-          asset_category?: string | null
-          file_name?: string
-          file_size_bytes?: number | null
-          id?: string
-          metadata?: Json | null
-          mime_type?: string
-          public_url?: string
-          session_id?: string
-          storage_path?: string
-          uploaded_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "assets_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      blog_batches: {
-        Row: {
-          angle: string | null
-          content_type: string
-          industry: string
-          created_at: string
-          created_by: string | null
-          id: string
-          rationale: string | null
-          seed: string | null
-          secondary_keywords: Json
-          status: string
-          target_keyword: string | null
-          title: string
-          updated_at: string
-        }
-        Insert: {
-          angle?: string | null
-          content_type?: string
-          industry?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          rationale?: string | null
-          seed?: string | null
-          secondary_keywords?: Json
-          status?: string
-          target_keyword?: string | null
-          title: string
-          updated_at?: string
-        }
-        Update: {
-          angle?: string | null
-          content_type?: string
-          industry?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          rationale?: string | null
-          seed?: string | null
-          secondary_keywords?: Json
-          status?: string
-          target_keyword?: string | null
-          title?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "blog_batches_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "admins"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       blog_batch_targets: {
         Row: {
           attempts: number
           batch_id: string
           content_job_id: string
           content_type: string
-          industry: string
           created_at: string
           error: string | null
           id: string
+          industry: string
           resource_idea_id: string | null
           session_id: string
           status: string
@@ -401,10 +309,10 @@ export type Database = {
           batch_id: string
           content_job_id: string
           content_type?: string
-          industry?: string
           created_at?: string
           error?: string | null
           id?: string
+          industry?: string
           resource_idea_id?: string | null
           session_id: string
           status?: string
@@ -415,10 +323,10 @@ export type Database = {
           batch_id?: string
           content_job_id?: string
           content_type?: string
-          industry?: string
           created_at?: string
           error?: string | null
           id?: string
+          industry?: string
           resource_idea_id?: string | null
           session_id?: string
           status?: string
@@ -450,6 +358,91 @@ export type Database = {
             foreignKeyName: "blog_batch_targets_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blog_batches: {
+        Row: {
+          angle: string | null
+          content_type: string
+          created_at: string
+          created_by: string | null
+          id: string
+          industry: string
+          rationale: string | null
+          secondary_keywords: Json
+          seed: string | null
+          status: string
+          target_keyword: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          angle?: string | null
+          content_type?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          industry?: string
+          rationale?: string | null
+          secondary_keywords?: Json
+          seed?: string | null
+          status?: string
+          target_keyword?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          angle?: string | null
+          content_type?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          industry?: string
+          rationale?: string | null
+          secondary_keywords?: Json
+          seed?: string | null
+          status?: string
+          target_keyword?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_batches_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      content_edit_stats: {
+        Row: {
+          computed_at: string
+          head_sha: string
+          session_id: string
+          stats: Json
+        }
+        Insert: {
+          computed_at?: string
+          head_sha: string
+          session_id: string
+          stats: Json
+        }
+        Update: {
+          computed_at?: string
+          head_sha?: string
+          session_id?: string
+          stats?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_edit_stats_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
             referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
@@ -596,35 +589,6 @@ export type Database = {
           },
         ]
       }
-      content_edit_stats: {
-        Row: {
-          computed_at: string
-          head_sha: string
-          session_id: string
-          stats: Json
-        }
-        Insert: {
-          computed_at?: string
-          head_sha: string
-          session_id: string
-          stats: Json
-        }
-        Update: {
-          computed_at?: string
-          head_sha?: string
-          session_id?: string
-          stats?: Json
-        }
-        Relationships: [
-          {
-            foreignKeyName: "content_edit_stats_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: true
-            referencedRelation: "sessions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       content_jobs: {
         Row: {
           articles_reviewed_at: string | null
@@ -682,6 +646,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "content_jobs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "content_jobs_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
@@ -690,7 +661,6 @@ export type Database = {
           },
         ]
       }
-      // Hand-patched for migration 078 (Design Studio) — replaced on the next `supabase gen types`.
       design_chat_messages: {
         Row: {
           attachment_ids: string[]
@@ -1142,6 +1112,42 @@ export type Database = {
           },
         ]
       }
+      manager_clients: {
+        Row: {
+          created_at: string
+          id: string
+          manager_id: string
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_id: string
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manager_clients_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manager_clients_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mbp_messages: {
         Row: {
           content: string
@@ -1216,17 +1222,17 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "mbp_suggestions_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "sessions"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "mbp_suggestions_resolved_by_fkey"
             columns: ["resolved_by"]
             isOneToOne: false
             referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mbp_suggestions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -1319,6 +1325,44 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      no_go_phrases: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          phrase: string
+          phrase_normalized: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          phrase: string
+          phrase_normalized: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          phrase?: string
+          phrase_normalized?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "no_go_phrases_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
             referencedColumns: ["id"]
           },
         ]
@@ -1526,51 +1570,6 @@ export type Database = {
           },
         ]
       }
-      site_settings: {
-        Row: {
-          booking_provider: string
-          booking_url: string
-          created_at: string
-          id: string
-          session_id: string
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          booking_provider?: string
-          booking_url?: string
-          created_at?: string
-          id?: string
-          session_id: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          booking_provider?: string
-          booking_url?: string
-          created_at?: string
-          id?: string
-          session_id?: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "site_settings_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: true
-            referencedRelation: "sessions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "site_settings_updated_by_fkey"
-            columns: ["updated_by"]
-            isOneToOne: false
-            referencedRelation: "admins"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       rate_limit_events: {
         Row: {
           created_at: string
@@ -1676,9 +1675,8 @@ export type Database = {
           angle: string | null
           content_job_id: string
           content_type: string
-          critic_review: Json | null
-          industry: string
           created_at: string
+          critic_review: Json | null
           draft_commit_sha: string | null
           draft_error: string | null
           draft_notes: string | null
@@ -1686,6 +1684,7 @@ export type Database = {
           draft_status: string
           external_links: Json
           id: string
+          industry: string
           rationale: string | null
           reverse_links: Json
           score: number | null
@@ -1704,9 +1703,8 @@ export type Database = {
           angle?: string | null
           content_job_id: string
           content_type?: string
-          critic_review?: Json | null
-          industry?: string
           created_at?: string
+          critic_review?: Json | null
           draft_commit_sha?: string | null
           draft_error?: string | null
           draft_notes?: string | null
@@ -1714,6 +1712,7 @@ export type Database = {
           draft_status?: string
           external_links?: Json
           id?: string
+          industry?: string
           rationale?: string | null
           reverse_links?: Json
           score?: number | null
@@ -1732,9 +1731,8 @@ export type Database = {
           angle?: string | null
           content_job_id?: string
           content_type?: string
-          critic_review?: Json | null
-          industry?: string
           created_at?: string
+          critic_review?: Json | null
           draft_commit_sha?: string | null
           draft_error?: string | null
           draft_notes?: string | null
@@ -1742,6 +1740,7 @@ export type Database = {
           draft_status?: string
           external_links?: Json
           id?: string
+          industry?: string
           rationale?: string | null
           reverse_links?: Json
           score?: number | null
@@ -1866,65 +1865,50 @@ export type Database = {
           },
         ]
       }
-      wordpress_sites: {
+      site_settings: {
         Row: {
-          id: string
-          site_key: string
-          github_repo: string
-          enabled: boolean
-          secret: string
+          booking_provider: string
+          booking_url: string
           created_at: string
+          id: string
+          session_id: string
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
-          id?: string
-          site_key: string
-          github_repo: string
-          enabled?: boolean
-          secret: string
+          booking_provider?: string
+          booking_url?: string
           created_at?: string
+          id?: string
+          session_id: string
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
-          id?: string
-          site_key?: string
-          github_repo?: string
-          enabled?: boolean
-          secret?: string
+          booking_provider?: string
+          booking_url?: string
           created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      no_go_phrases: {
-        Row: {
-          id: string
-          phrase: string
-          phrase_normalized: string
-          note: string | null
-          created_by: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
           id?: string
-          phrase: string
-          phrase_normalized: string
-          note?: string | null
-          created_by?: string | null
-          created_at?: string
+          session_id?: string
           updated_at?: string
+          updated_by?: string | null
         }
-        Update: {
-          id?: string
-          phrase?: string
-          phrase_normalized?: string
-          note?: string | null
-          created_by?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "site_settings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       task_progress: {
         Row: {
@@ -2054,6 +2038,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "token_usage_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "token_usage_session_id_fkey"
             columns: ["session_id"]
             isOneToOne: false
@@ -2061,6 +2052,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      wordpress_sites: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          github_repo: string
+          id: string
+          secret: string
+          site_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          github_repo: string
+          id?: string
+          secret: string
+          site_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          github_repo?: string
+          id?: string
+          secret?: string
+          site_key?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -2070,10 +2091,10 @@ export type Database = {
       token_usage_model_totals: {
         Args: { since?: string }
         Returns: {
-          model: string
-          input_tokens: number
-          output_tokens: number
           cost_usd: number
+          input_tokens: number
+          model: string
+          output_tokens: number
         }[]
       }
     }
@@ -2094,12 +2115,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2123,11 +2144,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2148,11 +2169,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2173,11 +2194,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -2190,11 +2211,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
