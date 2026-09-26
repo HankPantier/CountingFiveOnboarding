@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { criticTimeoutFor, CRITIC_CALL_CAP_MS } from './draft-critic'
 import {
   rewritePageForCritic,
-  criticTimeoutFor,
-  CRITIC_CALL_CAP_MS,
   type GeneratedResult,
   type PageGenContext,
   type CriticRewriteDeps,

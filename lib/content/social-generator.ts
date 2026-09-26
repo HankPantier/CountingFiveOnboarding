@@ -1,7 +1,8 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS } from './generation-tuning'
+import { GENERATION_PROVIDER_OPTIONS, OUTLINE_PROVIDER_OPTIONS, PUBLISHED_CONTENT_MODEL } from './generation-tuning'
+import { RESOURCE_CALL_CAP_MS, clipToDeadline, msUntil } from './generation-budget'
 import { buildBrandVoiceBlock, buildFirmContext, firmLocation } from './brand-voice'
 import { ANTI_SLOP_RULES, sanitizeGeneratedText } from './anti-slop-validator'
 import { loadNoGoPhrases, buildNoGoPromptBlock } from './no-go-phrases'
@@ -12,7 +13,11 @@ import { DRAFT_BRANCH, readFile, writeFile, FileNotFoundError } from '@/lib/gith
 import { splitFile } from '@/lib/editor/frontmatter'
 import type { SessionSchema } from '@/types/session-schema'
 
-const SOCIAL_MODEL = 'claude-sonnet-5'
+const SOCIAL_MODEL = PUBLISHED_CONTENT_MODEL
+// Standalone backfill runs in after() under a 300s route; keep well inside it.
+const SOCIAL_DEFAULT_BUDGET_MS = 240_000
+// Only retry a truncated first pass when this much time is left.
+const SOCIAL_MIN_RETRY_MS = 30_000
 
 export type SocialJson = {
   linkedin: string
@@ -30,6 +35,9 @@ type SocialInput = {
   contentJobId: string
   sessionId: string
   slug: string
+  // Absolute deadline (epoch ms): each call is clipped to it and the retry is
+  // skipped near it. Defaults to SOCIAL_DEFAULT_BUDGET_MS from now.
+  deadlineAt?: number
 }
 
 // One Sonnet call producing all three platform suggestions. Pure with respect
@@ -37,6 +45,7 @@ type SocialInput = {
 // on-demand backfill route. Returns null on unparseable output (non-fatal for
 // callers).
 export async function generateSocialJson(input: SocialInput): Promise<SocialJson | null> {
+  const deadlineAt = input.deadlineAt ?? Date.now() + SOCIAL_DEFAULT_BUDGET_MS
   const loc = firmLocation(input.schema)
   const noGoBlock = buildNoGoPromptBlock((await loadNoGoPhrases()).map(p => p.phrase))
   const prompt = `You are writing social media promotion copy for a blog post by ${input.schema.business?.name ?? 'a CPA firm'}${loc ? ` (${loc})` : ''}.
@@ -79,6 +88,9 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
       maxOutputTokens,
       providerOptions,
       maxRetries: 4,
+      // Bounds the call (and its retry backoff) so a stalled provider can't hold
+      // the claimed row past the invocation.
+      abortSignal: AbortSignal.timeout(clipToDeadline(deadlineAt, RESOURCE_CALL_CAP_MS)),
     })
     checkTokenBudget('social', input.slug, usage?.inputTokens, 5000)
     await recordTokenUsage({
@@ -118,7 +130,7 @@ ${ANTI_SLOP_RULES}${noGoBlock ? `\n\n${noGoBlock}` : ''}`
   // per CLAUDE.md). Retry: low effort so short reasoning leaves the larger budget
   // for the full JSON (mirrors the outline/page-body retry safety net).
   let res = await attempt(4000, GENERATION_PROVIDER_OPTIONS)
-  if ('failed' in res) {
+  if ('failed' in res && msUntil(deadlineAt) >= SOCIAL_MIN_RETRY_MS) {
     console.warn(
       `[social-gen] Parse failed for "${input.title}" (finish=${res.finishReason}) — retrying with larger budget. Raw: ${res.text.slice(0, 200)}`
     )

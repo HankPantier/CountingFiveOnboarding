@@ -2,7 +2,7 @@ import { generateText } from 'ai'
 import { after } from 'next/server'
 import { anthropic } from '@ai-sdk/anthropic'
 import { createServerClient } from '@/lib/supabase/server'
-import { scoreDraft, type DraftCriticInput } from './draft-critic'
+import { scoreDraft, criticTimeoutFor, type DraftCriticInput } from './draft-critic'
 import {
   criticFailsThreshold,
   buildCriticGuidance,
@@ -95,21 +95,6 @@ export const ORPHAN_RECLAIM_MS = GENERATE_ROUTE_MAX_DURATION_MS + 60_000
 export function callTimeoutFor(deadlineAt: number | undefined, capMs: number = PER_CALL_CAP_MS, now: number = Date.now()): number {
   if (deadlineAt === undefined) return capMs
   return Math.max(1, Math.min(capMs, deadlineAt - now))
-}
-
-// The critic (after()) shares the page's invocation. `deadlineAt` is that
-// invocation's work deadline (maxDuration - RESERVE_MS), so the function is
-// killed at deadlineAt + RESERVE_MS. The Opus call must end CRITIC_KILL_MARGIN_MS
-// before that; below CRITIC_MIN_CALL_MS it isn't worth starting.
-export const CRITIC_CALL_CAP_MS = 110_000
-export const CRITIC_KILL_MARGIN_MS = 15_000
-export const CRITIC_MIN_CALL_MS = 30_000
-
-/** Timeout for one critic call, or null when too little invocation time is left. */
-export function criticTimeoutFor(deadlineAt: number, now: number = Date.now()): number | null {
-  const left = deadlineAt + RESERVE_MS - CRITIC_KILL_MARGIN_MS - now
-  if (left < CRITIC_MIN_CALL_MS) return null
-  return Math.min(CRITIC_CALL_CAP_MS, left)
 }
 
 /** Enough time left before `deadlineAt` for an optional retry? */

@@ -1,5 +1,5 @@
 import { createServerClient } from '@/lib/supabase/server'
-import { generateResourceDraft } from './resource-draft-generator'
+import { generateResourceDraft, RESOURCE_DRAFT_MIN_VIABLE_MS } from './resource-draft-generator'
 import { createBudget, runWithPool } from './generation-budget'
 
 // Fan a single locked blog idea out across the batch's selected clients. Each
@@ -16,8 +16,9 @@ export const BLOG_BATCH_ROUTE_MAX_DURATION_MS = 600_000
 // One target = a resource draft (up to 2 model calls, RESOURCE cap 120s each)
 // plus an inline social call and an MBP impact review. The old fixed 240s soft
 // deadline was checked only between groups of 3, so a group could start with
-// seconds to spare and the function was killed mid-draft.
-const BLOG_TARGET_MIN_VIABLE_MS = 180_000
+// seconds to spare and the function was killed mid-draft. Each draft also gets
+// the invocation's deadline, so its optional steps are skipped rather than killed.
+const BLOG_TARGET_MIN_VIABLE_MS = RESOURCE_DRAFT_MIN_VIABLE_MS
 
 // Attempts before a target stops being auto-retried (cron reset / chain).
 export const MAX_BLOG_TARGET_ATTEMPTS = 3
@@ -96,7 +97,7 @@ export async function runBlogBatch(batchId: string): Promise<void> {
           .select('id')
         if (!claimed?.length) return
 
-        const result = await generateResourceDraft(ideaId)
+        const result = await generateResourceDraft(ideaId, { deadlineAt: Date.now() + budget.remaining() })
         // 'skipped' = another worker owns the idea lock (or it's already
         // drafted); leave it 'generating' and let the reconciliation pass below
         // settle it from draft_status.
