@@ -3,6 +3,7 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { after, NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
+import { toolError } from '@/lib/api/tool-error'
 import { z } from 'zod'
 import { resolveEditContext } from '../../_helpers'
 import { safePath } from '../../_path'
@@ -167,7 +168,7 @@ RULES
               })
             return { pages: entries, nav: nav ?? { primary: [] } }
           } catch (err) {
-            return { error: err instanceof Error ? err.message : 'Failed to list pages.' }
+            return toolError('site-assistant', err, 'Failed to list pages.')
           }
         },
       },
@@ -227,7 +228,8 @@ RULES
               .select('id')
               .single()
             if (error || !row) {
-              return { success: true, url, generationError: error?.message ?? 'AI draft could not be scheduled — the blank page was created.' }
+              if (error) console.error('[site-assistant] new_page_generations insert failed:', error)
+              return { success: true, url, generationError: 'AI draft could not be scheduled — the blank page was created.' }
             }
             after(async () => {
               try {
@@ -241,7 +243,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'The navigation changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to create the page.' }
+            return toolError('site-assistant', err, 'Failed to create the page.')
           }
         },
       },
@@ -271,7 +273,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'That page changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to delete the page.' }
+            return toolError('site-assistant', err, 'Failed to delete the page.')
           }
         },
       },
@@ -348,7 +350,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'That page changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to move the page.' }
+            return toolError('site-assistant', err, 'Failed to move the page.')
           }
         },
       },
@@ -402,7 +404,7 @@ RULES
             if (err instanceof StaleShaError) {
               return { error: 'The navigation changed on the server mid-edit. Reload and try again.' }
             }
-            return { error: err instanceof Error ? err.message : 'Failed to save the navigation.' }
+            return toolError('site-assistant', err, 'Failed to save the navigation.')
           }
         },
       },

@@ -2,6 +2,7 @@ import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { anthropic } from '@ai-sdk/anthropic'
 import { NextResponse } from 'next/server'
+import { toolError, ToolUserError } from '@/lib/api/tool-error'
 import { z } from 'zod'
 import { resolveEditContext } from '../_helpers'
 import { safePath } from '../_path'
@@ -115,7 +116,7 @@ export async function POST(
     // build` at deploy time. The tool executors catch this throw and return the
     // message to the model, which can retry with the value properly quoted.
     const yamlError = validateFrontmatterYaml(scrubbed)
-    if (yamlError) throw new Error(yamlError)
+    if (yamlError) throw new ToolUserError(yamlError)
     const res = await writeFile(githubRepo, path!, scrubbed, DRAFT_BRANCH, message, {
       expectedSha: workingSha,
       ...commitAuthor,
@@ -234,7 +235,7 @@ ${workingContent}
             try {
               await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
             } catch (err) {
-              return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
+              return toolError('edit:chat', err, 'Failed to save the edit.')
             }
             const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
             return { success: true, replacements: res.count, ...(noGoWarning.length ? { noGoWarning } : {}) }
@@ -278,7 +279,7 @@ ${workingContent}
               try {
                 await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
               } catch (err) {
-                return { error: err instanceof Error ? err.message : 'Failed to save the edits.' }
+                return toolError('edit:chat', err, 'Failed to save the edits.')
               }
             }
             const noGoWarning = changed ? findNoGoHits(workingContent, noGoPhrases) : []
@@ -316,7 +317,7 @@ ${workingContent}
             try {
               await commitWorking(next, `Edit FAQ on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
             } catch (err) {
-              return { error: err instanceof Error ? err.message : 'Failed to save the FAQ.' }
+              return toolError('edit:chat', err, 'Failed to save the FAQ.')
             }
             const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
             return { success: true, count: faqItems.length, ...(noGoWarning.length ? { noGoWarning } : {}) }
@@ -359,7 +360,7 @@ ${workingContent}
               try {
                 await commitWorking(res.next, `Remove text on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
               } catch (err) {
-                return { error: err instanceof Error ? err.message : 'Failed to save the edit.' }
+                return toolError('edit:chat', err, 'Failed to save the edit.')
               }
             }
             // Page-scoped edit only, but a phrase living in a firm-wide source
@@ -445,7 +446,7 @@ ${workingContent}
               const r = await patchBrandJsonContact(githubRepo, DRAFT_BRANCH, contactPatch, commitAuthor)
               patched = r.patched
             } catch (err) {
-              return { error: err instanceof Error ? err.message : 'Failed to update brand.json.' }
+              return toolError('edit:chat', err, 'Failed to update brand.json.')
             }
             await insertMbpSuggestion(supabase, {
               sessionId: sessionId,
@@ -500,7 +501,7 @@ ${workingContent}
               // Return the failure to the model instead of throwing — an uncaught
               // throw here would surface to the client as the generic "hit an
               // error" banner even though the page edit itself may have succeeded.
-              return { error: err instanceof Error ? err.message : 'Failed to file the MBP suggestion.' }
+              return toolError('edit:chat', err, 'Failed to file the MBP suggestion.')
             }
           },
         },
