@@ -59,3 +59,34 @@ describe('applyMbpUpdate appends', () => {
     expect(Object.keys(schema._meta.recently_applied)).toEqual(['team.2'])
   })
 })
+
+describe('applyMbpUpdate base guard', () => {
+  it('writes nothing and reports the path when the fresh row no longer matches the snapshot', async () => {
+    const { applyMbpUpdate } = await import('./apply-update')
+    const db = fakeSessions({ niches: [{ name: 'Dentists', customerTrigger: 'new since' }] })
+    const res = await applyMbpUpdate(
+      db.client as unknown as Parameters<typeof applyMbpUpdate>[0],
+      's1',
+      { niches: [{ name: 'Dentists' }, { name: 'Vets' }] },
+      undefined,
+      { expect: [{ path: 'niches', value: [{ name: 'Dentists' }] }] }
+    )
+    expect(res).toMatchObject({ success: false, stale: ['niches'] })
+    expect(db.row.schema_version).toBe(1)
+    expect((db.row.schema_data as { niches: unknown[] }).niches).toHaveLength(1)
+  })
+
+  it('applies when the snapshot still matches', async () => {
+    const { applyMbpUpdate } = await import('./apply-update')
+    const db = fakeSessions({ niches: [{ name: 'Dentists' }] })
+    const res = await applyMbpUpdate(
+      db.client as unknown as Parameters<typeof applyMbpUpdate>[0],
+      's1',
+      { niches: [{ name: 'Dentists' }, { name: 'Vets' }] },
+      undefined,
+      { expect: [{ path: 'niches', value: [{ name: 'Dentists' }] }] }
+    )
+    expect(res.success).toBe(true)
+    expect((db.row.schema_data as { niches: unknown[] }).niches).toHaveLength(2)
+  })
+})

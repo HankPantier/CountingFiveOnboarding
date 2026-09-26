@@ -5,26 +5,12 @@ import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { applyMbpUpdate } from '@/lib/mbp/apply-update'
 import { regenerateMbpIfApproved } from '@/lib/mbp/regenerate-if-approved'
 import { getByPath, outOfRangeIndexPath } from '@/lib/mbp/schema-write'
+import { isApprovableSuggestionPath, suggestionBaseFor } from '@/lib/mbp/suggestion-guards'
+import { readJsonBody } from '@/app/api/_json'
 import type { SessionSchema } from '@/types/session-schema'
-import type { MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
+import type { MbpSuggestionBase, MbpSuggestionChanges, SuggestionActionBody } from '@/types/mbp'
 
 export const runtime = 'nodejs'
-
-// The valid top-level segments of SessionSchema. A suggestion whose path starts
-// outside this set can only ever create an orphaned top-level key the MBP UI
-// never renders, so we skip (and report) it rather than write invisible data.
-// With deepSetPath's bracket parsing fixed, this fires only on a model
-// hallucination, never on a legitimate array path like `niches[3].description`.
-const KNOWN_TOP_LEVEL = new Set([
-  '_meta', 'contact', 'websiteUrl', 'technical', 'locations', 'team', 'services',
-  'clientPortals', 'niches', 'business', 'culture', 'brand', 'assets', 'additional',
-  'proposed_sitemap', 'current_sitemap', 'socialPresence', 'reputation',
-  'content_gaps', 'content_direction',
-])
-
-function topSegment(fieldPath: string): string {
-  return fieldPath.split(/[.[]/)[0]
-}
 
 function valueKind(v: unknown): string {
   return v !== null && typeof v === 'object' ? 'object' : typeof v
@@ -32,6 +18,11 @@ function valueKind(v: unknown): string {
 
 // Approve (apply the proposed field changes) or dismiss a pending MBP
 // suggestion. Admin-only — managers have a read-only MBP.
+//
+// Idempotent under double-clicks / concurrent admins: the row is CLAIMED
+// (pending → approved/dismissed, conditional on still being pending) before any
+// change is applied, so only one request ever applies it. If the apply then
+// fails, the claim is released back to pending.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; suggestionId: string }> }
@@ -40,12 +31,13 @@ export async function PATCH(
 
   const auth = await requireOnboardingSessionAccess(id)
   if (auth instanceof NextResponse) return auth
-  if (auth.user.role !== 'admin') {
+  if (!auth.user.isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const body = (await req.json()) as SuggestionActionBody
-  if (body.action !== 'approve' && body.action !== 'dismiss') {
+  const body = await readJsonBody<SuggestionActionBody>(req)
+  if (body instanceof NextResponse) return body
+  if (!body || typeof body !== 'object' || (body.action !== 'approve' && body.action !== 'dismiss')) {
     return NextResponse.json({ error: "action must be 'approve' or 'dismiss'" }, { status: 400 })
   }
 
@@ -80,10 +72,14 @@ export async function PATCH(
     // Exact paths written, for the "just added" highlight (applyMbpUpdate adds the
     // new row's index for appends, e.g. team.3, so only that row lights up).
     const appliedPaths: string[] = []
-    // Off-schema paths are skipped (not applied) and reported — see KNOWN_TOP_LEVEL.
+    // Off-schema and server-owned `_meta` paths are skipped (not applied) and
+    // reported — see isApprovableSuggestionPath.
     const skippedPaths: string[] = []
+    // Base snapshots the fresh row must still match (whole-array sets, guarded
+    // element changes). Checked inside applyMbpUpdate's compare-and-swap.
+    const expect: MbpSuggestionBase[] = []
     for (const [fieldPath, change] of Object.entries(changes)) {
-      if (!KNOWN_TOP_LEVEL.has(topSegment(fieldPath))) {
+      if (!isApprovableSuggestionPath(fieldPath)) {
         skippedPaths.push(fieldPath)
         continue
       }
@@ -125,11 +121,25 @@ export async function PATCH(
         updates[fieldPath] = change.proposedValue
         appliedPaths.push(fieldPath)
       }
+      const base = suggestionBaseFor(fieldPath, change, currentSchema as unknown as Record<string, unknown>)
+      if (base) expect.push(base)
     }
 
+    const claimed = await claimSuggestion(supabase, id, suggestionId, 'approved', auth.user.id)
+    if (claimed instanceof NextResponse) return claimed
+
     if (Object.keys(updates).length > 0 || Object.keys(appends).length > 0) {
-      const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths, appends })
+      const result = await applyMbpUpdate(supabase, id, updates, undefined, { appliedPaths, appends, expect })
       if (!result.success) {
+        await releaseClaim(supabase, suggestionId)
+        if (result.stale?.length) {
+          return NextResponse.json(
+            {
+              error: `This suggestion is out of date: ${result.stale.join(', ')} changed since it was suggested. Review the current profile again, then dismiss it or re-file it.`,
+            },
+            { status: 409 }
+          )
+        }
         return NextResponse.json({ error: result.error ?? 'Failed to apply' }, { status: 500 })
       }
       // Keep the downloadable MBP fresh if this session is already approved.
@@ -138,18 +148,45 @@ export async function PATCH(
     if (skippedPaths.length > 0) {
       console.warn(`[mbp-suggestion] skipped unapplicable paths on ${id}: ${skippedPaths.join(', ')}`)
     }
+    return NextResponse.json({ success: true })
   }
 
-  const { error: updateErr } = await supabase
-    .from('mbp_suggestions')
-    .update({
-      status: body.action === 'approve' ? 'approved' : 'dismissed',
-      resolved_at: new Date().toISOString(),
-      resolved_by: auth.user.id,
-    })
-    .eq('id', suggestionId)
-
-  if (updateErr) return internalError('mbp-suggestions:patch', updateErr, "Couldn't update the suggestion")
-
+  const claimed = await claimSuggestion(supabase, id, suggestionId, 'dismissed', auth.user.id)
+  if (claimed instanceof NextResponse) return claimed
   return NextResponse.json({ success: true })
+}
+
+type Supabase = ReturnType<typeof createServerClient>
+
+// Atomically move a still-pending suggestion to its resolved status. Returns a
+// 409 when another request already resolved it (double-click, second admin).
+async function claimSuggestion(
+  supabase: Supabase,
+  sessionId: string,
+  suggestionId: string,
+  status: 'approved' | 'dismissed',
+  userId: string
+): Promise<true | NextResponse> {
+  const { data, error } = await supabase
+    .from('mbp_suggestions')
+    .update({ status, resolved_at: new Date().toISOString(), resolved_by: userId })
+    .eq('id', suggestionId)
+    .eq('session_id', sessionId)
+    .eq('status', 'pending')
+    .select('id')
+  if (error) return internalError('mbp-suggestions:patch', error, "Couldn't update the suggestion")
+  if (!data || data.length === 0) {
+    return NextResponse.json({ error: 'Suggestion is no longer pending' }, { status: 409 })
+  }
+  return true
+}
+
+// Undo an approve claim whose apply failed, so the admin can retry or dismiss.
+async function releaseClaim(supabase: Supabase, suggestionId: string): Promise<void> {
+  const { error } = await supabase
+    .from('mbp_suggestions')
+    .update({ status: 'pending', resolved_at: null, resolved_by: null })
+    .eq('id', suggestionId)
+    .eq('status', 'approved')
+  if (error) console.error('[mbp-suggestion] could not release claim on', suggestionId, error.message)
 }

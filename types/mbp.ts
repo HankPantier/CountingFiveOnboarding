@@ -5,11 +5,21 @@ export type MbpSuggestionOrigin = 'page_edit' | 'outline_edit' | 'sitemap_confir
 // (a parsed object) as a new entry to an array field (services, locations…).
 export type MbpChangeOp = 'set' | 'append'
 
+// The value at `path` when a suggestion was filed. Approval is refused (409)
+// if the live value has changed since, so an old snapshot never clobbers newer
+// data. Recorded for whole-array sets and for element changes that must still
+// target the same entry (e.g. a niche drop keyed on that niche's name).
+export interface MbpSuggestionBase {
+  path: string
+  value: unknown
+}
+
 export interface MbpSuggestionChange {
   op?: MbpChangeOp
   currentValue?: unknown
   proposedValue: unknown
   rationale: string
+  base?: MbpSuggestionBase
 }
 
 export type MbpSuggestionChanges = Record<string, MbpSuggestionChange>

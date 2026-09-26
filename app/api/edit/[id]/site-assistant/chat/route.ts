@@ -21,6 +21,7 @@ import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
 import { DestinationOccupiedError, relocateFile } from '@/lib/editor/relocate'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
+import { buildNicheSuggestions } from '@/lib/mbp/niche-suggestions'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
@@ -113,7 +114,7 @@ YOUR TOOLS
 - delete_page({ path }) — permanently remove a page (content/pages or content/posts) from the draft and strip its nav link. Pass the exact path from list_site_pages.
 - move_page({ fromPath, toUrl, navAction? }) — relocate a page: reclassify a page ↔ blog post (Resources) or reparent it under another page. A blog post that was created as a page (e.g. content/pages/careers--foo.md at /careers/foo) becomes a Resource by moving it to /resources/foo with navAction "remove" (posts show on the Resources index, not the top nav). Reparent a page by moving it to a new parent URL with navAction "retarget" (default — its nav link follows). Adds a 301 redirect automatically.
 - set_nav({ contents }) — replace the whole nav.json (a JSON string with { "primary": [ { "label", "url", "children"? } ], "cta"? }). Use only for explicit reordering/nesting beyond what create/delete already handle.
-- file_mbp_suggestion({ summary, removedNiches?, addedNiches? }) — after the operator confirms an audience change, file a PENDING Master Business Profile suggestion to update the firm's target niches for admin approval. NEVER present this as done — it only queues a suggestion.
+- file_mbp_suggestion({ summary, removedNiches?, addedNiches? }) — after the operator confirms an audience change, file PENDING Master Business Profile suggestions for admin approval: each removed niche is marked dropped and each added niche is a separate addition (never a whole-list replace). NEVER present this as done — it only queues suggestions.
 
 RULES
 - Never claim success when a tool returns an error — tell the operator plainly and offer to retry.
@@ -437,32 +438,31 @@ RULES
           if (removed.size === 0 && added.length === 0) {
             return { error: 'Nothing to change — pass removedNiches and/or addedNiches.' }
           }
-          const current = (schema.niches ?? []).filter((n) => n?.name)
-          const next = [
-            ...current.filter((n) => !removed.has(n.name.trim().toLowerCase())),
-            ...added.map((n) => ({
-              name: n.name.trim(),
-              description: n.description?.trim() ?? '',
-              valueProp: n.valueProp?.trim() ?? '',
-            })),
-          ]
-          const { filed } = await insertMbpSuggestion(supabase, {
-            sessionId,
-            origin: 'site_structure',
-            summary,
-            changes: [
-              {
-                fieldPath: 'niches',
-                op: 'set',
-                proposedValue: next,
-                rationale: 'Audience pages changed on the live site; sync the MBP target niches.',
-              },
-            ],
-            schema: rawSchema,
-          })
-          return filed
-            ? { success: true, note: 'Pending MBP suggestion filed for admin approval.' }
-            : { error: 'Could not file the MBP suggestion.' }
+          const { suggestions, skipped } = buildNicheSuggestions(schema, removed, added)
+          if (suggestions.length === 0) {
+            return { error: `Nothing to change in the profile — ${skipped.join('; ') || 'no matching niches'}.` }
+          }
+          // Per-item changes, never a whole-array set: an old snapshot of the
+          // niches list would clobber every niche edit approved in between.
+          let filedCount = 0
+          for (const sug of suggestions) {
+            const { filed } = await insertMbpSuggestion(supabase, {
+              sessionId,
+              origin: 'site_structure',
+              summary: sug.summary ?? summary,
+              changes: sug.changes,
+              schema: rawSchema,
+            })
+            if (filed) filedCount += 1
+          }
+          if (filedCount === 0) return { error: 'Could not file the MBP suggestion.' }
+          return {
+            success: true,
+            filed: filedCount,
+            ...(filedCount < suggestions.length ? { failed: suggestions.length - filedCount } : {}),
+            ...(skipped.length ? { skipped } : {}),
+            note: `${filedCount} pending MBP suggestion${filedCount === 1 ? '' : 's'} filed for admin approval.`,
+          }
         },
       },
     },
