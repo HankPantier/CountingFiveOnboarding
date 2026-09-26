@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import nextConfig from '@/next.config'
+import { staticImportGraph, staticSpecifiers } from './static-import-graph'
 
 const includes = nextConfig.outputFileTracingIncludes ?? {}
 const LIGHTNING = ['./node_modules/lightningcss/**', './node_modules/lightningcss-linux-x64-gnu/**', './node_modules/detect-libc/**']
@@ -64,5 +65,32 @@ describe('Vercel packaging (R7)', () => {
     const src = readFileSync(path.join(process.cwd(), 'app/api/edit/[id]/design/runs/[runId]/step/route.ts'), 'utf-8')
     expect(src).toContain("await import('@/lib/design/run-orchestrator')")
     expect(includes['/api/edit/\\[id\\]/design/runs/\\[runId\\]/step']).toEqual(expect.arrayContaining([...LIGHTNING, ...CHROMIUM]))
+  })
+
+  // The regex checks above only see a route's OWN imports. Walk the whole
+  // static graph: a light module that later starts importing a native-backed
+  // one must fail here, not at deploy time.
+  const NATIVE = ['lightningcss', 'playwright-core', '@sparticuz/chromium']
+  const designRoutes = (readdirSync(path.join(process.cwd(), 'app/api/edit/[id]/design'), { recursive: true }) as string[])
+    .filter((f) => f.endsWith('route.ts'))
+    .map((f) => path.join('app/api/edit/[id]/design', f))
+  it('finds the design routes', () => {
+    expect(designRoutes.length).toBeGreaterThanOrEqual(15)
+  })
+  it.each([...designRoutes, 'app/api/cron/sweep-stuck-jobs/route.ts', 'app/api/edit/[id]/theme/route.ts', 'app/api/edit/[id]/theme/shell/route.ts'])(
+    '%s reaches no native-backed package through its STATIC import graph',
+    (file) => {
+      const { packages } = staticImportGraph(process.cwd(), file)
+      expect([...packages].filter((p) => NATIVE.some((n) => p === n || p.startsWith(`${n}/`)))).toEqual([])
+    }
+  )
+  it('the graph walker follows chains and skips type-only and dynamic imports', () => {
+    expect(staticSpecifiers("import type { A } from 'x'\nimport { type B } from 'y'\nimport { c, type D } from 'z'\nexport * from './w'\nimport 'side'\nconst q = await import('lazy')")).toEqual([
+      'z',
+      './w',
+      'side',
+    ])
+    // The sanitizer itself DOES reach lightningcss, so the walker can see it.
+    expect([...staticImportGraph(process.cwd(), 'lib/design/commit-version.ts').packages]).toContain('lightningcss')
   })
 })
