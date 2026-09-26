@@ -336,6 +336,7 @@ async function main() {
     bundle: null,
     errors: [],
     notes: [],
+    conceptNotes: [],
     generation: null,
     shots: [],
     checks: [],
@@ -360,6 +361,7 @@ async function main() {
     typography: bundle.typography,
     treatments: bundle.treatments,
     style: bundle.style,
+    css: bundle.css,
     tokens: { roundness: bundle.tokens.roundness, density: bundle.tokens.density, visualFeel: bundle.tokens.visualFeel },
   })
   const critiqueView = (k: CritiqueRecord): AbCritique => ({ scores: k.scores, mean: k.mean, passed: k.passed, summary: k.summary, issues: k.issues })
@@ -407,9 +409,14 @@ async function main() {
       row.generation = callStats(t, result ? result.costUsd : spend, result?.estimatedUsd ?? 0)
       if (t.error) row.errors.push(`Generation threw: ${t.error}`)
       if (result) {
-        row.notes.push(...result.notes)
+        // generateConcept folds the concept's own notes into result.notes as
+        // "<name>: <note>"; they go to conceptNotes (labelled) instead.
+        const c = result.concept
+        const own = new Set(c ? c.notes.map((n) => `${c.bundle.name}: ${n}`) : [])
+        row.notes.push(...result.notes.filter((n) => !own.has(n)))
         if (result.concept) {
           const bundle = result.concept.bundle
+          row.conceptNotes = [...result.concept.notes]
           row.status = 'valid'
           row.bundle = bundleView(bundle)
           row.critiqueStatus = args.critic ? 'not_rendered' : 'disabled'
@@ -573,7 +580,8 @@ async function main() {
     if (result?.concept) {
       rev.status = 'valid'
       rev.name = result.concept.bundle.name
-      rev.notes.push(...result.notes)
+      rev.bundle = bundleView(result.concept.bundle)
+      rev.conceptNotes = [...result.concept.notes] // = result.notes (reviseConcept returns the concept's notes)
       rev.critiqueStatus = 'not_rendered'
       bundles.set(row, result.concept.bundle)
       console.log(`    → revision ${rev.round} "${rev.name}" in ${(t.latencyMs / 1000).toFixed(1)}s, $${rev.stats.costUsd.toFixed(3)}`)
@@ -626,7 +634,7 @@ async function main() {
               return c.loop
             },
             revise: async (bundle, n, render, critique) => {
-              round = { round: n, status: 'failed', name: null, errors: [], notes: [], stats: null, shots: [], critiqueStatus: 'not_valid', critique: null, critiqueStats: null }
+              round = { round: n, status: 'failed', name: null, bundle: null, errors: [], notes: [], conceptNotes: [], stats: null, shots: [], critiqueStatus: 'not_valid', critique: null, critiqueStats: null }
               row.revisions.push(round)
               return runRevision(row, round, bundle, render, critique)
             },

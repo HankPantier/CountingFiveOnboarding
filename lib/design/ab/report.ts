@@ -2,12 +2,13 @@
 // raw result types (written as report.json), the per-model summary, a plain
 // text summary table for stdout, and a self-contained report.html (inline CSS,
 // images by RELATIVE path inside the output dir). Every model-provided string
-// (names, taglines, rationales, moves, critic text) and every error text is
-// HTML-escaped; image paths and colours are allowlisted before use.
+// (names, taglines, rationales, moves, CSS, critic text) and every error text
+// is HTML-escaped; image paths and colours are allowlisted before use.
 import type { DesignBundle } from '../bundle'
 import { RUBRIC_KEYS, RUBRIC_LABELS, type CritiqueIssue, type RubricScores } from '../critique'
 import type { DistinctnessRow } from '../distinctness'
 import type { ReviewOutcome } from '../review'
+import { countCssLines } from '../css-budget'
 import type { ApiUsage } from './api-tap'
 
 export type AbViewport = 'desktop' | 'mobile'
@@ -23,7 +24,8 @@ export type AbCallStats = {
   estimatedUsd: number // part of costUsd estimated for attempts that never reported usage
   apiErrors: string[]
 }
-export type AbBundleView = Pick<DesignBundle, 'name' | 'tagline' | 'rationale' | 'moves' | 'palette' | 'typography' | 'treatments' | 'style'> & {
+// `css` is the sanitized CSS the concept ships (global + scoped signature blocks).
+export type AbBundleView = Pick<DesignBundle, 'name' | 'tagline' | 'rationale' | 'moves' | 'palette' | 'typography' | 'treatments' | 'style' | 'css'> & {
   tokens: Pick<DesignBundle['tokens'], 'roundness' | 'density' | 'visualFeel'>
 }
 export type AbCritique = { scores: RubricScores; mean: number; passed: boolean; summary: string; issues: CritiqueIssue[] }
@@ -36,8 +38,11 @@ export type AbRevision = {
   round: number
   status: AbConceptStatus
   name: string | null // the revised bundle's name
+  bundle: AbBundleView | null // the revised bundle (null: no usable revision)
   errors: string[]
-  notes: string[]
+  notes: string[] // call-level notes (budget, repair) — not the concept's own
+  // The revised concept's validation + self-consistency notes (ValidConcept.notes).
+  conceptNotes: string[]
   stats: AbCallStats | null // the revise call (null: skipped before calling)
   shots: AbShot[] // the revision's renders of the prompt page
   critiqueStatus: AbCritiqueStatus
@@ -51,7 +56,10 @@ export type AbConcept = {
   status: AbConceptStatus
   bundle: AbBundleView | null
   errors: string[]
-  notes: string[]
+  notes: string[] // call-level notes (budget, repair, render prep) — not the concept's own
+  // The first draft's validation + self-consistency notes (ValidConcept.notes:
+  // capability / palette enforcement, claim checks, the signature-CSS floor).
+  conceptNotes: string[]
   generation: AbCallStats | null
   shots: AbShot[]
   checks: AbPageCheck[]
@@ -225,6 +233,7 @@ table{border-collapse:collapse;background:var(--card);width:100%;max-width:1100p
 .tagline{color:var(--muted);margin:0 0 8px}.rationale{white-space:pre-wrap}
 .swatches{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.sw{display:flex;align-items:center;gap:4px;font:12px ui-monospace,Menlo,monospace}.sw i{display:inline-block;width:22px;height:22px;border-radius:4px;border:1px solid var(--line)}
 .shots{display:grid;grid-template-columns:3fr 1fr;gap:8px;margin:6px 0}.shots figure{margin:0}.shots img{width:100%;height:auto;border:1px solid var(--line);border-radius:4px;display:block}.shots figcaption{font-size:12px;color:var(--muted)}
+.css pre{white-space:pre-wrap;word-break:break-word;font:12px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px;margin:4px 0;max-height:420px;overflow:auto}.css summary{cursor:pointer;font-size:12px}
 .missing{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:4px;padding:12px;text-align:center}
 ul{margin:4px 0;padding-left:18px}.round{border-top:1px solid var(--line);margin-top:10px;padding-top:8px}.err{color:var(--bad)}.small{font-size:12px;color:var(--muted)}
 `
@@ -272,6 +281,29 @@ function statsBlock(label: string, s: AbCallStats | null): string {
   return `<div class="small">${escapeHtml(label)}: ${escapeHtml(fmtSecs(s.latencyMs))} · ${s.calls} API call${s.calls === 1 ? '' : 's'} · in ${u.inputTokens.toLocaleString('en-US')} / cache read ${u.cacheReadTokens.toLocaleString('en-US')} / cache write ${u.cacheWriteTokens.toLocaleString('en-US')} / out ${u.outputTokens.toLocaleString('en-US')} tokens · ${escapeHtml(fmtUsd(s.costUsd))}${escapeHtml(est)}</div>${s.apiErrors.length ? `<div class="small err">API errors:</div>${list(s.apiErrors, 'err small')}` : ''}`
 }
 
+// The concept's validation + self-consistency notes, labelled.
+export function conceptNotesBlock(notes: string[]): string {
+  return notes.length ? `<h4>Concept notes</h4>${list(notes, 'small')}` : ''
+}
+
+function cssDetails(label: string, css: string): string {
+  const lines = countCssLines(css)
+  return `<details><summary>${escapeHtml(label)} · ${lines} line${lines === 1 ? '' : 's'}</summary><pre>${escapeHtml(css)}</pre></details>`
+}
+
+// The concept's CSS: a "N signature blocks" summary, then global + every
+// non-empty scoped block (id, line count, the text collapsed), all escaped —
+// the text lands inside <pre>, so `</style>` / `<script>` stay inert.
+export function cssBlock(css: AbBundleView['css'] | undefined, heading = 'CSS'): string {
+  if (!css) return ''
+  const blocks = Object.entries(css.blocks).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].trim().length > 0)
+  const global = css.global && css.global.trim().length > 0 ? css.global : null
+  const n = blocks.length
+  const summary = `<div class="small">${n} signature block${n === 1 ? '' : 's'}${global ? ' + global CSS' : ', no global CSS'}</div>`
+  const parts = [...(global ? [cssDetails('global', global)] : []), ...blocks.map(([id, body]) => cssDetails(`block ${id}`, body))]
+  return `<h4>${escapeHtml(heading)}</h4><div class="css">${summary}${parts.join('')}</div>`
+}
+
 function critiqueBlock(c: AbConcept): string {
   const head = `<h4>Critic</h4>`
   if (!c.critique) {
@@ -301,7 +333,9 @@ function conceptCard(c: AbConcept, pages: string[]): string {
     )
     if (b.rationale) parts.push(`<h4>Rationale</h4><div class="rationale">${escapeHtml(b.rationale)}</div>`)
     if (b.moves.length) parts.push(`<h4>Moves</h4>${list(b.moves)}`)
+    parts.push(cssBlock(b.css))
   }
+  parts.push(conceptNotesBlock(c.conceptNotes))
   if (c.errors.length) parts.push(`<h4>Errors</h4>${list(c.errors, 'err')}`)
   if (c.notes.length) parts.push(list(c.notes, 'small'))
   parts.push(statsBlock('Concept call', c.generation))
@@ -345,7 +379,7 @@ function revisionsBlock(c: AbConcept, pages: string[]): string {
           : r.status === 'valid'
             ? `<div class="small">${escapeHtml(CRITIQUE_LABEL[r.critiqueStatus])}</div>`
             : ''
-      return `<div class="round"><b>${title}</b>${list(r.errors, 'err small')}${list(r.notes, 'small')}${statsBlock('Revise call', r.stats)}${shots}${critique}${statsBlock('Critic call', r.critiqueStats)}</div>`
+      return `<div class="round"><b>${title}</b>${list(r.errors, 'err small')}${list(r.notes, 'small')}${conceptNotesBlock(r.conceptNotes)}${cssBlock(r.bundle?.css, `Round ${r.round} CSS`)}${statsBlock('Revise call', r.stats)}${shots}${critique}${statsBlock('Critic call', r.critiqueStats)}</div>`
     })
     .join('')
   const final =

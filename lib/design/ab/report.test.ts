@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { VALID } from '../__fixtures__/valid-bundle'
-import { buildReportHtml, escapeHtml, safeHex, safeRelativePath, summarize, summaryText, type AbCallStats, type AbConcept, type AbCritique, type AbReport, type AbRevision } from './report'
+import { buildReportHtml, conceptNotesBlock, cssBlock, escapeHtml, safeHex, safeRelativePath, summarize, summaryText, type AbCallStats, type AbConcept, type AbCritique, type AbReport, type AbRevision } from './report'
 
 const stats = (over: Partial<AbCallStats> = {}): AbCallStats => ({
   latencyMs: 10_000,
@@ -21,6 +21,7 @@ function concept(over: Partial<AbConcept>): AbConcept {
     bundle: VALID,
     errors: [],
     notes: [],
+    conceptNotes: [],
     generation: stats(),
     shots: [],
     checks: [],
@@ -166,8 +167,10 @@ const round = (n: number, over: Partial<AbRevision> = {}): AbRevision => ({
   round: n,
   status: 'valid',
   name: `v${n}`,
+  bundle: null,
   errors: [],
   notes: [],
+  conceptNotes: [],
   stats: stats({ costUsd: 0.5, latencyMs: 20_000 }),
   shots: [],
   critiqueStatus: 'done',
@@ -229,5 +232,62 @@ describe('summarize with the --revise loop', () => {
     expect(html).toContain('revise loop up to 2 rounds')
     expect(html).toContain('Final pass rate')
     expect(html).toContain('src="concepts/A/c1-r1-home-desktop.webp"')
+  })
+})
+
+describe('concept CSS + notes', () => {
+  const css = {
+    global: 'body{color:red}',
+    blocks: { hero: '[data-block="hero"]{\n  padding:0\n}\n/* </style><script>alert(1)</script> */', faq: '   ' },
+  }
+
+  it('lists global + every non-empty block with id and line count, escaped', () => {
+    const html = cssBlock(css)
+    expect(html).toContain('1 signature block + global CSS')
+    expect(html).toContain('global · 1 line')
+    expect(html).toContain('block hero · 4 lines')
+    expect(html).not.toContain('block faq')
+    expect(html).toContain('<details>')
+    expect(html).not.toContain('</style><script>')
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('&lt;/style&gt;&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(html).toContain('[data-block=&quot;hero&quot;]')
+  })
+
+  it('counts signature blocks with no global CSS', () => {
+    expect(cssBlock({ blocks: { hero: 'a{b:c}', 'service-cards': 'd{e:f}' } })).toContain('2 signature blocks, no global CSS')
+    expect(cssBlock({ blocks: {} })).toContain('0 signature blocks')
+    expect(cssBlock(undefined)).toBe('')
+  })
+
+  it('renders the concept notes labelled and escaped, and nothing when empty', () => {
+    expect(conceptNotesBlock([])).toBe('')
+    const html = conceptNotesBlock(['Signature CSS: only 1 scoped css.blocks move <b>'])
+    expect(html).toContain('<h4>Concept notes</h4>')
+    expect(html).toContain('only 1 scoped css.blocks move &lt;b&gt;')
+  })
+
+  it('shows the first draft and each revision\'s CSS + notes in the report', () => {
+    const evil = '</style><script>alert(1)</script>'
+    const html = buildReportHtml({
+      ...report([
+        concept({
+          bundle: { ...VALID, css: { global: evil, blocks: { hero: 'h{x:y}' } } },
+          conceptNotes: ['draft note'],
+          critique: k(3, false),
+          loopOutcome: 'max_revisions',
+          revisions: [round(1, { bundle: { ...VALID, css: { blocks: { hero: 'r{x:y}', footer: 'f{x:y}' } } }, conceptNotes: ['revision note'] })],
+        }),
+      ]),
+      maxRevisions: 1,
+    })
+    expect(html).not.toContain('<script>')
+    expect(html).toContain('draft note')
+    expect(html).toContain('revision note')
+    expect(html).toContain('1 signature block + global CSS')
+    expect(html).toContain('Round 1 CSS')
+    expect(html).toContain('2 signature blocks, no global CSS')
+    // the only <style> is the report's own stylesheet
+    expect(html.match(/<\/style>/g)).toHaveLength(1)
   })
 })
