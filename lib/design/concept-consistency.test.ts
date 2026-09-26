@@ -65,7 +65,7 @@ describe('conceptConsistencyNotes — style axes', () => {
   it('flags an axis word whose axis is not set (at L3+)', () => {
     expect(claims(says(['A bordered nav with a hairline']))).toEqual([expect.stringContaining('style.nav is "default" — set style.nav to "bordered"')])
     expect(claims(says(['Inverted navbar in the primary colour']))).toEqual([expect.stringContaining('set style.nav to "inverted"')])
-    expect(claims(says(['Flat tinted cards']))).toEqual([expect.stringContaining('style.cards')])
+    expect(claims(says(['Flat cards']))).toEqual([expect.stringContaining('style.cards')])
     expect(claims(says(['Monochrome photography']))).toEqual([expect.stringContaining('style.imageTreatment')])
     expect(claims(says(['Brand footer']))).toEqual([expect.stringContaining('style.footer')])
     expect(claims(says(['Underlined accent word']))).toEqual([expect.stringContaining('style.accentUsage')])
@@ -77,7 +77,10 @@ describe('conceptConsistencyNotes — style axes', () => {
     expect(claims(says(['Generous section rhythm'], { tokens: { ...BASE.tokens, density: 'airy' } }))).toEqual([])
   })
   it('reports each axis once', () => {
-    expect(claims(says(['A bordered nav', 'Hairline navbar', 'Inverted nav']))).toHaveLength(1)
+    expect(claims(says(['A bordered nav', 'Bordered navbar', 'Inverted nav']))).toHaveLength(1)
+  })
+  it('"hairline" is not a bordered-nav claim (the preset is a strong brand rule)', () => {
+    expect(claims(says(['Hairline navbar', 'A nav with a hairline under it']))).toEqual([])
   })
   it('ignores axis words below L3 (the site’s style is held)', () => {
     expect(claims(says(['A bordered nav', 'Flat cards']), L2)).toEqual([])
@@ -102,5 +105,38 @@ describe('claimClauses + SERIF_FONTS', () => {
     for (const f of SERIF_FONTS) expect(CURATED_FONTS).toContain(f)
     const sans = CURATED_FONTS.filter((f) => !SERIF_FONTS.includes(f))
     expect(sans.every((f) => !/serif|caslon|playfair|merriweather|lora|bitter|fraunces/i.test(f) || /sans/i.test(f))).toBe(true)
+  })
+})
+
+// Review round 1 (2026-09-26): real phrases that were false-flagged. The critic
+// turns every note into an issue, so missing a claim beats a false positive.
+describe('conceptConsistencyNotes — no false positives (regression)', () => {
+  it.each([
+    'Headlines in Inter with italic serif numerals',
+    'Headlines stay sans with serif numerals',
+    'Headlines stay sans with an italic-serif accent word',
+    'Bold CTAs in clay',
+    'Bold action-colour CTA buttons',
+    'Flat fee pricing cards with tabular numerals',
+    'Flat monthly fee cards',
+    'Natural light photography',
+    'Compact hero kicker',
+    'Ink footer links',
+    'Dark hero panels',
+  ])('%s → no note', (phrase) => {
+    // Every lever at its default / off, so any claim would surface.
+    expect(claims(says([phrase]))).toEqual([])
+  })
+  it.each([
+    ['Serif headlines', 'promises serif headlines'],
+    ['Flat cards throughout', 'flat cards'],
+    ['Inverted nav', 'an inverted nav'],
+    ['Dark sections carry the numerals', 'dark (ink) sections'],
+    ['Uppercase tracked buttons', 'uppercase tracked buttons'],
+    ['Dark footer', 'a brand-colour footer'],
+    ['Compact hero', 'a compact hero'],
+    ['Natural photography, ungraded', 'natural (ungraded) images'],
+  ])('%s → still caught', (phrase, label) => {
+    expect(claims(says([phrase]))).toEqual([expect.stringContaining(label)])
   })
 })

@@ -8,9 +8,11 @@
 // The generator / reviser attach them to the concept's notes, the P3 repair
 // turn quotes them, and the critique + revise prompts restate them (per call,
 // never in a cached prefix) so the next revision fixes the lever or the words.
-// Deliberately conservative: a claim counts only when the lever word sits right
-// next to its subject ("serif headlines", "flat cards"), and a clause with a
-// negation ("no dark sections") is skipped.
+// Deliberately conservative — missing a claim beats a false positive (the
+// critic turns each note into an issue and the reviser acts on it): a claim
+// counts only when the lever word sits right next to its subject ("serif
+// headlines", "flat cards"), the serif ACCENT role never counts, and a clause
+// with a negation ("no dark sections") is skipped.
 import type { DesignBundle } from './bundle'
 import { fontsUnlocked, styleAxesUnlocked } from './capabilities'
 import type { DesignCapabilities } from './run-types'
@@ -35,7 +37,9 @@ export const SERIF_FONTS: readonly string[] = [
 ]
 
 const NEGATION = /\b(no|not|without|never|avoid|avoids|drop|drops|dropped|remove|removes|removed|instead of|rather than)\b/
-// Up to n filler words between a lever word and its subject ("flat tinted cards").
+// Up to n filler words between a lever word and its subject. Used ONLY for the
+// serif / mono treatment claims; every style-axis claim requires the axis noun
+// RIGHT AFTER the value word ("flat cards", never "flat fee pricing cards").
 const gap = (n: number): string => `(?:[a-z0-9&'-]+\\s+){0,${n}}`
 
 // The claim text, split into clauses. "sans-serif" is folded to "sans" first so
@@ -52,14 +56,24 @@ export function claimClauses(bundle: Pick<DesignBundle, 'name' | 'tagline' | 'ra
 
 const anyClause = (clauses: string[], res: RegExp[]): boolean => clauses.some((c) => res.some((re) => re.test(c)))
 
-// "serif headlines" / "serif editorial display" — but not "serif accent word
-// in the headline" (the accent role is serif by design) nor "serif-accent".
+// The serif ACCENT role (emphasis words, numerals) is serif by design — "serif
+// accent", "italic-serif numerals" are never headline claims.
+const ACCENT_ROLE = /\b(accents?|numerals?|words?|italics?)\b/
+// Words between "headlines" and "serif" that mean the serif is something else:
+// "headlines stay sans with serif numerals", "headlines in inter and a serif …".
+const HEADLINE_ESCAPE = /\b(sans|with|and|plus|but|while|except|besides)\b/
+
+// "serif headlines" / "serif editorial display" / "headlines set in a serif" —
+// but never the accent role.
 function claimsSerifHeadlines(clauses: string[]): boolean {
   return clauses.some((c) => {
     for (const m of c.matchAll(new RegExp(`\\bserif\\s+(${gap(2)})(headlines?|headings?|display|titles?|h1s?)\\b`, 'g'))) {
-      if (!/\b(accent|accents|numerals?|word|words)\b/.test(m[1])) return true
+      if (!ACCENT_ROLE.test(m[1])) return true
     }
-    return new RegExp(`\\b(headlines?|headings?|titles?)\\s+${gap(4)}(in\\s+)?(a\\s+)?serif\\b(?!-)(?!\\s+accent)`).test(c)
+    for (const m of c.matchAll(new RegExp(`\\b(?:headlines?|headings?|titles?)\\s+(${gap(4)})serif\\b(?![\\s-]+(?:accents?|numerals?|words?|italics?)\\b)(?!-)`, 'g'))) {
+      if (!HEADLINE_ESCAPE.test(m[1]) && !ACCENT_ROLE.test(m[1])) return true
+    }
+    return false
   })
 }
 
@@ -67,62 +81,67 @@ const MONO_EYEBROW = [
   new RegExp(`\\bmono(space|spaced)?[\\s-]+${gap(2)}(eyebrows?|kickers?|overlines?)\\b`),
   new RegExp(`\\b(eyebrows?|kickers?|overlines?)\\s+${gap(3)}(in\\s+)?mono(space|spaced)?\\b`),
 ]
-const DARK_SECTIONS = [
-  new RegExp(`\\b(dark|ink|inky|deep[\\s-]ink)\\s+${gap(1)}(sections?|bands?|panels?)\\b`),
-  /\blight\s*(→|->|to)\s*ink\b/,
-]
+// Adjacent only: "dark sections", "ink bands", "deep ink bands" — not "dark hero panels".
+const DARK_SECTIONS = [/\b(dark|ink|inky|deep[\s-]ink)\s+(sections?|bands?|panels?)\b/, /\blight\s*(→|->|to)\s*ink\b/]
 
 type AxisClaim = { axis: StyleAxis; value: string; label: string; res: RegExp[]; alsoSatisfiedBy?: (b: DesignBundle) => boolean }
 
-const NAV = '(nav|navbar|navigation|header bar|top bar|menu bar)'
-const IMAGES = '(images?|photos?|photography|imagery|frames?)'
+const NAV = '(?:nav|navbar|navigation|header bar|top bar|menu bar)'
+const IMAGES = '(?:images?|photos?|photography|imagery)'
+// A chrome / hero noun that ENDS the claim (clause end, a comma, "and", "with")
+// or is followed by a word naming the whole thing — "ink footer links" or
+// "compact hero kicker" talk about a part, not the preset.
+const whole = (tail: string): string => `(?:\\s+(?:${tail}))?(?=\\s*$|\\s*,|\\s+(?:and|with|in|on|that|for)\\b)`
+const HERO_TAIL = whole('scale|headline|headlines|type|display|section')
+const FOOTER_TAIL = whole('band|bar|surface|background|block|section')
 const AXIS_CLAIMS: AxisClaim[] = [
-  { axis: 'nav', value: 'bordered', label: 'a bordered nav', res: [new RegExp(`\\b(bordered|hairline)\\s+${gap(1)}${NAV}\\b`), new RegExp(`\\b${NAV}\\s+${gap(3)}(hairline|bordered)\\b`)] },
-  { axis: 'nav', value: 'inverted', label: 'an inverted nav', res: [new RegExp(`\\b(inverted|reversed|dark|ink|navy|primary[\\s-]colou?r(ed)?)\\s+${gap(1)}${NAV}\\b`)] },
+  { axis: 'nav', value: 'bordered', label: 'a bordered nav', res: [new RegExp(`\\bbordered\\s+${NAV}\\b`)] },
+  { axis: 'nav', value: 'inverted', label: 'an inverted nav', res: [new RegExp(`\\b(?:inverted|reversed|dark|ink|navy|primary[\\s-]colou?r(?:ed)?)\\s+${NAV}\\b`)] },
   ...(['flat', 'outlined', 'elevated'] as const).map(
-    (v): AxisClaim => ({ axis: 'cards', value: v, label: `${v} cards`, res: [new RegExp(`\\b${v}\\s+${gap(2)}cards?\\b`)] })
+    (v): AxisClaim => ({ axis: 'cards', value: v, label: `${v} cards`, res: [new RegExp(`\\b${v}\\s+(?:card|cards|card surfaces)\\b`)] })
   ),
   {
     axis: 'buttons',
     value: 'pill',
     label: 'pill buttons',
-    res: [new RegExp(`\\bpill(-shaped)?\\s+${gap(2)}(buttons?|ctas?)\\b`)],
+    res: [/\bpill(?:-shaped)?\s+(?:buttons?|ctas?)\b/],
     alsoSatisfiedBy: (b) => b.tokens.roundness === 'pill',
   },
   {
     axis: 'buttons',
     value: 'sharp',
     label: 'sharp-cornered buttons',
-    res: [new RegExp(`\\b(sharp|square|squared|square-cornered|sharp-cornered)\\s+${gap(2)}(buttons?|ctas?)\\b`)],
+    res: [/\b(?:sharp|square|squared|square-cornered|sharp-cornered)\s+(?:buttons?|ctas?)\b/],
     alsoSatisfiedBy: (b) => b.tokens.roundness === 'sharp',
   },
-  { axis: 'buttons', value: 'bold', label: 'bold uppercase buttons', res: [new RegExp(`\\b(bold|uppercase|all-caps)\\s+${gap(2)}(buttons?|ctas?)\\b`)] },
-  { axis: 'heroScale', value: 'dramatic', label: 'a dramatic hero scale', res: [new RegExp(`\\b(dramatic|oversized|monumental)\\s+${gap(2)}hero\\b`)] },
-  { axis: 'heroScale', value: 'compact', label: 'a compact hero', res: [new RegExp(`\\bcompact\\s+${gap(1)}hero\\b`)] },
-  { axis: 'imageTreatment', value: 'mono', label: 'monochrome imagery', res: [new RegExp(`\\b(mono|monochrome|greyscale|grayscale|black-and-white)\\s+${gap(1)}${IMAGES}\\b`)] },
-  { axis: 'imageTreatment', value: 'rounded', label: 'rounded images', res: [new RegExp(`\\brounded\\s+${gap(1)}${IMAGES}\\b`)] },
-  { axis: 'imageTreatment', value: 'natural', label: 'natural (ungraded) images', res: [new RegExp(`\\b(natural|ungraded|untinted)\\s+${gap(1)}${IMAGES}\\b`)] },
-  { axis: 'footer', value: 'brand', label: 'a brand-colour footer', res: [new RegExp(`\\b(brand|branded|dark|ink|navy|primary[\\s-]colou?r(ed)?)\\s+${gap(1)}footer\\b`)] },
-  { axis: 'footer', value: 'light', label: 'a light footer', res: [new RegExp(`\\blight\\s+${gap(1)}footer\\b`)] },
+  // Never bare "bold" — "bold CTAs in clay" means colour / weight, not the preset.
+  { axis: 'buttons', value: 'bold', label: 'uppercase tracked buttons', res: [/\b(?:uppercase|all-caps|tracked)(?:\s+(?:uppercase|tracked))?\s+(?:buttons?|ctas?|button labels?)\b/] },
+  { axis: 'heroScale', value: 'dramatic', label: 'a dramatic hero scale', res: [new RegExp(`\\b(?:dramatic|oversized|monumental)\\s+hero${HERO_TAIL}`)] },
+  { axis: 'heroScale', value: 'compact', label: 'a compact hero', res: [new RegExp(`\\bcompact\\s+hero${HERO_TAIL}`)] },
+  { axis: 'imageTreatment', value: 'mono', label: 'monochrome imagery', res: [new RegExp(`\\b(?:mono|monochrome|greyscale|grayscale|black-and-white)\\s+${IMAGES}\\b`)] },
+  { axis: 'imageTreatment', value: 'rounded', label: 'rounded images', res: [new RegExp(`\\brounded\\s+${IMAGES}\\b`)] },
+  { axis: 'imageTreatment', value: 'natural', label: 'natural (ungraded) images', res: [new RegExp(`\\b(?:natural|ungraded|untinted)\\s+${IMAGES}\\b`)] },
+  { axis: 'footer', value: 'brand', label: 'a brand-colour footer', res: [new RegExp(`\\b(?:brand|branded|dark|ink|navy|primary[\\s-]colou?r(?:ed)?)\\s+footer${FOOTER_TAIL}`)] },
+  { axis: 'footer', value: 'light', label: 'a light footer', res: [new RegExp(`\\blight\\s+footer${FOOTER_TAIL}`)] },
   {
     axis: 'sectionRhythm',
     value: 'generous',
     label: 'a generous section rhythm',
-    res: [new RegExp(`\\b(generous|roomy|airy)\\s+${gap(1)}(section\\s+)?(rhythm|section spacing)\\b`)],
+    res: [/\b(?:generous|roomy|airy)\s+(?:section\s+)?(?:rhythm|section spacing)\b/],
     alsoSatisfiedBy: (b) => b.tokens.density === 'airy',
   },
   {
     axis: 'sectionRhythm',
     value: 'compact',
     label: 'a compact section rhythm',
-    res: [new RegExp(`\\b(compact|tight)\\s+${gap(1)}(section\\s+)?(rhythm|section spacing)\\b`)],
+    res: [/\b(?:compact|tight)\s+(?:section\s+)?(?:rhythm|section spacing)\b/],
     alsoSatisfiedBy: (b) => b.tokens.density === 'tight',
   },
   {
     axis: 'accentUsage',
     value: 'underline',
     label: 'an underlined accent word',
-    res: [new RegExp(`\\bunderlined?\\s+${gap(2)}accent\\b`), new RegExp(`\\baccent\\s+${gap(2)}underlined?\\b`)],
+    res: [/\bunderlined?\s+accent\b/, /\baccent\s+(?:words?\s+)?underlined?\b/, /\baccent\s+underline\b/],
   },
 ]
 
