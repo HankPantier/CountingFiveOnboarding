@@ -1,11 +1,12 @@
 // Pure. The capability-filtered token + selector + output contract (ported
 // from export-design-brief's design-system.md, plus the sanitizer's rules so
 // the model writes CSS that passes). Byte-stable per capability tier: it may
-// depend on `caps` ONLY through fontsUnlocked().
+// depend on `caps` ONLY through fontsUnlocked() and styleAxesUnlocked().
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
 import { CHROME_COMPONENTS, CSS_TARGETS, TREATMENT_STATE_ATTRS } from '../css-targets'
-import { fontsUnlocked } from '../capabilities'
+import { fontsUnlocked, styleAxesUnlocked } from '../capabilities'
+import { styleAxesSummary } from '../style-axes'
 import type { DesignCapabilities } from '../run-types'
 
 export const TOKEN_CONTRACT = `TOKEN CONTRACT (theme.css is regenerated from your palette + tokens; never restate it)
@@ -25,7 +26,14 @@ ${typography}
 - tokens: { roundness: sharp | soft | pill, density: tight | balanced | airy, visualFeel: classic | modern | editorial, spacing: { xs, sm, md, lg, xl, 2xl }, radius: { none, sm, md, lg, pill } } — spacing/radius values are CSS lengths like "16px" or "1.5rem".
 - treatments: { headlineStyle: sans | serif, eyebrowStyle: standard | mono, darkSections: true | false }.
 - css: { global?: string, blocks: { <target>: string } } — scoped CSS, see the rules below.
-- Never emit a "style" field (style axes are not available to you).`
+${styleLever(caps)}`
+}
+
+function styleLever(caps: DesignCapabilities): string {
+  if (!styleAxesUnlocked(caps)) return '- Never emit a "style" field (style axes are not available on this site).'
+  return `- style (optional): template style presets — { <axis>: <value> }; omit an axis (or use "default") to keep the default look. Prefer a preset over hand CSS for the same effect. Axes:
+${styleAxesSummary()}
+  When an axis is set, css.blocks.<id> may also be prefixed by it, e.g. html[data-c5-cards="flat"] [data-block="service-cards"] … (attribute = data-c5-<kebab axis>).`
 }
 
 export const CSS_RULES_SECTION = `CSS RULES (enforced by a strict sanitizer — a violating concept is rejected)
@@ -39,13 +47,16 @@ export const CSS_RULES_SECTION = `CSS RULES (enforced by a strict sanitizer — 
 - Forbidden: @import, @apply, @theme, @font-face, @layer; ~ or + combinators; display:none, visibility:hidden, opacity < 0.2, transparent text, content text; font-size below 12px; position sticky/fixed except on the navbar; the font shorthand; color-mix(); theme(); url() except a small inline data:image/svg+xml.
 - Prefer the colour variables over raw hex inside CSS.`
 
-const OUTPUT_FORMAT = `OUTPUT FORMAT
+function outputFormat(caps: DesignCapabilities): string {
+  const style = styleAxesUnlocked(caps) ? ',"style":{"cards":"…"}' : ''
+  return `OUTPUT FORMAT
 Return ONLY this JSON (no prose, no markdown fences):
-{"concepts":[{"name":"…","tagline":"…","rationale":"…","moves":["…"],"palette":{"primary":"#…","secondary":"#…","complementary":"#…","action":"#…","nearBlack":"#…","nearWhite":"#…"},"typography":{"headingFont":"…","bodyFont":"…","accentFont":"…"},"tokens":{"roundness":"…","density":"…","visualFeel":"…","spacing":{"xs":"…","sm":"…","md":"…","lg":"…","xl":"…","2xl":"…"},"radius":{"none":"…","sm":"…","md":"…","lg":"…","pill":"…"}},"treatments":{"headlineStyle":"…","eyebrowStyle":"…","darkSections":false},"css":{"global":"…","blocks":{"hero":"…"}}}]}
+{"concepts":[{"name":"…","tagline":"…","rationale":"…","moves":["…"],"palette":{"primary":"#…","secondary":"#…","complementary":"#…","action":"#…","nearBlack":"#…","nearWhite":"#…"},"typography":{"headingFont":"…","bodyFont":"…","accentFont":"…"},"tokens":{"roundness":"…","density":"…","visualFeel":"…","spacing":{"xs":"…","sm":"…","md":"…","lg":"…","xl":"…","2xl":"…"},"radius":{"none":"…","sm":"…","md":"…","lg":"…","pill":"…"}},"treatments":{"headlineStyle":"…","eyebrowStyle":"…","darkSections":false}${style},"css":{"global":"…","blocks":{"hero":"…"}}}]}
 name ≤ 60 chars, tagline ≤ 160, rationale ≤ 2000, at most 6 moves of ≤ 200 chars each.`
+}
 
 export function buildContract(caps: DesignCapabilities): string {
-  return [TOKEN_CONTRACT, leversSection(caps), CSS_RULES_SECTION, OUTPUT_FORMAT].join('\n\n')
+  return [TOKEN_CONTRACT, leversSection(caps), CSS_RULES_SECTION, outputFormat(caps)].join('\n\n')
 }
 
 // One-line restatement of the two rules concepts most often break (Concept-3
