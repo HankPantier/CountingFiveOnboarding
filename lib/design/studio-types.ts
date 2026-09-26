@@ -85,6 +85,9 @@ export type DesignStudioState = {
   baseline: BaselineStatus
   // true = committed theme.css ≠ generateThemeCss(brand, design); null = can't tell.
   themeCssStale: boolean | null
+  // true = the committed src/app/fonts.generated.ts ≠ what design.json generates
+  // (L2+ drafts only); null = not applicable / can't tell.
+  fontsModuleStale: boolean | null
   inputs: DesignInputDto[]
   suggestions: InputSuggestions
   run: DesignRunDto | null // the latest design run (P3)

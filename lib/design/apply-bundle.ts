@@ -1,6 +1,7 @@
 // Server-only. Apply a DesignBundle to a client repo's DRAFT branch as ONE
 // atomic commit (brand.json, design.json, regenerated theme.css, and the
-// managed design-overrides.css region), guarded by expected blob shas so a
+// managed design-overrides.css region — plus, on L2+ drafts, the regenerated
+// src/app/fonts.generated.ts), guarded by expected blob shas so a
 // concurrent edit surfaces as StaleShaError (rethrown — callers map it to 409).
 // Contrast is a hard gate: nothing is written if the palette fails WCAG checks.
 // The MBP mirror is NOT done here — callers invoke syncMbpTheme() after.
@@ -18,6 +19,7 @@ import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundErro
 import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { bundleToRepoFiles } from './bundle-files'
+import { FONTS_MODULE_PATH } from './drift'
 import type { DesignBundle } from './bundle'
 import type { DraftThemeSnapshot } from './theme-snapshot'
 
@@ -57,8 +59,10 @@ export async function applyBundleToDraft(args: {
   // design-overrides.css (the text that version recorded, hand CSS included)
   // instead of splicing the bundle's managed region into the current file.
   overridesVerbatim?: string
+  // L2+ DRAFT (marker declares fonts): also write/guard src/app/fonts.generated.ts
+  fontsModule?: boolean
 }): Promise<ApplyBundleResult> {
-  const { githubRepo, bundle, removeLegacy, message, author, base, overridesVerbatim } = args
+  const { githubRepo, bundle, removeLegacy, message, author, base, overridesVerbatim, fontsModule = false } = args
   await ensureDraftBranch(githubRepo)
 
   const fromBase = (p: string): { content: string; sha: string } | null => {
@@ -75,13 +79,14 @@ export async function applyBundleToDraft(args: {
   }
   const themeFile = await read(THEME_CSS_PATH)
   const overridesFile = await read(OVERRIDES_PATH)
+  const fontsFile = fontsModule ? await read(FONTS_MODULE_PATH) : null
 
   const rendered = bundleToRepoFiles(
     bundle,
     { brandText: brandFile.content, designText: designFile.content, overridesCss: overridesFile?.content ?? '' },
     // A verbatim overrides file replaces the current one wholesale, so the
     // current file's region (even a malformed one) is irrelevant.
-    { removeLegacy: overridesVerbatim !== undefined ? true : removeLegacy }
+    { removeLegacy: overridesVerbatim !== undefined ? true : removeLegacy, fontsModule }
   )
   if (!rendered.ok) return { ok: false, status: 422, error: rendered.errors.join(' ') }
   if (overridesVerbatim !== undefined) rendered.files.overridesCss = overridesVerbatim
@@ -100,6 +105,9 @@ export async function applyBundleToDraft(args: {
     { path: DESIGN_PATH, next: rendered.files.designText, current: designFile },
     { path: THEME_CSS_PATH, next: rendered.files.themeCss, current: themeFile },
     { path: OVERRIDES_PATH, next: rendered.files.overridesCss, current: overridesFile },
+    ...(fontsModule && rendered.files.fontsModule !== undefined
+      ? [{ path: FONTS_MODULE_PATH, next: rendered.files.fontsModule, current: fontsFile }]
+      : []),
   ]
   const changes = candidates
     .filter((c) => c.next !== (c.current?.content ?? null))

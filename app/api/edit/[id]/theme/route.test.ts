@@ -36,7 +36,8 @@ vi.mock('@/lib/github/repo-files', () => ({
   }),
   writeFiles: (...a: unknown[]) => h.writeFiles(...a),
 }))
-vi.mock('@/lib/editor/theme-edit', () => ({
+vi.mock('@/lib/editor/theme-edit', async (orig) => ({
+  ...((await orig()) as object),
   patchBrandPalette: vi.fn(),
   patchDesignTypography: vi.fn(),
   patchDesignFlags: vi.fn((text: string) => ({
@@ -55,6 +56,9 @@ vi.mock('@/lib/supabase/server', () => ({ createServerClient: vi.fn(() => ({})) 
 vi.mock('@/lib/design/theme-sources', () => ({ loadDraftThemeSources: vi.fn() }))
 
 import { PATCH } from './route'
+import { patchDesignTypography } from '@/lib/editor/theme-edit'
+import { generateFontsModule } from '@/lib/content/font-module-generator'
+import { normalizeTypography } from './_theme'
 
 const params = Promise.resolve({ id: '11111111-1111-1111-1111-111111111111' })
 const patchFlags = () =>
@@ -92,5 +96,50 @@ describe('PATCH /api/edit/[id]/theme — optimistic locks', () => {
     h.writeFiles.mockRejectedValueOnce(new h.StaleShaError('src/styles/theme.css'))
     const res = await patchFlags()
     expect(res.status).toBe(409)
+  })
+})
+
+describe('PATCH /api/edit/[id]/theme — fonts module (L2+ drafts)', () => {
+  const FONTS = 'src/app/fonts.generated.ts'
+  const E40 = 'e'.repeat(40)
+  const patchTypography = () =>
+    PATCH(
+      new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ typography: { headingFont: 'Inter' } }) }),
+      { params }
+    )
+
+  beforeEach(() => {
+    vi.mocked(patchDesignTypography).mockImplementation((text: string, t: Record<string, string>) => {
+      const design = JSON.parse(text) as { typography: Record<string, string> }
+      const next = { ...design, typography: { ...design.typography, ...t } }
+      return { ok: true, changed: true, design: next, next: JSON.stringify(next) } as unknown as ReturnType<typeof patchDesignTypography>
+    })
+  })
+
+  it('Controls writes the fonts module on an L2 draft', async () => {
+    h.fs.set('c5-template.json', { content: '{"capabilities":["fonts"]}', sha: 'markerSha' })
+    h.fs.set(FONTS, { content: 'old', sha: E40 })
+    const res = await patchTypography()
+    expect(res.status).toBe(200)
+    const files = h.writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha?: string | null }[]
+    expect(files.find((f) => f.path === FONTS)).toEqual({
+      path: FONTS,
+      content: generateFontsModule(normalizeTypography({ headingFont: 'Inter' })).source,
+      expectedSha: E40,
+    })
+  })
+
+  it('an absent module on an L2 draft is written as must-not-exist (null)', async () => {
+    h.fs.set('c5-template.json', { content: '{"capabilities":["fonts"]}', sha: 'markerSha' })
+    await patchFlags()
+    const files = h.writeFiles.mock.calls[0][1] as { path: string; expectedSha?: string | null }[]
+    expect(files.find((f) => f.path === FONTS)?.expectedSha).toBeNull()
+  })
+
+  it('…and not on an L1 draft', async () => {
+    h.fs.set(FONTS, { content: 'old', sha: E40 })
+    await patchTypography()
+    const files = h.writeFiles.mock.calls[0][1] as { path: string }[]
+    expect(files.map((f) => f.path)).not.toContain(FONTS)
   })
 })

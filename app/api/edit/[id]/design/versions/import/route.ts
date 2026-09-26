@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
-import { computeDrift, mergeAppliedBlobs, toBlobMap } from '@/lib/design/drift'
+import { computeDrift, mergeAppliedBlobs, themeFilePaths, toBlobMap } from '@/lib/design/drift'
+import { readDesignCapabilities } from '@/lib/design/capabilities-read'
 import { CAPTURED_NAME, insertVersion, latestVersion, VersionConflictError } from '@/lib/design/store'
 import { readDraftThemeSnapshot, themeTextsFromSnapshot } from '@/lib/design/theme-snapshot'
 import { requireDesignAdmin } from '../../_design'
@@ -20,7 +21,8 @@ const fileName = (p: string): string => p.slice(p.lastIndexOf('/') + 1)
 // POST — "Capture as version" (the drift banner's action): record the draft's
 // CURRENT theme as a new `import` version, so changes made outside the Studio
 // (Controls, hand edits) become a version the Studio can restore. No commit —
-// the draft already holds it. applied_blobs = the full current four-file map.
+// the draft already holds it. applied_blobs = the full current theme-file map
+// (four files, plus the fonts module on L2+ drafts).
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const ctx = await requireDesignAdmin(id)
@@ -39,7 +41,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const [snapshot, latest] = await Promise.all([readDraftThemeSnapshot(ctx.githubRepo), latestVersion(db, ctx.sessionId)])
     const draft = themeTextsFromSnapshot(snapshot)
     if (!draft.ok) return NextResponse.json({ error: draft.error }, { status: 409 })
-    const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null)
+    const draftCaps = await readDesignCapabilities(ctx.githubRepo)
+    const themePaths = themeFilePaths(draftCaps)
+    const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null, themePaths)
     if (drift.status === 'in-sync') {
       return NextResponse.json({ error: `Nothing to capture — the draft already matches v${drift.sinceVersion}.` }, { status: 409 })
     }
@@ -56,7 +60,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       bundle: captured.bundle,
       summary: changed ? `Captured from the draft — changed outside the Studio: ${changed}` : 'Captured from the draft',
       appliedCommitSha: null,
-      appliedBlobs: mergeAppliedBlobs(snapshot.shas, {}),
+      appliedBlobs: mergeAppliedBlobs(snapshot.shas, {}, themePaths),
       createdBy: ctx.adminId,
     })
     const response: CaptureVersionResponse = { ok: true, versionId: version.id, versionNo: version.version_no }

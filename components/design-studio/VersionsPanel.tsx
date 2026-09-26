@@ -27,7 +27,7 @@ function formatWhen(iso: string): string {
 }
 
 // Theme versions (v0 = baseline import of the draft), the drift banner with
-// "Capture as version", the stale-theme.css notice, and Restore: re-apply an
+// "Capture as version", the stale-theme.css + fonts-module notices, and Restore: re-apply an
 // older version to the draft as a NEW forward version (P5).
 export default function VersionsPanel({
   sessionId,
@@ -35,6 +35,7 @@ export default function VersionsPanel({
   drift,
   baseline,
   themeCssStale,
+  fontsModuleStale,
   onChanged,
 }: {
   sessionId: string
@@ -42,6 +43,7 @@ export default function VersionsPanel({
   drift: DriftResult
   baseline: BaselineStatus
   themeCssStale: boolean | null
+  fontsModuleStale: boolean | null
   onChanged: () => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -137,6 +139,16 @@ export default function VersionsPanel({
           <p className="mt-0.5">
             The committed theme.css doesn’t match brand.json + design.json, so the live site may not show the saved palette. Any Controls change or
             Studio apply regenerates it.
+          </p>
+        </div>
+      )}
+
+      {fontsModuleStale === true && (
+        <div role="status" className="rounded-lg border border-border-default bg-surface-subtle px-3 py-2 font-body text-xs text-text-secondary">
+          <p className="font-heading font-semibold text-text-primary">The live fonts are out of date</p>
+          <p className="mt-0.5">
+            src/app/fonts.generated.ts doesn’t match design.json, so the live site still loads older fonts. The next Studio apply, chat commit or
+            Controls change regenerates it — and the fonts change on the live site when you publish.
           </p>
         </div>
       )}

@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { asJson } from '@/lib/supabase/json-typed'
 import { SID, makeVersionRow } from '@/lib/design/__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT } from '@/lib/design/__fixtures__/theme-texts'
+import { DEFAULT_CAPABILITIES } from '@/lib/design/run-types'
 
-const m = vi.hoisted(() => ({ gate: vi.fn(), snapshot: vi.fn(), latest: vi.fn(), insert: vi.fn() }))
+const m = vi.hoisted(() => ({ gate: vi.fn(), snapshot: vi.fn(), latest: vi.fn(), insert: vi.fn(), caps: vi.fn() }))
+vi.mock('@/lib/design/capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
 vi.mock('../../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
 vi.mock('@/lib/design/theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r) }))
@@ -33,6 +35,7 @@ beforeEach(() => {
   m.snapshot.mockResolvedValue(snap(DRIFTED))
   m.latest.mockResolvedValue(makeVersionRow({ version_no: 3, applied_blobs: asJson(V3) }))
   m.insert.mockResolvedValue(makeVersionRow({ id: 'ver-4', version_no: 4, source: 'import' }))
+  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
 })
 
 describe('POST /design/versions/import', () => {
@@ -71,5 +74,35 @@ describe('POST /design/versions/import', () => {
     const res = await call()
     expect(res.status).toBe(500)
     expect(JSON.stringify(await res.json())).not.toContain('design_versions')
+  })
+
+  describe('fonts module (L2+ drafts)', () => {
+    const L2 = { level: 2, source: 'marker', templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    const FONTS = 'src/app/fonts.generated.ts'
+
+    it('L2 draft: captures the module in applied_blobs', async () => {
+      m.caps.mockResolvedValue(L2)
+      m.snapshot.mockResolvedValue(snap({ ...DRIFTED, [FONTS]: 'f'.repeat(40) }))
+      expect((await call()).status).toBe(201)
+      expect(m.caps).toHaveBeenCalledWith('o/r')
+      const v = m.insert.mock.calls[0][1] as { appliedBlobs: unknown }
+      expect(v.appliedBlobs).toEqual({ ...DRIFTED, [FONTS]: 'f'.repeat(40) })
+    })
+
+    it('L1 draft: the module never enters applied_blobs', async () => {
+      m.snapshot.mockResolvedValue(snap({ ...DRIFTED, [FONTS]: 'f'.repeat(40) }))
+      expect((await call()).status).toBe(201)
+      const v = m.insert.mock.calls[0][1] as { appliedBlobs: unknown }
+      expect(v.appliedBlobs).toEqual(DRIFTED)
+    })
+
+    it('L2 draft: a changed module alone is drift worth capturing', async () => {
+      m.caps.mockResolvedValue(L2)
+      m.latest.mockResolvedValue(makeVersionRow({ version_no: 3, applied_blobs: asJson({ ...V3, [FONTS]: '1'.repeat(40) }) }))
+      m.snapshot.mockResolvedValue(snap({ ...V3, [FONTS]: 'f'.repeat(40) }))
+      const res = await call()
+      expect(res.status).toBe(201)
+      expect((m.insert.mock.calls[0][1] as { summary: string }).summary).toContain('fonts.generated.ts')
+    })
   })
 })

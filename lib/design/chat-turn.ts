@@ -62,7 +62,7 @@ import { CHAT_MAX_OUTPUT_TOKENS, CHAT_MAX_STEPS, DEFAULT_CHAT_PAGE, TURN_BUDGET_
 import { ChatWorkspace } from './chat-workspace'
 import { commitDesignVersion, type CommitTarget } from './commit-version'
 import { composedThemeFromFiles, type ComposedTheme } from './composed-theme'
-import { computeDrift, toBlobMap } from './drift'
+import { computeDrift, themeFilePaths, toBlobMap } from './drift'
 import { isPlainObject } from './input-validation'
 import { firmNameFrom } from './run-gather'
 import { attachmentStoragePath, downloadDesignImage } from './storage'
@@ -195,7 +195,7 @@ export async function prepareChatTurn(
     if (loaded.length > 0) images[id] = loaded
   }
 
-  const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null)
+  const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null, themeFilePaths(capRead.draft))
   const page = request.page ?? DEFAULT_CHAT_PAGE
   const turn: PreparedTurn = {
     assistantId: randomUUID(),

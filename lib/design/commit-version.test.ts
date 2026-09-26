@@ -169,6 +169,56 @@ describe('commitDesignVersion', () => {
     expect(m.apply).not.toHaveBeenCalled()
   })
 
+  describe('fonts module (P6a: file contract = draft marker, gate = draft ∩ shell)', () => {
+    const L2 = { level: 2 as const, source: 'marker' as const, templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    const FONTS = 'src/app/fonts.generated.ts'
+    const otherFont = () => CURATED_FONTS.find((f) => f !== 'Public Sans' && f !== 'Fraunces') as string
+
+    it('fonts unlocked at L2 (draft ∩ shell): apply writes the module and appliedBlobs records it', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: L2 })
+      m.apply.mockResolvedValue({ ...APPLIED, blobs: { ...APPLIED.blobs, [FONTS]: '9'.repeat(40) }, changedPaths: [...APPLIED.changedPaths, FONTS] })
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, typography: { ...VALID.typography, headingFont: otherFont() } } }))
+      expect(r.ok).toBe(true)
+      expect(m.apply.mock.calls[0][0]).toMatchObject({ fontsModule: true })
+      const v = m.insertVersion.mock.calls[0][1] as { appliedBlobs: Record<string, string> }
+      expect(v.appliedBlobs).toEqual({ ...AFTER_SHAS, 'content/brand.json': 'c'.repeat(40), [FONTS]: '9'.repeat(40) })
+    })
+
+    it('fonts locked when the live shell is L1: 422 and nothing applied', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: DEFAULT_CAPABILITIES })
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, typography: { ...VALID.typography, headingFont: otherFont() } } }))
+      expect(r).toMatchObject({ ok: false, status: 422 })
+      expect(m.apply).not.toHaveBeenCalled()
+    })
+
+    it('L2 draft with an L1 shell and NO font change still writes/guards the module (file contract follows the draft)', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: DEFAULT_CAPABILITIES })
+      const r = await commitDesignVersion(DB, args())
+      expect(r.ok).toBe(true)
+      expect(m.apply.mock.calls[0][0]).toMatchObject({ fontsModule: true })
+    })
+
+    it('L1 draft records four files: fontsModule false and no fonts key even if the snapshot has one', async () => {
+      m.snapshot
+        .mockReset()
+        .mockResolvedValueOnce({ shas: { ...BEFORE_SHAS, [FONTS]: '8'.repeat(40) }, texts: BEFORE.texts })
+        .mockResolvedValueOnce({ shas: { ...AFTER_SHAS, [FONTS]: '8'.repeat(40) }, texts: {} })
+      const r = await commitDesignVersion(DB, args())
+      expect(m.apply.mock.calls[0][0]).toMatchObject({ fontsModule: false })
+      expect(r.ok && r.appliedBlobs).not.toHaveProperty(FONTS)
+      const v = m.insertVersion.mock.calls[0][1] as { appliedBlobs: Record<string, string> }
+      expect(v.appliedBlobs).not.toHaveProperty(FONTS)
+    })
+
+    it('skipIfUnchanged on an L2 draft returns the base map incl. the module', async () => {
+      m.effective.mockResolvedValue({ draft: L2, effective: L2 })
+      m.snapshot.mockReset().mockResolvedValue({ shas: { ...BEFORE_SHAS, [FONTS]: '8'.repeat(40) }, texts: BEFORE.texts })
+      m.apply.mockResolvedValue({ ...APPLIED, commitSha: null, blobs: {}, changedPaths: [] })
+      const r = await commitDesignVersion(DB, args({ skipIfUnchanged: true }))
+      expect(r).toMatchObject({ ok: true, version: null, appliedBlobs: { ...BEFORE_SHAS, [FONTS]: '8'.repeat(40) } })
+    })
+  })
+
   it('passes an apply refusal (contrast) through with its status', async () => {
     m.apply.mockResolvedValue({ ok: false, status: 422, error: 'The palette fails contrast checks — x.' })
     expect(await commitDesignVersion(DB, args())).toEqual({ ok: false, status: 422, error: 'The palette fails contrast checks — x.' })

@@ -84,6 +84,19 @@ describe('prepareChatTurn', () => {
     expect(await prepareChatTurn(DB, ACTOR, req(), Date.now())).toMatchObject({ ok: false, status: 409 })
     expect(m.insert).not.toHaveBeenCalled()
   })
+  it('drift tracks the fonts module only on L2+ drafts (draft marker, not the shell)', async () => {
+    const FONTS = 'src/app/fonts.generated.ts'
+    const L2 = { level: 2 as const, source: 'marker' as const, templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    m.latest.mockResolvedValue(makeVersionRow({ version_no: 3, bundle: asJson({ name: 'Harbor v3' }), applied_blobs: asJson({ ...SHAS, [FONTS]: '1'.repeat(40) }) }))
+    m.snapshot.mockResolvedValue({ ...SNAP, shas: { ...SHAS, [FONTS]: '2'.repeat(40) } })
+    const l1 = await prepareChatTurn(DB, ACTOR, req(), 0)
+    if (!l1.ok) throw new Error(l1.error)
+    expect(l1.turn.turnContext).not.toContain('changed outside the Studio')
+    m.effective.mockResolvedValue({ draft: L2, effective: DEFAULT_CAPABILITIES })
+    const l2 = await prepareChatTurn(DB, ACTOR, req(), 0)
+    if (!l2.ok) throw new Error(l2.error)
+    expect(l2.turn.turnContext).toContain('changed outside the Studio')
+  })
   it('409s malformed override markers', async () => {
     m.snapshot.mockResolvedValue({ ...SNAP, texts: { ...SNAP.texts, 'content/design-overrides.css': '/* design-studio:end */' } })
     expect(await prepareChatTurn(DB, ACTOR, req(), Date.now())).toMatchObject({ ok: false, status: 409 })

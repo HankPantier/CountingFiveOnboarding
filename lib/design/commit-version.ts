@@ -17,7 +17,7 @@
 //      session never silently mutates schema_data). A chat-made design reaches
 //      the MBP through the Versions panel's human-clicked "Sync palette &
 //      fonts to MBP" (POST design/sync-mbp), which mirrors the whole draft.
-//   5. the FULL post-apply four-file blob map (the applied_blobs contract)
+//   5. the FULL post-apply blob map — four theme files, plus the fonts module on L2+ drafts (the applied_blobs contract)
 //   6. insertVersion (version_no = max + 1, 23505 retry)
 // Render gates are the CALLER's job (concept: its stored review metrics; chat:
 // the turn's latest preview; restore: none — the version was on the draft
@@ -30,9 +30,9 @@ import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
 import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
-import { capabilityViolations } from './capabilities'
+import { capabilityViolations, fontsUnlocked } from './capabilities'
 import { readEffectiveCapabilities } from './capabilities-read'
-import { mergeAppliedBlobs } from './drift'
+import { mergeAppliedBlobs, themeFilePaths } from './drift'
 import type { RunScreenshot } from './run-types'
 import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
@@ -104,6 +104,8 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   const capRead = await readEffectiveCapabilities({ githubRepo: target.githubRepo, jobId: target.jobId })
   const violations = capabilityViolations(bundle, current.bundle, capRead.effective)
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
+  // File contract follows the DRAFT marker (what the next build ships).
+  const paths = themeFilePaths(capRead.draft)
 
   let result: Awaited<ReturnType<typeof applyBundleToDraft>>
   try {
@@ -113,6 +115,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       removeLegacy: args.removeLegacy,
       message: args.commitMessage,
       author: { name: target.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: target.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email },
+      fontsModule: fontsUnlocked(capRead.draft),
       ...(expectedShas ? { base: before } : {}),
       ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
     })
@@ -123,7 +126,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   if (!result.ok) return { ok: false, status: result.status, error: result.error }
 
   if (args.skipIfUnchanged && result.changedPaths.length === 0) {
-    return { ok: true, version: null, commitSha: null, changedPaths: [], appliedBlobs: mergeAppliedBlobs(before.shas, {}), css: result.css }
+    return { ok: true, version: null, commitSha: null, changedPaths: [], appliedBlobs: mergeAppliedBlobs(before.shas, {}, paths), css: result.css }
   }
 
   if (args.syncMbp) {
@@ -135,20 +138,20 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     })
   }
 
-  // applied_blobs MUST be the full four-file map (drift compares to it).
+  // applied_blobs MUST be the full theme-file map (drift compares to it).
   // With a base, the commit was guarded against every base blob, so base +
   // written IS the draft's theme now. Without one, written blobs win: right
   // after updateRef the (ETag-conditional) tree read can still return the
   // pre-commit tip, so the snapshot only fills the files this commit didn't touch.
   let appliedBlobs: ThemeBlobShas
   if (expectedShas) {
-    appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs)
+    appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs, paths)
   } else {
     try {
-      appliedBlobs = mergeAppliedBlobs((await readDraftThemeSnapshot(target.githubRepo)).shas, result.blobs)
+      appliedBlobs = mergeAppliedBlobs((await readDraftThemeSnapshot(target.githubRepo)).shas, result.blobs, paths)
     } catch (err) {
       console.warn('[design:commit] post-apply snapshot failed, using before + written shas:', err)
-      appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs)
+      appliedBlobs = mergeAppliedBlobs(before.shas, result.blobs, paths)
     }
   }
 
