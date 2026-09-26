@@ -8,6 +8,7 @@ type Tool = { execute: (input: Record<string, unknown>) => Promise<Record<string
 const m = vi.hoisted(() => ({
   file: '',
   tools: null as null | Record<string, Tool>,
+  system: null as null | Array<{ content: string }>,
   streamCalls: 0,
   spend: null as null | Response,
   insertFiled: true,
@@ -16,9 +17,10 @@ const m = vi.hoisted(() => ({
 
 vi.mock('ai', async (orig) => ({
   ...((await orig()) as object),
-  streamText: (args: { tools: Record<string, Tool> }) => {
+  streamText: (args: { tools: Record<string, Tool>; system: Array<{ content: string }> }) => {
     m.streamCalls += 1
     m.tools = args.tools
+    m.system = args.system
     return { toUIMessageStreamResponse: () => new Response('stream') }
   },
 }))
@@ -77,6 +79,7 @@ const post = () =>
 beforeEach(() => {
   m.file = '---\ntitle: "About"\n---\n\nWe partner with Root Advisors on payroll.\n'
   m.tools = null
+  m.system = null
   m.streamCalls = 0
   m.spend = null
   m.insertFiled = true
@@ -113,5 +116,35 @@ describe('POST /api/edit/[id]/chat', () => {
     m.insertFiled = true
     const ok = await m.tools!.update_firm_contact.execute({ field: 'phone', value: '555-0101' })
     expect(ok.mbpFlagged).toBe(true)
+  })
+
+  it('does not register update_firm_contact for a Site Owner, and the system prompt refuses instead of advertising it', async () => {
+    m.ctx = { ...m.ctx, user: { id: 'u2', isAdmin: false, capabilities: ['owner'] } }
+    await post()
+    expect(m.tools!.update_firm_contact).toBeUndefined()
+    // The other tools (which don't touch firm-wide brand.json) stay available.
+    expect(m.tools!.apply_edit).toBeDefined()
+    expect(m.tools!.set_faq).toBeDefined()
+
+    const systemText = m.system!.map(s => s.content).join('\n')
+    expect(systemText).toContain('Firm contact details are managed by your agency — ask them to update it.')
+    expect(systemText).not.toContain('update_firm_contact({ ... })')
+    expect(systemText).not.toContain('call update_firm_contact')
+
+    // No write path exists at all: the file (and brand.json, which the mocked
+    // patchBrandJsonContact would otherwise touch) is untouched.
+    expect(m.file).toBe('---\ntitle: "About"\n---\n\nWe partner with Root Advisors on payroll.\n')
+  })
+
+  it('leaves update_firm_contact registered and working for an admin', async () => {
+    m.ctx = { ...m.ctx, user: { id: 'u1', isAdmin: true, capabilities: [] } }
+    await post()
+    expect(m.tools!.update_firm_contact).toBeDefined()
+    const res = await m.tools!.update_firm_contact.execute({ field: 'phone', value: '555-0100' })
+    expect(res.success).toBe(true)
+    expect(res.brandJsonUpdated).toBe(true)
+
+    const systemText = m.system!.map(s => s.content).join('\n')
+    expect(systemText).toContain('call update_firm_contact')
   })
 })

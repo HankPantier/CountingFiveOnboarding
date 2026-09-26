@@ -66,6 +66,12 @@ export async function POST(
   if (!(user.isAdmin || isSiteOwner(user))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  // Site Owners are locked out of firm-wide config elsewhere (denySiteOwnerConfig on
+  // the site-wide routes) — the AI editor's update_firm_contact tool writes the same
+  // shared brand.json, so it must not be reachable from an owner's session either.
+  // Excluding the tool (rather than just refusing inside it) also keeps the system
+  // prompt from advertising it below.
+  const canEditFirmContact = !isSiteOwner(user)
 
   const body = await readJsonBody<{ messages: UIMessage[]; path?: string }>(req)
   if (body instanceof NextResponse) return body
@@ -162,8 +168,7 @@ BATCH your work: a request usually implies MANY edits (rewrite several sentences
 - apply_edits({ edits: [{ find, replace, all? }] }) — apply MANY exact find/replace rewrites in ONE commit. This is the DEFAULT for any multi-part edit. Each \`find\` is an EXACT snippet copied verbatim from the file (matching whitespace, punctuation, casing); it must match exactly ONE place unless all=true. All finds are matched against the SAME current file, so don't target text that another edit in the same batch rewrites. The result lists which edits applied and which missed (re-copy an exact snippet for any miss).
 - apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Use apply_edit for LAYOUT changes to a \`<!-- block: ... -->\` annotation. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
 - remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
-- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)
-- update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.
+- set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)${canEditFirmContact ? '\n- update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.' : ''}
 
 LAYOUT CHANGES (via apply_edit on the annotation comment)
 Every section's layout is set by an HTML comment before its \`##\` heading, e.g.
@@ -177,10 +182,10 @@ Almost any layout request is just editing that comment's \`variant\` (or moving/
 Only use these block ids and variants: ${BLOCK_CATALOG_HINT}. An edit that produces an unknown block id or an invalid variant is rejected — the tool tells you why, so fix it and retry.
 
 FIRM-WIDE CONTACT (phone, fax, email, hours, address)
-These are NOT page-specific — they render on every page (footer, contact page, on-page schema) from one shared source. When the admin asks to change any of them, FIRST ask whether to apply it firm-wide or only mention it on this page:
+These are NOT page-specific — they render on every page (footer, contact page, on-page schema) from one shared source.${canEditFirmContact ? ` When the admin asks to change any of them, FIRST ask whether to apply it firm-wide or only mention it on this page:
 "Should I update the {phone/email/…} everywhere (footer, contact page, and every page's schema), or just here on this page?"
 - Everywhere → call update_firm_contact. It updates the shared brand.json now (publish pushes it live everywhere) and flags the firm profile (MBP) for review. Say you've updated it site-wide and flagged the profile — never say the MBP itself was changed.
-- Just this page → use apply_edit on this file only.
+- Just this page → use apply_edit on this file only.` : ` You do NOT have a tool to change these firm-wide (that's managed by the agency, not from this editor). If the admin asks to change the phone, fax, email, hours, or address everywhere, tell them: "Firm contact details are managed by your agency — ask them to update it." You may still use apply_edit to change how a value is displayed on this one page only, if asked.`}
 
 RULES
 - Make ONLY what the admin asks for. Never invent facts (credentials, numbers, named people, dates) not supported by the firm profile above or the existing file.
@@ -420,7 +425,11 @@ ${workingContent}
             }
           },
         },
-        update_firm_contact: {
+        // Site Owners never get this tool (see canEditFirmContact above) — it
+        // writes the shared brand.json, which denySiteOwnerConfig locks out of
+        // every other site-wide config route. Spread it in only for admins/
+        // managers/editors so an owner's session can't even attempt the call.
+        ...(canEditFirmContact ? { update_firm_contact: {
           description:
             'Apply a firm-wide contact change (phone, fax, email, hours, or address). Updates the shared brand.json (publishable now) AND files a pending MBP suggestion. Only call after the admin confirms "everywhere".',
           inputSchema: z.object({
@@ -502,7 +511,7 @@ ${workingContent}
                 : `${site} Could NOT flag the firm profile (MBP) for review — tell the admin it needs a manual update.`,
             }
           },
-        },
+        } } : {}),
         suggest_mbp_update: {
           description:
             'Queue a pending MBP suggestion (for admin review) when the conversation surfaces a durable, verifiable fact or brand-voice/writing rule not already in the profile. Only call after the admin confirms. Does NOT change the profile.',
