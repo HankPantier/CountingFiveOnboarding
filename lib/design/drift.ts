@@ -1,6 +1,7 @@
 // Pure + client-safe. Has the draft's theme drifted from the latest Design
-// Studio version? Compares git blob shas of the four theme files (content-
-// addressed: equal bytes ⇔ equal sha) with the version's applied_blobs. Also
+// Studio version? Compares git blob shas of the four theme files (+ fonts
+// module on L2+) (content-addressed: equal bytes ⇔ equal sha) with the
+// version's applied_blobs. Also
 // flags a committed theme.css that no longer matches brand.json + design.json,
 // and a committed fonts module (src/app/fonts.generated.ts) that no longer
 // matches design.json typography (L2+ drafts only).

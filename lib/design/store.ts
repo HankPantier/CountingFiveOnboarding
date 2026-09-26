@@ -216,8 +216,8 @@ export type NewDesignVersion = {
   bundle: DesignBundle
   summary: string | null
   appliedCommitSha: string | null
-  // The FULL post-apply blob shas of all four theme files (drift compares
-  // against this) — not just the paths the commit changed.
+  // The FULL post-apply blob shas of all four theme files (+ fonts module on
+  // L2+) (drift compares against this) — not just the paths the commit changed.
   appliedBlobs: ThemeBlobShas
   conceptId?: string | null
   createdBy: string | null
