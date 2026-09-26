@@ -33,6 +33,7 @@ function styleLever(caps: DesignCapabilities): string {
   if (!styleAxesUnlocked(caps)) return '- Never emit a "style" field (style axes are not available to you).'
   return `- style (optional): template style presets — { <axis>: <value> }; omit an axis (or use "default") to keep the default look. Prefer a preset over hand CSS for the same effect. Axes:
 ${styleAxesSummary()}
+  nav=inverted puts the logo on a light plate inside the primary-colour bar, so a dark logo stays legible — it is safe to use.
   When an axis is set, css.blocks.<id> may also be prefixed by it, e.g. html[data-c5-cards="flat"] [data-block="service-cards"] … (attribute = data-c5-<kebab axis>).`
 }
 

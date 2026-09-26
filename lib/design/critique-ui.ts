@@ -25,7 +25,7 @@ export const TONE_BAR: Record<Tone, string> = { success: 'bg-success', warning: 
 export function scoreRows(c: CritiqueRecord): ScoreRow[] {
   return RUBRIC_KEYS.map((key) => {
     const score = c.scores[key]
-    const bar = minScoreFor(key)
+    const bar = minScoreFor(key, c.paletteFreedom)
     const tone: Tone = score < bar ? 'error' : score > bar || score >= 4 ? 'success' : 'warning'
     return { key, label: RUBRIC_LABELS[key], score, pct: Math.round((score / 5) * 100), tone, reason: c.reasons[key] }
   })

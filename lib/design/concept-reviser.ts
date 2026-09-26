@@ -15,7 +15,7 @@ import { GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/co
 import { DESIGN_SYSTEM_PROMPT, type BuiltPrompt, type PriorConcept } from './brief'
 import { CONCEPT_OUTPUT_TOKENS, REPAIR_CALL_TIMEOUT_MS, REPAIR_OUTPUT_TOKENS } from './concept-generator'
 import { isCssSizeCapError } from './css-budget'
-import { checkConceptCandidate, parseConceptsEnvelope, type ConceptContext, type ValidConcept } from './concept-validate'
+import { checkConceptCandidate, parseConceptsEnvelope, withConsistencyNotes, type ConceptContext, type ValidConcept } from './concept-validate'
 import { createDesignCaller, type StopReason } from './model-call'
 
 export const REVISE_CALL_CAP_MS = 300_000
@@ -71,7 +71,10 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
   if (raw === null) return fail([], caller.stopReason() ?? 'no_output')
   const candidate = parseConceptsEnvelope(raw)?.[0]
   const v = checkConceptCandidate(candidate, args.context, args.others)
-  if (v.ok) return { ...money, concept: v.concept, errors: [], notes: v.concept.notes, stoppedReason: null }
+  if (v.ok) {
+    const concept = withConsistencyNotes(v.concept, args.context.caps)
+    return { ...money, concept, errors: [], notes: concept.notes, stoppedReason: null }
+  }
   if (!isSizeOnlyFailure(v.errors)) return fail(v.errors, 'no_output')
 
   // Size-only: one repair turn, if the budget still allows a full call.
@@ -91,7 +94,10 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
   )
   const after = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd() }
   const fixed = repaired === null ? null : checkConceptCandidate(parseConceptsEnvelope(repaired)?.[0], args.context, args.others, 'after repair: ')
-  if (fixed?.ok) return { ...after, concept: fixed.concept, errors: [], notes: fixed.concept.notes, stoppedReason: null }
+  if (fixed?.ok) {
+    const concept = withConsistencyNotes(fixed.concept, args.context.caps)
+    return { ...after, concept, errors: [], notes: concept.notes, stoppedReason: null }
+  }
   return { ...after, concept: null, errors: [...v.errors, ...(fixed ? fixed.errors : [])], notes: [], stoppedReason: caller.stopReason() ?? 'no_output' }
 }
 

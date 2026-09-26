@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { critiquePasses, minScoreFor, parseCritiqueAnswer, parseCritiqueRecord, rubricMean, type RubricScores } from './critique'
+import {
+  LEGACY_CRITIQUE_PALETTE_FREEDOM,
+  critiquePasses,
+  minDistinctivenessFor,
+  minScoreFor,
+  parseCritiqueAnswer,
+  parseCritiqueRecord,
+  rubricMean,
+  type RubricScores,
+} from './critique'
 
 const S = (over: Partial<RubricScores> = {}): RubricScores => ({ brandFit: 4, distinctiveness: 4, hierarchy: 4, legibility: 4, consistency: 4, craft: 4, ...over })
 const ANSWER = {
@@ -8,20 +17,35 @@ const ANSWER = {
   issues: [{ area: 'hero', problem: 'CTA blends in', fix: 'Use the action colour on the hero button' }],
   summary: 'Solid.',
 }
-const META = { iteration: 0, model: 'claude-opus-5-5', at: '2026-09-25T12:00:00.000Z' }
+const META = { iteration: 0, model: 'claude-opus-5-5', at: '2026-09-25T12:00:00.000Z', paletteFreedom: 'free' as const }
 
-describe('pass rule (spec: all ≥ 3, mean ≥ 3.8, distinctiveness ≥ 4)', () => {
+describe('pass rule — free palette (all ≥ 3, mean ≥ 3.8, distinctiveness ≥ 4)', () => {
   it.each([
     [S(), true],
     [S({ craft: 3, legibility: 3 }), false], // mean 3.67
     [S({ craft: 3 }), true], // mean 3.83
     [S({ distinctiveness: 3, brandFit: 5, craft: 5 }), false], // distinctiveness below 4
     [S({ craft: 2, brandFit: 5, hierarchy: 5 }), false], // one score below 3
-  ])('%j → %s', (scores, pass) => expect(critiquePasses(scores)).toBe(pass))
+  ])('%j → %s', (scores, pass) => expect(critiquePasses(scores, 'free')).toBe(pass))
   it('mean is rounded to 2 decimals for display', () => expect(rubricMean(S({ craft: 3 }))).toBe(3.83))
   it('distinctiveness has a higher bar than the rest', () => {
-    expect(minScoreFor('distinctiveness')).toBe(4)
-    expect(minScoreFor('craft')).toBe(3)
+    expect(minScoreFor('distinctiveness', 'free')).toBe(4)
+    expect(minScoreFor('craft', 'free')).toBe(3)
+  })
+})
+
+describe.each(['keep', 'evolve'] as const)('pass rule — %s palette (all ≥ 3, mean ≥ 3.8, distinctiveness ≥ 3)', (freedom) => {
+  it.each([
+    [S({ distinctiveness: 3 }), true], // mean 3.83, distinctiveness at the held bar
+    [S({ distinctiveness: 3, craft: 3 }), false], // mean 3.67 — the mean bar is unchanged
+    [S({ distinctiveness: 2, brandFit: 5, craft: 5 }), false], // distinctiveness below 3
+    [S({ craft: 2, brandFit: 5, hierarchy: 5 }), false], // one score below 3
+    [S(), true],
+  ])('%j → %s', (scores, pass) => expect(critiquePasses(scores, freedom)).toBe(pass))
+  it('distinctiveness shares the ≥ 3 bar', () => {
+    expect(minDistinctivenessFor(freedom)).toBe(3)
+    expect(minScoreFor('distinctiveness', freedom)).toBe(3)
+    expect(minScoreFor('craft', freedom)).toBe(3)
   })
 })
 
@@ -30,7 +54,13 @@ describe('parseCritiqueAnswer', () => {
     const r = parseCritiqueAnswer({ ...ANSWER, scores: S({ distinctiveness: 2 }), pass: true, passed: true }, META)
     expect(r.ok && r.record.passed).toBe(false)
     const ok = parseCritiqueAnswer(ANSWER, META)
-    expect(ok.ok && ok.record).toMatchObject({ passed: true, mean: 4, iteration: 0, model: 'claude-opus-5-5', at: META.at })
+    expect(ok.ok && ok.record).toMatchObject({ passed: true, mean: 4, iteration: 0, model: 'claude-opus-5-5', at: META.at, paletteFreedom: 'free' })
+  })
+  it('judges distinctiveness 3 by the palette freedom it was made under', () => {
+    const scores = S({ distinctiveness: 3 })
+    expect(parseCritiqueAnswer({ ...ANSWER, scores }, META)).toMatchObject({ ok: true, record: { passed: false } })
+    expect(parseCritiqueAnswer({ ...ANSWER, scores }, { ...META, paletteFreedom: 'evolve' })).toMatchObject({ ok: true, record: { passed: true, paletteFreedom: 'evolve' } })
+    expect(parseCritiqueAnswer({ ...ANSWER, scores }, { ...META, paletteFreedom: 'keep' })).toMatchObject({ ok: true, record: { passed: true } })
   })
   it('rounds fractional scores, clips long text, keeps at most 6 issues, defaults a missing reason / summary', () => {
     const issues = Array.from({ length: 9 }, (_, i) => ({ area: `a${i}`, problem: 'p'.repeat(500), fix: 'f' }))
@@ -56,5 +86,14 @@ describe('parseCritiqueRecord', () => {
     const tampered = { ...ok.record, scores: S({ distinctiveness: 1 }), passed: true }
     expect(parseCritiqueRecord(JSON.parse(JSON.stringify(tampered)))?.passed).toBe(false)
     expect(parseCritiqueRecord({ nope: 1 })).toBeNull()
+  })
+  it('re-derives with the stored palette freedom; a pre-P7 record (none stored) keeps its free-bar verdict', () => {
+    const ok = parseCritiqueAnswer({ ...ANSWER, scores: S({ distinctiveness: 3 }) }, { ...META, paletteFreedom: 'evolve' })
+    if (!ok.ok) throw new Error('fixture')
+    expect(parseCritiqueRecord(JSON.parse(JSON.stringify(ok.record)))).toMatchObject({ passed: true, paletteFreedom: 'evolve' })
+    const { paletteFreedom: _dropped, ...legacy } = ok.record
+    expect(LEGACY_CRITIQUE_PALETTE_FREEDOM).toBe('free')
+    expect(parseCritiqueRecord(JSON.parse(JSON.stringify(legacy)))).toMatchObject({ passed: false, paletteFreedom: 'free' })
+    expect(parseCritiqueRecord({ ...ok.record, paletteFreedom: 'wild' })).toBeNull()
   })
 })

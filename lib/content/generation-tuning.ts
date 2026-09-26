@@ -26,6 +26,7 @@ export const DESIGN_MODEL = 'claude-opus-5-5'
 // Only for scripts/compare-design-models.ts (A/B vs DESIGN_MODEL). Not used by
 // any route — the tier map keeps Fable out of production paths until the A/B
 // says otherwise.
+// A/B 2026-09-26 (bblcpa): Opus 5.5 kept as DESIGN_MODEL — Fable 5.1 scored +0.09 mean at 2.3× the cost and 24% slower.
 export const DESIGN_AB_CHALLENGER_MODEL = 'claude-fable-5-1'
 
 // Interactive (streaming, operator-facing) chats. Sonnet 5 turns adaptive

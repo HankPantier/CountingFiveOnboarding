@@ -229,7 +229,7 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 ### P4 — Vision critique loop
 - `critic.ts`, `metrics.ts` (axe, overflow, hidden) and `distinctness.ts` (ΔE via chroma-js).
 - Rubric scored 1–5: brandFit, distinctiveness, hierarchy, legibility, consistency, craft.
-- Pass rule: all ≥3, mean ≥3.8, distinctiveness ≥4.
+- Pass rule: all ≥3, mean ≥3.8, distinctiveness ≥4. *(Revised in P7, 2026-09-26: distinctiveness ≥3 when palette freedom is keep or evolve, ≥4 when free — see P7.)*
 - UI: CritiqueView and BeforeAfter.
 - **Accepted deviations (recorded 2026-09-25):**
   - **No axe-core.** The renderer's CSP blocks a script tag, and axe would be roughly 0.5 MB evaluated on every render. Our own in-page checks run over CDP instead: WCAG AA contrast (4.5:1 normal, 3:1 large text), overflow at 390 px, and hidden, zero-size or off-screen `[data-block]` elements. Text on an image, or in a colour that can't be parsed, counts as unverified and is not failed.
@@ -300,6 +300,15 @@ Platform follow-up **P6b**: `style-axes.ts` mirror, `patchDesignStyle` in `theme
 - After about 5 proven clients and your sign-off:
   - delete `export-brief` from the template;
   - update CLAUDE.md (tier map, storage prefix, Design Studio rules) and the design-brief memory.
+- **Outcomes (recorded 2026-09-26):**
+  - **Model decision.** A/B 2026-09-26 on bblcpa: Opus 5.5 kept as `DESIGN_MODEL` (Fable 5.1 +0.09 mean critic score at 2.3× cost, 24% slower; its most distinct concept broke logo legibility via nav=inverted, since fixed in the template). `DESIGN_AB_CHALLENGER_MODEL` stays script-only.
+  - **export-brief retired 2026-09-26** (user sign-off) — earlier than the "about 5 proven clients" plan.
+  - **Judge + brief rework** (all 4 A/B concepts failed the pass rule, mostly on things no concept can change):
+    - The critic's static prefix opens with a **FIXED — never scored** section: page copy, images and crops, the component tree / section order / layout, which CTAs a page has, the chat/contact launcher, the logo artwork. It scores only the levers (palette, typography incl. the accent font — heading + body + accent is the normal set — tokens, treatments, style axes, scoped CSS) and their execution. Distinctiveness = how different the visual SYSTEM is, not the copy/layout. Issues must be fixes in lever terms. The prefix stays constant (both distinctiveness bars are stated in it); the run's palette freedom is a shared part.
+    - **Pass rule by palette freedom:** distinctiveness ≥3 for keep / evolve, ≥4 for free; all ≥3 and mean ≥3.8 unchanged. Each critique record stores the `paletteFreedom` it was judged under, so re-parsing gives the same verdict; records stored before this default to `free` (the old ≥4 bar).
+    - **Signature CSS:** the art direction requires 2–3 scoped `css.blocks` moves per concept, each tied to a named move — on every tier, so the L1/L2 prompt goldens changed by exactly that one line (deliberate).
+    - **Self-consistency** (`lib/design/concept-consistency.ts`): a concept's name/tagline/rationale/moves are checked against its levers (serif headlines, mono eyebrows, dark sections, style-axis words at L3+) plus the signature-CSS floor. Mismatches are notes, never a rejection: attached to the concept's notes by the generator and reviser, quoted in the P3 repair turn, and restated per call in the critique and revise prompts. The design chat does not run it.
+    - At L3+ the axes section says nav=inverted plates the logo on a light surface (the template fix), so the model knows it is safe.
 
 ---
 

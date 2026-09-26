@@ -77,6 +77,7 @@ const crit = (passed: boolean): CritiqueRecord => {
     passed,
     mean: s,
     model: 'claude-opus-5-5',
+    paletteFreedom: 'free',
     at: '2026-09-25T12:00:00.000Z',
   }
 }
@@ -226,7 +227,9 @@ describe('critiqueUnit', () => {
     expect(unitPatch().review).toMatchObject({ outcome: 'passed', next: 'done' })
     expect(unitPatch().review.critiques).toHaveLength(1)
     const args = m.critique.mock.calls[0][0] as { iteration: number; costSoFarUsd: number; deadline: number }
-    expect(args).toMatchObject({ iteration: 0, costSoFarUsd: 0, deadline: 1_000 + 540_000 })
+    expect(args).toMatchObject({ iteration: 0, costSoFarUsd: 0, deadline: 1_000 + 540_000, paletteFreedom: 'evolve' }) // the run's bar
+    const shared = (m.critique.mock.calls[0][0] as { prompt: { parts: { type: string; text?: string }[] } }).prompt.parts
+    expect(shared.some((p) => p.text?.startsWith('PALETTE FREEDOM for this run: evolve'))).toBe(true)
     expect(m.download).toHaveBeenCalledTimes(3) // current site + concept desktop + mobile
     expect(m.gather.mock.calls[0][4]).toEqual({ markup: false })
   })

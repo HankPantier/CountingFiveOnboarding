@@ -12,6 +12,7 @@ import type { BuiltPrompt } from './brief'
 import { CRITIC_SYSTEM_PROMPT } from './brief/critique-prompt'
 import { parseCritiqueAnswer, type CritiqueRecord } from './critique'
 import { createDesignCaller, type StopReason } from './model-call'
+import type { PaletteFreedom } from './run-types'
 
 export const CRITIQUE_CALL_CAP_MS = 240_000
 export const CRITIQUE_OUTPUT_TOKENS = 8_000
@@ -20,6 +21,9 @@ export const CRITIQUE_RETRY_OUTPUT_TOKENS = 12_000
 export type CritiqueConceptArgs = {
   prompt: BuiltPrompt
   iteration: number
+  // The run's palette freedom: sets the distinctiveness bar of the pass rule
+  // (critique.ts) and is stored on the record so a re-parse gives the same verdict.
+  paletteFreedom: PaletteFreedom
   costSoFarUsd: number
   costCapUsd: number
   deadline: number
@@ -68,7 +72,12 @@ export async function critiqueConcept(args: CritiqueConceptArgs): Promise<Critiq
   })
   const money = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd() }
   if (raw === null) return { ...money, critique: null, errors: [], stoppedReason: caller.stopReason() ?? 'no_output' }
-  const parsed = parseCritiqueAnswer(raw, { iteration: args.iteration, model: args.model ?? DESIGN_MODEL, at: new Date(now()).toISOString() })
+  const parsed = parseCritiqueAnswer(raw, {
+    iteration: args.iteration,
+    model: args.model ?? DESIGN_MODEL,
+    at: new Date(now()).toISOString(),
+    paletteFreedom: args.paletteFreedom,
+  })
   if (!parsed.ok) return { ...money, critique: null, errors: parsed.errors, stoppedReason: 'no_output' }
   return { ...money, critique: parsed.record, errors: [], stoppedReason: null }
 }

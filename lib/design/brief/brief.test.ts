@@ -13,6 +13,10 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // (prompt-cache prefix stability) regardless of any wording a later task
 // brief proposes. Regenerate ONLY via a deliberate, reviewed change to L1/L2
 // copy — never to make a new feature's test pass.
+// Deliberate regenerations:
+// - P7 judge rework (2026-09-26): ONE added art-direction line, the
+//   "Signature CSS" non-negotiable (2–3 scoped css.blocks moves per concept),
+//   on every tier. Nothing else in the L1/L2 bytes moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -224,12 +228,23 @@ describe('style axes in the brief', () => {
   // PF9 (ruling): the L1/L2 prompt text is a prompt-cache prefix and must stay
   // byte-identical to the pre-Task-22 code, independent of any later brief's
   // proposed wording.
+  it('requires 2–3 signature css.blocks moves on every tier (P7)', () => {
+    for (const p of [buildStaticPrefix(DEFAULT_CAPABILITIES), buildStaticPrefix(L2), buildStaticPrefix(L3)]) {
+      expect(p).toContain('- Signature CSS: every concept includes 2–3 scoped css.blocks moves')
+    }
+  })
+  it('tells the model nav=inverted plates the logo — at L3+ only', () => {
+    const line = 'nav=inverted puts the logo on a light plate inside the primary-colour bar'
+    expect(buildStaticPrefix(L3)).toContain(line)
+    expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain(line)
+    expect(buildStaticPrefix(L2)).not.toContain(line)
+  })
   it('pins the exact locked-tier line at L1 and L2', () => {
     for (const p of [buildStaticPrefix(DEFAULT_CAPABILITIES), buildStaticPrefix(L2)]) {
       expect(p).toContain('- Never emit a "style" field (style axes are not available to you).')
     }
   })
-  it('is byte-identical to the pre-Task-22 (04ea820) L1 and L2 static prefixes', () => {
+  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line)', () => {
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toBe(readGolden('static-prefix-l1.golden.txt'))
     expect(buildStaticPrefix(L2)).toBe(readGolden('static-prefix-l2.golden.txt'))
   })

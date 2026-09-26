@@ -25,6 +25,7 @@ const args = (over: Partial<CritiqueConceptArgs> = {}): CritiqueConceptArgs => (
     sharedPartCount: 2,
   },
   iteration: 1,
+  paletteFreedom: 'free',
   costSoFarUsd: 0,
   costCapUsd: 4,
   deadline: NOW + 540_000,
@@ -71,6 +72,11 @@ describe('critiqueConcept', () => {
   it('computes pass server-side, ignoring the model’s own verdict', async () => {
     answer = { ...GOOD, scores: { ...GOOD.scores, distinctiveness: 2 }, pass: true }
     expect((await critiqueConcept(args())).critique?.passed).toBe(false)
+  })
+  it('judges by the run’s palette freedom and stores it on the record', async () => {
+    answer = { ...GOOD, scores: { ...GOOD.scores, distinctiveness: 3, craft: 5 } }
+    expect((await critiqueConcept(args())).critique).toMatchObject({ passed: false, paletteFreedom: 'free' })
+    expect((await critiqueConcept(args({ paletteFreedom: 'evolve' }))).critique).toMatchObject({ passed: true, paletteFreedom: 'evolve' })
   })
   it('an unparseable answer is no critique, with the validation errors', async () => {
     answer = { scores: { brandFit: 9 } }

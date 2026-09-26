@@ -14,6 +14,7 @@ import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from './bundle-files'
 import type { PriorConcept } from './brief'
 import { enforceCapabilities } from './capabilities'
+import { conceptConsistencyNotes } from './concept-consistency'
 import { isNearDuplicate } from './distinctness'
 import { isPlainObject } from './input-validation'
 import type { DesignCapabilities, PaletteFreedom } from './run-types'
@@ -67,6 +68,22 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
     return { ok: false, errors: contrast.map((f) => `contrast ${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`) }
   }
   return { ok: true, concept: { bundle: { ...bundle, css: rendered.css }, files: rendered.files, notes } }
+}
+
+// P7: the concept's self-consistency notes (concept-consistency.ts) appended
+// to its validation notes. Generation + revision only — the design chat edits
+// a working bundle whose description it never rewrites, so it skips this.
+export function withConsistencyNotes(concept: ValidConcept, caps: DesignCapabilities): ValidConcept {
+  const extra = conceptConsistencyNotes(concept.bundle, caps).filter((n) => !concept.notes.includes(n))
+  return extra.length > 0 ? { ...concept, notes: [...concept.notes, ...extra] } : concept
+}
+
+// The same notes for a raw answer that failed validation (quoted in the P3
+// repair turn alongside its errors); [] when it doesn't even parse.
+export function rawConsistencyNotes(raw: unknown, ctx: Pick<ConceptContext, 'caps' | 'model'>): string[] {
+  if (!isPlainObject(raw)) return []
+  const parsed = parseDesignBundle({ ...raw, schemaVersion: 1, meta: { source: 'concept', model: ctx.model } })
+  return parsed.ok ? conceptConsistencyNotes(parsed.bundle, ctx.caps) : []
 }
 
 // ONE model answer → a usable concept, or the errors to quote back: missing,
