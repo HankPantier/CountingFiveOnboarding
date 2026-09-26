@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { annotationOps, exportSize, nextPinNumber, shapeFromDrag, strokeWidthFor, toImagePoint, type AnnotTool, type Pt, type Shape } from '@/lib/design/annotate'
+import { FOCUSABLE_SELECTOR, trapFocusIndex } from '@/lib/design/studio-ui'
 import { errorMessage } from './api'
 import { downscaleImageIfNeeded } from './downscale-image'
 import { FOCUS, PANEL, PRIMARY_BTN, SECONDARY_BTN, SECONDARY_BTN_SM } from './styles'
@@ -115,14 +116,38 @@ export default function AnnotateCanvas({ source: initialSource, onCancel, onSave
   // Release the decoded image when it's replaced or the dialog closes.
   useEffect(() => () => bitmap?.close(), [bitmap])
 
+  // The latest onCancel without re-running the mount effect on every parent
+  // render (the chat re-renders per streamed token) — which used to yank focus
+  // back to the dialog container.
+  const onCancelRef = useRef(onCancel)
   useEffect(() => {
+    onCancelRef.current = onCancel
+  }, [onCancel])
+
+  // Mount-only: focus the dialog, trap Tab inside it, close on Escape, and
+  // hand focus back to whatever opened it when it closes.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialogRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Escape') {
+        onCancelRef.current()
+        return
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return
+      const focusables = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+      const next = trapFocusIndex(focusables.indexOf(document.activeElement as HTMLElement), focusables.length, e.shiftKey)
+      if (next !== null) {
+        e.preventDefault()
+        focusables[next]?.focus()
+      }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (opener?.isConnected) opener.focus()
+    }
+  }, [])
 
   const scale = bitmap ? Math.min(1, DISPLAY_MAX_W / bitmap.width, DISPLAY_MAX_H / bitmap.height) : 1
   const displayW = bitmap ? Math.round(bitmap.width * scale) : 0
@@ -180,6 +205,7 @@ export default function AnnotateCanvas({ source: initialSource, onCancel, onSave
           <div className="min-w-0">
             <h2 id="annotate-heading" className="font-heading text-sm font-semibold text-text-primary">Annotate</h2>
             <p className="truncate font-body text-xs text-text-muted">{source.label} — draw boxes and arrows, or drop numbered pins to refer to (“pin 2”).</p>
+            <p className="font-body text-[11px] text-text-muted">Drawing needs a pointer. With a keyboard, attach the image as it is and describe the area in your message.</p>
           </div>
           <div role="group" aria-label="Annotation tool" className="flex items-center gap-1">
             {TOOLS.map((t) => (

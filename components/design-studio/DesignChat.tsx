@@ -7,10 +7,11 @@ import AiIssueNotice from '@/components/ui/AiIssueNotice'
 import { messageText } from '@/lib/design/chat-history'
 import { CHAT_TEXT_MAX, MAX_ATTACHMENTS_PER_MESSAGE, type ChatAttachmentDto, type DesignChatMessage } from '@/lib/design/chat-types'
 import { chatBlocks, chatRequestErrorText, lastAssistant, messageCommitted, restoresComposer, type ChatBlock } from '@/lib/design/chat-ui'
+import { SIGNED_VIEW_STALE_MS, isNearBottom } from '@/lib/design/studio-ui'
 import AnnotateCanvas, { type AnnotateSource } from './AnnotateCanvas'
 import InlineConfirm from './InlineConfirm'
 import { designApi, errorMessage } from './api'
-import { PANEL, PRIMARY_BTN, SECONDARY_BTN_SM, TEXTAREA } from './styles'
+import { FOCUS, PANEL, PRIMARY_BTN, SECONDARY_BTN_SM, TEXTAREA } from './styles'
 
 // A turn the route refused before streaming (PF12). Thrown from the transport's
 // fetch so useChat's error carries the server's own text and the status.
@@ -44,6 +45,8 @@ export default function DesignChat({ sessionId, page, onCommitted }: { sessionId
   const [history, setHistory] = useState<DesignChatMessage[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [epoch, setEpoch] = useState(0)
+  // Bumped after a stale-URL refresh so ChatBody remounts on the NEW history.
+  const [bodyKey, setBodyKey] = useState(0)
 
   const load = useCallback(async () => {
     try {
@@ -77,7 +80,7 @@ export default function DesignChat({ sessionId, page, onCommitted }: { sessionId
       )}
       {history ? (
         <ChatBody
-          key={epoch}
+          key={`${epoch}-${bodyKey}`}
           sessionId={sessionId}
           page={page}
           initial={history}
@@ -85,6 +88,9 @@ export default function DesignChat({ sessionId, page, onCommitted }: { sessionId
           onCleared={() => {
             setHistory(null)
             setEpoch((e) => e + 1)
+          }}
+          onStale={() => {
+            void load().then(() => setBodyKey((k) => k + 1))
           }}
         />
       ) : (
@@ -100,12 +106,15 @@ function ChatBody({
   initial,
   onCommitted,
   onCleared,
+  onStale,
 }: {
   sessionId: string
   page: string
   initial: DesignChatMessage[]
   onCommitted: () => void
   onCleared: () => void
+  // The history's signed image URLs have (nearly) expired: reload it.
+  onStale: () => void
 }) {
   const transport = useMemo(
     () =>
@@ -149,16 +158,45 @@ function ChatBody({
   const refused = error instanceof ChatRequestError
 
   const [annotate, setAnnotate] = useState<AnnotateSource | null>(null)
+  const closeAnnotate = useCallback(() => setAnnotate(null), [])
   const [uploading, setUploading] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [turnAnnouncement, setTurnAnnouncement] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const transcriptRef = useRef<HTMLDivElement>(null)
+  // Whether the admin is reading the latest messages: only then does new
+  // output keep the transcript pinned to the bottom. Updated on scroll.
+  const stickToBottom = useRef(true)
   const wasBusy = useRef(false)
 
+  // Screenshot/preview URLs are signed for 1 h and the history loads once: a
+  // chat left open longer re-fetches it when shown again — only while idle
+  // with an empty composer, so nothing in progress is lost to the remount.
+  const mountedAt = useRef(0)
+  const idle = !busy && !uploading && !capturing && text.trim() === '' && pending.length === 0 && annotate === null
+  const idleRef = useRef(idle)
+  const onStaleRef = useRef(onStale)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'nearest' })
+    idleRef.current = idle
+    onStaleRef.current = onStale
+  }, [idle, onStale])
+  // Mount-only (the parent re-renders on every Studio poll).
+  useEffect(() => {
+    mountedAt.current = Date.now()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && idleRef.current && Date.now() - mountedAt.current > SIGNED_VIEW_STALE_MS) onStaleRef.current()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // Scroll ONLY the transcript box (scrollIntoView also scrolled the Studio
+  // column behind it on every streamed chunk), and only when pinned.
+  useEffect(() => {
+    const el = transcriptRef.current
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
   }, [messages])
 
   // Once per finished turn: if it committed a version, refresh the Studio,
@@ -172,7 +210,9 @@ function ChatBody({
     wasBusy.current = false
     inFlight.current = null
     const last = lastAssistant(messages.slice(turnStart.current))
-    if (last && messageCommitted(last)) onCommitted()
+    const committed = !!last && messageCommitted(last)
+    setTurnAnnouncement(committed ? 'Reply received — a new version was saved to the draft.' : 'Reply received.')
+    if (committed) onCommitted()
   }, [busy, messages, onCommitted])
 
   const canAttach = !busy && !capturing && !uploading && pending.length < MAX_ATTACHMENTS_PER_MESSAGE
@@ -249,7 +289,16 @@ function ChatBody({
 
   return (
     <>
-      <div aria-live="polite" className="flex h-[440px] flex-col gap-3 overflow-y-auto rounded-lg border border-border-default bg-surface-subtle p-3">
+      <div
+        ref={transcriptRef}
+        onScroll={(e) => {
+          stickToBottom.current = isNearBottom(e.currentTarget.scrollTop, e.currentTarget.clientHeight, e.currentTarget.scrollHeight)
+        }}
+        role="region"
+        aria-label="Conversation"
+        tabIndex={0}
+        className={`flex h-[440px] flex-col gap-3 overflow-y-auto rounded-lg border border-border-default bg-surface-subtle p-3 ${FOCUS}`}
+      >
         {messages.length === 0 && (
           <p className="font-body text-xs italic text-text-muted">
             Try: attach an annotated screenshot and say “make these cards calmer”, or ask “warm up the navy a little” or “more breathing room between sections”.
@@ -279,8 +328,11 @@ function ChatBody({
           )
         )}
         {status === 'submitted' && <p className="font-body text-xs italic text-text-muted">Thinking…</p>}
-        <div ref={bottomRef} />
       </div>
+      {/* One announcement per turn state instead of re-reading every streamed chunk. */}
+      <p role="status" className="sr-only">
+        {busy ? 'The assistant is working…' : turnAnnouncement}
+      </p>
 
       {error &&
         (refused ? (
@@ -301,7 +353,7 @@ function ChatBody({
                   <img src={a.url} alt="" className="h-6 w-auto rounded" />
                 )}
                 <span className="font-body text-[11px] text-text-secondary">Screenshot</span>
-                <button type="button" onClick={() => void removePending(a.id)} aria-label="Remove attachment" className="font-heading text-[11px] font-semibold text-text-secondary hover:text-error">
+                <button type="button" onClick={() => void removePending(a.id)} aria-label="Remove attachment" className={`rounded-pill px-1 font-heading text-[11px] font-semibold text-text-secondary hover:text-error ${FOCUS}`}>
                   ✕
                 </button>
               </li>
@@ -357,7 +409,7 @@ function ChatBody({
         )}
       </form>
 
-      {annotate && <AnnotateCanvas source={annotate} onCancel={() => setAnnotate(null)} onSave={attach} />}
+      {annotate && <AnnotateCanvas source={annotate} onCancel={closeAnnotate} onSave={attach} />}
     </>
   )
 }
