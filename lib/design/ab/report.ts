@@ -7,6 +7,7 @@
 import type { DesignBundle } from '../bundle'
 import { RUBRIC_KEYS, RUBRIC_LABELS, type CritiqueIssue, type RubricScores } from '../critique'
 import type { DistinctnessRow } from '../distinctness'
+import type { ReviewOutcome } from '../review'
 import type { ApiUsage } from './api-tap'
 
 export type AbViewport = 'desktop' | 'mobile'
@@ -29,6 +30,21 @@ export type AbCritique = { scores: RubricScores; mean: number; passed: boolean; 
 export type AbConceptStatus = 'valid' | 'invalid' | 'failed' | 'skipped_cap'
 export type AbCritiqueStatus = 'done' | 'disabled' | 'skipped_cap' | 'failed' | 'not_rendered' | 'not_valid'
 
+// One round of the --revise loop: the revision (by the concept's own model)
+// and the judge's critique of its render.
+export type AbRevision = {
+  round: number
+  status: AbConceptStatus
+  name: string | null // the revised bundle's name
+  errors: string[]
+  notes: string[]
+  stats: AbCallStats | null // the revise call (null: skipped before calling)
+  shots: AbShot[] // the revision's renders of the prompt page
+  critiqueStatus: AbCritiqueStatus
+  critique: AbCritique | null
+  critiqueStats: AbCallStats | null
+}
+
 export type AbConcept = {
   model: string
   position: number
@@ -41,9 +57,18 @@ export type AbConcept = {
   checks: AbPageCheck[]
   distinctness: DistinctnessRow[]
   critiqueStatus: AbCritiqueStatus
-  critique: AbCritique | null
+  critique: AbCritique | null // the FIRST-DRAFT critique
   critiqueStats: AbCallStats | null
   critiqueErrors: string[]
+  // --revise: every round, how the loop ended, and the final bundle's
+  // critique (null when the final bundle was never critiqued). Without
+  // --revise: no rounds, finalCritique = critique.
+  revisions: AbRevision[]
+  loopOutcome: ReviewOutcome | null
+  finalCritique: AbCritique | null
+  finalBundle: AbBundleView | null // null ⇒ the first draft is final
+  finalShots: AbShot[] // the final bundle on every page (only when revised)
+  finalChecks: AbPageCheck[]
 }
 
 export type AbReport = {
@@ -57,6 +82,7 @@ export type AbReport = {
   pages: string[]
   primaryPage: string
   conceptsPerModel: number
+  maxRevisions: number // --revise n (0 = first drafts only)
   capUsd: number
   spentUsd: number
   capHit: boolean
@@ -75,12 +101,17 @@ export type AbSummaryRow = {
   valid: number
   failed: number // invalid + failed
   skipped: number // skipped (cap)
-  critiqued: number
-  meanCriticScore: number | null
-  passRate: number | null // passed / critiqued
+  critiqued: number // first drafts critiqued
+  meanCriticScore: number | null // first drafts
+  firstDraftPassRate: number | null // passed / critiqued, first drafts
+  finalCritiqued: number // concepts whose FINAL bundle was critiqued
+  meanFinalCriticScore: number | null
+  finalPassRate: number | null // passed / finalCritiqued
+  revisionsUsed: number // accepted revisions, all concepts
   meanLatencyMs: number | null // per concept call (incl. its repair)
   conceptUsd: number
-  criticUsd: number
+  reviseUsd: number
+  criticUsd: number // every critique (first draft + revisions)
   totalUsd: number
 }
 
@@ -91,11 +122,15 @@ export function summarize(report: Pick<AbReport, 'models' | 'concepts'>): AbSumm
   return report.models.map((model) => {
     const rows = report.concepts.filter((c) => c.model === model)
     const attempted = rows.filter((c) => c.generation !== null)
-    const critiqued = rows.filter((c): c is AbConcept & { critique: AbCritique } => c.critique !== null)
+    const critiqued = rows.flatMap((c) => (c.critique ? [c.critique] : []))
+    const finals = rows.flatMap((c) => (c.finalCritique ? [c.finalCritique] : []))
     const conceptUsd = rows.reduce((s, c) => s + (c.generation?.costUsd ?? 0), 0)
-    const criticUsd = rows.reduce((s, c) => s + (c.critiqueStats?.costUsd ?? 0), 0)
-    const meanScore = mean(critiqued.map((c) => c.critique.mean))
+    const reviseUsd = rows.reduce((s, c) => s + c.revisions.reduce((t, r) => t + (r.stats?.costUsd ?? 0), 0), 0)
+    const criticUsd = rows.reduce((s, c) => s + (c.critiqueStats?.costUsd ?? 0) + c.revisions.reduce((t, r) => t + (r.critiqueStats?.costUsd ?? 0), 0), 0)
+    const meanScore = mean(critiqued.map((k) => k.mean))
+    const meanFinal = mean(finals.map((k) => k.mean))
     const meanLatency = mean(attempted.map((c) => c.generation?.latencyMs ?? 0))
+    const rate = (list: AbCritique[]): number | null => (list.length === 0 ? null : round(list.filter((k) => k.passed).length / list.length, 3))
     return {
       model,
       attempted: attempted.length,
@@ -104,11 +139,16 @@ export function summarize(report: Pick<AbReport, 'models' | 'concepts'>): AbSumm
       skipped: rows.filter((c) => c.status === 'skipped_cap').length,
       critiqued: critiqued.length,
       meanCriticScore: meanScore === null ? null : round(meanScore, 2),
-      passRate: critiqued.length === 0 ? null : round(critiqued.filter((c) => c.critique.passed).length / critiqued.length, 3),
+      firstDraftPassRate: rate(critiqued),
+      finalCritiqued: finals.length,
+      meanFinalCriticScore: meanFinal === null ? null : round(meanFinal, 2),
+      finalPassRate: rate(finals),
+      revisionsUsed: rows.reduce((s, c) => s + c.revisions.filter((r) => r.status === 'valid').length, 0),
       meanLatencyMs: meanLatency === null ? null : Math.round(meanLatency),
       conceptUsd: round(conceptUsd, 4),
+      reviseUsd: round(reviseUsd, 4),
       criticUsd: round(criticUsd, 4),
-      totalUsd: round(conceptUsd + criticUsd, 4),
+      totalUsd: round(conceptUsd + reviseUsd + criticUsd, 4),
     }
   })
 }
@@ -120,16 +160,20 @@ const fmtScore = (n: number | null): string => (n === null ? '—' : n.toFixed(2
 
 // Fixed-width text table for stdout.
 export function summaryText(rows: AbSummaryRow[]): string {
-  const header = ['model', 'valid', 'failed', 'skipped', 'critic mean', 'pass rate', 'mean latency', 'concepts $', 'critic $', 'total $']
+  const header = ['model', 'valid', 'failed', 'skipped', 'first mean', 'first-draft pass', 'final mean', 'final pass', 'revisions', 'mean latency', 'concepts $', 'revise $', 'critic $', 'total $']
   const body = rows.map((r) => [
     r.model,
     `${r.valid}/${r.attempted + r.skipped}`,
     String(r.failed),
     String(r.skipped),
     fmtScore(r.meanCriticScore),
-    fmtPct(r.passRate),
+    fmtPct(r.firstDraftPassRate),
+    fmtScore(r.meanFinalCriticScore),
+    fmtPct(r.finalPassRate),
+    String(r.revisionsUsed),
     fmtSecs(r.meanLatencyMs),
     fmtUsd(r.conceptUsd),
+    fmtUsd(r.reviseUsd),
     fmtUsd(r.criticUsd),
     fmtUsd(r.totalUsd),
   ])
@@ -182,7 +226,7 @@ table{border-collapse:collapse;background:var(--card);width:100%;max-width:1100p
 .swatches{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}.sw{display:flex;align-items:center;gap:4px;font:12px ui-monospace,Menlo,monospace}.sw i{display:inline-block;width:22px;height:22px;border-radius:4px;border:1px solid var(--line)}
 .shots{display:grid;grid-template-columns:3fr 1fr;gap:8px;margin:6px 0}.shots figure{margin:0}.shots img{width:100%;height:auto;border:1px solid var(--line);border-radius:4px;display:block}.shots figcaption{font-size:12px;color:var(--muted)}
 .missing{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:4px;padding:12px;text-align:center}
-ul{margin:4px 0;padding-left:18px}.err{color:var(--bad)}.small{font-size:12px;color:var(--muted)}
+ul{margin:4px 0;padding-left:18px}.round{border-top:1px solid var(--line);margin-top:10px;padding-top:8px}.err{color:var(--bad)}.small{font-size:12px;color:var(--muted)}
 `
 
 function tagFor(status: AbConceptStatus): string {
@@ -268,21 +312,62 @@ function conceptCard(c: AbConcept, pages: string[]): string {
     )
   }
   if (c.status === 'valid' || c.critiqueStats) parts.push(critiqueBlock(c))
+  if (c.revisions.length > 0 || c.loopOutcome) parts.push(revisionsBlock(c, pages))
   return `<div class="card">${parts.join('')}</div>`
+}
+
+const OUTCOME_LABEL: Record<ReviewOutcome, string> = {
+  passed: 'passed',
+  max_revisions: 'revision limit reached',
+  cost_cap: 'stopped at the cap',
+  invalid_revision: 'a revision was unusable — previous version kept',
+  critic_unavailable: 'a critique failed',
+  not_rendered: 'a revision could not be rendered — kept, uncritiqued',
+}
+
+const verdict = (k: AbCritique | null): string =>
+  k ? `<span class="tag ${k.passed ? 'ok' : 'bad'}">${k.passed ? 'pass' : 'fail'}</span> mean ${escapeHtml(k.mean.toFixed(2))}` : '<span class="small">not critiqued</span>'
+
+const compactScores = (k: AbCritique): string => RUBRIC_KEYS.map((key) => `${escapeHtml(RUBRIC_LABELS[key])} ${escapeHtml(k.scores[key])}`).join(' · ')
+
+function revisionsBlock(c: AbConcept, pages: string[]): string {
+  const used = c.revisions.filter((r) => r.status === 'valid').length
+  const head = `<h4>Revise loop</h4><div>First draft ${verdict(c.critique)} → final ${verdict(c.finalCritique)} after ${used} revision${used === 1 ? '' : 's'}${c.loopOutcome ? ` <span class="small">(${escapeHtml(OUTCOME_LABEL[c.loopOutcome])})</span>` : ''}</div>`
+  const rounds = c.revisions
+    .map((r) => {
+      const title = `Round ${r.round}${r.name ? ` — ${escapeHtml(r.name)}` : ''} ${tagFor(r.status)}`
+      const d = r.shots.find((s) => s.viewport === 'desktop')
+      const m = r.shots.find((s) => s.viewport === 'mobile')
+      const shots = r.shots.length ? `<div class="shots">${shotFigure(d, `round ${r.round} desktop`)}${shotFigure(m, `round ${r.round} mobile`)}</div>` : ''
+      const critique =
+        r.critique
+          ? `<div>${verdict(r.critique)}</div><div class="small">${compactScores(r.critique)}</div>${r.critique.summary ? `<p>${escapeHtml(r.critique.summary)}</p>` : ''}`
+          : r.status === 'valid'
+            ? `<div class="small">${escapeHtml(CRITIQUE_LABEL[r.critiqueStatus])}</div>`
+            : ''
+      return `<div class="round"><b>${title}</b>${list(r.errors, 'err small')}${list(r.notes, 'small')}${statsBlock('Revise call', r.stats)}${shots}${critique}${statsBlock('Critic call', r.critiqueStats)}</div>`
+    })
+    .join('')
+  const final =
+    c.finalShots.length || c.finalChecks.length
+      ? `<h4>Final version${c.finalBundle ? ` — ${escapeHtml(c.finalBundle.name)}` : ''}</h4>${shotsBlock(c.finalShots, c.finalChecks, pages)}`
+      : ''
+  return `${head}${rounds}${final}`
 }
 
 export function buildReportHtml(report: AbReport): string {
   const rows = summarize(report)
-  const summary = `<table><tr><th>Model</th><th>Valid concepts</th><th>Failed</th><th>Skipped (cap)</th><th>Mean critic score</th><th>Pass rate</th><th>Mean latency</th><th>Concepts $</th><th>Critic $</th><th>Total $</th></tr>${rows
+  const summary = `<table><tr><th>Model</th><th>Valid concepts</th><th>Failed</th><th>Skipped (cap)</th><th>First-draft mean score</th><th>First-draft pass rate</th><th>Final mean score</th><th>Final pass rate</th><th>Revisions used</th><th>Mean latency</th><th>Concepts $</th><th>Revise $</th><th>Critic $</th><th>Total $</th></tr>${rows
     .map(
       (r) =>
-        `<tr><td>${escapeHtml(r.model)}</td><td>${r.valid} / ${r.attempted + r.skipped}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${escapeHtml(fmtScore(r.meanCriticScore))}</td><td>${escapeHtml(fmtPct(r.passRate))}</td><td>${escapeHtml(fmtSecs(r.meanLatencyMs))}</td><td>${escapeHtml(fmtUsd(r.conceptUsd))}</td><td>${escapeHtml(fmtUsd(r.criticUsd))}</td><td>${escapeHtml(fmtUsd(r.totalUsd))}</td></tr>`
+        `<tr><td>${escapeHtml(r.model)}</td><td>${r.valid} / ${r.attempted + r.skipped}</td><td>${r.failed}</td><td>${r.skipped}</td><td>${escapeHtml(fmtScore(r.meanCriticScore))}</td><td>${escapeHtml(fmtPct(r.firstDraftPassRate))}</td><td>${escapeHtml(fmtScore(r.meanFinalCriticScore))}${r.finalCritiqued < r.critiqued ? ` <span class="small">(${r.critiqued - r.finalCritiqued} final uncritiqued)</span>` : ''}</td><td>${escapeHtml(fmtPct(r.finalPassRate))}</td><td>${r.revisionsUsed}</td><td>${escapeHtml(fmtSecs(r.meanLatencyMs))}</td><td>${escapeHtml(fmtUsd(r.conceptUsd))}</td><td>${escapeHtml(fmtUsd(r.reviseUsd))}</td><td>${escapeHtml(fmtUsd(r.criticUsd))}</td><td>${escapeHtml(fmtUsd(r.totalUsd))}</td></tr>`
     )
     .join('')}</table>`
   const meta = [
     `Session ${report.sessionId}`,
     `generated ${report.generatedAt}`,
     `${report.conceptsPerModel} concept${report.conceptsPerModel === 1 ? '' : 's'} per model`,
+    report.maxRevisions > 0 ? `revise loop up to ${report.maxRevisions} round${report.maxRevisions === 1 ? '' : 's'}` : 'first drafts only',
     `critic ${report.criticModel ?? 'off'}`,
     `prompt page ${report.primaryPage}`,
     `palette ${report.paletteFreedom}`,

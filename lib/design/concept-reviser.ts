@@ -30,6 +30,9 @@ export type ReviseConceptArgs = {
   attribution: { sessionId: string; contentJobId: string; createdBy: string | null }
   now?: () => number
   onSpend?: (totalUsd: number) => void
+  // The model that revises (default DESIGN_MODEL, via createDesignCaller).
+  // Only the design-model A/B script overrides it (the concept's own model).
+  model?: string
 }
 
 export type ReviseConceptResult = {
@@ -52,6 +55,7 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
     attribution: args.attribution,
     now: args.now,
     onSpend: args.onSpend,
+    ...(args.model ? { model: args.model } : {}),
   })
   const shared = args.prompt.sharedPartCount
   const messages = buildCachedPartsMessages(args.prompt.staticPrefix, args.prompt.parts, {

@@ -10,7 +10,12 @@
 // default PUBLISHED_CONTENT_MODEL (Sonnet 5), which is not a contender (the
 // production critic, DESIGN_MODEL, is Opus 5.5 — one of the compared models).
 // A judge that IS a compared model is warned about and flagged in the report.
-// No revise loop: this compares first drafts.
+// By default this compares first drafts. With --revise [n] each concept then
+// runs the production critique → revise loop (review.ts decideAfterCritique,
+// driven by lib/design/ab/revise-loop): revisions by the concept's OWN model
+// through reviseConcept + buildRevisePrompt, re-rendered and re-critiqued by
+// the judge, until it passes, n revisions (default 2 = design_runs'
+// max_revisions default) or the cap. Still read-only.
 // Output: report.html (self-contained; images by relative path) + report.json
 // + the WebP renders, in <repo>/tmp/design-ab/<sessionId>-<timestamp>/ by default.
 //
@@ -27,7 +32,7 @@
 //
 // Usage (run with --help for every option):
 //   npx tsx scripts/compare-design-models.ts <sessionId> [--concepts 2] [--models claude-opus-5-5,claude-fable-5-1]
-//     [--pages /,/services] [--cap 15] [--critic claude-sonnet-5] [--no-critic] [--brief "<text>"] [--palette evolve] [--inputs all] [--out <dir>]
+//     [--pages /,/services] [--cap 15] [--critic claude-sonnet-5] [--no-critic] [--revise [2]] [--brief "<text>"] [--palette evolve] [--inputs all] [--out <dir>]
 // Rendering needs a local Chrome/Chromium: set CHROMIUM_EXECUTABLE_PATH, e.g.
 //   CHROMIUM_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 
@@ -104,6 +109,13 @@ async function main() {
   const { readEffectiveCapabilities } = await import('../lib/design/capabilities-read')
   const { CONCEPT_OUTPUT_TOKENS, REPAIR_OUTPUT_TOKENS, generateConcept } = await import('../lib/design/concept-generator')
   const { CRITIQUE_OUTPUT_TOKENS, CRITIQUE_RETRY_OUTPUT_TOKENS, critiqueConcept } = await import('../lib/design/critic')
+  type CritiqueRecord = import('../lib/design/critique').CritiqueRecord
+  const { reviseConcept } = await import('../lib/design/concept-reviser')
+  const { buildRevisePrompt } = await import('../lib/design/brief/revise-prompt')
+  const { revisionRejectionReason } = await import('../lib/design/refine-stage')
+  const { runReviseLoop } = await import('../lib/design/ab/revise-loop')
+  type LoopCritique = import('../lib/design/ab/revise-loop').LoopCritique<CritiqueRecord>
+  type LoopRevision = import('../lib/design/ab/revise-loop').LoopRevision<DesignBundle>
   const { estimateInputUsd } = await import('../lib/design/model-call')
   const { bundleToRepoFiles } = await import('../lib/design/bundle-files')
   type DesignBundle = import('../lib/design/bundle').DesignBundle
@@ -133,6 +145,10 @@ async function main() {
   type AbShot = import('../lib/design/ab/report').AbShot
   type AbPageCheck = import('../lib/design/ab/report').AbPageCheck
   type AbCallStats = import('../lib/design/ab/report').AbCallStats
+  type AbCritique = import('../lib/design/ab/report').AbCritique
+  type AbCritiqueStatus = import('../lib/design/ab/report').AbCritiqueStatus
+  type AbRevision = import('../lib/design/ab/report').AbRevision
+  type AbBundleView = import('../lib/design/ab/report').AbBundleView
 
   // ── fetch tap: per-call usage + API errors (generateJson swallows provider
   // errors, so e.g. a 400 on an unsupported provider option is only visible here).
@@ -223,7 +239,7 @@ async function main() {
     return rel
   }
   console.log(`Design model A/B for ${b.firmName} (${args.sessionId}) → ${outDir}`)
-  console.log(`models ${args.models.join(' vs ')} · ${args.concepts} concept(s) each · critic ${criticModel ?? 'off'} · pages ${pages.join(', ')} · cap $${args.capUsd.toFixed(2)}`)
+  console.log(`models ${args.models.join(' vs ')} · ${args.concepts} concept(s) each · critic ${criticModel ?? 'off'} · ${args.revisions > 0 ? `revise ≤ ${args.revisions}` : 'first drafts only'} · pages ${pages.join(', ')} · cap $${args.capUsd.toFixed(2)}`)
 
   // ── renderer (lazy; absent Chromium ⇒ no renders, no critic)
   const canRender = !!process.env.CHROMIUM_EXECUTABLE_PATH
@@ -328,7 +344,25 @@ async function main() {
     critique: null,
     critiqueStats: null,
     critiqueErrors: [],
+    revisions: [],
+    loopOutcome: null,
+    finalCritique: null,
+    finalBundle: null,
+    finalShots: [],
+    finalChecks: [],
   })
+  const bundleView = (bundle: DesignBundle): AbBundleView => ({
+    name: bundle.name,
+    tagline: bundle.tagline,
+    rationale: bundle.rationale,
+    moves: bundle.moves,
+    palette: bundle.palette,
+    typography: bundle.typography,
+    treatments: bundle.treatments,
+    style: bundle.style,
+    tokens: { roundness: bundle.tokens.roundness, density: bundle.tokens.density, visualFeel: bundle.tokens.visualFeel },
+  })
+  const critiqueView = (k: CritiqueRecord): AbCritique => ({ scores: k.scores, mean: k.mean, passed: k.passed, summary: k.summary, issues: k.issues })
 
   for (let position = 0; position < args.concepts; position++) {
     for (const model of args.models) {
@@ -377,17 +411,7 @@ async function main() {
         if (result.concept) {
           const bundle = result.concept.bundle
           row.status = 'valid'
-          row.bundle = {
-            name: bundle.name,
-            tagline: bundle.tagline,
-            rationale: bundle.rationale,
-            moves: bundle.moves,
-            palette: bundle.palette,
-            typography: bundle.typography,
-            treatments: bundle.treatments,
-            style: bundle.style,
-            tokens: { roundness: bundle.tokens.roundness, density: bundle.tokens.density, visualFeel: bundle.tokens.visualFeel },
-          }
+          row.bundle = bundleView(bundle)
           row.critiqueStatus = args.critic ? 'not_rendered' : 'disabled'
           bundles.set(row, bundle)
           modelPriors.push({ position, bundle })
@@ -433,67 +457,208 @@ async function main() {
     }
   }
 
-  // ── critic: the same judge for every model, first drafts only
+  // ── critic (+ --revise loop): the same judge for every model. `bundles`
+  // holds each concept's LATEST accepted bundle, so a critique / revision sees
+  // the other concepts as they stand now — like a real run's usablePriors.
+  const themeFor = (bundle: DesignBundle): ComposedTheme | null => {
+    const files = bundleToRepoFiles(bundle, { brandText: b.theme.brandText, designText: b.theme.designText, overridesCss: b.theme.overridesCss }, { removeLegacy: true })
+    return files.ok ? composedThemeFromFiles(files.files) : null
+  }
+  const othersOf = (row: AbConcept): PriorConcept[] =>
+    concepts.filter((c) => c !== row && c.model === row.model && bundles.has(c)).map((c) => ({ position: c.position, bundle: bundles.get(c) as DesignBundle }))
+  type LoopRender = { desktop: Buffer; mobile: Buffer | null; gateFailures: string[] }
+  type CritiqueRun = { loop: LoopCritique; status: AbCritiqueStatus; view: AbCritique | null; stats: AbCallStats | null; errors: string[] }
+
+  // ONE judge call, exactly as refine-stage's critique unit builds it.
+  const runCritique = async (row: AbConcept, bundle: DesignBundle, iteration: number, render: LoopRender): Promise<CritiqueRun> => {
+    const judge = criticModel as string
+    const others = othersOf(row)
+    const distinctness = distinctnessReport(bundle, [{ label: 'the current site', bundle: b.current }, ...others.map((o) => ({ label: `concept ${o.position + 1}`, bundle: o.bundle }))])
+    if (iteration === 0) row.distinctness = distinctness
+    const prompt = buildCritiquePrompt({
+      firmName: b.firmName,
+      schema: b.schema,
+      designMd: b.designMd,
+      paletteFreedom: b.paletteFreedom,
+      caps: b.caps,
+      currentImage: currentDesktop ? new Uint8Array(currentDesktop) : null,
+      concept: { position: row.position, iteration, bundle },
+      conceptCount: args.concepts,
+      others,
+      distinctness,
+      gateFailures: render.gateFailures,
+      desktop: new Uint8Array(render.desktop),
+      mobile: render.mobile ? new Uint8Array(render.mobile) : null,
+    })
+    const messages = buildCachedPartsMessages(prompt.staticPrefix, prompt.parts, { ttl: '5m', ...(prompt.sharedPartCount > 0 ? { breakAt: prompt.sharedPartCount - 1 } : {}) })
+    const projected = projectCallUsd({ model: judge, inputUsd: estimateInputUsd(CRITIC_SYSTEM_PROMPT, messages, judge), maxOutputTokens: critiqueAttemptTokens })
+    if (!budget.admit(projected)) return { loop: { kind: 'skipped_cap' }, status: 'skipped_cap', view: null, stats: null, errors: [] }
+    console.log(`  critiquing ${row.model} concept ${row.position + 1}${iteration > 0 ? ` (revision ${iteration})` : ''}…`)
+    let spend = 0
+    const t = await tapped(() =>
+      critiqueConcept({
+        prompt,
+        iteration,
+        paletteFreedom: b.paletteFreedom,
+        costSoFarUsd: budget.spentUsd(),
+        costCapUsd: callerCapUsd(budget, projected),
+        deadline: Date.now() + CALL_DEADLINE_MS,
+        attribution,
+        model: judge,
+        onSpend: (usd) => {
+          spend = usd
+        },
+      })
+    )
+    const result = t.value
+    budget.charge(result ? result.costUsd : spend)
+    const stats = callStats(t, result ? result.costUsd : spend, result?.estimatedUsd ?? 0)
+    const errors = [...(t.error ? [`Critique threw: ${t.error}`] : []), ...(result?.errors ?? [])]
+    if (result?.critique) {
+      const k = result.critique
+      return { loop: { kind: 'ok', passed: k.passed, gateFailures: render.gateFailures.length, record: k }, status: 'done', view: critiqueView(k), stats, errors }
+    }
+    const capped = result?.stoppedReason === 'cost_cap'
+    return { loop: capped ? { kind: 'skipped_cap' } : { kind: 'failed' }, status: capped ? 'skipped_cap' : 'failed', view: null, stats, errors }
+  }
+
+  // ONE revision by the concept's own model, as refine-stage's revise unit builds it.
+  const runRevision = async (row: AbConcept, rev: AbRevision, bundle: DesignBundle, render: LoopRender, critique: CritiqueRecord): Promise<LoopRevision> => {
+    const others = othersOf(row)
+    const prompt = buildRevisePrompt({
+      ...sharedPromptArgs(b, runLike, primaryPage, []),
+      position: row.position,
+      conceptCount: args.concepts,
+      round: rev.round,
+      bundle,
+      others,
+      critique,
+      gateFailures: render.gateFailures,
+      desktop: new Uint8Array(render.desktop),
+      mobile: render.mobile ? new Uint8Array(render.mobile) : null,
+    })
+    const messages = buildCachedPartsMessages(prompt.staticPrefix, prompt.parts, { ttl: '5m', ...(prompt.sharedPartCount > 0 ? { breakAt: prompt.sharedPartCount - 1 } : {}) })
+    const projected = projectCallUsd({ model: row.model, inputUsd: estimateInputUsd(DESIGN_SYSTEM_PROMPT, messages, row.model), maxOutputTokens: conceptAttemptTokens })
+    if (!budget.admit(projected)) {
+      rev.status = 'skipped_cap'
+      return { kind: 'skipped_cap' }
+    }
+    console.log(`  revising ${row.model} concept ${row.position + 1} (round ${rev.round})…`)
+    let spend = 0
+    const t = await tapped(() =>
+      reviseConcept({
+        prompt,
+        context: {
+          current: b.current,
+          caps: b.caps,
+          paletteFreedom: b.paletteFreedom,
+          draftFiles: { brandText: b.theme.brandText, designText: b.theme.designText, overridesCss: b.theme.overridesCss },
+          model: row.model,
+        },
+        others,
+        costSoFarUsd: budget.spentUsd(),
+        costCapUsd: callerCapUsd(budget, projected),
+        deadline: Date.now() + CALL_DEADLINE_MS,
+        attribution,
+        model: row.model,
+        onSpend: (usd) => {
+          spend = usd
+        },
+      })
+    )
+    const result = t.value
+    budget.charge(result ? result.costUsd : spend)
+    rev.stats = callStats(t, result ? result.costUsd : spend, result?.estimatedUsd ?? 0)
+    if (t.error) rev.errors.push(`Revision threw: ${t.error}`)
+    if (result?.concept) {
+      rev.status = 'valid'
+      rev.name = result.concept.bundle.name
+      rev.notes.push(...result.notes)
+      rev.critiqueStatus = 'not_rendered'
+      bundles.set(row, result.concept.bundle)
+      console.log(`    → revision ${rev.round} "${rev.name}" in ${(t.latencyMs / 1000).toFixed(1)}s, $${rev.stats.costUsd.toFixed(3)}`)
+      return { kind: 'ok', bundle: result.concept.bundle }
+    }
+    if (result?.stoppedReason === 'cost_cap') {
+      rev.status = 'skipped_cap'
+      rev.errors.push('The cap stopped this revision before it produced a concept.')
+      return { kind: 'skipped_cap' }
+    }
+    rev.status = result && result.errors.length > 0 ? 'invalid' : 'failed'
+    if (result && result.errors.length > 0) rev.errors.push(`Not usable: ${revisionRejectionReason(result.errors)}`)
+    else if (result) rev.errors.push(`No usable answer (${result.stoppedReason ?? 'no_output'}).`)
+    if (t.slot.apiErrors.length > 0) rev.errors.push('The API rejected the call — see API errors below.')
+    console.log(`    → revision ${rev.round} ${rev.status}`)
+    return { kind: 'invalid' }
+  }
+
   if (criticModel) {
     const maxPosition = Math.max(0, ...concepts.map((c) => c.position))
     for (let position = 0; position <= maxPosition; position++) {
       for (const row of concepts.filter((c) => c.position === position)) {
-        const bundle = bundles.get(row)
+        const first = bundles.get(row)
         const webp = primaryWebp.get(row)
-        if (!bundle || !webp?.desktop) continue
-        const others = concepts
-          .filter((c) => c !== row && c.model === row.model && bundles.has(c))
-          .map((c) => ({ position: c.position, bundle: bundles.get(c) as DesignBundle }))
-        const check = row.checks.find((c) => c.page === primaryPage)
-        const prompt = buildCritiquePrompt({
-          firmName: b.firmName,
-          schema: b.schema,
-          designMd: b.designMd,
-          paletteFreedom: b.paletteFreedom,
-          caps: b.caps,
-          currentImage: currentDesktop ? new Uint8Array(currentDesktop) : null,
-          concept: { position: row.position, iteration: 0, bundle },
-          conceptCount: args.concepts,
-          others,
-          distinctness: row.distinctness,
-          gateFailures: check?.gateFailures ?? [],
-          desktop: new Uint8Array(webp.desktop),
-          mobile: webp.mobile ? new Uint8Array(webp.mobile) : null,
-        })
-        const messages = buildCachedPartsMessages(prompt.staticPrefix, prompt.parts, { ttl: '5m', ...(prompt.sharedPartCount > 0 ? { breakAt: prompt.sharedPartCount - 1 } : {}) })
-        const projected = projectCallUsd({ model: criticModel, inputUsd: estimateInputUsd(CRITIC_SYSTEM_PROMPT, messages, criticModel), maxOutputTokens: critiqueAttemptTokens })
-        if (!budget.admit(projected)) {
-          row.critiqueStatus = 'skipped_cap'
-          continue
+        if (!first || !webp?.desktop) continue
+        const firstRender: LoopRender = {
+          desktop: webp.desktop,
+          mobile: webp.mobile ?? null,
+          gateFailures: row.checks.find((c) => c.page === primaryPage)?.gateFailures ?? [],
         }
-        console.log(`  critiquing ${row.model} concept ${row.position + 1}…`)
-        let spend = 0
-        const t = await tapped(() =>
-          critiqueConcept({
-            prompt,
-            iteration: 0,
-            paletteFreedom: b.paletteFreedom,
-            costSoFarUsd: budget.spentUsd(),
-            costCapUsd: callerCapUsd(budget, projected),
-            deadline: Date.now() + CALL_DEADLINE_MS,
-            attribution,
-            model: criticModel,
-            onSpend: (usd) => {
-              spend = usd
+        let round: AbRevision | null = null
+        const loop = await runReviseLoop<DesignBundle, LoopRender, CritiqueRecord>(
+          { bundle: first, render: firstRender },
+          {
+            maxRevisions: args.revisions,
+            capReached: () => budget.tripped(),
+            critique: async (bundle, iteration, render) => {
+              const c = await runCritique(row, bundle, iteration, render)
+              if (iteration === 0) {
+                row.critiqueStatus = c.status
+                row.critique = c.view
+                row.critiqueStats = c.stats
+                row.critiqueErrors.push(...c.errors)
+              } else if (round) {
+                round.critiqueStatus = c.status
+                round.critique = c.view
+                round.critiqueStats = c.stats
+                round.errors.push(...c.errors)
+              }
+              return c.loop
             },
-          })
+            revise: async (bundle, n, render, critique) => {
+              round = { round: n, status: 'failed', name: null, errors: [], notes: [], stats: null, shots: [], critiqueStatus: 'not_valid', critique: null, critiqueStats: null }
+              row.revisions.push(round)
+              return runRevision(row, round, bundle, render, critique)
+            },
+            render: async (bundle, iteration) => {
+              const current = round
+              const theme = themeFor(bundle)
+              if (!theme) {
+                current?.errors.push('The revision could not be prepared for rendering.')
+                return null
+              }
+              const r = await renderPage(primaryPage, theme, `concepts/${slug(row.model)}/c${row.position + 1}-r${iteration}`)
+              if (current) current.shots = r.shots
+              if (!r.webp.desktop) {
+                current?.errors.push(`Render: ${r.error ?? 'no desktop render was produced'} — not critiqued.`)
+                return null
+              }
+              return { desktop: r.webp.desktop, mobile: r.webp.mobile ?? null, gateFailures: checkOf(primaryPage, r, baselines.get(primaryPage) ?? null).gateFailures }
+            },
+          }
         )
-        const result = t.value
-        budget.charge(result ? result.costUsd : spend)
-        row.critiqueStats = callStats(t, result ? result.costUsd : spend, result?.estimatedUsd ?? 0)
-        if (t.error) row.critiqueErrors.push(`Critique threw: ${t.error}`)
-        if (result?.critique) {
-          const k = result.critique
-          row.critique = { scores: k.scores, mean: k.mean, passed: k.passed, summary: k.summary, issues: k.issues }
-          row.critiqueStatus = 'done'
-        } else {
-          row.critiqueStatus = result?.stoppedReason === 'cost_cap' ? 'skipped_cap' : 'failed'
-          if (result) row.critiqueErrors.push(...result.errors)
+        row.finalCritique = loop.finalCritique ? critiqueView(loop.finalCritique) : null
+        if (args.revisions > 0) row.loopOutcome = loop.outcome
+        if (loop.revisionsUsed > 0) {
+          row.finalBundle = bundleView(loop.finalBundle)
+          const theme = themeFor(loop.finalBundle)
+          if (theme) {
+            for (const page of pages) {
+              const r = await renderPage(page, theme, `concepts/${slug(row.model)}/c${row.position + 1}-final`)
+              row.finalShots.push(...r.shots)
+              row.finalChecks.push(checkOf(page, r, baselines.get(page) ?? null))
+            }
+          }
         }
       }
     }
@@ -512,6 +677,7 @@ async function main() {
     pages,
     primaryPage,
     conceptsPerModel: args.concepts,
+    maxRevisions: criticModel ? args.revisions : 0,
     capUsd: args.capUsd,
     spentUsd: Math.round(budget.spentUsd() * 10_000) / 10_000,
     capHit: budget.tripped(),

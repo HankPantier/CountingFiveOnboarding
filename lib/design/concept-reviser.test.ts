@@ -9,6 +9,7 @@ import { VALID } from './__fixtures__/valid-bundle'
 import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
 import { DESIGN_SYSTEM_PROMPT } from './brief'
 import { DEFAULT_CAPABILITIES } from './run-types'
+import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
 import { reviseConcept, type ReviseConceptArgs } from './concept-reviser'
 
 type Opts = { system?: string; beforeAttempt?: (n: 1 | 2) => boolean | Promise<boolean>; onAttempt?: (u: unknown, f: string) => Promise<void> | void; [k: string]: unknown }
@@ -53,6 +54,16 @@ describe('reviseConcept', () => {
     expect(r.concept?.bundle.meta).toEqual({ source: 'concept', model: 'claude-opus-5-5' })
     expect(r.costUsd).toBeCloseTo(0.28, 6) // 20k × $4 + 10k × $20 per M
     expect(r.stoppedReason).toBeNull()
+  })
+  it('defaults to DESIGN_MODEL; a model override reaches the call, pricing and the usage row (A/B script)', async () => {
+    await reviseConcept(args())
+    expect((m.generateJson.mock.calls[0][0] as { model: { modelId: string } }).model.modelId).toBe(DESIGN_MODEL)
+    m.generateJson.mockClear()
+    m.record.mockClear()
+    const r = await reviseConcept(args({ model: 'claude-fable-5-1' }))
+    expect((m.generateJson.mock.calls[0][0] as { model: { modelId: string } }).model.modelId).toBe('claude-fable-5-1')
+    expect(m.record).toHaveBeenCalledWith(expect.objectContaining({ stage: 'design_concept', model: 'claude-fable-5-1' }))
+    expect(r.costUsd).toBeCloseTo(0.7, 6) // 20k × $10 + 10k × $50 per M
   })
   it('adds the self-consistency notes to the revision (P7)', async () => {
     const r = await reviseConcept(args())

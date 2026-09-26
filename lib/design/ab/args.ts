@@ -7,6 +7,10 @@ export const DEFAULT_AB_CONCEPTS = 2
 export const DEFAULT_AB_CAP_USD = 15
 export const MAX_AB_CAP_USD = 100
 export const MAX_AB_PAGES = 5
+// --revise with no number: the production run's max_revisions (the
+// design_runs column default in migration 078; its CHECK allows 0-5).
+export const DEFAULT_AB_REVISIONS = 2
+export const MAX_AB_REVISIONS = 5
 
 export type AbInputsChoice = { kind: 'all' } | { kind: 'none' } | { kind: 'ids'; ids: string[] }
 
@@ -18,6 +22,7 @@ export type AbArgs = {
   capUsd: number
   critic: boolean
   criticModel: string // the judge (used only when critic is true)
+  revisions: number // max critique → revise rounds per concept (0 = first drafts only)
   out: string | null // null ⇒ tmp/design-ab/<sessionId>-<timestamp>/
   brief: string | null
   palette: PaletteFreedom
@@ -46,6 +51,9 @@ Options:
   --critic <modelId>    the judge for every concept (default ${defaults.critic} — not a contender;
                         a judge that is also a compared model is warned about and flagged)
   --no-critic           skip the critic (renders + metrics only)
+  --revise [n]          after each concept's first critique, run the production critique → revise
+                        loop: revisions by the concept's own model, critiques by the judge, until
+                        it passes, n revisions (default ${DEFAULT_AB_REVISIONS}, max ${MAX_AB_REVISIONS}) or the cap (default off)
   --brief "<text>"      admin brief (default: none), at most ${ADMIN_BRIEF_MAX} chars
   --palette <mode>      palette freedom: ${PALETTE_FREEDOMS.join(' | ')} (default ${DEFAULT_PALETTE_FREEDOM})
   --inputs <choice>     reference images: all | none | <inputId,...> (default all — the
@@ -85,6 +93,7 @@ export function parseAbArgs(argv: string[], defaults: AbDefaults): ParsedAbArgs 
     capUsd: DEFAULT_AB_CAP_USD,
     critic: true,
     criticModel: defaults.critic,
+    revisions: 0,
     out: null,
     brief: null,
     palette: DEFAULT_PALETTE_FREEDOM,
@@ -94,6 +103,18 @@ export function parseAbArgs(argv: string[], defaults: AbDefaults): ParsedAbArgs 
     const a = argv[i]
     if (a === '--no-critic') {
       out.critic = false
+      continue
+    }
+    if (a === '--revise') {
+      const next = argv[i + 1]
+      if (next !== undefined && /^\d+$/.test(next)) {
+        const n = Number(next)
+        if (n > MAX_AB_REVISIONS) return err(`--revise takes at most ${MAX_AB_REVISIONS} revisions`)
+        out.revisions = n
+        i++
+      } else {
+        out.revisions = DEFAULT_AB_REVISIONS
+      }
       continue
     }
     if (!a.startsWith('--')) {
@@ -166,6 +187,7 @@ export function parseAbArgs(argv: string[], defaults: AbDefaults): ParsedAbArgs 
   }
   if (out.sessionId === null) return err('Missing <sessionId>')
   if (!isUuid(out.sessionId)) return err('<sessionId> must be a session UUID')
+  if (out.revisions > 0 && !out.critic) return err('--revise needs the critic (drop --no-critic)')
   return { kind: 'ok', args: { ...out, sessionId: out.sessionId } }
 }
 

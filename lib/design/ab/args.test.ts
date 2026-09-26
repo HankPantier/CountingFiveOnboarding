@@ -22,6 +22,7 @@ describe('parseAbArgs', () => {
         capUsd: DEFAULT_AB_CAP_USD,
         critic: true,
         criticModel: 'claude-sonnet-5',
+        revisions: 0,
         out: null,
         brief: null,
         palette: 'evolve',
@@ -53,6 +54,8 @@ describe('parseAbArgs', () => {
       [SID, '--models', ','],
       [SID, '--cap'],
       [SID, '--critic', 'a,b'],
+      [SID, '--revise', '9'],
+      [SID, '--revise', '--no-critic'],
       [SID, '--bogus', '1'],
       [SID, SID],
       ['--no-critic'],
@@ -61,12 +64,26 @@ describe('parseAbArgs', () => {
     }
   })
 
+  it('--revise takes an optional count (default 2), before or after the session id', () => {
+    const at = (argv: string[]) => {
+      const r = parseAbArgs(argv, DEFAULTS)
+      return r.kind === 'ok' ? r.args.revisions : r.kind
+    }
+    expect(at([SID, '--revise'])).toBe(2)
+    expect(at([SID, '--revise', '3'])).toBe(3)
+    expect(at([SID, '--revise', '0'])).toBe(0)
+    expect(at(['--revise', SID])).toBe(2)
+    expect(at(['--revise', '1', SID])).toBe(1)
+    expect(at([SID, '--revise', '--cap', '5'])).toBe(2)
+  })
+
   it('usage names the defaults and the Chromium requirement', () => {
     const u = abUsage(DEFAULTS)
     expect(u).toContain('claude-opus-5-5,claude-fable-5-1')
     expect(u).toContain('CHROMIUM_EXECUTABLE_PATH')
     expect(u).toContain('default claude-sonnet-5')
     expect(u).toContain('design_concept / design_critique')
+    expect(u).toContain('--revise [n]')
   })
 
   it('flags a judge that is also a contender (only when the critic runs)', () => {
