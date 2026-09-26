@@ -16,7 +16,7 @@ const m = vi.hoisted(() => ({
   getRun: vi.fn(),
   markRunApplied: vi.fn(async (..._a: unknown[]) => {}),
   snapshot: vi.fn(),
-  caps: vi.fn(),
+  effective: vi.fn(),
   apply: vi.fn(),
   sync: vi.fn(async (..._a: unknown[]) => {}),
   insertVersion: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock('@/lib/design/theme-snapshot', async (orig) => ({
   ...((await orig()) as object),
   readDraftThemeSnapshot: (r: string) => m.snapshot(r),
 }))
-vi.mock('@/lib/design/capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
+vi.mock('@/lib/design/capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('@/lib/design/apply-bundle', () => ({ applyBundleToDraft: (a: unknown) => m.apply(a) }))
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
 vi.mock('@/lib/design/store', async (orig) => ({
@@ -76,7 +76,7 @@ beforeEach(() => {
   m.getConcept.mockResolvedValue(makeConceptRow({ status: 'ready', screenshots: asJson([SHOT]) }))
   m.getRun.mockResolvedValue(makeRunRow({ status: 'ready' }))
   m.snapshot.mockResolvedValueOnce(BEFORE).mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
-  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
+  m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.apply.mockResolvedValue(APPLIED)
   m.insertVersion.mockResolvedValue(makeVersionRow({ id: 'ver-3', version_no: 3, source: 'concept' }))
 })

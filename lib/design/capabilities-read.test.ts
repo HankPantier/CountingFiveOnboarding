@@ -6,8 +6,11 @@ vi.mock('@/lib/github/repo-files', () => {
   return { DRAFT_BRANCH: 'draft', FileNotFoundError, readFile: (...a: unknown[]) => m.readFile(...a) }
 })
 
+const shell = vi.hoisted(() => ({ read: vi.fn() }))
+vi.mock('./shell-capabilities', () => ({ readShellCapabilities: (a: unknown) => shell.read(a) }))
+
 import { FileNotFoundError } from '@/lib/github/repo-files'
-import { readDesignCapabilities } from './capabilities-read'
+import { readDesignCapabilities, readEffectiveCapabilities } from './capabilities-read'
 import { DEFAULT_CAPABILITIES } from './run-types'
 
 // beforeEach flushes a macrotask after mockReset(): on this Vitest 4.1.8 /
@@ -35,5 +38,16 @@ describe('readDesignCapabilities', () => {
   it('rethrows other GitHub errors', async () => {
     m.readFile.mockRejectedValue(new Error('rate limited'))
     await expect(readDesignCapabilities('o/r')).rejects.toThrow('rate limited')
+  })
+})
+
+describe('readEffectiveCapabilities', () => {
+  it('returns the draft marker and its intersection with the shell', async () => {
+    m.readFile.mockResolvedValue({ content: '{"templateVersion":"2026.09.2","capabilities":["fonts","style-axes","specimen"]}', sha: 'a'.repeat(40) })
+    shell.read.mockResolvedValue({ status: 'verified', capabilities: ['fonts'] })
+    const r = await readEffectiveCapabilities({ githubRepo: 'o/r', jobId: 'j' })
+    expect(r.draft.level).toBe(4)
+    expect(r.effective).toMatchObject({ level: 2, capabilities: ['fonts'], shell: 'verified' })
+    expect(shell.read).toHaveBeenCalledWith({ githubRepo: 'o/r', jobId: 'j' })
   })
 })

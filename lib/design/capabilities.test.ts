@@ -3,11 +3,14 @@ import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { VALID } from './__fixtures__/valid-bundle'
 import {
   capabilitiesFromJson,
+  capabilityLevel,
   capabilityViolations,
   enforceCapabilities,
   fontsUnlocked,
   hasStyleField,
+  intersectWithShell,
   parseTemplateMarker,
+  specimenUnlocked,
   styleAxesUnlocked,
 } from './capabilities'
 import { DEFAULT_CAPABILITIES } from './run-types'
@@ -84,5 +87,31 @@ describe('hasStyleField', () => {
     expect(hasStyleField({ style: { cards: 'flat' } })).toBe(true)
     expect(hasStyleField({ name: 'x' })).toBe(false)
     expect(hasStyleField(null)).toBe(false)
+  })
+})
+
+describe('intersectWithShell', () => {
+  const L4 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.2', capabilities: ['fonts', 'style-axes', 'specimen'] }))
+  it('keeps only what the deployed shell also declares', () => {
+    const c = intersectWithShell(L4, { status: 'verified', capabilities: ['fonts'] })
+    expect(c).toMatchObject({ level: 2, capabilities: ['fonts'], shell: 'verified', source: 'marker', templateVersion: '2026.09.2' })
+  })
+  it('a shell with no meta drops the site to L1', () => {
+    expect(intersectWithShell(L4, { status: 'verified', capabilities: [] }).level).toBe(1)
+  })
+  it('never raises the draft tier', () => {
+    expect(intersectWithShell(L2, { status: 'verified', capabilities: ['fonts', 'style-axes', 'specimen'] }).level).toBe(2)
+  })
+  it('an unverified shell keeps the draft tier (flagged)', () => {
+    expect(intersectWithShell(L4, { status: 'unverified' })).toEqual({ ...L4, shell: 'unverified' })
+  })
+  it('round-trips through capabilitiesFromJson', () => {
+    const c = intersectWithShell(L4, { status: 'verified', capabilities: ['fonts', 'style-axes'] })
+    expect(capabilitiesFromJson(JSON.parse(JSON.stringify(c)))).toEqual(c)
+  })
+  it('exposes the tier helpers', () => {
+    expect(capabilityLevel(['fonts', 'style-axes', 'specimen'])).toBe(4)
+    expect(specimenUnlocked(L4)).toBe(true)
+    expect(specimenUnlocked(L2)).toBe(false)
   })
 })

@@ -13,7 +13,7 @@ const m = vi.hoisted(() => ({
   list: vi.fn(),
   insert: vi.fn(),
   download: vi.fn(),
-  caps: vi.fn(),
+  effective: vi.fn(),
   readOptional: vi.fn(),
   turnContextThrows: false,
   convertThrows: false,
@@ -42,7 +42,7 @@ vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), re
 vi.mock('./store', async (orig) => ({ ...((await orig()) as object), latestVersion: (...a: unknown[]) => m.latest(...a), readSessionSchema: (...a: unknown[]) => m.schema(...a) }))
 vi.mock('./chat-store', () => ({ listChatMessages: (...a: unknown[]) => m.list(...a), insertChatMessage: (...a: unknown[]) => m.insert(...a) }))
 vi.mock('./storage', async (orig) => ({ ...((await orig()) as object), downloadDesignImage: (...a: unknown[]) => m.download(...a) }))
-vi.mock('./capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
+vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('./apply-bundle', async (orig) => ({ ...((await orig()) as object), readOptional: (...a: unknown[]) => m.readOptional(...a) }))
 
 import { bundleFromRepoFiles } from './bundle-files'
@@ -72,7 +72,7 @@ beforeEach(() => {
   m.list.mockResolvedValue([])
   m.insert.mockImplementation(async (_db: unknown, row: { role: string }) => makeChatRow({ id: 'user-row-1', role: row.role }))
   m.download.mockResolvedValue(new Uint8Array([1, 2, 3]))
-  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
+  m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.readOptional.mockResolvedValue(null)
 })
 

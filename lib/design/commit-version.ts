@@ -31,7 +31,7 @@ import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
 import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
 import { capabilityViolations } from './capabilities'
-import { readDesignCapabilities } from './capabilities-read'
+import { readEffectiveCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs } from './drift'
 import type { RunScreenshot } from './run-types'
 import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
@@ -101,7 +101,8 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     { name: 'Current design', source: 'baseline' }
   )
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}` }
-  const violations = capabilityViolations(bundle, current.bundle, await readDesignCapabilities(target.githubRepo))
+  const capRead = await readEffectiveCapabilities({ githubRepo: target.githubRepo, jobId: target.jobId })
+  const violations = capabilityViolations(bundle, current.bundle, capRead.effective)
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
 
   let result: Awaited<ReturnType<typeof applyBundleToDraft>>

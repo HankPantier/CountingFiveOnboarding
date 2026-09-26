@@ -4,7 +4,7 @@ import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { listInputs } from '@/lib/design/store'
 import { readDraftThemeSnapshot } from '@/lib/design/theme-snapshot'
-import { readDesignCapabilities } from '@/lib/design/capabilities-read'
+import { readEffectiveCapabilities } from '@/lib/design/capabilities-read'
 import { ActiveRunExistsError, createRun } from '@/lib/design/run-store'
 import { parseCreateRunBody } from '@/lib/design/run-request'
 import { chainOrFail, failActiveRun, STEP_CHAIN_ERROR } from '@/lib/design/run-trigger'
@@ -60,7 +60,7 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'One or more selected inputs no longer exist — refresh and try again.' }, { status: 400 })
     }
     const snapshot = await readDraftThemeSnapshot(ctx.githubRepo) // also ensures the draft branch
-    const capabilities = await readDesignCapabilities(ctx.githubRepo)
+    const capabilities = (await readEffectiveCapabilities({ githubRepo: ctx.githubRepo, jobId: ctx.jobId })).effective
     const run = await createRun(supabase, {
       sessionId: ctx.sessionId,
       createdBy: ctx.adminId,

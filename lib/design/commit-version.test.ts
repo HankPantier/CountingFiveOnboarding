@@ -9,14 +9,14 @@ import { DEFAULT_CAPABILITIES } from './run-types'
 const m = vi.hoisted(() => ({
   snapshot: vi.fn(),
   snapshotAt: vi.fn(),
-  caps: vi.fn(),
+  effective: vi.fn(),
   apply: vi.fn(),
   sync: vi.fn(async (..._a: unknown[]) => {}),
   insertVersion: vi.fn(),
   hasAnyVersion: vi.fn(),
 }))
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r), readThemeSnapshotAt: (r: string, s: unknown) => m.snapshotAt(r, s) }))
-vi.mock('./capabilities-read', () => ({ readDesignCapabilities: (r: string) => m.caps(r) }))
+vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('./apply-bundle', () => ({ applyBundleToDraft: (a: unknown) => m.apply(a) }))
 vi.mock('./sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
 vi.mock('./store', async (orig) => ({
@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   m.snapshot.mockResolvedValueOnce(BEFORE).mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
   m.snapshotAt.mockImplementation(async (_r: string, shas: Record<string, string>) => ({ shas, texts: BEFORE.texts }))
-  m.caps.mockResolvedValue(DEFAULT_CAPABILITIES)
+  m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.apply.mockResolvedValue(APPLIED)
   m.insertVersion.mockResolvedValue(makeVersionRow({ id: 'ver-5', version_no: 5, source: 'chat' }))
   m.hasAnyVersion.mockResolvedValue(true)
