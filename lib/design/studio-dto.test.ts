@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { asJson } from '@/lib/supabase/json-typed'
 import { SID, makeInputRow, makeVersionListRow } from './__fixtures__/rows'
-import { buildInputSuggestions, toInputDto, toVersionDto, versionScreenshotPaths } from './studio-dto'
+import { buildInputSuggestions, toInputDto, toVersionDto, versionScreenshotPaths, versionThumbnailPaths, SIGNED_VERSION_THUMBNAILS } from './studio-dto'
 
 describe('toInputDto', () => {
   it('maps fields and signs the thumbnail', () => {
@@ -16,6 +16,14 @@ describe('toInputDto', () => {
 })
 
 describe('versions', () => {
+  it('signs thumbnails for only the newest versions', () => {
+    const rows = Array.from({ length: SIGNED_VERSION_THUMBNAILS + 5 }, (_, i) =>
+      makeVersionListRow({ version_no: i, screenshots: asJson([{ path: `design/${SID}/versions/v${i}.webp` }]) })
+    )
+    const paths = versionThumbnailPaths(rows)
+    expect(paths).toHaveLength(SIGNED_VERSION_THUMBNAILS)
+    expect(paths[0]).toBe(`design/${SID}/versions/v0.webp`)
+  })
   it('takes the name from bundle_name and signs screenshots', () => {
     const p = `design/${SID}/versions/v1.webp`
     const row = makeVersionListRow({ version_no: 1, source: 'concept', screenshots: asJson([{ path: p }, { path: 'sessions/x.png' }, 'junk']) })

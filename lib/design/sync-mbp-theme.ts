@@ -51,7 +51,17 @@ export async function syncMbpTheme(
   }
   if (brand) {
     try {
-      const { data: job } = await supabase.from('content_jobs').select('palette').eq('id', jobId).maybeSingle()
+      const { data: job, error: readErr } = await supabase
+        .from('content_jobs')
+        .select('palette')
+        .eq('id', jobId)
+        .maybeSingle()
+      // A failed read must not be mistaken for "no palette": re-keying from
+      // null would reset every operator swatch name to its role name.
+      if (readErr) {
+        console.warn('[theme] content_jobs.palette read failed; palette sync skipped (theme saved):', readErr.message)
+        return
+      }
       const nextPalette = toPaletteData(brand.palette, (job?.palette as PaletteData | null) ?? null)
       const { error } = await supabase.from('content_jobs').update({ palette: asJson(nextPalette) }).eq('id', jobId)
       if (error) console.warn('[theme] content_jobs.palette sync failed (theme saved):', error.message)

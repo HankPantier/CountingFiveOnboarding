@@ -84,6 +84,22 @@ export async function listConcepts(db: Db, runId: string): Promise<DesignConcept
   return data ?? []
 }
 
+// The Studio's run poll (every 4 s while a run is active) needs everything
+// the DTO renders but never `initial_bundle` (only the reviser reads it).
+const CONCEPT_VIEW_COLUMNS =
+  'id, run_id, session_id, position, status, error, bundle, critique, screenshots, iterations, cost_usd, created_at, updated_at'
+export type DesignConceptViewRow = Omit<DesignConceptRow, 'initial_bundle'>
+
+export async function listConceptsForView(db: Db, runId: string): Promise<DesignConceptViewRow[]> {
+  const { data, error } = await db
+    .from('design_concepts')
+    .select(CONCEPT_VIEW_COLUMNS)
+    .eq('run_id', runId)
+    .order('position', { ascending: true })
+  if (error) throw storeError('listConceptsForView', error)
+  return data ?? []
+}
+
 export async function getConcept(db: Db, sessionId: string, conceptId: string): Promise<DesignConceptRow | null> {
   const { data, error } = await db
     .from('design_concepts')

@@ -176,7 +176,19 @@ export async function listVersions(db: Db, sessionId: string): Promise<DesignVer
     .order('version_no', { ascending: false })
     .limit(200)
   if (error) throw storeError('listVersions', error)
-  return (data ?? []) as unknown as DesignVersionListRow[]
+  return (data ?? []).map(
+    (row): DesignVersionListRow => ({
+      id: row.id,
+      version_no: row.version_no,
+      source: row.source,
+      summary: row.summary,
+      applied_commit_sha: row.applied_commit_sha,
+      applied_blobs: row.applied_blobs,
+      screenshots: row.screenshots,
+      created_at: row.created_at,
+      bundle_name: typeof row.bundle_name === 'string' ? row.bundle_name : null,
+    }),
+  )
 }
 
 export async function latestVersion(db: Db, sessionId: string): Promise<DesignVersionRow | null> {
@@ -228,12 +240,26 @@ function versionInsert(v: NewDesignVersion, versionNo: number): TablesInsert<'de
   }
 }
 
+// The highest version_no for a session (null when there are none). Narrow
+// select: allocation needs only the number, never the bundle/screenshots JSONB.
+async function latestVersionNo(db: Db, sessionId: string): Promise<number | null> {
+  const { data, error } = await db
+    .from('design_versions')
+    .select('version_no')
+    .eq('session_id', sessionId)
+    .order('version_no', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw storeError('latestVersionNo', error)
+  return data ? data.version_no : null
+}
+
 // version_no = max + 1, retried on a unique violation (a concurrent insert
 // took the number) up to INSERT_VERSION_ATTEMPTS times.
 export async function insertVersion(db: Db, v: NewDesignVersion): Promise<DesignVersionRow> {
   for (let attempt = 1; attempt <= INSERT_VERSION_ATTEMPTS; attempt++) {
-    const latest = await latestVersion(db, v.sessionId)
-    const versionNo = latest ? latest.version_no + 1 : 0
+    const latestNo = await latestVersionNo(db, v.sessionId)
+    const versionNo = latestNo === null ? 0 : latestNo + 1
     const { data, error } = await db.from('design_versions').insert(versionInsert(v, versionNo)).select('*').single()
     if (!error && data) return data
     if (error?.code !== UNIQUE_VIOLATION) throw storeError('insertVersion', error)

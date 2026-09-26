@@ -152,6 +152,13 @@ describe('versions', () => {
     expect(f.opsFor('design_versions', 1)[0][1]).toMatchObject({ version_no: 0, source: 'chat', session_id: SID, applied_blobs: BLOBS, concept_id: null })
   })
 
+  it('insertVersion allocates the number with a narrow version_no select (no bundle JSONB)', async () => {
+    const f = fakeSupabase({ design_versions: [{ data: { version_no: 5 } }, { data: makeVersionRow({ version_no: 6 }) }] })
+    await insertVersion(f.client, NEW)
+    expect(f.opsFor('design_versions', 0)[0]).toEqual(['select', 'version_no'])
+    expect(f.opsFor('design_versions', 1)[0][1]).toMatchObject({ version_no: 6 })
+  })
+
   it('insertVersion retries max+1 on a 23505 unique violation', async () => {
     const f = fakeSupabase({
       design_versions: [
