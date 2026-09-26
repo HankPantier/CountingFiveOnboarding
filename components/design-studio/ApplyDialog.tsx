@@ -61,7 +61,7 @@ export default function ApplyDialog({
         <input type="checkbox" checked={removeLegacy} onChange={(e) => setRemoveLegacy(e.target.checked)} disabled={busy} className="mt-0.5 accent-brand-cyan" />
         <span>
           <span className="font-semibold text-text-primary">Remove legacy overrides</span> — replace any hand-written rules in design-overrides.css with
-          this concept’s CSS (recommended).
+          this concept’s CSS (recommended). The render checks ran without them, so keeping them is refused when the draft has any.
         </span>
       </label>
       {error && (

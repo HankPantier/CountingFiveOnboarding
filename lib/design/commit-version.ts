@@ -27,7 +27,7 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
-import { bundleFromRepoFiles } from './bundle-files'
+import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
 import { capabilityViolations } from './capabilities'
 import { readDesignCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs } from './drift'
@@ -42,6 +42,8 @@ type Db = SupabaseClient<Database>
 export const STALE_THEME_ERROR = 'The theme changed while applying — refresh the Studio and try again.'
 export const APPLIED_VERSION_NUMBER_UNRECORDED = 'The design was applied to the draft, but its version number could not be recorded — refresh the Studio.'
 export const APPLIED_VERSION_UNRECORDED = 'The design was applied to the draft, but its version could not be recorded — refresh the Studio.'
+export const LEGACY_KEEP_UNCHECKED_ERROR =
+  'This concept was render-checked with the legacy overrides removed. Keeping them was never checked against the new palette, so it can’t be applied that way — apply with “Remove legacy overrides” on, or apply it and then refine in the chat (whose previews keep them).'
 
 export type CommitTarget = { sessionId: string; jobId: string; githubRepo: string; adminId: string; adminEmail?: string; adminName?: string }
 
@@ -61,6 +63,11 @@ export type CommitVersionArgs = {
   // appliedBlobs). Becomes the apply base + its sha guard — see the header.
   expectedShas?: ThemeBlobShas
   skipIfUnchanged?: boolean
+  // The caller's render gate measured the composition WITH legacy hand CSS
+  // removed (concept apply). When the commit keeps it (removeLegacy false) and
+  // the draft actually has some, what would be written was never rendered —
+  // refuse (422) instead of committing an unchecked composition.
+  gateRenderedWithoutLegacy?: boolean
 }
 
 export type CommitVersionResult =
@@ -74,6 +81,9 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     : await readDraftThemeSnapshot(target.githubRepo)
   const draft = themeTextsFromSnapshot(before)
   if (!draft.ok) return { ok: false, status: 409, error: draft.error }
+  if (args.gateRenderedWithoutLegacy && !args.removeLegacy && hasLegacyOverrides(draft.files.overridesCss)) {
+    return { ok: false, status: 422, error: LEGACY_KEEP_UNCHECKED_ERROR }
+  }
 
   // Only the fonts matter for the capability check, so the overrides file
   // (and any malformed region in it) is irrelevant here.

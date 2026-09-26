@@ -24,6 +24,7 @@ import { VersionConflictError } from './store'
 import {
   APPLIED_VERSION_NUMBER_UNRECORDED,
   APPLIED_VERSION_UNRECORDED,
+  LEGACY_KEEP_UNCHECKED_ERROR,
   STALE_THEME_ERROR,
   commitDesignVersion,
   type CommitVersionArgs,
@@ -86,6 +87,23 @@ describe('commitDesignVersion', () => {
   // applyBundleToDraft (whose writeFiles sha guard is the ONLY staleness
   // check) — no snapshot-vs-expected pre-comparison that a lagging read could
   // false-409.
+  it('refuses to keep legacy hand CSS the caller’s render gate never measured (concept apply)', async () => {
+    m.snapshot.mockReset().mockResolvedValue({
+      shas: BEFORE_SHAS,
+      texts: { ...BEFORE.texts, 'content/design-overrides.css': '[data-block="hero"] h1 { color: #fff; }\n' },
+    })
+    const r = await commitDesignVersion(DB, args({ source: 'concept', removeLegacy: false, gateRenderedWithoutLegacy: true }))
+    expect(r).toEqual({ ok: false, status: 422, error: LEGACY_KEEP_UNCHECKED_ERROR })
+    expect(m.apply).not.toHaveBeenCalled()
+    // Removing it (what the gate measured) is fine, and so is keeping when there is none.
+    expect((await commitDesignVersion(DB, args({ source: 'concept', removeLegacy: true, gateRenderedWithoutLegacy: true }))).ok).toBe(true)
+  })
+
+  it('keep-legacy with no legacy CSS on the draft applies normally', async () => {
+    const r = await commitDesignVersion(DB, args({ source: 'concept', removeLegacy: false, gateRenderedWithoutLegacy: true }))
+    expect(r.ok).toBe(true)
+  })
+
   it('expectedShas: reads the base by blob sha (no branch snapshot) and hands it to apply', async () => {
     const r = await commitDesignVersion(DB, args({ expectedShas: BEFORE_SHAS }))
     expect(r.ok).toBe(true)

@@ -11,6 +11,7 @@ import {
   composeRegion,
   bundleFromRepoFiles,
   bundleToRepoFiles,
+  hasLegacyOverrides,
 } from './bundle-files'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { VALID } from './__fixtures__/valid-bundle'
@@ -35,6 +36,14 @@ describe('managed region', () => {
 
   it('is empty when there are no fragments', () => {
     expect(composeRegion({ blocks: {} })).toBe('')
+  })
+
+  it('hasLegacyOverrides: only real CSS outside the region counts', () => {
+    const region = composeRegion({ blocks: { hero: '[data-block="hero"] { color: red; }' } })
+    expect(hasLegacyOverrides('')).toBe(false)
+    expect(hasLegacyOverrides(`${MANAGED_HEADER}\n${region}`)).toBe(false)
+    expect(hasLegacyOverrides(`${LEGACY}\n${region}`)).toBe(true)
+    expect(hasLegacyOverrides('[data-block="hero"] h1 { color: #fff; }')).toBe(true)
   })
 
   it('removeRegion keeps everything outside the region', () => {

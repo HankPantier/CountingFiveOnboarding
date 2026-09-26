@@ -109,6 +109,14 @@ export function composeRegion(css: DesignBundle['css']): string {
   return `${REGION_BEGIN}\n${parts.join('\n')}\n${REGION_END}\n`
 }
 
+// Whether design-overrides.css holds hand-written CSS OUTSIDE the Studio
+// region (comments, incl. the managed header, don't count). A malformed region
+// counts as legacy — nothing outside it can be told apart safely.
+export function hasLegacyOverrides(overridesCss: string): boolean {
+  const outside = removeRegion(overridesCss)
+  return outside.replace(/\/\*[\s\S]*?\*\//g, '').trim() !== ''
+}
+
 export function bundleFromRepoFiles(
   files: RepoThemeFiles,
   meta: { name: string; source: DesignBundle['meta']['source'] }
