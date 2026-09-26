@@ -98,7 +98,7 @@ Five tables. RLS on all five is admin-tier only (`admins.role='admin'`); the rea
 - **Drift banner** when the draft theme blobs differ from the latest version (for example after manual edits), with a "Capture as version" action.
 - **"Live"** = the blobs on `main` match.
 - **Publish** is the existing route, gated by `canPublish`. It publishes all of draft, and the UI says so.
-- **`applied_blobs` contract:** MUST be the full post-apply blob-sha map for all four theme files (`content/brand.json`, `content/design.json`, `src/styles/theme.css`, `content/design-overrides.css`), omitting any file that no longer exists after apply — drift compares this map to the live draft, so partial maps show as drifted immediately.
+- **`applied_blobs` contract:** MUST be the full post-apply blob-sha map for all four theme files, plus `src/app/fonts.generated.ts` on L2+ drafts (`content/brand.json`, `content/design.json`, `src/styles/theme.css`, `content/design-overrides.css`, `src/app/fonts.generated.ts`), omitting any file that no longer exists after apply — drift compares this map to the live draft, so partial maps show as drifted immediately.
 
 **Storage:** `session-assets` under `design/{sessionId}/{inputs|runs|versions|attachments}/…webp`.
 - Re-encoded with sharp to WebP, long edge ≤1568 px.
@@ -216,7 +216,7 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - Apply dialog with "Remove legacy overrides" (default on).
 - **Accepted deviations (recorded 2026-09-25):**
   - With no `c5-template.json`, a site is **L1**, so treatments count as a base lever. They shipped fleet-wide on 09-08. Fonts stay locked until L2, and style axes until L3.
-  - **Capabilities come from the draft marker only** (recorded in the 09-26 audit fix wave). The spec's intersection with the deployed shell's `<meta name="c5-capabilities">` is deferred to T1, because no template emits that meta yet. Until then a draft rolled to a newer tier than `main` can commit a lever (e.g. fonts) the live-shell preview can't show; the risk is bounded because fonts need L2 and no client repo is at L2 yet.
+  - Resolved in P6a: capabilities are draft ∩ live-shell meta.
   - **Keep-legacy concept applies are refused when the draft has hand CSS outside the region** (09-26 audit). Concept renders compose with legacy CSS removed, so the apply gate never measured a kept-legacy composition. Rather than re-render at apply time, `commitDesignVersion` 422s that case; with no legacy CSS the two compositions are identical and keep-legacy applies normally.
   - **The managed region has a 16 KB / 400-line total cap** on top of the per-fragment caps, enforced in `bundleToRepoFiles` (09-26 audit).
   - **No commit without a v0 baseline** (09-26 audit): if the baseline import failed, every commit path 409s until the draft is fixed, so a concept or chat commit can never become v0.
@@ -247,7 +247,7 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 - Attachments route, AnnotateCanvas (boxes, arrows, pins), and version restore/import routes.
 - **Replaces the old ThemeChat.**
 - **Accepted deviations (recorded 2026-09-25):**
-  - **No `style_axes` tool** until P6b. `DesignBundle` has no `style` field yet, and `set_fonts` is refused below L2.
+  - Resolved in P6b: set_style_axes (refused below L3).
   - **Staged edits live only within a turn.** Each turn commits them or reports why not in a `data-design-commit` part, and the next turn's context repeats that note. A stream error or hard-deadline abort discards staged edits. The chat has no migration and no cross-turn staging.
   - **Chat commits never sync the MBP** (CLAUDE.md MBP rule). Human-clicked paths still sync: concept apply, restore, Controls, and the Versions panel's **Sync palette & fonts to MBP** (`POST design/sync-mbp`, added in the 09-26 audit), which mirrors the whole draft. Capture records a version only; it never synced.
   - **Chat commits keep hand CSS** (`removeLegacy: false`). They pass the workspace's expected blob shas, so the sha guard is the only staleness check and two commits per turn work.
@@ -262,8 +262,33 @@ Each phase ships on its own. Track T (template) runs in parallel after P0.
 ### T1 — Template: marker + fonts module + accentFont
 Platform follow-up **P6a**: font generator golden, manifest parity test, fonts unlocked at L2.
 
+- **Accepted deviations (recorded 2026-09-26, T1 + P6a):**
+  - **"Byte-identical" = identical pixels.** next/font class hashes change when the calls move into `fonts.generated.ts`. R1 is enforced by a local Playwright pixel baseline (captured on `a540d1e`), a vitest pin of the default module text, an untouched `theme.css`, and no default `data-c5-*` attributes.
+  - **The fonts module is a committed artifact** (like `theme.css`). There is no prebuild regeneration, and template CI's `generate-fonts --check` guards drift. The platform regenerates it on EVERY theme write to an L2+ draft, so a stale module (e.g. a fleet-seeded default) changes the live fonts on the next publish. The Versions panel warns (`fontsModuleStale`).
+  - **Two capability reads.** Gates use draft ∩ live-shell meta. File-contract decisions (write/guard the module, `applied_blobs`, drift paths) use the draft marker. A shell without the meta = L1. An unreachable shell = draft tier, flagged `unverified`. Verified reads are cached 60 s.
+  - **`applied_blobs` = four theme files, plus `src/app/fonts.generated.ts` on L2+ drafts.** Drift compares the module only once a version recorded it, so pre-P6a versions don't show a false drift.
+  - **Preview font vars are `!important`**, so a chosen body font beats the template's inline `--font-body-loaded` alias.
+  - **First package deploy writes the theme files (Task 18b).** The deliverable push now adds `src/styles/theme.css` (generateThemeCss) and, when the draft `c5-template.json` declares `fonts`, `src/app/fonts.generated.ts` (SYNCED, from design.json) — both site config (`SITE_CONFIG_PATHS`): written on the first deploy, created if absent later, never overwritten once present. A deployed draft that is missing one gets it recreated from the PACKAGE brand/design, not the draft's. `content/.template-default` is never seeded into client repos.
+  - **Pre-cutover sites whose `preview_url` is unset resolve the shell to the client's OLD live site,** which lacks the meta ⇒ L1 (fonts/axes locked) until `preview_url` points at the new site.
+
 ### T2 — Template: style axes + specimen
 Platform follow-up **P6b**: `style-axes.ts` mirror, `patchDesignStyle` in `theme-edit.ts`, axes added to the brief and tools, specimen added to the page picker.
+
+- **Accepted deviations (recorded 2026-09-26, T2 + P6b):**
+  - **Hooks:** besides `data-c5="button"` and the headline accent span (`data-c5="headline-accent"`, on all four accent spans), two more inert hooks: `data-c5="media-grade"` (FramedMedia overlay) and `data-c5-spacing` (Section padding). The accent's inline colour is kept, so accent-usage presets use `!important` in template CSS.
+  - **Attributes are prefixed** `html[data-c5-<axis>]`. v1 values: sectionRhythm compact|generous; cards flat|outlined|elevated; buttons pill|sharp|bold; heroScale compact|dramatic; imageTreatment natural|mono|rounded; nav bordered|inverted; footer light|brand; accentUsage subtle|plain|underline.
+  - **`DesignBundle.style` is canonical** (defaults dropped; absent = all default). Apply writes the whole axis set, deleting `design.json.style` when all default. Below L3 it is stripped by the generator and rejected on apply.
+  - **The brief's CSS rules stay byte-stable.** Axis attributes are advertised in the tier-dependent levers section only. The sanitizer accepts them at every tier (they match nothing on older templates).
+  - **Specimen robots:** `noindex` meta + `X-Robots-Tag`. It is deliberately NOT disallowed in robots.txt (that would hide the noindex).
+  - **`nav=inverted` re-scopes the active nav item and the nav CTA** (light-on-primary) and restores popover colours inside the bar; covered by an interior-page e2e.
+  - **`fontsModuleStale` is also true for a fleet-seeded DEFAULT module** (its header marks it unsynced); the Versions panel notice shows until the next Studio apply/chat commit/Controls change regenerates it.
+
+**Live E2E checklist (post-T3)** (on a test client after T3 puts a T2 template on its draft AND main):
+1. The Studio state shows L4 (runs snapshot `capabilities.level === 4`, `shell: 'verified'`).
+2. Chat: "use Lora for headings" → commit → the Changes panel shows `design.json` + `src/app/fonts.generated.ts`, and the draft build succeeds.
+3. Chat: "make the cards flat and the nav inverted" → the preview shows it → commit → `design.json.style` is set.
+4. Pick "Block specimen" in the page picker → run 2 concepts → renders show every block.
+5. On an L1 client: `set_fonts` / `set_style_axes` are refused; no fonts module path in `applied_blobs`.
 
 ### T3 — Rollout
 1. Decide how the fleet rollout runs.
@@ -337,6 +362,15 @@ Platform follow-up **P6b**: `style-axes.ts` mirror, `patchDesignStyle` in `theme
 3. Preview/live drift: the shell is `main` but writes go to draft. Handled by capability intersection plus a banner.
 4. Publishing ships all of draft, so design changes go out together with any pending content edits.
 5. Stale fleet roster.
-6. Applying a design to sites with the `theme.css` gap will visibly change their live look on publish.
+6. Applying a design to sites with the `theme.css` gap will visibly change their live look on publish. (Resolved 2026-09-26: Task 18b makes the first package deploy write missing theme files — see T1's accepted deviations.)
 
 **Still to confirm:** the exact Fable 5.1 id and price, Fluid 800 s / 3 GB for these functions, and whether to expand `CURATED_FONTS` now that fonts reach the live site.
+
+## Open items (not in this plan)
+
+- **T3 rollout.** The fleet sync must:
+  - treat `src/app/fonts.generated.ts` as seed-if-absent (the template DEFAULT file, verbatim);
+  - never overwrite `content/design.json` or `content/design-overrides.css`;
+  - write `c5-template.json` last;
+  - show the reconciled roster first.
+- **Controls tab UI.** Theme Studio Controls could expose the style axes via `patchDesignStyle` (the theme PATCH route doesn't accept `style` yet).
