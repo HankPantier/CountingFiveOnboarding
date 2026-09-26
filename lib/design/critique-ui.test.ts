@@ -12,6 +12,7 @@ const CRIT: CritiqueRecord = {
   passed: false,
   mean: 3.67,
   model: 'claude-opus-5-5',
+  paletteFreedom: 'free',
   at: '2026-09-25T12:00:00.000Z',
 }
 const shot = (url: string): ScreenshotDto => ({ viewport: 'desktop', url, width: 1440, height: 900 })
@@ -40,6 +41,11 @@ describe('scoreRows', () => {
     expect(rows[1]).toMatchObject({ score: 3, tone: 'error' }) // below the distinctiveness bar
     expect(rows[3]).toMatchObject({ score: 2, pct: 40, tone: 'error' })
     expect(rows[2].tone).toBe('success')
+  })
+  it('the distinctiveness bar follows the palette freedom the critique was made under (keep / evolve ⇒ 3)', () => {
+    for (const paletteFreedom of ['keep', 'evolve'] as const) {
+      expect(scoreRows({ ...CRIT, paletteFreedom })[1]).toMatchObject({ score: 3, tone: 'warning' }) // at the bar
+    }
   })
 })
 

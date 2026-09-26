@@ -449,6 +449,8 @@ async function main() {
           firmName: b.firmName,
           schema: b.schema,
           designMd: b.designMd,
+          paletteFreedom: b.paletteFreedom,
+          caps: b.caps,
           currentImage: currentDesktop ? new Uint8Array(currentDesktop) : null,
           concept: { position: row.position, iteration: 0, bundle },
           conceptCount: args.concepts,
@@ -470,6 +472,7 @@ async function main() {
           critiqueConcept({
             prompt,
             iteration: 0,
+            paletteFreedom: b.paletteFreedom,
             costSoFarUsd: budget.spentUsd(),
             costCapUsd: callerCapUsd(budget, projected),
             deadline: Date.now() + CALL_DEADLINE_MS,

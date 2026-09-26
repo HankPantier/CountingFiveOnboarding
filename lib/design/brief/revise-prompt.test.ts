@@ -28,6 +28,7 @@ const CRIT: CritiqueRecord = {
   passed: false,
   mean: 3.5,
   model: 'claude-opus-5-5',
+  paletteFreedom: 'free',
   at: '2026-09-25T12:00:00.000Z',
 }
 const ARGS: RevisePromptArgs = {
@@ -69,9 +70,18 @@ describe('buildRevisePrompt', () => {
     expect(text).toContain('exactly ONE concept')
     expect(text).toContain(CSS_RULES_REMINDER)
   })
+  it('restates the concept’s claim-check / signature-CSS notes after its CSS budget (per call)', () => {
+    const idx = built.parts.findIndex((p) => p.type === 'text' && p.text.startsWith('CLAIM CHECK'))
+    expect(idx).toBeGreaterThanOrEqual(built.sharedPartCount)
+    const t = built.parts[idx]
+    expect(t.type === 'text' && t.text).toContain('Signature CSS: only 1 scoped css.blocks move') // VALID styles only the hero
+    const clean = { ...VALID, css: { blocks: { ...VALID.css.blocks, footer: '[data-component="footer"] a { text-decoration: underline; }' } } }
+    expect(texts(buildRevisePrompt({ ...ARGS, bundle: clean }).parts)).not.toContain('CLAIM CHECK')
+  })
   it('formatCritique lists scores with reasons, then numbered issues and the summary', () => {
     const f = formatCritique(CRIT)
-    expect(f.split('\n')[0]).toBe('Scores (mean 3.5; passes at every score ≥ 3, mean ≥ 3.8, distinctiveness ≥ 4):')
+    expect(f.split('\n')[0]).toBe('Scores (mean 3.5; passes at every score ≥ 3, mean ≥ 3.8, distinctiveness ≥ 4 at palette freedom free):')
+    expect(formatCritique({ ...CRIT, paletteFreedom: 'evolve' }).split('\n')[0]).toContain('distinctiveness ≥ 3 at palette freedom evolve')
     expect(f).toContain('Summary: Timid.')
   })
   it('carries a per-call CSS budget: each fragment’s lines/bytes vs the sanitizer caps — never in the static prefix', () => {

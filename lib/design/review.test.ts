@@ -29,6 +29,7 @@ const rec = (iteration: number, passed = false): CritiqueRecord => ({
   passed,
   mean: 3,
   model: 'claude-opus-5-5',
+  paletteFreedom: 'free',
   at: '2026-09-25T12:00:00.000Z',
 })
 const OVERFLOWING: RenderMetrics = {
