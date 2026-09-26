@@ -30,7 +30,7 @@ import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
 import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
-import { capabilityViolations, fontsUnlocked } from './capabilities'
+import { capabilityViolations, fontsUnlocked, keepLockedStyle } from './capabilities'
 import { readEffectiveCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs, themeFilePaths } from './drift'
 import type { RunScreenshot } from './run-types'
@@ -81,7 +81,7 @@ export type CommitVersionResult =
   | { ok: false; status: 409 | 422; error: string; stale?: true }
 
 export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Promise<CommitVersionResult> {
-  const { target, bundle, expectedShas } = args
+  const { target, expectedShas } = args
   // v0 must record the ORIGINAL design. If its import failed (e.g. an
   // uncurated font), refuse rather than let this commit become v0.
   if (!(await hasAnyVersion(db, target.sessionId))) return { ok: false, status: 409, error: NO_BASELINE_ERROR }
@@ -94,7 +94,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     return { ok: false, status: 422, error: LEGACY_KEEP_UNCHECKED_ERROR }
   }
 
-  // Only the fonts matter for the capability check, so the overrides file
+  // Only the fonts + style matter for the capability check, so the overrides file
   // (and any malformed region in it) is irrelevant here.
   const current = bundleFromRepoFiles(
     { brandText: draft.files.brandText, designText: draft.files.designText, overridesCss: '' },
@@ -102,6 +102,10 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   )
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}` }
   const capRead = await readEffectiveCapabilities({ githubRepo: target.githubRepo, jobId: target.jobId })
+  // Below L3 a style-less bundle (pre-P6b version/concept) keeps the draft's
+  // axes: render + record the filled bundle, or the replace-semantics render
+  // would delete them from design.json.
+  const bundle = keepLockedStyle(args.bundle, current.bundle, capRead.effective)
   const violations = capabilityViolations(bundle, current.bundle, capRead.effective)
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
   // File contract follows the DRAFT marker (what the next build ships).

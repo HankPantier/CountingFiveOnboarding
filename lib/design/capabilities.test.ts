@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { VALID } from './__fixtures__/valid-bundle'
+import { DRAFT_FILES } from './__fixtures__/theme-texts'
+import { bundleToRepoFiles } from './bundle-files'
 import {
   capabilitiesFromJson,
   capabilityLevel,
@@ -8,6 +10,7 @@ import {
   enforceCapabilities,
   fontsUnlocked,
   intersectWithShell,
+  keepLockedStyle,
   parseTemplateMarker,
   specimenUnlocked,
   styleAxesUnlocked,
@@ -114,9 +117,23 @@ describe('style axes (L3+)', () => {
     expect(r.bundle.style).toEqual({ cards: 'flat' })
     expect(r.notes.join(' ')).toContain('Style axes are not available on this site yet')
     expect(capabilityViolations(r.bundle, styled, L2)).toEqual([])
-    const dropped = enforceCapabilities(VALID, styled, L2)
-    expect(dropped.bundle.style).toEqual({ cards: 'flat' })
-    expect(dropped.notes).toHaveLength(1)
+  })
+  it('below L3 an ABSENT style (pre-P6b version/concept) keeps the current axes silently', () => {
+    const kept = enforceCapabilities(VALID, styled, L2)
+    expect(kept.bundle.style).toEqual({ cards: 'flat' })
+    expect(kept.notes).toEqual([])
+    expect(capabilityViolations(VALID, styled, L2)).toEqual([])
+    expect(keepLockedStyle(VALID, styled, L2).style).toEqual({ cards: 'flat' })
+  })
+  it('rendering keepLockedStyle(style-less bundle) below L3 keeps the axes in design.json', () => {
+    const designText = JSON.stringify({ ...JSON.parse(DRAFT_FILES.designText), style: { cards: 'flat' } })
+    const r = bundleToRepoFiles(keepLockedStyle(VALID, styled, L2), { ...DRAFT_FILES, designText }, { removeLegacy: false })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(JSON.parse(r.files.designText).style).toEqual({ cards: 'flat' })
+  })
+  it('at L3+ an absent style is left absent (all default), and an explicit change below L3 is still rejected', () => {
+    expect(keepLockedStyle(VALID, styled, L3).style).toBeUndefined()
+    expect(capabilityViolations({ ...VALID, style: { nav: 'inverted' as const } }, styled, L2)).toHaveLength(1)
   })
   it('below L2 both fonts and style are reported', () => {
     const both = { ...styled, typography: { ...VALID.typography, headingFont: OTHER_FONT } }

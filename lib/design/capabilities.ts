@@ -2,9 +2,12 @@
 // honours. The template declares them in c5-template.json on the DRAFT branch
 // ({ templateVersion, capabilities[] }); absent/malformed ⇒ L1 (palette,
 // tokens, CSS, treatments). Effective tier = draft marker ∩ the deployed
-// shell's <meta name="c5-capabilities"> (intersectWithShell, P6a). Fonts (L2+)
-// and `style` (L3+) are stripped by the generator and rejected on apply below
-// their tier.
+// shell's <meta name="c5-capabilities"> (intersectWithShell, P6a). Below its
+// tier a lever is held at the site's CURRENT value: the generator restores the
+// current fonts (L2+) / style axes (L3+) with a note, and apply rejects only a
+// bundle that would CHANGE them. A bundle with no `style` at all (pre-P6b
+// versions/concepts) means "keep the current style" below L3 — keepLockedStyle
+// fills it in so the replace-semantics render never wipes the site's axes.
 import type { DesignBundle } from './bundle'
 import { isPlainObject } from './input-validation'
 import { DEFAULT_CAPABILITIES, type CapabilityLevel, type DesignCapabilities } from './run-types'
@@ -87,13 +90,23 @@ function sameTypography(a: DesignBundle['typography'], b: DesignBundle['typograp
   return a.headingFont === b.headingFont && a.bodyFont === b.bodyFont && a.accentFont === b.accentFont
 }
 
-// Generator side: STRIP what the tier doesn't allow (the concept stays usable).
+// Below L3 an ABSENT bundle.style (a pre-P6b version/concept that predates
+// style axes) means "keep the current style": fill it from the draft so the
+// render (bundleToRepoFiles replaces design.json `style` wholesale) keeps the
+// site's axes. An explicit style is left for enforce/violations to judge.
+export function keepLockedStyle(bundle: DesignBundle, current: DesignBundle, caps: DesignCapabilities): DesignBundle {
+  if (styleAxesUnlocked(caps) || bundle.style !== undefined || !current.style) return bundle
+  return { ...bundle, style: { ...current.style } }
+}
+
+// Generator side: hold what the tier doesn't allow at the site's current
+// value (the concept stays usable).
 export function enforceCapabilities(
   bundle: DesignBundle,
   current: DesignBundle,
   caps: DesignCapabilities
 ): { bundle: DesignBundle; notes: string[] } {
-  let out = bundle
+  let out = keepLockedStyle(bundle, current, caps)
   const notes: string[] = []
   if (!fontsUnlocked(caps) && !sameTypography(out.typography, current.typography)) {
     out = { ...out, typography: { ...current.typography } }
@@ -110,11 +123,12 @@ export function enforceCapabilities(
   return { bundle: out, notes }
 }
 
-// Apply side: REJECT what the tier doesn't allow (never silently rewrite a
-// design the admin chose).
+// Apply side: REJECT a change the tier doesn't allow (never silently rewrite a
+// design the admin chose). An absent style below L3 is "keep current", not a
+// change — the caller renders keepLockedStyle(bundle) so the axes survive.
 export function capabilityViolations(bundle: DesignBundle, current: DesignBundle, caps: DesignCapabilities): string[] {
   const v: string[] = []
   if (!fontsUnlocked(caps) && !sameTypography(bundle.typography, current.typography)) v.push(FONT_LOCK_VIOLATION)
-  if (!styleAxesUnlocked(caps) && !sameStyle(bundle.style, current.style)) v.push(STYLE_LOCK_VIOLATION)
+  if (!styleAxesUnlocked(caps) && !sameStyle(keepLockedStyle(bundle, current, caps).style, current.style)) v.push(STYLE_LOCK_VIOLATION)
   return v
 }

@@ -219,6 +219,31 @@ describe('commitDesignVersion', () => {
     })
   })
 
+  describe('style axes below L3 (pre-P6b bundles keep the current axes)', () => {
+    const L2 = { level: 2 as const, source: 'marker' as const, templateVersion: '2026.09.1', capabilities: ['fonts'] }
+    const STYLED_DESIGN = JSON.stringify({ ...JSON.parse(DESIGN_TEXT), style: { cards: 'flat', nav: 'bordered' } }, null, 2)
+    beforeEach(() => {
+      m.effective.mockResolvedValue({ draft: L2, effective: L2 })
+      m.snapshot.mockReset()
+        .mockResolvedValueOnce({ shas: BEFORE_SHAS, texts: { ...BEFORE.texts, 'content/design.json': STYLED_DESIGN } })
+        .mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
+    })
+
+    it('restoring a style-less version on an L2 site with axes applies + records the current axes (no 422, no wipe)', async () => {
+      const { style: _none, ...styleLess } = VALID
+      const r = await commitDesignVersion(DB, args({ source: 'revert', bundle: { ...styleLess, meta: { source: 'revert' } } }))
+      expect(r.ok).toBe(true)
+      expect((m.apply.mock.calls[0][0] as { bundle: { style?: unknown } }).bundle.style).toEqual({ cards: 'flat', nav: 'bordered' })
+      expect((m.insertVersion.mock.calls[0][1] as { bundle: { style?: unknown } }).bundle.style).toEqual({ cards: 'flat', nav: 'bordered' })
+    })
+
+    it('applying a bundle that explicitly changes the style is still rejected below L3', async () => {
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, style: { cards: 'elevated' }, meta: { source: 'concept' } } }))
+      expect(r).toMatchObject({ ok: false, status: 422 })
+      expect(m.apply).not.toHaveBeenCalled()
+    })
+  })
+
   it('passes an apply refusal (contrast) through with its status', async () => {
     m.apply.mockResolvedValue({ ok: false, status: 422, error: 'The palette fails contrast checks — x.' })
     expect(await commitDesignVersion(DB, args())).toEqual({ ok: false, status: 422, error: 'The palette fails contrast checks — x.' })

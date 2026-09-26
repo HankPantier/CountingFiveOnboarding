@@ -45,8 +45,9 @@ export const DesignBundleSchema = z.object({
     eyebrowStyle: z.enum(['standard', 'mono']),
     darkSections: z.boolean(),
   }),
-  // Template style axes (L3+ only — enforceCapabilities strips / apply rejects
-  // below). Canonicalized in parseDesignBundle (defaults dropped, undefined
+  // Template style axes (L3+ only — below L3 the site's current style is held:
+  // enforceCapabilities restores it, apply rejects a change, and an absent
+  // style means "keep current" via keepLockedStyle). Canonicalized in parseDesignBundle (defaults dropped, undefined
   // when all default). No zod .transform here: it would make the inferred key
   // required and break every DesignBundle literal that omits `style`.
   style: StyleAxesInputSchema.optional(),
