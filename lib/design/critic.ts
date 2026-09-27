@@ -11,6 +11,7 @@ import { DESIGN_MODEL, GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } 
 import type { BuiltPrompt } from './brief'
 import { CRITIC_SYSTEM_PROMPT } from './brief/critique-prompt'
 import { parseCritiqueAnswer, type CritiqueRecord } from './critique'
+import type { ProviderRejection } from '@/lib/ai/provider-rejection'
 import { createDesignCaller, type StopReason } from './model-call'
 import type { PaletteFreedom } from './run-types'
 
@@ -41,6 +42,8 @@ export type CritiqueConceptResult = {
   costUsd: number // exact + estimated
   estimatedUsd: number
   stoppedReason: StopReason | null
+  // Set when the AI provider refused the account (see GeneratedConcept).
+  rejection: ProviderRejection | null
 }
 
 export async function critiqueConcept(args: CritiqueConceptArgs): Promise<CritiqueConceptResult> {
@@ -70,7 +73,7 @@ export async function critiqueConcept(args: CritiqueConceptArgs): Promise<Critiq
     label: 'design-critique',
     capMs: CRITIQUE_CALL_CAP_MS,
   })
-  const money = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd() }
+  const money = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd(), rejection: caller.rejection() }
   if (raw === null) return { ...money, critique: null, errors: [], stoppedReason: caller.stopReason() ?? 'no_output' }
   const parsed = parseCritiqueAnswer(raw, {
     iteration: args.iteration,

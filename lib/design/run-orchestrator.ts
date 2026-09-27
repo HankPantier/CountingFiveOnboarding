@@ -18,6 +18,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
 import { buildConceptPrompt, type PromptImage } from './brief'
 import { generateConcept, type GeneratedConcept, type StopReason } from './concept-generator'
+import { providerRejectionMessage } from './model-call'
 import { composedThemeFromFiles } from './composed-theme'
 import { renderAndStoreFolds } from './render/render-folds'
 import { listInputs } from './store'
@@ -55,12 +56,15 @@ const STOP_MESSAGES: Record<StopReason, string> = {
   cost_cap: 'The run hit its cost cap before any concept was usable.',
   deadline: 'Concept generation ran out of time — press Retry.',
   no_output: 'The model returned no usable concepts — press Retry.',
+  // Fallback only: a provider rejection carries its own message (providerRejectionMessage).
+  provider_rejected: 'The AI provider rejected the request — press Retry once the account issue is fixed.',
 }
 
 // Per-position rejection text (our own) when the model gave no usable answer.
 const POSITION_STOP_MESSAGES: Record<Exclude<StopReason, 'cost_cap'>, string> = {
   deadline: 'Ran out of time designing this concept.',
   no_output: 'The model returned no usable concept.',
+  provider_rejected: 'The AI provider rejected the request.',
 }
 
 export function shouldChain(outcome: StepOutcome): boolean {
@@ -310,6 +314,17 @@ async function generateStage(
       },
     })
     costUsd = priorCost + result.costUsd // result.costUsd already includes its estimate
+
+    // The provider refused the account (usage limit, credits, key, permission):
+    // every remaining concept would fail the same way, so stop generating and
+    // error the run with the specific cause. The concept is marked 'error' so a
+    // Retry (planRetry) discards it and designs this position again.
+    if (result.rejection) {
+      snapshot = withNotes(snapshot, result.notes)
+      // Spend first (as below), so a kill before the settle never loses it.
+      if (!(await transitionRun(db, runId, GENERATING, { costUsd, baseSnapshot: snapshot }))) await updateRunFields(db, runId, { costUsd })
+      return abort(providerRejectionMessage(result.rejection), { costUsd, baseSnapshot: snapshot })
+    }
 
     const accepted = priors.length + (result.concept ? 1 : 0)
     const capped = result.stoppedReason === 'cost_cap' || costUsd >= capUsd

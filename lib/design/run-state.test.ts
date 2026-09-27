@@ -89,6 +89,10 @@ describe('planRetry', () => {
     const later = Date.parse('2026-09-25T11:00:00.000Z') + DESIGN_STEP_MAX_LIFETIME_MS + 1
     expect(planRetry(run, [c('a', 0, 'pending'), c('b', 1, 'generating', false)], later)).toMatchObject({ status: 'queued', deleteConceptIds: ['b'] })
   })
+  it('generate stage: after a provider rejection at position 0 (its claim marked error), Retry regenerates that position', () => {
+    const run = makeRunRow({ status: 'error', stage: 'generate' })
+    expect(planRetry(run, [c('a', 0, 'error', false)])).toMatchObject({ ok: true, status: 'queued', deleteConceptIds: ['a'] })
+  })
   it('refuses while a generating row is younger than a step’s max lifetime (its worker may still be alive)', () => {
     const run = makeRunRow({ status: 'error', stage: 'generate' })
     const soon = Date.parse('2026-09-25T11:00:00.000Z') + DESIGN_STEP_MAX_LIFETIME_MS - 1_000

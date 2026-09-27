@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { APICallError } from 'ai'
+import { APICallError, RetryError } from 'ai'
 import { classifyAiError, aiStreamErrorMessage, logAndFormatAiStreamError, ANTHROPIC_STATUS_URL } from './ai-error'
 
 function apiError(statusCode: number, { message = 'boom', isRetryable = false, responseBody = '' } = {}) {
@@ -63,7 +63,7 @@ describe('classifyAiError — Anthropic API status codes', () => {
       })
     )
     expect(info.kind).toBe('credit') // NOT bad_request — must not say "shorten your request"
-    expect(info.isProviderIssue).toBe(false)
+    expect(info.isProviderIssue).toBe(true) // provider-side (account), agrees with classifyAiErrorText
     expect(info.userMessage).toMatch(/credits/i)
     expect(info.userMessage).toMatch(/administrator/i)
     expect(info.userMessage).not.toMatch(/shorter|too long/i)
@@ -125,6 +125,36 @@ describe('logAndFormatAiStreamError', () => {
     expect(msg).toContain(ANTHROPIC_STATUS_URL)
     expect(spy).toHaveBeenCalledTimes(1)
     expect(spy.mock.calls[0][0]).toContain('[ai-error] edit-page overloaded')
+    spy.mockRestore()
+  })
+})
+
+describe('classifyAiError — account usage limit', () => {
+  const USAGE_LIMIT = 'You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC.'
+
+  it('classifies the usage-limit 400 as usage_limit (not "shorten your request") with the reset date', () => {
+    const info = classifyAiError(
+      apiError(400, { message: USAGE_LIMIT, responseBody: JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: USAGE_LIMIT } }) })
+    )
+    expect(info.kind).toBe('usage_limit')
+    expect(info.isProviderIssue).toBe(true) // provider-side (account) — agrees with classifyAiErrorText
+    expect(info.userMessage).toContain('usage limit')
+    expect(info.userMessage).toContain('2026-10-01')
+    expect(info.userMessage).toMatch(/Anthropic Console/)
+    expect(info.userMessage).not.toMatch(/shorter|too long/i)
+  })
+
+  it('wins over the 429 bucket and reads through a RetryError', () => {
+    expect(classifyAiError(apiError(429, { message: USAGE_LIMIT })).kind).toBe('usage_limit')
+    const wrapped = new RetryError({ message: 'Failed after 3 attempts', reason: 'maxRetriesExceeded', errors: [apiError(429, { message: USAGE_LIMIT })] })
+    expect(classifyAiError(wrapped).kind).toBe('usage_limit')
+  })
+
+  it('logs it under [ai-error] as a classified kind', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const msg = logAndFormatAiStreamError('edit-page', apiError(400, { message: USAGE_LIMIT }))
+    expect(msg).toContain('2026-10-01')
+    expect(spy.mock.calls[0][0]).toContain('[ai-error] edit-page usage_limit')
     spy.mockRestore()
   })
 })

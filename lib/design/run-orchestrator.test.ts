@@ -243,6 +243,29 @@ describe('runDesignStep — later concepts', () => {
     expect(m.settleConceptGeneration).toHaveBeenCalledWith({}, 'claim-1', { status: 'rejected', error: 'Ran out of time designing this concept.' })
   })
 
+  it('a provider rejection (usage limit) stops generation: the claim is marked failed, the run errors with the specific message, spend is kept', async () => {
+    m.listConcepts.mockResolvedValue([pending(0)])
+    m.generateConcept.mockResolvedValue({
+      concept: null,
+      errors: [],
+      costUsd: 0,
+      estimatedUsd: 0,
+      notes: [],
+      stoppedReason: 'provider_rejected',
+      rejection: { kind: 'usage_limit', resetDate: '2026-10-01' },
+    })
+    const message =
+      'The AI provider rejected the request: API usage limit reached (access returns 2026-10-01). Raise the limit in the Anthropic Console, then press Retry.'
+    const out = await runDesignStep(CTX)
+    expect(out).toEqual({ kind: 'failed', error: message })
+    expect(shouldChain(out)).toBe(false)
+    expect(m.settleConceptGeneration).toHaveBeenCalledWith({}, 'claim-1', { status: 'error', error: message })
+    const last = lastTransition()
+    expect(last.from).toEqual(['generating'])
+    expect(last.patch).toMatchObject({ status: 'error', error: message, costUsd: 0.5 })
+    expect(transitions().findIndex((t) => t.patch.costUsd === 0.5)).toBeLessThan(transitions().length - 1) // persisted before the settle
+  })
+
   it('persists cost_usd (guarded) BEFORE settling the concept row', async () => {
     m.listConcepts.mockResolvedValue([pending(0)])
     const order: string[] = []

@@ -5,6 +5,7 @@ vi.mock('@/lib/content/json-generation', () => ({ generateJson: (o: unknown) => 
 vi.mock('@/lib/content/token-usage', () => ({ recordTokenUsage: (a: unknown) => m.record(a) }))
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: (id: string) => ({ modelId: id }) }))
 
+import { APICallError } from '@ai-sdk/provider'
 import { VALID } from './__fixtures__/valid-bundle'
 import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
 import { DESIGN_SYSTEM_PROMPT } from './brief'
@@ -278,6 +279,28 @@ describe('generateConcept', () => {
       expect(seen).toHaveLength(1)
       expect(seen[0]).toBeGreaterThan(0)
     })
+  })
+
+  it('a usage-limit rejection: no phantom cost, no repair, the rejection is reported', async () => {
+    const usageLimit = new APICallError({
+      message: 'You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC.',
+      url: 'u',
+      requestBodyValues: {},
+      statusCode: 400,
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    m.generateJson.mockImplementation(async (opts: Opts & { onAttemptFailed?: (i: { attempt: 1 | 2; finishReason: string; error: unknown }) => void }) => {
+      if (opts.beforeAttempt && !(await opts.beforeAttempt(1))) return null
+      opts.onAttemptFailed?.({ attempt: 1, finishReason: 'error', error: usageLimit })
+      return null
+    })
+    const r = await generateConcept(args())
+    expect(r.concept).toBeNull()
+    expect(r.stoppedReason).toBe('provider_rejected')
+    expect(r.rejection).toEqual({ kind: 'usage_limit', resetDate: '2026-10-01' })
+    expect(r.costUsd).toBe(0)
+    expect(r.estimatedUsd).toBe(0)
+    expect(m.generateJson).toHaveBeenCalledTimes(1)
   })
 
   it('reports no_output when the model returns nothing usable', async () => {
