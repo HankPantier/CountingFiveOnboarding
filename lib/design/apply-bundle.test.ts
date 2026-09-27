@@ -93,6 +93,18 @@ describe('applyBundleToDraft', () => {
     expect(writeFiles).not.toHaveBeenCalled()
   })
 
+  it('never 422s for the advisory action-colour pairs (action / primary, action / background)', async () => {
+    for (const palette of [
+      { ...VALID.palette, primary: '#003a42', action: '#cc381e' }, // action / primary 2.47:1
+      { ...VALID.palette, action: '#ff8e27', nearWhite: '#ffffff' }, // action / background 2.29:1
+    ]) {
+      writeFiles.mockClear()
+      const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: { ...VALID, palette }, removeLegacy: false, message: 'm', author: AUTHOR })
+      expect(r.ok).toBe(true)
+      expect(writeFiles).toHaveBeenCalledTimes(1)
+    }
+  })
+
   it('returns 422 when the bundle CSS fails the sanitizer', async () => {
     const bad = { ...VALID, css: { blocks: { hero: 'body { display: none; }' } } }
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: bad, removeLegacy: false, message: 'm', author: AUTHOR })

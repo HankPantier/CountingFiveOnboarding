@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { APICallError, RetryError } from 'ai'
 import { classifyAiError, aiStreamErrorMessage, logAndFormatAiStreamError, ANTHROPIC_STATUS_URL } from './ai-error'
 
+const recordAiOutage = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('./ai-service-status', () => ({ recordAiOutage }))
+
 function apiError(statusCode: number, { message = 'boom', isRetryable = false, responseBody = '' } = {}) {
   return new APICallError({
     message,
@@ -156,5 +159,19 @@ describe('classifyAiError — account usage limit', () => {
     expect(msg).toContain('2026-10-01')
     expect(spy.mock.calls[0][0]).toContain('[ai-error] edit-page usage_limit')
     spy.mockRestore()
+  })
+
+  it('records the usage-limit outage (with its reset date) for the admin-shell banner', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    recordAiOutage.mockClear()
+    logAndFormatAiStreamError('edit-page', apiError(400, { message: USAGE_LIMIT }))
+    expect(recordAiOutage).toHaveBeenCalledWith('usage_limit', '2026-10-01')
+    recordAiOutage.mockClear()
+    logAndFormatAiStreamError('edit-page', apiError(400, { message: 'Your credit balance is too low to access the Anthropic API.' }))
+    expect(recordAiOutage).toHaveBeenCalledWith('credit')
+    recordAiOutage.mockClear()
+    logAndFormatAiStreamError('edit-page', apiError(529))
+    expect(recordAiOutage).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
   })
 })

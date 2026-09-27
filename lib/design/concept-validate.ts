@@ -6,10 +6,12 @@
 //   3. capability tier (fonts below L2 / style below L3 → current, with a note)
 //   4. palette freedom "keep" → the current palette, with a note
 //   5. render the repo files with removeLegacy (sanitizes every CSS fragment)
-//   6. checkThemeContrast (the same hard gate apply uses)
+//   6. checkThemeContrast (the same hard gate apply uses). The action-colour
+//      pairs (checkActionContrast) are NOT checked here — they are Theme
+//      Studio warnings until the theme auto-corrects action text.
 // The stored bundle carries the SANITIZED css (what apply would write).
 import type { BrandJson } from '@/types/brand-json'
-import { checkThemeContrast } from '@/lib/content/theme-css-generator'
+import { checkThemeContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'
 import {
   BUNDLE_MAX_MOVES,
   BUNDLE_MOVE_MAX_LENGTH,
@@ -94,9 +96,10 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
   const rendered = bundleToRepoFiles(bundle, ctx.draftFiles, { removeLegacy: true })
   if (!rendered.ok) return { ok: false, errors: rendered.errors }
 
-  const contrast = checkThemeContrast(JSON.parse(rendered.files.brandText) as BrandJson)
+  const brand = JSON.parse(rendered.files.brandText) as BrandJson
+  const contrast = checkThemeContrast(brand)
   if (contrast.length > 0) {
-    return { ok: false, errors: contrast.map((f) => `contrast ${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`) }
+    return { ok: false, errors: contrast.map((f) => `contrast ${formatContrastFailure(f)}`) }
   }
   return { ok: true, concept: { bundle: { ...bundle, css: rendered.css }, files: rendered.files, notes } }
 }

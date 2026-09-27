@@ -12,7 +12,7 @@ import {
   type TypographyPatch,
   type DesignFlagsPatch,
 } from '@/lib/editor/theme-edit'
-import { generateThemeCss, checkThemeContrast } from '@/lib/content/theme-css-generator'
+import { generateThemeCss, checkThemeContrast, checkActionContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
@@ -175,9 +175,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       headlineStyle: design.headlineStyle ?? 'sans',
       eyebrowStyle: design.eyebrowStyle ?? 'standard',
       darkSections: design.darkSections ?? false,
-      contrastWarnings: checkThemeContrast(brand).map(
-        (f) => `${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`
-      ),
+      // Advisory, never blocking: the save above already landed, so a palette
+      // that fails a pair is saved and the warning — with its fix hint for the
+      // action-colour pairs (checkActionContrast) — shows in the Controls.
+      contrastWarnings: [...checkThemeContrast(brand), ...checkActionContrast(brand)].map(formatContrastFailure),
     })
   } catch (err) {
     // A concurrent theme edit (another tab / a Design Studio apply) moved one of the

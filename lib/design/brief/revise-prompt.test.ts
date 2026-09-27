@@ -135,3 +135,40 @@ describe('pricing-calculator is a CSS target (the reviser can restyle the estima
     expect(prefix).not.toContain('[data-block="pricing-calculator"] p.')
   })
 })
+
+describe('every /design-specimen block is a CSS target in the brief', () => {
+  const SPECIMEN_BLOCKS = ['pricing-plans', 'booking', 'contact-info', 'map', 'resource-list']
+  it('lists each in Block targets and the BLOCK VOCABULARY', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    for (const id of SPECIMEN_BLOCKS) {
+      expect(prefix).toMatch(new RegExp(`Block targets: [^\\n]*\\b${id}\\b`))
+      expect(prefix).toContain(`- [data-block="${id}"]`)
+    }
+  })
+  it('points the pricing-plans featured tier at a scoped selector, never a bare element', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(prefix).toContain('[data-block="pricing-plans"] .bg-primary')
+    expect(prefix).not.toMatch(/\[data-block="pricing-plans"\] (h3|span|li|p)\b/)
+  })
+})
+
+describe('the pricing-calculator hint is advisory (no hard action / primary requirement)', () => {
+  it('asks for legible panel text, never a hard gate', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(prefix).toContain('legible on the primary (ideally ≥4.5:1)')
+    expect(prefix).not.toContain('requires action on primary')
+    expect(prefix).not.toContain('must reach 3:1 (large text)')
+  })
+})
+
+describe('revise prompt: no palette-level action contrast', () => {
+  it('a palette whose action pairs fail adds no contrast section; measured contrast failures still gate', () => {
+    const palette = { ...VALID.palette, primary: '#003a42', action: '#cc381e' }
+    const t = texts(buildRevisePrompt({ ...ARGS, bundle: { ...VALID, palette } }).parts)
+    expect(t).not.toContain('PALETTE CONTRAST')
+    const measured = 'Desktop (1440): “~$169–$229” (pricing-calculator › p) is 2.43:1 — needs 3:1 (text #cc381e on #003a42)'
+    const g = texts(buildRevisePrompt({ ...ARGS, bundle: { ...VALID, palette }, gateFailures: [measured] }).parts)
+    expect(g).toContain('RENDER-CHECK FAILURES — hard gates')
+    expect(g).toContain('2.43:1 — needs 3:1')
+  })
+})

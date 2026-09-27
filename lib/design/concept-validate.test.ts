@@ -82,6 +82,16 @@ describe('validateConceptBundle', () => {
     if (!r.ok) expect(r.errors[0]).toMatch(/^css\.global:/)
   })
 
+  it('never rejects or notes the action-colour pairs (Theme Studio warnings only)', () => {
+    for (const palette of [
+      { ...VALID.palette, primary: '#003a42', action: '#cc381e' }, // action / primary 2.47:1
+      { ...VALID.palette, action: '#ff8e27', nearWhite: '#ffffff' }, // action / background 2.29:1
+    ]) {
+      const r = validateConceptBundle({ ...rawOf(VALID), palette }, CTX)
+      expect(r.ok).toBe(true)
+      if (r.ok) expect(r.concept.notes).toEqual([])
+    }
+  })
   it('rejects a palette that fails WCAG contrast', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, nearBlack: '#fafaf6', nearWhite: '#fafaf7' } }, CTX)
     expect(r.ok).toBe(false)

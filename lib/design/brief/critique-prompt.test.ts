@@ -89,3 +89,12 @@ describe('buildCritiquePrompt', () => {
     expect(t.type === 'text' && t.text).toContain('promises serif headlines')
   })
 })
+
+describe('critique prompt: no palette-level action contrast', () => {
+  it('a palette whose action pairs fail adds no contrast section (only measured render checks count)', () => {
+    const t = texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } } } }).parts)
+    expect(t).not.toContain('PALETTE CONTRAST')
+    expect(t).not.toContain('action / primary')
+    expect(t).toContain('RENDER-CHECK FAILURES') // the measured gate is untouched
+  })
+})

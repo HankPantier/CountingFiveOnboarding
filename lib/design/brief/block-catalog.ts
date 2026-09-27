@@ -1,8 +1,10 @@
 // Pure. The block + chrome vocabulary the concept model may style, ported from
 // the template's export-design-brief.ts BLOCK_CATALOG (component-library-spec).
 // Limited to CSS-targetable ids (OVERRIDE_BLOCKS / CHROME_COMPONENTS) so the
-// model never writes CSS the sanitizer would reject — contact-info and map
-// carry no overridable data-block and are omitted; client-center is added.
+// model never writes CSS the sanitizer would reject; client-center is added.
+// Every block /design-specimen renders is listed (template block registry).
+// Hints name SCOPED selectors wherever a bare element selector would also hit
+// text on a different surface (e.g. a --color-primary panel vs the canvas).
 import type { OVERRIDE_BLOCKS } from '@/lib/editor/theme-edit'
 import type { CHROME_COMPONENTS } from '../css-targets'
 
@@ -41,9 +43,38 @@ export const BLOCK_CATALOG: readonly BlockSpec[] = [
   {
     id: 'pricing-calculator',
     purpose:
-      'Interactive fee estimator: service rows and option chips on the canvas, and a --color-primary estimate panel whose large price figure (a <p>, e.g. "~$169–$229") is set in --color-action — action on primary must reach 3:1 (large text), so change that pair or restyle the panel text only with [data-block="pricing-calculator"] .bg-primary p (a bare p also hits the labels on the light canvas).',
+      'Interactive fee estimator: service rows and option chips on the canvas, and a --color-primary estimate panel whose large price figure (a <p>, e.g. "~$169–$229") is set in --color-action — keep that figure and the other panel text legible on the primary (ideally ≥4.5:1), so adjust that pair or restyle the panel text only with [data-block="pricing-calculator"] .bg-primary p (a bare p also hits the labels on the light canvas).',
     variants: [],
     tokens: '--color-primary (estimate panel bg), --color-action (estimate figure + CTA), --color-primary-foreground (panel text)',
+  },
+  {
+    id: 'pricing-plans',
+    purpose:
+      'Plan tier cards with a monthly/annual switch, an "all plans include" list and add-on cards. The most-popular tier is a --color-primary card (class bg-primary) with primary-foreground text, crowned by a "Most popular" pill in --color-action with white text; the other tiers and the lists sit on the canvas. Restyle the featured tier only with [data-block="pricing-plans"] .bg-primary … (a bare h3, span or li also hits the canvas cards).',
+    variants: [],
+    tokens: '--color-primary (featured tier bg + ring), --color-primary-foreground (featured text), --color-action (switch, "Most popular" pill, check icons)',
+  },
+  {
+    id: 'booking',
+    purpose:
+      'Scheduling embed: a centred header (h2 + intro) above a third-party calendar (Calendly widget or iframe). Only the header and the embed\'s outer box are styleable — the calendar is cross-origin and ignores site CSS.',
+    variants: [],
+  },
+  {
+    id: 'contact-info',
+    purpose: 'Firm contact details from brand.json: "Reach out" (phone/email/fax links) and "Visit" (address, hours) columns, each row led by a --color-primary icon.',
+    variants: [],
+    tokens: '--color-primary (icons, link hover)',
+  },
+  {
+    id: 'map',
+    purpose: 'Heading over a bordered, rounded 16:9 Google Maps iframe of the firm address. Style the heading and the frame box only (the map is cross-origin).',
+    variants: [],
+  },
+  {
+    id: 'resource-list',
+    purpose: 'Downloadable resources as a card grid (title, description, outline Download button), always followed by a separate newsletter [data-block="form"] section.',
+    variants: [],
   },
 ]
 

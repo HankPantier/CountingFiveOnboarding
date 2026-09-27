@@ -117,13 +117,13 @@ describe('ChatWorkspace previews + commits', () => {
     expect(w.lastVersionId()).toBe('ver-9')
     expect(w.pendingSummary()).toBe('')
     // Later edits validate against the committed files.
-    expect(w.apply({ kind: 'palette', patch: { action: '#0a7c86' } }).ok).toBe(true)
+    expect(w.apply({ kind: 'palette', patch: { action: '#3fd0dc' } }).ok).toBe(true)
   })
   it('a preview recorded for an earlier revision (an edit landed mid-render) never gates the current copy', () => {
     const w = ws()
     w.apply({ kind: 'palette', patch: { primary: '#123a5c' } })
     const rendered = w.revision()
-    w.apply({ kind: 'palette', patch: { action: '#0a7c86' } })
+    w.apply({ kind: 'palette', patch: { action: '#3fd0dc' } })
     w.recordPreview({ metrics: null, baseline: null, shots: [] }, rendered)
     expect(w.currentPreview()).toBeNull()
   })
@@ -151,7 +151,7 @@ describe('ChatWorkspace previews + commits', () => {
     w.apply({ kind: 'palette', patch: { primary: '#123a5c' } })
     const first = { ...SHAS, 'content/brand.json': 'c'.repeat(40) }
     w.markCommitted(first, 'ver-1')
-    w.apply({ kind: 'palette', patch: { action: '#0a7c86' } })
+    w.apply({ kind: 'palette', patch: { action: '#3fd0dc' } })
     expect(w.draftShas()).toEqual(first)
     const second = { ...first, 'content/brand.json': 'd'.repeat(40) }
     w.markCommitted(second, null)

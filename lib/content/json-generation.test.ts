@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('ai', () => ({ generateText: vi.fn() }))
+const recordAiOutage = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/lib/ai/ai-service-status', () => ({ recordAiOutage }))
 
 import { generateText } from 'ai'
 // The real provider error class (the `ai` module is mocked above).
@@ -174,6 +176,21 @@ describe('generateJson', () => {
     expect(mockGen).toHaveBeenCalledTimes(1)
     expect(failed).toEqual(['error'])
     expect(String(errSpy.mock.calls[0][0])).toContain('rejected the request (usage_limit)')
+    // Background generators raise the admin-shell outage banner too.
+    expect(recordAiOutage).toHaveBeenCalledWith('usage_limit', '2026-10-01')
+    errSpy.mockRestore()
+  })
+
+  it('raises the credit banner on a credit rejection, and never for an auth rejection', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    recordAiOutage.mockClear()
+    mockGen.mockRejectedValueOnce(new APICallError({ message: 'Your credit balance is too low to access the Anthropic API.', url: 'u', requestBodyValues: {}, statusCode: 400 }))
+    expect(await generateJson({ ...base, firstBudget: 1000 })).toBeNull()
+    expect(recordAiOutage).toHaveBeenCalledWith('credit', null)
+    recordAiOutage.mockClear()
+    mockGen.mockRejectedValueOnce(new APICallError({ message: 'invalid x-api-key', url: 'u', requestBodyValues: {}, statusCode: 401 }))
+    expect(await generateJson({ ...base, firstBudget: 1000 })).toBeNull()
+    expect(recordAiOutage).not.toHaveBeenCalled()
     errSpy.mockRestore()
   })
 

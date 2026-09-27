@@ -1,5 +1,8 @@
-// Server-only. The sweep cron's backstop for stalled Design Studio runs (see
-// isRunStalled in run-state.ts): when no Studio tab is open to nudge a run
+// Server-only. The cron backstop for stalled Design Studio runs (see
+// isRunStalled in run-state.ts), called every minute by
+// /api/cron/nudge-design-runs and, as a fallback, every 5 minutes by the sweep
+// cron (duplicate nudges are no-ops — every step unit is claim-guarded): when
+// no Studio tab is open to nudge a run
 // whose self-chain Vercel refused, the cron calls the step route itself — a
 // cron-originated request starts a fresh chain. Runs it nudged are excluded
 // from that tick's 15-minute stale → error sweep (sweepStuckDesignRows), so a
@@ -52,7 +55,8 @@ export const CRON_NUDGE_HOP = 1
 export async function nudgeStalledDesignRuns(
   db: SupabaseClient<Database>,
   now: number = Date.now(),
-  trigger: Trigger = triggerDesignStep
+  trigger: Trigger = triggerDesignStep,
+  logTag: string = 'sweep-stuck-jobs'
 ): Promise<DesignNudgeResult> {
   const result: DesignNudgeResult = { nudged: [], refused: 0 }
   try {
@@ -81,7 +85,7 @@ export async function nudgeStalledDesignRuns(
       else result.refused += 1
     }
   } catch (err) {
-    console.error('[sweep-stuck-jobs] design run nudge failed:', err)
+    console.error(`[${logTag}] design run nudge failed:`, err)
   }
   return result
 }

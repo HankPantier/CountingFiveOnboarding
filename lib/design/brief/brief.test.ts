@@ -6,7 +6,7 @@ import { parseTemplateMarker } from '../capabilities'
 import { DEFAULT_CAPABILITIES } from '../run-types'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
-import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, type ConceptPromptArgs } from './index'
+import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, paletteFreedomInstruction, type ConceptPromptArgs } from './index'
 
 // Byte-stability goldens captured from 04ea820 (the commit immediately before
 // Task 22 introduced style axes) — ruling PF9 binds the L1/L2 prompt bytes
@@ -28,6 +28,17 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   `.bg-primary p` (the estimate panel only — a bare p also matched the canvas
 //   labels); the Forbidden line spells out the font-size grammar and var() in
 //   pointer-events; the animation line mentions view()/scroll() timelines.
+// - Studio follow-ups (2026-09-26): the remaining /design-specimen blocks —
+//   pricing-plans, booking, contact-info, map, resource-list — became CSS
+//   targets: appended to "Block targets" and given BLOCK VOCABULARY entries
+//   (pricing-plans names the scoped `.bg-primary …` featured-tier selector).
+// - Task 10 fix round 1 (2026-09-26): the pricing-calculator entry now says
+//   action on primary must reach 4.5:1 (the palette gate's threshold — the
+//   pair also colours the 12px page-header kicker), not "3:1 (large text)".
+// - Task 10 round 3 (2026-09-26): action contrast pairs became ADVISORY (both
+//   can't pass together on a dark primary — see checkActionContrast), so the
+//   pricing-calculator entry no longer claims a hard 4.5:1 requirement: it
+//   says to keep the figure and panel text legible (ideally ≥4.5:1).
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -255,7 +266,7 @@ describe('style axes in the brief', () => {
       expect(p).toContain('- Never emit a "style" field (style axes are not available to you).')
     }
   })
-  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 forbidden-CSS list and pricing-calculator target)', () => {
+  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 forbidden-CSS list, pricing-calculator target and the remaining specimen-block targets)', () => {
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toBe(readGolden('static-prefix-l1.golden.txt'))
     expect(buildStaticPrefix(L2)).toBe(readGolden('static-prefix-l2.golden.txt'))
   })
@@ -265,5 +276,11 @@ describe('style axes in the brief', () => {
     expect(extractOutputFormat(buildStaticPrefix(L2))).toBe(extractOutputFormat(readGolden('static-prefix-l2.golden.txt')))
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain('"style":{')
     expect(buildStaticPrefix(L2)).not.toContain('"style":{')
+  })
+})
+
+describe('palette instruction carries no action-contrast target (it cannot be met until the theme auto-corrects)', () => {
+  it('evolve / free / keep never mention a contrast ratio for action text', () => {
+    for (const f of ['evolve', 'free', 'keep'] as const) expect(paletteFreedomInstruction(f, VALID.palette)).not.toMatch(/\d(\.\d)?:1|kicker|legible/i)
   })
 })

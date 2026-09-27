@@ -65,11 +65,17 @@ function ensureContrast(bgHex: string, fgHex: string, minRatio = 4.5): string {
   }
 }
 
-export type ContrastFailure = { name: string; ratio: number; minRatio: number; bg: string; fg: string }
+export type ContrastFailure = { name: string; ratio: number; minRatio: number; bg: string; fg: string; hint?: string }
 
-// Report every fg/bg pair the theme exposes that ships under WCAG AA, so the
-// caller can surface it to the operator. Never throws.
-export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
+export function formatContrastFailure(f: ContrastFailure): string {
+  return `${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)${f.hint ? ` — ${f.hint}` : ''}`
+}
+
+// HARD gate: every fg/bg pair the theme exposes that ships under WCAG AA. The
+// generator derives these foregrounds/surfaces itself (pickForeground /
+// ensureContrast), so a palette only fails them when its own neutrals clash.
+// The Design Studio refuses a palette that fails any of them. Never throws.
+export function checkThemeContrast(brand: Pick<BrandJson, 'palette'>): ContrastFailure[] {
   const { palette } = brand
   const primaryFg = pickForeground(palette.primary, palette.nearWhite, palette.nearBlack)
   const secondaryFg = pickForeground(palette.secondary, palette.nearWhite, palette.nearBlack)
@@ -83,7 +89,7 @@ export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
   const ink = setLightness(chroma.mix(palette.nearBlack, palette.primary, 0.4, 'lab').hex(), 12)
   const inkFg = pickForeground(ink, palette.nearWhite, palette.nearBlack)
 
-  const pairs: Array<{ name: string; bg: string; fg: string; minRatio: number }> = [
+  return failingPairs([
     { name: 'foreground / background', bg: palette.nearWhite, fg: palette.nearBlack, minRatio: 4.5 },
     { name: 'primary-fg / primary', bg: primaryBg, fg: primaryFg, minRatio: 4.5 },
     { name: 'secondary-fg / secondary', bg: secondaryBg, fg: secondaryFg, minRatio: 4.5 },
@@ -91,14 +97,51 @@ export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
     { name: 'muted-fg / muted', bg: muted, fg: mutedForeground, minRatio: 4.5 },
     { name: 'footer muted text (text-bg/90)', bg: palette.nearBlack, fg: footerMutedText, minRatio: 4.5 },
     { name: 'ink-fg / ink', bg: ink, fg: inkFg, minRatio: 4.5 },
-  ]
+  ])
+}
+
+type ContrastPair = { name: string; bg: string; fg: string; minRatio: number; hint?: string }
+
+function failingPairs(pairs: ContrastPair[]): ContrastFailure[] {
   const failures: ContrastFailure[] = []
-  for (const { name, bg, fg, minRatio } of pairs) {
+  for (const { name, bg, fg, minRatio, hint } of pairs) {
     const ratio = chroma.contrast(bg, fg)
-    if (ratio < minRatio) failures.push({ name, ratio, minRatio, bg, fg })
+    if (ratio < minRatio) failures.push({ name, ratio, minRatio, bg, fg, ...(hint ? { hint } : {}) })
   }
   return failures
 }
+
+// ADVISORY (never a gate): raw --color-action used as small text on the two
+// surfaces the template puts it on. .t-kicker is 0.75rem/600 in
+// var(--color-action) — on the page background (hero / section kickers, card
+// dates; --color-background = palette.nearWhite, emitted uncorrected) and on
+// the AA-corrected primary (page-header kicker, stat figures, calculator
+// estimate) — so AA wants 4.5:1 on both. They cannot BOTH pass on a
+// dark-primary site: contrast(a, primary) × contrast(a, background) =
+// contrast(primary, background), and 4.5 × 4.5 = 20.25:1 needs a near-black
+// primary (navy #003b71 on #f7f5f2 tops out at ~3.2:1 on both). So these are
+// Theme Studio warnings only until the theme generator emits auto-corrected
+// action-text tokens (that task reuses this helper). The Design Studio does
+// not use them at all: a concept can't satisfy both, so feeding them to the
+// critic / reviser would penalise and chase an impossible target. Real
+// rendered-text contrast (render-check, metrics.ts) is a separate gate.
+export const ACTION_ON_PRIMARY_PAIR = 'action / primary'
+export const ACTION_ON_BACKGROUND_PAIR = 'action / background'
+const ACTION_ON_PRIMARY_HINT =
+  'action-colour text sits on the primary colour (inner-page kicker, stat figures, price estimate) — a brighter or lighter action colour, or a darker primary, reads better'
+const ACTION_ON_BACKGROUND_HINT =
+  'action-colour text sits on the page background (hero and section kickers, card dates) — a deeper, darker action colour reads better'
+
+export function checkActionContrast(brand: Pick<BrandJson, 'palette'>): ContrastFailure[] {
+  const { palette } = brand
+  const primaryFg = pickForeground(palette.primary, palette.nearWhite, palette.nearBlack)
+  const primaryBg = ensureContrast(palette.primary, primaryFg)
+  return failingPairs([
+    { name: ACTION_ON_PRIMARY_PAIR, bg: primaryBg, fg: palette.action, minRatio: 4.5, hint: ACTION_ON_PRIMARY_HINT },
+    { name: ACTION_ON_BACKGROUND_PAIR, bg: palette.nearWhite, fg: palette.action, minRatio: 4.5, hint: ACTION_ON_BACKGROUND_HINT },
+  ])
+}
+
 
 // Regenerate the full theme.css contents from brand.json + design.json. The
 // output string must match the template's generate-theme.ts exactly.
