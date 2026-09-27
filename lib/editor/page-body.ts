@@ -1,5 +1,7 @@
 import type { FaqItem } from './structured-fields'
 import { findTrailerStart } from '@/lib/content/strip-generator-notes'
+import { humanizeDashes } from '@/lib/content/anti-slop-validator'
+import { splitFile } from './frontmatter'
 
 // The generator appends two trailers to the page body that the template strips
 // at render (parse-page-md.ts `trimMetadataTrailer`): a human-readable
@@ -23,6 +25,19 @@ export function splitTrailers(body: string): SplitBody {
   if (idx > 0 && body[idx - 1] === '\n') idx--
   if (idx > 0 && body[idx - 1] === '\r') idx--
   return { content: body.slice(0, idx), trailer: body.slice(idx) }
+}
+
+/**
+ * Normalize em/en dashes in the reader-facing body prose ONLY. Frontmatter
+ * (URLs, JSON blobs, quoted YAML) and the generator trailer stay byte-for-byte:
+ * scrubbing the trailer turned "Structured Data — paste into" into a comma form
+ * on Accord's /services (commit e0d81c7, via remove_text stripDashes).
+ */
+export function humanizeBodyDashes(file: string): string {
+  const { body } = splitFile(file)
+  const head = file.slice(0, file.length - body.length)
+  const { content, trailer } = splitTrailers(body)
+  return head + humanizeDashes(content) + trailer
 }
 
 const FAQ_MARKER = '<!-- block: faq-accordion -->'
