@@ -22,7 +22,7 @@ import {
   minDistinctivenessFor,
 } from '../critique'
 import type { DistinctnessRow } from '../distinctness'
-import type { DesignCapabilities, PaletteFreedom } from '../run-types'
+import type { DesignCapabilities, PaletteFreedom, RunViewport } from '../run-types'
 import { buildBrandBrief } from './brand'
 import { CSS_RULES_REMINDER, CSS_RULES_SECTION } from './contract'
 import { fenceData } from './fence'
@@ -77,6 +77,8 @@ export type CritiquePromptArgs = {
   gateFailures: string[]
   desktop: Uint8Array | null
   mobile: Uint8Array | null
+  // Viewports of the concept's render captured before its webfonts loaded.
+  fontsNotReady?: RunViewport[]
 }
 
 const image = (bytes: Uint8Array): DynamicPart => ({ type: 'image', image: bytes, mediaType: 'image/webp' })
@@ -89,6 +91,12 @@ const FREEDOM_TEXT: Record<PaletteFreedom, string> = {
 
 export function paletteFreedomLine(freedom: PaletteFreedom): string {
   return `PALETTE FREEDOM for this run: ${FREEDOM_TEXT[freedom]}. The distinctiveness bar is ${minDistinctivenessFor(freedom)}.`
+}
+
+// Per call: this render may show fallback fonts — not the designer's fault.
+export function fontsNotReadyLine(viewports: RunViewport[]): string {
+  const which = viewports.length === 1 ? `The ${viewports[0]} render was` : 'These renders were'
+  return `FONTS NOT LOADED: ${which} captured before the webfonts finished loading, so text may show a fallback font. Ignore font-family mismatches in ${viewports.length === 1 ? 'it' : 'them'} — judge the typography from the fonts the concept sets and never raise the rendered font family as an issue.`
 }
 
 export function buildCritiquePrompt(args: CritiquePromptArgs): BuiltPrompt {
@@ -140,6 +148,10 @@ export function buildCritiquePrompt(args: CritiquePromptArgs): BuiltPrompt {
         ? `RENDER-CHECK FAILURES (measured in the browser; each MUST become an issue):\n${args.gateFailures.map((f) => `- ${f}`).join('\n')}`
         : 'RENDER CHECKS: no contrast, overflow or hidden-block failures were measured.',
   })
+  const fontsNotReady = (args.fontsNotReady ?? []).filter((v) => (v === 'desktop' ? args.desktop : args.mobile))
+  if (fontsNotReady.length > 0) {
+    parts.push({ type: 'text', text: fontsNotReadyLine(fontsNotReady) })
+  }
   if (args.desktop) {
     parts.push({ type: 'text', text: `Concept ${k} — desktop fold (1440 px):` })
     parts.push(image(args.desktop))

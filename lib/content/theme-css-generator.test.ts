@@ -10,6 +10,7 @@ import {
   ACTION_ON_PRIMARY_PAIR,
   ACTION_ON_BACKGROUND_PAIR,
   deriveLightActionTextTokens,
+  deriveDarkActionTextTokens,
   ensureTextContrast,
   hslTokensToHex,
   renderedHex,
@@ -163,6 +164,28 @@ describe('small-text action tokens', () => {
     }
     expect(chroma.contrast(row.light.actionOnPrimary, hslTokensToHex(tok(r, '--color-primary')))).toBeGreaterThanOrEqual(4.5)
     expect(chroma.contrast(row.light.actionOnInk, tok(r, '--color-ink'))).toBeGreaterThanOrEqual(4.5)
+    // Tint badges: the 10% / 15% action tint over the page background AND the card, both themes.
+    for (const [blk, tint, label] of [[r, row.light.actionTextTint, ''], [d, row.dark.actionTextTint, '.dark ']] as const)
+      for (const sName of ['--color-background', '--color-card'])
+        for (const a of [0.1, 0.15])
+          expect(chroma.contrast(tint, chroma.mix(hslTokensToHex(tok(blk, sName)), row.palette.action, a, 'rgb').hex()), `${label}tint ${a} over ${sName}`).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('tint tokens clear the tint over the BACKGROUND as well as the card (light + dark)', () => {
+    const light = { background: '#e4e1dc', muted: '#e4e1dc', card: '#ffffff', primary: '#003B71', ink: '#131c2a' }
+    const dark = { background: '#2c2f33', muted: '#2c2f33', card: '#16181a' }
+    const cases = [
+      ['#00C1DE', deriveLightActionTextTokens('#00C1DE', light).actionTextTint, light],
+      ['#C45300', deriveDarkActionTextTokens('#C45300', dark).actionTextTint, dark],
+    ] as const
+    for (const [action, tint, s] of cases) {
+      for (const under of [s.background, s.card])
+        for (const a of [0.1, 0.15])
+          expect(chroma.contrast(tint, chroma.mix(under, action, a, 'rgb').hex()), `${action} ${under} ${a}`).toBeGreaterThanOrEqual(4.5)
+      // The old card-only rule fails the background in both fixtures.
+      const cardOnly = ensureTextContrast(action, [0.1, 0.15].map((a) => chroma.mix(s.card, action, a, 'rgb').hex()))
+      expect(chroma.contrast(cardOnly, chroma.mix(s.background, action, 0.15, 'rgb').hex())).toBeLessThan(4.5)
+    }
   })
 
   it('Accord: on-primary clears the RENDERED primary #1f3a60 (hex #1F3A5F)', () => {

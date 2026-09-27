@@ -23,7 +23,14 @@ import { checkConceptCandidate, parseConceptsEnvelope, withConsistencyNotes, typ
 import type { ProviderRejection } from '@/lib/ai/provider-rejection'
 import { createDesignCaller, type StopReason } from './model-call'
 
-export const REVISE_CALL_CAP_MS = 300_000
+// Cap for the revise call's attempts (high effort, then its low-effort retry);
+// the actual timeout is dynamic. Same call shape as the first concept call
+// (24k budget, adaptive thinking at high effort), so the same 180 s cap as
+// FIRST_ATTEMPT_CAP_MS: a runaway attempt fails 120 s sooner, and the worst
+// case — both attempts at the cap + the 150 s CSS repair (510 s) — fits the
+// step's 540 s model budget minus the 20 s safety. At 300 s a runaway left the
+// retry ~220 s and no room at all for the repair turn.
+export const REVISE_CALL_CAP_MS = 180_000
 
 export type ReviseConceptArgs = {
   prompt: BuiltPrompt

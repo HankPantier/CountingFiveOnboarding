@@ -114,20 +114,9 @@ export function estimateInputUsd(system: string, messages: ModelMessage[], model
   return estimateCostUsd(modelId, tokens, 0)
 }
 
-// What the Studio shows when the provider refused the account (never the key,
-// never the raw request).
-export function providerRejectionMessage(r: ProviderRejection): string {
-  switch (r.kind) {
-    case 'usage_limit':
-      return `The AI provider rejected the request: API usage limit reached${r.resetDate ? ` (access returns ${r.resetDate})` : ''}. Raise the limit in the Anthropic Console, then press Retry.`
-    case 'credit':
-      return 'The AI provider rejected the request: the account is out of API credits. Add credits in the Anthropic Console, then press Retry.'
-    case 'auth':
-      return 'The AI provider rejected the API key — check ANTHROPIC_API_KEY, then press Retry.'
-    case 'permission':
-      return "The AI provider refused access (permission denied) — check the API key's workspace and model access in the Anthropic Console, then press Retry."
-  }
-}
+// What the Studio shows when the provider refused the account — pure, in its
+// own module so the A/B report helpers (lib/design/ab) can use it too.
+export { providerRejectionMessage } from './provider-rejection-message'
 
 export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
   const now = opts.now ?? Date.now

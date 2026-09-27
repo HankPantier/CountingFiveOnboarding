@@ -136,6 +136,18 @@ describe('conceptConsistencyNotes — no false positives (regression)', () => {
     // "bitter" the word, not the font Bitter.
     'Headlines in a bitter chocolate brown',
     'Bitter headlines',
+    // One allowlisted adjective is allowed between value and noun — no more, and never these:
+    'Flat tinted fee cards',
+    'Flat soft pricing cards',
+    'Natural soft light photography',
+    'Natural warm photography',
+    'Natural tinted images',
+    'Compact quiet hero kicker',
+    'Dark warm footer links',
+    'Dark navy footer links',
+    'Inverted light nav',
+    'Flat light cards',
+    'Soft tinted cards',
   ])('%s → no note', (phrase) => {
     // Every lever at its default / off, so any claim would surface.
     expect(claims(says([phrase]))).toEqual([])
@@ -155,6 +167,23 @@ describe('conceptConsistencyNotes — no false positives (regression)', () => {
     ['Dark footer', 'a brand-colour footer'],
     ['Compact hero', 'a compact hero'],
     ['Natural photography, ungraded', 'natural (ungraded) images'],
+    // ONE allowlisted adjective between the value word and the noun (Task 12).
+    ['Flat tinted cards', 'flat cards'],
+    ['Soft outlined cards', 'outlined cards'],
+    ['Outlined paper cards', 'outlined cards'],
+    ['Elevated borderless cards', 'elevated cards'],
+    ['Inverted borderless nav', 'an inverted nav'],
+    ['Inverted navy nav', 'an inverted nav'], // via "navy nav" — colour words are value words, not STYLE_ADJ
+    ['Bordered quiet navbar', 'a bordered nav'],
+    ['Pill soft buttons', 'pill buttons'],
+    ['Uppercase tracked subtle CTAs', 'uppercase tracked buttons'],
+    ['Dramatic quiet hero', 'a dramatic hero scale'],
+    ['Compact subtle hero, left-aligned', 'a compact hero'],
+    ['Brand warm footer band', 'a brand-colour footer'],
+    ['Light paper footer', 'a light footer'],
+    ['Monochrome subtle photography', 'monochrome imagery'],
+    ['Rounded soft images', 'rounded images'],
+    ['Natural quiet photography', 'natural (ungraded) images'],
   ])('%s → still caught', (phrase, label) => {
     expect(claims(says([phrase]))).toEqual([expect.stringContaining(label)])
   })

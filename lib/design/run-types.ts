@@ -45,7 +45,10 @@ export type DesignCapabilities = {
 export const DEFAULT_CAPABILITIES: DesignCapabilities = { level: 1, source: 'default', templateVersion: null, capabilities: [] }
 
 export type RunViewport = 'desktop' | 'mobile'
-export type RunScreenshot = { viewport: RunViewport; path: string; width: number; height: number }
+// fontsReady: false — captured before the page's webfonts finished loading
+// (renderComposed's bounded fonts wait timed out), so the image may show
+// fallback fonts. Absent = the fonts were ready (or a pre-flag render).
+export type RunScreenshot = { viewport: RunViewport; path: string; width: number; height: number; fontsReady?: false }
 
 // design_runs.base_snapshot: fixed at creation (page, draft theme shas) and
 // completed by the generate step (current-site renders, notes for the admin).
@@ -91,6 +94,9 @@ export type DesignConceptDto = {
   treatments: DesignBundle['treatments'] | null
   tokens: Pick<DesignBundle['tokens'], 'roundness' | 'density' | 'visualFeel'> | null
   screenshots: ScreenshotDto[]
+  // Non-blocking: the concept's current render was captured before its
+  // webfonts loaded (fontsNotReadyNote), else null.
+  fontsNote: string | null
   iterations: number
   review: ConceptReviewDto | null
 }

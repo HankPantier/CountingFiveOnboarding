@@ -1,12 +1,13 @@
 // Rollout helper for template 2026.09.4: add ONLY the small-text action-colour
 // tokens (--color-action-text / -text-canvas / -text-tint / -on-primary /
 // -on-ink, + the .dark overrides) to a client's EXISTING theme.css, computed
-// from the surfaces that file already renders. Does not regenerate anything else (see
-// lib/content/add-action-text-vars.ts). Idempotent.
+// from the surfaces that file already renders. A file that already has them
+// gets only its stale --color-action-text-tint value(s) refreshed. Does not
+// regenerate anything else (see lib/content/add-action-text-vars.ts). Idempotent.
 //
 //   npx tsx scripts/add-action-text-vars.ts <client-repo>/src/styles/theme.css [--check]
 //
-// --check: print what would be added and exit 1 if the file needs it (no write).
+// --check: print what would be added / refreshed and exit 1 if the file needs it (no write).
 import { readFileSync, writeFileSync } from 'node:fs'
 import { addActionTextVars } from '../lib/content/add-action-text-vars'
 
@@ -26,6 +27,12 @@ if (r.status === 'error') {
 }
 if (r.status === 'unchanged') {
   console.warn(`${file}: already has the action-text tokens — nothing to do`)
+  process.exit(0)
+}
+if (r.status === 'updated') {
+  console.warn(`${file}: refreshed --color-action-text-tint: ${r.changed.join('; ')}`)
+  if (check) process.exit(1)
+  writeFileSync(file, r.css, 'utf-8')
   process.exit(0)
 }
 const action = css.match(/^\s*--color-action:\s*([^;]+);/m)?.[1].trim() ?? ''

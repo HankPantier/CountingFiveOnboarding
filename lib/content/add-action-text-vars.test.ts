@@ -34,10 +34,13 @@ function expectRenderedAA(css: string) {
   const inkName = tokOrNull(light, '--color-ink') ? '--color-ink' : '--color-near-black'
   expect(chroma.contrast(tok(light, '--color-action-on-ink'), painted(light, inkName))).toBeGreaterThanOrEqual(4.5)
   const action = tok(light, '--color-action')
-  for (const a of [0.1, 0.15]) {
-    const tint = chroma.mix(painted(light, '--color-card'), action, a, 'rgb').hex()
-    expect(chroma.contrast(tok(light, '--color-action-text-tint'), tint), `tint ${a}`).toBeGreaterThanOrEqual(4.5)
-  }
+  // Tint badges: the 10% / 15% action tint over the page background AND the card, both themes.
+  for (const [blk, label] of [[light, ''], [dark, '.dark ']] as const)
+    for (const s of ['--color-background', '--color-card'])
+      for (const a of [0.1, 0.15]) {
+        const tint = chroma.mix(painted(blk, s), action, a, 'rgb').hex()
+        expect(chroma.contrast(tok(blk, '--color-action-text-tint'), tint), `${label}tint ${a} over ${s}`).toBeGreaterThanOrEqual(4.5)
+      }
   for (const s of ['--color-background', '--color-muted', '--color-card'])
     expect(chroma.contrast(tok(dark, '--color-action-text'), painted(dark, s)), `.dark ${s}`).toBeGreaterThanOrEqual(4.5)
 }
@@ -88,6 +91,41 @@ describe('addActionTextVars', () => {
   it('refuses a file without a surface it must read', () => {
     const r = addActionTextVars(before.replace(/^\s*--color-muted: [^;]+;\n/gm, ''))
     expect(r).toEqual({ status: 'error', error: 'theme.css has no readable --color-muted (hsl() or #rrggbb)' })
+  })
+
+  it('refreshes ONLY a stale -text-tint value in a file that already has the full set (2026.09.4 rollout)', () => {
+    // Simulate a client whose .dark background is LIGHTER than its card and whose
+    // tint values were computed over the card only (the pre-fix rule).
+    const { light, dark } = blocks(golden)
+    const darkSwapped = dark
+      .replace(/(\n\s*--color-background: )hsl\([^)]+\);/, '$1hsl(210 7% 21%);')
+      .replace(/(\n\s*--color-action-text-tint: )[^;]+;/, '$1#00C1DE;')
+    const stale = light + darkSwapped
+    const r = addActionTextVars(stale)
+    expect(r.status).toBe('updated')
+    if (r.status !== 'updated') return
+    const want = r.dark!.actionTextTint
+    expect(want).not.toBe('#00C1DE')
+    expect(r.changed).toEqual([`.dark #00C1DE → ${want}`])
+    // Exactly one line differs — the .dark tint value.
+    const a = lines(stale)
+    const b = lines(r.css)
+    expect(b.length).toBe(a.length)
+    const diff = a.flatMap((l, i) => (l === b[i] ? [] : [[l, b[i]]]))
+    expect(diff).toEqual([['  --color-action-text-tint: #00C1DE;', `  --color-action-text-tint: ${want};`]])
+    expectRenderedAA(r.css)
+    // Idempotent once refreshed.
+    expect(addActionTextVars(r.css)).toEqual({ status: 'unchanged', css: r.css })
+  })
+
+  it('refreshes a stale LIGHT tint in every light block (@theme + :root) and leaves other tokens alone', () => {
+    const stale = golden.replace(/(\n\s*--color-action-text-tint: )#007385;/g, '$1#0099b0;')
+    expect(stale).not.toBe(golden)
+    const r = addActionTextVars(stale)
+    expect(r.status).toBe('updated')
+    if (r.status !== 'updated') return
+    expect(r.css).toBe(golden)
+    expect(r.changed).toEqual(['#0099b0 → #007385', '#0099b0 → #007385'])
   })
 
   it('refuses a partial older token set rather than stacking a second one', () => {

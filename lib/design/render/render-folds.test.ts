@@ -45,6 +45,17 @@ describe('renderAndStoreFolds', () => {
     expect(r.desktopWebp?.subarray(8, 12).toString('ascii')).toBe('WEBP')
   })
 
+  it('flags a fold captured before its webfonts loaded (fontsReady: false) on that screenshot only', async () => {
+    m.render.mockImplementation(async (a: { viewport: string }) => ({ shots: [{ kind: 'fold', png }], sample: null, fontsReady: a.viewport === 'desktop' }))
+    const r = await renderAndStoreFolds(args())
+    expect(r.error).toBeNull()
+    expect(r.shots.map((s) => [s.viewport, s.fontsReady])).toEqual([
+      ['desktop', undefined],
+      ['mobile', false],
+    ])
+    expect('fontsReady' in r.shots[0]).toBe(false) // fonts-ready shots keep the old JSON shape
+  })
+
   it('asks for metrics only when requested and evaluates each viewport’s sample', async () => {
     const sample = { viewportWidth: 390, scrollWidth: 430, docHeight: 2000, offenders: [], text: [], blocks: [] }
     m.render.mockImplementation(async (a: { viewport: string }) => ({ shots: [{ kind: 'fold', png }], sample: a.viewport === 'mobile' ? sample : null }))

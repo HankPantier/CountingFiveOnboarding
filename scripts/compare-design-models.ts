@@ -60,6 +60,7 @@ const errText = (err: unknown): string => (err instanceof Error ? `${err.name}: 
 async function main() {
   const tuning = await import('../lib/content/generation-tuning')
   const { abUsage, criticIsContender, parseAbArgs } = await import('../lib/design/ab/args')
+  const { noUsableAnswerText, rejectionText } = await import('../lib/design/ab/outcome')
   // Default judge: the Sonnet 5 writing tier — not a contender. critiqueConcept
   // sends it adaptive thinking + effort (GENERATION_PROVIDER_OPTIONS), both
   // supported on Sonnet 5; nothing Opus-only.
@@ -254,19 +255,22 @@ async function main() {
     shells.set(page, value)
     return value
   }
-  type PageRender = { shots: AbShot[]; webp: Partial<Record<Viewport, Buffer>>; metrics: RenderMetrics | null; error: string | null }
+  type PageRender = { shots: AbShot[]; webp: Partial<Record<Viewport, Buffer>>; metrics: RenderMetrics | null; error: string | null; fontsNotReady: Viewport[] }
   const renderPage = async (page: string, theme: ComposedTheme, fileBase: string): Promise<PageRender> => {
     const shell = await shellFor(page)
-    if (typeof shell === 'string') return { shots: [], webp: {}, metrics: null, error: shell }
-    if (!shell.origin.startsWith('https://')) return { shots: [], webp: {}, metrics: null, error: 'The preview URL must use https to render.' }
+    if (typeof shell === 'string') return { shots: [], webp: {}, metrics: null, error: shell, fontsNotReady: [] }
+    if (!shell.origin.startsWith('https://')) return { shots: [], webp: {}, metrics: null, error: 'The preview URL must use https to render.', fontsNotReady: [] }
     const { renderComposed } = await import('../lib/design/render/render-composed')
     const html = composeThemeDoc(shell.shellHtml, theme)
-    const out: PageRender = { shots: [], webp: {}, metrics: null, error: null }
+    const out: PageRender = { shots: [], webp: {}, metrics: null, error: null, fontsNotReady: [] }
     const measured: ViewportMetrics[] = []
     for (const viewport of VIEWPORTS) {
       try {
         const r = await renderComposed({ html, shellOrigin: shell.origin, viewport, crops: false, metrics: true })
-        if (!r.fontsReady) notes.push(`Fonts not ready — ${fileBase} ${page} ${viewport} was captured with the webfonts that had loaded.`)
+        if (!r.fontsReady) {
+          notes.push(`Fonts not ready — ${fileBase} ${page} ${viewport} was captured with the webfonts that had loaded.`)
+          out.fontsNotReady.push(viewport)
+        }
         if (r.sample) measured.push(evaluatePageSample(viewport, r.sample))
         const fold = r.shots.find((s) => s.kind === 'fold')
         if (!fold) continue
@@ -431,16 +435,18 @@ async function main() {
           row.errors.push('The cap stopped this call before it produced a concept.')
         } else {
           row.status = 'failed'
-          row.errors.push(`No usable answer (${result.stoppedReason ?? 'no_output'}).`)
+          row.errors.push(noUsableAnswerText(result))
         }
       }
       if (row.status !== 'valid' && t.slot.apiErrors.length > 0) row.errors.push('The API rejected the call — see API errors below.')
-      console.log(`    → ${row.status}${row.bundle ? ` "${row.bundle.name}"` : ''} in ${(t.latencyMs / 1000).toFixed(1)}s, $${(row.generation.costUsd).toFixed(3)}`)
+      const rejected = rejectionText(result)
+      console.log(`    → ${row.status}${row.bundle ? ` "${row.bundle.name}"` : ''} in ${(t.latencyMs / 1000).toFixed(1)}s, $${(row.generation.costUsd).toFixed(3)}${rejected ? ` — ${rejected}` : ''}`)
     }
   }
 
   // ── renders + render checks + distinctness
   const primaryWebp = new Map<AbConcept, Partial<Record<Viewport, Buffer>>>()
+  const primaryFontsNotReady = new Map<AbConcept, Viewport[]>()
   for (const row of concepts) {
     const bundle = bundles.get(row)
     if (!bundle) continue
@@ -461,7 +467,10 @@ async function main() {
       const r = await renderPage(page, theme, `concepts/${slug(row.model)}/c${row.position + 1}`)
       row.shots.push(...r.shots)
       row.checks.push(checkOf(page, r, baselines.get(page) ?? null))
-      if (page === primaryPage) primaryWebp.set(row, r.webp)
+      if (page === primaryPage) {
+        primaryWebp.set(row, r.webp)
+        primaryFontsNotReady.set(row, r.fontsNotReady)
+      }
     }
   }
 
@@ -474,7 +483,7 @@ async function main() {
   }
   const othersOf = (row: AbConcept): PriorConcept[] =>
     concepts.filter((c) => c !== row && c.model === row.model && bundles.has(c)).map((c) => ({ position: c.position, bundle: bundles.get(c) as DesignBundle }))
-  type LoopRender = { desktop: Buffer; mobile: Buffer | null; gateFailures: string[] }
+  type LoopRender = { desktop: Buffer; mobile: Buffer | null; gateFailures: string[]; fontsNotReady: Viewport[] }
   type CritiqueRun = { loop: LoopCritique; status: AbCritiqueStatus; view: AbCritique | null; stats: AbCallStats | null; errors: string[] }
 
   // ONE judge call, exactly as refine-stage's critique unit builds it.
@@ -497,6 +506,7 @@ async function main() {
       gateFailures: render.gateFailures,
       desktop: new Uint8Array(render.desktop),
       mobile: render.mobile ? new Uint8Array(render.mobile) : null,
+      fontsNotReady: render.fontsNotReady,
     })
     const messages = buildCachedPartsMessages(prompt.staticPrefix, prompt.parts, { ttl: '5m', ...(prompt.sharedPartCount > 0 ? { breakAt: prompt.sharedPartCount - 1 } : {}) })
     const projected = projectCallUsd({ model: judge, inputUsd: estimateInputUsd(CRITIC_SYSTEM_PROMPT, messages, judge), maxOutputTokens: critiqueAttemptTokens })
@@ -521,7 +531,9 @@ async function main() {
     const result = t.value
     budget.charge(result ? result.costUsd : spend)
     const stats = callStats(t, result ? result.costUsd : spend, result?.estimatedUsd ?? 0)
-    const errors = [...(t.error ? [`Critique threw: ${t.error}`] : []), ...(result?.errors ?? [])]
+    const rejected = rejectionText(result)
+    if (rejected) console.log(`    → critique failed — ${rejected}`)
+    const errors = [...(t.error ? [`Critique threw: ${t.error}`] : []), ...(rejected ? [rejected] : []), ...(result?.errors ?? [])]
     if (result?.critique) {
       const k = result.critique
       return { loop: { kind: 'ok', passed: k.passed, gateFailures: render.gateFailures.length, record: k }, status: 'done', view: critiqueView(k), stats, errors }
@@ -595,9 +607,10 @@ async function main() {
     }
     rev.status = result && result.errors.length > 0 ? 'invalid' : 'failed'
     if (result && result.errors.length > 0) rev.errors.push(`Not usable: ${revisionRejectionReason(result.errors)}`)
-    else if (result) rev.errors.push(`No usable answer (${result.stoppedReason ?? 'no_output'}).`)
+    else if (result) rev.errors.push(noUsableAnswerText(result))
     if (t.slot.apiErrors.length > 0) rev.errors.push('The API rejected the call — see API errors below.')
-    console.log(`    → revision ${rev.round} ${rev.status}`)
+    const rejected = rejectionText(result)
+    console.log(`    → revision ${rev.round} ${rev.status}${rejected ? ` — ${rejected}` : ''}`)
     return { kind: 'invalid' }
   }
 
@@ -612,6 +625,7 @@ async function main() {
           desktop: webp.desktop,
           mobile: webp.mobile ?? null,
           gateFailures: row.checks.find((c) => c.page === primaryPage)?.gateFailures ?? [],
+          fontsNotReady: primaryFontsNotReady.get(row) ?? [],
         }
         let round: AbRevision | null = null
         const loop = await runReviseLoop<DesignBundle, LoopRender, CritiqueRecord>(
@@ -652,7 +666,7 @@ async function main() {
                 current?.errors.push(`Render: ${r.error ?? 'no desktop render was produced'} — not critiqued.`)
                 return null
               }
-              return { desktop: r.webp.desktop, mobile: r.webp.mobile ?? null, gateFailures: checkOf(primaryPage, r, baselines.get(primaryPage) ?? null).gateFailures }
+              return { desktop: r.webp.desktop, mobile: r.webp.mobile ?? null, gateFailures: checkOf(primaryPage, r, baselines.get(primaryPage) ?? null).gateFailures, fontsNotReady: r.fontsNotReady }
             },
           }
         )

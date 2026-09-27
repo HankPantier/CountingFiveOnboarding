@@ -61,6 +61,7 @@ import {
 } from './run-store'
 import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
 import { CONCEPT_STOPPED_MID_REVIEW, hasStalledConcept, parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
+import { fontsNotReadyViewports } from './screenshots'
 import type { RunScreenshot } from './run-types'
 import { STEP_MODEL_BUDGET_MS, type StepContext, type StepOutcome } from './step-types'
 import { downloadDesignImage, removeDesignPaths } from './storage'
@@ -396,6 +397,7 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
         gateFailures: gate,
         desktop,
         mobile,
+        fontsNotReady: fontsNotReadyViewports(shots),
       }),
       iteration: claimed.iterations,
       paletteFreedom: b.paletteFreedom,

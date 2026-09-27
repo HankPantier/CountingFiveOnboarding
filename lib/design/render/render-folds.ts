@@ -105,7 +105,9 @@ export async function renderFoldsTo(args: {
       const { webp, width, height } = await toWebp(fold.png)
       const path = designStoragePath(args.sessionId, ...args.folder, `${args.name}-${viewport}.webp`)
       await storeDesignImage(args.db, path, webp, { upsert: true })
-      shots.push({ viewport, path, width, height })
+      // A fold captured before its webfonts loaded is still kept (the render
+      // never fails on fonts); the flag reaches the Studio note and the critic.
+      shots.push({ viewport, path, width, height, ...(result.fontsReady === false ? { fontsReady: false as const } : {}) })
       images.push({ viewport, webp })
       if (viewport === 'desktop') desktopWebp = webp
     } catch (err) {
