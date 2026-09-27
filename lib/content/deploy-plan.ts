@@ -194,10 +194,13 @@ function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-// Urls of every published page the deployed site will have: what's already on
-// draft plus what this package ships.
-function livePageUrls(input: PlanInput): Set<string> {
-  return pageUrlsFromPaths([...input.draftBlobs.keys(), ...input.entries.map((e) => e.path)])
+// Urls of every published page the deployed site will have: the POST-push
+// tree, i.e. what is already on draft plus the entries this plan actually
+// pushes. A package entry the plan skips (e.g. a page the editor moved away,
+// skipped as 'removed') is NOT live, so a fresh editor-move 301 away from its
+// old url survives the re-deploy.
+function livePageUrls(draftBlobs: ReadonlyMap<string, string>, pushedPaths: Iterable<string>): Set<string> {
+  return pageUrlsFromPaths([...draftBlobs.keys(), ...pushedPaths])
 }
 
 export type PlanInput = {
@@ -214,9 +217,9 @@ export function planDeployPush(input: PlanInput): DeployPlan {
   const { entries, draftBlobs, baseline } = input
   const manifestGuard = draftBlobs.get(DEPLOY_MANIFEST_PATH) ?? null
 
-  const live = livePageUrls(input)
-
   if (baseline === null) {
+    // First deploy: a plain overlay, so every entry is pushed.
+    const live = livePageUrls(draftBlobs, entries.map((e) => e.path))
     const safeEntries = entries.map((e) =>
       e.path === REDIRECTS_CSV_PATH
         ? { ...e, content: sanitizeRedirectsCsv(asText(e.content), { livePaths: live }) }
@@ -240,27 +243,10 @@ export function planDeployPush(input: PlanInput): DeployPlan {
   const skipped: SkippedFile[] = []
 
   for (const e of entries) {
+    // redirects.csv is planned after the loop, once the pushed set is known.
+    if (e.path === REDIRECTS_CSV_PATH) continue
     const draft = draftBlobs.get(e.path) ?? null
     const base = baseline[e.path] ?? null
-
-    if (e.path === REDIRECTS_CSV_PATH) {
-      const generated = sanitizeRedirectsCsv(asText(e.content), { livePaths: live })
-      if (draft === null) {
-        push.push({ path: e.path, content: generated, expectedBlobSha: null })
-        nextManifest[e.path] = gitBlobSha(generated)
-        continue
-      }
-      const current = input.redirects?.draft ?? null
-      if (current === null) {
-        // Couldn't read the draft copy — leave it alone rather than guess.
-        skipped.push({ path: e.path, reason: 'edited' })
-        continue
-      }
-      const merged = mergeRedirectsCsv(current, generated, input.redirects?.lastDeployed ?? null, live)
-      if (merged !== current) push.push({ path: e.path, content: merged, expectedBlobSha: draft })
-      nextManifest[e.path] = gitBlobSha(merged)
-      continue
-    }
 
     const sha = gitBlobSha(e.content)
 
@@ -293,6 +279,26 @@ export function planDeployPush(input: PlanInput): DeployPlan {
       path: e.path,
       reason: draft === null ? 'removed' : base === null ? 'created' : 'edited',
     })
+  }
+
+  const redirectsEntry = entries.find((e) => e.path === REDIRECTS_CSV_PATH)
+  if (redirectsEntry) {
+    const path = REDIRECTS_CSV_PATH
+    const draft = draftBlobs.get(path) ?? null
+    const live = livePageUrls(draftBlobs, push.map((p) => p.path))
+    const generated = sanitizeRedirectsCsv(asText(redirectsEntry.content), { livePaths: live })
+    const current = input.redirects?.draft ?? null
+    if (draft === null) {
+      push.push({ path, content: generated, expectedBlobSha: null })
+      nextManifest[path] = gitBlobSha(generated)
+    } else if (current === null) {
+      // Couldn't read the draft copy — leave it alone rather than guess.
+      skipped.push({ path, reason: 'edited' })
+    } else {
+      const merged = mergeRedirectsCsv(current, generated, input.redirects?.lastDeployed ?? null, live)
+      if (merged !== current) push.push({ path, content: merged, expectedBlobSha: draft })
+      nextManifest[path] = gitBlobSha(merged)
+    }
   }
 
   push.push({

@@ -315,7 +315,29 @@ describe('redirects.csv loop safety on deploy', () => {
       baseline: { 'content/redirects.csv': sha(header) },
       redirects: { draft, lastDeployed: header },
     })
-    expect(plan.push[0]).toMatchObject({ path: 'content/redirects.csv', content: header })
+    expect(plan.push.find((p) => p.path === 'content/redirects.csv')).toMatchObject({ content: header })
+  })
+
+  it('keeps a fresh editor-move 301 when the package re-ships the moved page (skipped as removed)', () => {
+    // Deployed /about-us; the editor then moved it to /about (the move reuses
+    // the blob and appends the 301); now the operator re-deploys.
+    const page = 'url: /about-us\n'
+    const draft = header + '/about-us,/about,301,Relocated via editor\n'
+    const plan = planDeployPush({
+      entries: [
+        { path: 'content/pages/about-us.md', content: page },
+        { path: 'content/redirects.csv', content: header },
+      ],
+      draftBlobs: new Map([
+        ['content/pages/about.md', sha(page)],
+        ['content/redirects.csv', sha(draft)],
+      ]),
+      baseline: { 'content/pages/about-us.md': sha(page), 'content/redirects.csv': sha(header) },
+      redirects: { draft, lastDeployed: header },
+    })
+    expect(plan.skipped).toContainEqual({ path: 'content/pages/about-us.md', reason: 'removed' })
+    // The draft file is unchanged, so nothing is pushed for it: the row survives.
+    expect(plan.push.map((p) => p.path)).toEqual([DEPLOY_MANIFEST_PATH])
   })
 
   it('sanitizes the generated file on a first deploy', () => {
