@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { FALLBACK_PALETTE } from './deliverable-defaults'
 import { getPhaseStatus, isCompletePalette, isDesignSystemLocked, paletteFromBrandJson } from './brand-gate'
 
 const PALETTE = Object.fromEntries(
@@ -62,5 +63,12 @@ describe('paletteFromBrandJson (PIPE-4)', () => {
     expect(paletteFromBrandJson('{')).toBeNull()
     expect(paletteFromBrandJson(JSON.stringify({ palette: { ...full, action: 'teal' } }))).toBeNull()
     expect(paletteFromBrandJson(JSON.stringify({}))).toBeNull()
+  })
+
+  it('treats a brand.json carrying FALLBACK_PALETTE as NOT locked (unbranded sites stay gated)', () => {
+    const fallback = Object.fromEntries(Object.entries(FALLBACK_PALETTE).map(([role, sw]) => [role, sw.hex.toLowerCase()]))
+    expect(paletteFromBrandJson(JSON.stringify({ palette: fallback }))).toBeNull()
+    // One real colour is enough to count as a chosen palette.
+    expect(paletteFromBrandJson(JSON.stringify({ palette: { ...fallback, primary: '#003b71' } }))).not.toBeNull()
   })
 })

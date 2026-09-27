@@ -4,6 +4,8 @@
 // silently shipped FALLBACK_PALETTE (generic slate/teal) — the main reason the
 // fleet looked unbranded. Pure + client-safe (PhaseStepper imports it).
 
+import { FALLBACK_PALETTE } from './deliverable-defaults'
+
 // #rgb, #rrggbb, or #rrggbbaa — the forms chroma-js and the theme generator accept.
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const PALETTE_ROLES = ['primary', 'secondary', 'complementary', 'action', 'nearBlack', 'nearWhite'] as const
@@ -24,6 +26,7 @@ export function isCompletePalette(palette: unknown): boolean {
  * The six-role palette from a content/brand.json text (roles as hex strings),
  * in PaletteData form, or null when the file is unparseable or incomplete.
  * brand.json is the LIVE palette: Theme Studio and Design Studio write it.
+ * The generic FALLBACK_PALETTE counts as no palette.
  */
 export function paletteFromBrandJson(text: string | null | undefined): Record<(typeof PALETTE_ROLES)[number], { hex: string; name: string }> | null {
   if (!text) return null
@@ -38,7 +41,12 @@ export function paletteFromBrandJson(text: string | null | undefined): Record<(t
   const out = Object.fromEntries(
     PALETTE_ROLES.map((role) => [role, { hex: typeof pal[role] === 'string' ? (pal[role] as string) : '', name: role }])
   ) as Record<(typeof PALETTE_ROLES)[number], { hex: string; name: string }>
-  return isCompletePalette(out) ? out : null
+  if (!isCompletePalette(out)) return null
+  // The pre-gate packager shipped FALLBACK_PALETTE into brand.json on the
+  // unbranded sites: that is not a locked palette, so the caller falls through
+  // to the job palette (and the 409 when that is missing too).
+  const isFallback = PALETTE_ROLES.every((role) => out[role].hex.toLowerCase() === FALLBACK_PALETTE[role].hex.toLowerCase())
+  return isFallback ? null : out
 }
 
 /** True when the value carries a type pairing (the one field every consumer needs). */

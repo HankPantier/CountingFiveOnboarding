@@ -66,4 +66,15 @@ describe('GET /api/edit/[id]/export-divi — no silent house-colour fallback', (
     expect(outcome).not.toBe(409)
     h.brandJson = null
   })
+
+  it('a brand.json still on FALLBACK_PALETTE does not unlock the export (PIPE-4)', async () => {
+    h.job = { palette: null }
+    h.brandJson = JSON.stringify({
+      palette: { primary: '#1F3A5F', secondary: '#5A6B7B', complementary: '#C2703D', action: '#0E8C9C', nearBlack: '#1A1C1E', nearWhite: '#F8F8F6' },
+    })
+    const res = await GET(new Request('http://test'), { params: Promise.resolve({ id: 'sess-1' }) })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: string }).error).toBe(DESIGN_SYSTEM_REQUIRED_FOR_EXPORT)
+    h.brandJson = null
+  })
 })
