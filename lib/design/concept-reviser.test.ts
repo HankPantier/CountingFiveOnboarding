@@ -77,6 +77,20 @@ describe('reviseConcept', () => {
     expect(r.errors.join(' ')).toContain('palette.primary')
     expect(m.generateJson).toHaveBeenCalledTimes(1)
   })
+  it('production repro (run 4f6abd93, concept 2): a revision whose rationale runs past 2000 chars is kept, clamped — not thrown away as "rationale: Too big"', async () => {
+    const longRationale = `${'Revision 1 fixes the vermilion-on-ink contrast failures and restores the serif voice. '.repeat(30)}End.`
+    expect(longRationale.length).toBeGreaterThan(2000)
+    const longMoves = [...Array.from({ length: 8 }, (_, i) => `Move ${i + 1}: ${'x'.repeat(250)}`)]
+    answer = { concepts: [{ ...rawOf(REVISED), rationale: longRationale, moves: longMoves }] }
+    const r = await reviseConcept(args())
+    expect(r.errors).toEqual([])
+    expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
+    expect(r.concept?.bundle.rationale.length).toBeLessThanOrEqual(2000)
+    expect(r.concept?.bundle.rationale.endsWith('…')).toBe(true)
+    expect(r.concept?.bundle.moves).toHaveLength(6)
+    expect(r.concept?.bundle.moves.every((mv) => mv.length <= 200)).toBe(true)
+    expect(m.generateJson).toHaveBeenCalledTimes(1)
+  })
   it('a revision that converges onto another concept is rejected as too similar', async () => {
     const r = await reviseConcept(args({ others: [{ position: 1, bundle: REVISED }] }))
     expect(r.concept).toBeNull()

@@ -107,7 +107,18 @@ describe('renderErrorMessage', () => {
 describe('loadRenderShell', () => {
   it('explains a missing preview URL', async () => {
     m.siteUrl.mockResolvedValue(null)
-    expect(await loadRenderShell({ jobId: 'j', githubRepo: 'o/r' }, '/')).toEqual({ ok: false, reason: 'No preview URL is set for this client.' })
+    expect(await loadRenderShell({ jobId: 'j', githubRepo: 'o/r' }, '/')).toEqual({ ok: false, reason: 'No preview URL is set for this client.', retryable: false })
+  })
+  it.each([
+    [508, true], // Vercel recursion protection deep in a step chain
+    [502, true],
+    [500, true],
+    [404, false],
+    [undefined, false], // unreachable / blocked / not HTML
+  ])('a live-site failure with status %s is retryable=%s', async (status, retryable) => {
+    m.siteUrl.mockResolvedValue('https://acme.vercel.app')
+    m.shell.mockResolvedValue({ ok: false, reason: 'x', ...(status === undefined ? {} : { status }) })
+    expect(await loadRenderShell({ jobId: 'j', githubRepo: 'o/r' }, '/')).toEqual({ ok: false, reason: 'x', retryable })
   })
   it('resolves the page on the preview origin and returns the shell', async () => {
     m.siteUrl.mockResolvedValue('https://acme.vercel.app')

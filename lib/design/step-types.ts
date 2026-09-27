@@ -8,7 +8,10 @@ export type StepOutcome =
   // position: the position designed this step (null: no model call).
   | { kind: 'generated'; position: number | null; next: 'generate' | 'render' }
   // One critique-loop unit ran; remaining: some concept still has work.
-  | { kind: 'refined'; unit: ReviewUnit | 'finish'; conceptId: string; remaining: boolean }
+  // freshChain: the unit was released after a transient live-site failure
+  // (Vercel's 508 deep in the chain) — the next step must come from a FRESH
+  // chain (a nudge), not a self-call that would inherit the same depth.
+  | { kind: 'refined'; unit: ReviewUnit | 'finish'; conceptId: string; remaining: boolean; freshChain?: true }
   // A concept parked mid-loop by a Retry went back to refining (P4).
   | { kind: 'resumed'; conceptId: string }
   | { kind: 'finalized' }

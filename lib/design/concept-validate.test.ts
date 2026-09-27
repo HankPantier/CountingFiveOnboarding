@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { VALID } from './__fixtures__/valid-bundle'
 import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
-import { checkConceptCandidate, parseConceptsEnvelope, validateConceptBundle, type ConceptContext } from './concept-validate'
+import { checkConceptCandidate, clampConceptProse, clampProse, parseConceptsEnvelope, validateConceptBundle, type ConceptContext } from './concept-validate'
 import { DEFAULT_CAPABILITIES } from './run-types'
 import { parseTemplateMarker } from './capabilities'
 
@@ -113,5 +113,30 @@ describe('checkConceptCandidate', () => {
   it('returns the validated concept when valid and distinct', () => {
     const r = checkConceptCandidate(rawOf(VALID), CTX, [])
     expect(r.ok && r.concept.bundle.name).toBe(VALID.name)
+  })
+})
+
+describe('clampProse / clampConceptProse', () => {
+  it('leaves text within the cap alone', () => {
+    expect(clampProse('short', 10)).toBe('short')
+    expect(clampProse('x'.repeat(10), 10)).toBe('x'.repeat(10))
+  })
+  it('cuts at a word boundary and ends in an ellipsis, never over the cap', () => {
+    const out = clampProse('alpha beta gamma delta epsilon', 20)
+    expect(out).toBe('alpha beta gamma…')
+    expect(out.length).toBeLessThanOrEqual(20)
+    expect(clampProse('x'.repeat(50), 20)).toBe(`${'x'.repeat(19)}…`)
+  })
+  it('clamps tagline / rationale / moves; leaves non-strings for zod to reject', () => {
+    const out = clampConceptProse({ tagline: 't '.repeat(200), rationale: 'r '.repeat(1500), moves: Array.from({ length: 9 }, () => 'm '.repeat(150)), name: 'N' })
+    expect((out.tagline as string).length).toBeLessThanOrEqual(160)
+    expect((out.rationale as string).length).toBeLessThanOrEqual(2000)
+    expect(out.moves as string[]).toHaveLength(6)
+    expect(out.name).toBe('N')
+    expect(clampConceptProse({ rationale: 42, moves: [1, 'a'] })).toEqual({ rationale: 42, moves: [1, 'a'] })
+  })
+  it('an over-long rationale no longer fails validation', () => {
+    const r = validateConceptBundle({ ...rawOf(VALID), rationale: 'word '.repeat(600) }, CTX)
+    expect(r.ok).toBe(true)
   })
 })

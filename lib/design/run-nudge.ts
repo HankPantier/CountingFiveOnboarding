@@ -43,7 +43,11 @@ export function pickStalledRuns(
     .map(({ run }) => run)
 }
 
-type Trigger = (sessionId: string, runId: string, opts: { nudge?: boolean }) => Promise<TriggerResult>
+type Trigger = (sessionId: string, runId: string, opts: { nudge?: boolean; hop: number }) => Promise<TriggerResult>
+
+// The cron route is itself one function deep in its x-vercel-id chain, so the
+// step it starts is hop 1 (see MAX_CHAIN_HOPS in run-trigger.ts).
+export const CRON_NUDGE_HOP = 1
 
 export async function nudgeStalledDesignRuns(
   db: SupabaseClient<Database>,
@@ -72,7 +76,7 @@ export async function nudgeStalledDesignRuns(
     for (const run of pickStalledRuns(runs, concepts ?? [], now)) {
       // Flagged as a nudge: the Bearer path only ever advances (never retries),
       // and a run that stopped being active meanwhile is a 409 (refused).
-      const outcome = await trigger(run.session_id, run.id, { nudge: true })
+      const outcome = await trigger(run.session_id, run.id, { nudge: true, hop: CRON_NUDGE_HOP })
       if (outcome === 'started') result.nudged.push(run.id)
       else result.refused += 1
     }

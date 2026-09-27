@@ -3,7 +3,7 @@ import { asJson } from '@/lib/supabase/json-typed'
 import { CID, RID, SID, makeConceptRow, makeRunRow } from './__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT, THEME_CSS_TEXT } from './__fixtures__/theme-texts'
 import { VALID } from './__fixtures__/valid-bundle'
-import { newReview, type ConceptReview } from './review'
+import { MAX_RENDER_RETRIES, newReview, type ConceptReview } from './review'
 import type { CritiqueRecord } from './critique'
 import { DEFAULT_CAPABILITIES } from './run-types'
 
@@ -205,6 +205,71 @@ describe('renderUnit', () => {
   })
 })
 
+describe('renderUnit — transient live-site failures (Vercel 508 deep in a chain)', () => {
+  const REFUSED = { ok: false, reason: 'The live site returned HTTP 508.', retryable: true }
+
+  it('the incident: a re-render after revision 2 gets a 508 → NOT consumed: still refining, render next, retry counted, fresh chain asked for', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null }, { iterations: 2, screenshots: asJson(R1) })])
+    m.loadShell.mockResolvedValue(REFUSED)
+    const out = await renderUnit({} as never, CTX, RUN, CID, 'rerender')
+    expect(m.renderFolds).not.toHaveBeenCalled()
+    const patch = unitPatch()
+    expect(patch.status).toBe('refining')
+    expect(patch.review).toMatchObject({ next: 'render', claim: null, outcome: null, renderRetries: 1 })
+    expect(patch.review.notes.some((n) => n.startsWith('Render skipped:'))).toBe(false)
+    expect(patch.error).toBeUndefined() // not flashed on the card; the final failure still is
+    expect(patch.screenshots).toBeUndefined() // the previous render is kept, nothing deleted
+    expect(m.remove).not.toHaveBeenCalled()
+    expect(out).toEqual({ kind: 'refined', unit: 'render', conceptId: CID, remaining: true, freshChain: true })
+  })
+
+  it('a first render refused the same way is released too (it resumes as a re-render)', async () => {
+    m.claimConceptRender.mockResolvedValue(makeConceptRow({ status: 'refining' }))
+    m.listConcepts.mockResolvedValue([makeConceptRow({ status: 'refining' })])
+    m.loadShell.mockResolvedValue(REFUSED)
+    const out = await renderUnit({} as never, CTX, RUN, CID, 'initial')
+    const patch = m.settleInitialRender.mock.calls[0][3] as UnitPatch
+    expect(patch.status).toBe('refining')
+    expect(patch.review).toMatchObject({ next: 'render', renderRetries: 1 })
+    expect(out).toMatchObject({ kind: 'refined', freshChain: true })
+  })
+
+  it('bounded: once MAX_RENDER_RETRIES are spent the render ends not_rendered like any other failure', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null, renderRetries: MAX_RENDER_RETRIES }, { iterations: 1 })])
+    m.loadShell.mockResolvedValue(REFUSED)
+    const out = await renderUnit({} as never, CTX, RUN, CID, 'rerender')
+    expect(unitPatch().status).toBe('ready')
+    expect(unitPatch().review.outcome).toBe('not_rendered')
+    expect(unitPatch().review.notes.at(-1)).toMatch(/^Render skipped: The live site returned HTTP 508\./)
+    expect(out).not.toHaveProperty('freshChain')
+  })
+
+  it('a non-transient shell failure (4xx, no preview URL) is not retried', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null }, { iterations: 1 })])
+    m.loadShell.mockResolvedValue({ ok: false, reason: 'The live site returned HTTP 404.', retryable: false })
+    await renderUnit({} as never, CTX, RUN, CID, 'rerender')
+    expect(unitPatch().review.outcome).toBe('not_rendered')
+  })
+
+  it('a render that then succeeds clears the retry count and critiques as usual', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null, renderRetries: 1 }, { iterations: 2, screenshots: asJson(R1) })])
+    m.renderFolds.mockResolvedValue({ shots: R2, desktopWebp: Buffer.from([1]), metrics: OK_METRICS, error: null })
+    const out = await renderUnit({} as never, CTX, RUN, CID, 'rerender')
+    expect(unitPatch().review.next).toBe('critique')
+    expect(unitPatch().review).not.toHaveProperty('renderRetries')
+    expect(unitPatch().error).toBeNull()
+    expect(out).not.toHaveProperty('freshChain')
+  })
+
+  it('a released FIRST render still gets the current-site retry when it comes back as a re-render', async () => {
+    const bare = makeRunRow({ status: 'refining', base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [], notes: [] }) })
+    m.getRun.mockResolvedValue(bare)
+    m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null, initialScreenshots: [], renderRetries: 1 }, { iterations: 0, screenshots: asJson([]) })])
+    await renderUnit({} as never, CTX, bare, CID, 'rerender')
+    expect(m.renderFolds.mock.calls.map((c) => (c[0] as { name: string }).name)).toEqual(['current', 'concept-0-r0'])
+  })
+})
+
 describe('critiqueUnit', () => {
   const result = (critique: CritiqueRecord | null, over = {}) => ({ critique, errors: [], costUsd: 0.1, estimatedUsd: 0, stoppedReason: critique ? null : 'no_output', ...over })
 
@@ -368,12 +433,13 @@ describe('critiqueUnit', () => {
 })
 
 describe('reviseUnit', () => {
-  it('a valid revision replaces the bundle, counts the round and queues a re-render (metrics cleared)', async () => {
-    m.listConcepts.mockResolvedValue([looping({ next: 'revise', critiques: [crit(false)] })])
+  it('a valid revision replaces the bundle, counts the round and queues a re-render (metrics + render retries cleared)', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'revise', critiques: [crit(false)], renderRetries: 1 })])
     m.revise.mockResolvedValue({ concept: { bundle: REVISED, files: FILES, notes: [] }, errors: [], notes: [], costUsd: 0.4, estimatedUsd: 0, stoppedReason: null })
     await reviseUnit({} as never, CTX, RID, CID, () => 1_000)
     expect(unitPatch()).toMatchObject({ status: 'refining', bundle: REVISED, iterations: 1 })
     expect(unitPatch().review).toMatchObject({ next: 'render', metrics: null, metricsIteration: null })
+    expect(unitPatch().review).not.toHaveProperty('renderRetries')
     expect(m.gather.mock.calls[0][4]).toEqual({ markup: true })
     expect(texts(m.revise.mock.calls[0][0])).toContain('revision round 1')
     expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { costUsd: 0.4 })

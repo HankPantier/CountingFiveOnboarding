@@ -41,16 +41,24 @@ export function renderErrorMessage(err: unknown): string {
   return 'The render failed.'
 }
 
+// A live-site 5xx (Vercel's 508 recursion refusal when the fetch runs deep in
+// a step chain, or a site briefly down) is transient: the caller may retry it
+// from a fresh chain. Anything else (no preview URL, a 4xx, a blocked URL,
+// not HTML) is not.
+export function isRetryableShellStatus(status: number | undefined): boolean {
+  return status !== undefined && status >= 500 && status <= 599
+}
+
 export async function loadRenderShell(
   target: { jobId: string; githubRepo: string },
   pagePath: string
-): Promise<{ ok: true; shell: RenderShell; path: string } | { ok: false; reason: string }> {
+): Promise<{ ok: true; shell: RenderShell; path: string } | { ok: false; reason: string; retryable: boolean }> {
   const siteUrl = await getPreviewSiteUrl(target)
-  if (!siteUrl) return { ok: false, reason: 'No preview URL is set for this client.' }
+  if (!siteUrl) return { ok: false, reason: 'No preview URL is set for this client.', retryable: false }
   const page = resolvePreviewPageUrl(siteUrl, pagePath)
-  if (!page.ok) return { ok: false, reason: page.reason }
+  if (!page.ok) return { ok: false, reason: page.reason, retryable: false }
   const shell = await buildPreviewShell(page.url)
-  if (!shell.ok) return { ok: false, reason: shell.reason }
+  if (!shell.ok) return { ok: false, reason: shell.reason, retryable: isRetryableShellStatus(shell.status) }
   return { ok: true, shell: { origin: shell.origin, shellHtml: shell.shellHtml }, path: page.path }
 }
 

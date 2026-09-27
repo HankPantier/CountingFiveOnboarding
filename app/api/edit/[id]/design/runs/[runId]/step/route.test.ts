@@ -17,6 +17,7 @@ const m = vi.hoisted(() => ({
   runDesignStep: vi.fn(),
   shouldChain: vi.fn(),
   chainOrFail: vi.fn(async (..._a: unknown[]) => {}),
+  stallForFreshChain: vi.fn(async (..._a: unknown[]) => {}),
   failActiveRun: vi.fn(async (..._a: unknown[]) => {}),
   after: vi.fn(),
 }))
@@ -36,8 +37,10 @@ vi.mock('@/lib/design/run-orchestrator', () => ({
   runDesignStep: (...a: unknown[]) => m.runDesignStep(...a),
   shouldChain: (o: unknown) => m.shouldChain(o),
 }))
-vi.mock('@/lib/design/run-trigger', () => ({
+vi.mock('@/lib/design/run-trigger', async (orig) => ({
+  ...((await orig()) as object),
   chainOrFail: (...a: unknown[]) => m.chainOrFail(...a),
+  stallForFreshChain: (...a: unknown[]) => m.stallForFreshChain(...a),
   failActiveRun: (...a: unknown[]) => m.failActiveRun(...a),
 }))
 vi.mock('next/server', async (orig) => ({ ...((await orig()) as object), after: (fn: () => unknown) => m.after(fn) }))
@@ -88,7 +91,8 @@ describe('POST step — gate matrix', () => {
     expect(m.gate).not.toHaveBeenCalled()
     await runAfter()
     expect(m.runDesignStep).toHaveBeenCalledWith({ sessionId: SID, runId: RID, jobId: 'job-1', githubRepo: 'o/r' })
-    expect(m.chainOrFail).toHaveBeenCalledWith(m.db, SID, RID)
+    // No hop header: an external Bearer caller is hop 0.
+    expect(m.chainOrFail).toHaveBeenCalledWith(m.db, SID, RID, 0)
   })
   it('does not chain when the orchestrator says the run is done', async () => {
     m.shouldChain.mockReturnValue(false)
@@ -241,6 +245,36 @@ describe('POST step — automatic nudges (?nudge=1) never retry', () => {
     m.transitionRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
     expect((await call()).status).toBe(202)
     expect(m.transitionRun.mock.calls[0].slice(0, 3)).toEqual([m.db, RID, ['error']])
+  })
+})
+
+describe('POST step — hop budget (x-design-hop)', () => {
+  it('a Bearer step chains from the hop its header carries', async () => {
+    await call({ authorization: 'Bearer s3cret', 'x-design-hop': '2' })
+    await runAfter()
+    expect(m.chainOrFail).toHaveBeenCalledWith(m.db, SID, RID, 2)
+  })
+  it('a malformed Bearer hop is treated as the budget (never lengthens the chain)', async () => {
+    await call({ authorization: 'Bearer s3cret', 'x-design-hop': 'banana' })
+    await runAfter()
+    expect(m.chainOrFail).toHaveBeenCalledWith(m.db, SID, RID, 2)
+  })
+  it('the header never authorizes anything: a bad bearer with a hop is still a 401', async () => {
+    expect((await call({ authorization: 'Bearer nope', 'x-design-hop': '0' })).status).toBe(401)
+    expect(m.after).not.toHaveBeenCalled()
+  })
+  it('an admin (browser) step ignores the header — it is always hop 0', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'refining' }))
+    await call({ 'x-design-hop': '2' })
+    await runAfter()
+    expect(m.chainOrFail).toHaveBeenCalledWith(m.db, SID, RID, 0)
+  })
+  it('a render released for a fresh chain stalls the run instead of self-chaining', async () => {
+    m.runDesignStep.mockResolvedValue({ kind: 'refined', unit: 'render', conceptId: 'c', remaining: true, freshChain: true })
+    await call({ authorization: 'Bearer s3cret', 'x-design-hop': '1' })
+    await runAfter()
+    expect(m.chainOrFail).not.toHaveBeenCalled()
+    expect(m.stallForFreshChain).toHaveBeenCalledWith(m.db, SID, RID, expect.any(String))
   })
 })
 

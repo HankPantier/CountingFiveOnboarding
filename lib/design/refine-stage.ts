@@ -35,7 +35,9 @@ import {
   latestCritique,
   newReview,
   parseConceptReview,
+  shouldRetryRender,
   withCritique,
+  withoutRenderRetries,
   withReviewNotes,
   type ConceptReview,
   type ReviewOutcome,
@@ -63,7 +65,9 @@ import { readDraftThemeTexts } from './theme-snapshot'
 
 type Db = SupabaseClient<Database>
 type Now = () => number
-type FoldResult = { shots: RunScreenshot[]; metrics: RenderMetrics | null; error: string | null }
+// retryable: the failure was the live site's transient 5xx (see
+// isRetryableShellStatus) — worth a fresh-chain retry, not a skipped critique.
+type FoldResult = { shots: RunScreenshot[]; metrics: RenderMetrics | null; error: string | null; retryable?: boolean }
 
 const RENDER_FAILED = 'The render failed — use the live preview instead.'
 
@@ -179,7 +183,7 @@ async function ensureCurrentRender(db: Db, ctx: StepContext, conceptId: string):
 
 // A concept's folds, composed exactly as the default apply writes them.
 async function renderConceptFolds(db: Db, ctx: StepContext, pagePath: string, concept: DesignConceptRow): Promise<FoldResult> {
-  const skip = (error: string): FoldResult => ({ shots: [], metrics: null, error })
+  const skip = (error: string, retryable = false): FoldResult => ({ shots: [], metrics: null, error, ...(retryable ? { retryable } : {}) })
   const parsed = parseDesignBundle(concept.bundle)
   if (!parsed.ok) return skip('The stored concept is no longer valid.')
   const theme = await readDraftThemeTexts(ctx.githubRepo)
@@ -188,7 +192,7 @@ async function renderConceptFolds(db: Db, ctx: StepContext, pagePath: string, co
   const files = bundleToRepoFiles(parsed.bundle, { brandText, designText, overridesCss }, { removeLegacy: true })
   if (!files.ok) return skip('The concept could not be prepared for rendering.')
   const shell = await loadRenderShell(ctx, pagePath)
-  if (!shell.ok) return skip(shell.reason)
+  if (!shell.ok) return skip(shell.reason, shell.retryable)
   const r = await renderAndStoreFolds({
     db,
     sessionId: ctx.sessionId,
@@ -219,6 +223,15 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
     if (!c) return { kind: 'noop', reason: 'render already claimed' }
     claimed = c.row
     review = c.review
+    // A first render released after a transient failure comes back here: it
+    // still gets the current-site retry the 'initial' path would have run.
+    if (claimed.iterations === 0 && review.critiques.length === 0) {
+      try {
+        await ensureCurrentRender(db, ctx, conceptId)
+      } catch (err) {
+        console.warn('[design-run] current-site re-render failed', err)
+      }
+    }
   }
   await transitionRun(db, run.id, ['refining'], { stage: 'render' })
 
@@ -230,17 +243,20 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
     result = { shots: [], metrics: null, error: RENDER_FAILED }
   }
 
+  const rendered = result.shots.some((s) => s.viewport === 'desktop')
+  if (!rendered && shouldRetryRender(review, result.retryable === true)) return releaseRender(db, run.id, claimed, mode, review, result.error)
+
   // The concept's latest metrics live in critique.metrics (null: unmeasured).
   const iteration = claimed.iterations
   let next: ConceptReview = {
-    ...review,
+    ...withoutRenderRetries(review),
     claim: null,
     metrics: result.metrics,
     metricsIteration: result.metrics ? iteration : null,
     initialScreenshots: iteration === 0 ? result.shots : review.initialScreenshots,
   }
   let status: ConceptUnitPatch['status'] = 'refining'
-  if (result.shots.some((s) => s.viewport === 'desktop')) {
+  if (rendered) {
     next = { ...next, next: 'critique' }
   } else {
     // Unrenderable ⇒ uncritiquable: the concept stays applicable (P3 rule).
@@ -268,6 +284,31 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
     }
   }
   return afterUnit(db, run.id, 'render', claimed.id)
+}
+
+// A render the live site refused with a transient 5xx (typically Vercel's 508
+// on a fetch deep in a step chain): the unit is NOT consumed — the concept
+// stays refining with `render` still next (retry count + note kept), and the
+// step asks for a FRESH chain (freshChain ⇒ the run is marked stalled and a
+// nudge restarts it) rather than a self-call at the same depth. Bounded by
+// MAX_RENDER_RETRIES: a site that is really down still ends not_rendered.
+async function releaseRender(
+  db: Db,
+  runId: string,
+  claimed: DesignConceptRow,
+  mode: 'initial' | 'rerender',
+  review: ConceptReview,
+  error: string | null
+): Promise<StepOutcome> {
+  const retries = (review.renderRetries ?? 0) + 1
+  // Logged, not shown: the concept card would otherwise flash a 508 for a
+  // retry that usually succeeds. The final failure is shown as before.
+  console.warn(`[design-run] render of concept ${claimed.position + 1} got a transient live-site failure (${error ?? 'unknown'}) — retry ${retries} from a fresh chain`)
+  const patch: ConceptUnitPatch = { status: 'refining', review: { ...review, claim: null, next: 'render', renderRetries: retries } }
+  const settled = mode === 'initial' ? await settleInitialRender(db, runId, claimed, patch) : await settleConceptUnit(db, runId, claimed, patch)
+  if (!settled) return { kind: 'noop', reason: 'the concept changed while rendering' }
+  const outcome = await afterUnit(db, runId, 'render', claimed.id)
+  return outcome.kind === 'refined' ? { ...outcome, freshChain: true } : outcome
 }
 
 type ModelUnitStart =
@@ -447,7 +488,7 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
       return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision ${round} was not usable (${why}) — kept the previous version.`])
     }
     const nextReview = withReviewNotes(
-      { ...review, claim: null, next: 'render', metrics: null, metricsIteration: null },
+      { ...withoutRenderRetries(review), claim: null, next: 'render', metrics: null, metricsIteration: null },
       [...b.notes, ...result.notes].map((n) => `Revision ${round}: ${n}`)
     )
     const settled = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: nextReview, bundle: result.concept.bundle, iterations: round })
