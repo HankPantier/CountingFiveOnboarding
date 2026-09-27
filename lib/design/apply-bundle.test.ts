@@ -7,9 +7,15 @@ const writeFiles = vi.fn()
 
 vi.mock('@/lib/github/repo-files', () => {
   class FileNotFoundError extends Error {}
+  class StaleShaError extends Error {
+    constructor(public path: string) {
+      super(`stale ${path}`)
+    }
+  }
   return {
     DRAFT_BRANCH: 'draft',
     FileNotFoundError,
+    StaleShaError,
     ensureDraftBranch: vi.fn(async () => undefined),
     readFile: vi.fn(async (_repo: string, p: string) => {
       const f = files.get(p)
@@ -20,7 +26,7 @@ vi.mock('@/lib/github/repo-files', () => {
   }
 })
 
-import { readFile } from '@/lib/github/repo-files'
+import { readFile, StaleShaError } from '@/lib/github/repo-files'
 import { applyBundleToDraft } from './apply-bundle'
 import { readRegion } from './bundle-files'
 import { VALID } from './__fixtures__/valid-bundle'
@@ -270,6 +276,21 @@ describe('applyBundleToDraft — design.md (WS-B)', () => {
     const [brand, design] = build.mock.calls.at(-1) as unknown as [{ palette: unknown }, { typography: unknown }]
     expect(brand.palette).toMatchObject({ primary: VALID.palette.primary })
     expect(design.typography).toMatchObject({ headingFont: VALID.typography.headingFont })
+  })
+
+  it('a stale design.md guard drops only the notes; the theme still commits (EDIT-6)', async () => {
+    files.set('content/design.md', { content: GENERATED, sha: 'smd' })
+    writeFiles.mockClear()
+    writeFiles.mockRejectedValueOnce(new StaleShaError('content/design.md', 'newer', ''))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })
+    expect(r.ok).toBe(true)
+    expect(writeFiles).toHaveBeenCalledTimes(2)
+    const second = (writeFiles.mock.calls[1][1] as { path: string }[]).map((c) => c.path)
+    expect(second).not.toContain('content/design.md')
+    expect(second.length).toBeGreaterThan(0)
+    expect(r.ok && r.changedPaths).not.toContain('content/design.md')
+    warn.mockRestore()
   })
 
   it('never touches a generated design.md whose prose an admin edited (body hash mismatch)', async () => {

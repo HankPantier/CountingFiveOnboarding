@@ -26,7 +26,7 @@
 // after a commit can lag.
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
-import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError } from '@/lib/github/repo-files'
+import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError, StaleShaError } from '@/lib/github/repo-files'
 import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { designMdRewrite } from '@/lib/content/design-md-builder'
@@ -66,14 +66,16 @@ export async function readOptional(repo: string, path: string): Promise<{ conten
 async function designMdChange(
   repo: string,
   rebuild: { before: () => string; after: () => string },
-  baseMode: boolean
-): Promise<{ path: string; content: string; expectedSha: string | undefined } | null> {
+): Promise<{ path: string; content: string; expectedSha: string } | null> {
   try {
     const current = await readOptional(repo, DESIGN_MD_PATH)
     if (!current) return null
     const next = designMdRewrite(current.content, rebuild)
     if (next === null) return null
-    return { path: DESIGN_MD_PATH, content: next, expectedSha: baseMode ? undefined : current.sha }
+    // Always sha-guarded: a lagging read of a platform copy must never clobber
+    // a hand edit saved seconds earlier (the caller drops the notes on a stale
+    // guard rather than failing the theme apply).
+    return { path: DESIGN_MD_PATH, content: next, expectedSha: current.sha }
   } catch (err) {
     console.warn('[design:apply] design.md was not regenerated', err)
     return null
@@ -162,8 +164,7 @@ export async function applyBundleToDraft(args: {
         {
           before: () => buildMd(JSON.parse(brandFile.content) as BrandJson, JSON.parse(designFile.content) as DesignJson),
           after: () => buildMd(brand, design),
-        },
-        base !== undefined
+        }
       )
     : null
   if (notes) changes.push(notes)
@@ -177,10 +178,23 @@ export async function applyBundleToDraft(args: {
         .map((c) => ({ path: c.path, content: c.current?.content ?? '', expectedSha: c.current?.sha }))
     : []
 
-  const written = await writeFiles(githubRepo, [...changes, ...guards], DRAFT_BRANCH, message, {
-    authorName: author.name,
-    authorEmail: author.email,
-  })
+  const commit = (entries: typeof changes) =>
+    writeFiles(githubRepo, [...entries, ...guards], DRAFT_BRANCH, message, {
+      authorName: author.name,
+      authorEmail: author.email,
+    })
+  let written: Awaited<ReturnType<typeof commit>>
+  try {
+    written = await commit(changes)
+  } catch (err) {
+    // design.md is best-effort notes: a stale guard on it alone never fails the
+    // theme apply — commit without it.
+    if (!(notes && err instanceof StaleShaError && err.path === DESIGN_MD_PATH)) throw err
+    console.warn('[design:apply] design.md changed concurrently; left as is')
+    changes.pop()
+    changedPaths.pop()
+    written = await commit(changes)
+  }
   const blobs: Record<string, string> = {}
   for (const p of changedPaths) if (written.blobs[p]) blobs[p] = written.blobs[p]
   return { ok: true, commitSha: written.commitSha, blobs, changedPaths, brand, design, css: rendered.css }
