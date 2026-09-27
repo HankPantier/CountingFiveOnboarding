@@ -200,6 +200,14 @@ export async function PUT(
     // Replacing the site's logo re-derives brand.json logo.tone from the new
     // image and commits both together, so a dark replacement never keeps a
     // stale "light" tone (and a light one gets it).
+    //
+    // SITE OWNER EXCEPTION (deliberate): a Site Owner may replace images, and
+    // this is the ONE way their action writes the shared content/brand.json,
+    // which denySiteOwnerConfig otherwise keeps them out of. It is allowed
+    // because the write is not their input: only logo.tone changes, derived
+    // from the image they may already replace, and it keeps the header and
+    // footer legible for the image they chose. Nothing else in brand.json is
+    // touched (retoneBrandJson re-checks that the rest is unchanged).
     const retone = await logoRetone(ctx.githubRepo, path, buffer)
     if (retone) {
       const result = await writeBinaryFileWithCompanions(ctx.githubRepo, path, buffer, DRAFT_BRANCH, message, {

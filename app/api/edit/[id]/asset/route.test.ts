@@ -5,6 +5,7 @@ type CompanionOpts = { mode: string; expectedSha?: string; companions: Companion
 
 const h = vi.hoisted(() => ({
   brandText: '' as string | null,
+  siteOwner: false,
   lightLogo: false,
   conclusive: true,
   writeBinaryFile: vi.fn(async (..._args: unknown[]) => ({ commitSha: 'c1', blobSha: 'b1' })),
@@ -12,7 +13,12 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('../_helpers', () => ({
-  resolveEditContext: async () => ({ githubRepo: 'repo', adminEmail: 'a@x.com', adminName: 'A' }),
+  resolveEditContext: async () => ({
+    githubRepo: 'repo',
+    adminEmail: 'a@x.com',
+    adminName: 'A',
+    user: h.siteOwner ? { isAdmin: false, capabilities: ['owner'] } : { isAdmin: true, capabilities: [] },
+  }),
 }))
 vi.mock('@/lib/content/logo-preflight', () => ({
   preflightLogo: async (buffer: Buffer) => ({ buffer, lightLogo: h.lightLogo, toneConclusive: h.conclusive, trimmed: null, plate: null, notes: [] }),
@@ -65,6 +71,7 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     h.writeBinaryFileWithCompanions.mockClear()
     h.lightLogo = false
     h.conclusive = true
+    h.siteOwner = false
   })
 
   it('clears a stale light tone in the same commit when the logo is replaced with a dark one', async () => {
@@ -122,6 +129,18 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     h.brandText = brand({ primary: 'logo.png', alt: 'A logo', tone: 'dark' })
     await put('public/content-assets/logo.png')
     expect(h.writeBinaryFileWithCompanions).not.toHaveBeenCalled()
+  })
+
+  it('Site Owner exception: replacing the logo retones brand.json for an owner too — and changes only logo.tone', async () => {
+    h.siteOwner = true
+    h.brandText = brand({ primary: 'logo.png', alt: 'A logo', tone: 'light' })
+    const res = await put('public/content-assets/logo.png')
+    expect(res.status).toBe(200)
+    const [companion] = companionOpts().companions
+    const before = JSON.parse(h.brandText) as { logo: Record<string, unknown> }
+    const after = JSON.parse(companion!.content) as { logo: Record<string, unknown> }
+    const { tone: _gone, ...logoRest } = before.logo
+    expect(after).toEqual({ ...before, logo: logoRest })
   })
 
   it('still uploads when the site has no brand.json', async () => {
