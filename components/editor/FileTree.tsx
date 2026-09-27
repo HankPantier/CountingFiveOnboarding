@@ -383,7 +383,9 @@ export default function FileTree({
       {open.pages &&
         (navEditable && onNavCommit && !selectMode ? (
           <SidebarPagesNav
-            key={`sidebarnav-${navSha ?? 'none'}`}
+            // Remount once the nav CONTENT arrives, not just its sha: the hook seeds its
+            // items once, and the tree (sha) loads before the file body does.
+            key={`sidebarnav-${navSha ?? 'none'}-${navContent != null ? 'loaded' : 'pending'}`}
             pageFiles={pages}
             navContent={navContent ?? null}
             navLoading={navLoading}
