@@ -102,10 +102,28 @@ When a client skipped a release, the manifests strictly after OLD's version and 
    - **Any working-tree change the plan did not predict aborts the repo.** The clone is then reset.
    - One commit is made, listing its paths explicitly, with the trailer `Fleet-Sync: <version> <OLD>..<NEW>`.
 3. **Local verify:** `npm ci`, `tsc`, `vitest`, `build`, then `generate-fonts --check`. This runs at concurrency ≤ 2, with one automatic retry per repo because of the Google-Fonts build flake. A repo that fails is reset and not pushed.
-4. **Push and deploy.**
-   - Fast-forward push to `main`. It is never forced.
-   - Merge main→draft through the GitHub merges API.
-   - Poll the commit's `Vercel` status until it reaches success or failure. After 3 minutes with no status, the repo is reported as having no deploy target (korbey).
+4. **Push and deploy, one repo at a time** (`lib/fleet/push-phase.ts`):
+   1. **Draft pre-merge.** The clone fetches `draft` (unshallowing it first) and trial-merges the local sync commit into it with `git merge-tree --write-tree`. A conflict blocks that repo. **Nothing is pushed.**
+   2. **Push.** Fast-forward push to `main`. It is never forced.
+   3. **Merge draft.** Merge main→draft through the GitHub merges API.
+   4. **Wait for Vercel.** Poll the commit's `Vercel` status. A missing status after 3 minutes is a **failure**. The only exception is a repo marked `"noDeploy": true` in `config/clients.json` (korbey).
+5. **Fail fast.** After the first remote failure, no further repo is pushed. That covers a draft conflict, a rejected push, a failed draft merge, and a Vercel failure, error, timeout or missing status. The rest are reset and reported as `skipped`. `--keep-going` overrides this for non-canary failures.
+6. **Canary.** `--canary <n>`: the first n repos must reach Vercel `success` before any other repo is pushed. A failed canary always stops the run. The default is **1 on the first `--apply` of a release** (no target is on NEW yet), otherwise 0. The prompt says so. `noDeploy` repos are never a canary.
+7. **Report and template guard.**
+   - A throw inside one repo is recorded as that repo's failure. The JSON report (`--json`) is always written.
+   - `--apply` refuses when the local template `main` is not origin's `main`, or when NEW is not on origin. It checks with `ls-remote`, so the checkout's refs are not changed. A dry-run only warns.
+
+## Recovery
+
+- **The first `--apply` of a release:** run it on one repo (`--slugs Abramson-Company-LLC --apply`), check the site, then run `--all --apply`. The already-synced repo shows "up to date".
+- **"push failed — non-fast-forward"** means the client's main moved since the gate (someone published). Delete that clone (`rm -rf $TMPDIR/revaltus-fleet/<repo>`) and re-run. The gate recomputes against the new main.
+- **"main→draft would conflict (files…)"** means the repo's draft has unpublished edits to files this release changes. Nothing was pushed. Publish or discard those draft edits in the editor, or resolve them on `draft` by hand, then re-run.
+- **"main pushed, but main→draft conflict"** means draft moved between the pre-merge and the API merge (a rare race). Main is live. Merge `main` into `draft` by hand, or through a PR, before anyone publishes.
+- **Vercel failure or timeout:**
+  - Inspect the deploy.
+  - If the release is at fault, run `rollback --slugs <repo> --apply`, which reverts the Fleet-Sync commit and redeploys.
+  - The remaining repos were not pushed. Re-run after the fix.
+- **A stopped run:** re-running is safe. Synced repos report "up to date" and the rest are gated again.
 
 ## fleet-status (read-only)
 

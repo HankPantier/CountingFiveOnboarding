@@ -40,6 +40,36 @@ export function pushMain(dir: string): { ok: boolean; sha: string; err?: string 
   return { ok: true, sha }
 }
 
+export type DraftPreflight = { ok: true; draft: 'present' | 'absent' } | { ok: false; reason: string }
+
+// BEFORE main is pushed: fetch draft and trial-merge the local sync commit into
+// it (`git merge-tree --write-tree`, no working tree touched). The later
+// main→draft merge through the API merges exactly this commit, so a conflict
+// here means the repo is blocked with nothing pushed. The clone is unshallowed
+// first so the merge base is real.
+export function draftPreflight(dir: string): DraftPreflight {
+  const ls = tryGit(dir, ['ls-remote', '--exit-code', 'origin', 'refs/heads/draft'])
+  if (ls.code === 2) return { ok: true, draft: 'absent' }
+  if (!ls.ok) return { ok: false, reason: `cannot read origin draft: ${ls.err.trim().split('\n')[0]}` }
+  const shallow = tryGit(dir, ['rev-parse', '--is-shallow-repository']).out.trim() === 'true'
+  const fetch = tryGit(dir, [
+    'fetch',
+    '-q',
+    ...(shallow ? ['--unshallow'] : []),
+    'origin',
+    '+refs/heads/main:refs/remotes/origin/main',
+    '+refs/heads/draft:refs/remotes/origin/draft',
+  ])
+  if (!fetch.ok) return { ok: false, reason: `fetching draft failed: ${fetch.err.trim().split('\n')[0]}` }
+  const m = tryGit(dir, ['merge-tree', '--write-tree', '--name-only', '--no-messages', 'HEAD', 'refs/remotes/origin/draft'])
+  if (m.ok) return { ok: true, draft: 'present' }
+  if (m.code === 1) {
+    const files = m.out.trim().split('\n').slice(1).filter(Boolean)
+    return { ok: false, reason: `main→draft would conflict (${files.join(', ') || 'unknown files'}) — resolve draft first; nothing was pushed` }
+  }
+  return { ok: false, reason: `draft trial merge failed: ${m.err.trim().split('\n')[0]}` }
+}
+
 export type DraftMerge = 'merged' | 'up-to-date' | 'no-draft' | 'conflict' | 'failed'
 
 // Merge main → draft through the GitHub merges API (keeps the editor's draft
@@ -47,7 +77,12 @@ export type DraftMerge = 'merged' | 'up-to-date' | 'no-draft' | 'conflict' | 'fa
 export function mergeMainIntoDraft(slug: string, message: string): { result: DraftMerge; detail: string } {
   const r = ghApi(['-X', 'POST', `repos/${slug}/merges`, '-f', 'base=draft', '-f', 'head=main', '-f', `commit_message=${message}`])
   if (r.status === 201) {
-    const sha = (JSON.parse(r.body || '{}') as { sha?: string }).sha ?? ''
+    let sha = ''
+    try {
+      sha = (JSON.parse(r.body || '{}') as { sha?: string }).sha ?? ''
+    } catch {
+      // merged; the body just wasn't parseable
+    }
     return { result: 'merged', detail: sha.slice(0, 7) }
   }
   if (r.status === 204) return { result: 'up-to-date', detail: '' }

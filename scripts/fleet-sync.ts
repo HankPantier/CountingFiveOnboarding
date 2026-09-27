@@ -16,6 +16,9 @@
 //   · --no-fetch · --concurrency <n> (verify, default 2) · --no-deploy-wait ·
 //   --json <file> (machine-readable report) · -v/--verbose · --yes (skip prompt)
 //   · --client-rev <rev> (dry-run replay against an older client commit; never applies)
+//   · --canary <n> (first n repos must deploy green before the rest are pushed;
+//   default 1 on the first --apply of a release, else 0) · --keep-going (don't
+//   stop at the first remote failure; a failed canary still stops)
 //
 // See lib/fleet/README.md for the gate rules and the release-manifest format.
 import { existsSync, writeFileSync } from 'node:fs'
@@ -26,10 +29,11 @@ import { loadClients, repoName, resolveTargets } from '../lib/fleet/registry'
 import { loadManifest, manifestForRange } from '../lib/fleet/release-manifest'
 import { MARKER, summarize } from '../lib/fleet/classify'
 import { readMarker } from '../lib/fleet/special-files'
-import { git, revParse, showText, tryGit } from '../lib/fleet/git-local'
+import { git, isAncestor, revParse, showText, tryGit } from '../lib/fleet/git-local'
 import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, type RepoRun, type SyncContext } from '../lib/fleet/sync'
 import { pool, verifyRepo } from '../lib/fleet/verify'
-import { findLastFleetCommit, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
+import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
+import { runPushPhase, type PushItem } from '../lib/fleet/push-phase'
 import type { ClientEntry, TargetSelection } from '../lib/fleet/types'
 
 interface Args {
@@ -49,6 +53,8 @@ interface Args {
   json: string | null
   verbose: boolean
   clientRev: string | null
+  keepGoing: boolean
+  canary: number | null
 }
 
 function parseArgs(argv: string[]): Args {
@@ -69,6 +75,8 @@ function parseArgs(argv: string[]): Args {
     json: null,
     verbose: false,
     clientRev: null,
+    keepGoing: false,
+    canary: null,
   }
   const val = (i: number, flag: string) => {
     const v = argv[i]
@@ -95,6 +103,8 @@ function parseArgs(argv: string[]): Args {
     else if (f === '--json') a.json = path.resolve(val(++i, f))
     else if (f === '-v' || f === '--verbose') a.verbose = true
     else if (f === '--client-rev') a.clientRev = val(++i, f)
+    else if (f === '--keep-going') a.keepGoing = true
+    else if (f === '--canary') a.canary = Math.max(0, Math.floor(Number(val(++i, f)) || 0))
     else throw new Error(`Unknown argument: ${f}`)
   }
   return a
@@ -141,7 +151,25 @@ function resolveTemplate(a: Args): { to: string; toVersion: string } {
   if (tryGit(a.templateDir, ['status', '--porcelain']).out.trim()) {
     console.warn(`⚠ template checkout has uncommitted changes — ignored (the tool reads committed blobs at ${to.slice(0, 7)} only)`)
   }
+  const problem = templateOriginProblem(a.templateDir, to, a.to === 'main')
+  if (problem) {
+    if (a.apply) throw new Error(`Refusing to --apply: ${problem}`)
+    console.warn(`⚠ ${problem} (dry-run continues; --apply would refuse)`)
+  }
   return { to, toVersion }
+}
+
+// NEW must be the published template: local main == origin main (read with
+// ls-remote, so the checkout's refs are never changed), or an explicit older
+// commit that origin main already contains.
+function templateOriginProblem(dir: string, to: string, isMain: boolean): string | null {
+  const ls = tryGit(dir, ['ls-remote', 'origin', 'refs/heads/main'])
+  const remote = ls.ok ? ls.out.split(/\s+/)[0] : ''
+  if (!/^[0-9a-f]{40}$/.test(remote)) return `could not read the template's origin main (${ls.err.trim().split('\n')[0] || 'no output'})`
+  if (remote === to) return null
+  if (!tryGit(dir, ['cat-file', '-e', `${remote}^{commit}`]).ok) return `the local template checkout is behind origin/main (${remote.slice(0, 7)}) — fetch/pull it first`
+  if (isAncestor(dir, to, remote)) return isMain ? `local template main ${to.slice(0, 7)} is behind origin/main ${remote.slice(0, 7)} — pull it first` : null
+  return `template@NEW ${to.slice(0, 7)} is not on origin/main — push the template release before rolling it out`
 }
 
 async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
@@ -200,11 +228,24 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
     console.log('Nothing to apply.')
     return blocked.length ? 1 : 0
   }
-  if (!(await confirm(`APPLY template ${toVersion} to ${ready.length} repo(s) and push to their LIVE main branch?`, a.yes))) {
+  // The first --apply of a release (no targeted repo is on NEW yet) defaults
+  // to one canary: it has to go green on Vercel before any other repo is pushed.
+  const firstOfRelease = !runs.some((r) => r.upToDate)
+  const canary = a.canary ?? (firstOfRelease && ready.length > 1 ? 1 : 0)
+  const canaryNote = canary ? ` The first ${canary} repo(s) are a canary and must deploy green before the rest are pushed.` : ''
+  if (!(await confirm(`APPLY template ${toVersion} to ${ready.length} repo(s) and push to their LIVE main branch?${canaryNote}`, a.yes))) {
     console.log('Aborted.')
     return 1
   }
+  try {
+    return await applyAndPush(a, ctx, ready, canary, report)
+  } finally {
+    writeReport()
+  }
+}
 
+async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary: number, report: Record<string, unknown>): Promise<number> {
+  const { toVersion } = ctx
   // 1) local commit per repo (unexpected-change abort inside)
   const committed: { run: RepoRun; sha: string }[] = []
   for (const run of ready) {
@@ -224,34 +265,42 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
     if (!v.ok) console.log(v.tail.replace(/^/gm, '      '))
     return { ...c, verify: v }
   })
-  // 3) push main → merge main→draft → Vercel, one repo at a time
-  const results: Record<string, unknown>[] = []
+  // 3) draft pre-merge → push main → merge main→draft → Vercel, one repo at a
+  //    time; canary first, fail-fast (lib/fleet/push-phase.ts)
+  const results: unknown[] = []
   let failures = committed.length < ready.length ? ready.length - committed.length : 0
+  const pushable: PushItem[] = []
   for (const v of verified) {
-    const repo = repoName(v.run.client.slug)
-    if (!v.verify.ok) {
-      failures++
-      git(v.run.dir, ['reset', '-q', '--hard', 'refs/remotes/origin/main'])
-      results.push({ slug: v.run.client.slug, pushed: false, reason: `verify failed at ${v.verify.failedStep}` })
+    if (v.verify.ok) {
+      pushable.push({ slug: v.run.client.slug, dir: v.run.dir, noDeploy: v.run.client.noDeploy })
       continue
     }
-    const push = pushMain(v.run.dir)
-    if (!push.ok) {
-      failures++
-      console.log(`  ✗ ${repo}: push failed — ${push.err}`)
-      results.push({ slug: v.run.client.slug, pushed: false, reason: push.err })
-      continue
-    }
-    const draft = mergeMainIntoDraft(v.run.client.slug, `Merge main into draft (template ${toVersion} sync)`)
-    let deploy: { state: string; url: string | null } = { state: 'not-checked', url: null }
-    if (a.deployWait) deploy = await waitForVercel(v.run.client.slug, push.sha)
-    if (draft.result === 'conflict' || draft.result === 'failed' || deploy.state === 'failure' || deploy.state === 'error' || deploy.state === 'timeout') failures++
-    console.log(`  ${repo}: main=${push.sha.slice(0, 7)} draft=${draft.result}${draft.detail ? ` ${draft.detail}` : ''} vercel=${deploy.state}${deploy.url ? ` ${deploy.url}` : ''}`)
-    results.push({ slug: v.run.client.slug, pushed: true, main: push.sha, draft, deploy })
+    failures++
+    resetLocal(v.run.dir)
+    results.push({ slug: v.run.client.slug, status: 'failed', stage: 'verify', reason: `verify failed at ${v.verify.failedStep}` })
   }
+  console.log(`\nPushing ${pushable.length} repo(s)${canary ? ` — canary ${canary} first` : ''}${a.keepGoing ? ' (--keep-going)' : ', stopping at the first failure'}…`)
+  const phase = await runPushPhase(
+    pushable,
+    { keepGoing: a.keepGoing, canary, deployWait: a.deployWait },
+    {
+      draftPreflight,
+      pushMain,
+      mergeDraft: (slug) => mergeMainIntoDraft(slug, `Merge main into draft (template ${toVersion} sync)`),
+      waitDeploy: (slug, sha) => waitForVercel(slug, sha),
+      resetLocal,
+    },
+    (line) => console.log(line)
+  )
+  results.push(...phase.results)
+  failures += phase.results.filter((r) => r.status !== 'pushed').length
+  if (phase.stoppedBy) console.log(`\nSTOPPED after ${phase.stoppedBy} — the remaining repos were not pushed. Fix it, then re-run (synced repos show "up to date").`)
   report.results = results
-  writeReport()
   return failures ? 1 : 0
+}
+
+function resetLocal(dir: string): void {
+  tryGit(dir, ['reset', '-q', '--hard', 'refs/remotes/origin/main'])
 }
 
 async function runRollback(a: Args, targets: ClientEntry[]): Promise<number> {

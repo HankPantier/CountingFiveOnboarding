@@ -13,6 +13,12 @@ export interface ClientEntry {
   managed: boolean
   /** true = excluded from group/--all runs; explicit --slugs includes it with a warning. */
   paused: boolean
+  /**
+   * true = the repo has no Vercel project (korbey), so "no deploy status" is
+   * expected. For every other repo a missing status after the grace period is
+   * a failure.
+   */
+  noDeploy: boolean
 }
 
 export interface ClientsConfig {

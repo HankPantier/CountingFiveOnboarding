@@ -21,6 +21,7 @@ function validateEntry(e: unknown, i: number): ClientEntry {
     themeGroup: typeof o.themeGroup === 'string' && o.themeGroup.trim() ? o.themeGroup.trim() : null,
     managed: o.managed === true,
     paused: o.paused === true,
+    noDeploy: o.noDeploy === true,
   }
 }
 

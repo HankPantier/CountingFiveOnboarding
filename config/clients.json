@@ -63,7 +63,8 @@
       "liveUrl": null,
       "themeGroup": "revaltus-template",
       "managed": true,
-      "paused": false
+      "paused": false,
+      "noDeploy": true
     },
     {
       "slug": "HankPantier/Slachta-Accounting",

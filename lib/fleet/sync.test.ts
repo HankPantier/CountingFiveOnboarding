@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os'
 import path from 'node:path'
 import { applyChanges, ensureClone, gateRepo, unexpectedChanges, type SyncContext } from './sync'
-import { findLastFleetCommit } from './remote'
+import { draftPreflight, findLastFleetCommit, pushMain } from './remote'
+import { runPushPhase } from './push-phase'
 import type { ClientEntry, ReleaseManifest } from './types'
 
 // End-to-end on throwaway local repos: a template with three commits
@@ -40,7 +41,7 @@ let OLD: string
 let NEW: string
 let work: string
 
-const client: ClientEntry = { slug: 'acme/client', displayName: 'Client', liveUrl: null, themeGroup: 'g', managed: true, paused: false }
+const client: ClientEntry = { slug: 'acme/client', displayName: 'Client', liveUrl: null, themeGroup: 'g', managed: true, paused: false, noDeploy: false }
 const manifest: ReleaseManifest = {
   templateVersion: '2026.09.5',
   notes: 'Test release.',
@@ -56,14 +57,21 @@ const ctx = (over: Partial<SyncContext> = {}): SyncContext => ({
   ...over,
 })
 
-function makeClient(files: Record<string, string | null>): string {
+let lastBare = ''
+function makeClient(files: Record<string, string | null>, draftFiles?: Record<string, string | null>): string {
   const bare = path.join(root, `origin-${Math.random().toString(36).slice(2)}.git`)
+  lastBare = bare
   sh(root, 'init', '-q', '--bare', '-b', 'main', bare)
   const seed = mkdtempSync(path.join(root, 'seed-'))
   sh(seed, 'init', '-q', '-b', 'main')
   commit(seed, files, 'client state')
   sh(seed, 'remote', 'add', 'origin', bare)
   sh(seed, 'push', '-q', 'origin', 'main')
+  if (draftFiles) {
+    sh(seed, 'checkout', '-q', '-b', 'draft')
+    commit(seed, draftFiles, 'unpublished content edit')
+    sh(seed, 'push', '-q', 'origin', 'draft')
+  }
   const dir = path.join(work, 'client')
   rmSync(dir, { recursive: true, force: true })
   sh(root, 'clone', '-q', bare, dir)
@@ -179,6 +187,48 @@ describe('gateRepo + applyChanges (local repos)', () => {
     const run = gateRepo(ctx(), client, dir, OLD)
     writeFileSync(path.join(dir, 'stray.txt'), 'x')
     expect(() => applyChanges(ctx(), run)).toThrow(/uncommitted/)
+  })
+
+  it('draft pre-merge: a clean draft passes; one that edits a synced file blocks with NOTHING pushed', async () => {
+    // clean: draft only has a content edit
+    let dir = makeClient(clientBase(), { 'content/pages/about.md': 'edited\n' })
+    let run = gateRepo(ctx(), client, dir, OLD)
+    applyChanges(ctx(), run)
+    expect(draftPreflight(dir)).toEqual({ ok: true, draft: 'present' })
+
+    // conflict: draft edited src/a.ts, which the sync rewrites
+    dir = makeClient(clientBase(), { 'src/a.ts': 'draft edit\n' })
+    const bare = lastBare
+    const mainBefore = sh(bare, 'rev-parse', 'main')
+    run = gateRepo(ctx(), client, dir, OLD)
+    applyChanges(ctx(), run)
+    const pre = draftPreflight(dir)
+    expect(pre.ok).toBe(false)
+    if (!pre.ok) expect(pre.reason).toMatch(/would conflict \(src\/a\.ts\)/)
+
+    // …and through the push phase with the REAL git ops: blocked, main untouched, local commit reset
+    const phase = await runPushPhase(
+      [{ slug: client.slug, dir, noDeploy: false }, { slug: 'acme/other', dir: '/nonexistent', noDeploy: false }],
+      { keepGoing: false, canary: 0, deployWait: false },
+      {
+        draftPreflight,
+        pushMain,
+        mergeDraft: () => ({ result: 'merged', detail: '' }),
+        waitDeploy: async () => ({ state: 'success', url: null }),
+        resetLocal: (d) => {
+          if (d !== '/nonexistent') sh(d, 'reset', '-q', '--hard', 'refs/remotes/origin/main')
+        },
+      }
+    )
+    expect(phase.results.map((r) => r.status)).toEqual(['blocked', 'skipped'])
+    expect(sh(bare, 'rev-parse', 'main')).toBe(mainBefore)
+    expect(sh(dir, 'rev-parse', 'HEAD')).toBe(mainBefore)
+  })
+
+  it('no draft branch on origin → preflight passes with draft absent', () => {
+    const dir = makeClient(clientBase())
+    applyChanges(ctx(), gateRepo(ctx(), client, dir, OLD))
+    expect(draftPreflight(dir)).toEqual({ ok: true, draft: 'absent' })
   })
 
   it('unexpectedChanges lists every path the plan did not predict', () => {

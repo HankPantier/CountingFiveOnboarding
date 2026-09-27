@@ -15,9 +15,9 @@ export function gitBuffer(dir: string, args: string[]): Buffer {
   return execFileSync('git', args, { cwd: dir, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
-export function tryGit(dir: string, args: string[]): { ok: boolean; out: string; err: string } {
+export function tryGit(dir: string, args: string[]): { ok: boolean; code: number | null; out: string; err: string } {
   const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
-  return { ok: r.status === 0, out: r.stdout ?? '', err: r.stderr ?? '' }
+  return { ok: r.status === 0, code: r.status, out: r.stdout ?? '', err: r.stderr ?? '' }
 }
 
 export function revParse(dir: string, rev: string): string {

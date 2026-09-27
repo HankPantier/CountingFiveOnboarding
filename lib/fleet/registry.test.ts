@@ -35,5 +35,7 @@ describe('registry', () => {
     const managed = resolveTargets(loadClients(), { all: true }).targets
     expect(managed).toHaveLength(11)
     expect(new Set(managed.map((m) => m.themeGroup))).toEqual(new Set(['revaltus-template']))
+    // korbey has no Vercel project — the only repo allowed a missing deploy status
+    expect(managed.filter((m) => m.noDeploy).map((m) => repoName(m.slug))).toEqual(['korbey-lague-site'])
   })
 })
