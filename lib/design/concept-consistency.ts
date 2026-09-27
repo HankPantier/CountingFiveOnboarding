@@ -41,7 +41,9 @@ export const SERIF_FONTS: readonly string[] = [
 const NEGATION = /\b(no|not|without|never|avoid|avoids|drop|drops|dropped|remove|removes|removed|instead of|rather than)\b/
 // Up to n filler words between a lever word and its subject. Used ONLY for the
 // serif / mono treatment claims; every style-axis claim requires the axis noun
-// RIGHT AFTER the value word ("flat cards", never "flat fee pricing cards").
+// right after the value word, or after ONE adjective from a small allowlist
+// (STYLE_ADJ) — "flat cards", "flat tinted cards", never "flat fee pricing
+// cards".
 const gap = (n: number): string => `(?:[a-z0-9&'-]+\\s+){0,${n}}`
 
 // The claim text, split into clauses. "sans-serif" is folded to "sans" first so
@@ -125,6 +127,15 @@ const DARK_SECTIONS = [/\b(dark|ink|inky|deep[\s-]ink)\s+(sections?|bands?|panel
 
 type AxisClaim = { axis: StyleAxis; value: string; label: string; res: RegExp[]; alsoSatisfiedBy?: (b: DesignBundle) => boolean }
 
+// The ONE optional surface adjective allowed between an axis value word and its
+// noun ("flat tinted cards", "inverted borderless nav"). Deliberately small and
+// colour-free: "light" is excluded ("natural light photography" is a lighting
+// style) and colour words are excluded (the colour value words — dark, ink,
+// navy, brand — are already value words for nav / footer, so "inverted navy
+// nav" is caught through "navy nav"). Images get a narrower list: warm / cool /
+// tinted describe a grade, which contradicts "natural (ungraded)".
+const STYLE_ADJ = '(?:(?:tinted|soft|subtle|quiet|borderless|bordered|warm|cool|paper)\\s+)?'
+const IMAGE_ADJ = '(?:(?:soft|subtle|quiet)\\s+)?'
 const NAV = '(?:nav|navbar|navigation|header bar|top bar|menu bar)'
 const IMAGES = '(?:images?|photos?|photography|imagery)'
 // A chrome / hero noun that ENDS the claim (clause end, a comma, "and", "with")
@@ -134,34 +145,34 @@ const whole = (tail: string): string => `(?:\\s+(?:${tail}))?(?=\\s*$|\\s*,|\\s+
 const HERO_TAIL = whole('scale|headline|headlines|type|display|section')
 const FOOTER_TAIL = whole('band|bar|surface|background|block|section')
 const AXIS_CLAIMS: AxisClaim[] = [
-  { axis: 'nav', value: 'bordered', label: 'a bordered nav', res: [new RegExp(`\\bbordered\\s+${NAV}\\b`)] },
-  { axis: 'nav', value: 'inverted', label: 'an inverted nav', res: [new RegExp(`\\b(?:inverted|reversed|dark|ink|navy|primary[\\s-]colou?r(?:ed)?)\\s+${NAV}\\b`)] },
+  { axis: 'nav', value: 'bordered', label: 'a bordered nav', res: [new RegExp(`\\bbordered\\s+${STYLE_ADJ}${NAV}\\b`)] },
+  { axis: 'nav', value: 'inverted', label: 'an inverted nav', res: [new RegExp(`\\b(?:inverted|reversed|dark|ink|navy|primary[\\s-]colou?r(?:ed)?)\\s+${STYLE_ADJ}${NAV}\\b`)] },
   ...(['flat', 'outlined', 'elevated'] as const).map(
-    (v): AxisClaim => ({ axis: 'cards', value: v, label: `${v} cards`, res: [new RegExp(`\\b${v}\\s+(?:card|cards|card surfaces)\\b`)] })
+    (v): AxisClaim => ({ axis: 'cards', value: v, label: `${v} cards`, res: [new RegExp(`\\b${v}\\s+${STYLE_ADJ}(?:card|cards|card surfaces)\\b`)] })
   ),
   {
     axis: 'buttons',
     value: 'pill',
     label: 'pill buttons',
-    res: [/\bpill(?:-shaped)?\s+(?:buttons?|ctas?)\b/],
+    res: [new RegExp(`\\bpill(?:-shaped)?\\s+${STYLE_ADJ}(?:buttons?|ctas?)\\b`)],
     alsoSatisfiedBy: (b) => b.tokens.roundness === 'pill',
   },
   {
     axis: 'buttons',
     value: 'sharp',
     label: 'sharp-cornered buttons',
-    res: [/\b(?:sharp|square|squared|square-cornered|sharp-cornered)\s+(?:buttons?|ctas?)\b/],
+    res: [new RegExp(`\\b(?:sharp|square|squared|square-cornered|sharp-cornered)\\s+${STYLE_ADJ}(?:buttons?|ctas?)\\b`)],
     alsoSatisfiedBy: (b) => b.tokens.roundness === 'sharp',
   },
   // Never bare "bold" — "bold CTAs in clay" means colour / weight, not the preset.
-  { axis: 'buttons', value: 'bold', label: 'uppercase tracked buttons', res: [/\b(?:uppercase|all-caps|tracked)(?:\s+(?:uppercase|tracked))?\s+(?:buttons?|ctas?|button labels?)\b/] },
-  { axis: 'heroScale', value: 'dramatic', label: 'a dramatic hero scale', res: [new RegExp(`\\b(?:dramatic|oversized|monumental)\\s+hero${HERO_TAIL}`)] },
-  { axis: 'heroScale', value: 'compact', label: 'a compact hero', res: [new RegExp(`\\bcompact\\s+hero${HERO_TAIL}`)] },
-  { axis: 'imageTreatment', value: 'mono', label: 'monochrome imagery', res: [new RegExp(`\\b(?:mono|monochrome|greyscale|grayscale|black-and-white)\\s+${IMAGES}\\b`)] },
-  { axis: 'imageTreatment', value: 'rounded', label: 'rounded images', res: [new RegExp(`\\brounded\\s+${IMAGES}\\b`)] },
-  { axis: 'imageTreatment', value: 'natural', label: 'natural (ungraded) images', res: [new RegExp(`\\b(?:natural|ungraded|untinted)\\s+${IMAGES}\\b`)] },
-  { axis: 'footer', value: 'brand', label: 'a brand-colour footer', res: [new RegExp(`\\b(?:brand|branded|dark|ink|navy|primary[\\s-]colou?r(?:ed)?)\\s+footer${FOOTER_TAIL}`)] },
-  { axis: 'footer', value: 'light', label: 'a light footer', res: [new RegExp(`\\blight\\s+footer${FOOTER_TAIL}`)] },
+  { axis: 'buttons', value: 'bold', label: 'uppercase tracked buttons', res: [new RegExp(`\\b(?:uppercase|all-caps|tracked)(?:\\s+(?:uppercase|tracked))?\\s+${STYLE_ADJ}(?:buttons?|ctas?|button labels?)\\b`)] },
+  { axis: 'heroScale', value: 'dramatic', label: 'a dramatic hero scale', res: [new RegExp(`\\b(?:dramatic|oversized|monumental)\\s+${STYLE_ADJ}hero${HERO_TAIL}`)] },
+  { axis: 'heroScale', value: 'compact', label: 'a compact hero', res: [new RegExp(`\\bcompact\\s+${STYLE_ADJ}hero${HERO_TAIL}`)] },
+  { axis: 'imageTreatment', value: 'mono', label: 'monochrome imagery', res: [new RegExp(`\\b(?:mono|monochrome|greyscale|grayscale|black-and-white)\\s+${IMAGE_ADJ}${IMAGES}\\b`)] },
+  { axis: 'imageTreatment', value: 'rounded', label: 'rounded images', res: [new RegExp(`\\brounded\\s+${IMAGE_ADJ}${IMAGES}\\b`)] },
+  { axis: 'imageTreatment', value: 'natural', label: 'natural (ungraded) images', res: [new RegExp(`\\b(?:natural|ungraded|untinted)\\s+${IMAGE_ADJ}${IMAGES}\\b`)] },
+  { axis: 'footer', value: 'brand', label: 'a brand-colour footer', res: [new RegExp(`\\b(?:brand|branded|dark|ink|navy|primary[\\s-]colou?r(?:ed)?)\\s+${STYLE_ADJ}footer${FOOTER_TAIL}`)] },
+  { axis: 'footer', value: 'light', label: 'a light footer', res: [new RegExp(`\\blight\\s+${STYLE_ADJ}footer${FOOTER_TAIL}`)] },
   {
     axis: 'sectionRhythm',
     value: 'generous',
