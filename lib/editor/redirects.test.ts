@@ -108,6 +108,12 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
     )
   })
 
+  it('compares case-insensitively, like Next.js redirect matching', () => {
+    expect(validateRedirectsCsv(`${H}/About-Us,/about-us,301,x\n`)).toMatch(/redirects to itself/)
+    expect(findRedirectProblems(`${H}/a,/B,301,x\n/b,/A,301,x\n`).cycles).toEqual([['/a', '/b']])
+    expect(validateRedirectsCsv(`${H}/About,/team,301,x\n`, { livePaths: ['/about'] })).toMatch(/has a real page/)
+  })
+
   it('passes a clean chain-free file', () => {
     expect(validateRedirectsCsv(`${H}/a,/b,301,x\n/c,/b,301,x\n`)).toBeNull()
   })

@@ -33,12 +33,14 @@ export interface RedirectOptions {
 }
 
 // Comparable form of a redirect url: host and trailing slash stripped, so
-// `https://x.com/a/`, `/a/` and `/a` are the same source. Paths stay
-// case-sensitive (Next's redirect matcher is). Non-path values fall back to the
-// trimmed string so they still compare consistently.
+// `https://x.com/a/`, `/a/` and `/a` are the same source. Lowercased, because
+// Next.js matches redirect sources case-INsensitively by default
+// (caseSensitiveRoutes: false): `/About-Us → /about-us` is a self-redirect and
+// `/About` shadows a live `/about`. Non-path values fall back to the trimmed
+// string so they still compare consistently.
 export function redirectKey(url: string): string {
   const t = url.trim()
-  return toPathname(t) ?? t
+  return (toPathname(t) ?? t).toLowerCase()
 }
 
 // RFC 4180 field quoting — a comma, quote or newline must never shift columns.

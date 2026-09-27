@@ -116,7 +116,8 @@ async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string
   let live = new Set<string>()
   try {
     const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
-    live = pageUrlsFromPaths(tree.filter((e) => e.type === 'blob').map((e) => e.path))
+    const urls = pageUrlsFromPaths(tree.filter((e) => e.type === 'blob').map((e) => e.path))
+    live = new Set([...urls].map(redirectKey))
   } catch (err) {
     // Fail soft: cycle safety doesn't need the tree; only the Accord-style
     // "real page redirected away" guard degrades to this batch's targets.
