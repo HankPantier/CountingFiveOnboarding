@@ -28,6 +28,8 @@
       "e2e/site-pages.ts",
       "src/lib/content/strip-generator-notes.ts",
       "src/lib/content/strip-generator-notes.test.ts",
+      "src/lib/content/strip-generator-notes.parity.test.ts",
+      "src/lib/content/__fixtures__/generator-trailer.template.json",
       "src/lib/content/__fixtures__/leaked-generator-notes/accord-services.orphan-structured.page.md",
       "src/lib/content/__fixtures__/leaked-generator-notes/accord-year-end-cheer.post.md"
     ],
