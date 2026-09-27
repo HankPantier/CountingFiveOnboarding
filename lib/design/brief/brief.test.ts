@@ -17,13 +17,17 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // - P7 judge rework (2026-09-26): ONE added art-direction line, the
 //   "Signature CSS" non-negotiable (2–3 scoped css.blocks moves per concept),
 //   on every tier. Nothing else in the L1/L2 bytes moved.
-// - Concept-quality blockers (2026-09-27): the CSS RULES "Allowed at-rules" +
+// - Concept-quality blockers (2026-09-26): the CSS RULES "Allowed at-rules" +
 //   "Forbidden" lines now list everything the sanitizer rejects (incl. the new
 //   pointer-events:none-on-::before/::after-only rule), on every tier, so
 //   concepts stop spending revisions on rejected CSS. Nothing else moved.
 // - Same day, separate commit: pricing-calculator became a CSS target — it is
 //   appended to the CSS RULES "Block targets" list and gets a BLOCK VOCABULARY
 //   entry (its estimate figure is --color-action on a --color-primary panel).
+// - Task 8 fix round 1 (2026-09-26): the pricing-calculator hint now names
+//   `.bg-primary p` (the estimate panel only — a bare p also matched the canvas
+//   labels); the Forbidden line spells out the font-size grammar and var() in
+//   pointer-events; the animation line mentions view()/scroll() timelines.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

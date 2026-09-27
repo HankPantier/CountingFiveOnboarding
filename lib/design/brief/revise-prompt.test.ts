@@ -130,5 +130,8 @@ describe('pricing-calculator is a CSS target (the reviser can restyle the estima
     const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
     expect(prefix).toContain('[data-block="pricing-calculator"]')
     expect(prefix).toMatch(/Block targets: [^\n]*pricing-calculator/)
+    // Points at the estimate panel's text, not every <p> (canvas labels would fail).
+    expect(prefix).toContain('[data-block="pricing-calculator"] .bg-primary p')
+    expect(prefix).not.toContain('[data-block="pricing-calculator"] p.')
   })
 })

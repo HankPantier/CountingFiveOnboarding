@@ -41,7 +41,7 @@ export const BLOCK_CATALOG: readonly BlockSpec[] = [
   {
     id: 'pricing-calculator',
     purpose:
-      'Interactive fee estimator: service rows and option chips on the canvas, and a --color-primary estimate panel whose large price figure (a <p>, e.g. "~$169–$229") is set in --color-action — action on primary must reach 3:1 (large text), so change that pair or restyle the figure with [data-block="pricing-calculator"] p.',
+      'Interactive fee estimator: service rows and option chips on the canvas, and a --color-primary estimate panel whose large price figure (a <p>, e.g. "~$169–$229") is set in --color-action — action on primary must reach 3:1 (large text), so change that pair or restyle the panel text only with [data-block="pricing-calculator"] .bg-primary p (a bare p also hits the labels on the light canvas).',
     variants: [],
     tokens: '--color-primary (estimate panel bg), --color-action (estimate figure + CTA), --color-primary-foreground (panel text)',
   },

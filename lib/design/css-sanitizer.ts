@@ -554,6 +554,9 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
   if (prop === 'pointer-events' && value === 'none' && !innermostRuleIsGeneratedBoxOnly(decl)) {
     errors.push('pointer-events: none is not allowed (only on a ::before/::after pseudo-element).')
   }
+  // Like z-index: var() can't be statically proven not to resolve to none
+  // (`pointer-events: var(--x)` + `:root { --x: none }`).
+  if (prop === 'pointer-events' && /\bvar\(/.test(value)) errors.push(`pointer-events: ${decl.value} may not use var().`)
   if ((prop === 'animation' || prop === 'animation-fill-mode') && /\b(?:forwards|backwards|both)\b/.test(value)) {
     errors.push(`${prop}: ${decl.value} may not use the forwards/backwards/both fill mode (can hide content permanently).`)
   }

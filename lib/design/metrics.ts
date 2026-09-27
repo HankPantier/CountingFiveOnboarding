@@ -28,7 +28,7 @@ export type RawPageSample = { viewportWidth: number; scrollWidth: number; docHei
 // fg / bg: the measured text and background colours (#rrggbb, text already
 // composited over its background) — so a reviser can tell WHICH palette pair
 // failed ("text #cc381e on #003a42" = action on primary). Absent on rows
-// recorded before 2026-09-27.
+// recorded before 2026-09-26.
 export type ContrastFailure = { key: string; text: string; ratio: number; required: number; fontSizePx: number; fg?: string; bg?: string }
 export type HiddenReason = 'display' | 'visibility' | 'opacity' | 'size' | 'offscreen'
 export type HiddenBlock = { key: string; reason: HiddenReason }

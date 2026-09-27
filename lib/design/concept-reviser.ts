@@ -8,7 +8,7 @@
 // ONE repair turn: P3's repair pattern (the answer replayed + the exact errors
 // + "fix only the CSS" / "shorten to fit"), under the same cost-cap / deadline
 // gate. A paid revision is no longer thrown away over one bad declaration (the
-// 2026-09-27 live run lost a revision to `pointer-events: none`). Any other
+// 2026-09-26 live run lost a revision to `pointer-events: none`). Any other
 // failure (zod, contrast, near-duplicate), a vetoed repair or a second failure
 // is reported and the caller keeps the previous bundle (the loop never
 // retries forever). Recorded as token stage 'design_concept' — a
