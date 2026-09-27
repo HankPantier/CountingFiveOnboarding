@@ -22,6 +22,18 @@ import {
   })
 })
 
+describe('extractImportSpecifiers — CSS @import quoted in code', () => {
+  it('ignores a CSS @import string inside a test, and member calls named import/require', () => {
+    const src = [
+      "import { readFileSync } from 'node:fs'",
+      "expect(i('@import \"../styles/logo-tone.css\";')).toBeGreaterThan(i('@import \"../styles/style-axes.css\";'))",
+      "loader.import('./not-a-module')",
+      "ctx.require('./nope')",
+    ].join('\n')
+    expect(extractImportSpecifiers(src)).toEqual(['node:fs'])
+  })
+})
+
 describe('importCandidates', () => {
   it('resolves relative and @/ (→ src/) specifiers; packages are external', () => {
     expect(importCandidates('src/components/blocks/Hero.tsx', './Icon')).toContain('src/components/blocks/Icon.tsx')

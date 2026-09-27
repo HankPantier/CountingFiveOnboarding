@@ -12,11 +12,13 @@ export function isCodeFile(p: string): boolean {
 }
 
 // import x from '…' / import '…' / export … from '…' / import('…') / require('…')
+// The keyword must not follow '@', '.', '$' or a word character, so a CSS
+// `@import "…"` quoted inside a test (or `x.import(…)`) is not an import.
 const SPEC_RES = [
-  /\b(?:import|export)\b[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]/g,
-  /\bimport\s*['"]([^'"]+)['"]/g,
-  /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /\brequire\(\s*['"]([^'"]+)['"]\s*\)/g,
+  /(?<![@.$\w])(?:import|export)\b[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]/g,
+  /(?<![@.$\w])import\s*['"]([^'"]+)['"]/g,
+  /(?<![@.$\w])import\(\s*['"]([^'"]+)['"]\s*\)/g,
+  /(?<![@.$\w])require\(\s*['"]([^'"]+)['"]\s*\)/g,
 ]
 
 export function extractImportSpecifiers(src: string): string[] {
