@@ -1,6 +1,7 @@
 import { generateText, type ModelMessage } from 'ai'
 import { extractJson } from './extract-json'
 import { providerRejection } from '@/lib/ai/provider-rejection'
+import { recordAiOutage } from '@/lib/ai/ai-service-status'
 
 type GenTextOpts = Parameters<typeof generateText>[0]
 type ProviderOptions = GenTextOpts['providerOptions']
@@ -111,6 +112,9 @@ export async function generateJson(opts: GenerateJsonOptions): Promise<unknown |
   const rejected = !res.ok && res.finishReason === 'error' ? providerRejection(res.error) : null
   if (rejected) {
     console.error(`[${opts.label}] the AI provider rejected the request (${rejected.kind}) — not retrying`)
+    // Account-level outages pause every AI feature — surface the admin-shell
+    // banner from background generators too (fire-and-forget, never throws).
+    if (rejected.kind === 'credit' || rejected.kind === 'usage_limit') void recordAiOutage(rejected.kind, rejected.resetDate)
     return null
   }
   if (!res.ok && res.finishReason !== 'skipped' && opts.retryBudget) {

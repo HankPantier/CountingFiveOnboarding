@@ -18,7 +18,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (isSiteOwner(user)) return <>{children}</>
 
   // One proactive banner across the whole admin shell when Claude API credits have
-  // run out (a credit outage disables every AI feature at once).
+  // run out or the account's usage limit is reached (either disables every AI
+  // feature at once).
   const aiStatus = await getAiCreditStatus()
 
   return (
@@ -26,7 +27,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <AdminSidebar isAdmin={user.isAdmin} capabilities={user.capabilities} userName={user.name ?? undefined} />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col">
         <AdminTopBar userName={user.name ?? undefined} searchAction={hasOnboardingAccess(user) ? '/admin/dashboard' : '/admin/content'} />
-        {aiStatus.exhausted && <AiCreditBanner isAdmin={user.isAdmin} />}
+        {aiStatus.exhausted && <AiCreditBanner isAdmin={user.isAdmin} kind={aiStatus.kind} resetDate={aiStatus.resetDate} />}
         {children}
       </div>
     </div>

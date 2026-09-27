@@ -45,17 +45,23 @@ export type Database = {
         Row: {
           credit_exhausted_at: string | null
           id: boolean
+          outage_kind: string | null
           updated_at: string
+          usage_limit_resets_on: string | null
         }
         Insert: {
           credit_exhausted_at?: string | null
           id?: boolean
+          outage_kind?: string | null
           updated_at?: string
+          usage_limit_resets_on?: string | null
         }
         Update: {
           credit_exhausted_at?: string | null
           id?: boolean
+          outage_kind?: string | null
           updated_at?: string
+          usage_limit_resets_on?: string | null
         }
         Relationships: []
       }

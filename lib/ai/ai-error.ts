@@ -7,7 +7,8 @@ import {
   type AiErrorInfo,
   type AiErrorKind,
 } from './ai-error-text'
-import { recordAiCreditExhausted } from './ai-service-status'
+import { recordAiOutage } from './ai-service-status'
+import { providerRejection } from './provider-rejection'
 
 // Classify an error thrown by (or streamed from) a Claude/Anthropic call so
 // every AI surface can tell the user "this looks like a Claude API issue" with
@@ -112,9 +113,11 @@ export function logAndFormatAiStreamError(routeTag: string, error: unknown): str
   } else {
     console.warn(`[ai-error] ${routeTag} ${info.kind}: ${describeAiError(error)}`)
   }
-  // A credit outage takes down every AI surface at once — record it (fire-and-
-  // forget) so the admin shell can show one proactive banner instead of a stream
-  // of per-action failures. Never let a status write affect the response.
-  if (info.kind === 'credit') void recordAiCreditExhausted()
+  // A credit outage or an account usage limit takes down every AI surface at
+  // once — record it (fire-and-forget) so the admin shell can show one proactive
+  // banner instead of a stream of per-action failures. Never let a status write
+  // affect the response.
+  if (info.kind === 'credit') void recordAiOutage('credit')
+  if (info.kind === 'usage_limit') void recordAiOutage('usage_limit', providerRejection(error)?.resetDate ?? null)
   return info.userMessage
 }

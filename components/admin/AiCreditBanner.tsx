@@ -2,14 +2,25 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { aiOutageBannerCopy, type AiOutageKind } from '@/lib/ai/ai-outage'
 
 // Proactive, app-wide banner shown across the admin shell when the account's
-// Claude API credits have run out — a credit outage takes down every AI feature
-// at once, so one banner beats a stream of per-action "hit an error" failures.
+// Claude API credits have run out or its Anthropic API usage limit is reached —
+// either outage takes down every AI feature at once, so one banner beats a
+// stream of per-action "hit an error" failures. Copy: aiOutageBannerCopy.
 // Rendered only when the server determined the outage is active (getAiCreditStatus).
 // Dismiss is in-memory (hides for this page view; re-appears on reload while the
 // outage persists). Admins get a "topped up" action that clears the flag globally.
-export default function AiCreditBanner({ isAdmin }: { isAdmin: boolean }) {
+export default function AiCreditBanner({
+  isAdmin,
+  kind = 'credit',
+  resetDate = null,
+}: {
+  isAdmin: boolean
+  kind?: AiOutageKind
+  resetDate?: string | null
+}) {
+  const copy = aiOutageBannerCopy(kind, resetDate)
   const [hidden, setHidden] = useState(false)
   const [busy, setBusy] = useState(false)
   const router = useRouter()
@@ -33,9 +44,7 @@ export default function AiCreditBanner({ isAdmin }: { isAdmin: boolean }) {
       className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-warning/30 bg-warning/10 px-6 py-2.5 font-body text-sm text-warning-strong"
     >
       <span className="flex-1 min-w-0">
-        <span className="font-heading font-semibold">AI features are paused</span> — the account&apos;s
-        Claude API credits have run out. Add credits in the Anthropic console to restore content
-        generation, AI editing, and audits. Retrying won&apos;t help until then.
+        <span className="font-heading font-semibold">{copy.title}</span> — {copy.body}
       </span>
       <div className="flex shrink-0 items-center gap-2">
         {isAdmin && (
@@ -44,7 +53,7 @@ export default function AiCreditBanner({ isAdmin }: { isAdmin: boolean }) {
             disabled={busy}
             className="rounded-pill bg-brand-cyan px-3 py-1 font-heading text-xs font-semibold text-text-inverse transition-colors hover:bg-brand-cyan-dark disabled:opacity-50"
           >
-            {busy ? 'Clearing…' : "I've added credits"}
+            {busy ? 'Clearing…' : copy.resolveLabel}
           </button>
         )}
         <button
