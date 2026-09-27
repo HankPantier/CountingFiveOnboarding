@@ -55,6 +55,27 @@ function readEnv(): {
   }
 }
 
+// Octokit's request-log plugin reports every non-2xx response through
+// log.error, including 304 (our ETag cache hits, see ./conditional) and 404
+// (a missing file, which callers map to FileNotFoundError). Both are expected
+// and flooded the production error log; real failures (403/422/5xx, rate
+// limits) still go through.
+const EXPECTED_REQUEST_LOG = / - (304|404) with id \S+ in \d+ms$/
+
+export function isExpectedGithubRequestLog(message: unknown): boolean {
+  return typeof message === 'string' && EXPECTED_REQUEST_LOG.test(message)
+}
+
+const githubLog = {
+  debug: () => {},
+  info: () => {},
+  warn: (message: unknown, ...rest: unknown[]) => console.warn(message, ...rest),
+  error: (message: unknown, ...rest: unknown[]) => {
+    if (isExpectedGithubRequestLog(message)) return
+    console.error(message, ...rest)
+  },
+}
+
 // Returns a long-lived Octokit instance authenticated as the GitHub App
 // installation. @octokit/auth-app handles installation-token minting and
 // caching internally (tokens are valid for 1 hour and re-minted as needed),
@@ -63,6 +84,7 @@ export function getOctokit(): InstanceType<typeof ThrottledOctokit> {
   if (cached) return cached
   const { appId, privateKey, installationId } = readEnv()
   cached = new ThrottledOctokit({
+    log: githubLog,
     authStrategy: createAppAuth,
     auth: { appId, privateKey, installationId },
     throttle: {
