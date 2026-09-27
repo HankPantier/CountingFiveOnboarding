@@ -47,6 +47,9 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   negative offsets beyond -200px / -12.5rem / -50% (the authoring-time
 //   layoutGuardErrors rules that stop a Harbor-Light-style 2800 px page).
 //   Nothing else moved.
+// - WS-B fix round (2026-09-27): that same clause now names the horizontal
+//   translate and horizontal-padding rules and says the negative-offset limit
+//   is horizontal only (vertical negative margins allowed). Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

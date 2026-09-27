@@ -817,12 +817,38 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
     expect(layoutGuardErrors('[data-block="hero"] { max-width: 90vw; }')).toEqual([])
   })
 
-  it('rejects large negative offsets, allows small ones', () => {
+  it('rejects large negative HORIZONTAL offsets, allows small ones', () => {
     expect(layoutGuardErrors('[data-block="hero"] { margin-left: -240px; }')).toHaveLength(1)
-    expect(layoutGuardErrors('[data-block="hero"] { top: -60%; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { right: -60%; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { inset-inline: -13rem; }')).toHaveLength(1)
     expect(layoutGuardErrors('[data-block="hero"] h1 { text-indent: -9999px; }')).toHaveLength(1)
-    expect(layoutGuardErrors('[data-block="hero"] { margin: -13rem 0 0; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { margin: 0 -13rem; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { inset: 0 auto 0 -300px; }')).toHaveLength(1)
     expect(layoutGuardErrors('[data-block="hero"] { margin-top: -2rem; left: -24px; inset: -8px; }')).toEqual([])
+  })
+
+  it('allows large negative VERTICAL offsets (a card overlapping the hero)', () => {
+    expect(layoutGuardErrors('[data-block="service-cards"] { margin-top: -240px; }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { top: -60%; bottom: -300px; margin-block: -13rem; }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { margin: -240px 0 0; inset: -300px 0 auto; }')).toEqual([])
+  })
+
+  it('rejects viewport units in a horizontal translate, allows vertical / bounded ones', () => {
+    expect(layoutGuardErrors('[data-block="hero"] { transform: translateX(-50vw); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { transform: rotate(2deg) translate(20vw, 0); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { transform: translate3d(100vw, 0, 0); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { translate: 30vw 0; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { transform: translateY(10vh); translate: 0 5vh; }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { transform: translate(-50%, 20vh); }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { transform: translateX(min(2vw, 1rem)); }')).toEqual([])
+  })
+
+  it('rejects unbounded viewport-unit horizontal padding, allows bounded / vertical', () => {
+    expect(layoutGuardErrors('[data-block="hero"] { padding-inline: 10vw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { padding-left: 8vw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { padding-right: calc(2rem + 5vw); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { padding-inline: clamp(1rem, 5vw, 4rem); padding-left: min(6vw, 3rem); }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { padding-block: 8vh; padding-top: 10vw; }')).toEqual([])
   })
 
   it('leaves vertical viewport units, box-shadow / clip-path bleed and transforms alone', () => {

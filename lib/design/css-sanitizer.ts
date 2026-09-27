@@ -592,10 +592,14 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
 //   - no viewport units (vw/vh/vmin/vmax and their s/l/d variants, vi/vb) in a
 //     HORIZONTAL offset (left, right, inset-inline*, margin-left/right,
 //     margin-inline*, and the horizontal parts of inset / margin), nor in a
-//     width (width, min-width, inline-size, min-inline-size) unless inside
-//     min() / clamp() (bounded);
-//   - no large negative offset (≤ -200px, ≤ -12.5rem/em, ≤ -50%) in any
-//     offset, margin or text-indent.
+//     width (width, min-width, inline-size, min-inline-size) or horizontal
+//     padding (padding-inline*, padding-left/right) unless inside min() /
+//     clamp() (bounded), nor in the X component of a translate
+//     (transform: translateX / translate / translate3d, the translate property);
+//   - no large negative HORIZONTAL offset (≤ -200px, ≤ -12.5rem/em, ≤ -50%)
+//     in left/right/inset-inline*/margin-left/right/margin-inline* (and the
+//     horizontal parts of inset / margin) or text-indent. Vertical negatives
+//     stay allowed (margin-top: -240px — a card overlapping the hero).
 // box-shadow spread and clip-path draw outside the box WITHOUT widening the
 // page, so a full-bleed band stays possible.
 const VIEWPORT_UNIT_RE = /-?(?:\d+(?:\.\d+)?|\.\d+)(?:[sld]?v[wh]|v(?:min|max)|[sld]?v[ib])\b/i
@@ -611,9 +615,9 @@ const HORIZONTAL_OFFSET_PROPS = new Set([
   'margin-inline-start',
   'margin-inline-end',
 ])
-const VERTICAL_OFFSET_PROPS = new Set(['top', 'bottom', 'inset-block', 'inset-block-start', 'inset-block-end', 'margin-top', 'margin-bottom', 'margin-block', 'margin-block-start', 'margin-block-end', 'text-indent'])
 const BOX_SHORTHANDS = new Set(['inset', 'margin'])
 const WIDTH_PROPS = new Set(['width', 'min-width', 'inline-size', 'min-inline-size'])
+const HORIZONTAL_PADDING_PROPS = new Set(['padding-inline', 'padding-inline-start', 'padding-inline-end', 'padding-left', 'padding-right'])
 const NEGATIVE_LENGTH_RE = /(^|[\s,(])-(\d+(?:\.\d+)?|\.\d+)(px|rem|em|%)(?![\w%])/gi
 const LARGE_NEGATIVE: Record<string, number> = { px: 200, rem: 12.5, em: 12.5, '%': 50 }
 
@@ -657,6 +661,31 @@ function horizontalParts(value: string): string[] {
   return [parts[1], parts[3] ?? parts[1]]
 }
 
+// The X component of every translate in a transform value, or of the
+// translate property ('translate: 10vw 0' → '10vw').
+function translateXParts(prop: string, value: string): string[] {
+  if (prop === 'translate') {
+    const first = tokenizeBalanced(value.trim())[0]
+    return first ? [first] : []
+  }
+  if (prop !== 'transform') return []
+  const out: string[] = []
+  const re = /\b(translatex|translate3d|translate)\(/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(value))) {
+    let depth = 1
+    let i = m.index + m[0].length
+    const start = i
+    for (; i < value.length && depth > 0; i++) {
+      if (value[i] === '(') depth++
+      else if (value[i] === ')') depth--
+    }
+    const args = value.slice(start, i - 1)
+    out.push(m[1].toLowerCase() === 'translatex' ? args : (splitTopLevelCommas(args)[0] ?? ''))
+  }
+  return out
+}
+
 const BLEED_HINT =
   'keep decorative bleed inside the block (% or px), or draw it with box-shadow / clip-path, which never widen the page'
 
@@ -675,13 +704,14 @@ export function layoutGuardErrors(css: string): string[] {
     const horizontal = HORIZONTAL_OFFSET_PROPS.has(prop) ? [value] : BOX_SHORTHANDS.has(prop) ? horizontalParts(value) : []
     if (horizontal.some((v) => VIEWPORT_UNIT_RE.test(v))) {
       errors.push(`${shown} is not allowed — viewport units in a horizontal offset can make the page wider than the screen; ${BLEED_HINT}.`)
-    } else if (WIDTH_PROPS.has(prop) && VIEWPORT_UNIT_RE.test(withoutBoundedCalls(value))) {
-      errors.push(`${shown} is not allowed — a viewport-unit width can overflow its block and the screen (wrap it in min(100%, …) or use %); ${BLEED_HINT}.`)
+    } else if ((WIDTH_PROPS.has(prop) || HORIZONTAL_PADDING_PROPS.has(prop)) && VIEWPORT_UNIT_RE.test(withoutBoundedCalls(value))) {
+      errors.push(`${shown} is not allowed — a viewport-unit width or horizontal padding can overflow its block and the screen (wrap it in min(…) / clamp() or use %); ${BLEED_HINT}.`)
+    } else if (translateXParts(prop, value).some((x) => VIEWPORT_UNIT_RE.test(withoutBoundedCalls(x)))) {
+      errors.push(`${shown} is not allowed — a viewport-unit horizontal translate can push content past the screen edge; ${BLEED_HINT}.`)
     }
-    if (HORIZONTAL_OFFSET_PROPS.has(prop) || VERTICAL_OFFSET_PROPS.has(prop) || BOX_SHORTHANDS.has(prop)) {
-      const neg = largeNegative(value)
-      if (neg) errors.push(`${shown} is not allowed — a negative offset of ${neg} (beyond -200px / -12.5rem / -50%) pushes content off the page.`)
-    }
+    const negParts = HORIZONTAL_OFFSET_PROPS.has(prop) || prop === 'text-indent' ? [value] : BOX_SHORTHANDS.has(prop) ? horizontalParts(value) : []
+    const neg = negParts.map(largeNegative).find((n) => n !== null)
+    if (neg) errors.push(`${shown} is not allowed — a negative horizontal offset of ${neg} (beyond -200px / -12.5rem / -50%) pushes content off the page.`)
   })
   return Array.from(new Set(errors))
 }
