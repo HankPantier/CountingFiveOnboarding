@@ -272,6 +272,12 @@ describe('applyBundleToDraft — design.md (WS-B)', () => {
     expect(design.typography).toMatchObject({ headingFont: VALID.typography.headingFont })
   })
 
+  it('never touches a generated design.md whose prose an admin edited (body hash mismatch)', async () => {
+    files.set('content/design.md', { content: GENERATED.replace('## Layout\n\n', '## Layout\n\nOur own note. '), sha: 'smd' })
+    await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })
+    expect((writeFiles.mock.calls[0][1] as { path: string }[]).map((c) => c.path)).not.toContain('content/design.md')
+  })
+
   it('never touches a hand-written design.md, or one that is absent', async () => {
     files.set('content/design.md', { content: '# Our notes\nWarm and editorial.\n', sha: 'smd' })
     await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })

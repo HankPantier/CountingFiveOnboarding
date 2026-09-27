@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDesignMd, buildDesignMdFromTheme, isGeneratedDesignMd } from './design-md-builder'
+import { buildDesignMd, buildDesignMdFromTheme, designMdHashState, designMdRewrite, isGeneratedDesignMd } from './design-md-builder'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
@@ -62,7 +62,7 @@ describe('buildDesignMdFromTheme', () => {
   }
   it('writes the applied theme, the Studio direction, and stays recognisable as generated', () => {
     const md = buildDesignMdFromTheme({ brand, design, schema: { brand: { toneAdjectives: ['warm'] } } as unknown as SessionSchema, direction: { name: 'Port Arthur Ledger', tagline: 'Harbor calm', moves: ['Brass rule under kickers'] } })
-    expect(md.startsWith('<!-- Fonts: https://fonts.googleapis.com/css2?family=X -->')).toBe(true)
+    expect(md).toMatch(/^<!-- Fonts: https:\/\/fonts\.googleapis\.com\/css2\?family=X · body-sha256:[0-9a-f]{64} -->\n/)
     expect(md).toContain('primary: "#123a5c"')
     expect(md).toContain('**primary #123a5c** as the structural primary')
     expect(md).toContain('Fraunces for headlines, Public Sans for body copy')
@@ -74,5 +74,36 @@ describe('buildDesignMdFromTheme', () => {
   })
   it('omits the direction section when none is given (a restore)', () => {
     expect(buildDesignMdFromTheme({ brand, design, schema: null })).not.toContain('## Design direction')
+  })
+})
+
+// WS-B fix round: an admin's prose edits are never overwritten.
+describe('designMdRewrite', () => {
+  const before = buildDesignMd(input())
+  const after = buildDesignMd({ ...input(), direction: { name: 'Port Arthur Ledger', tagline: '', moves: [] } })
+  const rebuild = { before: () => before, after: () => after }
+  const legacy = (md: string) => md.replace(/ · body-sha256:[0-9a-f]{64}/, '')
+
+  it('an untouched hashed file is regenerated', () => {
+    expect(designMdHashState(before)).toBe('untouched')
+    expect(designMdRewrite(before, rebuild)).toBe(after)
+  })
+  it('a hashed file with edited prose is skipped (scaffolding intact)', () => {
+    const edited = before.replace('Container max-width 1200px.', 'Container max-width 1200px. We love generous gutters.')
+    expect(isGeneratedDesignMd(edited)).toBe(true)
+    expect(designMdHashState(edited)).toBe('edited')
+    expect(designMdRewrite(edited, rebuild)).toBeNull()
+  })
+  it('a legacy file (no hash) is regenerated only when it equals a rebuild of the pre-apply theme', () => {
+    const old = legacy(before)
+    expect(designMdHashState(old)).toBe('legacy')
+    expect(designMdRewrite(old, rebuild)).toBe(after)
+    expect(designMdRewrite(old.replace(/\n/g, '\r\n'), rebuild)).toBe(after)
+    const oldEdited = old.replace('Container max-width 1200px.', 'Container max-width 1140px.')
+    expect(designMdRewrite(oldEdited, rebuild)).toBeNull()
+  })
+  it('an unchanged rebuild and a hand-written file are left alone', () => {
+    expect(designMdRewrite(after, { before: () => after, after: () => after })).toBeNull()
+    expect(designMdRewrite('# Notes\n', rebuild)).toBeNull()
   })
 })

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import chroma from 'chroma-js'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens, Roundness, Density } from '@/types/design-tokens'
@@ -323,7 +324,61 @@ export function buildDesignMd(input: BuilderInput): string {
     buildDosDontsSection(input),
     ...(input.direction ? ['', buildDirectionSection(input)] : []),
   ]
-  return sections.join('\n') + '\n'
+  return withBodyHash(sections.join('\n') + '\n')
+}
+
+// ── Edit detection (WS-B fix round) ─────────────────────────────────────────
+// The leading "<!-- Fonts: … -->" comment carries a sha256 of everything after
+// it, written when this builder wrote the file. A body that no longer matches
+// was edited by hand and is never regenerated. The marker stays ONE comment on
+// the first line, so stripFrontMatter still drops it from the prompt.
+const MARKER_RE = /^<!-- Fonts: (.*?)(?: · body-sha256:([0-9a-f]{64}))? -->$/
+const sha256 = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
+const lf = (text: string): string => text.replace(/\r\n/g, '\n')
+
+function splitFirstLine(text: string): { first: string; body: string } {
+  const t = lf(text)
+  const i = t.indexOf('\n')
+  return i === -1 ? { first: t, body: '' } : { first: t.slice(0, i), body: t.slice(i + 1) }
+}
+
+function withBodyHash(md: string): string {
+  const { first, body } = splitFirstLine(md)
+  const m = MARKER_RE.exec(first)
+  if (!m) return md
+  return `<!-- Fonts: ${m[1]} · body-sha256:${sha256(body)} -->\n${body}`
+}
+
+// 'untouched' — the hash matches; 'edited' — it doesn't; 'legacy' — a file
+// written before the hash existed (or with no marker comment at all).
+export function designMdHashState(text: string): 'untouched' | 'edited' | 'legacy' {
+  const { first, body } = splitFirstLine(text)
+  const hash = MARKER_RE.exec(first)?.[2]
+  if (!hash) return 'legacy'
+  return hash === sha256(body) ? 'untouched' : 'edited'
+}
+
+// The same document with its hash dropped, for comparing a legacy file to a rebuild.
+function withoutHash(text: string): string {
+  const { first, body } = splitFirstLine(text)
+  const m = MARKER_RE.exec(first)
+  return m ? `<!-- Fonts: ${m[1]} -->\n${body}` : lf(text)
+}
+
+// What a Studio commit writes to content/design.md: the rebuild from the new
+// theme, or null to leave the file alone. Only a platform-generated file
+// (isGeneratedDesignMd) whose body is provably untouched is replaced:
+//   - hashed file: its body must still match the hash;
+//   - legacy file (no hash): it must equal a rebuild from the PRE-apply
+//     theme; anything else — an admin's prose edits, or the older builder's
+//     wording — counts as hand-written and is kept.
+export function designMdRewrite(current: string, rebuild: { before: () => string; after: () => string }): string | null {
+  if (!isGeneratedDesignMd(current)) return null
+  const state = designMdHashState(current)
+  if (state === 'edited') return null
+  if (state === 'legacy' && withoutHash(rebuild.before()) !== withoutHash(current)) return null
+  const next = rebuild.after()
+  return next === current ? null : next
 }
 
 // ── Design Studio regeneration (WS-B, R2 I6c) ───────────────────────────────

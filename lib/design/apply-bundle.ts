@@ -18,7 +18,9 @@
 // content/design.md is one this platform generated (isGeneratedDesignMd), it
 // is rewritten from the new brand/design in the SAME commit — the next Studio
 // run is then briefed against the applied theme, not the one before it. A
-// hand-written design.md is never touched; a failed read skips it (the theme
+// hand-written or hand-EDITED design.md is never touched (designMdRewrite:
+// its body hash must match, or a legacy file must equal a rebuild from the
+// pre-apply theme); a failed read skips it (the theme
 // apply never fails over its notes). In base mode the file is written
 // unguarded: the base snapshot does not cover it and a branch read right
 // after a commit can lag.
@@ -27,7 +29,7 @@ import type { DesignJson } from '@/types/design-json'
 import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError } from '@/lib/github/repo-files'
 import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
-import { isGeneratedDesignMd } from '@/lib/content/design-md-builder'
+import { designMdRewrite } from '@/lib/content/design-md-builder'
 import { bundleToRepoFiles } from './bundle-files'
 import { DESIGN_MD_PATH } from './brief/brand'
 import { FONTS_MODULE_PATH } from './drift'
@@ -63,14 +65,14 @@ export async function readOptional(repo: string, path: string): Promise<{ conten
 // unchanged, or unreadable).
 async function designMdChange(
   repo: string,
-  build: () => string | null,
+  rebuild: { before: () => string; after: () => string },
   baseMode: boolean
 ): Promise<{ path: string; content: string; expectedSha: string | undefined } | null> {
   try {
     const current = await readOptional(repo, DESIGN_MD_PATH)
-    if (!current || !isGeneratedDesignMd(current.content)) return null
-    const next = build()
-    if (next === null || next === current.content) return null
+    if (!current) return null
+    const next = designMdRewrite(current.content, rebuild)
+    if (next === null) return null
     return { path: DESIGN_MD_PATH, content: next, expectedSha: baseMode ? undefined : current.sha }
   } catch (err) {
     console.warn('[design:apply] design.md was not regenerated', err)
@@ -153,7 +155,17 @@ export async function applyBundleToDraft(args: {
   if (changes.length === 0) {
     return { ok: true, commitSha: null, blobs: {}, changedPaths: [], brand, design, css: rendered.css }
   }
-  const notes = args.designMd ? await designMdChange(githubRepo, () => args.designMd?.(brand, design) ?? null, base !== undefined) : null
+  const buildMd = args.designMd
+  const notes = buildMd
+    ? await designMdChange(
+        githubRepo,
+        {
+          before: () => buildMd(JSON.parse(brandFile.content) as BrandJson, JSON.parse(designFile.content) as DesignJson),
+          after: () => buildMd(brand, design),
+        },
+        base !== undefined
+      )
+    : null
   if (notes) changes.push(notes)
 
   const changedPaths = changes.map((c) => c.path)
