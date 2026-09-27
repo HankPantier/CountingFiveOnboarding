@@ -59,6 +59,24 @@ export interface BodyStripResult {
   removed: string[]
   /** The exact text cut from the body ('' when nothing was cut). */
   removedText: string
+  /**
+   * Set when a trailer was found but NOT cut, because the text after it holds
+   * a heading other than the two trailer headings (real content appended after
+   * the trailer). Nothing is removed; a human has to look.
+   */
+  warning?: string
+}
+
+const TRAILER_HEADING_LINE_RE =
+  /^## (?:SEO &(?:amp;)? AIO Metadata|Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`)[ \t]*\r?$/
+
+// Headings in `text` other than the two trailer headings, ignoring fenced code.
+function foreignHeadings(text: string): string[] {
+  return text
+    .replace(/```[\s\S]*?```/g, '')
+    .split(/\r?\n/)
+    .filter((l) => /^#{1,6}[ \t]/.test(l) && !TRAILER_HEADING_LINE_RE.test(l))
+    .map((l) => l.trim())
 }
 
 // Line ending of a file — CRLF when the file uses it, else LF.
@@ -134,6 +152,15 @@ export function stripGeneratorNotesFromBody(body: string): BodyStripResult {
   if (starts.length === 0) return { body, removed: [], removedText: '' }
   const cut = Math.min(...starts)
   const removedText = body.slice(cut)
+  const foreign = foreignHeadings(removedText)
+  if (foreign.length > 0) {
+    return {
+      body,
+      removed: [],
+      removedText: '',
+      warning: `Generator notes found but not removed: content follows them (${foreign.join(' | ')})`,
+    }
+  }
   const removed: string[] = []
   if (trailerStart(removedText, SEO_TRAILER_RE) >= 0) removed.push('SEO & AIO Metadata')
   removed.push(...labelsIn(removedText))
@@ -229,6 +256,8 @@ export interface FileStripResult {
   removedText: string
   /** Frontmatter keys filled from the trailer because they were empty. */
   backfilled: string[]
+  /** See BodyStripResult.warning — the file was left unchanged. */
+  warning?: string
 }
 
 /**
@@ -242,7 +271,14 @@ export function stripGeneratorNotesFromFile(content: string): FileStripResult {
   const body = parts ? parts.body : content
   const res = stripGeneratorNotesFromBody(body)
   if (!res.removedText) {
-    return { content, changed: false, removed: [], removedText: '', backfilled: [] }
+    return {
+      content,
+      changed: false,
+      removed: [],
+      removedText: '',
+      backfilled: [],
+      ...(res.warning ? { warning: res.warning } : {}),
+    }
   }
   if (!parts) {
     return { content: res.body, changed: true, removed: res.removed, removedText: res.removedText, backfilled: [] }

@@ -249,3 +249,21 @@ describe('trailer whose "## SEO & AIO Metadata" line alone was deleted', () => {
     )
   })
 })
+
+describe('refuses to cut when real content follows the trailer', () => {
+  it('returns a warning and leaves the file untouched', () => {
+    const appended = `${POST}\n## A section someone added after the trailer\n\nReal copy.\n`
+    const r = stripGeneratorNotesFromFile(appended)
+    expect(r.changed).toBe(false)
+    expect(r.content).toBe(appended)
+    expect(r.warning).toMatch(/not removed.*## A section someone added after the trailer/)
+    expect(stripGeneratorNotesFromBody(appended).body).toBe(appended)
+  })
+
+  it('ignores "#" lines inside fenced code (the JSON-LD block) and the two trailer headings', () => {
+    const withFence = POST.replace('```html\n', '```html\n# not a heading\n')
+    const r = stripGeneratorNotesFromFile(withFence)
+    expect(r.changed).toBe(true)
+    expect(r.warning).toBeUndefined()
+  })
+})

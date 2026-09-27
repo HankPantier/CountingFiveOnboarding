@@ -195,9 +195,12 @@ export async function relocateFile(
   // PAGE renderer trims. Moved into content/posts/ it rendered live (the
   // "**Internal Links:**" dump on /insights/*), so drop it on the way in.
   const swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
-  const fixed = toPath.startsWith('content/posts/')
-    ? stripGeneratorNotesFromFile(swapped).content
-    : swapped
+  let fixed = swapped
+  if (toPath.startsWith('content/posts/')) {
+    const stripped = stripGeneratorNotesFromFile(swapped)
+    if (stripped.warning) console.warn(`[relocate] ${toPath}: ${stripped.warning}`)
+    fixed = stripped.content
+  }
   let blobSha = expectedSha
   if (fixed !== moved.content) {
     const w = await writeFile(ctx.githubRepo, toPath, fixed, DRAFT_BRANCH, `Update canonical for ${toUrl}`, {

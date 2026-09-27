@@ -51,6 +51,7 @@ function mdFiles(dir: string): string[] {
 }
 
 interface Totals {
+  skipped: number
   postsStripped: number
   pagesRepaired: number
   pagesWithTrailerKept: number
@@ -59,15 +60,21 @@ interface Totals {
   labels: Record<string, number>
 }
 
-const grand: Totals = { postsStripped: 0, pagesRepaired: 0, pagesWithTrailerKept: 0, charsRemoved: 0, backfilled: 0, labels: {} }
+const grand: Totals = { skipped: 0, postsStripped: 0, pagesRepaired: 0, pagesWithTrailerKept: 0, charsRemoved: 0, backfilled: 0, labels: {} }
 
 for (const dir of dirs) {
   const root = path.resolve(dir)
-  const t: Totals = { postsStripped: 0, pagesRepaired: 0, pagesWithTrailerKept: 0, charsRemoved: 0, backfilled: 0, labels: {} }
+  const t: Totals = { skipped: 0, postsStripped: 0, pagesRepaired: 0, pagesWithTrailerKept: 0, charsRemoved: 0, backfilled: 0, labels: {} }
 
   for (const file of mdFiles(path.join(root, 'posts'))) {
     const before = fs.readFileSync(file, 'utf-8')
     const res = stripGeneratorNotesFromFile(before)
+    if (res.warning) {
+      // Content follows the trailer: never cut blind. Report for a human.
+      t.skipped++
+      console.log(`  SKIP   ${path.relative(root, file)}  ${res.warning}`)
+      continue
+    }
     if (!res.changed) continue
     t.postsStripped++
     t.charsRemoved += before.length - res.content.length
@@ -92,9 +99,11 @@ for (const dir of dirs) {
 
   console.log(
     `${apply ? 'APPLIED' : 'DRY RUN'} ${root}: ${t.postsStripped} post(s) stripped (−${t.charsRemoved} chars, ${t.backfilled} field(s) backfilled), ` +
-      `${t.pagesRepaired} page(s) repaired, ${t.pagesWithTrailerKept} page trailer(s) kept (template-trimmed). ` +
+      `${t.pagesRepaired} page(s) repaired, ${t.pagesWithTrailerKept} page trailer(s) kept (template-trimmed), ` +
+      `${t.skipped} skipped (content after trailer). ` +
       `Labels: ${Object.entries(t.labels).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}`
   )
+  grand.skipped += t.skipped
   grand.postsStripped += t.postsStripped
   grand.pagesRepaired += t.pagesRepaired
   grand.pagesWithTrailerKept += t.pagesWithTrailerKept
@@ -106,7 +115,7 @@ for (const dir of dirs) {
 if (dirs.length > 1) {
   console.log(
     `\nTOTAL: ${grand.postsStripped} post(s) stripped (−${grand.charsRemoved} chars, ${grand.backfilled} field(s) backfilled), ` +
-      `${grand.pagesRepaired} page(s) repaired, ${grand.pagesWithTrailerKept} page trailer(s) kept. ` +
+      `${grand.pagesRepaired} page(s) repaired, ${grand.pagesWithTrailerKept} page trailer(s) kept, ${grand.skipped} skipped. ` +
       `Labels: ${Object.entries(grand.labels).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}`
   )
 }
