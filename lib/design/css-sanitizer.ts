@@ -669,6 +669,9 @@ const LARGE_POSITIVE: Record<string, number> = { px: 1600, rem: 100, em: 100 }
 
 function largePositive(value: string): string | null {
   for (const m of value.matchAll(POSITIVE_LENGTH_RE)) {
+    // The operand of a calc() subtraction (`calc(100% - 1600px)`) is not a
+    // positive offset: skip a length whose preceding token is a minus.
+    if (value.slice(0, (m.index ?? 0) + m[1].length).trimEnd().endsWith('-')) continue
     const n = parseFloat(m[2])
     const unit = m[3].toLowerCase()
     if (n >= LARGE_POSITIVE[unit]) return `${m[2]}${m[3]}`

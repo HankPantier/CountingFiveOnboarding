@@ -872,6 +872,8 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
     expect(layoutGuardErrors('[data-block="hero"]::before { left: 3000px; }')).toHaveLength(1)
     expect(layoutGuardErrors('[data-block="hero"]::before { transform: translateX(3000px); }')).toHaveLength(1)
     expect(layoutGuardErrors('[data-block="hero"]::before { inset: 0 auto auto 2000px; }')).toHaveLength(1)
+    // A calc() ADDITION still counts.
+    expect(layoutGuardErrors('[data-block="hero"]::before { left: calc(100% + 1600px); }')).toHaveLength(1)
     expect(layoutGuardErrors('[data-block="hero"]::before { margin-left: 120rem; }')).toHaveLength(1)
     // Negatives: positioning and centring patterns real designs use.
     for (const css of [
@@ -882,6 +884,8 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
       '[data-block="hero"]::before { width: 200%; left: -25%; transform: rotate(-3deg); }',
       '[data-block="hero"] { transform: translateX(100%); translate: 40px 0; }',
       '[data-block="hero"] { margin-top: 2000px; top: 1600px; }',
+      // A calc() subtraction operand is not a positive offset.
+      '[data-block="hero"]::before { left: calc(100% - 1600px); transform: translateX(calc(50% - 2000px)); }',
     ]) {
       expect(layoutGuardErrors(css)).toEqual([])
     }
