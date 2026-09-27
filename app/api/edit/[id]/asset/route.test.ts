@@ -6,6 +6,7 @@ type CompanionOpts = { mode: string; expectedSha?: string; companions: Companion
 const h = vi.hoisted(() => ({
   brandText: '' as string | null,
   lightLogo: false,
+  conclusive: true,
   writeBinaryFile: vi.fn(async (..._args: unknown[]) => ({ commitSha: 'c1', blobSha: 'b1' })),
   writeBinaryFileWithCompanions: vi.fn(async (..._args: unknown[]) => ({ commitSha: 'c2', blobSha: 'b2' })),
 }))
@@ -14,7 +15,7 @@ vi.mock('../_helpers', () => ({
   resolveEditContext: async () => ({ githubRepo: 'repo', adminEmail: 'a@x.com', adminName: 'A' }),
 }))
 vi.mock('@/lib/content/logo-preflight', () => ({
-  preflightLogo: async (buffer: Buffer) => ({ buffer, lightLogo: h.lightLogo, trimmed: null, plate: null, notes: [] }),
+  preflightLogo: async (buffer: Buffer) => ({ buffer, lightLogo: h.lightLogo, toneConclusive: h.conclusive, trimmed: null, plate: null, notes: [] }),
 }))
 vi.mock('@/lib/github/repo-files', () => {
   class FileNotFoundError extends Error {}
@@ -63,6 +64,7 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     h.writeBinaryFile.mockClear()
     h.writeBinaryFileWithCompanions.mockClear()
     h.lightLogo = false
+    h.conclusive = true
   })
 
   it('clears a stale light tone in the same commit when the logo is replaced with a dark one', async () => {
@@ -105,6 +107,21 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     await put('public/content-assets/hero.png')
     expect(h.writeBinaryFileWithCompanions).not.toHaveBeenCalled()
     expect(h.writeBinaryFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('an inconclusive detection (GIF, multi-page, sharp failure) never retones — a correct "light" is kept', async () => {
+    h.brandText = brand({ primary: 'logo.png', alt: 'A logo', tone: 'light' })
+    h.conclusive = false
+    const res = await put('public/content-assets/logo.png')
+    expect(res.status).toBe(200)
+    expect(h.writeBinaryFileWithCompanions).not.toHaveBeenCalled()
+    expect(h.writeBinaryFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an explicit "dark" tone when the new logo is dark', async () => {
+    h.brandText = brand({ primary: 'logo.png', alt: 'A logo', tone: 'dark' })
+    await put('public/content-assets/logo.png')
+    expect(h.writeBinaryFileWithCompanions).not.toHaveBeenCalled()
   })
 
   it('still uploads when the site has no brand.json', async () => {

@@ -43,9 +43,10 @@ describe('retoneBrandJson', () => {
     const out = retoneBrandJson(brand({ primary: 'l.png', alt: 'a', tone: 'light' }), false)
     expect(JSON.parse(out!).logo).toEqual({ primary: 'l.png', alt: 'a' })
   })
-  it('clears an explicit "dark" tone too (absent = dark)', () => {
-    const out = retoneBrandJson(brand({ primary: 'l.png', alt: 'a', tone: 'dark' }), false)
-    expect(JSON.parse(out!).logo.tone).toBeUndefined()
+  it('keeps an explicit "dark" tone for a dark logo, but a conclusively light one overrides it', () => {
+    expect(retoneBrandJson(brand({ primary: 'l.png', alt: 'a', tone: 'dark' }), false)).toBeNull()
+    const out = retoneBrandJson(brand({ primary: 'l.png', alt: 'a', tone: 'dark' }), true)
+    expect(JSON.parse(out!).logo.tone).toBe('light')
   })
   it('returns null when nothing changes', () => {
     expect(retoneBrandJson(brand({ primary: 'l.png', alt: 'a', tone: 'light' }), true)).toBeNull()

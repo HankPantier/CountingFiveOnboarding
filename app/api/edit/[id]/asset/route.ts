@@ -243,7 +243,10 @@ async function logoRetone(
     return null
   }
   if (!isBrandLogoPath(brand.content, path)) return null
-  const { lightLogo } = await preflightLogo(buffer, path)
+  const { lightLogo, toneConclusive } = await preflightLogo(buffer, path)
+  // A GIF, a multi-page image or a sharp failure says nothing about the tone:
+  // leave brand.json as it is rather than clear a correct "light".
+  if (!toneConclusive) return null
   const brandText = retoneBrandJson(brand.content, lightLogo)
   if (brandText === null) return null
   return {

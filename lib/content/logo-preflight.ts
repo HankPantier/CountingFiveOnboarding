@@ -13,6 +13,12 @@ export type LogoPreflight = {
   trimmed: { from: string; to: string } | null
   /** Mostly white/light: needs a dark surface (inverted nav) to be visible. */
   lightLogo: boolean
+  /**
+   * Whether the pixels (or SVG colours) were actually examined. False for a
+   * GIF, a multi-page image, unreadable metadata or a sharp failure: then
+   * `lightLogo` is only the dark default, not a finding.
+   */
+  toneConclusive: boolean
   /** An opaque light background box baked into the image. */
   plate: { hex: string; share: number } | null
   /** Operator-facing notes for the Deliverables panel. */
@@ -25,10 +31,11 @@ const MIN_TRIM_SHARE = 0.1
 // A plate this large (share of the image) is worth telling the operator about.
 const PLATE_NOTE_SHARE = 0.25
 
-const noChange = (buffer: Buffer, lightLogo = false): LogoPreflight => ({
+const noChange = (buffer: Buffer, lightLogo = false, toneConclusive = false): LogoPreflight => ({
   buffer,
   trimmed: null,
   lightLogo,
+  toneConclusive,
   plate: null,
   notes: lightLogo ? [LIGHT_LOGO_NOTE] : [],
 })
@@ -62,7 +69,7 @@ export function applyLogoTone<T extends { tone?: 'light' | 'dark' }>(logo: T, li
 /** Analyse (and, for padded transparent rasters, trim) the logo. Never throws. */
 export async function preflightLogo(buffer: Buffer, fileName: string): Promise<LogoPreflight> {
   if (/\.svg$/i.test(fileName)) {
-    return noChange(buffer, isLightLogo(extractSvgColorWeights(buffer.toString('utf-8'))))
+    return noChange(buffer, isLightLogo(extractSvgColorWeights(buffer.toString('utf-8'))), true)
   }
   try {
     const meta = await sharp(buffer, { limitInputPixels: 50_000_000 }).metadata()
@@ -104,7 +111,7 @@ export async function preflightLogo(buffer: Buffer, fileName: string): Promise<L
         `The logo has an opaque ${plate.hex} background box (${Math.round(plate.share * 100)}% of the image). It shows as a box on tinted or dark surfaces such as the footer — ask the client for a transparent PNG or an SVG.`,
       )
     }
-    return { buffer: out, trimmed, lightLogo, plate, notes }
+    return { buffer: out, trimmed, lightLogo, toneConclusive: true, plate, notes }
   } catch (err) {
     console.warn(`[package] Logo preflight skipped for ${fileName}:`, err)
     return noChange(buffer)

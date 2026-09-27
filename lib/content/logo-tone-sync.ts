@@ -43,12 +43,16 @@ export function isBrandLogoPath(brandText: string, assetPath: string): boolean {
  * dark one), or null when nothing changes or the file can't be parsed. Every
  * other byte of structure is preserved; output uses the repo's 2-space JSON +
  * trailing newline convention.
+ *
+ * An explicit `tone: "dark"` (an operator's choice) is kept unless the new logo
+ * is conclusively light. Callers only get here with a conclusive detection
+ * (logo-preflight `toneConclusive`); an inconclusive one never retones.
  */
 export function retoneBrandJson(brandText: string, lightLogo: boolean): string | null {
   const brand = parseBrand(brandText)
   if (!brand || !brand.logo || typeof brand.logo !== 'object') return null
   const current = brand.logo.tone
-  if (lightLogo ? current === 'light' : current === undefined) return null
+  if (lightLogo ? current === 'light' : current === undefined || current === 'dark') return null
   const logo: BrandJson['logo'] = { ...brand.logo }
   if (lightLogo) logo.tone = 'light'
   else delete logo.tone
