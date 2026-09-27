@@ -38,6 +38,13 @@ export const BLOCK_CATALOG: readonly BlockSpec[] = [
   { id: 'form', purpose: 'Lead-capture, contact or newsletter form.', variants: ['contact', 'quote', 'newsletter', 'custom'] },
   { id: 'content-table', purpose: 'Comparison data, calendars or structured reference info.', variants: [] },
   { id: 'client-center', purpose: 'Client portal / secure-file links and logins.', variants: [] },
+  {
+    id: 'pricing-calculator',
+    purpose:
+      'Interactive fee estimator: service rows and option chips on the canvas, and a --color-primary estimate panel whose large price figure (a <p>, e.g. "~$169–$229") is set in --color-action — action on primary must reach 3:1 (large text), so change that pair or restyle the figure with [data-block="pricing-calculator"] p.',
+    variants: [],
+    tokens: '--color-primary (estimate panel bg), --color-action (estimate figure + CTA), --color-primary-foreground (panel text)',
+  },
 ]
 
 export const CHROME_CATALOG: readonly ChromeSpec[] = [

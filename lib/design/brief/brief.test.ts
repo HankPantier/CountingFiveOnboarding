@@ -21,6 +21,9 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   "Forbidden" lines now list everything the sanitizer rejects (incl. the new
 //   pointer-events:none-on-::before/::after-only rule), on every tier, so
 //   concepts stop spending revisions on rejected CSS. Nothing else moved.
+// - Same day, separate commit: pricing-calculator became a CSS target — it is
+//   appended to the CSS RULES "Block targets" list and gets a BLOCK VOCABULARY
+//   entry (its estimate figure is --color-action on a --color-primary panel).
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -248,7 +251,7 @@ describe('style axes in the brief', () => {
       expect(p).toContain('- Never emit a "style" field (style axes are not available to you).')
     }
   })
-  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 full forbidden-CSS list)', () => {
+  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 forbidden-CSS list and pricing-calculator target)', () => {
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toBe(readGolden('static-prefix-l1.golden.txt'))
     expect(buildStaticPrefix(L2)).toBe(readGolden('static-prefix-l2.golden.txt'))
   })

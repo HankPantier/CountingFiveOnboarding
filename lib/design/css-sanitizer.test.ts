@@ -775,3 +775,10 @@ describe('sanitizeDesignCss — pointer-events: none (decorative overlays only)'
     expect(errs('[data-block="content-prose"] h2 { pointer-events: none; }', GLOBAL)).toContain('pointer-events')
   })
 })
+
+describe('sanitizeDesignCss — pricing-calculator target', () => {
+  it('accepts a rule scoped to the pricing calculator (block scope and global)', () => {
+    ok('[data-block="pricing-calculator"] p { color: var(--color-primary-foreground); }', { kind: 'target', target: 'pricing-calculator' })
+    ok('[data-block="pricing-calculator"] p { color: var(--color-primary-foreground); }', GLOBAL)
+  })
+})

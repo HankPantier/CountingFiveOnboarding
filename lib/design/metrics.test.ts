@@ -248,3 +248,22 @@ describe('contrast baseline diff uses the full, uncapped failure set (PF8)', () 
     expect(parseRenderMetrics(legacy)?.viewports[0].contrastKeys).toBeUndefined()
   })
 })
+
+describe('contrast failures carry the measured colours (live run a81093ea: "~$169–$229" 2.43:1)', () => {
+  // The pricing calculator's estimate figure: --color-action text on the --color-primary panel (the palette pair; prod measured 2.43 on the theme-derived panel).
+  const figure = t({ key: 'block:pricing-calculator p#7', text: '~$169–$229', color: 'rgb(204, 56, 30)', bg: ['rgb(0, 58, 66)'], fontSizePx: 36, fontWeight: 700 })
+  it('records fg / bg as #rrggbb and names them in the gate message', () => {
+    const vm = evaluatePageSample('desktop', page({ text: [figure] }))
+    expect(vm.contrast[0]).toMatchObject({ ratio: 2.46, required: AA_LARGE, fg: '#cc381e', bg: '#003a42' })
+    const [f] = metricGateFailures({ v: 1, viewports: [vm] }, null)
+    expect(f.message).toBe('Desktop (1440): “~$169–$229” (pricing-calculator › p) is 2.46:1 — needs 3:1 (text #cc381e on #003a42)')
+  })
+  it('survives the jsonb round trip; rows without colours keep the old message', () => {
+    const metrics = combineMetrics([evaluatePageSample('desktop', page({ text: [figure] }))])
+    const parsed = parseRenderMetrics(JSON.parse(JSON.stringify(metrics)))
+    expect(parsed?.viewports[0].contrast[0]).toMatchObject({ fg: '#cc381e', bg: '#003a42' })
+    const legacy = parseRenderMetrics({ v: 1, viewports: [{ viewport: 'desktop', textChecked: 1, textUnverified: 0, contrast: [{ key: 'block:hero p#0', text: 'x', ratio: 2, required: 4.5, fontSizePx: 16, fg: 'red' }], overflow: null, hidden: [] }] })
+    expect(legacy?.viewports[0].contrast[0].fg).toBeUndefined()
+    expect(metricGateFailures(legacy!, null)[0].message).toBe('Desktop (1440): “x” (hero › p) is 2.00:1 — needs 4.5:1')
+  })
+})

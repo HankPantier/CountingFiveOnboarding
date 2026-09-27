@@ -25,7 +25,11 @@ export type RawBlockSample = {
 }
 export type RawPageSample = { viewportWidth: number; scrollWidth: number; docHeight: number; offenders: string[]; text: RawTextSample[]; blocks: RawBlockSample[] }
 
-export type ContrastFailure = { key: string; text: string; ratio: number; required: number; fontSizePx: number }
+// fg / bg: the measured text and background colours (#rrggbb, text already
+// composited over its background) — so a reviser can tell WHICH palette pair
+// failed ("text #cc381e on #003a42" = action on primary). Absent on rows
+// recorded before 2026-09-27.
+export type ContrastFailure = { key: string; text: string; ratio: number; required: number; fontSizePx: number; fg?: string; bg?: string }
 export type HiddenReason = 'display' | 'visibility' | 'opacity' | 'size' | 'offscreen'
 export type HiddenBlock = { key: string; reason: HiddenReason }
 export type ViewportMetrics = {
@@ -79,7 +83,7 @@ function over(top: Rgba, bottom: Rgb): Rgb {
   return [top[0] * a + bottom[0] * (1 - a), top[1] * a + bottom[1] * (1 - a), top[2] * a + bottom[2] * (1 - a)]
 }
 
-export function contrastOf(sample: RawTextSample): { ratio: number; required: number } | null {
+export function contrastOf(sample: RawTextSample): { ratio: number; required: number; fg: string; bg: string } | null {
   if (sample.bgImage) return null
   let bg: Rgb = WHITE
   // bg is innermost-first; paint from the outermost inwards over the canvas.
@@ -94,7 +98,7 @@ export function contrastOf(sample: RawTextSample): { ratio: number; required: nu
   const text = over([fg[0], fg[1], fg[2], fg[3] * opacity], bg)
   const ratio = chroma.contrast(chroma.rgb(...text), chroma.rgb(...bg))
   const large = sample.fontSizePx >= LARGE_PX || (sample.fontSizePx >= LARGE_BOLD_PX && sample.fontWeight >= BOLD)
-  return { ratio, required: large ? AA_LARGE : AA_NORMAL }
+  return { ratio, required: large ? AA_LARGE : AA_NORMAL, fg: chroma.rgb(...text).hex('rgb'), bg: chroma.rgb(...bg).hex('rgb') }
 }
 
 function hiddenReason(b: RawBlockSample, docWidth: number): HiddenReason | null {
@@ -119,7 +123,9 @@ export function evaluatePageSample(viewport: RunViewport, raw: RawPageSample): V
       continue
     }
     textChecked++
-    if (c.ratio < c.required) contrast.push({ key: sample.key, text: sample.text, ratio: floor2(c.ratio), required: c.required, fontSizePx: sample.fontSizePx })
+    if (c.ratio < c.required) {
+      contrast.push({ key: sample.key, text: sample.text, ratio: floor2(c.ratio), required: c.required, fontSizePx: sample.fontSizePx, fg: c.fg, bg: c.bg })
+    }
   }
   contrast.sort((a, b) => a.ratio / a.required - b.ratio / b.required)
   const overflows = raw.scrollWidth > raw.viewportWidth + OVERFLOW_TOLERANCE_PX || raw.offenders.length > 0
@@ -173,7 +179,8 @@ export function metricGateFailures(metrics: RenderMetrics, baseline: RenderMetri
     for (const f of vm.contrast) {
       shown.add(f.key)
       if (baseContrast.has(f.key)) continue
-      out.push({ kind: 'contrast', viewport: vm.viewport, message: `${label}: “${f.text}” (${describeKey(f.key)}) is ${f.ratio.toFixed(2)}:1 — needs ${f.required}:1` })
+      const colours = f.fg && f.bg ? ` (text ${f.fg} on ${f.bg})` : ''
+      out.push({ kind: 'contrast', viewport: vm.viewport, message: `${label}: “${f.text}” (${describeKey(f.key)}) is ${f.ratio.toFixed(2)}:1 — needs ${f.required}:1${colours}` })
     }
     // New failures past the display cap have no detail stored — one summary line.
     const unshown = contrastKeysOf(vm).filter((k) => !shown.has(k) && !baseContrast.has(k))
@@ -249,6 +256,7 @@ export function parseRawPageSample(value: unknown): RawPageSample | null {
   }
 }
 
+const HEX6 = /^#[0-9a-f]{6}$/
 const HIDDEN_REASONS: readonly HiddenReason[] = ['display', 'visibility', 'opacity', 'size', 'offscreen']
 
 function parseViewportMetrics(v: unknown): ViewportMetrics | null {
@@ -260,7 +268,10 @@ function parseViewportMetrics(v: unknown): ViewportMetrics | null {
     const key = str(f.key, 200)
     const text = str(f.text, 80)
     if (key === null || text === null || !finite(f.ratio) || !finite(f.required) || !finite(f.fontSizePx)) return []
-    return [{ key, text, ratio: f.ratio, required: f.required, fontSizePx: f.fontSizePx }]
+    const out: ContrastFailure = { key, text, ratio: f.ratio, required: f.required, fontSizePx: f.fontSizePx }
+    if (typeof f.fg === 'string' && HEX6.test(f.fg)) out.fg = f.fg
+    if (typeof f.bg === 'string' && HEX6.test(f.bg)) out.bg = f.bg
+    return [out]
   })
   const hidden = v.hidden.flatMap((h): HiddenBlock[] => {
     if (!isPlainObject(h)) return []
