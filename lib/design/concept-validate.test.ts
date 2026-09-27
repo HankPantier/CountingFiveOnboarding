@@ -32,6 +32,14 @@ describe('validateConceptBundle', () => {
     expect(r.concept.notes).toEqual([])
   })
 
+  it('rejects newly authored CSS that can widen the page (layout guards), naming the fragment', () => {
+    const raw = { ...rawOf(VALID), css: { blocks: { hero: '[data-block="hero"]::before { content: ""; position: absolute; inset: 0 -100vmax auto; }' } } }
+    const r = validateConceptBundle(raw, CTX)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors[0]).toMatch(/^css\.blocks\.hero: inset: 0 -100vmax auto is not allowed/)
+    expect(validateConceptBundle(raw, { ...CTX, layoutGuards: 'none' }).ok).toBe(true)
+  })
+
   it('rejects a schema violation with the zod path', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, primary: 'navy' } }, CTX)
     expect(r.ok).toBe(false)

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { PAGE_METRICS_SCRIPT } from './page-metrics-script'
 import { evaluatePageSample, parseRawPageSample, type RawPageSample } from '../metrics'
 
@@ -78,5 +78,47 @@ describe('PAGE_METRICS_SCRIPT', () => {
     expect(s?.scrollWidth).toBe(420)
     expect(s?.offenders).toEqual(['block:cta-banner div#0 (600px)'])
     expect(evaluatePageSample('mobile', s as RawPageSample).overflow).not.toBeNull()
+  })
+})
+
+// WS-B (R2 F5): Harbor Light r2's `[data-block="hero"] …::before { inset: 0
+// -100vmax auto }` made a 2800 px page with NO offending element box — the
+// stored overflow had offenders: [] and the critic / reviser had to guess.
+describe('PAGE_METRICS_SCRIPT — overflow culprit by clip probing', () => {
+  const realGcs = window.getComputedStyle
+  const clipped = (el: Element | null): boolean => {
+    for (let a = el; a; a = a.parentElement) if ((a as HTMLElement).style?.getPropertyValue('overflow-x') === 'clip') return true
+    return false
+  }
+  const setup = (pseudo: boolean) => {
+    document.body.innerHTML = `
+      <nav data-component="navbar" data-rect="0,0,1440,80"><a data-rect="10,10,100,20">Home</a></nav>
+      <section data-block="hero" data-rect="0,80,1440,600">
+        <div data-rect="0,80,1440,600"><div id="bleed" data-rect="100,100,600,400"><h1 data-rect="100,100,600,80">Hello</h1></div></div>
+      </section>`
+    stubLayout(1440, 0)
+    Object.defineProperty(document.documentElement, 'scrollWidth', { configurable: true, get: () => (clipped(document.getElementById('bleed')) ? 1440 : 2800) })
+    window.getComputedStyle = ((el: Element, p?: string | null) =>
+      pseudo && p === '::before' && el.id === 'bleed'
+        ? ({ content: '""', position: 'absolute', left: '-1280px', right: '-1280px', width: '3040px' } as unknown as CSSStyleDeclaration)
+        : realGcs(el)) as typeof window.getComputedStyle
+  }
+  afterEach(() => {
+    window.getComputedStyle = realGcs
+  })
+
+  it('names the block and the pseudo-element (with its offsets), and restores every inline style', () => {
+    setup(true)
+    const s = collect()
+    expect(s?.scrollWidth).toBe(2800)
+    expect(s?.offenders).toEqual(['block:hero div#1::before (position absolute, left -1280px, right -1280px, width 3040px) (2800px)'])
+    expect(Array.from(document.querySelectorAll('[style]')).every((e) => e.getAttribute('style') === '')).toBe(true) // probed, then restored
+    const gate = evaluatePageSample('desktop', s as RawPageSample)
+    expect(gate.overflow?.offenders[0]).toContain('::before')
+  })
+
+  it('without a pseudo-element it names the deepest element whose contents overflow', () => {
+    setup(false)
+    expect(collect()?.offenders).toEqual(['block:hero div#1 (its contents, 2800px)'])
   })
 })

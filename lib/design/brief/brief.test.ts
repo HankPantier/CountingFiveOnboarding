@@ -42,6 +42,11 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // - Task 11 (2026-09-26): ONE added TOKEN CONTRACT line — small action text
 //   is auto-corrected (--color-action-text / --color-action-on-primary at
 //   4.5:1), so the model can pick a bold action colour. Nothing else moved.
+// - WS-B layout guards (2026-09-27): the CSS RULES "Forbidden" line gains ONE
+//   clause at its end — viewport units in horizontal offsets / widths and
+//   negative offsets beyond -200px / -12.5rem / -50% (the authoring-time
+//   layoutGuardErrors rules that stop a Harbor-Light-style 2800 px page).
+//   Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

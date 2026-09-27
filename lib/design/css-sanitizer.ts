@@ -28,7 +28,9 @@
 //   - text-indent pushing text off-screen (e.g. -9999px);
 //   - clip-path clipping the element away (e.g. inset(50%));
 //   - off-screen positioning (large negative margins, an absolute overlay
-//     sized to the viewport covering other content).
+//     sized to the viewport covering other content) — closed for NEWLY
+//     AUTHORED CSS (concepts, revisions, chat edits) by layoutGuardErrors()
+//     below; not applied here, so a restore of an older version still works.
 // (content-visibility:hidden, filter opacity(), zoom, and scale < 0.2 ARE
 // rejected — closed in the pre-merge handoff review.)
 import postcss, {
@@ -579,6 +581,109 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
   if (/--spacing\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use --spacing() (Tailwind-only function).`)
   if (/--alpha\(/.test(value)) errors.push(`${prop}: ${decl.value} may not use --alpha() (Tailwind-only function).`)
   if (value.includes('url(')) checkUrls(decl.value, errors)
+}
+
+// ── Layout guards (authoring-time only) ─────────────────────────────────────
+// Declarations that can make the PAGE wider than the screen or push content
+// off it (Harbor Light r2: `[data-block="hero"]::before { inset: 0 -100vmax
+// auto }` → a 2800 px page). Run on CSS a model or the chat just wrote —
+// never on stored versions (a restore must still apply), so it lives outside
+// sanitizeDesignCss. Rules:
+//   - no viewport units (vw/vh/vmin/vmax and their s/l/d variants, vi/vb) in a
+//     HORIZONTAL offset (left, right, inset-inline*, margin-left/right,
+//     margin-inline*, and the horizontal parts of inset / margin), nor in a
+//     width (width, min-width, inline-size, min-inline-size) unless inside
+//     min() / clamp() (bounded);
+//   - no large negative offset (≤ -200px, ≤ -12.5rem/em, ≤ -50%) in any
+//     offset, margin or text-indent.
+// box-shadow spread and clip-path draw outside the box WITHOUT widening the
+// page, so a full-bleed band stays possible.
+const VIEWPORT_UNIT_RE = /-?(?:\d+(?:\.\d+)?|\.\d+)(?:[sld]?v[wh]|v(?:min|max)|[sld]?v[ib])\b/i
+const HORIZONTAL_OFFSET_PROPS = new Set([
+  'left',
+  'right',
+  'inset-inline',
+  'inset-inline-start',
+  'inset-inline-end',
+  'margin-left',
+  'margin-right',
+  'margin-inline',
+  'margin-inline-start',
+  'margin-inline-end',
+])
+const VERTICAL_OFFSET_PROPS = new Set(['top', 'bottom', 'inset-block', 'inset-block-start', 'inset-block-end', 'margin-top', 'margin-bottom', 'margin-block', 'margin-block-start', 'margin-block-end', 'text-indent'])
+const BOX_SHORTHANDS = new Set(['inset', 'margin'])
+const WIDTH_PROPS = new Set(['width', 'min-width', 'inline-size', 'min-inline-size'])
+const NEGATIVE_LENGTH_RE = /(^|[\s,(])-(\d+(?:\.\d+)?|\.\d+)(px|rem|em|%)(?![\w%])/gi
+const LARGE_NEGATIVE: Record<string, number> = { px: 200, rem: 12.5, em: 12.5, '%': 50 }
+
+// The value with every min( … ) / clamp( … ) call removed (their result is
+// bounded by a non-viewport argument in practice).
+function withoutBoundedCalls(value: string): string {
+  let out = value
+  for (let guard = 0; guard < 20; guard++) {
+    const m = /\b(?:min|clamp)\(/i.exec(out)
+    if (!m) break
+    let depth = 0
+    let end = -1
+    for (let i = m.index + m[0].length - 1; i < out.length; i++) {
+      if (out[i] === '(') depth++
+      else if (out[i] === ')' && --depth === 0) {
+        end = i
+        break
+      }
+    }
+    if (end === -1) break
+    out = `${out.slice(0, m.index)}0${out.slice(end + 1)}`
+  }
+  return out
+}
+
+function largeNegative(value: string): string | null {
+  for (const m of value.matchAll(NEGATIVE_LENGTH_RE)) {
+    const n = parseFloat(m[2])
+    const unit = m[3].toLowerCase()
+    if (n >= LARGE_NEGATIVE[unit]) return `-${m[2]}${m[3]}`
+  }
+  return null
+}
+
+// [top, right, bottom, left] → the horizontal (right, left) parts of a 1–4
+// value box shorthand.
+function horizontalParts(value: string): string[] {
+  const parts = tokenizeBalanced(value.trim())
+  if (parts.length === 1) return [parts[0]]
+  if (parts.length === 2 || parts.length === 3) return [parts[1]]
+  return [parts[1], parts[3] ?? parts[1]]
+}
+
+const BLEED_HINT =
+  'keep decorative bleed inside the block (% or px), or draw it with box-shadow / clip-path, which never widen the page'
+
+export function layoutGuardErrors(css: string): string[] {
+  let root: Root
+  try {
+    root = postcss.parse(css)
+  } catch {
+    return [] // the sanitizer reports parse errors
+  }
+  const errors: string[] = []
+  root.walkDecls((decl) => {
+    const prop = decl.prop.toLowerCase()
+    const value = decl.value.trim()
+    const shown = `${decl.prop}: ${decl.value.trim()}`.slice(0, 120)
+    const horizontal = HORIZONTAL_OFFSET_PROPS.has(prop) ? [value] : BOX_SHORTHANDS.has(prop) ? horizontalParts(value) : []
+    if (horizontal.some((v) => VIEWPORT_UNIT_RE.test(v))) {
+      errors.push(`${shown} is not allowed — viewport units in a horizontal offset can make the page wider than the screen; ${BLEED_HINT}.`)
+    } else if (WIDTH_PROPS.has(prop) && VIEWPORT_UNIT_RE.test(withoutBoundedCalls(value))) {
+      errors.push(`${shown} is not allowed — a viewport-unit width can overflow its block and the screen (wrap it in min(100%, …) or use %); ${BLEED_HINT}.`)
+    }
+    if (HORIZONTAL_OFFSET_PROPS.has(prop) || VERTICAL_OFFSET_PROPS.has(prop) || BOX_SHORTHANDS.has(prop)) {
+      const neg = largeNegative(value)
+      if (neg) errors.push(`${shown} is not allowed — a negative offset of ${neg} (beyond -200px / -12.5rem / -50%) pushes content off the page.`)
+    }
+  })
+  return Array.from(new Set(errors))
 }
 
 export function sanitizeDesignCss(css: string, scope: CssScope): SanitizeResult {

@@ -10,8 +10,11 @@
 // hidden blocks) is made in lib/design/metrics.ts so it is unit-tested
 // without a browser. A horizontal clip on html/body (overflow-x hidden or
 // clip) means nothing scrolls sideways: the page is reported as not
-// overflowing and nothing past the right edge is an offender. Bounded:
-// ≤ 4000 elements scanned, ≤ 400 text samples, ≤ 80 blocks, ≤ 8 offenders.
+// overflowing and nothing past the right edge is an offender. When the page
+// overflows but no element box does (a ::before/::after bleed), the culprit
+// block / pseudo-element is found by clip probing (see below). Bounded:
+// ≤ 4000 elements scanned, ≤ 400 text samples, ≤ 80 blocks, ≤ 8 offenders,
+// ≤ 80 clip probes.
 // Empty computed values (jsdom) are read as the CSS initial value.
 export const PAGE_METRICS_SCRIPT = String.raw`(() => {
   const MAX_SCAN = 4000, MAX_TEXT = 400, MAX_BLOCKS = 80, MAX_OFFENDERS = 8;
@@ -123,6 +126,65 @@ export const PAGE_METRICS_SCRIPT = String.raw`(() => {
     if ((getComputedStyle(el).visibility || 'visible') !== 'visible' || clippedOrFixed(el)) continue;
     offending.add(el);
     offenders.push(offenderKey(el) + ' (' + Math.round(r.right) + 'px)');
+  }
+
+  // The page is wider than the screen but no element's box pokes out: the
+  // culprit is a ::before/::after (not in the DOM) or a box scanned past the
+  // limits. Find it by CLIPPING: overflow-x: clip on an element hides its
+  // descendants' and pseudo-elements' overflow (not its own box) and creates
+  // no scroll container. The first [data-block]/[data-component] whose clip
+  // brings the page back is the culprit block; descend while a single child's
+  // clip still does. At the deepest such element the overflow is its own
+  // pseudo-element (named when it has content) or a too-wide child. Every
+  // inline style is restored; bounded by MAX_PROBES re-measures.
+  if (!pageClipsX && scrollWidth > vw + 1 && offenders.length === 0) {
+    const MAX_PROBES = 80;
+    let probes = 0;
+    const measure = () => Math.max(root.scrollWidth || 0, body ? body.scrollWidth || 0 : 0);
+    const fixes = (el) => {
+      if (probes++ >= MAX_PROBES || !el.style) return false;
+      const prev = el.style.getPropertyValue('overflow-x');
+      const prio = el.style.getPropertyPriority('overflow-x');
+      el.style.setProperty('overflow-x', 'clip', 'important');
+      const w = measure();
+      if (prev) el.style.setProperty('overflow-x', prev, prio); else el.style.removeProperty('overflow-x');
+      return w <= vw + 1;
+    };
+    const keyFor = (el) => {
+      const b = el.getAttribute('data-block'), c = el.getAttribute('data-component');
+      if (b || c) {
+        const sel = b ? '[data-block="' + b + '"]' : '[data-component="' + c + '"]';
+        return (b ? 'block:' + b : 'component:' + c) + '#' + Math.max(0, Array.from(document.querySelectorAll(sel)).indexOf(el));
+      }
+      const base = scopeOf(el) + ' ' + el.tagName.toLowerCase();
+      let n = 0;
+      for (const o of all) { if (o === el) break; if (scopeOf(o) + ' ' + o.tagName.toLowerCase() === base) n++; }
+      return base + '#' + n;
+    };
+    const pseudoOf = (el) => {
+      for (const p of ['::before', '::after']) {
+        const s = getComputedStyle(el, p);
+        const content = s.content || 'none';
+        if (content !== 'none' && content !== 'normal') return p + ' (position ' + (s.position || 'static') + ', left ' + (s.left || 'auto') + ', right ' + (s.right || 'auto') + ', width ' + (s.width || 'auto') + ')';
+      }
+      return null;
+    };
+    const px = ' (' + Math.round(scrollWidth) + 'px)';
+    for (const scope of Array.from(document.querySelectorAll('[data-block],[data-component]'))) {
+      if (offenders.length > 0 || probes >= MAX_PROBES) break;
+      if (scope.parentElement && scope.parentElement.closest('[data-block],[data-component]')) continue;
+      if (!fixes(scope)) continue;
+      let cur = scope;
+      for (let depth = 0; depth < 40; depth++) {
+        let next = null;
+        for (const child of Array.from(cur.children)) { if (fixes(child)) { next = child; break; } }
+        if (!next) break;
+        cur = next;
+      }
+      const pseudo = pseudoOf(cur);
+      const wide = Array.from(cur.children).find((ch) => ch.getBoundingClientRect().right > vw + 2);
+      offenders.push(pseudo ? keyFor(cur) + pseudo + px : wide ? keyFor(wide) + ' (' + Math.round(wide.getBoundingClientRect().right) + 'px)' : keyFor(cur) + ' (its contents, ' + Math.round(scrollWidth) + 'px)');
+    }
   }
 
   return { viewportWidth: vw, scrollWidth, docHeight: root.scrollHeight || 0, offenders, text, blocks };

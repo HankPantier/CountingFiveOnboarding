@@ -12,6 +12,7 @@ import { fontsUnlocked, styleAxesUnlocked } from './capabilities'
 import { applyChatEdit, describeChatEdit, fragmentOf, sameLevers, type ChatEdit, type CssFragmentKey } from './chat-edits'
 import { PREVIEWS_PER_TURN } from './chat-types'
 import { checkConceptCandidate } from './concept-validate'
+import { layoutGuardErrors } from './css-sanitizer'
 import { cssByteLength, cssCaps, countCssLines } from './css-budget'
 import type { RenderMetrics } from './metrics'
 import type { DesignCapabilities, RunScreenshot } from './run-types'
@@ -72,9 +73,15 @@ export class ChatWorkspace {
     if (edit.kind === 'style' && !styleAxesUnlocked(this.caps)) return { ok: false, error: STYLE_LOCKED_TOOL_ERROR }
     const candidate = applyChatEdit(this.working, edit)
     if (sameLevers(candidate, this.working)) return { ok: true, changed: false, notes: [], budget: null }
+    // Layout guards apply to the CSS this edit writes — not to fragments the
+    // site already carries (they were applied before these rules existed).
+    if (edit.kind === 'css') {
+      const layout = layoutGuardErrors(edit.css)
+      if (layout.length > 0) return { ok: false, error: layout.join(' ').slice(0, 1500) }
+    }
     const v = checkConceptCandidate(
       candidate,
-      { current: this.init.current, caps: this.caps, paletteFreedom: 'free', draftFiles: this.files, model: this.init.model },
+      { current: this.init.current, caps: this.caps, paletteFreedom: 'free', draftFiles: this.files, model: this.init.model, layoutGuards: 'none' },
       []
     )
     if (!v.ok) return { ok: false, error: v.errors.join(' ').slice(0, 1500) }

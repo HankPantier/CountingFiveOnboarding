@@ -172,3 +172,18 @@ describe('revise prompt: no palette-level action contrast', () => {
     expect(g).toContain('2.43:1 — needs 3:1')
   })
 })
+
+describe('overflow + uncritiqued versions (WS-B)', () => {
+  const textOf = (a: RevisePromptArgs) => texts(buildRevisePrompt(a).parts)
+  it('an overflow failure brings the culprit hint; an uncritiqued version says so', () => {
+    const text = textOf({ ...ARGS, critique: null, gateFailures: ['Desktop (1440): the page is wider than the screen (2800 px at 1440 px) — e.g. hero › div::before (position absolute, left -1280px)'] })
+    expect(text).toContain('An overflow names its culprit after "e.g."')
+    expect(text).toContain('This version was NOT critiqued')
+    expect(text).toContain('box-shadow spread or clip-path')
+  })
+  it('a critiqued version with only contrast failures gets neither', () => {
+    const text = textOf({ ...ARGS, gateFailures: ['x is 2.1:1 — needs 4.5:1 (text #cd391f on #123456)'] })
+    expect(text).not.toContain('An overflow names its culprit')
+    expect(text).not.toContain('NOT critiqued')
+  })
+})

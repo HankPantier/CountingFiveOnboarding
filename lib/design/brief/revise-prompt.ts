@@ -104,6 +104,11 @@ export function annotatePaletteHexes(line: string, palette: DesignBundle['palett
 const CONTRAST_FIX_HINT =
   'A contrast failure names the measured text and background colours: change that palette pair (e.g. action text on a primary panel needs 3:1 for large text, 4.5:1 for small), or restyle that element with a scoped rule on its own block — [data-block="<id>"] … — using a colour variable that passes.'
 
+const OVERFLOW_FIX_HINT =
+  'An overflow names its culprit after "e.g." (a block, an element, or a ::before/::after with its computed position and offsets). Remove the viewport-unit or large negative offset / width on it — keep decorative bleed inside the block (% or px), or draw a full-bleed band with a box-shadow spread or clip-path, which never widen the page.'
+const NOT_CRITIQUED =
+  'This version was NOT critiqued: a hard render check failed first, so the art director never saw it. Fix the failures below and keep the concept’s direction.'
+
 const image = (bytes: Uint8Array): DynamicPart => ({ type: 'image', image: bytes, mediaType: 'image/webp' })
 
 export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
@@ -127,6 +132,7 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
       text: `CLAIM CHECK — your description and your levers disagree. Set the lever or change the words:\n${claims.map((c) => `- ${c}`).join('\n')}`,
     })
   }
+  if (!args.critique && args.gateFailures.length > 0) parts.push({ type: 'text', text: NOT_CRITIQUED })
   if (args.gateFailures.length > 0) {
     parts.push({
       type: 'text',
@@ -134,6 +140,7 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
         'RENDER-CHECK FAILURES — hard gates: a concept with any of these cannot be applied. Fix every one.',
         ...args.gateFailures.map((f) => `- ${annotatePaletteHexes(f, args.bundle.palette)}`),
         ...(args.gateFailures.some((f) => f.includes(':1 — needs')) ? [CONTRAST_FIX_HINT] : []),
+        ...(args.gateFailures.some((f) => f.includes('wider than the screen')) ? [OVERFLOW_FIX_HINT] : []),
       ].join('\n'),
     })
   }

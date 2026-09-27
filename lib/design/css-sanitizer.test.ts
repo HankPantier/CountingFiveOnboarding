@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sanitizeDesignCss, type CssScope } from './css-sanitizer'
+import { layoutGuardErrors, sanitizeDesignCss, type CssScope } from './css-sanitizer'
 
 const HERO: CssScope = { kind: 'target', target: 'hero' }
 const GLOBAL: CssScope = { kind: 'global' }
@@ -796,5 +796,45 @@ describe('sanitizeDesignCss — remaining specimen-block targets', () => {
     ok('[data-block="contact-info"] h3 { text-transform: uppercase; }', { kind: 'target', target: 'contact-info' })
     ok('[data-block="map"] iframe { border-radius: 0; }', { kind: 'target', target: 'map' })
     ok('[data-block="resource-list"] h3 { font-weight: 600; }', GLOBAL)
+  })
+})
+
+describe('layoutGuardErrors (authoring-time, WS-B)', () => {
+  it('rejects the Harbor Light r2 bleed: viewport units in a horizontal inset / margin / offset', () => {
+    const harbor = '[data-block="hero"]::before { content: ""; position: absolute; inset: 0 -100vmax auto; height: 1px; }'
+    expect(layoutGuardErrors(harbor).join(' ')).toMatch(/inset: 0 -100vmax auto is not allowed — viewport units in a horizontal offset/)
+    expect(layoutGuardErrors('[data-block="hero"] { margin-inline: calc(50% - 50vw); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { margin: 0 -10vw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { left: -5svw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { right: 2vmin; }')).toHaveLength(1)
+  })
+
+  it('rejects unbounded viewport-unit widths, allows bounded ones', () => {
+    expect(layoutGuardErrors('[data-block="hero"] { width: 100vw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { min-width: calc(100% + 20vw); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { width: min(100%, 60vw); }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { width: clamp(18rem, 40vw, 36rem); }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { max-width: 90vw; }')).toEqual([])
+  })
+
+  it('rejects large negative offsets, allows small ones', () => {
+    expect(layoutGuardErrors('[data-block="hero"] { margin-left: -240px; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { top: -60%; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] h1 { text-indent: -9999px; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { margin: -13rem 0 0; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { margin-top: -2rem; left: -24px; inset: -8px; }')).toEqual([])
+  })
+
+  it('leaves vertical viewport units, box-shadow / clip-path bleed and transforms alone', () => {
+    const ok = [
+      '[data-block="hero"] { min-height: 70vh; padding-block: 8vh; margin-top: 4vh; }',
+      '[data-block="hero"] { box-shadow: 0 0 0 100vmax var(--color-secondary); clip-path: inset(0 -100vmax); }',
+      '[data-block="hero"] h1 { font-size: clamp(2rem, 5vw, 4rem); }',
+    ]
+    for (const css of ok) expect(layoutGuardErrors(css)).toEqual([])
+  })
+
+  it('is not part of sanitizeDesignCss (a stored version with old bleed CSS still restores)', () => {
+    expect(sanitizeDesignCss('[data-block="hero"] { width: 100vw; }', HERO).ok).toBe(true)
   })
 })

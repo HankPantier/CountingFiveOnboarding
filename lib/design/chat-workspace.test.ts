@@ -92,6 +92,16 @@ describe('ChatWorkspace edits', () => {
   })
 })
 
+describe('ChatWorkspace layout guards', () => {
+  it('refuses a CSS edit that can widen the page, but not the site\'s older fragments', () => {
+    const w = ws({ current: { ...current(), css: { blocks: { hero: '[data-block="hero"] { width: 100vw; }' } } } })
+    expect(w.apply({ kind: 'palette', patch: { secondary: '#eef2f7' } })).toMatchObject({ ok: true, changed: true })
+    const bad = w.apply({ kind: 'css', target: 'hero', css: '[data-block="hero"] { margin-inline: -50vw; }' })
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.error).toMatch(/viewport units in a horizontal offset/)
+  })
+})
+
 describe('ChatWorkspace previews + commits', () => {
   it('allows PREVIEWS_PER_TURN preview slots', () => {
     const w = ws()
