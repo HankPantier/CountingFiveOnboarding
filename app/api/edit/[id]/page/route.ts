@@ -4,6 +4,9 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
 import { safePath } from '../_path'
 import { stripNavReference } from '@/lib/editor/nav-mutations'
+import { planRedirectClear } from '@/lib/editor/new-page-redirects'
+import { readSiteBlogPath } from '@/lib/editor/relocate'
+import { pageUrlsFromPaths } from '@/lib/editor/redirects'
 import {
   AssetExistsError,
   DRAFT_BRANCH,
@@ -77,6 +80,15 @@ export async function POST(
 
   try {
     await ensureDraftBranch(ctx.githubRepo)
+    // Restoring puts the page back at its url: a redirects.csv row still 301ing
+    // that url away would leave it unreachable, so drop it in the same commit.
+    const clear =
+      action === 'restore'
+        ? await planRedirectClear(
+            ctx.githubRepo,
+            [...pageUrlsFromPaths([newPath], await readSiteBlogPath(ctx.githubRepo))]
+          )
+        : null
     const result = await moveFile(
       ctx.githubRepo,
       path,
@@ -86,12 +98,12 @@ export async function POST(
       `${action === 'draft' ? 'Unpublish' : 'Restore'} ${path.split('/').pop()} via admin (${
         ctx.adminEmail ?? 'unknown'
       })`,
-      author(ctx)
+      { ...author(ctx), ...(clear ? { companions: [clear.companion] } : {}) }
     )
     // Drafting takes the page off the live site, so drop its nav link too.
     // Restore leaves nav alone — the admin re-links manually.
     if (action === 'draft') await stripNavReference(ctx, path)
-    return NextResponse.json({ ...result, newPath })
+    return NextResponse.json({ ...result, newPath, ...(clear ? { redirectNotice: clear.notice } : {}) })
   } catch (err) {
     return mapError(err)
   }

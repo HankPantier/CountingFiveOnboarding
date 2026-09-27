@@ -45,7 +45,8 @@ export default function NewPageDialog({
   sessionId: string
   onClose: () => void
   // Called once the starter file exists on the draft branch — select it.
-  onCreated: (path: string) => void
+  /** redirectNotice: a redirects.csv row that shadowed the url was removed. */
+  onCreated: (path: string, redirectNotice?: string) => void
   // Called when the AI first draft finishes — reload the file to show it.
   onGenerated: (path: string) => void
 }) {
@@ -177,6 +178,7 @@ export default function NewPageDialog({
         generationId?: string
         error?: string
         generationError?: string
+        redirectNotice?: string
       }
       if (!res.ok || !data.path) {
         setError(data.error ?? `Could not create the page (${res.status}).`)
@@ -184,7 +186,7 @@ export default function NewPageDialog({
         return
       }
 
-      onCreated(data.path)
+      onCreated(data.path, data.redirectNotice)
 
       if (mode === 'ai' && data.generationId) {
         setPhase('generating')

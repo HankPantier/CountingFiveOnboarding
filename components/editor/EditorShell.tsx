@@ -682,7 +682,7 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Failed: ${res.status}`)
       }
-      const data = (await res.json()) as { newPath: string }
+      const data = (await res.json()) as { newPath: string; redirectNotice?: string }
       const oldPath = selectedPath
       setLoaded((prev) => {
         const m = new Map(prev)
@@ -700,7 +700,7 @@ export default function EditorShell({
       setPublishResult(
         action === 'draft'
           ? 'Moved to drafts — Publish to take it off the live site.'
-          : 'Restored — Publish to put it back on the live site.'
+          : `Restored — Publish to put it back on the live site.${data.redirectNotice ? ` ${data.redirectNotice}` : ''}`
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed')
@@ -1326,7 +1326,9 @@ export default function EditorShell({
         <NewPageDialog
           sessionId={sessionId}
           onClose={() => setNewPageOpen(false)}
-          onCreated={(path) => {
+          onCreated={(path, redirectNotice) => {
+            // A redirect that shadowed the new url was removed with the page.
+            if (redirectNotice) setPublishResult(redirectNotice)
             // Starter file exists on the draft branch — surface it in the tree
             // and open it so the admin can edit (or watch the AI draft land).
             void (async () => {

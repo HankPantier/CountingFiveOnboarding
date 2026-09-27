@@ -662,8 +662,15 @@ export async function moveFile(
   branch: string,
   expectedSha: string,
   message: string,
-  options: { authorName?: string; authorEmail?: string } = {}
+  options: {
+    authorName?: string
+    authorEmail?: string
+    /** Text files committed in the same commit, each sha-guarded (null = must not exist). */
+    companions?: { path: string; content: string; expectedSha: string | null }[]
+  } = {}
 ): Promise<{ commitSha: string }> {
+  const companions = options.companions ?? []
+  const companionWrites = companions.length > 0 ? await createBlobs(slug, companions) : []
   // sha: null marks a deletion in the tree; the new entry reuses the moved
   // blob's sha (== expectedSha, verified below) so no blob upload is needed.
   // The checks run against each attempt's base commit, so a concurrent edit
@@ -675,9 +682,10 @@ export async function moveFile(
     [
       { path: toPath, sha: expectedSha },
       { path: fromPath, sha: null },
+      ...companionWrites,
     ],
     message,
-    options,
+    { authorName: options.authorName, authorEmail: options.authorEmail },
     async (base) => {
       const existing = await blobShaAt(slug, fromPath, base)
       if (existing === null) throw new FileNotFoundError(fromPath)
@@ -685,6 +693,7 @@ export async function moveFile(
       if ((await blobShaAt(slug, toPath, base)) !== null) {
         throw new AssetExistsError(toPath)
       }
+      for (const c of companions) await assertBlobSha(slug, c.path, c.expectedSha, base, true)
     }
   )
   return { commitSha }
