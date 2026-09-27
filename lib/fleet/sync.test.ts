@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { applyChanges, ensureClone, gateRepo, unexpectedChanges, type SyncContext } from './sync'
+import { applyChanges, ensureClone, gateRepo, unexpectedChanges, verifyPlanInScratch, type SyncContext } from './sync'
 import { draftPreflight, findLastFleetCommit, pushMain } from './remote'
 import { runPushPhase } from './push-phase'
 import type { ClientEntry, ReleaseManifest } from './types'
@@ -105,8 +105,11 @@ beforeAll(() => {
     },
     'new'
   )
+  // A later commit whose new file imports a helper the template never ships.
+  NEW_BROKEN_IMPORT = commit(T, { 'src/uses.ts': "import { h } from './helpers/h'\nexport const x = h\n" }, 'uses a missing helper')
 })
 afterAll(() => rmSync(root, { recursive: true, force: true }))
+let NEW_BROKEN_IMPORT: string
 
 const clientBase = () => ({
   'src/a.ts': 'a1\n', // == OLD → WRITE
@@ -229,6 +232,62 @@ describe('gateRepo + applyChanges (local repos)', () => {
     const dir = makeClient(clientBase())
     applyChanges(ctx(), gateRepo(ctx(), client, dir, OLD))
     expect(draftPreflight(dir)).toEqual({ ok: true, draft: 'absent' })
+  })
+
+  it('import check: a written file importing something the client will not have blocks the repo', () => {
+    const dir = makeClient(clientBase())
+    const run = gateRepo(ctx({ to: NEW_BROKEN_IMPORT }), client, dir, OLD)
+    expect(run.plan.blockers.join('\n')).toMatch(/import check: src\/uses\.ts → import "\.\/helpers\/h" resolves to no file/)
+  })
+
+  it('2026.09.5 shape: themeCss none never ships the template theme.css; actionTextVars ensure adds missing tokens; the lock recipe is materialized', () => {
+    const stripped = THEME.split('\n')
+      .filter((l) => !/--color-action-(text|on-primary|on-ink)/.test(l))
+      .join('\n')
+    const lock = JSON.stringify({ name: 'site', lockfileVersion: 3, packages: { '': {}, 'node_modules/rolldown': { version: '1.0.0' }, 'node_modules/@rolldown/binding-darwin-arm64': { version: '1.0.0' } } }, null, 2)
+    const dir = makeClient({ ...clientBase(), 'src/styles/theme.css': stripped, 'package-lock.json': lock })
+    const recipeManifest: ReleaseManifest = {
+      ...manifest,
+      themeCss: 'none',
+      actionTextVars: 'ensure',
+      lockfile: { dropPackages: '(^|/)node_modules/(rolldown|@rolldown/binding-)', expectPackages: ['node_modules/@rolldown/binding-linux-x64-gnu'] },
+    }
+    const npm = (cwd: string) => {
+      const l = JSON.parse(readFileSync(path.join(cwd, 'package-lock.json'), 'utf8')) as { packages: Record<string, unknown> }
+      l.packages['node_modules/rolldown'] = { version: '1.0.0' }
+      l.packages['node_modules/@rolldown/binding-linux-x64-gnu'] = { version: '1.0.0' }
+      writeFileSync(path.join(cwd, 'package-lock.json'), JSON.stringify(l, null, 2) + '\n')
+      return { ok: true, err: '' }
+    }
+    const run = gateRepo(ctx({ manifestFor: () => recipeManifest, npm }), client, dir, OLD)
+    expect(run.plan.blockers).toEqual([])
+    const theme = run.changes.find((c) => c.path === 'src/styles/theme.css')
+    expect(theme?.why).toMatch(/action-text tokens added/)
+    expect(theme?.content?.toString()).toContain('--color-action-text:')
+    expect(theme?.content?.toString()).not.toContain('template house default')
+    const lockChange = run.changes.find((c) => c.path === 'package-lock.json')
+    expect(lockChange?.content?.toString()).toContain('binding-linux-x64-gnu')
+    expect(lockChange?.content?.toString()).not.toContain('binding-darwin-arm64')
+
+    // Applying commits the materialized lock + theme with no unexpected changes; marker last.
+    applyChanges(ctx({ manifestFor: () => recipeManifest, npm }), run)
+    expect(sh(dir, 'show', '--name-only', '--format=', 'HEAD').split('\n')).toEqual(expect.arrayContaining(['package-lock.json', 'src/styles/theme.css', 'c5-template.json']))
+  })
+
+  it('dry-run verify runs on a throwaway copy with the planned files; the clone is untouched', async () => {
+    const dir = makeClient(clientBase())
+    const head = sh(dir, 'rev-parse', 'HEAD')
+    const run = gateRepo(ctx(), client, dir, OLD)
+    const seen = await verifyPlanInScratch(run, async (scratch) => ({
+      b: readFileSync(path.join(scratch, 'src/b.ts'), 'utf8'),
+      gone: existsSync(path.join(scratch, 'src/gone.ts')),
+      scratch,
+    }))
+    expect(seen).toMatchObject({ b: 'b2\n', gone: false })
+    expect(existsSync(seen.scratch)).toBe(false)
+    expect(sh(dir, 'rev-parse', 'HEAD')).toBe(head)
+    expect(sh(dir, 'status', '--porcelain')).toBe('')
+    expect(readFileSync(path.join(dir, 'src/b.ts'), 'utf8')).toBe('b0\n')
   })
 
   it('unexpectedChanges lists every path the plan did not predict', () => {

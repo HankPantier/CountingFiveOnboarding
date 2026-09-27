@@ -19,6 +19,8 @@
 //   · --canary <n> (first n repos must deploy green before the rest are pushed;
 //   default 1 on the first --apply of a release, else 0) · --keep-going (don't
 //   stop at the first remote failure; a failed canary still stops)
+//   · --dry-verify <repo,repo|all> (dry-run only: run the local verify on the
+//   planned files in a throwaway copy; the clone is not touched)
 //
 // See lib/fleet/README.md for the gate rules and the release-manifest format.
 import { existsSync, writeFileSync } from 'node:fs'
@@ -30,7 +32,7 @@ import { loadManifest, manifestForRange } from '../lib/fleet/release-manifest'
 import { MARKER, summarize } from '../lib/fleet/classify'
 import { readMarker } from '../lib/fleet/special-files'
 import { git, isAncestor, revParse, showText, tryGit } from '../lib/fleet/git-local'
-import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, type RepoRun, type SyncContext } from '../lib/fleet/sync'
+import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, verifyPlanInScratch, type RepoRun, type SyncContext } from '../lib/fleet/sync'
 import { pool, verifyRepo } from '../lib/fleet/verify'
 import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
 import { effectiveCanary, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
@@ -55,6 +57,7 @@ interface Args {
   clientRev: string | null
   keepGoing: boolean
   canary: number | null
+  dryVerify: string[]
 }
 
 function parseArgs(argv: string[]): Args {
@@ -77,6 +80,7 @@ function parseArgs(argv: string[]): Args {
     clientRev: null,
     keepGoing: false,
     canary: null,
+    dryVerify: [],
   }
   const val = (i: number, flag: string) => {
     const v = argv[i]
@@ -104,6 +108,7 @@ function parseArgs(argv: string[]): Args {
     else if (f === '-v' || f === '--verbose') a.verbose = true
     else if (f === '--client-rev') a.clientRev = val(++i, f)
     else if (f === '--keep-going') a.keepGoing = true
+    else if (f === '--dry-verify') a.dryVerify = val(++i, f).split(',').map((s) => s.trim()).filter(Boolean)
     else if (f === '--canary') a.canary = Math.max(0, Math.floor(Number(val(++i, f)) || 0))
     else throw new Error(`Unknown argument: ${f}`)
   }
@@ -219,6 +224,22 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
   const writeReport = () => a.json && writeFileSync(a.json, JSON.stringify(report, null, 2))
 
   if (!a.apply) {
+    if (a.dryVerify.length) {
+      const want = a.dryVerify.includes('all') ? ready : ready.filter((r) => a.dryVerify.some((s) => s.toLowerCase() === repoName(r.client.slug).toLowerCase()))
+      console.log(`\nDry-run verify of ${want.length} READY repo(s) in throwaway copies (npm ci / tsc / test / build / fonts --check; concurrency ${a.concurrency}, 1 retry)…`)
+      const verified = await pool(want, a.concurrency, async (r) => {
+        try {
+          const v = await verifyPlanInScratch(r, (d) => verifyRepo(d))
+          console.log(`  ${v.ok ? '✓' : '✗'} ${repoName(r.client.slug)}: ${v.ok ? `${v.passed.join(' ')} (attempt ${v.attempts})` : `FAILED at ${v.failedStep}`}`)
+          if (!v.ok) console.log(v.tail.replace(/^/gm, '      '))
+          return { slug: r.client.slug, ok: v.ok, passed: v.passed, failedStep: v.failedStep, attempts: v.attempts }
+        } catch (err) {
+          console.log(`  ✗ ${repoName(r.client.slug)}: ${(err as Error).message.split('\n')[0]}`)
+          return { slug: r.client.slug, ok: false, passed: [], failedStep: 'exception', attempts: 0 }
+        }
+      })
+      report.dryVerify = verified
+    }
     writeReport()
     console.log('\nDRY RUN — nothing was written, committed or pushed. Re-run with --apply to roll out the READY repos.')
     return 0

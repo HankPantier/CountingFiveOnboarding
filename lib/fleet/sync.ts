@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { addActionTextVars } from '@/lib/content/add-action-text-vars'
 import {
@@ -8,6 +8,7 @@ import {
   GITIGNORE,
   MARKER,
   PACKAGE_JSON,
+  PACKAGE_LOCK,
   TEMPLATE_DEFAULT,
   THEME_CSS,
   expectedPaths,
@@ -33,6 +34,8 @@ import {
 import { compareVersions, editGitignore, editPackageJson, mergeLines, readMarker, stampMarker } from './special-files'
 import type { BlobView, ClientEntry, ReleaseManifest, RepoPlan } from './types'
 import { repoName } from './registry'
+import { regenerateLock, type NpmRunner } from './lockfile'
+import { checkImportClosure } from './imports'
 
 // Orchestration of one repo's gate → materialize → (apply) on a LOCAL clone.
 // Nothing here pushes; see remote.ts. Nothing here writes to the working tree
@@ -51,6 +54,8 @@ export interface SyncContext {
   threeWay: boolean
   /** Dry-run replay only: gate against this client revision instead of origin/main. */
   clientRevOverride?: string
+  /** Lockfile re-resolver (tests inject a fake; default runs npm in a temp dir). */
+  npm?: NpmRunner
 }
 
 export interface FileChange {
@@ -233,8 +238,28 @@ export function materialize(ctx: SyncContext, run: RepoRun): void {
         for (const p of trackedUnder(dir, clientRev, s.path)) out.push({ path: p, content: null, why: `retired (${s.path})` })
       } else if (s.kind === 'delete-template-default') {
         out.push({ path: TEMPLATE_DEFAULT, content: null, why: 'template-only marker, never shipped' })
+      } else if (s.kind === 'action-text-vars') {
+        const cur = showText(dir, clientRev, THEME_CSS) ?? ''
+        const r = addActionTextVars(cur)
+        if (r.status === 'error') plan.blockers.push(`action-text vars: ${r.error}`)
+        else if (r.status === 'added') out.push({ path: THEME_CSS, content: Buffer.from(r.css), why: 'action-text tokens added (lines added only; palette untouched)' })
+        else if (r.status === 'updated') plan.warnings.push(`theme.css has the action-text set but stale -text-tint values (${r.changed.join('; ')}) — left as is (themeCss: none)`)
       } else if (s.kind === 'lockfile-regenerate') {
-        plan.warnings.push('package-lock.json is regenerated at apply time (npm install --package-lock-only)')
+        const lock = showText(dir, clientRev, PACKAGE_LOCK)
+        const pkg = out.find((c) => c.path === PACKAGE_JSON)?.content?.toString('utf8') ?? showText(dir, clientRev, PACKAGE_JSON)
+        if (lock === null || pkg === null) throw new Error('client has no package.json / package-lock.json')
+        const recipe = typeof run.manifest.lockfile === 'object' ? run.manifest.lockfile : null
+        const r = regenerateLock(pkg, lock, recipe, ctx.npm)
+        if (r.missing.length) plan.blockers.push(`package-lock.json still lacks ${r.missing.join(', ')} after the recipe`)
+        const nonPatch = r.versionChanges.filter((v) => v.nonPatch)
+        if (nonPatch.length) plan.warnings.push(`lockfile: ${nonPatch.length} non-patch version change(s): ${nonPatch.slice(0, 5).map((v) => `${v.key} ${v.from}→${v.to}`).join(', ')}`)
+        if (r.text !== lock) {
+          out.push({
+            path: PACKAGE_LOCK,
+            content: Buffer.from(r.text),
+            why: `${recipe ? `recipe dropped ${r.dropped.length} entries, ` : ''}re-resolved (npm --package-lock-only); ${r.versionChanges.length} version change(s)${recipe?.expectPackages?.length ? `; has ${recipe.expectPackages.map((k) => k.replace('node_modules/', '')).join(', ')}` : ''}`,
+          })
+        }
       } else if (s.kind === 'marker') {
         const tm = showText(T, ctx.to, MARKER)
         if (tm === null) throw new Error('template@NEW has no c5-template.json')
@@ -251,6 +276,56 @@ export function materialize(ctx: SyncContext, run: RepoRun): void {
     seen.add(c.path)
   }
   run.changes = out
+  checkImports(ctx, run)
+}
+
+// Every written code file's local imports must resolve in the client's
+// post-sync tree (see imports.ts). A miss blocks the repo.
+function checkImports(ctx: SyncContext, run: RepoRun): void {
+  const { dir, clientRev, plan } = run
+  const clientTree = new Set(git(dir, ['ls-tree', '-r', '--name-only', clientRev]).split('\n').filter(Boolean))
+  const templateTree = new Set(git(ctx.templateDir, ['ls-tree', '-r', '--name-only', ctx.to]).split('\n').filter(Boolean))
+  const written = new Map<string, string>()
+  const deleted = new Set<string>()
+  for (const c of run.changes) {
+    if (c.content === null) deleted.add(c.path)
+    else written.set(c.path, c.content.toString('utf8'))
+  }
+  const notSynced = new Set(plan.decisions.filter((d) => d.action.startsWith('SKIP') || d.action.startsWith('DRIFT')).map((d) => d.path))
+  const problems = checkImportClosure({
+    written,
+    postSyncHas: (p) => written.has(p) || (clientTree.has(p) && !deleted.has(p)),
+    templateHas: (p) => templateTree.has(p),
+    staleOnClient: (p) => notSynced.has(p) && clientTree.has(p),
+  })
+  for (const p of problems) plan.blockers.push(`import check: ${p.file} → ${p.reason}`)
+}
+
+// ── dry-run verify (throwaway copy; the clone itself is never touched) ──────
+
+/**
+ * Write the plan's changes into a THROWAWAY shared clone at the planned client
+ * commit and run `verify` there (npm ci / tsc / test / build …). The source
+ * clone's working tree, index and refs are left exactly as they were.
+ */
+export async function verifyPlanInScratch<T>(run: RepoRun, verify: (dir: string) => Promise<T>): Promise<T> {
+  if (run.plan.blockers.length) throw new Error('plan has blockers — nothing to verify')
+  const tmp = mkdtempSync(path.join(os.tmpdir(), `fleet-verify-${repoName(run.client.slug)}-`))
+  try {
+    git(os.tmpdir(), ['clone', '-q', '--shared', '--no-checkout', run.dir, tmp])
+    git(tmp, ['checkout', '-q', '--detach', run.clientHead])
+    for (const c of run.changes) {
+      const abs = path.join(tmp, c.path)
+      if (c.content === null) rmSync(abs, { force: true, recursive: true })
+      else {
+        mkdirSync(path.dirname(abs), { recursive: true })
+        writeFileSync(abs, c.content)
+      }
+    }
+    return await verify(tmp)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 }
 
 // ── apply (local working tree + one local commit; still no push) ────────────
@@ -293,14 +368,8 @@ export function applyChanges(ctx: SyncContext, run: RepoRun): string {
     }
   }
   const marker = run.changes.find((c) => c.path === MARKER)
+  // package-lock.json was already re-resolved (in a temp dir) by materialize.
   for (const c of run.changes) if (c !== marker) write(c)
-  if (run.plan.specials.some((s) => s.kind === 'lockfile-regenerate')) {
-    const r = spawnSync('npm', ['install', '--package-lock-only', '--no-audit', '--no-fund', '--ignore-scripts'], { cwd: dir, encoding: 'utf8' })
-    if (r.status !== 0) {
-      git(dir, ['reset', '-q', '--hard', 'refs/remotes/origin/main'])
-      throw new Error(`npm install --package-lock-only failed: ${(r.stderr ?? '').trim().split('\n').slice(-2).join(' ')}`)
-    }
-  }
   // The capability marker is always the LAST write.
   if (marker) write(marker)
   const expected = expectedPaths(run.plan, (p) => trackedUnder(dir, run.clientRev, p))

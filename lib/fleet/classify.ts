@@ -103,6 +103,36 @@ export interface PlanInput {
   threeWay?: boolean
 }
 
+/**
+ * The template diff must match the release's declared file set (the CHANGELOG
+ * rollout list). A changed path that isn't declared with its status blocks;
+ * a declared path the diff doesn't contain only warns (a client whose OLD is
+ * newer legitimately has a smaller diff). Pure.
+ */
+export function checkDeclaredFiles(generic: DiffEntry[], expect: NonNullable<ReleaseManifest['expectFiles']>, warnings: string[] = []): string[] {
+  const lists: Record<DiffEntry['status'], Set<string>> = {
+    M: new Set(expect.overwrite ?? []),
+    A: new Set(expect.add ?? []),
+    D: new Set(expect.delete ?? []),
+  }
+  const label = { M: 'overwrite', A: 'add', D: 'delete' } as const
+  const blockers: string[] = []
+  const seen = new Set<string>()
+  for (const e of generic) {
+    seen.add(e.path)
+    if (lists[e.status].has(e.path)) continue
+    const elsewhere = (['M', 'A', 'D'] as const).find((s) => lists[s].has(e.path))
+    blockers.push(
+      elsewhere
+        ? `${e.path}: the template ${label[e.status]}s it but the manifest declares it under "${label[elsewhere]}"`
+        : `${e.path} changed in the template (${label[e.status]}) but is not in the manifest's expectFiles — undeclared change`
+    )
+  }
+  const missing = [...lists.M, ...lists.A, ...lists.D].filter((p) => !seen.has(p))
+  if (missing.length) warnings.push(`declared but not changed OLD..NEW (client already has them?): ${missing.join(', ')}`)
+  return blockers
+}
+
 // Whole-repo plan: generic decisions + special ops + blockers. Pure.
 export function planRepo(input: PlanInput): RepoPlan {
   const { manifest, diff } = input
@@ -141,11 +171,16 @@ export function planRepo(input: PlanInput): RepoPlan {
   } else if (manifest.packageJson && (manifest.packageJson.addScripts || manifest.packageJson.removeScripts || manifest.packageJson.setDependencies)) {
     specials.push({ kind: 'package-json' })
   }
-  if (manifest.lockfile === 'regenerate') {
-    specials.push({ kind: 'lockfile-regenerate' })
+  if (manifest.lockfile === 'regenerate' || typeof manifest.lockfile === 'object') {
+    if (input.client.has(PACKAGE_LOCK)) specials.push({ kind: 'lockfile-regenerate' })
+    else blockers.push('the manifest regenerates package-lock.json but the client has none')
   } else if (changed.has(PACKAGE_LOCK) && manifest.lockfile !== 'ignore') {
-    blockers.push('package-lock.json changed in the template — set "lockfile": "regenerate" (npm install --package-lock-only after the package.json edits) or "ignore"')
+    blockers.push('package-lock.json changed in the template — set "lockfile" to "regenerate", a { dropPackages } recipe, or "ignore"')
   }
+  if (manifest.actionTextVars === 'ensure' && input.client.has(THEME_CSS) && !(changed.has(THEME_CSS) && manifest.themeCss === 'additive-helper')) {
+    specials.push({ kind: 'action-text-vars' })
+  }
+  if (manifest.expectFiles) blockers.push(...checkDeclaredFiles(generic, manifest.expectFiles, warnings))
   if (changed.has(GITIGNORE) && !manifest.gitignore) blockers.push('.gitignore changed in the template but the manifest has no "gitignore" entry')
   if (manifest.gitignore && input.client.has(GITIGNORE)) specials.push({ kind: 'gitignore' })
   if (changed.has(GITATTRIBUTES)) {
@@ -187,6 +222,7 @@ export function expectedPaths(plan: RepoPlan, deletedUnder: (dir: string) => str
     else if (s.kind === 'seed') out.add(s.path)
     else if (s.kind === 'delete-template-default') out.add(TEMPLATE_DEFAULT)
     else if (s.kind === 'lockfile-regenerate') out.add(PACKAGE_LOCK)
+    else if (s.kind === 'action-text-vars') out.add(THEME_CSS)
     else if (s.kind === 'marker') out.add(MARKER)
     else if (s.kind === 'delete-tracked') for (const p of deletedUnder(s.path)) out.add(p)
   }

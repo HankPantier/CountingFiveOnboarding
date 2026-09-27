@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyPath, expectedPaths, isSpecialPath, planRepo, summarize, type PlanInput } from './classify'
+import { checkDeclaredFiles, classifyPath, expectedPaths, isSpecialPath, planRepo, summarize, type PlanInput } from './classify'
 import type { BlobView, DiffEntry, ReleaseManifest } from './types'
 
 const O = 'o'.repeat(40)
@@ -135,9 +135,34 @@ describe('planRepo', () => {
       deleteTracked: ['design-kit'],
       lockfile: 'regenerate',
     }
-    const plan = planRepo(input([{ status: 'M', path: 'package-lock.json' }], {}, m, ['.gitignore', 'design-kit']))
+    const plan = planRepo(input([{ status: 'M', path: 'package-lock.json' }], {}, m, ['.gitignore', 'design-kit', 'package-lock.json']))
     expect(plan.blockers).toEqual([])
     expect(plan.specials.map((s) => s.kind)).toEqual(['package-json', 'lockfile-regenerate', 'gitignore', 'delete-tracked', 'marker'])
+  })
+
+  it('expectFiles: an undeclared template change (or one under the wrong status) blocks; a declared-but-unchanged path only warns', () => {
+    const warnings: string[] = []
+    const blockers = checkDeclaredFiles(
+      [
+        { status: 'M', path: 'src/Hero.tsx' },
+        { status: 'A', path: 'src/lib/hero-cta-site.ts' },
+        { status: 'A', path: 'src/lib/accent-color.ts' },
+      ],
+      { overwrite: ['src/Hero.tsx', 'src/lib/accent-color.ts', 'README.md'], add: [] },
+      warnings
+    )
+    expect(blockers).toEqual([
+      'src/lib/hero-cta-site.ts changed in the template (add) but is not in the manifest’s expectFiles — undeclared change'.replace('’', "'"),
+      'src/lib/accent-color.ts: the template adds it but the manifest declares it under "overwrite"',
+    ])
+    expect(warnings).toEqual(['declared but not changed OLD..NEW (client already has them?): README.md'])
+    const plan = planRepo(input([{ status: 'A', path: 'src/x.ts' }], { 'src/x.ts': { client: null, old: null } }, { ...base, expectFiles: { add: [] } }))
+    expect(plan.blockers.join()).toMatch(/undeclared change/)
+  })
+
+  it('actionTextVars "ensure" adds the step when the client has theme.css (themeCss none)', () => {
+    const plan = planRepo(input([], {}, { ...base, themeCss: 'none', actionTextVars: 'ensure' }, ['src/styles/theme.css']))
+    expect(plan.specials.map((s) => s.kind)).toEqual(['action-text-vars', 'marker'])
   })
 
   it('warns about unused rulings; expectedPaths covers every write', () => {

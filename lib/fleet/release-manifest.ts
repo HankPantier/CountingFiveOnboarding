@@ -18,7 +18,7 @@ function strArray(v: unknown, field: string): string[] | undefined {
 export function parseManifest(text: string, source = 'manifest'): ReleaseManifest {
   const o = JSON.parse(text) as Record<string, unknown>
   if (typeof o.templateVersion !== 'string') throw new Error(`${source}: missing "templateVersion"`)
-  const known = new Set(['_note', 'templateVersion', 'notes', 'exclude', 'packageJson', 'gitignore', 'gitattributes', 'themeCss', 'lockfile', 'seedIfAbsent', 'deleteTracked', 'rulings'])
+  const known = new Set(['_note', 'templateVersion', 'notes', 'exclude', 'packageJson', 'gitignore', 'gitattributes', 'themeCss', 'lockfile', 'actionTextVars', 'expectFiles', 'seedIfAbsent', 'deleteTracked', 'rulings'])
   for (const k of Object.keys(o)) if (!known.has(k)) throw new Error(`${source}: unknown field "${k}"`)
 
   const m: ReleaseManifest = { templateVersion: o.templateVersion }
@@ -62,8 +62,31 @@ export function parseManifest(text: string, source = 'manifest'): ReleaseManifes
     m.themeCss = o.themeCss
   }
   if (o.lockfile !== undefined) {
-    if (o.lockfile !== 'ignore' && o.lockfile !== 'regenerate') throw new Error(`${source}: "lockfile" must be "ignore" or "regenerate"`)
-    m.lockfile = o.lockfile
+    if (o.lockfile === 'ignore' || o.lockfile === 'regenerate') {
+      m.lockfile = o.lockfile
+    } else if (o.lockfile && typeof o.lockfile === 'object' && typeof (o.lockfile as Record<string, unknown>).dropPackages === 'string') {
+      const l = o.lockfile as Record<string, unknown>
+      new RegExp(l.dropPackages as string)
+      const known2 = new Set(['dropPackages', 'expectPackages'])
+      for (const k of Object.keys(l)) if (!known2.has(k)) throw new Error(`${source}: unknown field "lockfile.${k}"`)
+      m.lockfile = { dropPackages: l.dropPackages as string, expectPackages: strArray(l.expectPackages, 'lockfile.expectPackages') }
+    } else {
+      throw new Error(`${source}: "lockfile" must be "ignore", "regenerate" or { "dropPackages": "<regex>", "expectPackages": [...] }`)
+    }
+  }
+  if (o.actionTextVars !== undefined) {
+    if (o.actionTextVars !== 'ensure') throw new Error(`${source}: "actionTextVars" must be "ensure"`)
+    m.actionTextVars = 'ensure'
+  }
+  if (o.expectFiles !== undefined) {
+    const e = o.expectFiles as Record<string, unknown>
+    if (!e || typeof e !== 'object') throw new Error(`${source}: "expectFiles" must be an object`)
+    for (const k of Object.keys(e)) if (!['overwrite', 'add', 'delete'].includes(k)) throw new Error(`${source}: unknown field "expectFiles.${k}"`)
+    m.expectFiles = {
+      overwrite: strArray(e.overwrite, 'expectFiles.overwrite'),
+      add: strArray(e.add, 'expectFiles.add'),
+      delete: strArray(e.delete, 'expectFiles.delete'),
+    }
   }
   m.seedIfAbsent = strArray(o.seedIfAbsent, 'seedIfAbsent')
   m.deleteTracked = strArray(o.deleteTracked, 'deleteTracked')
@@ -120,8 +143,18 @@ export function mergeManifests(ms: ReleaseManifest[]): ReleaseManifest {
   if (ms.some((m) => m.gitattributes)) out.gitattributes = 'merge-lines'
   if (ms.some((m) => m.themeCss === 'additive-helper')) out.themeCss = 'additive-helper'
   else if (ms.some((m) => m.themeCss === 'none')) out.themeCss = 'none'
-  if (ms.some((m) => m.lockfile === 'regenerate')) out.lockfile = 'regenerate'
+  const recipe = [...ms].reverse().find((m) => typeof m.lockfile === 'object')?.lockfile
+  if (recipe) out.lockfile = recipe
+  else if (ms.some((m) => m.lockfile === 'regenerate')) out.lockfile = 'regenerate'
   else if (ms.some((m) => m.lockfile === 'ignore')) out.lockfile = 'ignore'
+  if (ms.some((m) => m.actionTextVars === 'ensure')) out.actionTextVars = 'ensure'
+  if (ms.some((m) => m.expectFiles)) {
+    out.expectFiles = {
+      overwrite: uniq(ms.map((m) => m.expectFiles?.overwrite)),
+      add: uniq(ms.map((m) => m.expectFiles?.add)),
+      delete: uniq(ms.map((m) => m.expectFiles?.delete)),
+    }
+  }
   out.seedIfAbsent = uniq(ms.map((m) => m.seedIfAbsent))
   out.deleteTracked = uniq(ms.map((m) => m.deleteTracked))
   const rulings: Record<string, Record<string, Ruling>> = {}

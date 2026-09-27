@@ -62,7 +62,8 @@ npx tsx scripts/fleet-sync.ts rollback --slugs bblcpa --apply
 | `src/app/fonts.generated.ts` | Seeded only if absent (the DEFAULT module). Never overwritten. |
 | `content/**` | Client-owned and never shipped. `content/.template-default` is removed if present. |
 | `package.json` | Surgical text edits from the manifest: `addScripts` / `removeScripts` / `setDependencies`. Formatting is preserved. |
-| `package-lock.json` | Blocks unless the manifest says `"lockfile": "ignore"` or `"regenerate"`. `regenerate` runs `npm install --package-lock-only` after the package.json edits. |
+| `package-lock.json` | Blocks unless the manifest sets `"lockfile"` to `"ignore"`, `"regenerate"` or a recipe `{ "dropPackages": "<regex>", "expectPackages": [...] }`. For regenerate or a recipe, the client's lock (recipe entries dropped first) is re-resolved with `npm install --package-lock-only --ignore-scripts` **in a temp dir**, never in the clone. The dry-run therefore shows the exact lock that will be committed. A missing `expectPackages` key blocks, and a non-patch version change warns. |
+| action-text tokens | `"actionTextVars": "ensure"` idempotently **adds** the 2026.09.4 small-text tokens (`add-action-text-vars.ts`) to a client theme.css that lacks them. A file that already has them is never touched. It is independent of `themeCss`. |
 | `.gitignore` / `.gitattributes` | Exact-line remove/add, or line-merge. |
 
 If a special path changed in the template and the manifest doesn't say how to handle it, the repo is blocked.
@@ -92,6 +93,14 @@ Every release declares its migration. There is no new `rollN.sh`.
 ```
 
 When a client skipped a release, the manifests strictly after OLD's version and up to NEW's version are merged. `2026.09.2` to `.4` encode the three September rollouts.
+
+**Two more checks, both blocking:**
+- **`expectFiles`** (`{ overwrite, add, delete }`) is the release's declared file set, copied from the CHANGELOG. Every non-special path the template changed OLD..NEW must be declared under its status, or the repo is blocked as an undeclared change. A path that is declared but not changed only warns.
+- **The import check** runs on every sync, with or without `expectFiles`. Each written code file's relative and `@/` imports must resolve to a file the client will have after the sync. A helper that is imported but not shipped blocks the repo, and so does one that changed but is being skipped for this client.
+
+`2026.09.5.json` uses all three features: `expectFiles`, `actionTextVars: "ensure"` with `themeCss: "none"`, and the CHANGELOG's native-bindings lockfile recipe.
+
+**Dry-run verify:** `--dry-verify <repo,…|all>` runs the full local verify (npm ci / tsc / vitest / build / fonts --check) on the planned files. It works in a throwaway `--shared` copy at the planned client commit, and the clone itself is not modified.
 
 ### --apply pipeline
 

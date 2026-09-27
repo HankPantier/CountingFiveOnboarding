@@ -71,13 +71,39 @@ export interface ReleaseManifest {
    * change for clients); 'regenerate' runs `npm install --package-lock-only` in the
    * clone after package.json edits (apply only). Unset + changed = blocker.
    */
-  lockfile?: 'ignore' | 'regenerate'
+  lockfile?: 'ignore' | 'regenerate' | LockfileRecipe
+  /**
+   * 'ensure': idempotently add the small-text action tokens
+   * (lib/content/add-action-text-vars.ts) to a client theme.css that lacks them,
+   * whatever themeCss says. Only an 'added' result is written; a file that
+   * already has the set is never touched by this step.
+   */
+  actionTextVars?: 'ensure'
+  /**
+   * The release's declared file set (the CHANGELOG rollout list). Every
+   * generic path the template changed OLD..NEW must be declared with the
+   * matching status, or the repo is blocked.
+   */
+  expectFiles?: { overwrite?: string[]; add?: string[]; delete?: string[] }
   /** Template paths written only when the client lacks them (never overwritten). */
   seedIfAbsent?: string[]
   /** Tracked client paths/dirs removed if present (e.g. retired design-kit/). */
   deleteTracked?: string[]
   /** repo name (bare, e.g. "Slachta-Accounting") → path → ruling. */
   rulings?: Record<string, Record<string, Ruling>>
+}
+
+/**
+ * Lockfile recipe (e.g. the 2026.09.5 native-bindings fix): drop the matching
+ * `packages` entries from the CLIENT's package-lock.json, re-resolve with
+ * `npm install --package-lock-only --ignore-scripts` in a temp dir, and
+ * require every `expectPackages` key in the result.
+ */
+export interface LockfileRecipe {
+  /** Regex over package-lock `packages` keys to delete before re-resolving. */
+  dropPackages: string
+  /** Keys that must exist afterwards (e.g. "node_modules/@rolldown/binding-linux-x64-gnu"). */
+  expectPackages?: string[]
 }
 
 /** One changed template path between OLD and NEW. */
@@ -127,6 +153,7 @@ export type SpecialOp =
   | { kind: 'delete-tracked'; path: string }
   | { kind: 'delete-template-default' }
   | { kind: 'lockfile-regenerate' }
+  | { kind: 'action-text-vars' }
   | { kind: 'marker' }
 
 export interface RepoPlan {
