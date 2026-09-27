@@ -16,36 +16,56 @@ import { deriveVercelPreviewUrl } from './vercel-alias'
 export type PreviewUrlSource = 'override' | 'vercel' | 'config'
 export type ResolvedPreviewUrl = { url: string | null; source: PreviewUrlSource }
 
-// A failed derivation (no Vercel project yet, App lacks access, nothing
-// verified) is not retried for a while: the deploy-status poll and every
-// capability read would otherwise repeat 3+ GitHub calls and a site fetch.
+// Per-repo, in-process memo of lookups, both ways, for DERIVE_RETRY_MS:
+// - a miss (no Vercel project yet, App lacks access, nothing verified) is not
+//   retried, since the deploy-status poll and every capability read would
+//   otherwise repeat 3+ GitHub calls and a site fetch;
+// - a hit is remembered, so a failed cache write to content_jobs doesn't
+//   re-run the lookup on every 8 s deploy-status poll (only the cheap write
+//   is retried).
 export const DERIVE_RETRY_MS = 10 * 60_000
 const failedAt = new Map<string, number>()
+const found = new Map<string, { url: string; at: number }>()
 const inflight = new Map<string, Promise<string | null>>()
 
 export function __resetPreviewUrlCacheForTests(): void {
   failedAt.clear()
+  found.clear()
   inflight.clear()
 }
 
-// Derive the Vercel address and, once verified, cache it into
+// The verified Vercel address for a repo, memoized (see above) and shared
+// between concurrent callers. Never throws.
+export async function lookupVercelPreviewUrl(githubRepo: string, now: number = Date.now()): Promise<string | null> {
+  const hit = found.get(githubRepo)
+  if (hit && now - hit.at < DERIVE_RETRY_MS) return hit.url
+  const last = failedAt.get(githubRepo)
+  if (last !== undefined && now - last < DERIVE_RETRY_MS) return null
+  let pending = inflight.get(githubRepo)
+  if (!pending) {
+    pending = deriveVercelPreviewUrl(githubRepo)
+      .then((url) => {
+        if (url) {
+          found.set(githubRepo, { url, at: now })
+          failedAt.delete(githubRepo)
+        } else {
+          failedAt.set(githubRepo, now)
+        }
+        return url
+      })
+      .finally(() => inflight.delete(githubRepo))
+    inflight.set(githubRepo, pending)
+  }
+  return pending
+}
+
+// Look up the Vercel address and, once verified, cache it into
 // content_jobs.preview_url — only while that column is still null, so an
 // operator's override that lands meanwhile is never clobbered. Returns the
 // verified URL (even if the cache write failed) or null. Never throws.
 export async function cacheVercelPreviewUrl(args: { jobId: string; githubRepo: string }, now: number = Date.now()): Promise<string | null> {
-  const last = failedAt.get(args.githubRepo)
-  if (last !== undefined && now - last < DERIVE_RETRY_MS) return null
-  let pending = inflight.get(args.githubRepo)
-  if (!pending) {
-    pending = deriveVercelPreviewUrl(args.githubRepo).finally(() => inflight.delete(args.githubRepo))
-    inflight.set(args.githubRepo, pending)
-  }
-  const url = await pending
-  if (!url) {
-    failedAt.set(args.githubRepo, now)
-    return null
-  }
-  failedAt.delete(args.githubRepo)
+  const url = await lookupVercelPreviewUrl(args.githubRepo, now)
+  if (!url) return null
   const { error } = await createServerClient()
     .from('content_jobs')
     .update({ preview_url: url, updated_at: new Date().toISOString() })

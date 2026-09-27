@@ -105,6 +105,20 @@ describe('cacheVercelPreviewUrl', () => {
     expect(derive).toHaveBeenCalledTimes(2)
   })
 
+  it('remembers a hit per repo, so a failed cache write only retries the write', async () => {
+    derive.mockResolvedValue('https://x.vercel.app/')
+    state.updateError = { message: 'boom' }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await cacheVercelPreviewUrl(ARGS, 1000)).toBe('https://x.vercel.app/')
+    expect(await cacheVercelPreviewUrl(ARGS, 9000)).toBe('https://x.vercel.app/')
+    warn.mockRestore()
+    expect(derive).toHaveBeenCalledTimes(1)
+    expect(state.updates).toHaveLength(2)
+    // Expires with the same TTL as a miss.
+    await cacheVercelPreviewUrl(ARGS, 1000 + DERIVE_RETRY_MS)
+    expect(derive).toHaveBeenCalledTimes(2)
+  })
+
   it('shares one in-flight derivation between concurrent callers', async () => {
     let release: (v: string) => void = () => {}
     derive.mockReturnValue(new Promise<string>((r) => (release = r)))
