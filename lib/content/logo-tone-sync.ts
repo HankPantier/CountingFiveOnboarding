@@ -40,9 +40,14 @@ export function isBrandLogoPath(brandText: string, assetPath: string): boolean {
 
 /**
  * brand.json text with `logo.tone` set to "light" (a light logo) or removed (a
- * dark one), or null when nothing changes or the file can't be parsed. Every
- * other byte of structure is preserved; output uses the repo's 2-space JSON +
- * trailing newline convention.
+ * dark one), or null when nothing changes or the file can't be edited safely.
+ *
+ * The edit is MINIMAL and format-preserving (like add-action-text-vars edits
+ * theme.css lines): only the `"tone": …` member is inserted, rewritten or
+ * removed, copying the file's own indentation and colon spacing — every other
+ * byte (key order, spacing, line endings, trailing newline) is kept, so the
+ * commit diff is one line. The result is re-parsed and must equal the intended
+ * object; anything else returns null rather than guess.
  *
  * An explicit `tone: "dark"` (an operator's choice) is kept unless the new logo
  * is conclusively light. Callers only get here with a conclusive detection
@@ -50,13 +55,121 @@ export function isBrandLogoPath(brandText: string, assetPath: string): boolean {
  */
 export function retoneBrandJson(brandText: string, lightLogo: boolean): string | null {
   const brand = parseBrand(brandText)
-  if (!brand || !brand.logo || typeof brand.logo !== 'object') return null
+  if (!brand || !brand.logo || typeof brand.logo !== 'object' || Array.isArray(brand.logo)) return null
   const current = brand.logo.tone
   if (lightLogo ? current === 'light' : current === undefined || current === 'dark') return null
-  const logo: BrandJson['logo'] = { ...brand.logo }
-  if (lightLogo) logo.tone = 'light'
-  else delete logo.tone
-  return JSON.stringify({ ...brand, logo }, null, 2) + '\n'
+
+  const expected: BrandJson = { ...brand, logo: { ...brand.logo } }
+  if (lightLogo) expected.logo.tone = 'light'
+  else delete expected.logo.tone
+
+  let out: string | null
+  try {
+    out = editToneMember(brandText, lightLogo)
+  } catch {
+    out = null
+  }
+  if (out === null) return null
+  const reparsed = parseBrand(out)
+  return reparsed && canonical(reparsed) === canonical(expected) ? out : null
+}
+
+// ---- Minimal JSON text editing (only what retoneBrandJson needs) ----------
+
+type Member = { key: string; keyStart: number; keyEnd: number; valueStart: number; valueEnd: number }
+
+function skipWs(t: string, i: number): number {
+  while (i < t.length && /\s/.test(t[i])) i++
+  return i
+}
+
+function skipString(t: string, i: number): number {
+  if (t[i] !== '"') throw new Error('expected string')
+  for (i++; i < t.length; i++) {
+    if (t[i] === '\\') i++
+    else if (t[i] === '"') return i + 1
+  }
+  throw new Error('unterminated string')
+}
+
+function skipValue(t: string, i: number): number {
+  if (t[i] === '"') return skipString(t, i)
+  if (t[i] === '{' || t[i] === '[') {
+    let depth = 0
+    for (; i < t.length; i++) {
+      const c = t[i]
+      if (c === '"') i = skipString(t, i) - 1
+      else if (c === '{' || c === '[') depth++
+      else if (c === '}' || c === ']') {
+        depth--
+        if (depth === 0) return i + 1
+      }
+    }
+    throw new Error('unterminated value')
+  }
+  while (i < t.length && !/[\s,}\]]/.test(t[i])) i++
+  return i
+}
+
+// The members of the object whose '{' is at `open`, and the index of its '}'.
+function objectMembers(t: string, open: number): { members: Member[]; close: number } {
+  if (t[open] !== '{') throw new Error('expected object')
+  const members: Member[] = []
+  let i = skipWs(t, open + 1)
+  if (t[i] === '}') return { members, close: i }
+  for (;;) {
+    const keyStart = i
+    const keyEnd = skipString(t, i)
+    const key = JSON.parse(t.slice(keyStart, keyEnd)) as string
+    i = skipWs(t, keyEnd)
+    if (t[i] !== ':') throw new Error('expected colon')
+    const valueStart = skipWs(t, i + 1)
+    const valueEnd = skipValue(t, valueStart)
+    members.push({ key, keyStart, keyEnd, valueStart, valueEnd })
+    i = skipWs(t, valueEnd)
+    if (t[i] === ',') {
+      i = skipWs(t, i + 1)
+      continue
+    }
+    if (t[i] === '}') return { members, close: i }
+    throw new Error('expected , or }')
+  }
+}
+
+function editToneMember(t: string, light: boolean): string | null {
+  const root = skipWs(t, 0)
+  const logo = objectMembers(t, root).members.find((m) => m.key === 'logo')
+  if (!logo || t[logo.valueStart] !== '{') return null
+  const { members } = objectMembers(t, logo.valueStart)
+  const k = members.findIndex((m) => m.key === 'tone')
+  const tone = k === -1 ? null : members[k]
+
+  if (light && tone) return t.slice(0, tone.valueStart) + '"light"' + t.slice(tone.valueEnd)
+  if (light) {
+    const last = members[members.length - 1]
+    if (!last) return null
+    // Copy the separator the file uses before its last member (e.g. "\n    ")
+    // and its colon spacing, so the new line looks like its neighbours.
+    const before = members.length >= 2 ? t.slice(members[members.length - 2].valueEnd, last.keyStart) : t.slice(logo.valueStart + 1, last.keyStart)
+    const sep = before.replace(/^\s*,/, '') || ' '
+    const colon = t.slice(last.keyEnd, last.valueStart)
+    return t.slice(0, last.valueEnd) + ',' + sep + '"tone"' + colon + '"light"' + t.slice(last.valueEnd)
+  }
+  if (!tone) return null
+  if (k > 0) return t.slice(0, members[k - 1].valueEnd) + t.slice(tone.valueEnd)
+  if (members.length > 1) return t.slice(0, tone.keyStart) + t.slice(members[1].keyStart)
+  return t.slice(0, logo.valueStart + 1) + t.slice(skipWs(t, tone.valueEnd))
+}
+
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
+  if (v && typeof v === 'object') {
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(v)
 }
 
 function parseBrand(text: string): BrandJson | null {
