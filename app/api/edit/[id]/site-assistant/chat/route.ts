@@ -355,6 +355,8 @@ RULES
               toUrl: destUrl,
               moved: res.moved,
               ...(res.warning ? { warning: res.warning } : {}),
+              // Rows still shadowing a real page: tell the admin, never auto-removed.
+              ...(res.redirectWarnings.length ? { redirectWarnings: res.redirectWarnings } : {}),
             }
           } catch (err) {
             if (err instanceof DestinationOccupiedError) {

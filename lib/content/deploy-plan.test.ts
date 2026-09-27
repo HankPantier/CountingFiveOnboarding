@@ -287,3 +287,83 @@ describe('theme files as site config (Task 18b)', () => {
     ])
   })
 })
+
+describe('redirects.csv loop safety on deploy', () => {
+  const header = 'old_url,new_url,status_code,reason\n'
+
+  it('heals a loop already on draft and never appends a row that closes one', () => {
+    const draft = header + '/a,/b,301,editor\n/b,/a,301,editor\n'
+    const merged = mergeRedirectsCsv(draft, header + '/c,/a,301,gen\n', null)
+    expect(merged).toBe(header + '/a,/b,301,editor\n/c,/b,301,gen\n')
+  })
+
+  it('collapses a generated row through an existing chain', () => {
+    const draft = header + '/a,/b,301,editor\n'
+    expect(mergeRedirectsCsv(draft, header + '/old,/a,301,gen\n', null)).toBe(
+      draft + '/old,/b,301,gen\n'
+    )
+  })
+
+  it('keeps a row over a page the site has and reports it as a warning', () => {
+    const draft = header + '/services/outsourced-accounting,/services,301,old\n'
+    const plan = planDeployPush({
+      entries: [
+        { path: 'content/redirects.csv', content: header },
+        { path: 'content/pages/services--outsourced-accounting.md', content: 'x' },
+      ],
+      draftBlobs: new Map([['content/redirects.csv', sha(draft)]]),
+      baseline: { 'content/redirects.csv': sha(header) },
+      redirects: { draft, lastDeployed: header },
+    })
+    // Not pushed (unchanged) and not removed: reported instead.
+    expect(plan.push.find((p) => p.path === 'content/redirects.csv')).toBeUndefined()
+    expect(plan.redirectWarnings).toEqual([{ from: '/services/outsourced-accounting', to: '/services' }])
+  })
+
+  it('keeps a fresh editor-move 301 when the package re-ships the moved page (skipped as removed)', () => {
+    // Deployed /about-us; the editor then moved it to /about (the move reuses
+    // the blob and appends the 301); now the operator re-deploys.
+    const page = 'url: /about-us\n'
+    const draft = header + '/about-us,/about,301,Relocated via editor\n'
+    const plan = planDeployPush({
+      entries: [
+        { path: 'content/pages/about-us.md', content: page },
+        { path: 'content/redirects.csv', content: header },
+      ],
+      draftBlobs: new Map([
+        ['content/pages/about.md', sha(page)],
+        ['content/redirects.csv', sha(draft)],
+      ]),
+      baseline: { 'content/pages/about-us.md': sha(page), 'content/redirects.csv': sha(header) },
+      redirects: { draft, lastDeployed: header },
+    })
+    expect(plan.skipped).toContainEqual({ path: 'content/pages/about-us.md', reason: 'removed' })
+    // The draft file is unchanged, so nothing is pushed for it: the row survives.
+    expect(plan.push.map((p) => p.path)).toEqual([DEPLOY_MANIFEST_PATH])
+  })
+
+  it("counts posts under the draft's blog path when warning (korbey /insights)", () => {
+    const draft = header + '/resources/tax-tips,/insights/tax-tips,301,moved\n/insights/tax-tips,/insights,301,bad\n'
+    const plan = planDeployPush({
+      entries: [{ path: 'content/redirects.csv', content: header }],
+      draftBlobs: new Map([
+        ['content/redirects.csv', sha(draft)],
+        ['content/posts/tax-tips.md', 'p'],
+        ['content/blog.json', 'b'],
+      ]),
+      baseline: { 'content/redirects.csv': sha(header) },
+      redirects: { draft, lastDeployed: header },
+      blogJson: '{"path":"/insights"}',
+    })
+    expect(plan.redirectWarnings).toEqual([{ from: '/insights/tax-tips', to: '/insights' }])
+  })
+
+  it('sanitizes the generated file on a first deploy', () => {
+    const plan = planDeployPush({
+      entries: [{ path: 'content/redirects.csv', content: header + '/a,/b,301,x\n/b,/a,301,x\n' }],
+      draftBlobs: new Map(),
+      baseline: null,
+    })
+    expect(plan.push[0].content).toBe(header + '/a,/b,301,x\n')
+  })
+})

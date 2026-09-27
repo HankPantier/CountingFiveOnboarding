@@ -10,6 +10,7 @@ import {
   pushAssembledDeliverable,
 } from '@/lib/content/package-assembler'
 import type { DeployPlan } from '@/lib/content/deploy-plan'
+import { formatLiveRedirectWarning } from '@/lib/editor/redirects'
 
 export const runtime = 'nodejs'
 // Assembly (asset downloads + LLM brand doc + docx + ~45MB resumable upload) is
@@ -71,9 +72,20 @@ export async function POST(
       await pushAssembledDeliverable(deploy, plan)
     })
   }
+  // redirects.csv rows that would shadow a live page are kept on deploy and
+  // reported with the other redirect-map issues.
+  const redirectIssues = [
+    ...body.redirectIssues,
+    ...(plan?.redirectWarnings ?? []).map((w) => ({
+      severity: 'warning' as const,
+      oldUrl: w.from,
+      reason: formatLiveRedirectWarning(w),
+    })),
+  ]
   return NextResponse.json({
     success: true,
     ...body,
+    redirectIssues,
     pushScheduled: deploy !== null,
     firstDeploy: plan?.firstDeploy ?? null,
     preservedFiles: plan ? plan.skipped : null,

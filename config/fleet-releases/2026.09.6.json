@@ -1,0 +1,38 @@
+{
+  "_note": "Template 2026.09.6 (fix/light-logo-nav). File set = the CHANGELOG 'Rollout notes (template 2026.09.5 → 2026.09.6)' list: light-logo tone (brand.json logo.tone → html[data-c5-logo-tone], src/styles/logo-tone.css), e2e specs gated on client content (form page, content/blog.json), and the renderers never showing the page files' SEO & AIO Metadata / Structured Data trailer (strip-generator-notes.ts, mirroring the platform's). theme.css is not rewritten, package.json and package-lock.json are unchanged ('ignore' acknowledges; a skipped 2026.09.5 still brings its lockfile recipe, which wins in a merge).",
+  "templateVersion": "2026.09.6",
+  "notes": "A white logo flagged in brand.json (logo.tone \"light\") stays visible: no light plate on the inverted nav, a dark plate on a light nav, no inversion in the dark footer; sites without the flag are unchanged. Posts, orphaned Structured Data blocks and the .md endpoint no longer show the page files' SEO & AIO Metadata / Structured Data review trailer. The contact-form and blog-index e2e checks run on this site's own content instead of the template demo.",
+  "exclude": ["\\.png$", "^e2e/.*-snapshots/"],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "src/app/globals.css",
+      "src/app/layout.tsx",
+      "src/lib/brand/types.ts",
+      "src/lib/theme/hooks.test.ts",
+      "src/lib/theme/template-marker.test.ts",
+      "e2e/form.spec.ts",
+      "e2e/smoke.spec.ts",
+      "src/lib/content/get-post.ts",
+      "src/lib/assembly/parse-page-md.ts",
+      "src/app/api/md/[[...slug]]/route.ts",
+      "src/app/api/md/[[...slug]]/route.test.ts",
+      "CHANGELOG.md"
+    ],
+    "add": [
+      "src/styles/logo-tone.css",
+      "src/lib/brand/logo-tone.ts",
+      "src/lib/brand/logo-tone.test.ts",
+      "e2e/logo-tone.spec.ts",
+      "e2e/site-pages.ts",
+      "src/lib/content/strip-generator-notes.ts",
+      "src/lib/content/strip-generator-notes.test.ts",
+      "src/lib/content/strip-generator-notes.parity.test.ts",
+      "src/lib/content/__fixtures__/generator-trailer.template.json",
+      "src/lib/content/__fixtures__/leaked-generator-notes/accord-services.orphan-structured.page.md",
+      "src/lib/content/__fixtures__/leaked-generator-notes/accord-year-end-cheer.post.md"
+    ],
+    "delete": []
+  }
+}

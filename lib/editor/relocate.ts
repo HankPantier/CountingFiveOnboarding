@@ -1,15 +1,18 @@
 import { toPathname } from './nav-urls'
 import { stripGeneratorNotesFromFile } from '@/lib/content/strip-generator-notes'
+import { applyRedirectAdds, blogPathFromJson, formatLiveRedirectWarning, pageUrlsFromPaths, redirectKey } from './redirects'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
+  listTree,
   moveFile,
   readFile,
   writeFile,
 } from '@/lib/github/repo-files'
 
 const REDIRECTS_PATH = 'content/redirects.csv'
+const BLOG_JSON_PATH = 'content/blog.json'
 
 export type Move = { from: string; to: string }
 
@@ -108,38 +111,68 @@ export function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-// Append 301 redirect rows to content/redirects.csv (creating it if absent),
-// skipping any from-url that already has one. `reason` is the CSV note column;
-// callers pass a fixed string (never client input) so it can't corrupt the CSV.
+// The site's post base path from the draft's content/blog.json (only read
+// when the tree has one). /resources when absent or unreadable.
+export async function readBlogPath(githubRepo: string, tree: Array<{ path: string }>): Promise<string> {
+  if (!tree.some((e) => e.path === BLOG_JSON_PATH)) return blogPathFromJson(null)
+  try {
+    return blogPathFromJson((await readFile(githubRepo, BLOG_JSON_PATH, DRAFT_BRANCH)).content)
+  } catch {
+    return blogPathFromJson(null)
+  }
+}
+
+// Root-relative urls of every published page on the draft, for the live-page
+// warnings. A branch tree read right after a move can lag, so the caller's
+// own moves are applied on top: sources are vacated, destinations are live.
+async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string>> {
+  let live = new Set<string>()
+  try {
+    const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
+    const urls = pageUrlsFromPaths(
+      tree.filter((e) => e.type === 'blob').map((e) => e.path),
+      await readBlogPath(ctx.githubRepo, tree)
+    )
+    live = new Set([...urls].map(redirectKey))
+  } catch (err) {
+    // Fail soft: cycle safety doesn't need the tree; only the Accord-style
+    // "real page redirected away" warning degrades to this batch's targets.
+    console.warn('[redirects] page tree unavailable; real-page guard limited to this move', err)
+  }
+  for (const { from } of pairs) live.delete(redirectKey(from))
+  for (const { to } of pairs) live.add(redirectKey(to))
+  return live
+}
+
+// Add 301 redirect rows to content/redirects.csv (creating it if absent)
+// through the cycle-safe helper (lib/editor/redirects.ts): moving B back to A
+// removes the old A→B row, X→A chains collapse to X→B, and self-redirects and
+// loops are dropped. A row whose source still has a real page is kept and
+// returned as a warning for the UI. `reason` is the CSV note column; callers
+// pass a fixed string (never client input).
 export async function appendRedirects(
   ctx: RelocateCtx,
   pairs: Move[],
   reason: string
-): Promise<void> {
-  let content = ''
+): Promise<{ warnings: string[] }> {
+  let current: string | null = null
   let sha: string | undefined
   try {
     const f = await readFile(ctx.githubRepo, REDIRECTS_PATH, DRAFT_BRANCH)
-    content = f.content
+    current = f.content
     sha = f.sha
   } catch (err) {
     if (!(err instanceof FileNotFoundError)) throw err
-    content = 'old_url,new_url,status_code,reason\n'
   }
-  if (!content.endsWith('\n')) content += '\n'
-  const existing = new Set(content.split('\n').map((l) => l.split(',')[0]))
-  let added = false
-  for (const { from, to } of pairs) {
-    if (existing.has(from)) continue
-    content += `${[from, to, '301', reason].map(csvField).join(',')}\n`
-    added = true
-  }
-  if (added) {
+  const livePaths = await livePageUrls(ctx, pairs)
+  const { content, changed, warnings } = applyRedirectAdds(current, pairs, reason, { livePaths })
+  if (changed) {
     await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
       ...(sha ? { expectedSha: sha } : {}),
       ...author(ctx),
     })
   }
+  return { warnings: warnings.map(formatLiveRedirectWarning) }
 }
 
 // Relocate a single live content file (page/post) from fromPath→toPath on the
@@ -158,7 +191,7 @@ export async function relocateFile(
     expectedSha: string
     reason: string
   }
-): Promise<{ blobSha: string; moved: boolean; warning?: string }> {
+): Promise<{ blobSha: string; moved: boolean; warning?: string; redirectWarnings: string[] }> {
   const { fromPath, toPath, fromUrl, toUrl, expectedSha, reason } = args
 
   // Destination check: free → move; occupied by THIS page already → done;
@@ -172,7 +205,7 @@ export async function relocateFile(
   if (occupant) {
     const occUrl = frontmatterUrl(occupant.content)
     if (occUrl && toPathname(occUrl) === toPathname(toUrl)) {
-      return { blobSha: occupant.sha, moved: false }
+      return { blobSha: occupant.sha, moved: false, redirectWarnings: [] }
     }
     throw new DestinationOccupiedError(fromUrl, toUrl)
   }
@@ -215,6 +248,6 @@ export async function relocateFile(
     })
     blobSha = w.blobSha
   }
-  await appendRedirects(ctx, [{ from: fromUrl, to: toUrl }], reason)
-  return { blobSha, moved: true, ...(warning ? { warning } : {}) }
+  const { warnings } = await appendRedirects(ctx, [{ from: fromUrl, to: toUrl }], reason)
+  return { blobSha, moved: true, redirectWarnings: warnings, ...(warning ? { warning } : {}) }
 }

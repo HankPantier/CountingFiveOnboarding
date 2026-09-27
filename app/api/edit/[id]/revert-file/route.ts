@@ -3,7 +3,10 @@ import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../_helpers'
 import { safePath, safeAssetPath, CONTENT_MD_RE, ADMIN_BLOCKED_CONFIG } from '../_path'
-import { StaleShaError, revertFileToMain } from '@/lib/github/repo-files'
+import { FileNotFoundError, MAIN_BRANCH, StaleShaError, readFile, revertFileToMain } from '@/lib/github/repo-files'
+import { validateRedirectsCsv } from '@/lib/editor/redirects'
+
+const REDIRECTS_PATH = 'content/redirects.csv'
 
 export const runtime = 'nodejs'
 
@@ -65,6 +68,23 @@ export async function POST(
   }
 
   try {
+    // Reverting redirects.csv restores the LIVE copy; never restore one that
+    // loops or redirects a url to itself (the same 422 as the code-view save).
+    if (path === REDIRECTS_PATH || previousPath === REDIRECTS_PATH) {
+      let live: string | null = null
+      try {
+        live = (await readFile(ctx.githubRepo, REDIRECTS_PATH, MAIN_BRANCH)).content
+      } catch (err) {
+        if (!(err instanceof FileNotFoundError)) throw err
+      }
+      const problem = live === null ? null : validateRedirectsCsv(live)
+      if (problem) {
+        return NextResponse.json(
+          { error: `The live redirects.csv can't be restored: ${problem.replace(/^redirects\.csv can't be saved: /, '')}` },
+          { status: 422 }
+        )
+      }
+    }
     const result = await revertFileToMain(
       ctx.githubRepo,
       path,

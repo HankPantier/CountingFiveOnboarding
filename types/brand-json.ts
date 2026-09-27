@@ -48,5 +48,13 @@ export type BrandJson = {
   logo: {
     primary: string  // filename in /content/assets/
     alt: string
+    /**
+     * "light" = a white/light logo that needs a dark surface. The template
+     * (2026.09.6+, src/lib/brand/logo-tone.ts) turns it into
+     * <html data-c5-logo-tone="light">: no light plate on the inverted nav, a
+     * dark plate on a light nav, no invert in the dark footer. Written by the
+     * logo preflight (applyLogoTone); absent = dark logo.
+     */
+    tone?: 'light' | 'dark'
   }
 }

@@ -5,14 +5,19 @@ import { resolveEditContext } from '../_helpers'
 import { safePath, CONTENT_MD_RE, ADMIN_BLOCKED_CONFIG } from '../_path'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
+import { pageUrlsFromPaths, validateRedirectsCsv } from '@/lib/editor/redirects'
+import { readBlogPath } from '@/lib/editor/relocate'
 import {
   DRAFT_BRANCH,
   StaleShaError,
   ensureDraftBranch,
+  listTree,
   writeFile,
 } from '@/lib/github/repo-files'
 
 export const runtime = 'nodejs'
+
+const REDIRECTS_PATH = 'content/redirects.csv'
 
 // Non-admins may write page/post markdown only (CONTENT_MD_RE). Admins
 // (superusers) may still raw-edit other content/ files from the code view,
@@ -61,6 +66,24 @@ export async function PATCH(
     // hard-fails the site's `next build`, so refuse it before it reaches draft.
     const yamlError = validateFrontmatterYaml(contents)
     if (yamlError) return NextResponse.json({ error: yamlError }, { status: 422 })
+  }
+  if (path === REDIRECTS_PATH) {
+    // A redirect loop (or a live page redirected away) takes those URLs down on
+    // the published site, so refuse it before it reaches draft.
+    let livePaths: Set<string> | undefined
+    try {
+      const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
+      // Posts are live under the site's blog path (content/blog.json), not /resources.
+      livePaths = pageUrlsFromPaths(
+        tree.filter((e) => e.type === 'blob').map((e) => e.path),
+        await readBlogPath(ctx.githubRepo, tree)
+      )
+    } catch (err) {
+      // Loop detection doesn't need the tree; only the live-page check is skipped.
+      console.warn('[edit:files] page tree unavailable for the redirects check', err)
+    }
+    const redirectError = validateRedirectsCsv(contents, { livePaths })
+    if (redirectError) return NextResponse.json({ error: redirectError }, { status: 422 })
   }
 
   try {

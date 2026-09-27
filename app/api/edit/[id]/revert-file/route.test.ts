@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   ctx: { githubRepo: 'repo-1', adminName: 'A', adminEmail: 'a@x', user: { id: 'u', isAdmin: false } },
   revertFileToMain: vi.fn(),
+  readFile: vi.fn(),
 }))
 
 vi.mock('../_helpers', () => ({ resolveEditContext: vi.fn(async () => h.ctx) }))
 vi.mock('@/lib/github/repo-files', () => ({
   StaleShaError: class StaleShaError extends Error {},
+  FileNotFoundError: class FileNotFoundError extends Error {},
+  MAIN_BRANCH: 'main',
+  readFile: (...a: unknown[]) => h.readFile(...a),
   revertFileToMain: (...a: unknown[]) => h.revertFileToMain(...a),
 }))
 
@@ -52,6 +56,19 @@ describe('POST /api/edit/[id]/revert-file — lockdown', () => {
     h.ctx.user.isAdmin = true
     expect((await call({ path: 'content/design.json', expectedSha: 's' })).status).toBe(200)
     expect((await call({ path: 'content/nav.json', expectedSha: 's' })).status).toBe(403)
+  })
+
+  it('refuses (422) to restore a live redirects.csv that loops, and restores a clean one', async () => {
+    h.ctx.user.isAdmin = true
+    const header = 'old_url,new_url,status_code,reason\n'
+    h.readFile.mockResolvedValueOnce({ content: header + '/a,/b,301,x\n/b,/a,301,x\n', sha: 'm' })
+    const bad = await call({ path: 'content/redirects.csv', expectedSha: 's' })
+    expect(bad.status).toBe(422)
+    expect(((await bad.json()) as { error: string }).error).toMatch(/redirect loop \/a → \/b → \/a/)
+    expect(h.revertFileToMain).not.toHaveBeenCalled()
+
+    h.readFile.mockResolvedValueOnce({ content: header + '/a,/b,301,x\n', sha: 'm' })
+    expect((await call({ path: 'content/redirects.csv', expectedSha: 's' })).status).toBe(200)
   })
 
   it('applies the lockdown to a rename previousPath too', async () => {

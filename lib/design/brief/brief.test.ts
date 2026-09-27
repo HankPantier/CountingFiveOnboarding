@@ -59,6 +59,10 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   no longer says large accents keep the raw action — template 2026.09.5
 //   colours the accent word / primary-band stat figures / calculator estimate
 //   with the corrected --color-action-text. Nothing else moved.
+// - Light-logo round (2026-09-27, template 2026.09.6): the nav=inverted style
+//   hint no longer says every logo gets a light plate (a light-tone logo sits
+//   directly on the bar). That line is L3+ only (style axes), so the L1/L2
+//   goldens are deliberately NOT regenerated: re-checked byte-identical.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -280,9 +284,11 @@ describe('style axes in the brief', () => {
       expect(p).toContain('- Signature CSS: every concept includes 2–3 scoped css.blocks moves')
     }
   })
-  it('tells the model nav=inverted plates the logo — at L3+ only', () => {
-    const line = 'nav=inverted puts the logo on a light plate inside the primary-colour bar'
+  it('tells the model how nav=inverted seats the logo — at L3+ only', () => {
+    const line = 'nav=inverted makes the bar the primary colour: a dark logo sits on a light plate there'
     expect(buildStaticPrefix(L3)).toContain(line)
+    // Template 2026.09.6: a light-tone logo gets NO plate on the inverted bar.
+    expect(buildStaticPrefix(L3)).toContain('a light logo (brand.json logo.tone "light") sits directly on the bar')
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain(line)
     expect(buildStaticPrefix(L2)).not.toContain(line)
   })

@@ -32,6 +32,7 @@ const h = vi.hoisted(() => {
     writeFile: vi.fn(),
     moveFile: vi.fn(),
     ensureDraftBranch: vi.fn(),
+    listTree: vi.fn(),
   }
 })
 
@@ -44,6 +45,7 @@ vi.mock('@/lib/github/repo-files', () => ({
   readFile: h.readFile,
   writeFile: h.writeFile,
   moveFile: h.moveFile,
+  listTree: h.listTree,
 }))
 
 vi.mock('../_helpers', () => ({
@@ -81,6 +83,10 @@ beforeEach(() => {
   h.writeFile.mockReset()
   h.moveFile.mockReset()
   h.ensureDraftBranch.mockReset()
+  h.listTree.mockReset()
+  h.listTree.mockImplementation(async () =>
+    [...h.fs.keys()].map((path) => ({ path, sha: `sha-${path}`, type: 'blob' }))
+  )
 
   h.readFile.mockImplementation(async (_repo: string, path: string) => {
     const f = h.fs.get(path)
@@ -124,6 +130,39 @@ describe('POST /api/edit/[id]/nav — move validation', () => {
     // B→C must run before A→B so /b is free when A relocates there.
     expect(h.moveCalls[0]).toEqual(['content/pages/b.md', 'content/pages/c.md'])
     expect(h.moveCalls[1]).toEqual(['content/pages/a.md', 'content/pages/b.md'])
+    // /b holds a page again (the old /a), so it must not redirect to /c.
+    expect(h.fs.get('content/redirects.csv')?.content).toBe(
+      'old_url,new_url,status_code,reason\n/a,/b,301,Nested via nav editor\n'
+    )
+  })
+
+  it('keeps a row over a real page and returns it as a warning for the UI', async () => {
+    seed('content/pages/a.md', '/a')
+    seed('content/pages/services--outsourced-accounting.md', '/services/outsourced-accounting')
+    const csv = 'old_url,new_url,status_code,reason\n/services/outsourced-accounting,/services,301,old\n'
+    h.fs.set('content/redirects.csv', { content: csv, sha: 'r1' })
+
+    const res = await POST(req([{ from: '/a', to: '/b' }]), { params })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { redirectWarnings: string[] }
+    expect(body.redirectWarnings).toEqual([expect.stringMatching(/^\/services\/outsourced-accounting has a real page/)])
+    expect(h.fs.get('content/redirects.csv')?.content).toBe(csv + '/a,/b,301,Nested via nav editor\n')
+  })
+
+  it('moving a page back removes the old redirect instead of creating a loop (Berg)', async () => {
+    seed('content/pages/b.md', '/b')
+    h.fs.set('content/redirects.csv', {
+      content: 'old_url,new_url,status_code,reason\n/x,/a,301,old\n/a,/b,301,Nested via nav editor\n',
+      sha: 'r1',
+    })
+
+    const res = await POST(req([{ from: '/b', to: '/a' }]), { params })
+
+    expect(res.status).toBe(200)
+    expect(h.fs.get('content/redirects.csv')?.content).toBe(
+      'old_url,new_url,status_code,reason\n/x,/a,301,old\n/b,/a,301,Nested via nav editor\n'
+    )
   })
 
   it('skips a move whose destination is already the same page (no 422, no move)', async () => {

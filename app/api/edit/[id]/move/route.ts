@@ -125,6 +125,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     let moved = false
     let blobSha = body.expectedSha ?? ''
     let warning: string | undefined
+    let redirectWarnings: string[] = []
     if (willMove) {
       if (await hasDescendantPages(ctx.githubRepo, fromPath)) {
         return NextResponse.json(
@@ -143,6 +144,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       moved = res.moved
       blobSha = res.blobSha
       warning = res.warning
+      redirectWarnings = res.redirectWarnings
     }
 
     if (navAction === 'retarget') {
@@ -156,7 +158,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await appendNavItem(ctx, label, toUrl, body.navParentUrl?.trim() || undefined)
     }
 
-    return NextResponse.json({ fromUrl, toUrl, toPath, moved, blobSha, ...(warning ? { warning } : {}) })
+    return NextResponse.json({ fromUrl, toUrl, toPath, moved, blobSha, redirectWarnings, ...(warning ? { warning } : {}) })
   } catch (err) {
     if (err instanceof DestinationOccupiedError) {
       return NextResponse.json(

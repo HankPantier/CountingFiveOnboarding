@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { toSitePath } from './url-path'
+import { sanitizeRedirectsCsv } from '@/lib/editor/redirects'
 
 type CurrentSitemapEntry = NonNullable<SessionSchema['current_sitemap']>[number]
 
@@ -40,6 +41,27 @@ const CSV_HEADER = 'old_url,new_url,status_code,reason\n'
 // origin (so https://host/contact and /contact match), drops trailing prose
 // ("/contact (merge into contact page)"), and trims trailing slashes.
 const sanitizeUrl = toSitePath
+
+// The redirect SOURCE as Next.js needs it: a root-relative path with no
+// ?query or #hash (Next's build rejects either, and never matches on them).
+// Old-site urls are stored absolute (https://www.firm.com/about-us/), so keep
+// only the path (trailing slash and case as the old site had them). Returns
+// null when nothing redirectable is left: a WordPress `/?page_id=12` is just
+// `/` (the home page), and an unparseable absolute url has no path.
+function sourcePath(oldUrl: string): string | null {
+  let path: string
+  if (/^https?:\/\//i.test(oldUrl)) {
+    try {
+      path = new URL(oldUrl).pathname
+    } catch {
+      return null
+    }
+  } else {
+    path = oldUrl.replace(/[?#].*$/, '')
+    if (path && !path.startsWith('/')) path = `/${path}`
+  }
+  return path && path !== '/' ? path : null
+}
 
 // Emit a CSV migration plan from the firm's current site to the new sitemap.
 // Validates redirect targets against the confirmed sitemap and returns both
@@ -99,6 +121,32 @@ export function buildRedirectsCsv(
         continue // drop from CSV
       }
 
+      // Never redirect a URL the new site still has a page at (Accord:
+      // /services/outsourced-accounting was consolidated away while its page
+      // shipped) — the redirect would shadow the page. Same for a self-redirect.
+      const oldPath = sanitizeUrl(oldUrl)
+      if (oldPath && (oldPath === newUrl || validNewUrls.has(oldPath))) {
+        issues.push({
+          severity: 'warning',
+          oldUrl,
+          reason:
+            oldPath === newUrl
+              ? `redirects to itself — dropped`
+              : `marked '${entry.action}' but the new sitemap still has a page at ${oldPath} — redirect dropped so the page stays reachable`,
+        })
+        continue
+      }
+
+      const source = sourcePath(oldUrl)
+      if (!source) {
+        issues.push({
+          severity: 'warning',
+          oldUrl,
+          reason: 'no path to redirect once the ?query / #hash is removed (Next.js cannot redirect on a query string) — row dropped',
+        })
+        continue
+      }
+
       // Valid redirect row
       const reason =
         entry.action === 'consolidate'
@@ -106,16 +154,23 @@ export function buildRedirectsCsv(
           : 'redirected to new structure'
 
       rows.push(
-        [csvEscape(oldUrl), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
+        [csvEscape(source), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
       )
     } else if (!validNewUrls.has(sanitizeUrl(oldUrl) ?? oldUrl)) {
       // 'keep' (or any other non-redirect action) whose URL doesn't appear in
       // the new sitemap. Phase I sometimes marks these 'keep' but still fills
       // new_url with where the content went — honor that intent as a redirect
       // instead of warning about a broken link.
-      if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl)) {
+      const source = sourcePath(oldUrl)
+      if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl) && !source) {
+        issues.push({
+          severity: 'warning',
+          oldUrl,
+          reason: 'no path to redirect once the ?query / #hash is removed (Next.js cannot redirect on a query string) — row dropped',
+        })
+      } else if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl) && source) {
         rows.push(
-          [csvEscape(oldUrl), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
+          [csvEscape(source), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
         )
       } else {
         issues.push({
@@ -127,6 +182,8 @@ export function buildRedirectsCsv(
     }
   }
 
-  const csv = header + rows.join('\n') + (rows.length > 0 ? '\n' : '')
+  // Belt and braces: no loops or self-redirects ever leave the builder. (An old
+  // URL that is still a page in the new sitemap was already skipped above.)
+  const csv = sanitizeRedirectsCsv(header + rows.join('\n') + (rows.length > 0 ? '\n' : ''))
   return { csv, issues }
 }
