@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MockLanguageModelV3, simulateReadableStream } from 'ai/test'
 import type { LanguageModelV3StreamPart } from '@ai-sdk/provider'
 import { asJson } from '@/lib/supabase/json-typed'
-import { SID, makeChatRow, makeVersionRow } from './__fixtures__/rows'
+import { SID, makeChatRow, makeConceptRow, makeVersionRow } from './__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT, DRAFT_FILES } from './__fixtures__/theme-texts'
 import { DEFAULT_CAPABILITIES } from './run-types'
 
@@ -15,6 +15,7 @@ const m = vi.hoisted(() => ({
   download: vi.fn(),
   effective: vi.fn(),
   readOptional: vi.fn(),
+  getConcept: vi.fn(),
   turnContextThrows: false,
   convertThrows: false,
 }))
@@ -43,12 +44,14 @@ vi.mock('./store', async (orig) => ({ ...((await orig()) as object), latestVersi
 vi.mock('./chat-store', () => ({ listChatMessages: (...a: unknown[]) => m.list(...a), insertChatMessage: (...a: unknown[]) => m.insert(...a) }))
 vi.mock('./storage', async (orig) => ({ ...((await orig()) as object), downloadDesignImage: (...a: unknown[]) => m.download(...a) }))
 vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
+vi.mock('./run-store', async (orig) => ({ ...((await orig()) as object), getConcept: (...a: unknown[]) => m.getConcept(...a) }))
 vi.mock('./apply-bundle', async (orig) => ({ ...((await orig()) as object), readOptional: (...a: unknown[]) => m.readOptional(...a) }))
 
 import { bundleFromRepoFiles } from './bundle-files'
 import { ChatWorkspace } from './chat-workspace'
 import { composedThemeFromFiles } from './composed-theme'
-import { CHAT_WRAP_UP_MS, prepareChatTurn, streamChatTurn, type PreparedTurn, type TurnIo } from './chat-turn'
+import { CHAT_WRAP_UP_MS, MISSING_CONCEPT, prepareChatTurn, streamChatTurn, type PreparedTurn, type TurnIo } from './chat-turn'
+import { VALID } from './__fixtures__/valid-bundle'
 import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
 import { TURN_BUDGET_MS } from './chat-types'
 import type { DesignChatMessage } from './chat-types'
@@ -96,6 +99,24 @@ describe('prepareChatTurn', () => {
     const l2 = await prepareChatTurn(DB, ACTOR, req(), 0)
     if (!l2.ok) throw new Error(l2.error)
     expect(l2.turn.turnContext).toContain('changed outside the Studio')
+  })
+  it('"Fix in chat": a ready concept of this session joins the turn context (per turn, fenced prose)', async () => {
+    const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
+    m.getConcept.mockResolvedValue(makeConceptRow({ id: CID2, status: 'ready', bundle: asJson({ ...VALID, name: 'Sabine Tide Line' }) }))
+    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2 }), 0)
+    if (!r.ok) throw new Error(r.error)
+    expect(m.getConcept).toHaveBeenCalledWith(DB, SID, CID2)
+    expect(r.turn.turnContext).toContain('CONCEPT TO BRING TO THE DRAFT — the admin picked Studio concept "Sabine Tide Line"')
+    expect(r.turn.turnContext).toContain('<<<CONCEPT_NOTES')
+    expect(r.turn.staticSystem).not.toContain('Sabine Tide Line')
+  })
+  it('"Fix in chat": a missing / unfinished concept is a 400 before anything is saved', async () => {
+    m.getConcept.mockResolvedValue(null)
+    const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
+    expect(await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2 }), 0)).toEqual({ ok: false, status: 400, error: MISSING_CONCEPT })
+    m.getConcept.mockResolvedValue(makeConceptRow({ id: CID2, status: 'refining' }))
+    expect(await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2 }), 0)).toMatchObject({ ok: false, status: 400 })
+    expect(m.insert).not.toHaveBeenCalled()
   })
   it('409s malformed override markers', async () => {
     m.snapshot.mockResolvedValue({ ...SNAP, texts: { ...SNAP.texts, 'content/design-overrides.css': '/* design-studio:end */' } })

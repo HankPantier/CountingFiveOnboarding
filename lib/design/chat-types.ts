@@ -50,4 +50,7 @@ export interface DesignChatRequestBody {
   text: string
   attachmentIds?: string[]
   page?: string
+  // "Fix in chat" (WS-B): a Studio concept of this session the admin wants
+  // brought to the draft; its validated bundle joins this turn's context.
+  conceptId?: string
 }

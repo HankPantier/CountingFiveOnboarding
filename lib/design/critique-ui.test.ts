@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import type { CritiqueRecord } from './critique'
 import type { ConceptReviewDto, DesignConceptDto, DesignRunDto, ScreenshotDto } from './run-types'
-import { beforeAfterShots, conceptStatusLabel, critiqueChip, refineStatusLabel, revisionsLabel, scoreRows } from './critique-ui'
+import { beforeAfterShots, blockedLabel, conceptApplyBlockers, conceptStatusLabel, critiqueChip, fixInChatMessage, refineStatusLabel, revisionsLabel, scoreRows } from './critique-ui'
+import { CHAT_TEXT_MAX } from './chat-types'
 
 const CRIT: CritiqueRecord = {
   iteration: 1,
@@ -91,5 +92,25 @@ describe('beforeAfterShots', () => {
       before: [shot('a')],
       after: [shot('b')],
     })
+  })
+})
+
+describe('blocked concepts + Fix in chat (WS-B)', () => {
+  const FAIL = 'Mobile (390): “~$169–$229” (pricing-calculator › p) is 2.43:1 — needs 3:1 (text #e4572e on #003b71)'
+  it('a ready, measured concept with render-check failures is blocked; others are not', () => {
+    expect(conceptApplyBlockers(concept({ review: review({ gateFailures: [FAIL] }) }))).toEqual([FAIL])
+    expect(conceptApplyBlockers(concept({ review: review() }))).toEqual([])
+    expect(conceptApplyBlockers(concept({ review: null }))).toEqual([])
+    expect(conceptApplyBlockers(concept({ status: 'refining', review: review({ gateFailures: [FAIL] }) }))).toEqual([])
+    expect(blockedLabel([FAIL])).toBe('Blocked: 1 render check')
+    expect(blockedLabel([FAIL, FAIL])).toBe('Blocked: 2 render checks')
+  })
+  it('the prefilled message names the concept and its failures, within the chat cap', () => {
+    const msg = fixInChatMessage({ name: 'Sabine Tide Line', review: review({ gateFailures: [FAIL] }) })
+    expect(msg).toContain('Bring the concept "Sabine Tide Line" to the draft')
+    expect(msg).toContain(`- ${FAIL}`)
+    const many = fixInChatMessage({ name: 'x', review: review({ gateFailures: Array.from({ length: 9 }, () => 'y'.repeat(900)) }) })
+    expect(many).toContain('(+4 more)')
+    expect(many.length).toBeLessThanOrEqual(CHAT_TEXT_MAX)
   })
 })
