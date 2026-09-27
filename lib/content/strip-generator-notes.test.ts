@@ -138,6 +138,11 @@ describe('negatives — reader-facing prose is never stripped', () => {
       '## Intro\n\nText.\n\n---\n## SEO tips for accounting firms\n\n**Answer Block:** is a term we use.\n',
     ],
     ['a Structured Data heading without the paste-into shape', 'Text.\n\n---\n## Structured data for small firms\n\nProse.\n'],
+    [
+      'a differently-cased SEO heading (not the generator shape)',
+      'Text.\n\n---\n## SEO & AIO metadata for reviewers\n\n**Answer Block:**\nx\n\n## Next\n\nMore.\n',
+    ],
+    ['a lower-case "seo & aio metadata" heading', 'Text.\n\n---\n## seo & aio metadata\n\nProse.\n'],
   ]
   for (const [name, body] of cases) {
     it(name, () => {

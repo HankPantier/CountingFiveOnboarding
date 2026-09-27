@@ -31,14 +31,14 @@ export const GENERATOR_NOTE_LABELS = [
 
 export type GeneratorNoteLabel = (typeof GENERATOR_NOTE_LABELS)[number] | 'Call to Action'
 
-// `---` rule line, optional blank lines, then the exact heading. The rule is
+// `---` rule line, optional blank lines, then the EXACT generator heading
+// (case-sensitive; `&amp;` tolerated for HTML-escaped copies). The rule is
 // required so a heading that merely mentions SEO in prose never anchors a cut.
-const SEO_TRAILER_RE =
-  /(^|\n)[ \t]*-{3,}[ \t]*\n(?:[ \t]*\n)*[ \t]*##[ \t]+SEO[ \t]*&(?:amp;)?[ \t]*AIO[ \t]+Metadata[ \t]*(?=\n|$)/i
-// "Structured Data — paste into `<head>`". The AI editor's dash scrub turns the
-// em-dash into a comma, so any short separator is accepted.
+const SEO_TRAILER_RE = /(^|\n)-{3,}[ \t]*\n(?:[ \t]*\n)*## SEO &(?:amp;)? AIO Metadata[ \t]*(?=\n|$)/
+// "## Structured Data — paste into `<head>`". The AI editor's dash scrub turned
+// the em-dash into a comma on some pages, so the separator may vary.
 const STRUCTURED_TRAILER_RE =
-  /(^|\n)[ \t]*-{3,}[ \t]*\n(?:[ \t]*\n)*[ \t]*##[ \t]+Structured Data[ \t]*(?:—|–|-|,|:)?[ \t]*paste into `<head>`[ \t]*(?=\n|$)/i
+  /(^|\n)-{3,}[ \t]*\n(?:[ \t]*\n)*## Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`[ \t]*(?=\n|$)/
 
 const LABEL_ALT = GENERATOR_NOTE_LABELS.map((l) => l.replace(/[-]/g, '\\-')).join('|')
 // A generator label on a line of its own: `**Internal Links:**`.
