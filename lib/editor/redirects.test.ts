@@ -224,7 +224,7 @@ describe('trailing-slash sources (PIPE-1)', () => {
   })
 })
 
-describe('rows the template skips (EDIT-2)', () => {
+describe('rows the template skips (EDIT-2) and inert duplicates (EDIT-3)', () => {
   it('an absolute destination is not an edge, so the live loop behind it is found', () => {
     const text = `${H}/a,https://old.com/b,301,x\n/a,/c,301,x\n/c,/a,301,x\n`
     expect(findRedirectProblems(text).cycles).toEqual([['/a', '/c']])
@@ -235,5 +235,11 @@ describe('rows the template skips (EDIT-2)', () => {
     const text = `${H}/a,https://old.com/b,301,x\n/b,/a,301,x\n`
     expect(findRedirectProblems(text).cycles).toEqual([])
     expect(sanitizeRedirectsCsv(text)).toBe(text)
+  })
+
+  it('breaks a loop on its active row, keeping a later inert duplicate', () => {
+    // /b's first row loops; its second row is inert today and must survive.
+    const out = sanitizeRedirectsCsv(`${H}/a,/b,301,x\n/b,/a,301,x\n/b,/z,301,x\n`)
+    expect(pairs(out)).toEqual(['/a>/b', '/b>/z'])
   })
 })

@@ -203,16 +203,24 @@ function keySet(paths: Iterable<string> | undefined): Set<string> {
   return out
 }
 
-// Break every loop by dropping its last-listed row (the newest one written).
+// Break every loop by dropping its last-listed ACTIVE row (the newest one
+// written). Only the first live row per source is an edge (Next applies the
+// first match), so an inert duplicate or a row the template skips is never
+// the one dropped: that would remove a fallback that is live and loop-free.
 function breakCycles(input: Line[]): Line[] {
   let lines = input
   for (;;) {
     const { cycles } = findRedirectProblems(serializeLines(lines))
     if (cycles.length === 0) return lines
     const inCycle = new Set(cycles.flat())
+    const seen = new Set<string>()
     let lastIdx = -1
     lines.forEach((l, i) => {
-      if (l.kind === 'row' && inCycle.has(redirectKey(l.row.from))) lastIdx = i
+      if (l.kind !== 'row' || redirectDestinationError(l.row.to)) return
+      const from = redirectKey(l.row.from)
+      if (from === redirectKey(l.row.to) || seen.has(from)) return
+      seen.add(from)
+      if (inCycle.has(from)) lastIdx = i
     })
     if (lastIdx < 0) return lines
     lines = lines.filter((_, i) => i !== lastIdx)
