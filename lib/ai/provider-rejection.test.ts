@@ -63,6 +63,11 @@ describe('classifyProviderError — transient and other', () => {
     expect(classifyProviderError(new RetryError({ message: 'x', reason: 'maxRetriesExceeded', errors: [apiError(529, 'Overloaded')] }))).toEqual({ class: 'transient' })
   })
 
+  it('a bare "402" in some other 400\'s text does not stop a run', () => {
+    expect(providerRejection(apiError(400, 'messages.402: text content blocks must be non-empty'))).toBeNull()
+    expect(providerRejection(apiError(400, 'Error 402: payment required'))?.kind).toBe('credit')
+  })
+
   it('treats a plain bad request, an app error and unparseable output as other', () => {
     expect(classifyProviderError(apiError(400, 'prompt is too long: 250000 tokens > 200000 maximum'))).toEqual({ class: 'other' })
     expect(classifyProviderError(new SyntaxError('Unexpected token'))).toEqual({ class: 'other' })
@@ -77,6 +82,12 @@ describe('requestWasRejected — nothing generated, nothing billed', () => {
     expect(requestWasRejected(apiError(529, 'Overloaded'))).toBe(true)
     expect(requestWasRejected(new LoadAPIKeyError({ message: 'missing' }))).toBe(true)
     expect(requestWasRejected(new RetryError({ message: 'x', reason: 'maxRetriesExceeded', errors: [apiError(529, 'a'), apiError(529, 'b')] }))).toBe(true)
+  })
+
+  it('waives 4xx, 529 and 503 — but not 500 / 502 / 504 (may land after a billed generation) nor a 2xx', () => {
+    for (const s of [400, 401, 403, 413, 429, 503, 529]) expect(requestWasRejected(apiError(s, 'x'))).toBe(true)
+    for (const s of [200, 500, 502, 504]) expect(requestWasRejected(apiError(s, s === 200 ? 'Invalid JSON response' : 'x'))).toBe(false)
+    expect(requestWasRejected(new RetryError({ message: 'x', reason: 'maxRetriesExceeded', errors: [apiError(529, 'a'), apiError(504, 'b')] }))).toBe(false)
   })
 
   it('is false for a timeout abort, a status-less network failure, or anything unknown', () => {

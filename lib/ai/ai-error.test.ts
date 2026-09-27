@@ -63,7 +63,7 @@ describe('classifyAiError — Anthropic API status codes', () => {
       })
     )
     expect(info.kind).toBe('credit') // NOT bad_request — must not say "shorten your request"
-    expect(info.isProviderIssue).toBe(false)
+    expect(info.isProviderIssue).toBe(true) // provider-side (account), agrees with classifyAiErrorText
     expect(info.userMessage).toMatch(/credits/i)
     expect(info.userMessage).toMatch(/administrator/i)
     expect(info.userMessage).not.toMatch(/shorter|too long/i)
@@ -137,7 +137,7 @@ describe('classifyAiError — account usage limit', () => {
       apiError(400, { message: USAGE_LIMIT, responseBody: JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: USAGE_LIMIT } }) })
     )
     expect(info.kind).toBe('usage_limit')
-    expect(info.isProviderIssue).toBe(false) // retrying won't help
+    expect(info.isProviderIssue).toBe(true) // provider-side (account) — agrees with classifyAiErrorText
     expect(info.userMessage).toContain('usage limit')
     expect(info.userMessage).toContain('2026-10-01')
     expect(info.userMessage).toMatch(/Anthropic Console/)

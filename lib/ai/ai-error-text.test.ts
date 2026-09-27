@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aiErrorKindFromText, classifyAiErrorText, unwrapChatErrorMessage, usageLimitResetDate } from './ai-error-text'
+import { aiErrorKindFromText, aiErrorMessageFor, classifyAiErrorText, isProviderIssueKind, unwrapChatErrorMessage, usageLimitResetDate } from './ai-error-text'
 
 describe('unwrapChatErrorMessage', () => {
   it('unwraps a JSON { error } body (e.g. the chat spend-limit 429)', () => {
@@ -49,5 +49,23 @@ describe('usage-limit text', () => {
     const info = classifyAiErrorText(USAGE_LIMIT)
     expect(info.kind).toBe('usage_limit')
     expect(info.userMessage).toContain('(access returns 2026-10-01)')
+  })
+})
+
+describe('credit 402 anchoring + isProviderIssue agreement', () => {
+  it('a bare 402 in unrelated text is not a credit error; 402 with payment/credit wording is', () => {
+    expect(aiErrorKindFromText('messages.402: text content blocks must be non-empty')).not.toBe('credit')
+    expect(aiErrorKindFromText('402 Payment Required')).toBe('credit')
+    expect(aiErrorKindFromText('HTTP 402 — credit exhausted')).toBe('credit')
+  })
+
+  it('classifyAiErrorText and isProviderIssueKind agree for every recognised kind', () => {
+    for (const text of ['Overloaded', 'rate limit', 'fetch failed', 'invalid api key', 'Your credit balance is too low', 'You have reached your specified API usage limits.']) {
+      const info = classifyAiErrorText(text)
+      expect(isProviderIssueKind(info.kind)).toBe(info.isProviderIssue)
+    }
+    expect(isProviderIssueKind('usage_limit')).toBe(true)
+    expect(isProviderIssueKind('credit')).toBe(true)
+    expect(aiErrorMessageFor('usage_limit')).toMatch(/usage limit/)
   })
 })

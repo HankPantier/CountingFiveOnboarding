@@ -74,14 +74,25 @@ export function providerRejection(error: unknown): ProviderRejection | null {
   return c.class === 'rejected' ? { kind: c.kind, resetDate: c.resetDate } : null
 }
 
+// An HTTP error status the provider returns BEFORE generating: every 4xx
+// (refused request), 529 (overloaded) and 503 (unavailable). NOT 500, 502 or
+// 504 — an internal error or a gateway timeout can land after a long
+// generation that may have been billed — and never a 2xx (e.g. an "Invalid
+// JSON response" APICallError on a 200, which the model did generate).
+function isPreGenerationStatus(status: number | undefined): boolean {
+  if (typeof status !== 'number') return false
+  return (status >= 400 && status < 500) || status === 529 || status === 503
+}
+
 // True when the call failed WITHOUT the model generating anything: the provider
-// answered with an HTTP error status (every attempt of a backoff loop included),
-// or the request was never sent (no API key). A timeout abort, a network drop
-// with no status, or anything unknown is NOT — the provider may have billed.
+// answered with a pre-generation HTTP error (every attempt of a backoff loop
+// included), or the request was never sent (no API key). A timeout abort, a
+// network drop with no status, a 500/502/504, a 2xx or anything unknown is
+// NOT — the provider may have billed, so the caller keeps its estimate.
 export function requestWasRejected(error: unknown): boolean {
   if (isLoadApiKeyError(error)) return true
   if (isRetryError(error)) {
-    return error.errors.length > 0 && error.errors.every((x) => isApiCallError(x) && typeof x.statusCode === 'number')
+    return error.errors.length > 0 && error.errors.every((x) => isApiCallError(x) && isPreGenerationStatus(x.statusCode))
   }
-  return isApiCallError(error) && typeof error.statusCode === 'number'
+  return isApiCallError(error) && isPreGenerationStatus(error.statusCode)
 }

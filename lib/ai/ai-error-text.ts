@@ -12,12 +12,13 @@ export interface AiErrorInfo {
   userMessage: string
 }
 
-// Which kinds are a transient provider outage / throttle / network drop / config
-// problem (drives AiErrorInfo.isProviderIssue). A bad_request is a request the
-// model rejected (too long / malformed) and unknown is an app bug — neither is a
-// provider outage, so retrying the identical request won't help.
+// Which kinds are a provider-side problem — a transient outage / throttle /
+// network drop, or an account/config problem (bad key, credits out, usage limit
+// reached) — i.e. NOT an app bug (drives AiErrorInfo.isProviderIssue; matches
+// classifyAiErrorText, which flags every recognised kind). A bad_request is a
+// request the model rejected (too long / malformed) and unknown is an app bug.
 export function isProviderIssueKind(kind: AiErrorKind): boolean {
-  return kind === 'overloaded' || kind === 'rate_limit' || kind === 'timeout' || kind === 'auth'
+  return kind === 'overloaded' || kind === 'rate_limit' || kind === 'timeout' || kind === 'auth' || kind === 'credit' || kind === 'usage_limit'
 }
 
 // Where users can check for a real Anthropic outage.
@@ -72,8 +73,9 @@ export function aiErrorKindFromText(msg: string): AiErrorKind | null {
   // whose body says "credit balance is too low" with type invalid_request_error —
   // so it MUST be checked BEFORE bad_request (which also matches that type) or it
   // would be mislabeled "shorten your request". Retrying won't help; an admin must
-  // add credits.
-  if (/credit balance is too low|insufficient (?:credit|balance|funds)|\bbilling\b|plans? *& *billing|payment required|\b402\b/i.test(msg)) {
+  // add credits. A bare "402" alone is not enough (it could be any number in
+  // another error's text) — a real 402 is caught by its HTTP status instead.
+  if (/credit balance is too low|insufficient (?:credit|balance|funds)|\bbilling\b|plans? *& *billing|payment required|\b402\b.{0,40}(?:credit|billing|payment)/i.test(msg)) {
     return 'credit'
   }
   // A request the provider rejected: invalid request, or a prompt/payload that
