@@ -787,3 +787,14 @@ describe('sanitizeDesignCss — pricing-calculator target', () => {
     ok('[data-block="pricing-calculator"] .bg-primary p { color: var(--color-primary-foreground); }', GLOBAL)
   })
 })
+
+describe('sanitizeDesignCss — remaining specimen-block targets', () => {
+  it('accepts rules scoped to pricing-plans, booking, contact-info, map and resource-list', () => {
+    ok('[data-block="pricing-plans"] .bg-primary h3 { color: var(--color-primary-foreground); }', { kind: 'target', target: 'pricing-plans' })
+    ok('[data-block="pricing-plans"] .bg-primary h3 { color: var(--color-primary-foreground); }', GLOBAL)
+    ok('[data-block="booking"] header h2 { letter-spacing: -0.01em; }', { kind: 'target', target: 'booking' })
+    ok('[data-block="contact-info"] h3 { text-transform: uppercase; }', { kind: 'target', target: 'contact-info' })
+    ok('[data-block="map"] iframe { border-radius: 0; }', { kind: 'target', target: 'map' })
+    ok('[data-block="resource-list"] h3 { font-weight: 600; }', GLOBAL)
+  })
+})

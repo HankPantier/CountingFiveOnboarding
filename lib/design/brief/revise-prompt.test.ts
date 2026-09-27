@@ -135,3 +135,19 @@ describe('pricing-calculator is a CSS target (the reviser can restyle the estima
     expect(prefix).not.toContain('[data-block="pricing-calculator"] p.')
   })
 })
+
+describe('every /design-specimen block is a CSS target in the brief', () => {
+  const SPECIMEN_BLOCKS = ['pricing-plans', 'booking', 'contact-info', 'map', 'resource-list']
+  it('lists each in Block targets and the BLOCK VOCABULARY', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    for (const id of SPECIMEN_BLOCKS) {
+      expect(prefix).toMatch(new RegExp(`Block targets: [^\\n]*\\b${id}\\b`))
+      expect(prefix).toContain(`- [data-block="${id}"]`)
+    }
+  })
+  it('points the pricing-plans featured tier at a scoped selector, never a bare element', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(prefix).toContain('[data-block="pricing-plans"] .bg-primary')
+    expect(prefix).not.toMatch(/\[data-block="pricing-plans"\] (h3|span|li|p)\b/)
+  })
+})

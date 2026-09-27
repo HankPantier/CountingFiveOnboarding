@@ -216,4 +216,12 @@ export const OVERRIDE_BLOCKS = [
   // the calculator's estimate figure is --color-action on a --color-primary
   // panel, and a concept must be able to restyle it (live run a81093ea).
   'pricing-calculator',
+  // Appended 2026-09-26: the remaining blocks /design-specimen renders that
+  // carry a data-block (template block registry) — a render-check failure on
+  // them was only fixable through the palette.
+  'pricing-plans',
+  'booking',
+  'contact-info',
+  'map',
+  'resource-list',
 ] as const

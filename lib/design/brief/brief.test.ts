@@ -28,6 +28,10 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   `.bg-primary p` (the estimate panel only — a bare p also matched the canvas
 //   labels); the Forbidden line spells out the font-size grammar and var() in
 //   pointer-events; the animation line mentions view()/scroll() timelines.
+// - Studio follow-ups (2026-09-26): the remaining /design-specimen blocks —
+//   pricing-plans, booking, contact-info, map, resource-list — became CSS
+//   targets: appended to "Block targets" and given BLOCK VOCABULARY entries
+//   (pricing-plans names the scoped `.bg-primary …` featured-tier selector).
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -255,7 +259,7 @@ describe('style axes in the brief', () => {
       expect(p).toContain('- Never emit a "style" field (style axes are not available to you).')
     }
   })
-  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 forbidden-CSS list and pricing-calculator target)', () => {
+  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 forbidden-CSS list, pricing-calculator target and the remaining specimen-block targets)', () => {
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toBe(readGolden('static-prefix-l1.golden.txt'))
     expect(buildStaticPrefix(L2)).toBe(readGolden('static-prefix-l2.golden.txt'))
   })
