@@ -44,7 +44,7 @@ import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
 import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
 import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
-import { applyLogoNavDefault, preflightLogo } from '@/lib/content/logo-preflight'
+import { applyLogoNavDefault, applyLogoTone, preflightLogo } from '@/lib/content/logo-preflight'
 import { withDefaultNavCta } from '@/lib/content/nav-cta'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
@@ -504,6 +504,9 @@ export async function assembleContentPackage(
       logoAsset.content = logoCheck.buffer
       logoNotes.push(...logoCheck.notes)
       applyLogoNavDefault(designJson, logoCheck.lightLogo)
+      // …and tell the template the logo is light, so the inverted nav drops
+      // its light plate and the dark footer stops inverting it (2026.09.6).
+      applyLogoTone(brandJson.logo, logoCheck.lightLogo)
     } else if (palette && designJson?.typography?.headingFont) {
       // No uploaded logo — generate a branded SVG wordmark so the NavBar
       // ships with the firm name in the heading font + primary color

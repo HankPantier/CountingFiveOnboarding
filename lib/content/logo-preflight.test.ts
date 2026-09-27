@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
-import { applyLogoNavDefault, LIGHT_LOGO_NOTE, preflightLogo } from './logo-preflight'
+import { applyLogoNavDefault, applyLogoTone, LIGHT_LOGO_NOTE, preflightLogo } from './logo-preflight'
 
 // A w×h PNG: `bg` (RGBA) everywhere with a centred bw×bh box of `fg`.
 async function png(
@@ -66,6 +66,18 @@ describe('preflightLogo', () => {
     expect(applyLogoNavDefault({ style: { cards: 'flat' } }, true).style).toEqual({ cards: 'flat', nav: 'inverted' })
     expect(applyLogoNavDefault({ style: { nav: 'bordered' } }, true).style).toEqual({ nav: 'bordered' })
     expect(applyLogoNavDefault({} as { style?: Record<string, string> }, false).style).toBeUndefined()
+  })
+
+  it('light logo → brand.json logo.tone "light"; a dark logo gets no key (template R1)', () => {
+    expect(applyLogoTone({ primary: 'l.png', alt: 'a' } as { primary: string; alt: string; tone?: 'light' | 'dark' }, true)).toEqual({
+      primary: 'l.png',
+      alt: 'a',
+      tone: 'light',
+    })
+    expect(applyLogoTone({ primary: 'l.png', alt: 'a' } as { primary: string; alt: string; tone?: 'light' | 'dark' }, false)).toEqual({
+      primary: 'l.png',
+      alt: 'a',
+    })
   })
 
   it('wires a real white logo end-to-end into the nav default', async () => {

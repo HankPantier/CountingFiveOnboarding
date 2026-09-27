@@ -34,7 +34,7 @@ const noChange = (buffer: Buffer, lightLogo = false): LogoPreflight => ({
 })
 
 export const LIGHT_LOGO_NOTE =
-  'The logo is mostly white/light, so it would disappear on the light header. A first deploy ships the inverted (primary-colour) navigation so it shows; on a live site switch Navigation to “inverted” in Theme Studio, or upload a dark version of the logo.'
+  'The logo is mostly white/light, so it would disappear on the light header. A first deploy ships the inverted (primary-colour) navigation and flags the logo as light (brand.json logo.tone) so it shows in the header and footer; on a live site set "tone": "light" in brand.json’s logo (template 2026.09.6+) and switch Navigation to “inverted” in Theme Studio, or upload a dark version of the logo.'
 
 /**
  * A white/light logo gets the inverted (primary-colour) nav so it is visible —
@@ -44,6 +44,19 @@ export const LIGHT_LOGO_NOTE =
 export function applyLogoNavDefault<T extends { style?: Record<string, string> }>(designJson: T, lightLogo: boolean): T {
   if (lightLogo && !designJson.style?.nav) designJson.style = { ...designJson.style, nav: 'inverted' }
   return designJson
+}
+
+/**
+ * A white/light logo is flagged in brand.json as `logo.tone: "light"`, the
+ * template's deterministic signal (2026.09.6, src/lib/brand/logo-tone.ts) to
+ * drop the inverted nav's light plate, seat the logo on a dark plate on a light
+ * nav, and stop inverting it in the dark footer. A dark logo gets no key, so
+ * its site renders exactly as before. Mutates and returns the logo object.
+ * brand.json is first-deploy site config, so this never changes a live site.
+ */
+export function applyLogoTone<T extends { tone?: 'light' | 'dark' }>(logo: T, lightLogo: boolean): T {
+  if (lightLogo) logo.tone = 'light'
+  return logo
 }
 
 /** Analyse (and, for padded transparent rasters, trim) the logo. Never throws. */
