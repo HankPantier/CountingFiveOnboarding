@@ -19,6 +19,13 @@ describe('splitForModel', () => {
   })
 })
 
+describe('content after the trailer', () => {
+  it('is visible to the model (nothing hidden), so it can be seen and fixed', () => {
+    const file = `${PAGE}\n## Added after the trailer\n\nCopy.\n`
+    expect(splitForModel(file)).toEqual({ visible: file, trailer: '' })
+  })
+})
+
 describe('a model edit cannot touch the trailer', () => {
   it('apply_edit on the trailer heading misses (not in the view), and the commit keeps it', () => {
     const { visible, trailer } = splitForModel(PAGE)

@@ -158,7 +158,7 @@ export async function relocateFile(
     expectedSha: string
     reason: string
   }
-): Promise<{ blobSha: string; moved: boolean }> {
+): Promise<{ blobSha: string; moved: boolean; warning?: string }> {
   const { fromPath, toPath, fromUrl, toUrl, expectedSha, reason } = args
 
   // Destination check: free → move; occupied by THIS page already → done;
@@ -196,9 +196,15 @@ export async function relocateFile(
   // "**Internal Links:**" dump on /insights/*), so drop it on the way in.
   const swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
   let fixed = swapped
+  let warning: string | undefined
   if (toPath.startsWith('content/posts/')) {
     const stripped = stripGeneratorNotesFromFile(swapped)
-    if (stripped.warning) console.warn(`[relocate] ${toPath}: ${stripped.warning}`)
+    if (stripped.warning) {
+      // Content follows the trailer, so it was NOT cut: the post will render
+      // the generator notes until someone removes them by hand.
+      console.warn(`[relocate] ${toPath}: ${stripped.warning}`)
+      warning = `${stripped.warning}. Remove the SEO & AIO Metadata section from this resource by hand.`
+    }
     fixed = stripped.content
   }
   let blobSha = expectedSha
@@ -210,5 +216,5 @@ export async function relocateFile(
     blobSha = w.blobSha
   }
   await appendRedirects(ctx, [{ from: fromUrl, to: toUrl }], reason)
-  return { blobSha, moved: true }
+  return { blobSha, moved: true, ...(warning ? { warning } : {}) }
 }

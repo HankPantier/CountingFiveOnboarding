@@ -89,7 +89,8 @@ export const GENERATOR_TRAILER_ANCHORS = {
 }
 
 // Headings in `text` other than the two trailer headings, ignoring fenced code.
-function foreignHeadings(text: string): string[] {
+// Non-empty for a trailer means real content follows it: never cut or hide it.
+export function foreignHeadings(text: string): string[] {
   return text
     .replace(/```[\s\S]*?```/g, '')
     .split(/\r?\n/)

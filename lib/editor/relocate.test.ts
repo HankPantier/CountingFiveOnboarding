@@ -68,6 +68,22 @@ describe('relocateFile — page → post drops the generator trailer', () => {
     )
   })
 
+  it('returns a warning (and does not cut) when content follows the trailer', async () => {
+    arrange('content/posts/a.md')
+    const withTail = `${page}\n## Added later\n\nCopy.\n`
+    h.readFile.mockImplementation(async (_repo: string, path: string, ref: string) => {
+      if (path === 'content/posts/a.md' && ref === 'moveCommit') return { path, content: withTail, sha: 'blobA' }
+      if (path === 'content/redirects.csv') return { path, content: 'old_url,new_url,status_code,reason\n', sha: 'r1' }
+      throw new h.FileNotFoundError(path)
+    })
+    const res = await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/pages/a.md', toPath: 'content/posts/a.md', fromUrl: '/a', toUrl: '/resources/a', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(res.warning).toMatch(/not removed.*## Added later/)
+    expect(h.writeFile.mock.calls[0][2]).toContain('## SEO & AIO Metadata')
+  })
+
   it('keeps it on a page → page move (the template trims it and reuses the JSON-LD)', async () => {
     arrange('content/pages/b.md')
     await relocateFile(

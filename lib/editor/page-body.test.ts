@@ -46,6 +46,11 @@ describe('splitTrailers', () => {
     expect(splitTrailers(body)).toEqual({ content: body, trailer: '' })
   })
 
+  it('hides nothing when real content follows the trailer', () => {
+    const body = `${CONTENT}${TRAILER}\n## Added after the trailer\n\nCopy.\n`
+    expect(splitTrailers(body)).toEqual({ content: body, trailer: '' })
+  })
+
   it('treats a trailer whose SEO heading line was deleted as trailer', () => {
     const body = `${CONTENT}\n---\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- a → /b — c\n`
     expect(splitTrailers(body).content).toBe(CONTENT)

@@ -1,5 +1,5 @@
 import type { FaqItem } from './structured-fields'
-import { findTrailerStart } from '@/lib/content/strip-generator-notes'
+import { findTrailerStart, foreignHeadings } from '@/lib/content/strip-generator-notes'
 import { humanizeDashes } from '@/lib/content/anti-slop-validator'
 import { splitFile } from './frontmatter'
 
@@ -19,9 +19,12 @@ export type SplitBody = { content: string; trailer: string }
 // Split the body into editable content and the (hidden) metadata trailer. The
 // trailer starts at the earliest trailer anchor and keeps the line break in
 // front of it, so `content` never ends mid-line. content + trailer === body.
+// When real content (any other heading) follows the trailer, nothing is
+// hidden: the AI editor and PageEditor must be able to see and fix it.
 export function splitTrailers(body: string): SplitBody {
   let idx = findTrailerStart(body)
   if (idx < 0) return { content: body, trailer: '' }
+  if (foreignHeadings(body.slice(idx)).length > 0) return { content: body, trailer: '' }
   if (idx > 0 && body[idx - 1] === '\n') idx--
   if (idx > 0 && body[idx - 1] === '\r') idx--
   return { content: body.slice(0, idx), trailer: body.slice(idx) }

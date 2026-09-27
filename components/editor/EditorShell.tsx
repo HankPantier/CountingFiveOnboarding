@@ -710,7 +710,7 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string; message?: string }
         throw new Error(data.error === 'stale_sha' ? (data.message ?? 'File changed on the server.') : (data.error ?? `Move failed: ${res.status}`))
       }
-      const data = (await res.json()) as { toPath: string }
+      const data = (await res.json()) as { toPath: string; warning?: string }
       const oldPath = selectedPath
       setLoaded((prev) => {
         const m = new Map(prev)
@@ -725,7 +725,11 @@ export default function EditorShell({
       await refreshTree()
       await refreshStatus()
       await select(data.toPath)
-      setPublishResult('Moved — Publish to update the live site.')
+      setPublishResult(
+        data.warning
+          ? `Moved — Publish to update the live site. Heads up: ${data.warning}`
+          : 'Moved — Publish to update the live site.'
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Move failed')
     } finally {
@@ -747,6 +751,7 @@ export default function EditorShell({
     setPublishResult(null)
     setBulkStatus(`Moving 0 of ${paths.length}…`)
     const failures: { name: string; reason: string }[] = []
+    const warnings: string[] = []
     let done = 0
     for (const p of paths) {
       const name = p.split('/').pop() ?? p
@@ -780,6 +785,9 @@ export default function EditorShell({
               ? (data.message ?? 'changed on the server')
               : (data.error ?? `HTTP ${res.status}`)
           failures.push({ name, reason })
+        } else {
+          const data = (await res.json().catch(() => ({}))) as { warning?: string }
+          if (data.warning) warnings.push(name)
         }
       } catch {
         failures.push({ name, reason: 'network error' })
@@ -805,7 +813,10 @@ export default function EditorShell({
       return false
     }
     setPublishResult(
-      `Moved ${paths.length} ${dest.type === 'resources' ? 'to Resources' : 'under ' + dest.parentUrl} — Publish to update the live site.`
+      `Moved ${paths.length} ${dest.type === 'resources' ? 'to Resources' : 'under ' + dest.parentUrl} — Publish to update the live site.` +
+        (warnings.length
+          ? ` Heads up: ${warnings.join(', ')} still carry an SEO & AIO Metadata section with content after it; remove it by hand.`
+          : '')
     )
     return true
   }
