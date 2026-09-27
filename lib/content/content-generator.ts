@@ -717,7 +717,9 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   // regeneration. The validator still flags notes the strip refused to cut
   // (content after them). buildPageMarkdown writes its own trailer from
   // `metadata`; a model-echoed one would sit above the marker the template
-  // trims at.
+  // trims at. EVERY gen() result goes through stripNotes, including the
+  // structural and block-validation retries below: nothing downstream strips
+  // page bodies.
   const stripNotes = (r: Awaited<ReturnType<typeof gen>>) => {
     r.content = stripGeneratorNotesFromBody(r.content).body
     return r
@@ -775,7 +777,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
         console.warn(`[content-gen] Page deadline too close for structural retry on ${input.pageUrl}`)
         break
       }
-      result = await gen([correctionNote])
+      result = stripNotes(await gen([correctionNote]))
       if (parseBlockAnnotations(result.content).length > 0) break
       console.warn(
         `[content-gen] Annotations still missing after retry ${attempt}/${STRUCTURAL_RETRY_MAX} on ${input.pageUrl}`
@@ -805,7 +807,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       .join('\n')
     const correctionNote = `Your previous draft had these block annotation issues — fix all of them:\n${errorSummary}`
 
-    result = await gen([correctionNote])
+    result = stripNotes(await gen([correctionNote]))
 
     const retryAnnotations = parseBlockAnnotations(result.content)
     const retryValidation = validateBlockAnnotations(retryAnnotations, input.pageUrl, result.metadata.faq_block)
