@@ -135,8 +135,9 @@ export default function ThemeStudio({
     void init()
   }, [init])
 
-  // Save the preview-URL override (empty clears it → falls back to site.config),
-  // then reload the preview against the new URL.
+  // Save the preview-URL override (empty clears it → the default: the site's
+  // verified Vercel address, else site.config siteUrl), then reload the
+  // preview against the new URL.
   const saveUrl = useCallback(
     async (value: string | null) => {
       setBusyUrl(true)
@@ -257,8 +258,9 @@ export default function ThemeStudio({
     [commitTheme]
   )
 
-  const overrideSet = !!info?.previewUrl
-  const canResetToDefault = overrideSet && !!info?.configUrl && info.configUrl !== info.previewUrl
+  // Only an operator-typed URL is an override; the auto-derived Vercel
+  // address (even when cached in preview_url) is the default.
+  const overrideSet = info?.source === 'override'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -350,8 +352,10 @@ export default function ThemeStudio({
           </button>
         </div>
 
-        {/* Preview URL bar — the deployed site to preview (a staging/Vercel URL
-            before DNS cutover, or the canonical site.config siteUrl). */}
+        {/* Preview URL bar — the deployed site to preview: an operator
+            override, else the site's verified Vercel address, else the
+            site.config siteUrl (refused with a notice when it is the old,
+            pre-cutover site). */}
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -377,23 +381,25 @@ export default function ThemeStudio({
           >
             {busyUrl ? 'Loading…' : 'Load preview'}
           </button>
-          {canResetToDefault && (
+          {overrideSet && (
             <button
               type="button"
               onClick={() => void saveUrl(null)}
               disabled={busyUrl}
-              title={`Use the site's configured URL (${info?.configUrl})`}
+              title="Clear the custom URL and use the site's Vercel address (or its configured URL when there is none)"
               className="rounded-pill border border-border-default px-3 py-1.5 font-heading text-xs font-semibold text-text-secondary transition-colors hover:text-brand-navy disabled:opacity-50"
             >
               Reset to default
             </button>
           )}
           <span className="w-full font-body text-[11px] text-text-muted">
-            {overrideSet
-              ? `Using a custom preview URL${info?.configUrl ? ` · site default: ${info.configUrl}` : ''}`
-              : info?.configUrl
-                ? `Using the site's configured URL. Enter a staging URL above to override it while you build.`
-                : 'Set the deployed site URL to preview (e.g. a Vercel preview deploy).'}
+            {info?.source === 'override'
+              ? 'Using a custom preview URL.'
+              : info?.source === 'vercel'
+                ? `Using the site's Vercel address.${info.configUrl ? ` Site URL: ${info.configUrl}` : ''}`
+                : info?.configUrl
+                  ? "Using the site's configured URL. Enter the site's Vercel address above to preview it before DNS cutover."
+                  : "Set the deployed site URL to preview (e.g. the site's Vercel address)."}
           </span>
         </form>
 

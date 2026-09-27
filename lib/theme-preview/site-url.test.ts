@@ -35,7 +35,7 @@ const afterCbs: (() => Promise<void>)[] = []
 vi.mock('next/server', () => ({ after: (cb: () => Promise<void>) => afterCbs.push(cb) }))
 vi.mock('./vercel-alias', () => ({ deriveVercelPreviewUrl: (repo: string) => derive(repo) }))
 
-import { DERIVE_DEADLINE_MS, DERIVE_RETRY_MS, __resetPreviewUrlCacheForTests, cacheVercelPreviewUrl, getPreviewSiteUrl, resolvePreviewSiteUrl } from './site-url'
+import { DERIVE_DEADLINE_MS, DERIVE_RETRY_MS, __resetPreviewUrlCacheForTests, cacheVercelPreviewUrl, getPreviewSiteUrl, isDerivedVercelUrl, resolvePreviewSiteUrl } from './site-url'
 
 const ARGS = { jobId: 'j', githubRepo: 'o/r' }
 
@@ -186,5 +186,23 @@ describe('cacheVercelPreviewUrl', () => {
     release('https://x.vercel.app/')
     expect(await Promise.all([a, b])).toEqual(['https://x.vercel.app/', 'https://x.vercel.app/'])
     expect(derive).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('isDerivedVercelUrl', () => {
+  beforeEach(() => {
+    __resetPreviewUrlCacheForTests()
+    derive.mockReset()
+  })
+
+  it('is true only when the stored URL equals the derived Vercel address', async () => {
+    derive.mockResolvedValue('https://acme.vercel.app/')
+    expect(await isDerivedVercelUrl(ARGS, 'https://acme.vercel.app/')).toBe(true)
+    expect(await isDerivedVercelUrl(ARGS, 'https://staging.acme.test/')).toBe(false)
+  })
+
+  it('is false when nothing is derived', async () => {
+    derive.mockResolvedValue(null)
+    expect(await isDerivedVercelUrl(ARGS, 'https://acme.vercel.app/')).toBe(false)
   })
 })

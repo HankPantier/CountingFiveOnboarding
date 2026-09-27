@@ -63,8 +63,14 @@ export function themeSourcesHtmlAttributes(
 }
 
 export type PreviewUrlInfo = {
-  /** Operator override stored on content_jobs (what the preview fetches when set). */
+  /** content_jobs.preview_url: an operator override, or the auto-derived Vercel address cached there. */
   previewUrl: string | null
+  /**
+   * Where effectiveUrl came from: 'override' = the operator typed it;
+   * 'vercel' = the site's verified Vercel address (auto-derived, whether or
+   * not it is cached in preview_url); 'siteUrl' = site.config siteUrl.
+   */
+  source: 'override' | 'vercel' | 'siteUrl'
   /** Canonical site.config.ts siteUrl on main — the fallback when no override. */
   configUrl: string | null
   /** What the preview will actually fetch: previewUrl ?? (verified Vercel address) ?? configUrl. */

@@ -128,3 +128,17 @@ export async function resolvePreviewSiteUrl(args: { jobId: string; githubRepo: s
 export async function getPreviewSiteUrl(args: { jobId: string; githubRepo: string }): Promise<string | null> {
   return (await resolvePreviewSiteUrl(args)).url
 }
+
+// Is a STORED preview_url just the auto-derived Vercel address (cached by
+// cacheVercelPreviewUrl) rather than an operator's own override? Compared
+// against the (memoized) lookup, bounded by the same deadline; a timed-out
+// or failed lookup answers false, i.e. "treat it as the operator's".
+export async function isDerivedVercelUrl(args: { jobId: string; githubRepo: string }, storedUrl: string): Promise<boolean> {
+  const task = lookupVercelPreviewUrl(args.githubRepo)
+  const alias = await withDeadline(task, DERIVE_DEADLINE_MS)
+  if (alias === TIMED_OUT) {
+    keepAliveAfterResponse(task)
+    return false
+  }
+  return alias !== null && alias === storedUrl
+}
