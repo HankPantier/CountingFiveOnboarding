@@ -295,8 +295,6 @@ async function main() {
     gateFailures: r.metrics ? metricGateFailures(r.metrics, baseline).map((f) => f.message) : [],
     renderError: r.error,
   })
-  // WS-B (R2 F10/I10): the loop and the critic gate on EVERY rendered page.
-  const allPageFailures = allPageGateFailures
 
   // ── the current site: the prompt's "before" image + each page's metrics baseline
   const baselines = new Map<string, RenderMetrics | null>()
@@ -646,7 +644,7 @@ async function main() {
         const firstRender: LoopRender = {
           desktop: webp.desktop,
           mobile: webp.mobile ?? null,
-          gateFailures: allPageFailures(row.checks),
+          gateFailures: allPageGateFailures(row.checks),
           fontsNotReady: primaryFontsNotReady.get(row) ?? [],
         }
         let round: AbRevision | null = null
@@ -671,7 +669,7 @@ async function main() {
               return c.loop
             },
             revise: async (bundle, n, render, critique) => {
-              round = { round: n, status: 'failed', name: null, bundle: null, errors: [], notes: [], conceptNotes: [], stats: null, shots: [], critiqueStatus: 'not_valid', critique: null, critiqueStats: null }
+              round = { round: n, status: 'failed', name: null, bundle: null, errors: [], notes: [], conceptNotes: [], stats: null, shots: [], checks: [], critiqueStatus: 'not_valid', critique: null, critiqueStats: null }
               row.revisions.push(round)
               return runRevision(row, round, bundle, render, critique)
             },
@@ -693,12 +691,15 @@ async function main() {
                 checks.push(checkOf(page, r, baselines.get(page) ?? null))
                 if (page === primaryPage) primary = r
               }
-              if (current) current.shots = shots
+              if (current) {
+                current.shots = shots
+                current.checks = checks // per-page gate failures → report.json
+              }
               if (!primary?.webp.desktop) {
                 current?.errors.push(`Render: ${primary?.error ?? 'no desktop render was produced'} — not critiqued.`)
                 return null
               }
-              return { desktop: primary.webp.desktop, mobile: primary.webp.mobile ?? null, gateFailures: allPageFailures(checks), fontsNotReady: primary.fontsNotReady }
+              return { desktop: primary.webp.desktop, mobile: primary.webp.mobile ?? null, gateFailures: allPageGateFailures(checks), fontsNotReady: primary.fontsNotReady }
             },
           }
         )

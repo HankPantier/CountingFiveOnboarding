@@ -52,7 +52,10 @@ export type AbRevision = {
   // The revised concept's validation + self-consistency notes (ValidConcept.notes).
   conceptNotes: string[]
   stats: AbCallStats | null // the revise call (null: skipped before calling)
-  shots: AbShot[] // the revision's renders of the prompt page
+  shots: AbShot[] // the revision's renders (every page, the prompt page first)
+  // The revision's render checks, per page (report.json) — what the loop and
+  // the judge gated on (allPageGateFailures). [] until it was rendered.
+  checks: AbPageCheck[]
   critiqueStatus: AbCritiqueStatus
   critique: AbCritique | null
   critiqueStats: AbCallStats | null
@@ -387,7 +390,9 @@ function revisionsBlock(c: AbConcept, pages: string[]): string {
           : r.status === 'valid'
             ? `<div class="small">${escapeHtml(CRITIQUE_LABEL[r.critiqueStatus])}</div>`
             : ''
-      return `<div class="round"><b>${title}</b>${list(r.errors, 'err small')}${list(r.notes, 'small')}${conceptNotesBlock(r.conceptNotes)}${cssBlock(r.bundle?.css, `Round ${r.round} CSS`)}${statsBlock('Revise call', r.stats)}${shots}${critique}${statsBlock('Critic call', r.critiqueStats)}</div>`
+      const failures = allPageGateFailures(r.checks)
+      const checks = failures.length ? `<div class="small err">Render-check failures:</div>${list(failures, 'err small')}` : ''
+      return `<div class="round"><b>${title}</b>${list(r.errors, 'err small')}${checks}${list(r.notes, 'small')}${conceptNotesBlock(r.conceptNotes)}${cssBlock(r.bundle?.css, `Round ${r.round} CSS`)}${statsBlock('Revise call', r.stats)}${shots}${critique}${statsBlock('Critic call', r.critiqueStats)}</div>`
     })
     .join('')
   const final =

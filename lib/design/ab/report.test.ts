@@ -173,6 +173,7 @@ const round = (n: number, over: Partial<AbRevision> = {}): AbRevision => ({
   conceptNotes: [],
   stats: stats({ costUsd: 0.5, latencyMs: 20_000 }),
   shots: [],
+  checks: [],
   critiqueStatus: 'done',
   critique: null,
   critiqueStats: stats({ costUsd: 0.1 }),
@@ -299,5 +300,18 @@ describe('allPageGateFailures (WS-B, R2 I10)', () => {
     expect(allPageGateFailures([check('/', []), check('/services', [f]), check('/about', [f])])).toEqual([`/services — ${f}`, `/about — ${f}`])
     expect(allPageGateFailures([check('/design-specimen', [f])])).toEqual([f])
     expect(allPageGateFailures([check('/', []), check('/services', [])])).toEqual([])
+  })
+})
+
+describe('revision render checks in the report (WS-B fix round)', () => {
+  it('each round keeps its per-page checks, and the HTML lists their failures by page', () => {
+    const f = 'Desktop (1440): “Tax” (industry-cards › h3) is 1.00:1 — needs 3:1'
+    const checks = [
+      { page: '/', measured: ['desktop' as const], gateFailures: [], renderError: null },
+      { page: '/services', measured: ['desktop' as const], gateFailures: [f], renderError: null },
+    ]
+    const r = report([concept({ loopOutcome: 'max_revisions', revisions: [round(1, { checks })] })])
+    expect(JSON.parse(JSON.stringify(r)).concepts[0].revisions[0].checks[1].gateFailures).toEqual([f])
+    expect(buildReportHtml(r)).toContain(escapeHtml(`/services — ${f}`))
   })
 })
