@@ -24,20 +24,23 @@ export function usageLimitHasReset(resetDate: string | null, nowMs: number): boo
   return date !== null && nowMs >= Date.parse(`${date}T00:00:00Z`)
 }
 
+// Rendered as "<title> — <body>", so the body continues the sentence
+// (lower-case start) and never repeats the title.
 export function aiOutageBannerCopy(kind: AiOutageKind, resetDate: string | null = null): AiOutageBannerCopy {
+  const title = 'AI features are paused'
   if (kind === 'usage_limit') {
     const date = normalizeResetDate(resetDate)
     return {
-      title: 'AI features are paused',
+      title,
       body: date
-        ? `The Anthropic API usage limit has been reached — AI features are paused until ${date} or until the limit is raised in the Anthropic Console.`
-        : 'The Anthropic API usage limit has been reached — AI features are paused until the limit resets or is raised in the Anthropic Console.',
+        ? `the Anthropic API usage limit was reached. Access returns ${date}, or raise the limit in the Anthropic Console.`
+        : 'the Anthropic API usage limit was reached. Access returns when the limit resets, or raise the limit in the Anthropic Console.',
       resolveLabel: "I've raised the limit",
     }
   }
   return {
-    title: 'AI features are paused',
-    body: "The account's Claude API credits have run out. Add credits in the Anthropic console to restore content generation, AI editing, and audits. Retrying won't help until then.",
+    title,
+    body: "the account's Claude API credits have run out. Add credits in the Anthropic console to restore content generation, AI editing, and audits. Retrying won't help until then.",
     resolveLabel: "I've added credits",
   }
 }

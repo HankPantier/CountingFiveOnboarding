@@ -2,24 +2,34 @@ import { describe, it, expect } from 'vitest'
 import { aiOutageBannerCopy, isAiOutageKind, normalizeResetDate, usageLimitHasReset } from './ai-outage'
 
 describe('aiOutageBannerCopy', () => {
-  it('usage limit with a known reset date: the exact wording, date included', () => {
+  // The banner renders "<title> — <body>".
+  const line = (c: { title: string; body: string }) => `${c.title} — ${c.body}`
+  it('usage limit with a known reset date reads as one clean sentence, date included', () => {
     const c = aiOutageBannerCopy('usage_limit', '2026-10-01')
-    expect(c.body).toBe(
-      'The Anthropic API usage limit has been reached — AI features are paused until 2026-10-01 or until the limit is raised in the Anthropic Console.'
+    expect(line(c)).toBe(
+      'AI features are paused — the Anthropic API usage limit was reached. Access returns 2026-10-01, or raise the limit in the Anthropic Console.'
     )
     expect(c.resolveLabel).toBe("I've raised the limit")
     expect(c.body).not.toMatch(/credit/i)
   })
-  it('usage limit without a date says it resets or is raised', () => {
-    expect(aiOutageBannerCopy('usage_limit', null).body).toBe(
-      'The Anthropic API usage limit has been reached — AI features are paused until the limit resets or is raised in the Anthropic Console.'
+  it('usage limit without a date says access returns when it resets', () => {
+    expect(line(aiOutageBannerCopy('usage_limit', null))).toBe(
+      'AI features are paused — the Anthropic API usage limit was reached. Access returns when the limit resets, or raise the limit in the Anthropic Console.'
     )
     expect(aiOutageBannerCopy('usage_limit', 'soon').body).not.toContain('soon')
   })
-  it('credit keeps the credit wording', () => {
+  it('credit keeps its original wording and casing', () => {
     const c = aiOutageBannerCopy('credit')
-    expect(c.body).toMatch(/credits have run out/)
+    expect(line(c)).toBe(
+      "AI features are paused — the account's Claude API credits have run out. Add credits in the Anthropic console to restore content generation, AI editing, and audits. Retrying won't help until then."
+    )
     expect(c.resolveLabel).toBe("I've added credits")
+  })
+  it('the body never repeats the title and never starts upper-case', () => {
+    for (const c of [aiOutageBannerCopy('credit'), aiOutageBannerCopy('usage_limit', '2026-10-01'), aiOutageBannerCopy('usage_limit')]) {
+      expect(c.body).not.toMatch(/AI features are paused/i)
+      expect(c.body[0]).toBe(c.body[0].toLowerCase())
+    }
   })
 })
 
