@@ -106,8 +106,10 @@ describe('prepareChatTurn', () => {
     const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2 }), 0)
     if (!r.ok) throw new Error(r.error)
     expect(m.getConcept).toHaveBeenCalledWith(DB, SID, CID2)
-    expect(r.turn.turnContext).toContain('CONCEPT TO BRING TO THE DRAFT — the admin picked Studio concept "Sabine Tide Line"')
-    expect(r.turn.turnContext).toContain('<<<CONCEPT_NOTES')
+    expect(r.turn.turnContext).toContain('CONCEPT TO BRING TO THE DRAFT — the admin picked a Studio concept')
+    // The model-written name sits INSIDE the fence, never in the instruction (AI-3).
+    expect(r.turn.turnContext).toContain('<<<CONCEPT_NOTES\nName: Sabine Tide Line')
+    expect(r.turn.turnContext).not.toContain('concept "Sabine Tide Line"')
     expect(r.turn.staticSystem).not.toContain('Sabine Tide Line')
   })
   it('"Fix in chat": a missing / unfinished concept is a 400 before anything is saved', async () => {
