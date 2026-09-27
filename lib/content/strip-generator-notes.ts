@@ -125,6 +125,21 @@ function bareLabelRunStart(body: string): number {
 }
 
 /**
+ * Index where the generator trailer begins in `body` (the `---` rule line of
+ * the SEO & AIO or Structured Data trailer, or the first line of a heading-
+ * less label run), or -1. The single anchor set shared by the strip, the page
+ * repair, and the editor's trailer split (lib/editor/page-body.ts).
+ */
+export function findTrailerStart(body: string): number {
+  const starts = [
+    trailerStart(body, SEO_TRAILER_RE),
+    trailerStart(body, STRUCTURED_TRAILER_RE),
+    bareLabelRunStart(body),
+  ].filter((i) => i >= 0)
+  return starts.length ? Math.min(...starts) : -1
+}
+
+/**
  * Labels / trailer headings present in `text` — for validators. Anything
  * non-empty means generator notes are sitting in a reader-facing body.
  */
@@ -144,13 +159,8 @@ export function findGeneratorNotes(text: string): string[] {
  * earliest trailer marker is removed — both trailers always sit at the end.
  */
 export function stripGeneratorNotesFromBody(body: string): BodyStripResult {
-  const starts = [
-    trailerStart(body, SEO_TRAILER_RE),
-    trailerStart(body, STRUCTURED_TRAILER_RE),
-    bareLabelRunStart(body),
-  ].filter((i) => i >= 0)
-  if (starts.length === 0) return { body, removed: [], removedText: '' }
-  const cut = Math.min(...starts)
+  const cut = findTrailerStart(body)
+  if (cut < 0) return { body, removed: [], removedText: '' }
   const removedText = body.slice(cut)
   const foreign = foreignHeadings(removedText)
   if (foreign.length > 0) {

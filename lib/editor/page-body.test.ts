@@ -32,10 +32,23 @@ describe('splitTrailers', () => {
     expect(trailer).toBe('')
   })
 
-  it('splits on a lone Structured Data marker too', () => {
-    const body = `${CONTENT}\n---\n## Structured Data\n\n\`\`\`html\n<script></script>\n\`\`\`\n`
-    const { content } = splitTrailers(body)
-    expect(content).toBe(CONTENT)
+  it('splits on a lone Structured Data marker too (incl. the dash-scrubbed form)', () => {
+    for (const heading of ['## Structured Data — paste into `<head>`', '## Structured Data, paste into `<head>`']) {
+      const body = `${CONTENT}\n---\n${heading}\n\n\`\`\`html\n<script></script>\n\`\`\`\n`
+      const { content, trailer } = splitTrailers(body)
+      expect(content).toBe(CONTENT)
+      expect(trailer.startsWith('\n---\n')).toBe(true)
+    }
+  })
+
+  it('shares the strip module anchors: a reader-facing "Structured Data" heading is content', () => {
+    const body = `${CONTENT}\n---\n## Structured Data for small firms\n\nProse.\n`
+    expect(splitTrailers(body)).toEqual({ content: body, trailer: '' })
+  })
+
+  it('treats a trailer whose SEO heading line was deleted as trailer', () => {
+    const body = `${CONTENT}\n---\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- a → /b — c\n`
+    expect(splitTrailers(body).content).toBe(CONTENT)
   })
 })
 

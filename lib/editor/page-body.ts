@@ -1,4 +1,5 @@
 import type { FaqItem } from './structured-fields'
+import { findTrailerStart } from '@/lib/content/strip-generator-notes'
 
 // The generator appends two trailers to the page body that the template strips
 // at render (parse-page-md.ts `trimMetadataTrailer`): a human-readable
@@ -6,20 +7,21 @@ import type { FaqItem } from './structured-fields'
 // fenced JSON-LD block. They render nothing live, so the editor splits them out
 // of the editable body and never shows the raw schema. We re-attach the trailer
 // verbatim on save (no data loss); frontmatter is the live source of truth.
-const SEO_TRAILER_RE = /\n---\n##\s+SEO\s*&(?:amp;)?\s*AIO Metadata\b/i
-const STRUCTURED_TRAILER_RE = /\n---\n##\s+Structured Data\b/i
+//
+// The anchors live in lib/content/strip-generator-notes.ts (findTrailerStart),
+// shared with the post strip and the page repair so all three agree on where
+// the trailer begins.
 
 export type SplitBody = { content: string; trailer: string }
 
 // Split the body into editable content and the (hidden) metadata trailer. The
-// trailer starts at the earliest trailer marker. content + trailer === body.
+// trailer starts at the earliest trailer anchor and keeps the line break in
+// front of it, so `content` never ends mid-line. content + trailer === body.
 export function splitTrailers(body: string): SplitBody {
-  let idx = -1
-  for (const re of [SEO_TRAILER_RE, STRUCTURED_TRAILER_RE]) {
-    const m = re.exec(body)
-    if (m && (idx < 0 || m.index < idx)) idx = m.index
-  }
+  let idx = findTrailerStart(body)
   if (idx < 0) return { content: body, trailer: '' }
+  if (idx > 0 && body[idx - 1] === '\n') idx--
+  if (idx > 0 && body[idx - 1] === '\r') idx--
   return { content: body.slice(0, idx), trailer: body.slice(idx) }
 }
 
