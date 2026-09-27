@@ -3,8 +3,14 @@
 // Styling review 3 (F1): only one live site had a header CTA and no hero had
 // a button, so above the fold the only conversion element was the floating
 // "Contact" pill. The package assembler now turns nav.cta on by default; an
-// operator-set CTA (nav curation / curated nav_config) always wins, and the
-// repo NavEditor can remove it after deploy. The template (2026.09.5+) also
+// operator-set CTA (nav curation / curated nav_config) always wins.
+//
+// First deploy only, by construction: content/nav.json is in
+// SITE_CONFIG_PATHS (deploy-plan.ts), which only the FIRST deploy writes —
+// after that nav.json is the site's config, owned by the NavEditor. So an
+// operator who removes the CTA in the NavEditor keeps it removed through
+// every later re-package (the re-packaged nav.json is skipped as
+// 'site-config'); nav-cta.test.ts pins that invariant. The template (2026.09.5+) also
 // uses nav.cta as the hero's primary button and hides a childless primary
 // item that points at the same page, so "Contact" is not shown twice.
 import type { NavJson } from '@/types/nav-json'
