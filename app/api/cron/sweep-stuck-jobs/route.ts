@@ -130,6 +130,9 @@ export async function GET(req: Request) {
   // FIRST — a step call from here starts a fresh chain, so a run finishes even
   // with no Studio tab open. Only runs where a step would act and none holds
   // a claim (isRunStalled), so nothing in progress is double-run. Fail-soft.
+  // The primary nudger is the every-minute /api/cron/nudge-design-runs; this
+  // pass stays as a fallback (and to know which runs to spare from the stale
+  // sweep below). A duplicate nudge is a no-op — every step unit is claimed.
   const designNudge = await nudgeStalledDesignRuns(supabase)
   if (designNudge.nudged.length || designNudge.refused) {
     console.warn(`[sweep-stuck-jobs] design runs nudged=${designNudge.nudged.length} refused=${designNudge.refused}`)
