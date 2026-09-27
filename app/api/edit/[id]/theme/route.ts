@@ -13,6 +13,7 @@ import {
   type DesignFlagsPatch,
 } from '@/lib/editor/theme-edit'
 import { generateThemeCss, checkThemeContrast, checkActionContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'
+import { FALLBACK_PALETTE } from '@/lib/content/deliverable-defaults'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
@@ -47,7 +48,25 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch; flags?: DesignFlagsPatch }
+// regenerate: rewrite theme.css (+ the fonts module on L2+) from the CURRENT
+// brand.json + design.json with no value change — the "Regenerate theme files"
+// action on the Design Studio stale notices.
+// allowFallbackPalette: the operator confirmed regenerating a site whose
+// brand.json is still FALLBACK_PALETTE.
+type ThemePatchBody = {
+  palette?: PalettePatch
+  typography?: TypographyPatch
+  flags?: DesignFlagsPatch
+  regenerate?: boolean
+  allowFallbackPalette?: boolean
+}
+
+function isFallbackPalette(p: BrandJson['palette'] | undefined): boolean {
+  if (!p) return false
+  return (Object.keys(FALLBACK_PALETTE) as (keyof typeof FALLBACK_PALETTE)[]).every(
+    (k) => typeof p[k] === 'string' && p[k].toLowerCase() === FALLBACK_PALETTE[k].hex.toLowerCase()
+  )
+}
 
 // PATCH — direct (non-AI) theme edits from the Theme Studio pickers. Applies a
 // palette and/or typography change: commits brand.json/design.json + the
@@ -66,7 +85,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = (await req.json().catch(() => ({}))) as ThemePatchBody
-  if (!body.palette && !body.typography && !body.flags) {
+  const regenerate = body.regenerate === true
+  if (!body.palette && !body.typography && !body.flags && !regenerate) {
     return NextResponse.json({ error: 'Nothing to change.' }, { status: 400 })
   }
 
@@ -125,7 +145,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     designChanged = fontsChanged || treatmentsChanged
 
-    if (!brandChanged && !designChanged) {
+    if (!brandChanged && !designChanged && !regenerate) {
       return NextResponse.json({ ok: true, note: 'No change — those values were already set.' })
     }
 
@@ -136,6 +156,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // purely to lock its sha, and an absent theme.css must still be absent (a
     // concurrent Design Studio apply that created it wins → 409, not clobbered).
     const themeCss = generateThemeCss(brand, design)
+    let derivedUnchanged = themeCss === themeFile.content
     const changes: { path: string; content: string; expectedSha: string | null }[] = [
       { path: THEME_CSS_PATH, content: themeCss, expectedSha: themeFile.sha || null },
       { path: BRAND_PATH, content: brandChanged ? brandText : brandFile.content, expectedSha: brandFile.sha },
@@ -144,9 +165,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // L2+ drafts: the live fonts come from the generated next/font module, so
     // regenerate it from the FINAL design.json on every theme write (same as
     // theme.css) and guard it — an absent module must still be absent.
-    if (fontsUnlocked(await readDesignCapabilities(githubRepo))) {
+    const fontsWritable = fontsUnlocked(await readDesignCapabilities(githubRepo))
+    if (fontsWritable) {
       const fontsFile = (await load(FONTS_MODULE_PATH, true))!
       const fontsModule = generateFontsModule(normalizeTypography(design.typography)).source
+      derivedUnchanged = derivedUnchanged && fontsModule === fontsFile.content
       changes.push({ path: FONTS_MODULE_PATH, content: fontsModule, expectedSha: fontsFile.sha || null })
     }
 
@@ -155,21 +178,46 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       fontsChanged && 'fonts',
       treatmentsChanged && 'treatments',
     ].filter(Boolean) as string[]
-    await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: update ${changedParts.join(' + ')} (${adminEmail ?? 'admin'})`, {
+    const regenerateOnly = !brandChanged && !designChanged
+    // An L1 draft (template marker without `fonts`) has no live-fonts module to
+    // write, so a regenerate only ever touches theme.css there.
+    const fontsNote = regenerateOnly && !fontsWritable ? ' The fonts module was not touched: this site’s template doesn’t unlock live fonts yet.' : ''
+    // Nothing to regenerate when the derived files already match — no empty commit.
+    if (regenerateOnly && derivedUnchanged) {
+      return NextResponse.json({ ok: true, note: `Theme files already match brand.json + design.json.${fontsNote}` })
+    }
+    // Regenerating a site whose brand.json still holds the generic FALLBACK
+    // palette would swap its live colours for the fallback on publish. Refuse
+    // unless the operator confirmed it explicitly.
+    if (regenerateOnly && themeCss !== themeFile.content && isFallbackPalette(brand.palette) && body.allowFallbackPalette !== true) {
+      return NextResponse.json(
+        {
+          error: 'This site’s brand.json still has the fallback palette, so regenerating would switch the site to the fallback colours when you publish. Brand it first, or confirm to regenerate anyway.',
+          fallbackPalette: true,
+        },
+        { status: 409 }
+      )
+    }
+    const summary = regenerateOnly ? 'regenerate theme files' : `update ${changedParts.join(' + ')}`
+    await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: ${summary} (${adminEmail ?? 'admin'})`, {
       authorName: adminName ?? DEFAULT_COMMIT_AUTHOR.name,
       authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
     })
 
-    // MBP sync: keep the profile in step with the site (best-effort).
-    await syncMbpTheme(createServerClient(), {
-      sessionId,
-      jobId,
-      brand: brandChanged ? brand : undefined,
-      design: designChanged ? design : undefined,
-    })
+    // MBP sync: keep the profile in step with the site (best-effort). A pure
+    // regenerate changed no brand/design value, so there's nothing to sync.
+    if (!regenerateOnly) {
+      await syncMbpTheme(createServerClient(), {
+        sessionId,
+        jobId,
+        brand: brandChanged ? brand : undefined,
+        design: designChanged ? design : undefined,
+      })
+    }
 
     return NextResponse.json({
       ok: true,
+      ...(regenerateOnly ? { note: `Regenerated the theme files on the draft from brand.json + design.json.${fontsNote}` } : {}),
       palette: brand.palette,
       typography: normalizeTypography(design.typography),
       headlineStyle: design.headlineStyle ?? 'sans',

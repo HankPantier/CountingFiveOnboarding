@@ -1,0 +1,12 @@
+{
+  "_note": "Rollout 2 (template 1e15b09 → 85a3bd3). Encodes scratchpad t3/roll2.sh: retired scripts removed from package.json, tracked design-kit/ + design-brief.md removed, their .gitignore lines pruned.",
+  "templateVersion": "2026.09.3",
+  "notes": "Style preset fixes (footer=light / nav=inverted logo plate / nav=bordered) with contrast e2e, dark-mode contrast for current-page indicators, and removal of the retired export-brief / design-preview scripts (replaced by the in-platform Design Studio).",
+  "packageJson": {
+    "removeScripts": ["export-brief", "export-kit", "design-preview"]
+  },
+  "gitignore": {
+    "remove": ["design-kit/", "design-brief.md"]
+  },
+  "deleteTracked": ["design-kit", "design-brief.md"]
+}

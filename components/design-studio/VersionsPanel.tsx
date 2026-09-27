@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { BaselineStatus, DesignVersionDto, DriftResult } from '@/lib/design/studio-types'
 import InlineConfirm from './InlineConfirm'
-import { designApi, errorMessage } from './api'
+import { DesignApiError, designApi, errorMessage } from './api'
 import { FOCUS, PANEL, PRIMARY_BTN_SM } from './styles'
 
 const SOURCE_LABELS: Record<DesignVersionDto['source'], string> = {
@@ -78,6 +78,24 @@ export default function VersionsPanel({
       await designApi(`/api/edit/${sessionId}/design/sync-mbp`, { method: 'POST', json: {} })
       return 'The MBP now lists the draft’s palette and fonts.'
     }, 'Failed to sync the MBP')
+  // A site still on the FALLBACK palette gets a 409 first; the operator then
+  // has to confirm switching the site to the fallback colours explicitly.
+  const [fallbackWarning, setFallbackWarning] = useState<string | null>(null)
+  const regenerate = (allowFallbackPalette = false) =>
+    run(async () => {
+      try {
+        const res = await designApi<{ note?: string }>(`/api/edit/${sessionId}/theme`, {
+          method: 'PATCH',
+          json: { regenerate: true, ...(allowFallbackPalette ? { allowFallbackPalette: true } : {}) },
+        })
+        setFallbackWarning(null)
+        return res.note ?? 'Regenerated the theme files on the draft from brand.json + design.json.'
+      } catch (err) {
+        const body = err instanceof DesignApiError ? (err.body as { fallbackPalette?: boolean } | null) : null
+        if (body?.fallbackPalette) setFallbackWarning(err instanceof Error ? err.message : 'This site still has the fallback palette.')
+        throw err
+      }
+    }, 'Failed to regenerate the theme files')
   const capture = () =>
     run(async () => {
       const res = await designApi<{ versionNo: number }>(`/api/edit/${sessionId}/design/versions/import`, { method: 'POST', json: {} })
@@ -164,6 +182,31 @@ export default function VersionsPanel({
                 or Controls change regenerates it — and the fonts change on the live site when you publish.
               </p>
             </>
+          )}
+        </div>
+      )}
+
+      {/* Fix the stale notices in place: the theme PATCH with
+          { regenerate: true } rewrites theme.css (+ the fonts module on L2+)
+          from the draft's current brand.json + design.json. Admin-only route. */}
+      {(themeCssStale === true || fontsModuleStale === true) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <InlineConfirm
+            label="Regenerate theme files"
+            prompt="Rewrite theme.css (and, where the template unlocks live fonts, the fonts module) on the draft from brand.json + design.json? The live site changes when you publish."
+            confirmLabel="Regenerate"
+            busy={busy}
+            onConfirm={() => regenerate()}
+            tone="neutral"
+          />
+          {fallbackWarning && (
+            <InlineConfirm
+              label="Regenerate with the fallback palette anyway"
+              prompt="This will switch the site to the generic fallback palette when you publish. Brand it first unless that’s intended. Continue?"
+              confirmLabel="Use fallback palette"
+              busy={busy}
+              onConfirm={() => regenerate(true)}
+            />
           )}
         </div>
       )}

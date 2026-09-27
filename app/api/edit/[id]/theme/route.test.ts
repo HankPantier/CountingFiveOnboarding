@@ -62,6 +62,7 @@ import { patchDesignTypography } from '@/lib/editor/theme-edit'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { normalizeTypography } from './_theme'
 import { checkActionContrast } from '@/lib/content/theme-css-generator'
+import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
 
 const params = Promise.resolve({ id: '11111111-1111-1111-1111-111111111111' })
 const patchFlags = () =>
@@ -158,5 +159,67 @@ describe('PATCH /api/edit/[id]/theme — fonts module (L2+ drafts)', () => {
     await patchTypography()
     const files = h.writeFiles.mock.calls[0][1] as { path: string }[]
     expect(files.map((f) => f.path)).not.toContain(FONTS)
+  })
+})
+
+describe('PATCH /api/edit/[id]/theme — regenerate (stale-notice button)', () => {
+  const FONTS = 'src/app/fonts.generated.ts'
+  const regenerate = () =>
+    PATCH(new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ regenerate: true }) }), { params })
+
+  it('rewrites theme.css from the unchanged brand/design (both locked, contents untouched) and skips the MBP sync', async () => {
+    h.fs.set('src/styles/theme.css', { content: 'house cyan', sha: 'themeSha' })
+    vi.mocked(syncMbpTheme).mockClear()
+    const res = await regenerate()
+    expect(res.status).toBe(200)
+    expect(h.writeFiles).toHaveBeenCalledTimes(1)
+    const [, files, , message] = h.writeFiles.mock.calls[0] as [string, { path: string; content: string; expectedSha?: string | null }[], string, string]
+    expect(files.find((f) => f.path === 'src/styles/theme.css')).toEqual({ path: 'src/styles/theme.css', content: ':root{}', expectedSha: 'themeSha' })
+    expect(files.find((f) => f.path === 'content/brand.json')).toEqual({ path: 'content/brand.json', content: '{"palette":{}}', expectedSha: 'brandSha' })
+    expect(files.find((f) => f.path === 'content/design.json')).toEqual({ path: 'content/design.json', content: '{"typography":{}}', expectedSha: 'designSha' })
+    expect(message).toMatch(/^Theme: regenerate theme files/)
+    expect(syncMbpTheme).not.toHaveBeenCalled()
+  })
+
+  it('regenerates the fonts module on an L2 draft', async () => {
+    h.fs.set('c5-template.json', { content: '{"capabilities":["fonts"]}', sha: 'markerSha' })
+    h.fs.set('src/styles/theme.css', { content: ':root{}', sha: 'themeSha' })
+    h.fs.set(FONTS, { content: 'default seed', sha: 'f'.repeat(40) })
+    const res = await regenerate()
+    expect(res.status).toBe(200)
+    const files = h.writeFiles.mock.calls[0][1] as { path: string; content: string }[]
+    expect(files.find((f) => f.path === FONTS)?.content).toBe(generateFontsModule(normalizeTypography({})).source)
+  })
+
+  it('refuses (409 fallbackPalette) to regenerate a FALLBACK-palette site until the operator confirms', async () => {
+    const fallback = { primary: '#1F3A5F', secondary: '#5A6B7B', complementary: '#C2703D', action: '#0E8C9C', nearBlack: '#1A1C1E', nearWhite: '#F8F8F6' }
+    h.fs.set('content/brand.json', { content: JSON.stringify({ palette: fallback }), sha: 'brandSha' })
+    h.fs.set('src/styles/theme.css', { content: 'house cyan', sha: 'themeSha' })
+    const refused = await regenerate()
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ fallbackPalette: true })
+    expect(h.writeFiles).not.toHaveBeenCalled()
+    const ok = await PATCH(
+      new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ regenerate: true, allowFallbackPalette: true }) }),
+      { params }
+    )
+    expect(ok.status).toBe(200)
+    expect(h.writeFiles).toHaveBeenCalledTimes(1)
+  })
+
+  it('on an L1 draft says the fonts module was not touched', async () => {
+    h.fs.set('src/styles/theme.css', { content: 'old', sha: 'themeSha' })
+    const res = await regenerate()
+    expect((await res.json()).note).toMatch(/fonts module was not touched/)
+    const files = h.writeFiles.mock.calls[0][1] as { path: string }[]
+    expect(files.map((f) => f.path)).not.toContain(FONTS)
+  })
+
+  it('is a no-op (no empty commit) when the derived files already match', async () => {
+    h.fs.set('src/styles/theme.css', { content: ':root{}', sha: 'themeSha' })
+    const res = await regenerate()
+    expect(res.status).toBe(200)
+    expect((await res.json()).note).toMatch(/already match/)
+    expect(h.writeFiles).not.toHaveBeenCalled()
   })
 })
