@@ -32,6 +32,9 @@ import { ACTION_ON_PRIMARY_RULE, DESIGN_SYSTEM_PROMPT, buildConceptPrompt, build
 //   pricing-plans, booking, contact-info, map, resource-list — became CSS
 //   targets: appended to "Block targets" and given BLOCK VOCABULARY entries
 //   (pricing-plans names the scoped `.bg-primary …` featured-tier selector).
+// - Task 10 fix round 1 (2026-09-26): the pricing-calculator entry now says
+//   action on primary must reach 4.5:1 (the palette gate's threshold — the
+//   pair also colours the 12px page-header kicker), not "3:1 (large text)".
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

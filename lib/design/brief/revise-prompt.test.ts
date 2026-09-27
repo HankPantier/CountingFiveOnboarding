@@ -151,3 +151,11 @@ describe('every /design-specimen block is a CSS target in the brief', () => {
     expect(prefix).not.toMatch(/\[data-block="pricing-plans"\] (h3|span|li|p)\b/)
   })
 })
+
+describe('the pricing-calculator hint matches the palette gate', () => {
+  it('states 4.5:1 for action on primary, never the old 3:1 large-text bar', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(prefix).toContain('requires action on primary to reach 4.5:1')
+    expect(prefix).not.toContain('must reach 3:1 (large text)')
+  })
+})
