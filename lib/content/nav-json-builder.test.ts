@@ -177,3 +177,48 @@ describe('nav labels — SEO titles never reach the header', () => {
     ])
   })
 })
+
+describe('nav labels — review probes (firm-name matching must not eat real labels)', () => {
+  it('skips stopwords when matching the firm name', () => {
+    expect(cleanNavLabel('About The Team', 'The Berg Group')).toBe('About The Team')
+    expect(cleanNavLabel('About Our Services', 'Our Family CPAs')).toBe('About Our Services')
+    expect(cleanNavLabel('About Berg', 'The Berg Group')).toBe('About')
+    expect(cleanNavLabel('About Our Family CPAs', 'Our Family CPAs')).toBe('About')
+  })
+
+  it('does not strip a real dash-suffix when a firm name is known', () => {
+    expect(cleanNavLabel('Bookkeeping - Small Business Accounting', 'Berg Advisors')).toBe('Bookkeeping - Small Business Accounting')
+    expect(cleanNavLabel('Tax Planning – Berg Advisors', 'Berg Advisors')).toBe('Tax Planning')
+  })
+
+  it('keeps the first "|" segment that is not the firm name', () => {
+    expect(cleanNavLabel('Berg Advisors | Accounting Services', 'Berg Advisors')).toBe('Accounting Services')
+    expect(cleanNavLabel('Blog | BussCPA', 'Buss CPA')).toBe('Blog')
+    expect(cleanNavLabel('Stephen Pryor | Stephen P. Pryor, CPA', 'Stephen P. Pryor, CPA')).toBe('Stephen Pryor')
+  })
+
+  it('leaves an already-clean curated label exactly as typed', () => {
+    const curated: NavJson = {
+      primary: [
+        { label: 'About Home', url: '/about' }, // clean by the rule (short, no "|", no firm name)
+        { label: 'About Berg Advisors', url: '/about-us' }, // names the firm → cleaned
+        { label: 'Berg Advisors | Accounting Services', url: '/services' },
+      ],
+    }
+    const nav = buildNavJson([], curated, { firmName: 'Berg Advisors' })
+    expect(nav.primary.map((i) => i.label)).toEqual(['About Home', 'About', 'Accounting Services'])
+  })
+
+  it('lints duplicate sibling labels', () => {
+    const nav: NavJson = {
+      primary: [
+        { label: 'Meet Our Team', url: '/meet-the-team', children: [{ label: 'Tax', url: '/a' }, { label: 'tax', url: '/b' }] },
+        { label: 'Meet Our Team', url: '/meet-the-team/your-team' },
+      ],
+    }
+    expect(lintNavLabels(nav)).toEqual([
+      'Nav label "Meet Our Team" appears 2 times in the top-level menu — give each page a distinct label.',
+      'Nav label "Tax" appears 2 times under "Meet Our Team" — give each page a distinct label.',
+    ])
+  })
+})

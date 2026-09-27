@@ -88,29 +88,55 @@ export const NAV_LABEL_MAX = 30
 
 const normWords = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
-// Does `suffix` name the firm? Exact match, or it starts with the firm's first
-// significant word ("Berg Partners" for "Berg Advisors", "BussCPA" for "Buss CPA").
-function namesFirm(suffix: string, firmName?: string): boolean {
-  const s = normWords(suffix)
+const NAME_STOPWORDS = new Set(['the', 'our', 'a', 'an', 'and', 'of', 'at', 'for', 'to', 'in', 'on', 'by', 'with', 'your'])
+
+// The words of a name that carry meaning ("The Berg Group" → berg, group).
+const significantWords = (s: string): string[] =>
+  normWords(s)
+    .split(' ')
+    .filter((w) => w.length > 1 && !NAME_STOPWORDS.has(w))
+
+// Does `text` name the firm? The whole name (spaces optional: "BussCPA" for
+// "Buss CPA"), or text whose first significant word is the firm's first
+// significant word ("Berg Partners" for "The Berg Group"). Stopwords never
+// match ("About The Team" is not "The Berg Group"). Without a firm name, falls
+// back to generic firm-name words (CPA, LLC, Group, Advisors, …).
+function namesFirm(text: string, firmName?: string): boolean {
+  const s = normWords(text)
   if (!s) return false
   if (firmName) {
     const f = normWords(firmName)
+    if (!f) return false
     if (s === f || s.replace(/ /g, '') === f.replace(/ /g, '')) return true
-    const first = f.split(' ').find((w) => w.length > 2)
-    if (first && (s.split(' ')[0] === first || s.startsWith(first))) return true
+    const firmFirst = significantWords(firmName)[0]
+    const textFirst = significantWords(text)[0]
+    if (!firmFirst || !textFirst) return false
+    return textFirst === firmFirst || (textFirst.startsWith(firmFirst) && s.replace(/ /g, '').startsWith(firmFirst))
   }
   return /\b(cpas?|llc|pllc|pc|llp|inc|group|advisors|accounting|consulting|associates)\b/.test(s)
 }
 
+// Does the label mention the firm anywhere (the whole name, or its first
+// significant word as a word)?
+function containsFirm(label: string, firmName?: string): boolean {
+  if (!firmName) return false
+  const l = ` ${normWords(label)} `
+  const f = normWords(firmName)
+  const first = significantWords(firmName)[0]
+  return (!!f && l.includes(` ${f} `)) || (!!first && l.includes(` ${first} `))
+}
+
 /**
- * Strip SEO-title noise from a nav label: "| Firm Name" suffixes, "- Firm"
- * suffixes, "About Home" → "About", "About <Firm>" → "About", and "…your
- * trusted accounting partner" taglines. Never shortens a clean label.
+ * Strip SEO-title noise from a nav label: "| Firm Name" segments (keeping the
+ * first segment that is NOT the firm name), "- Firm" suffixes, "About Home" →
+ * "About", "About <Firm>" → "About", and "…your trusted accounting partner"
+ * taglines. Never shortens a clean label.
  */
 export function cleanNavLabel(raw: string, firmName?: string): string {
   let label = raw.replace(/\s+/g, ' ').trim()
   if (label.includes('|')) {
-    label = label.split('|').map((part) => part.trim()).find((part) => part.length > 0) ?? ''
+    const parts = label.split('|').map((part) => part.trim()).filter((part) => part.length > 0)
+    label = parts.find((part) => !namesFirm(part, firmName)) ?? parts[0] ?? ''
   }
   const dash = label.match(/^(.+?)\s+[-–—]\s+(.+)$/)
   if (dash && namesFirm(dash[2], firmName)) label = dash[1].trim()
@@ -148,11 +174,13 @@ function getLabel(entry: SitemapEntry, firmName?: string): string {
 }
 
 // Curated (operator-saved) labels are only stripped of SEO noise — never
-// shortened; the package preflight lints any that are still too long.
+// shortened — and a label that is already clean (short, no "|", no firm name)
+// is left exactly as the operator typed it. The preflight lints the rest.
 function cleanCuratedLabels(item: NavItem, firmName?: string): NavItem {
+  const clean = item.label.length <= NAV_LABEL_MAX && !item.label.includes('|') && !containsFirm(item.label, firmName)
   return {
     ...item,
-    label: cleanNavLabel(item.label, firmName) || item.label,
+    label: clean ? item.label : cleanNavLabel(item.label, firmName) || item.label,
     ...(item.children ? { children: item.children.map((c) => cleanCuratedLabels(c, firmName)) } : {}),
   }
 }
@@ -167,14 +195,30 @@ export const NAV_DROPDOWN_LABEL_MAX = 50
  */
 export function lintNavLabels(nav: NavJson): string[] {
   const out: string[] = []
+  // Two siblings with the same label read as one link twice (Aurora's two
+  // "Meet Our Team" pages).
+  const lintDuplicates = (items: NavItem[], where: string) => {
+    const counts = new Map<string, { label: string; n: number }>()
+    for (const i of items) {
+      const key = i.label.trim().toLowerCase()
+      const c = counts.get(key)
+      if (c) c.n++
+      else counts.set(key, { label: i.label, n: 1 })
+    }
+    for (const { label, n } of counts.values()) {
+      if (n > 1) out.push(`Nav label "${label}" appears ${n} times ${where} — give each page a distinct label.`)
+    }
+  }
   const visit = (item: NavItem, depth: number) => {
     const where = depth === 0 ? 'top-level' : 'dropdown'
     const max = depth === 0 ? NAV_LABEL_MAX : NAV_DROPDOWN_LABEL_MAX
     if (item.label.includes('|')) out.push(`Nav label "${item.label}" (${where}) contains "|" — use a short page name.`)
     else if (item.label.length > max)
       out.push(`Nav label "${item.label}" (${where}) is ${item.label.length} characters — keep it to ${max} or fewer.`)
+    lintDuplicates(item.children ?? [], `under "${item.label}"`)
     for (const child of item.children ?? []) visit(child, depth + 1)
   }
+  lintDuplicates(nav.primary, 'in the top-level menu')
   for (const item of nav.primary) visit(item, 0)
   if (nav.cta) visit(nav.cta, 0)
   return out
