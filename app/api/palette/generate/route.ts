@@ -3,8 +3,8 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
 import sharp from 'sharp'
-import { derivePalette, NEUTRAL_PALETTE, pickRasterBrandColors } from '@/lib/content/derive-palette'
-import { extractSvgColors, pickBrandColors } from '@/lib/content/svg-colors'
+import { buildLogoPalette, NEUTRAL_PALETTE, pickLogoBrandColors, pickRasterBrandColors } from '@/lib/content/derive-palette'
+import { extractSvgColorWeights } from '@/lib/content/svg-colors'
 
 export const runtime = 'nodejs'
 
@@ -51,11 +51,11 @@ export async function POST(req: Request) {
 
   // SVG: derive from the vector's own colors (no rasterizer needed).
   if (logoAsset.mime_type === 'image/svg+xml') {
-    const picked = pickBrandColors(extractSvgColors(buffer.toString('utf-8')))
+    const picked = pickLogoBrandColors(extractSvgColorWeights(buffer.toString('utf-8')))
     if (!picked) {
       return NextResponse.json({ palette: NEUTRAL_PALETTE, fromLogo: false })
     }
-    return NextResponse.json({ palette: derivePalette(picked.primary, picked.secondary), fromLogo: true })
+    return NextResponse.json({ palette: buildLogoPalette(picked), fromLogo: true, lightLogo: picked.lightLogo })
   }
 
   // Raster: sample the dominant colors. Decode failure degrades to defaults
@@ -67,11 +67,13 @@ export async function POST(req: Request) {
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true })
-    const picked = pickRasterBrandColors(data, info.channels)
+    // Background plates (a logo on a white box) and white/grey pixels are
+    // excluded inside the picker — see lib/content/derive-palette.ts.
+    const picked = pickRasterBrandColors(data, info.channels, info.width, info.height)
     if (!picked) {
       return NextResponse.json({ palette: NEUTRAL_PALETTE, fromLogo: false })
     }
-    return NextResponse.json({ palette: derivePalette(picked.primary, picked.secondary), fromLogo: true })
+    return NextResponse.json({ palette: buildLogoPalette(picked), fromLogo: true, lightLogo: picked.lightLogo })
   } catch (err) {
     console.warn('[palette] raster extraction failed, using defaults:', err)
     return NextResponse.json({ palette: NEUTRAL_PALETTE, fromLogo: false })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractSvgColors, pickBrandColors } from './svg-colors'
+import { extractSvgColors, extractSvgColorWeights } from './svg-colors'
 
 describe('extractSvgColors', () => {
   it('pulls fill/stroke/stop-color in attribute and style forms, normalized to hex', () => {
@@ -27,21 +27,12 @@ describe('extractSvgColors', () => {
   })
 })
 
-describe('pickBrandColors', () => {
-  it('picks a saturated primary and a hue-distinct secondary', () => {
-    const picked = pickBrandColors(['#ff0000', '#0000ff', '#000000', '#ffffff'])
-    expect(picked).not.toBeNull()
-    expect(picked!.primary).toBe('#ff0000')
-    expect(picked!.secondary).toBe('#0000ff')
-  })
-
-  it('returns null when nothing usable', () => {
-    expect(pickBrandColors([])).toBeNull()
-  })
-
-  it('falls back to neutrals only when no saturated color exists', () => {
-    const picked = pickBrandColors(['#000000', '#ffffff'])
-    expect(picked).not.toBeNull()
-    expect(picked!.primary).toBe('#000000')
+describe('extractSvgColorWeights', () => {
+  it('reports each colour with its occurrence count', () => {
+    const svg = `<svg><a fill="#111111"/><b fill="#111111"/><c fill="#222222"/></svg>`
+    expect(extractSvgColorWeights(svg)).toEqual([
+      { hex: '#111111', weight: 2 },
+      { hex: '#222222', weight: 1 },
+    ])
   })
 })
