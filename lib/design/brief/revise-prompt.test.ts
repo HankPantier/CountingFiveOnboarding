@@ -103,3 +103,35 @@ describe('buildRevisePrompt', () => {
     expect(formatCssBudget({ blocks: {} })).toContain('(no CSS yet)')
   })
 })
+
+describe('revise prompt — render-check colours (live run a81093ea)', () => {
+  const palette = { ...VALID.palette, action: '#cc381e', primary: '#003a42' }
+  const failure = 'Desktop (1440): “~$169–$229” (pricing-calculator › p) is 2.43:1 — needs 3:1 (text #cc381e on #003a42)'
+  const textOf = (a: RevisePromptArgs) =>
+    buildRevisePrompt(a)
+      .parts.flatMap((p) => (p.type === 'text' ? [p.text] : []))
+      .join('\n')
+  it('names the palette role behind each measured colour and says how to fix a contrast pair', () => {
+    const text = textOf({ ...ARGS, bundle: { ...VALID, palette }, gateFailures: [failure] })
+    expect(text).toContain('(text #cc381e (= palette.action) on #003a42 (= palette.primary))')
+    expect(text).toContain('A contrast failure names the measured text and background colours')
+    expect(text).toContain('[data-block="<id>"]')
+  })
+  it('a near colour reads as ≈ its role; an unrelated one stays bare; no contrast hint without a contrast failure', () => {
+    const text = textOf({ ...ARGS, bundle: { ...VALID, palette }, gateFailures: ['x (text #cd391f on #123456)'] })
+    expect(text).toContain('#cd391f (≈ palette.action)')
+    expect(text).toContain('on #123456)')
+    expect(text).not.toContain('A contrast failure names')
+  })
+})
+
+describe('pricing-calculator is a CSS target (the reviser can restyle the estimate figure)', () => {
+  it('is in the static prefix block catalog and CSS rules', () => {
+    const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
+    expect(prefix).toContain('[data-block="pricing-calculator"]')
+    expect(prefix).toMatch(/Block targets: [^\n]*pricing-calculator/)
+    // Points at the estimate panel's text, not every <p> (canvas labels would fail).
+    expect(prefix).toContain('[data-block="pricing-calculator"] .bg-primary p')
+    expect(prefix).not.toContain('[data-block="pricing-calculator"] p.')
+  })
+})

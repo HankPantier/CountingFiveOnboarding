@@ -4,10 +4,12 @@
 // markup, admin brief; no reference images — a revision fixes the concept,
 // it doesn't restart it). Then per iteration: the run's other concepts, this
 // concept's full bundle (with its CSS), the fenced critique, the render-check
-// failures, its claim-check notes (concept-consistency — P7), its desktop +
+// failures (each measured colour named by its palette role, plus how to fix
+// a contrast pair), its claim-check notes (concept-consistency — P7), its desktop +
 // mobile renders, the CSS budget (each fragment's size vs the sanitizer's caps
 // — per call, never in the cached prefix) and the task (round r, one concept,
 // the CSS reminder).
+import chroma from 'chroma-js'
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
 import { CSS_TARGETS } from '../css-targets'
@@ -74,6 +76,34 @@ export function formatCssBudget(css: DesignBundle['css']): string {
   ].join('\n')
 }
 
+// Colours within this ΔE of a palette hex read as that role (the theme
+// derives some surfaces from the palette, e.g. a contrast-nudged primary).
+const NEAR_ROLE_DELTA_E = 3
+
+// Names the palette role behind every #rrggbb in a render-check line, so a
+// contrast failure reads "text #cc381e (= palette.action) on #003a42
+// (= palette.primary)" — the reviser then knows which PAIR to fix.
+export function annotatePaletteHexes(line: string, palette: DesignBundle['palette']): string {
+  const roles = Object.entries(palette) as [string, string][]
+  return line.replace(/#[0-9a-f]{6}\b/gi, (hex) => {
+    const exact = roles.find(([, v]) => v.toLowerCase() === hex.toLowerCase())
+    if (exact) return `${hex} (= palette.${exact[0]})`
+    let best: { role: string; d: number } | null = null
+    for (const [role, v] of roles) {
+      try {
+        const d = chroma.deltaE(hex, v)
+        if (d <= NEAR_ROLE_DELTA_E && (!best || d < best.d)) best = { role, d }
+      } catch {
+        // not a colour — leave it unnamed
+      }
+    }
+    return best ? `${hex} (≈ palette.${best.role})` : hex
+  })
+}
+
+const CONTRAST_FIX_HINT =
+  'A contrast failure names the measured text and background colours: change that palette pair (e.g. action text on a primary panel needs 3:1 for large text, 4.5:1 for small), or restyle that element with a scoped rule on its own block — [data-block="<id>"] … — using a colour variable that passes.'
+
 const image = (bytes: Uint8Array): DynamicPart => ({ type: 'image', image: bytes, mediaType: 'image/webp' })
 
 export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
@@ -100,7 +130,11 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
   if (args.gateFailures.length > 0) {
     parts.push({
       type: 'text',
-      text: `RENDER-CHECK FAILURES — hard gates: a concept with any of these cannot be applied. Fix every one.\n${args.gateFailures.map((f) => `- ${f}`).join('\n')}`,
+      text: [
+        'RENDER-CHECK FAILURES — hard gates: a concept with any of these cannot be applied. Fix every one.',
+        ...args.gateFailures.map((f) => `- ${annotatePaletteHexes(f, args.bundle.palette)}`),
+        ...(args.gateFailures.some((f) => f.includes(':1 — needs')) ? [CONTRAST_FIX_HINT] : []),
+      ].join('\n'),
     })
   }
   if (args.desktop) {

@@ -745,3 +745,45 @@ describe('sanitizeDesignCss — handoff review hiding gaps', () => {
     ok('[data-block="hero"] img { scale: 1.02; filter: saturate(1.1) blur(0); }')
   })
 })
+
+describe('sanitizeDesignCss — pointer-events: none (decorative overlays only)', () => {
+  it.each([
+    ['::before scrim', '[data-block="hero"]::before { content: ""; position: absolute; inset: 0; pointer-events: none; }'],
+    ['::after grain on a descendant', '[data-block="hero"] .u-frame::after { content: ""; pointer-events: none; }'],
+    ['legacy :after spelling', '[data-block="hero"] .u-frame:after { pointer-events: none; }'],
+    ['both selectors are generated boxes', '[data-block="hero"]::before, [data-block="hero"] h1::after { pointer-events: none; }'],
+    ['nested &::before', '[data-block="hero"] a { &::before { content: ""; pointer-events: none; } }'],
+    ['inside @media', '@media (min-width: 768px) { [data-block="hero"]::after { pointer-events: none; } }'],
+  ])('accepts it on a ::before/::after: %s', (_n, css) => {
+    ok(css)
+  })
+
+  it.each([
+    ['the block itself', '[data-block="hero"] { pointer-events: none; }'],
+    ['a link', '[data-block="hero"] a { pointer-events: none; }'],
+    ['a list mixing a real element with a pseudo', '[data-block="hero"]::before, [data-block="hero"] a { pointer-events: none; }'],
+    ['a real element nested under a pseudo rule', '[data-block="hero"]::before { & a { pointer-events: none; } }'],
+    ['a pseudo-element only inside :is()', '[data-block="hero"] a:is(::before) { pointer-events: none; }'],
+    ['::marker (not a generated overlay box)', '[data-block="hero"] li::marker { pointer-events: none; }'],
+    ['a keyframe step', '@media (prefers-reduced-motion: no-preference) { @keyframes c5-x { from { pointer-events: none; } } }'],
+  ])('still rejects it on %s', (_n, css) => {
+    expect(errs(css)).toContain('pointer-events: none is not allowed')
+  })
+
+  it('rejects var() in pointer-events, even on a pseudo-element', () => {
+    expect(errs('[data-block="hero"] a { pointer-events: var(--c5-pe); }')).toContain('may not use var()')
+    expect(errs('[data-block="hero"]::before { pointer-events: var(--c5-pe, none); }')).toContain('may not use var()')
+  })
+  it('the global scope follows the same rule', () => {
+    ok('[data-block="content-prose"] h2::after { pointer-events: none; }', GLOBAL)
+    expect(errs('[data-block="content-prose"] h2 { pointer-events: none; }', GLOBAL)).toContain('pointer-events')
+  })
+})
+
+describe('sanitizeDesignCss — pricing-calculator target', () => {
+  it('accepts a rule scoped to the pricing calculator (block scope and global)', () => {
+    // The catalog's hint: the estimate panel's text only, never the canvas labels.
+    ok('[data-block="pricing-calculator"] .bg-primary p { color: var(--color-primary-foreground); }', { kind: 'target', target: 'pricing-calculator' })
+    ok('[data-block="pricing-calculator"] .bg-primary p { color: var(--color-primary-foreground); }', GLOBAL)
+  })
+})

@@ -3,16 +3,20 @@
 // goes through the SAME check as a new concept (checkConceptCandidate:
 // validateConceptBundle — zod, capability tier, palette freedom, sanitizer,
 // contrast — plus the near-duplicate check against the run's other concepts).
-// A revision that fails ONLY the sanitizer's size caps (a fragment over its
-// line / byte cap) gets exactly ONE size repair turn — P3's repair pattern
-// (the answer replayed + the exact errors + "shorten to fit"), under the same
-// cost-cap / deadline gate. Any other failure, a vetoed repair or a second
-// failure is reported and the caller keeps the previous bundle (the loop
-// never retries forever). Recorded as token stage 'design_concept' — a
+// A revision that fails ONLY on its CSS — the sanitizer's rules (a banned
+// declaration, an unscoped selector, …) and/or its size caps — gets exactly
+// ONE repair turn: P3's repair pattern (the answer replayed + the exact errors
+// + "fix only the CSS" / "shorten to fit"), under the same cost-cap / deadline
+// gate. A paid revision is no longer thrown away over one bad declaration (the
+// 2026-09-26 live run lost a revision to `pointer-events: none`). Any other
+// failure (zod, contrast, near-duplicate), a vetoed repair or a second failure
+// is reported and the caller keeps the previous bundle (the loop never
+// retries forever). Recorded as token stage 'design_concept' — a
 // revision produces a concept bundle.
 import { buildCachedPartsMessages } from '@/lib/content/cache-control'
 import { GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
 import { DESIGN_SYSTEM_PROMPT, type BuiltPrompt, type PriorConcept } from './brief'
+import { CSS_RULES_REMINDER } from './brief/contract'
 import { CONCEPT_OUTPUT_TOKENS, REPAIR_CALL_TIMEOUT_MS, REPAIR_OUTPUT_TOKENS } from './concept-generator'
 import { isCssSizeCapError } from './css-budget'
 import { checkConceptCandidate, parseConceptsEnvelope, withConsistencyNotes, type ConceptContext, type ValidConcept } from './concept-validate'
@@ -79,16 +83,17 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
     const concept = withConsistencyNotes(v.concept, args.context.caps)
     return { ...money, concept, errors: [], notes: concept.notes, stoppedReason: null }
   }
-  if (!isSizeOnlyFailure(v.errors)) return fail(v.errors, 'no_output')
+  if (!isCssOnlyFailure(v.errors)) return fail(v.errors, 'no_output')
 
-  // Size-only: one repair turn, if the budget still allows a full call.
+  // CSS-only (sanitizer rules and/or size caps): one repair turn, if the
+  // budget still allows a full call.
   const plan = caller.plan(REPAIR_CALL_TIMEOUT_MS)
   if (!plan.ok) {
     caller.stop(plan.reason)
     return fail(v.errors, plan.reason)
   }
   const repaired = await caller.call(
-    [...messages, { role: 'assistant', content: JSON.stringify(raw) }, { role: 'user', content: sizeRepairRequest(v.errors) }],
+    [...messages, { role: 'assistant', content: JSON.stringify(raw) }, { role: 'user', content: cssRepairRequest(v.errors) }],
     {
       firstBudget: REPAIR_OUTPUT_TOKENS,
       providerOptions: providerOptionsForAttempt(2),
@@ -108,6 +113,33 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
 // Every error is a sanitizer size cap (and there is at least one).
 export function isSizeOnlyFailure(errors: string[]): boolean {
   return errors.length > 0 && errors.every(isCssSizeCapError)
+}
+
+// Every error is one bundleToRepoFiles reports for a CSS fragment
+// ("css.global: …", "css.blocks.<key>: …", "css (total): …") — the sanitizer's
+// rules or its size caps — and there is at least one.
+const CSS_ERROR = /^css(?:\.global|\.blocks\.[a-z-]+| \(total\)): /
+export function isCssOnlyFailure(errors: string[]): boolean {
+  return errors.length > 0 && errors.every((e) => CSS_ERROR.test(e))
+}
+
+const MAX_ERRORS_QUOTED = 8
+const MAX_ERROR_CHARS = 200
+
+// The repair request for a CSS-only failure: the size wording when every
+// error is a size cap, otherwise "fix only the offending CSS".
+export function cssRepairRequest(errors: string[]): string {
+  if (isSizeOnlyFailure(errors)) return sizeRepairRequest(errors)
+  const quoted = errors
+    .slice(0, MAX_ERRORS_QUOTED)
+    .map((e) => e.slice(0, MAX_ERROR_CHARS))
+    .join('; ')
+  return [
+    `Your revised concept cannot be used — the CSS sanitizer rejected it: ${quoted}`,
+    'Fix ONLY the offending CSS: rewrite or drop each rejected declaration or selector (keep the design intent, stay within the CSS budget) — change nothing else.',
+    CSS_RULES_REMINDER,
+    'Return ONLY JSON: {"concepts":[ exactly 1 concept ]}',
+  ].join('\n')
 }
 
 export function sizeRepairRequest(errors: string[]): string {

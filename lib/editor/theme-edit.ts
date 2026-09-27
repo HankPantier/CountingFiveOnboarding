@@ -212,4 +212,8 @@ export const OVERRIDE_BLOCKS = [
   'form',
   'content-table',
   'client-center',
+  // Appended (never reordered — composeRegion writes fragments in this order):
+  // the calculator's estimate figure is --color-action on a --color-primary
+  // panel, and a concept must be able to restyle it (live run a81093ea).
+  'pricing-calculator',
 ] as const
