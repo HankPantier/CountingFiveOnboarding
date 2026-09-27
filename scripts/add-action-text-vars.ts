@@ -1,21 +1,26 @@
 // Rollout helper for template 2026.09.4: add ONLY the small-text action-colour
 // tokens (--color-action-text / -text-canvas / -text-tint / -on-primary /
 // -on-ink, + the .dark overrides) to a client's EXISTING theme.css, computed
-// from the surfaces that file already renders. A file that already has them
-// gets only its stale --color-action-text-tint value(s) refreshed. Does not
-// regenerate anything else (see lib/content/add-action-text-vars.ts). Idempotent.
+// from the surfaces that file already renders. Does not regenerate anything
+// else (see lib/content/add-action-text-vars.ts). Idempotent.
 //
-//   npx tsx scripts/add-action-text-vars.ts <client-repo>/src/styles/theme.css [--check]
+// DRY RUN by default (like fleet-sync and strip-leaked-generator-notes):
 //
-// --check: print what would be added / refreshed and exit 1 if the file needs it (no write).
+//   npx tsx scripts/add-action-text-vars.ts <client-repo>/src/styles/theme.css            # report only
+//   npx tsx scripts/add-action-text-vars.ts <client-repo>/src/styles/theme.css --apply    # add missing tokens
+//   ... --apply --refresh-tint   # ALSO rewrite stale --color-action-text-tint values in a file
+//                                # that already has the tokens (the fleet leaves those alone)
+//
+// Exit code: 1 when the file needs a change that was not written, else 0 (2 on error).
 import { readFileSync, writeFileSync } from 'node:fs'
 import { addActionTextVars } from '../lib/content/add-action-text-vars'
 
 const args = process.argv.slice(2)
 const file = args.find((a) => !a.startsWith('--'))
-const check = args.includes('--check')
+const apply = args.includes('--apply')
+const refreshTint = args.includes('--refresh-tint')
 if (!file) {
-  console.error('usage: npx tsx scripts/add-action-text-vars.ts <path/to/theme.css> [--check]')
+  console.error('usage: npx tsx scripts/add-action-text-vars.ts <path/to/theme.css> [--apply [--refresh-tint]]')
   process.exit(2)
 }
 
@@ -30,9 +35,13 @@ if (r.status === 'unchanged') {
   process.exit(0)
 }
 if (r.status === 'updated') {
-  console.warn(`${file}: refreshed --color-action-text-tint: ${r.changed.join('; ')}`)
-  if (check) process.exit(1)
+  console.warn(`${file}: stale --color-action-text-tint: ${r.changed.join('; ')}`)
+  if (!apply || !refreshTint) {
+    console.warn(`${file}: left as is (the fleet does not refresh tints). Pass --apply --refresh-tint to rewrite them.`)
+    process.exit(1)
+  }
   writeFileSync(file, r.css, 'utf-8')
+  console.warn(`${file}: tint refreshed`)
   process.exit(0)
 }
 const action = css.match(/^\s*--color-action:\s*([^;]+);/m)?.[1].trim() ?? ''
@@ -41,5 +50,9 @@ console.warn(
     `-on-primary ${r.light.actionOnPrimary}, -on-ink ${r.light.actionOnInk}; ` +
     (r.dark ? `.dark -text ${r.dark.actionText}, -text-tint ${r.dark.actionTextTint}` : '(no .dark block)')
 )
-if (check) process.exit(1)
+if (!apply) {
+  console.warn(`${file}: DRY RUN — nothing written. Re-run with --apply.`)
+  process.exit(1)
+}
 writeFileSync(file, r.css, 'utf-8')
+console.warn(`${file}: tokens added`)
