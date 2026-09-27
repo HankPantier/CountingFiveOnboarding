@@ -258,13 +258,21 @@ async function latestVersionNo(db: Db, sessionId: string): Promise<number | null
 // The action / primary pairs of every version recorded for the session (v0 =
 // the site's original design). checkThemeContrast grandfathers these, so a
 // restore to the site's own earlier palette is never refused for that pair.
-// Fail-soft: a read error just grandfathers nothing extra.
+// Fail-soft: a read error (or throw) just grandfathers nothing extra.
 export async function listRecordedActionPrimaryPairs(db: Db, sessionId: string): Promise<{ action: string; primary: string }[]> {
   // JSON-path select: never pulls the full bundle JSONB (like listVersions).
-  const { data, error } = await db
-    .from('design_versions')
-    .select('action:bundle->palette->>action, primary:bundle->palette->>primary')
-    .eq('session_id', sessionId)
+  let data: unknown[] | null = null
+  let error: { message: string } | null = null
+  try {
+    const res = await db
+      .from('design_versions')
+      .select('action:bundle->palette->>action, primary:bundle->palette->>primary')
+      .eq('session_id', sessionId)
+    data = res.data
+    error = res.error
+  } catch (err) {
+    error = { message: err instanceof Error ? err.message : String(err) }
+  }
   if (error || !data) {
     if (error) console.warn('[design:store] recorded palettes unreadable:', error.message)
     return []

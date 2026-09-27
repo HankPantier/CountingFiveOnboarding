@@ -40,6 +40,7 @@ vi.mock('@/lib/design/store', async (orig) => ({
   ...((await orig()) as object),
   insertVersion: (...a: unknown[]) => m.insertVersion(...a),
   hasAnyVersion: async () => true,
+  listRecordedActionPrimaryPairs: async () => [],
 }))
 
 import { VersionConflictError } from '@/lib/design/store'

@@ -278,4 +278,9 @@ describe('listRecordedActionPrimaryPairs', () => {
     const f = fakeSupabase({ design_versions: [{ error: { message: 'boom' } }] })
     expect(await listRecordedActionPrimaryPairs(f.client, SID)).toEqual([])
   })
+  it('fails soft on a thrown read too — an apply is never blocked by it', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const throwing = { from: () => { throw new Error('network') } } as never
+    expect(await listRecordedActionPrimaryPairs(throwing, SID)).toEqual([])
+  })
 })
