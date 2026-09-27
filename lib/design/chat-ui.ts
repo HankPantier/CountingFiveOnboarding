@@ -126,6 +126,11 @@ export function chatRequestErrorText(status: number, body: string): string {
   return `The chat request failed (${status}).`
 }
 
+// "Fix in chat": the turn's 400 when the concept the client sent is gone or no
+// longer ready. The chat drops its concept chip on it (client-safe copy here;
+// chat-turn re-exports it).
+export const MISSING_CONCEPT = 'That concept is no longer available — open the run and pick it again.'
+
 // The route's 503 when the chat engine module fails to load — sent BEFORE
 // anything is stored (the route imports it from here, so the two can't drift).
 export const CHAT_ENGINE_UNAVAILABLE_ERROR = 'The design chat is unavailable right now.'
@@ -136,3 +141,11 @@ export const CHAT_ENGINE_UNAVAILABLE_ERROR = 'The design chat is unavailable rig
 // message (and referenced its attachments), so it stays in the transcript.
 export const restoresComposer = (status: number, errorText = ''): boolean =>
   (status >= 400 && status < 500) || (status === 503 && errorText === CHAT_ENGINE_UNAVAILABLE_ERROR)
+
+// "Fix in chat": the concept chip after a refused turn. Only the turn's 400
+// for THAT concept (gone / no longer ready) drops it; any other refusal keeps
+// it, since the id is simply re-sent with the retried message.
+export function adoptAfterRefusal<T extends { conceptId: string }>(current: T | null, sent: T | null, status: number, errorText: string): T | null {
+  if (!sent || !current || status !== 400 || errorText !== MISSING_CONCEPT) return current
+  return current.conceptId === sent.conceptId ? null : current
+}

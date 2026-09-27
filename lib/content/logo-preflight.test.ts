@@ -61,6 +61,16 @@ describe('preflightLogo', () => {
     expect(r.lightLogo).toBe(true)
   })
 
+  it('marks the tone conclusive only when pixels / SVG colours were actually read', async () => {
+    expect((await preflightLogo(await png(300, 64, TRANSPARENT, NAVY, 296, 60), 'logo.png')).toneConclusive).toBe(true)
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path fill="#12284c"/></svg>')
+    expect((await preflightLogo(svg, 'logo.svg')).toneConclusive).toBe(true)
+    const gif = await sharp({ create: { width: 10, height: 10, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).gif().toBuffer()
+    expect(await preflightLogo(gif, 'logo.gif')).toMatchObject({ lightLogo: false, toneConclusive: false })
+    // sharp throws on bytes it can't decode.
+    expect(await preflightLogo(Buffer.from('not an image'), 'logo.png')).toMatchObject({ lightLogo: false, toneConclusive: false })
+  })
+
   it('light logo → design.json style.nav=inverted, unless a nav style is already chosen', () => {
     expect(applyLogoNavDefault({ roundness: 'soft' } as { roundness: string; style?: Record<string, string> }, true).style).toEqual({ nav: 'inverted' })
     expect(applyLogoNavDefault({ style: { cards: 'flat' } }, true).style).toEqual({ cards: 'flat', nav: 'inverted' })

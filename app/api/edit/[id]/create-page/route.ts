@@ -12,8 +12,8 @@ import {
   StaleShaError,
   ensureDraftBranch,
   readFile,
-  writeFile,
 } from '@/lib/github/repo-files'
+import { writeNewPage } from '@/lib/editor/new-page-redirects'
 import type { SessionSchema } from '@/types/session-schema'
 
 export const runtime = 'nodejs'
@@ -100,14 +100,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     // Write a valid starter file first so the page (and any nav link) exists
     // immediately and never dangles.
-    const starter = await writeFile(
+    // A redirects.csv row still 301ing this url away would make the new page
+    // unreachable — writeNewPage drops it in the same commit.
+    const starter = await writeNewPage(
       ctx.githubRepo,
       path,
+      url,
       buildStarterPage(title, url, firmName),
-      DRAFT_BRANCH,
       `Create page ${url} via admin (${ctx.adminEmail ?? 'unknown'})`,
       author(ctx)
     )
+    const redirectNotice = starter.redirectNotice
 
     if (addToNav) await appendNavItem(ctx, title, url)
 
@@ -131,7 +134,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // The page exists; only the AI draft couldn't be scheduled.
         console.error('[create-page] scheduling AI draft failed:', error)
         return NextResponse.json(
-          { path, url, generationError: 'Failed to schedule AI draft' },
+          { path, url, generationError: 'Failed to schedule AI draft', ...(redirectNotice ? { redirectNotice } : {}) },
           { status: 200 }
         )
       }
@@ -145,7 +148,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       })
     }
 
-    return NextResponse.json({ path, url, generationId })
+    return NextResponse.json({ path, url, generationId, ...(redirectNotice ? { redirectNotice } : {}) })
   } catch (err) {
     if (err instanceof StaleShaError) {
       return NextResponse.json({ error: 'This page changed on the server. Reload to continue.' }, { status: 409 })

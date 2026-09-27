@@ -96,7 +96,7 @@ export default function ConceptCards({
                 ))}
               </ul>
             )}
-            {c.review && <CritiqueView review={c.review} iterations={c.iterations} maxRevisions={maxRevisions} />}
+            {c.review && <CritiqueView review={c.review} revisionsUsed={c.revisionsUsed} maxRevisions={maxRevisions} />}
             {c.fontsNote && <p className="font-body text-[11px] text-text-muted">{c.fontsNote}</p>}
             {c.error && <p className="font-body text-[11px] text-warning-strong">{c.error}</p>}
 

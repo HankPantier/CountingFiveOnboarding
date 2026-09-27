@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { annotationOps, exportSize, nextPinNumber, shapeFromDrag, strokeWidthFor, toImagePoint, type AnnotTool, type Pt, type Shape } from '@/lib/design/annotate'
-import { FOCUSABLE_SELECTOR, trapFocusIndex } from '@/lib/design/studio-ui'
+import { installModalKeyboard } from '@/lib/design/modal-keyboard'
 import { errorMessage } from './api'
 import { downscaleImageIfNeeded } from './downscale-image'
 import { FOCUS, PANEL, PRIMARY_BTN, SECONDARY_BTN, SECONDARY_BTN_SM } from './styles'
@@ -124,29 +124,18 @@ export default function AnnotateCanvas({ source: initialSource, onCancel, onSave
     onCancelRef.current = onCancel
   }, [onCancel])
 
-  // Mount-only: focus the dialog, trap Tab inside it, close on Escape, and
-  // hand focus back to whatever opened it when it closes.
+  // Escape must not drop an upload in flight (the attachment would orphan).
+  const savingRef = useRef(false)
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    dialogRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCancelRef.current()
-        return
-      }
-      if (e.key !== 'Tab' || !dialogRef.current) return
-      const focusables = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-      const next = trapFocusIndex(focusables.indexOf(document.activeElement as HTMLElement), focusables.length, e.shiftKey)
-      if (next !== null) {
-        e.preventDefault()
-        focusables[next]?.focus()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      if (opener?.isConnected) opener.focus()
-    }
+    savingRef.current = saving
+  }, [saving])
+
+  // Mount-only: focus the dialog, trap Tab among its visible controls, close
+  // on Escape (not mid-upload), and hand focus back to whatever opened it.
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    return installModalKeyboard(dialog, { onEscape: () => onCancelRef.current(), canClose: () => !savingRef.current })
   }, [])
 
   const scale = bitmap ? Math.min(1, DISPLAY_MAX_W / bitmap.width, DISPLAY_MAX_H / bitmap.height) : 1
@@ -200,18 +189,21 @@ export default function AnnotateCanvas({ source: initialSource, onCancel, onSave
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-navy/60 p-6">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="annotate-heading" tabIndex={-1} className={`${PANEL} max-h-full max-w-[960px] overflow-auto ${FOCUS}`}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="annotate-heading" aria-describedby="annotate-keyboard-note" tabIndex={-1} className={`${PANEL} max-h-full max-w-[960px] overflow-auto ${FOCUS}`}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 id="annotate-heading" className="font-heading text-sm font-semibold text-text-primary">Annotate</h2>
             <p className="truncate font-body text-xs text-text-muted">{source.label} — draw boxes and arrows, or drop numbered pins to refer to (“pin 2”).</p>
-            <p className="font-body text-[11px] text-text-muted">Drawing needs a pointer. With a keyboard, attach the image as it is and describe the area in your message.</p>
+            <p id="annotate-keyboard-note" className="font-body text-[11px] text-text-muted">
+              Drawing needs a pointer. With a keyboard, attach the image as it is and describe the area in your message. Escape closes this dialog.
+            </p>
           </div>
           <div role="group" aria-label="Annotation tool" className="flex items-center gap-1">
             {TOOLS.map((t) => (
               <button
                 key={t.key}
                 type="button"
+                aria-label={`${t.label} tool`}
                 aria-pressed={tool === t.key}
                 onClick={() => setTool(t.key)}
                 className={tool === t.key ? `rounded-pill bg-brand-navy px-3 py-1 font-heading text-[11px] font-semibold text-text-inverse ${FOCUS}` : SECONDARY_BTN_SM}
@@ -219,10 +211,10 @@ export default function AnnotateCanvas({ source: initialSource, onCancel, onSave
                 {t.label}
               </button>
             ))}
-            <button type="button" onClick={() => setShapes((s) => s.slice(0, -1))} disabled={shapes.length === 0} className={SECONDARY_BTN_SM}>
+            <button type="button" onClick={() => setShapes((s) => s.slice(0, -1))} disabled={shapes.length === 0} aria-label="Undo the last mark" className={SECONDARY_BTN_SM}>
               Undo
             </button>
-            <button type="button" onClick={() => setShapes([])} disabled={shapes.length === 0} className={SECONDARY_BTN_SM}>
+            <button type="button" onClick={() => setShapes([])} disabled={shapes.length === 0} aria-label="Clear all marks" className={SECONDARY_BTN_SM}>
               Clear
             </button>
           </div>
@@ -260,15 +252,20 @@ export default function AnnotateCanvas({ source: initialSource, onCancel, onSave
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            aria-label="Screenshot to annotate"
+            role="img"
+            aria-label={`Screenshot to annotate: ${source.label}`}
+            aria-describedby="annotate-keyboard-note"
           />
         ) : (
           <p className="font-body text-xs text-text-muted">Loading the image…</p>
         )}
 
+        <p role="status" className="sr-only">
+          {shapes.length === 0 ? 'No marks yet.' : `${shapes.length} mark${shapes.length === 1 ? '' : 's'} on the screenshot.`}
+        </p>
         {saveError && <p role="alert" className="font-body text-xs text-error">{saveError}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className={SECONDARY_BTN}>
+          <button type="button" onClick={onCancel} disabled={saving} className={SECONDARY_BTN}>
             Cancel
           </button>
           <button type="button" onClick={() => void save()} disabled={!bitmap || saving} className={PRIMARY_BTN}>

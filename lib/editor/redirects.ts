@@ -432,6 +432,30 @@ export function normalizeRedirectSources(text: string): string {
   return serializeLines(normalizeSourceLines(parseLines(text)))
 }
 
+/**
+ * Drop every row whose source is `url` (a page is being created or restored
+ * there, so a 301 away from it would make the new page unreachable). Pattern
+ * sources are left alone: they match many urls, not just this one. Every other
+ * line keeps its bytes. Returns the new text and the rows removed.
+ */
+export function removeRedirectsFrom(text: string, url: string): { content: string; removed: RedirectRow[] } {
+  const key = redirectKey(url)
+  const removed: RedirectRow[] = []
+  const lines = parseLines(text).filter((l) => {
+    if (l.kind !== 'row' || isPatternSource(l.row.from) || redirectKey(l.row.from) !== key) return true
+    removed.push(l.row)
+    return false
+  })
+  return removed.length === 0 ? { content: text, removed } : { content: serializeLines(lines), removed }
+}
+
+/** Operator-facing notice for the rows removeRedirectsFrom dropped. */
+export function formatClearedRedirectNotice(removed: RedirectRow[]): string | null {
+  if (removed.length === 0) return null
+  const list = removed.map((r) => `${r.from} → ${r.to}`).join(', ')
+  return `Removed the redirect ${list} from redirects.csv so the new page is reachable.`
+}
+
 /** Resolve a destination through existing rows to the end of its chain. */
 export function resolveRedirectTarget(text: string, url: string): string {
   const edges = new Map<string, string>()

@@ -42,6 +42,13 @@ describe('parseChatRequest', () => {
     expect(parseChatRequest({ text: 'fix it', conceptId: A1.toUpperCase() })).toEqual({ ok: true, request: { text: 'fix it', attachmentIds: [], page: null, conceptId: A1 } })
     expect(parseChatRequest({ text: 'fix it', conceptId: 'c1' }).ok).toBe(false)
     expect(parseChatRequest({ text: 'fix it', conceptId: null })).toEqual({ ok: true, request: { text: 'fix it', attachmentIds: [], page: null } })
+    expect(parseChatRequest({ text: 'fix it', conceptId: A1, conceptCarried: true })).toEqual({
+      ok: true,
+      request: { text: 'fix it', attachmentIds: [], page: null, conceptId: A1, conceptCarried: true },
+    })
+    // conceptCarried means nothing without a concept id, and only `true` counts.
+    expect(parseChatRequest({ text: 'fix it', conceptCarried: true })).toEqual({ ok: true, request: { text: 'fix it', attachmentIds: [], page: null } })
+    expect(parseChatRequest({ text: 'fix it', conceptId: A1, conceptCarried: 'yes' })).toEqual({ ok: true, request: { text: 'fix it', attachmentIds: [], page: null, conceptId: A1 } })
   })
   it('rejects empty/oversized text, bad ids, too many images and odd pages', () => {
     expect(parseChatRequest({ text: '   ' }).ok).toBe(false)

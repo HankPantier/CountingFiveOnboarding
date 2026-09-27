@@ -91,7 +91,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // if a concurrent Retry got there first these writes match nothing,
         // and a Retry whose transition below loses leaves only rows that the
         // next Retry plans from as usual (deletes are of dead rows only).
-        await deleteConcepts(db, run.id, plan.deleteConceptIds)
+        // The deleted positions are designed again: their renders would
+        // orphan. Only the rows THIS Retry's delete actually removed are
+        // cleaned up — a concurrent Retry that already deleted them (and may
+        // be regenerating those positions) gets nothing back here, so a losing
+        // Retry never touches the winner's folder. Removed while the run is
+        // still 'error'. Lazy: storage pulls in sharp. Best-effort.
+        const retired = await deleteConcepts(db, run.id, plan.deleteConceptIds)
+        if (retired.length > 0) {
+          try {
+            const { removeRetiredConceptRenders } = await import('@/lib/design/run-cleanup')
+            await removeRetiredConceptRenders(db, caller.target.sessionId, run.id, retired)
+          } catch (err) {
+            console.warn('[design:step] retried concepts’ render cleanup unavailable:', err)
+          }
+        }
         await resetConcepts(
           db,
           run.id,

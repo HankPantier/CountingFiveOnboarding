@@ -22,6 +22,7 @@ import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
 import { reconcileDirtyAfterSave } from '@/lib/ui/dirty-buffers'
 import { readRedirectWarnings, redirectWarningMessage } from '@/lib/editor/redirect-warnings'
 import { isStaleShaConflict, type ConflictResponse } from '@/lib/editor/conflict-response'
+import { REDIRECTS_CSV_PATH, redirectsCacheAction } from '@/lib/editor/redirect-cache'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -275,6 +276,20 @@ export default function EditorShell({
     },
     [sessionId]
   )
+
+  // A server write removed rows from redirects.csv (a page was created or
+  // restored over a redirect): refresh an unedited cached copy so its next
+  // save doesn't 409 on the old sha. Unsaved edits are never overwritten.
+  const pendingRedirectNotice = useRef<string | null>(null)
+  const loadedRef = useRef(loaded)
+  const dirtyRef = useRef(dirty)
+  useEffect(() => {
+    loadedRef.current = loaded
+    dirtyRef.current = dirty
+  }, [loaded, dirty])
+  const refreshRedirectsCache = useCallback(() => {
+    if (redirectsCacheAction(loadedRef.current, dirtyRef.current) === 'reload') void reloadFile(REDIRECTS_CSV_PATH)
+  }, [reloadFile])
 
   // After a single file is reverted from the Changes panel, drop its cached
   // blob so a later reopen pulls the reverted content, and refresh the tree +
@@ -682,7 +697,8 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Failed: ${res.status}`)
       }
-      const data = (await res.json()) as { newPath: string }
+      const data = (await res.json()) as { newPath: string; redirectNotice?: string }
+      if (data.redirectNotice) refreshRedirectsCache()
       const oldPath = selectedPath
       setLoaded((prev) => {
         const m = new Map(prev)
@@ -700,7 +716,7 @@ export default function EditorShell({
       setPublishResult(
         action === 'draft'
           ? 'Moved to drafts — Publish to take it off the live site.'
-          : 'Restored — Publish to put it back on the live site.'
+          : `Restored — Publish to put it back on the live site.${data.redirectNotice ? ` ${data.redirectNotice}` : ''}`
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed')
@@ -1325,8 +1341,21 @@ export default function EditorShell({
       {newPageOpen && (
         <NewPageDialog
           sessionId={sessionId}
-          onClose={() => setNewPageOpen(false)}
-          onCreated={(path) => {
+          onClose={() => {
+            setNewPageOpen(false)
+            const notice = pendingRedirectNotice.current
+            pendingRedirectNotice.current = null
+            if (notice) setPublishResult(notice)
+          }}
+          onCreated={(path, redirectNotice) => {
+            // A redirect that shadowed the new url was removed with the page:
+            // told once the dialog closes (it covers the toast, and an AI
+            // draft keeps it open), and the cached redirects.csv is refreshed
+            // so its next save doesn't 409 on the old sha.
+            if (redirectNotice) {
+              pendingRedirectNotice.current = redirectNotice
+              refreshRedirectsCache()
+            }
             // Starter file exists on the draft branch — surface it in the tree
             // and open it so the admin can edit (or watch the AI draft land).
             void (async () => {

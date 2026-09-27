@@ -45,7 +45,8 @@ export default function NewPageDialog({
   sessionId: string
   onClose: () => void
   // Called once the starter file exists on the draft branch — select it.
-  onCreated: (path: string) => void
+  /** redirectNotice: a redirects.csv row that shadowed the url was removed. */
+  onCreated: (path: string, redirectNotice?: string) => void
   // Called when the AI first draft finishes — reload the file to show it.
   onGenerated: (path: string) => void
 }) {
@@ -60,6 +61,9 @@ export default function NewPageDialog({
   const [phase, setPhase] = useState<Phase>('form')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // A redirects.csv row that shadowed the new url was removed with the page —
+  // shown here while the AI draft runs (the editor repeats it once this closes).
+  const [redirectNotice, setRedirectNotice] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
   // "Run in background" unmounts the dialog while the poll keeps going, so the
   // poll must still reach onGenerated; only this dialog's own state updates
@@ -177,6 +181,7 @@ export default function NewPageDialog({
         generationId?: string
         error?: string
         generationError?: string
+        redirectNotice?: string
       }
       if (!res.ok || !data.path) {
         setError(data.error ?? `Could not create the page (${res.status}).`)
@@ -184,7 +189,8 @@ export default function NewPageDialog({
         return
       }
 
-      onCreated(data.path)
+      onCreated(data.path, data.redirectNotice)
+      if (data.redirectNotice) setRedirectNotice(data.redirectNotice)
 
       if (mode === 'ai' && data.generationId) {
         setPhase('generating')
@@ -225,6 +231,11 @@ export default function NewPageDialog({
               The blank page is already in place — you can keep working. It will refresh here when the
               draft is ready.
             </p>
+            {redirectNotice && (
+              <p role="status" className="mt-2 font-body text-xs text-info">
+                {redirectNotice}
+              </p>
+            )}
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
@@ -382,6 +393,11 @@ export default function NewPageDialog({
             {error && (
               <p className="mt-3 font-body text-xs text-warning-strong" role="alert">
                 {error}
+              </p>
+            )}
+            {phase === 'error' && redirectNotice && (
+              <p role="status" className="mt-2 font-body text-xs text-info">
+                {redirectNotice}
               </p>
             )}
 

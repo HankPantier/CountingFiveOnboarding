@@ -83,6 +83,28 @@ describe('critique-loop DTO', () => {
   })
   const signed = { [INIT.path]: 'https://signed/init', [LATEST.path]: 'https://signed/latest' }
 
+  it('revisionsUsed survives a best-iteration fallback (iterations rewound to the kept version)', () => {
+    const kept = makeConceptRow({ status: 'ready', iterations: 1, critique: asJson({ ...newReview(), next: 'done', revisionsUsed: 2 }) })
+    expect(toConceptDto(kept, {})).toMatchObject({ iterations: 1, revisionsUsed: 2 })
+  })
+  it('derives revisionsUsed for a review written before the counter (highest recorded iteration)', () => {
+    const crit2 = {
+      iteration: 2,
+      scores: { brandFit: 3, distinctiveness: 3, hierarchy: 3, legibility: 3, consistency: 3, craft: 3 },
+      reasons: { brandFit: '', distinctiveness: '', hierarchy: '', legibility: '', consistency: '', craft: '' },
+      issues: [],
+      summary: '',
+      passed: false,
+      mean: 3,
+      model: 'claude-opus-5-5',
+      paletteFreedom: 'free',
+      at: '2026-09-25T12:00:00.000Z',
+    }
+    const legacy = makeConceptRow({ status: 'ready', iterations: 1, critique: asJson({ ...newReview(), next: 'done', critiques: [crit2] }) })
+    expect(toConceptDto(legacy, {}).revisionsUsed).toBe(2)
+    expect(toConceptDto(makeConceptRow({ status: 'ready', iterations: 0 }), {}).revisionsUsed).toBe(0)
+  })
+
   it('carries the review: active unit, measured, baseline-diffed gate failures, signed first-render shots', () => {
     const dto = toConceptDto(row, signed)
     expect(dto.iterations).toBe(2)

@@ -4,7 +4,7 @@ import type { Tables } from '@/types/database'
 import { parseDesignBundle } from './bundle'
 import { capabilitiesFromJson } from './capabilities'
 import { metricGateFailures, type RenderMetrics } from './metrics'
-import { critiqueForIteration, parseConceptReview, renderGateWarnings, unmeasuredViewports, type ConceptReview } from './review'
+import { critiqueForIteration, parseConceptReview, renderGateWarnings, revisionsUsedOf, unmeasuredViewports, type ConceptReview } from './review'
 import { isRunStalled, parseBaseSnapshot, parseScreenshots } from './run-state'
 import { fontsNotReadyNote } from './screenshots'
 import { CONCEPT_STATUSES, PALETTE_FREEDOMS, RUN_STATUSES, type ConceptStatus, type RunStatus } from './studio-types'
@@ -66,6 +66,7 @@ function toReviewDto(review: ConceptReview | null, signed: Record<string, string
 export function toConceptDto(row: ConceptRow, signed: Record<string, string>, baseline: RenderMetrics | null = null): DesignConceptDto {
   const parsed = row.bundle === null ? null : parseDesignBundle(row.bundle)
   const bundle = parsed?.ok ? parsed.bundle : null
+  const review = parseConceptReview(row.critique)
   return {
     id: row.id,
     runId: row.run_id,
@@ -83,7 +84,8 @@ export function toConceptDto(row: ConceptRow, signed: Record<string, string>, ba
     screenshots: toShots(parseScreenshots(row.screenshots), signed),
     fontsNote: fontsNotReadyNote(parseScreenshots(row.screenshots)),
     iterations: row.iterations,
-    review: toReviewDto(parseConceptReview(row.critique), signed, baseline, row.iterations),
+    revisionsUsed: revisionsUsedOf(review, row.iterations),
+    review: toReviewDto(review, signed, baseline, row.iterations),
   }
 }
 

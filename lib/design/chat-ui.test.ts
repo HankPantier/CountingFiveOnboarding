@@ -86,3 +86,17 @@ describe('pre-stream request errors (PF12)', () => {
     expect(restoresComposer(500, CHAT_ENGINE_UNAVAILABLE_ERROR)).toBe(false)
   })
 })
+
+describe('adoptAfterRefusal ("Fix in chat" chip)', () => {
+  it('drops the chip only on the stale-concept 400 for that concept', async () => {
+    const { adoptAfterRefusal, MISSING_CONCEPT } = await import('./chat-ui')
+    const a = { conceptId: 'a' }
+    expect(adoptAfterRefusal(a, a, 400, MISSING_CONCEPT)).toBeNull()
+    expect(adoptAfterRefusal(a, a, 400, 'Type a message.')).toBe(a)
+    expect(adoptAfterRefusal(a, a, 409, MISSING_CONCEPT)).toBe(a)
+    // A different concept was handed over meanwhile: keep it.
+    const b = { conceptId: 'b' }
+    expect(adoptAfterRefusal(b, a, 400, MISSING_CONCEPT)).toBe(b)
+    expect(adoptAfterRefusal(a, null, 400, MISSING_CONCEPT)).toBe(a)
+  })
+})

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { BaselineStatus, DesignVersionDto, DriftResult } from '@/lib/design/studio-types'
+import DesignMdAdopt from './DesignMdAdopt'
 import InlineConfirm from './InlineConfirm'
 import { DesignApiError, designApi, errorMessage } from './api'
 import { FOCUS, PANEL, PRIMARY_BTN_SM } from './styles'
@@ -210,6 +211,8 @@ export default function VersionsPanel({
           )}
         </div>
       )}
+
+      <DesignMdAdopt sessionId={sessionId} onChanged={onChanged} />
 
       {versions.length === 0 ? (
         <p className="font-body text-xs italic text-text-muted">No versions yet.</p>

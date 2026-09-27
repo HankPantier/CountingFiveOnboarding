@@ -3,7 +3,8 @@ import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { parseChatRequest, previewPathsInParts, rowToChatMessage } from '@/lib/design/chat-history'
-import { clearChatHistory, listChatMessages, versionScreenshotPathSet } from '@/lib/design/chat-store'
+import { clearChatHistory, listChatMessages, setAdoptedConceptId, versionScreenshotPathSet } from '@/lib/design/chat-store'
+import { readPersistedAdoption, toAdoptionDto, type ChatAdoptionDto } from '@/lib/design/chat-adopt'
 import type { DesignChatMessage, DesignChatRequestBody } from '@/lib/design/chat-types'
 import { CHAT_ENGINE_UNAVAILABLE_ERROR } from '@/lib/design/chat-ui'
 import { attachmentStoragePath, removeDesignPaths, signDesignPaths } from '@/lib/design/storage'
@@ -17,6 +18,8 @@ export const maxDuration = 600
 
 interface ChatHistoryResponse {
   messages: DesignChatMessage[]
+  // The "Fix in chat" concept still in context (validated), else null.
+  adopt: ChatAdoptionDto | null
 }
 interface ClearChatResponse {
   ok: true
@@ -43,14 +46,15 @@ function isOwnChatPreviewPath(sessionId: string, p: string): boolean {
 //   POST   — one turn: { text, attachmentIds?, page? } → a UI message stream.
 //            The heavy turn module (sanitizer + renderer) is lazy-loaded.
 //   DELETE — clear the history, its sent attachments and its preview renders
-//            — except renders a version still uses as its thumbnail.
+//            — except renders a version still uses as its thumbnail — and the
+//            "Fix in chat" concept kept in context.
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params
   const ctx = await requireDesignAdmin(id)
   if (ctx instanceof NextResponse) return ctx
   try {
     const db = createServerClient()
-    const rows = await listChatMessages(db, ctx.sessionId)
+    const [rows, adopted] = await Promise.all([listChatMessages(db, ctx.sessionId), readPersistedAdoption(db, ctx.sessionId)])
     const paths = rows.flatMap((r) => [
       ...r.attachment_ids.flatMap((a) => {
         const p = safeAttachmentPath(ctx.sessionId, a)
@@ -67,6 +71,7 @@ export async function GET(_req: Request, { params }: Params) {
       }
     }
     const response: ChatHistoryResponse = {
+      adopt: toAdoptionDto(adopted),
       messages: rows.map((r) =>
         rowToChatMessage(r, {
           preview: (p) => (isOwnChatPreviewPath(ctx.sessionId, p) ? (signed[p] ?? null) : null),
@@ -121,6 +126,8 @@ export async function DELETE(_req: Request, { params }: Params) {
   try {
     const db = createServerClient()
     const rows = await clearChatHistory(db, ctx.sessionId)
+    // A cleared chat has no concept in play either (fail-soft).
+    await setAdoptedConceptId(db, ctx.sessionId, null)
     const attachmentPaths = rows.flatMap((r) =>
       r.attachment_ids.flatMap((a) => {
         const p = safeAttachmentPath(ctx.sessionId, a)

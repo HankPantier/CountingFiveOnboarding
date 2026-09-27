@@ -182,11 +182,13 @@ export async function updateRunFields(db: Db, runId: string, patch: RunPatch): P
 }
 
 // Deletes these concepts of this run (a retry regenerating a failed position,
-// or a generation claim released because nothing was generated).
-export async function deleteConcepts(db: Db, runId: string, ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  const { error } = await db.from('design_concepts').delete().eq('run_id', runId).in('id', ids)
+// or a generation claim released because nothing was generated). Returns the
+// rows THIS call deleted — none when a concurrent caller got there first.
+export async function deleteConcepts(db: Db, runId: string, ids: string[]): Promise<DesignConceptRow[]> {
+  if (ids.length === 0) return []
+  const { data, error } = await db.from('design_concepts').delete().eq('run_id', runId).in('id', ids).select('*')
   if (error) throw storeError('deleteConcepts', error)
+  return data ?? []
 }
 
 // Claims a position for generation by inserting its row as 'generating'. The

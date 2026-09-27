@@ -725,6 +725,39 @@ export type Database = {
           },
         ]
       }
+      design_chat_state: {
+        Row: {
+          adopted_concept_id: string | null
+          session_id: string
+          updated_at: string
+        }
+        Insert: {
+          adopted_concept_id?: string | null
+          session_id: string
+          updated_at?: string
+        }
+        Update: {
+          adopted_concept_id?: string | null
+          session_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_chat_state_adopted_concept_id_fkey"
+            columns: ["adopted_concept_id"]
+            isOneToOne: false
+            referencedRelation: "design_concepts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_chat_state_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: true
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       design_concepts: {
         Row: {
           bundle: Json | null

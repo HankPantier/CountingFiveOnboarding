@@ -22,6 +22,7 @@ import { appendNavItem, retargetNavUrl, stripNavReference } from '@/lib/editor/n
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
 import { DestinationOccupiedError, readSiteBlogPath, relocateFile } from '@/lib/editor/relocate'
+import { writeNewPage } from '@/lib/editor/new-page-redirects'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { buildNicheSuggestions } from '@/lib/mbp/niche-suggestions'
 import {
@@ -117,7 +118,7 @@ STEP-BY-STEP CONFIRMATION (required)
 
 YOUR TOOLS
 - list_site_pages() — list current pages (path + url + kind ("page"|"post") + whether each is in the nav) and the current navigation tree. Call this first.
-- create_page({ title, slug?, brief?, addToNav?, parentUrl? }) — create a page and kick off an AI-written first draft grounded in the business profile. slug may nest with "/" (e.g. "industries/veterinarians"). parentUrl nests the nav link under an existing item (e.g. "/industries"). Returns a generationId; the draft lands shortly after.
+- create_page({ title, slug?, brief?, addToNav?, parentUrl? }) — create a page and kick off an AI-written first draft grounded in the business profile. slug may nest with "/" (e.g. "industries/veterinarians"). parentUrl nests the nav link under an existing item (e.g. "/industries"). Returns a generationId; the draft lands shortly after. If it returns redirectNotice, tell the admin that redirect was removed.
 - delete_page({ path }) — permanently remove a page (content/pages or content/posts) from the draft and strip its nav link. Pass the exact path from list_site_pages.
 - move_page({ fromPath, toUrl, navAction? }) — relocate a page: reclassify a page ↔ blog post (Resources) or reparent it under another page. A blog post that was created as a page (e.g. content/pages/careers--foo.md at /careers/foo) becomes a Resource by moving it to /resources/foo with navAction "remove" (posts show on the Resources index, not the top nav). Reparent a page by moving it to a new parent URL with navAction "retarget" (default — its nav link follows). Adds a 301 redirect automatically.
 - set_nav({ contents }) — replace the whole nav.json (a JSON string with { "primary": [ { "label", "url", "children"? } ], "cta"? }). Use only for explicit reordering/nesting beyond what create/delete already handle.
@@ -210,14 +211,16 @@ RULES
             } catch (err) {
               if (!(err instanceof FileNotFoundError)) throw err
             }
-            const starter = await writeFile(
+            // Drops any redirects.csv row 301ing this url away, in the same commit.
+            const starter = await writeNewPage(
               githubRepo,
               path,
+              url,
               buildStarterPage(title, url, firmName),
-              DRAFT_BRANCH,
               `Create page ${url} via AI (${adminEmail ?? 'admin'})`,
               commitAuthor
             )
+            const notice = starter.redirectNotice ? { redirectNotice: starter.redirectNotice } : {}
             if (addToNav !== false) await appendNavItem(ctx, title, url, parentUrl?.trim() || undefined)
 
             const { data: row, error } = await supabase
@@ -236,7 +239,7 @@ RULES
               .single()
             if (error || !row) {
               if (error) console.error('[site-assistant] new_page_generations insert failed:', error)
-              return { success: true, url, generationError: 'AI draft could not be scheduled — the blank page was created.' }
+              return { success: true, url, generationError: 'AI draft could not be scheduled — the blank page was created.', ...notice }
             }
             after(async () => {
               try {
@@ -245,7 +248,7 @@ RULES
                 console.error('[site-assistant] AI draft trigger failed:', err)
               }
             })
-            return { success: true, url, generationId: row.id }
+            return { success: true, url, generationId: row.id, ...notice }
           } catch (err) {
             if (err instanceof StaleShaError) {
               return { error: 'The navigation changed on the server mid-edit. Reload and try again.' }

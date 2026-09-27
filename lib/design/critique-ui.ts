@@ -86,8 +86,9 @@ export function refineStatusLabel(run: Pick<DesignRunDto, 'concepts' | 'maxRevis
   return c.iterations > 0 ? `Rendering concept ${k} (revision ${c.iterations})…` : `Rendering concept ${k}…`
 }
 
-export function revisionsLabel(iterations: number, maxRevisions: number): string {
-  return iterations === 0 ? 'No revisions' : `${iterations} of ${maxRevisions} revision${maxRevisions === 1 ? '' : 's'}`
+// Pass DesignConceptDto.revisionsUsed, not iterations (a fallback rewinds that).
+export function revisionsLabel(revisionsUsed: number, maxRevisions: number): string {
+  return revisionsUsed === 0 ? 'No revisions' : `${revisionsUsed} of ${maxRevisions} revision${maxRevisions === 1 ? '' : 's'}`
 }
 
 export function beforeAfterShots(c: Pick<DesignConceptDto, 'iterations' | 'screenshots' | 'review'>): { before: ScreenshotDto[]; after: ScreenshotDto[] } | null {

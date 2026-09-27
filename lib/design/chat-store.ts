@@ -63,6 +63,19 @@ export async function isAttachmentReferenced(db: Db, sessionId: string, attachme
   return (data ?? []).length > 0
 }
 
+// Every attachment id this session's messages reference — one query, for the
+// hourly orphan sweep (lib/design/storage-sweep.ts).
+export async function referencedAttachmentIds(db: Db, sessionId: string): Promise<Set<string>> {
+  const { data, error } = await db
+    .from('design_chat_messages')
+    .select('attachment_ids')
+    .eq('session_id', sessionId)
+  if (error) throw chatError('referencedAttachmentIds', error)
+  const out = new Set<string>()
+  for (const row of data ?? []) for (const id of row.attachment_ids) out.add(id.toLowerCase())
+  return out
+}
+
 // Every storage path a design version of this session uses as a screenshot
 // (chat versions reuse their chat preview renders), so clearing the chat
 // never deletes a version's thumbnail.
@@ -77,6 +90,71 @@ export async function versionScreenshotPathSet(db: Db, sessionId: string): Promi
     }
   }
   return out
+}
+
+// ---- Chat state (migration 081): the "Fix in chat" concept, kept only so
+// the chip survives a reload (the client re-sends the id on every turn, so no
+// turn depends on this table). Fail-soft: before 081 is applied the table is
+// missing — reads return null, writes count as done, and that is warned ONCE
+// per process, not on every GET or turn. Other DB errors warn each time.
+
+// PostgREST "table not in the schema cache" / Postgres "undefined_table".
+const MISSING_TABLE_CODES = new Set(['PGRST205', '42P01'])
+let warnedMissingChatState = false
+
+export function isMissingTableError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  if (error.code && MISSING_TABLE_CODES.has(error.code)) return true
+  return /design_chat_state/.test(error.message ?? '') && /(does not exist|schema cache)/i.test(error.message ?? '')
+}
+
+// True when the error is only "081 not applied yet" (warned once).
+function chatStateMissing(error: { code?: string; message?: string }): boolean {
+  if (!isMissingTableError(error)) return false
+  if (!warnedMissingChatState) {
+    warnedMissingChatState = true
+    console.warn('[design-chat-store] design_chat_state is missing (apply migration 081) — the "Fix in chat" chip will not survive a reload.')
+  }
+  return true
+}
+
+/** Test hook: forget the once-per-process warning. */
+export function __resetChatStateWarningForTests(): void {
+  warnedMissingChatState = false
+}
+
+export async function getAdoptedConceptId(db: Db, sessionId: string): Promise<string | null> {
+  const { data, error } = await db.from('design_chat_state').select('adopted_concept_id').eq('session_id', sessionId).maybeSingle()
+  if (error) {
+    if (!chatStateMissing(error)) console.warn('[design-chat-store] adopted concept not read:', error.message)
+    return null
+  }
+  return data?.adopted_concept_id ?? null
+}
+
+/**
+ * Persist (or, with null, clear) the chat's adopted concept. Idempotent.
+ * Returns false only on a real DB error; a missing table (081 not applied)
+ * counts as done — there is nothing to persist to or clear.
+ */
+export async function setAdoptedConceptId(db: Db, sessionId: string, conceptId: string | null): Promise<boolean> {
+  const { error } = await db
+    .from('design_chat_state')
+    .upsert({ session_id: sessionId, adopted_concept_id: conceptId, updated_at: new Date().toISOString() }, { onConflict: 'session_id' })
+  if (!error) return true
+  if (chatStateMissing(error)) return true
+  console.warn('[design-chat-store] adopted concept not saved:', error.message)
+  return false
+}
+
+/** Clear the adopted concept only while it is still `conceptId` (fail-soft). */
+export async function clearAdoptedConceptIf(db: Db, sessionId: string, conceptId: string): Promise<void> {
+  const { error } = await db
+    .from('design_chat_state')
+    .update({ adopted_concept_id: null, updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('adopted_concept_id', conceptId)
+  if (error && !chatStateMissing(error)) console.warn('[design-chat-store] adopted concept not cleared:', error.message)
 }
 
 export async function clearChatHistory(db: Db, sessionId: string): Promise<ChatMessageRow[]> {
