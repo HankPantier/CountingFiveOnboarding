@@ -131,6 +131,15 @@ describe('loadRenderShell', () => {
     m.shell.mockResolvedValue({ ok: false, reason: 'x', ...(status === undefined ? {} : { status }) })
     expect(await loadRenderShell({ jobId: 'j', githubRepo: 'o/r' }, '/')).toEqual({ ok: false, reason: 'x', retryable })
   })
+  it('fails (not retryable) with the not-Revaltus message instead of rendering the old site', async () => {
+    m.siteUrl.mockResolvedValue('https://acme.com')
+    m.shell.mockResolvedValue({ ok: false, reason: "https://acme.com isn't the Revaltus-built site", code: 'not_revaltus' })
+    expect(await loadRenderShell({ jobId: 'j', githubRepo: 'o/r' }, '/')).toEqual({
+      ok: false,
+      reason: "https://acme.com isn't the Revaltus-built site",
+      retryable: false,
+    })
+  })
   it('resolves the page on the preview origin and returns the shell', async () => {
     m.siteUrl.mockResolvedValue('https://acme.vercel.app')
     m.shell.mockResolvedValue({ ok: true, ...SHELL })

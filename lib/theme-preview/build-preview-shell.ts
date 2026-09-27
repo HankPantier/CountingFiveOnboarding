@@ -1,5 +1,6 @@
 import { safeGet } from '@/lib/audit/crawl'
 import { THEME_SLOT } from './compose-srcdoc'
+import { hasRevaltusMarker, notRevaltusSiteMessage } from './revaltus-marker'
 
 // Build a re-skinnable "shell" of the client's REAL deployed site for the Theme
 // Studio preview: fetch the homepage (SSRF-guarded), keep its real markup + real
@@ -22,7 +23,9 @@ export type PreviewShell =
   | { ok: true; origin: string; shellHtml: string }
   // status: the live site's HTTP status when it answered with an error (a
   // 5xx — e.g. Vercel's 508 recursion refusal — is worth retrying later).
-  | { ok: false; reason: string; status?: number }
+  // code 'not_revaltus': the page answered but lacks the Revaltus template
+  // marker — usually the client's OLD site before DNS cutover (callers → 422).
+  | { ok: false; reason: string; status?: number; code?: 'not_revaltus' }
 
 // Pure transform of a fetched page into the re-skinnable shell. Separated from
 // the fetch so it can be unit-tested without a network. `finalUrl` is the
@@ -68,6 +71,11 @@ export async function buildPreviewShell(siteUrl: string): Promise<PreviewShell> 
   const ct = res.contentType.toLowerCase()
   if (ct && !ct.includes('html')) {
     return { ok: false, reason: 'The site URL did not return an HTML page.' }
+  }
+  // Never preview/render a page that isn't the Revaltus build as the client's
+  // "current site" (see revaltus-marker.ts).
+  if (!hasRevaltusMarker(res.body)) {
+    return { ok: false, reason: notRevaltusSiteMessage(siteUrl), code: 'not_revaltus' }
   }
   return transformShellHtml(res.body, res.finalUrl)
 }

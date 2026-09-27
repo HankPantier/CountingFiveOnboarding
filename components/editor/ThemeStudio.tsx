@@ -8,6 +8,7 @@ import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import type { FlagsPatch } from './ThemeControls'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
+import { fetchShellWithRetry, type ShellFetchResult } from '@/lib/theme-preview/shell-fetch'
 
 // Regenerate theme.css client-side (generateThemeCss is pure) so a color/font
 // pick re-skins the preview instantly, before the draft commit round-trips.
@@ -66,6 +67,8 @@ export default function ThemeStudio({
   const [loading, setLoading] = useState(true)
   const [busyUrl, setBusyUrl] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The preview URL answered but isn't the Revaltus-built site (422 not_revaltus).
+  const [wrongSite, setWrongSite] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [contrastWarnings, setContrastWarnings] = useState<string[]>([])
@@ -92,19 +95,44 @@ export default function ThemeStudio({
   }, [sessionId])
 
   // Fetch the real-site shell (expensive external fetch) + theme sources. No-op
-  // with a clear message when no preview URL is set yet.
-  const loadPreview = useCallback(async () => {
-    setError(null)
-    setShellHtml(null)
-    const shellRes = await fetch(`/api/edit/${sessionId}/theme/shell`)
-    if (!shellRes.ok) {
-      const data = (await shellRes.json().catch(() => ({}))) as { error?: string }
-      throw new Error(data.error ?? `Failed to load the preview (${shellRes.status})`)
-    }
-    const shell = (await shellRes.json()) as { shellHtml: string }
-    setShellHtml(shell.shellHtml)
-    await loadSources()
-  }, [sessionId, loadSources])
+  // with a clear message when no preview URL is set yet. `source` is the
+  // preview URL's origin (PreviewUrlInfo.source): unless it is an operator
+  // override, a 422 not_revaltus is retried once ~3 s later, since it usually
+  // means a cold Vercel-address lookup timed out and fell back to the old
+  // site while the address was being cached (see lib/theme-preview/shell-fetch.ts).
+  const loadPreview = useCallback(
+    async (source: PreviewUrlInfo['source'] | undefined) => {
+      setError(null)
+      setWrongSite(false)
+      setShellHtml(null)
+      const fetchShell = async (): Promise<ShellFetchResult> => {
+        const res = await fetch(`/api/edit/${sessionId}/theme/shell`)
+        if (res.ok) return { ok: true, shellHtml: ((await res.json()) as { shellHtml: string }).shellHtml }
+        const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
+        return { ok: false, status: res.status, error: data.error ?? `Failed to load the preview (${res.status})`, code: data.code }
+      }
+      const { result, retried } = await fetchShellWithRetry(fetchShell, source)
+      if (!result.ok) {
+        // 422 not_revaltus: the URL is the client's old site (pre-cutover), not
+        // the Revaltus build — shown as a fix-the-URL notice, never a blank frame.
+        if (result.code === 'not_revaltus') setWrongSite(true)
+        throw new Error(result.error)
+      }
+      setShellHtml(result.shellHtml)
+      // A retry that succeeded used a newly cached Vercel address: refresh the
+      // URL bar so it shows what is actually previewed.
+      if (retried) {
+        const res = await fetch(`/api/edit/${sessionId}/theme/preview-url`)
+        if (res.ok) {
+          const pi = (await res.json()) as PreviewUrlInfo
+          setInfo(pi)
+          setUrlInput(pi.effectiveUrl ?? '')
+        }
+      }
+      await loadSources()
+    },
+    [sessionId, loadSources]
+  )
 
   // Initial load: resolve the preview URL, then load the preview if one exists.
   const init = useCallback(async () => {
@@ -115,7 +143,7 @@ export default function ThemeStudio({
       const pi = (await res.json()) as PreviewUrlInfo
       setInfo(pi)
       setUrlInput(pi.effectiveUrl ?? '')
-      if (pi.effectiveUrl) await loadPreview()
+      if (pi.effectiveUrl) await loadPreview(pi.source)
       else setError('No preview URL set. Enter the site URL above (e.g. https://acme.vercel.app) and load it.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -129,12 +157,14 @@ export default function ThemeStudio({
     void init()
   }, [init])
 
-  // Save the preview-URL override (empty clears it → falls back to site.config),
-  // then reload the preview against the new URL.
+  // Save the preview-URL override (empty clears it → the default: the site's
+  // verified Vercel address, else site.config siteUrl), then reload the
+  // preview against the new URL.
   const saveUrl = useCallback(
     async (value: string | null) => {
       setBusyUrl(true)
       setError(null)
+      setWrongSite(false)
       try {
         const res = await fetch(`/api/edit/${sessionId}/theme/preview-url`, {
           method: 'PATCH',
@@ -145,7 +175,7 @@ export default function ThemeStudio({
         if (!res.ok) throw new Error(data.error ?? `Failed to save (${res.status})`)
         setInfo(data)
         setUrlInput(data.effectiveUrl ?? '')
-        if (data.effectiveUrl) await loadPreview()
+        if (data.effectiveUrl) await loadPreview(data.source)
         else {
           setShellHtml(null)
           setError('No preview URL set. Enter the site URL above and load it.')
@@ -250,8 +280,9 @@ export default function ThemeStudio({
     [commitTheme]
   )
 
-  const overrideSet = !!info?.previewUrl
-  const canResetToDefault = overrideSet && !!info?.configUrl && info.configUrl !== info.previewUrl
+  // Only an operator-typed URL is an override; the auto-derived Vercel
+  // address (even when cached in preview_url) is the default.
+  const overrideSet = info?.source === 'override'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -343,8 +374,10 @@ export default function ThemeStudio({
           </button>
         </div>
 
-        {/* Preview URL bar — the deployed site to preview (a staging/Vercel URL
-            before DNS cutover, or the canonical site.config siteUrl). */}
+        {/* Preview URL bar — the deployed site to preview: an operator
+            override, else the site's verified Vercel address, else the
+            site.config siteUrl (refused with a notice when it is the old,
+            pre-cutover site). */}
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -370,23 +403,25 @@ export default function ThemeStudio({
           >
             {busyUrl ? 'Loading…' : 'Load preview'}
           </button>
-          {canResetToDefault && (
+          {overrideSet && (
             <button
               type="button"
               onClick={() => void saveUrl(null)}
               disabled={busyUrl}
-              title={`Use the site's configured URL (${info?.configUrl})`}
+              title="Clear the custom URL and use the site's Vercel address (or its configured URL when there is none)"
               className="rounded-pill border border-border-default px-3 py-1.5 font-heading text-xs font-semibold text-text-secondary transition-colors hover:text-brand-navy disabled:opacity-50"
             >
               Reset to default
             </button>
           )}
           <span className="w-full font-body text-[11px] text-text-muted">
-            {overrideSet
-              ? `Using a custom preview URL${info?.configUrl ? ` · site default: ${info.configUrl}` : ''}`
-              : info?.configUrl
-                ? `Using the site's configured URL. Enter a staging URL above to override it while you build.`
-                : 'Set the deployed site URL to preview (e.g. a Vercel preview deploy).'}
+            {info?.source === 'override'
+              ? 'Using a custom preview URL.'
+              : info?.source === 'vercel'
+                ? `Using the site's Vercel address.${info.configUrl ? ` Site URL: ${info.configUrl}` : ''}`
+                : info?.configUrl
+                  ? "Using the site's configured URL. Enter the site's Vercel address above to preview it before DNS cutover."
+                  : "Set the deployed site URL to preview (e.g. the site's Vercel address)."}
           </span>
         </form>
 
@@ -395,7 +430,13 @@ export default function ThemeStudio({
             Loading the site…
           </div>
         ) : error ? (
-          <div className="flex flex-1 items-center justify-center px-6 text-center font-body text-sm text-error">
+          <div
+            role="alert"
+            className={[
+              'flex flex-1 items-center justify-center px-6 text-center font-body text-sm',
+              wrongSite ? 'text-warning-strong' : 'text-error',
+            ].join(' ')}
+          >
             {error}
           </div>
         ) : shellHtml && sources ? (

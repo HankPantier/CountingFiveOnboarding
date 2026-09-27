@@ -1,8 +1,10 @@
 // Server-only (safeGet). The DEPLOYED shell's half of the capability
 // handshake: the template's root layout emits
 // <meta name="c5-capabilities" content="fonts,style-axes,specimen"> (T1+).
-// Absent meta on a reachable page = a template that predates T1 → []. An
-// unreachable page is 'unverified' (callers keep the draft tier — see
+// Absent meta on a reachable page = NOT a Revaltus site (every managed site
+// runs a template ≥ 2026.09.2; before DNS cutover siteUrl is usually the
+// client's OLD site) → 'unverified' with a reason. An unreachable page is
+// 'unverified' (callers keep the draft tier — see
 // intersectWithShell). Verified reads are cached per job + repo for 60 s;
 // 'unverified' results (incl. the overall SHELL_READ_DEADLINE_MS timeout) get
 // a short 15 s negative cache, so a down/protected preview doesn't cost up to
@@ -10,13 +12,15 @@
 // the same SSRF-guarded, timeout-bounded safeGet the preview shell uses.
 import { safeGet } from '@/lib/audit/crawl'
 import { getPreviewSiteUrl } from '@/lib/theme-preview/site-url'
+import { SHELL_CAPABILITIES_META, findShellMarker, notRevaltusSiteMessage } from '@/lib/theme-preview/revaltus-marker'
 
-export const SHELL_CAPABILITIES_META = 'c5-capabilities'
-export type ShellCapabilities = { status: 'verified'; capabilities: string[] } | { status: 'unverified' }
+export { SHELL_CAPABILITIES_META }
+// 'unverified' carries a `reason` only when there is something the operator
+// can fix: the preview URL answered but isn't the Revaltus build (no marker —
+// usually the client's old site before DNS cutover). A timeout/unreachable
+// shell stays reason-less.
+export type ShellCapabilities = { status: 'verified'; capabilities: string[] } | { status: 'unverified'; reason?: string }
 
-const TOKEN_RE = /^[a-z0-9][a-z0-9-]{0,39}$/
-const MAX_TOKENS = 20
-const MAX_SCAN = 200_000
 const TTL_MS = 60_000
 export const UNVERIFIED_TTL_MS = 15_000
 const CACHE_MAX = 200
@@ -26,34 +30,27 @@ export function __resetShellCapabilitiesCacheForTests(): void {
   cache.clear()
 }
 
-const attr = (tag: string, name: string): string | null => {
-  const m = new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(tag)
-  return m ? m[2] : null
-}
-
+// The marker's tokens; [] when absent (callers that must tell "no marker"
+// apart from "empty marker" use findShellMarker).
 export function parseShellCapabilities(html: string): string[] {
-  for (const match of html.slice(0, MAX_SCAN).matchAll(/<meta\b[^>]*>/gi)) {
-    const tag = match[0]
-    if (attr(tag, 'name')?.trim().toLowerCase() !== SHELL_CAPABILITIES_META) continue
-    const tokens = (attr(tag, 'content') ?? '')
-      .split(/[\s,]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter((s) => TOKEN_RE.test(s))
-    return [...new Set(tokens)].slice(0, MAX_TOKENS)
-  }
-  return []
+  return findShellMarker(html) ?? []
 }
 
 // Overall wall-clock budget for one shell read (preview-URL lookup + fetch).
 // safeGet alone can take ~6 hops × 10 s; callers run inside 30–60 s routes
 // and the chat commit reserve, so a slow site degrades to 'unverified' fast.
 export const SHELL_READ_DEADLINE_MS = 6_000
+// A cold Vercel-address lookup inside that budget gets half of it, leaving
+// time for the site.config fallback + the page fetch; otherwise the nested
+// 6 s races would always lose to this one and waste the fallback work. The
+// lookup itself keeps running (and caches) in the background either way.
+export const SHELL_DERIVE_DEADLINE_MS = 3_000
 const UNVERIFIED: ShellCapabilities = { status: 'unverified' }
 
 async function fetchShell(args: { jobId: string; githubRepo: string }): Promise<ShellCapabilities> {
   let siteUrl: string | null
   try {
-    siteUrl = await getPreviewSiteUrl(args)
+    siteUrl = await getPreviewSiteUrl(args, { deriveDeadlineMs: SHELL_DERIVE_DEADLINE_MS })
   } catch {
     return UNVERIFIED
   }
@@ -67,7 +64,11 @@ async function fetchShell(args: { jobId: string; githubRepo: string }): Promise<
     res.status < 300 &&
     (!res.contentType || res.contentType.toLowerCase().includes('html'))
   if (!res || !html) return UNVERIFIED
-  return { status: 'verified', capabilities: parseShellCapabilities(res.body) }
+  // No marker at all = not a Revaltus site (the old site before cutover).
+  // Keep the draft tier (unverified) but say why, so the Studio can show it.
+  const marker = findShellMarker(res.body)
+  if (marker === null) return { status: 'unverified', reason: notRevaltusSiteMessage(siteUrl) }
+  return { status: 'verified', capabilities: marker }
 }
 
 // Cached per job + repo (checked BEFORE resolving the preview URL, so a cache

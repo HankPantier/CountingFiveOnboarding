@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const m = vi.hoisted(() => ({ siteUrl: vi.fn(), get: vi.fn() }))
-vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: (a: unknown) => m.siteUrl(a) }))
+vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: (a: unknown, o: unknown) => m.siteUrl(a, o) }))
 vi.mock('@/lib/audit/crawl', () => ({ safeGet: (u: string) => m.get(u) }))
 
-import { SHELL_READ_DEADLINE_MS, UNVERIFIED_TTL_MS, __resetShellCapabilitiesCacheForTests, parseShellCapabilities, readShellCapabilities } from './shell-capabilities'
+import { SHELL_DERIVE_DEADLINE_MS, SHELL_READ_DEADLINE_MS, UNVERIFIED_TTL_MS, __resetShellCapabilitiesCacheForTests, parseShellCapabilities, readShellCapabilities } from './shell-capabilities'
 
 const page = (meta: string) => ({ status: 200, contentType: 'text/html', finalUrl: 'https://a.test/', body: `<html><head>${meta}</head></html>` })
 
@@ -31,7 +31,9 @@ describe('readShellCapabilities', () => {
     m.get.mockResolvedValue(page('<meta name="c5-capabilities" content="fonts">'))
     const args = { jobId: 'j', githubRepo: 'o/r' }
     expect(await readShellCapabilities(args, 1000)).toEqual({ status: 'verified', capabilities: ['fonts'] })
-    expect(m.siteUrl).toHaveBeenCalledWith(args)
+    // A shorter inner deadline for the Vercel lookup than the overall read.
+    expect(m.siteUrl).toHaveBeenCalledWith(args, { deriveDeadlineMs: SHELL_DERIVE_DEADLINE_MS })
+    expect(SHELL_DERIVE_DEADLINE_MS).toBeLessThan(SHELL_READ_DEADLINE_MS)
     expect(m.get).toHaveBeenCalledWith('https://a.test')
     await readShellCapabilities(args, 50_000)
     expect(m.get).toHaveBeenCalledTimes(1)
@@ -40,8 +42,16 @@ describe('readShellCapabilities', () => {
     await readShellCapabilities(args, 62_000)
     expect(m.get).toHaveBeenCalledTimes(2)
   })
-  it('a reachable shell without the meta verifies as no capabilities', async () => {
-    m.get.mockResolvedValue(page(''))
+  it('a reachable shell WITHOUT the marker is not a Revaltus site: unverified, with the reason', async () => {
+    m.get.mockResolvedValue(page('<meta name="generator" content="WordPress 6.6">'))
+    const r = await readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' })
+    expect(r.status).toBe('unverified')
+    expect(r.status === 'unverified' && r.reason).toBe(
+      "https://a.test isn't the Revaltus-built site (it may be the client's old site before DNS cutover). Set the preview URL to the site's Vercel address, e.g. https://<project>.vercel.app."
+    )
+  })
+  it('an EMPTY marker is still a Revaltus site: verified with no capabilities', async () => {
+    m.get.mockResolvedValue(page('<meta name="c5-capabilities" content="">'))
     expect(await readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' })).toEqual({ status: 'verified', capabilities: [] })
   })
   it.each([

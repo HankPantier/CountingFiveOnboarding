@@ -1,8 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { getStatus, DRAFT_BRANCH } from '@/lib/github/repo-files'
 import { containsDeployCommit } from '@/lib/github/deploy-commit'
+import { cacheVercelPreviewUrl } from '@/lib/theme-preview/site-url'
 
 export const runtime = 'nodejs'
 
@@ -25,7 +26,7 @@ export async function GET(
   const supabase = createServerClient()
   const { data: job } = await supabase
     .from('content_jobs')
-    .select('github_repo')
+    .select('github_repo, preview_url')
     .eq('id', id)
     .single()
 
@@ -35,6 +36,17 @@ export async function GET(
 
   try {
     const status = await getStatus(job.github_repo)
+    const isDeployCommit = containsDeployCommit(status.aheadCommitMessages)
+    // First deploy of a site: record its Vercel address as the preview URL
+    // (Theme/Design Studio) once the deploy landed, so it never falls back to
+    // the client's old site. Background, never blocks the poll; a miss is
+    // negative-cached for 10 min, so the 8 s poll doesn't repeat it.
+    if (isDeployCommit && !job.preview_url) {
+      const githubRepo = job.github_repo
+      after(async () => {
+        await cacheVercelPreviewUrl({ jobId: id, githubRepo })
+      })
+    }
     return NextResponse.json({
       repo: job.github_repo,
       branch: DRAFT_BRANCH,
@@ -42,7 +54,7 @@ export async function GET(
       lastCommitSha: status.lastCommitSha,
       lastCommitMessage: status.lastCommitMessage,
       lastCommitAt: status.lastCommitAt,
-      isDeployCommit: containsDeployCommit(status.aheadCommitMessages),
+      isDeployCommit,
       draftAhead: status.draftAhead,
     })
   } catch {

@@ -11,7 +11,9 @@ export const maxDuration = 30
 // GET a re-skinnable shell of the client's REAL deployed site (homepage) for the
 // Theme Studio preview. Admin-only. Fetched once per studio session; the client
 // re-skins it locally as the theme sources change. The deployed host comes from
-// site.config.ts on MAIN (the live site), never client input.
+// getPreviewSiteUrl (operator override → the repo's Vercel alias → site.config
+// siteUrl on MAIN), never client input. A page without the Revaltus template
+// marker is refused with a 422 (see lib/theme-preview/revaltus-marker.ts).
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const ctx = await resolveEditContext(id)
@@ -43,6 +45,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const shell = await buildPreviewShell(page.url)
   if (!shell.ok) {
+    // A reachable page without the Revaltus marker (the client's old site
+    // before DNS cutover) is an operator-fixable config problem, not a 502.
+    if (shell.code === 'not_revaltus') {
+      return NextResponse.json({ error: shell.reason, code: shell.code }, { status: 422 })
+    }
     return NextResponse.json({ error: shell.reason }, { status: 502 })
   }
   return NextResponse.json({ origin: shell.origin, shellHtml: shell.shellHtml, path: page.path })

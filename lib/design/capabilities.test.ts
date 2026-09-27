@@ -157,6 +157,14 @@ describe('intersectWithShell', () => {
   it('never raises the draft tier', () => {
     expect(intersectWithShell(L2, { status: 'verified', capabilities: ['fonts', 'style-axes', 'specimen'] }).level).toBe(2)
   })
+  it('a not-Revaltus shell keeps the draft tier and carries the reason as shellNote', () => {
+    expect(intersectWithShell(L4, { status: 'unverified', reason: 'old site' })).toEqual({ ...L4, shell: 'unverified', shellNote: 'old site' })
+  })
+  it('capabilitiesFromJson round-trips shellNote on an unverified snapshot only', () => {
+    const snap = intersectWithShell(L4, { status: 'unverified', reason: 'old site' })
+    expect(capabilitiesFromJson(JSON.parse(JSON.stringify(snap)))).toEqual(snap)
+    expect(capabilitiesFromJson({ ...L4, shell: 'verified', shellNote: 'x' })).not.toHaveProperty('shellNote')
+  })
   it('an unverified shell keeps the draft tier (flagged)', () => {
     expect(intersectWithShell(L4, { status: 'unverified' })).toEqual({ ...L4, shell: 'unverified' })
   })

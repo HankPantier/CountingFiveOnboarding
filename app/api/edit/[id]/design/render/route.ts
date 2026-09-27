@@ -88,7 +88,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!page.ok) return NextResponse.json({ error: page.reason }, { status: 400 })
 
     const [shell, loaded] = await Promise.all([buildPreviewShell(page.url), loadDraftThemeSources(ctx.githubRepo)])
-    if (!shell.ok) return NextResponse.json({ error: shell.reason }, { status: 502 })
+    if (!shell.ok) {
+      // Never render the client's old (pre-cutover) site as the current site.
+      if (shell.code === 'not_revaltus') return NextResponse.json({ error: shell.reason, code: shell.code }, { status: 422 })
+      return NextResponse.json({ error: shell.reason }, { status: 502 })
+    }
     if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status })
     // The renderer's request allowlist and CSP only admit https — an http
     // shell would render with every same-origin asset blocked.
