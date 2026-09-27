@@ -143,11 +143,13 @@ export const PAGE_METRICS_SCRIPT = String.raw`(() => {
     const measure = () => Math.max(root.scrollWidth || 0, body ? body.scrollWidth || 0 : 0);
     const fixes = (el) => {
       if (probes++ >= MAX_PROBES || !el.style) return false;
+      const hadAttr = el.hasAttribute('style');
       const prev = el.style.getPropertyValue('overflow-x');
       const prio = el.style.getPropertyPriority('overflow-x');
       el.style.setProperty('overflow-x', 'clip', 'important');
       const w = measure();
       if (prev) el.style.setProperty('overflow-x', prev, prio); else el.style.removeProperty('overflow-x');
+      if (!hadAttr && !el.getAttribute('style')) el.removeAttribute('style');
       return w <= vw + 1;
     };
     const keyFor = (el) => {

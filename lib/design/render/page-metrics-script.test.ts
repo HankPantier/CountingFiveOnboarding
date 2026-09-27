@@ -112,7 +112,7 @@ describe('PAGE_METRICS_SCRIPT — overflow culprit by clip probing', () => {
     const s = collect()
     expect(s?.scrollWidth).toBe(2800)
     expect(s?.offenders).toEqual(['block:hero div#1::before (position absolute, left -1280px, right -1280px, width 3040px) (2800px)'])
-    expect(Array.from(document.querySelectorAll('[style]')).every((e) => e.getAttribute('style') === '')).toBe(true) // probed, then restored
+    expect(document.querySelectorAll('[style]')).toHaveLength(0) // probed, then restored (no attribute left behind)
     const gate = evaluatePageSample('desktop', s as RawPageSample)
     expect(gate.overflow?.offenders[0]).toContain('::before')
   })
