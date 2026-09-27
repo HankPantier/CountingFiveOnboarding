@@ -11,8 +11,10 @@
 // Deliberately conservative — missing a claim beats a false positive (the
 // critic turns each note into an issue and the reviser acts on it): a claim
 // counts only when the lever word sits right next to its subject ("serif
-// headlines", "flat cards"), the serif ACCENT role never counts, and a clause
-// with a negation ("no dark sections") is skipped.
+// headlines", "flat cards"), the serif ACCENT role never counts, a scoped
+// title ("long-read section titles switch to upright DM Serif Display" — a
+// css.blocks move, live run a81093ea) never counts, and a clause with a
+// negation ("no dark sections") is skipped.
 import type { DesignBundle } from './bundle'
 import { fontsUnlocked, styleAxesUnlocked } from './capabilities'
 import type { DesignCapabilities } from './run-types'
@@ -57,21 +59,42 @@ export function claimClauses(bundle: Pick<DesignBundle, 'name' | 'tagline' | 'ra
 const anyClause = (clauses: string[], res: RegExp[]): boolean => clauses.some((c) => res.some((re) => re.test(c)))
 
 // The serif ACCENT role (emphasis words, numerals) is serif by design — "serif
-// accent", "italic-serif numerals" are never headline claims.
-const ACCENT_ROLE = /\b(accents?|numerals?|words?|italics?)\b/
+// accent", "italic-serif numerals" are never headline claims; nor are other
+// small roles (kickers, eyebrows, labels).
+const ACCENT_ROLE = /\b(accents?|numerals?|words?|italics?|kickers?|eyebrows?|labels?)\b/
 // Words between "headlines" and "serif" that mean the serif is something else:
 // "headlines stay sans with serif numerals", "headlines in inter and a serif …".
 const HEADLINE_ESCAPE = /\b(sans|with|and|plus|but|while|except|besides)\b/
+// A qualifier right before "headings"/"headlines" that scopes them to one
+// block or role — "section headings in a serif", "card headlines" — a scoped
+// css.blocks move, not the site-wide headline treatment.
+const SCOPED_HEADING = /\b(section|sections|prose|card|cards|block|blocks|article|articles|blog|post|content|long-read|faq|pricing|panel|sidebar|footer|sub|team|service|services|stat|stats|table|quote|testimonial|page-header)$/
+const SERIF_FONT_NAMES = (): string[] => SERIF_FONTS.map((f) => f.toLowerCase()).sort((a, b) => b.length - a.length)
+// A serif FONT NAME reads as the word "serif" ("headlines set in Lora" → a
+// serif claim) and never as a subject: "DM Serif Display is the accent face"
+// is not a "serif display" claim.
+function foldSerifFontNames(clause: string): string {
+  let out = clause
+  for (const name of SERIF_FONT_NAMES()) out = out.split(name).join('serif')
+  return out
+}
+const wordBefore = (c: string, index: number): string => c.slice(0, index).trimEnd().split(/\s+/).pop() ?? ''
 
-// "serif headlines" / "serif editorial display" / "headlines set in a serif" —
-// but never the accent role.
+// Claims about THE headlines / headings site-wide: "serif headlines", "serif
+// display headline", "headlines set in <serif font>", "headings in a serif".
+// Never titles (section / prose / card titles are scoped block-CSS moves),
+// never a scoped heading ("section headings"), never the accent role.
 function claimsSerifHeadlines(clauses: string[]): boolean {
-  return clauses.some((c) => {
-    for (const m of c.matchAll(new RegExp(`\\bserif\\s+(${gap(2)})(headlines?|headings?|display|titles?|h1s?)\\b`, 'g'))) {
-      if (!ACCENT_ROLE.test(m[1])) return true
+  return clauses.some((raw) => {
+    const c = foldSerifFontNames(raw)
+    for (const m of c.matchAll(new RegExp(`\\bserif\\s+(${gap(2)})(headlines?|headings?|h1s?)\\b`, 'g'))) {
+      const between = m[1].trim()
+      if (!ACCENT_ROLE.test(m[1]) && !SCOPED_HEADING.test(between)) return true
     }
-    for (const m of c.matchAll(new RegExp(`\\b(?:headlines?|headings?|titles?)\\s+(${gap(4)})serif\\b(?![\\s-]+(?:accents?|numerals?|words?|italics?)\\b)(?!-)`, 'g'))) {
-      if (!HEADLINE_ESCAPE.test(m[1]) && !ACCENT_ROLE.test(m[1])) return true
+    for (const m of c.matchAll(new RegExp(`\\b(?:headlines?|headings?)\\s+(${gap(4)})serif\\b(?![\\s-]+(?:accents?|numerals?|words?|italics?|kickers?|eyebrows?|labels?)\\b)(?!-)`, 'g'))) {
+      if (HEADLINE_ESCAPE.test(m[1]) || ACCENT_ROLE.test(m[1])) continue
+      if (SCOPED_HEADING.test(wordBefore(c, m.index ?? 0))) continue
+      return true
     }
     return false
   })

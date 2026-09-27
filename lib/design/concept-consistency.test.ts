@@ -123,12 +123,25 @@ describe('conceptConsistencyNotes — no false positives (regression)', () => {
     'Compact hero kicker',
     'Ink footer links',
     'Dark hero panels',
+    // Live run a81093ea (2026-09-27): a scoped block-CSS move, not a global headline promise.
+    'Content-prose and checklist-section: long-read section titles switch to upright DM Serif Display, prose titles over a short marigold rule with underlined red links.',
+    'DM Serif Display is the accent face',
+    'Section titles in a serif',
+    'Prose titles in Lora',
+    'Card titles set in a serif',
+    'Section headings in a serif',
+    'Serif card headings',
+    'Headlines with a serif kicker',
+    'Serif numerals and an italic accent word',
   ])('%s → no note', (phrase) => {
     // Every lever at its default / off, so any claim would surface.
     expect(claims(says([phrase]))).toEqual([])
   })
   it.each([
     ['Serif headlines', 'promises serif headlines'],
+    ['Headlines set in DM Serif Display', 'promises serif headlines'],
+    ['Headings in a serif', 'promises serif headlines'],
+    ['Serif display headlines', 'promises serif headlines'],
     ['Flat cards throughout', 'flat cards'],
     ['Inverted nav', 'an inverted nav'],
     ['Dark sections carry the numerals', 'dark (ink) sections'],
