@@ -34,8 +34,8 @@ import { readMarker } from '../lib/fleet/special-files'
 import { git, isAncestor, revParse, showText, tryGit } from '../lib/fleet/git-local'
 import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, verifyPlanInScratch, type RepoRun, type SyncContext } from '../lib/fleet/sync'
 import { pool, verifyRepo } from '../lib/fleet/verify'
-import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
-import { effectiveCanary, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
+import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, vercelState, waitForVercel } from '../lib/fleet/remote'
+import { defaultCanary, effectiveCanary, releaseProven, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
 import type { ClientEntry, TargetSelection } from '../lib/fleet/types'
 
 interface Args {
@@ -249,10 +249,17 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
     console.log('Nothing to apply.')
     return blocked.length ? 1 : 0
   }
-  // The first --apply of a release (no targeted repo is on NEW yet) defaults
-  // to one canary: it has to go green on Vercel before any other repo is pushed.
-  const firstOfRelease = !runs.some((r) => r.upToDate)
-  const requestedCanary = a.canary ?? (firstOfRelease && ready.length > 1 ? 1 : 0)
+  // Until the release is PROVEN (some deployable repo already on NEW has a
+  // green Vercel status on its main head), --apply defaults to one canary that
+  // must go green before any other repo is pushed. The marker alone doesn't
+  // prove it: a canary that failed at the deploy stage is already on NEW.
+  const proven =
+    a.canary === null &&
+    releaseProven(
+      runs.map((r) => ({ upToDate: r.upToDate, noDeploy: r.client.noDeploy, slug: r.client.slug, head: r.clientHead })),
+      (slug, sha) => vercelState(slug, sha).state
+    )
+  const requestedCanary = a.canary ?? defaultCanary(proven, ready.length)
   const canary = effectiveCanary(
     ready.map((r) => ({ noDeploy: r.client.noDeploy })),
     requestedCanary

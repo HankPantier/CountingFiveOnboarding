@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { effectiveCanary, runPushPhase, type PushItem, type PushOps } from './push-phase'
+import { defaultCanary, effectiveCanary, releaseProven, runPushPhase, type PushItem, type PushOps } from './push-phase'
 import type { DeployState } from './remote'
 
 const item = (name: string, noDeploy = false): PushItem => ({ slug: `o/${name}`, dir: `/w/${name}`, noDeploy })
@@ -122,5 +122,29 @@ describe('runPushPhase', () => {
     const f = fakeOps({ a: { preflight: 'absent' } })
     const r = await runPushPhase([item('a')], opts, f.ops)
     expect(r.results[0]).toMatchObject({ status: 'pushed', draft: { result: 'no-draft' } })
+  })
+})
+
+describe('releaseProven / defaultCanary (FLEET-2)', () => {
+  const run = (slug: string, upToDate: boolean, noDeploy = false) => ({ slug, upToDate, noDeploy, head: `${slug}-sha` })
+
+  it('a canary that failed at deploy but stayed pushed does not prove the release', () => {
+    const proven = releaseProven([run('a', true), run('b', false)], () => 'failure')
+    expect(proven).toBe(false)
+    expect(defaultCanary(proven, 2)).toBe(1)
+  })
+
+  it('a noDeploy repo on NEW never proves it', () => {
+    expect(releaseProven([run('korbey', true, true)], () => 'success')).toBe(false)
+  })
+
+  it('a deployable repo on NEW with a green main head proves it (no default canary)', () => {
+    const proven = releaseProven([run('a', true), run('b', false)], (slug, sha) => (slug === 'a' && sha === 'a-sha' ? 'success' : 'none'))
+    expect(proven).toBe(true)
+    expect(defaultCanary(proven, 5)).toBe(0)
+  })
+
+  it('a single ready repo gets no canary', () => {
+    expect(defaultCanary(false, 1)).toBe(0)
   })
 })

@@ -65,6 +65,24 @@ export function effectiveCanary(items: { noDeploy: boolean }[], requested: numbe
   return Math.max(0, Math.min(requested, items.filter((i) => !i.noDeploy).length))
 }
 
+/**
+ * A release counts as proven only on evidence: some target already on NEW that
+ * can deploy (not noDeploy) has a green Vercel status on its current main head.
+ * The marker alone is not enough, since a canary that failed at the deploy
+ * stage has already pushed it (and a noDeploy repo can never prove a deploy).
+ */
+export function releaseProven(
+  runs: { upToDate: boolean; noDeploy: boolean; slug: string; head: string }[],
+  deployState: (slug: string, sha: string) => DeployState
+): boolean {
+  return runs.some((r) => r.upToDate && !r.noDeploy && deployState(r.slug, r.head) === 'success')
+}
+
+/** Default canary count when --canary is not passed: one until the release is proven. */
+export function defaultCanary(proven: boolean, readyCount: number): number {
+  return !proven && readyCount > 1 ? 1 : 0
+}
+
 export async function runPushPhase(
   items: PushItem[],
   opts: PushOptions,
