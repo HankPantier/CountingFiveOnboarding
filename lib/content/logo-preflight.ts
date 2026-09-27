@@ -1,0 +1,89 @@
+import sharp from 'sharp'
+import { isLightLogo, sampleLogoPixels } from '@/lib/content/derive-palette'
+import { extractSvgColorWeights } from '@/lib/content/svg-colors'
+
+// Logo checks at package time (server-only: sharp). Before this, nothing looked
+// at the logo before it shipped: Accord's PNG carried so much transparent
+// padding it rendered 81px wide, Berg's white wordmark was invisible on the
+// light header, and Pryor/Buss ship an opaque white box.
+
+export type LogoPreflight = {
+  /** The logo bytes to ship — trimmed when it had a lot of transparent padding. */
+  buffer: Buffer
+  trimmed: { from: string; to: string } | null
+  /** Mostly white/light: needs a dark surface (inverted nav) to be visible. */
+  lightLogo: boolean
+  /** An opaque light background box baked into the image. */
+  plate: { hex: string; share: number } | null
+  /** Operator-facing notes for the Deliverables panel. */
+  notes: string[]
+}
+
+// Trim only when the padding is substantial: at least this share of the width
+// or height is empty border.
+const MIN_TRIM_SHARE = 0.1
+// A plate this large (share of the image) is worth telling the operator about.
+const PLATE_NOTE_SHARE = 0.25
+
+const noChange = (buffer: Buffer, lightLogo = false): LogoPreflight => ({
+  buffer,
+  trimmed: null,
+  lightLogo,
+  plate: null,
+  notes: lightLogo ? [LIGHT_LOGO_NOTE] : [],
+})
+
+export const LIGHT_LOGO_NOTE =
+  'The logo is mostly white/light, so it would disappear on the light header. A first deploy ships the inverted (primary-colour) navigation so it shows; on a live site switch Navigation to “inverted” in Theme Studio, or upload a dark version of the logo.'
+
+/** Analyse (and, for padded transparent rasters, trim) the logo. Never throws. */
+export async function preflightLogo(buffer: Buffer, fileName: string): Promise<LogoPreflight> {
+  if (/\.svg$/i.test(fileName)) {
+    return noChange(buffer, isLightLogo(extractSvgColorWeights(buffer.toString('utf-8'))))
+  }
+  try {
+    const meta = await sharp(buffer, { limitInputPixels: 50_000_000 }).metadata()
+    if (!meta.width || !meta.height || meta.format === 'svg' || meta.format === 'gif' || (meta.pages ?? 1) > 1) {
+      return noChange(buffer)
+    }
+
+    let out = buffer
+    let trimmed: LogoPreflight['trimmed'] = null
+    if (meta.hasAlpha) {
+      // Trim fully transparent borders only (background = transparent).
+      const { data, info } = await sharp(buffer, { limitInputPixels: 50_000_000 })
+        .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 1 })
+        .toBuffer({ resolveWithObject: true })
+      const cutW = 1 - info.width / meta.width
+      const cutH = 1 - info.height / meta.height
+      if (info.width > 0 && info.height > 0 && (cutW >= MIN_TRIM_SHARE || cutH >= MIN_TRIM_SHARE)) {
+        out = data
+        trimmed = { from: `${meta.width}×${meta.height}`, to: `${info.width}×${info.height}` }
+      }
+    }
+
+    const { data: px, info: pi } = await sharp(out, { limitInputPixels: 50_000_000 })
+      .resize(128, 128, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const sampled = sampleLogoPixels(px, pi.channels, pi.width, pi.height)
+    const lightLogo = isLightLogo(sampled.colors)
+    const plate = sampled.plate && sampled.plate.share >= PLATE_NOTE_SHARE ? sampled.plate : null
+
+    const notes: string[] = []
+    if (trimmed) {
+      notes.push(`Logo trimmed from ${trimmed.from} to ${trimmed.to} px (transparent padding removed) so it renders at full size in the header.`)
+    }
+    if (lightLogo) notes.push(LIGHT_LOGO_NOTE)
+    if (plate) {
+      notes.push(
+        `The logo has an opaque ${plate.hex} background box (${Math.round(plate.share * 100)}% of the image). It shows as a box on tinted or dark surfaces such as the footer — ask the client for a transparent PNG or an SVG.`,
+      )
+    }
+    return { buffer: out, trimmed, lightLogo, plate, notes }
+  } catch (err) {
+    console.warn(`[package] Logo preflight skipped for ${fileName}:`, err)
+    return noChange(buffer)
+  }
+}

@@ -221,6 +221,21 @@ export function sampleLogoPixels(
 type Family = { rep: string; repWeight: number; weight: number; lch: Oklch }
 
 /**
+ * Most of the logo (by weight, background plate already removed) is white or
+ * light — a white wordmark on transparency (Berg). It needs a dark surface.
+ */
+export function isLightLogo(colors: WeightedColor[]): boolean {
+  let total = 0
+  let light = 0
+  for (const c of colors) {
+    if (c.weight <= 0 || !chroma.valid(c.hex)) continue
+    total += c.weight
+    if (chroma(c.hex).luminance() > LIGHT_LOGO_LUMINANCE) light += c.weight
+  }
+  return total > 0 && light / total >= LIGHT_LOGO_SHARE
+}
+
+/**
  * Choose primary + accent from weighted logo colours (raster buckets or SVG
  * fill counts). Returns null when the logo has no usable colour at all (all
  * white/grey), so the caller falls back to NEUTRAL_PALETTE.
@@ -230,11 +245,9 @@ export function pickLogoBrandColors(colors: WeightedColor[]): LogoBrandColors | 
   const total = valid.reduce((s, c) => s + c.weight, 0)
   if (total === 0) return null
 
-  let lightWeight = 0
   let darkNeutral: Family | null = null
   const families: Family[] = []
   for (const c of valid) {
-    if (chroma(c.hex).luminance() > LIGHT_LOGO_LUMINANCE) lightWeight += c.weight
     const lch = oklch(c.hex)
     if (lch.l > WHITE_L && lch.c < WHITE_MAX_C) continue // white / background
     if (lch.c < NEUTRAL_C) {
@@ -255,7 +268,7 @@ export function pickLogoBrandColors(colors: WeightedColor[]): LogoBrandColors | 
       families.push({ rep: c.hex, repWeight: c.weight, weight: c.weight, lch })
     }
   }
-  const lightLogo = lightWeight / total >= LIGHT_LOGO_SHARE
+  const lightLogo = isLightLogo(valid)
 
   const brandWeight = families.reduce((s, f) => s + f.weight, 0) + (darkNeutral?.weight ?? 0)
   if (brandWeight === 0) return null

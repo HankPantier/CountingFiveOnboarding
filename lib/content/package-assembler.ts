@@ -44,6 +44,7 @@ import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
 import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
 import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
+import { preflightLogo } from '@/lib/content/logo-preflight'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
@@ -149,6 +150,9 @@ export type PackageResult =
       // Nav labels that will crowd/overflow the header (warn-only; curated
       // labels are never auto-shortened — see lintNavLabels).
       navLabelWarnings: string[]
+      // What the logo preflight did or recommends (trimmed padding, light logo →
+      // inverted nav, opaque background box). Informational.
+      logoNotes: string[]
       // Referenced hero/inline images vs. what actually shipped under
       // public/content-assets/. `missing` non-empty means the site will render
       // "Image not found" on those refs — the operator should Re-pull images.
@@ -482,6 +486,7 @@ export async function assembleContentPackage(
   }
 
   // Override logo.primary with the actual uploaded logo asset filename
+  const logoNotes: string[] = []
   if (brandJson) {
     const logoAsset =
       assetEntries.find(a => a.category === 'logo') ??
@@ -490,6 +495,16 @@ export async function assembleContentPackage(
       brandJson.logo = {
         primary: logoAsset.fileName,
         alt: brandJson.logo?.alt || `${brandJson.firm.name} logo`,
+      }
+      // Logo preflight: ship it without transparent padding, and give a white/
+      // light logo the inverted (primary-colour) nav so it is visible. design.json
+      // is only written on a FIRST deploy (site config), so this default never
+      // overrides a live site's chosen nav style; an explicit style.nav wins.
+      const logoCheck = await preflightLogo(logoAsset.content, logoAsset.fileName)
+      logoAsset.content = logoCheck.buffer
+      logoNotes.push(...logoCheck.notes)
+      if (logoCheck.lightLogo && !designJson.style?.nav) {
+        designJson.style = { ...designJson.style, nav: 'inverted' }
       }
     } else if (palette && designJson?.typography?.headingFont) {
       // No uploaded logo — generate a branded SVG wordmark so the NavBar
@@ -816,6 +831,7 @@ export async function assembleContentPackage(
     redirectIssues,
     linkWarnings,
     navLabelWarnings,
+    logoNotes,
     imageCoverage,
     deploy,
   }
