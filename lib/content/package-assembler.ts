@@ -43,6 +43,7 @@ import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/desi
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
 import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { withDefaultNavCta } from '@/lib/content/nav-cta'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
@@ -424,9 +425,13 @@ export async function assembleContentPackage(
   // default rather than shipping a zip the template can't validate or theme.
   const brandJson = buildBrandJson(schema, palette ?? FALLBACK_PALETTE)
   const designJson = buildDesignJson(designTokens ?? FALLBACK_DESIGN_TOKENS)
-  const navJson = normalizeNavUrls(
-    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config),
-    siteHost(session.website_url)
+  // Header CTA on by default (an operator-set nav.cta wins) — see nav-cta.ts.
+  const navJson = withDefaultNavCta(
+    normalizeNavUrls(
+      buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config),
+      siteHost(session.website_url)
+    ),
+    sitemap
   )
 
   // Client Center — emitted only when the firm has at least one client portal
