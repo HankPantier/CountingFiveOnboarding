@@ -60,6 +60,7 @@ const errText = (err: unknown): string => (err instanceof Error ? `${err.name}: 
 async function main() {
   const tuning = await import('../lib/content/generation-tuning')
   const { abUsage, criticIsContender, parseAbArgs } = await import('../lib/design/ab/args')
+  const { noUsableAnswerText, rejectionText } = await import('../lib/design/ab/outcome')
   // Default judge: the Sonnet 5 writing tier — not a contender. critiqueConcept
   // sends it adaptive thinking + effort (GENERATION_PROVIDER_OPTIONS), both
   // supported on Sonnet 5; nothing Opus-only.
@@ -434,11 +435,12 @@ async function main() {
           row.errors.push('The cap stopped this call before it produced a concept.')
         } else {
           row.status = 'failed'
-          row.errors.push(`No usable answer (${result.stoppedReason ?? 'no_output'}).`)
+          row.errors.push(noUsableAnswerText(result))
         }
       }
       if (row.status !== 'valid' && t.slot.apiErrors.length > 0) row.errors.push('The API rejected the call — see API errors below.')
-      console.log(`    → ${row.status}${row.bundle ? ` "${row.bundle.name}"` : ''} in ${(t.latencyMs / 1000).toFixed(1)}s, $${(row.generation.costUsd).toFixed(3)}`)
+      const rejected = rejectionText(result)
+      console.log(`    → ${row.status}${row.bundle ? ` "${row.bundle.name}"` : ''} in ${(t.latencyMs / 1000).toFixed(1)}s, $${(row.generation.costUsd).toFixed(3)}${rejected ? ` — ${rejected}` : ''}`)
     }
   }
 
@@ -529,7 +531,9 @@ async function main() {
     const result = t.value
     budget.charge(result ? result.costUsd : spend)
     const stats = callStats(t, result ? result.costUsd : spend, result?.estimatedUsd ?? 0)
-    const errors = [...(t.error ? [`Critique threw: ${t.error}`] : []), ...(result?.errors ?? [])]
+    const rejected = rejectionText(result)
+    if (rejected) console.log(`    → critique failed — ${rejected}`)
+    const errors = [...(t.error ? [`Critique threw: ${t.error}`] : []), ...(rejected ? [rejected] : []), ...(result?.errors ?? [])]
     if (result?.critique) {
       const k = result.critique
       return { loop: { kind: 'ok', passed: k.passed, gateFailures: render.gateFailures.length, record: k }, status: 'done', view: critiqueView(k), stats, errors }
@@ -603,9 +607,10 @@ async function main() {
     }
     rev.status = result && result.errors.length > 0 ? 'invalid' : 'failed'
     if (result && result.errors.length > 0) rev.errors.push(`Not usable: ${revisionRejectionReason(result.errors)}`)
-    else if (result) rev.errors.push(`No usable answer (${result.stoppedReason ?? 'no_output'}).`)
+    else if (result) rev.errors.push(noUsableAnswerText(result))
     if (t.slot.apiErrors.length > 0) rev.errors.push('The API rejected the call — see API errors below.')
-    console.log(`    → revision ${rev.round} ${rev.status}`)
+    const rejected = rejectionText(result)
+    console.log(`    → revision ${rev.round} ${rev.status}${rejected ? ` — ${rejected}` : ''}`)
     return { kind: 'invalid' }
   }
 
