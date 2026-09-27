@@ -42,7 +42,9 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { readOptional } from './apply-bundle'
 import { DESIGN_MD_PATH } from './brief/brand'
 import { buildChatSystemStatic, buildChatTurnContext } from './brief/chat-prompt'
+import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleFromRepoFiles, type RepoThemeFiles } from './bundle-files'
+import { getConcept } from './run-store'
 import { readEffectiveCapabilities } from './capabilities-read'
 import { commitWorkspace, finishTurnCommit, type CommitVersionFn } from './chat-commit'
 import {
@@ -119,6 +121,7 @@ export function chatStepTools(now: () => number, turnDeadlineAt: number): { acti
 }
 
 const MISSING_ATTACHMENT = 'An attached image could not be found — attach it again.'
+export const MISSING_CONCEPT = 'That concept is no longer available — open the run and pick it again.'
 
 async function inlineImage(db: Db, sessionId: string, attachmentId: string): Promise<InlineImage> {
   const bytes = await downloadDesignImage(db, attachmentStoragePath(sessionId, attachmentId))
@@ -141,6 +144,16 @@ export async function prepareChatTurn(
   const latestName = latest && isPlainObject(latest.bundle) && typeof latest.bundle.name === 'string' ? latest.bundle.name : null
   const current = bundleFromRepoFiles(draftFiles, { name: latestName ?? 'Current design', source: 'chat' })
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}`.slice(0, 500) }
+
+  // "Fix in chat": the concept must be a finished concept of THIS session
+  // (getConcept scopes by the gated session id).
+  let adopt: DesignBundle | undefined
+  if (request.conceptId) {
+    const row = await getConcept(db, actor.sessionId, request.conceptId)
+    const parsed = row && row.status === 'ready' && row.bundle !== null ? parseDesignBundle(row.bundle) : null
+    if (!parsed?.ok) return { ok: false, status: 400, error: MISSING_CONCEPT }
+    adopt = parsed.bundle
+  }
 
   // This turn's attachments must exist in THIS session's folder (the path is
   // built from the gated session id, so a foreign id can't reach anything).
@@ -203,7 +216,14 @@ export async function prepareChatTurn(
     history: withAttachmentImages(trimmed, images),
     workspace: new ChatWorkspace({ current: current.bundle, draftFiles, draftShas: snapshot.shas, caps, model: INTERACTIVE_CHAT_MODEL }),
     staticSystem: buildChatSystemStatic({ firmName: firmNameFrom(draft.files.brandText), schema, designMd: designMd?.content ?? null, caps }),
-    turnContext: buildChatTurnContext({ bundle: current.bundle, latestVersionNo: latest?.version_no ?? null, drift: drift.status, page, lastTurnNote: lastTurnNote(prior) }),
+    turnContext: buildChatTurnContext({
+      bundle: current.bundle,
+      latestVersionNo: latest?.version_no ?? null,
+      drift: drift.status,
+      page,
+      lastTurnNote: lastTurnNote(prior),
+      ...(adopt ? { adopt } : {}),
+    }),
     page,
     target: actor,
     baselineTheme: composedThemeFromFiles(draft.files),

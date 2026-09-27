@@ -17,6 +17,11 @@ import {
   unmeasuredViewports,
   withCritique,
   withReviewNotes,
+  critiqueForIteration,
+  iterationBeats,
+  iterationToRestore,
+  withEvaluatedIteration,
+  type IterationSnapshot,
 } from './review'
 import type { CritiqueRecord } from './critique'
 
@@ -122,5 +127,57 @@ describe('applyRenderGate (R6)', () => {
   })
   it('renderGateMessage lists up to 3 failures', () => {
     expect(renderGateMessage(['a', 'b', 'c', 'd'])).toBe('This concept fails the render checks, so it can’t be applied: a · b · c (+1 more)')
+  })
+})
+
+describe('best iteration (WS-B)', () => {
+  const snap = (iteration: number, over: { gate?: number; passed?: boolean; mean?: number; craft?: number; critique?: null } = {}): IterationSnapshot => ({
+    iteration,
+    bundle: { name: 'x' },
+    screenshots: [],
+    metrics: null,
+    critique:
+      over.critique === null
+        ? null
+        : { ...rec(iteration, over.passed ?? false), mean: over.mean ?? 3, scores: { ...rec(iteration).scores, craft: over.craft ?? 3 } },
+    gateFailures: over.gate ?? 0,
+  })
+
+  it('ranks appliable first, then a pass, then mean, then craft; ties are not wins', () => {
+    expect(iterationBeats(snap(1, { mean: 3 }), snap(2, { mean: 4, gate: 1 }))).toBe(true)
+    expect(iterationBeats(snap(1, { passed: true, mean: 3.8 }), snap(2, { mean: 3.9 }))).toBe(true)
+    expect(iterationBeats(snap(1, { mean: 3.5, craft: 4 }), snap(2, { mean: 3.33, craft: 2 }))).toBe(true)
+    expect(iterationBeats(snap(1, { mean: 3.5, craft: 4 }), snap(2, { mean: 3.5, craft: 3 }))).toBe(true)
+    expect(iterationBeats(snap(1, { mean: 3.5 }), snap(2, { mean: 3.5 }))).toBe(false)
+    expect(iterationBeats(snap(1, { mean: 2 }), snap(2, { critique: null }))).toBe(true) // an uncritiqued skip ranks below
+  })
+
+  it('withEvaluatedIteration keeps a strictly better best, else takes the newer', () => {
+    const r1 = withEvaluatedIteration(newReview(), snap(1, { mean: 3.5 }))
+    expect(withEvaluatedIteration(r1, snap(2, { mean: 3.33 })).best?.iteration).toBe(1)
+    expect(withEvaluatedIteration(r1, snap(2, { mean: 3.5 })).best?.iteration).toBe(2)
+  })
+
+  it('iterationToRestore: an evaluated loser falls back; an unjudged version only on a known gate failure vs an appliable best', () => {
+    const review = { ...newReview(), best: snap(1, { mean: 3.5 }) }
+    expect(iterationToRestore(review, { iteration: 2, evaluated: true, gateFailures: 0 })?.iteration).toBe(1)
+    expect(iterationToRestore(review, { iteration: 1, evaluated: true, gateFailures: 0 })).toBeNull()
+    expect(iterationToRestore(review, { iteration: 2, evaluated: false, gateFailures: 0 })).toBeNull()
+    expect(iterationToRestore(review, { iteration: 2, evaluated: false, gateFailures: 2 })?.iteration).toBe(1)
+    expect(iterationToRestore({ ...review, best: snap(1, { gate: 1 }) }, { iteration: 2, evaluated: false, gateFailures: 2 })).toBeNull()
+    expect(iterationToRestore(newReview(), { iteration: 2, evaluated: true, gateFailures: 0 })).toBeNull()
+  })
+
+  it('round-trips through jsonb parsing and drops a malformed best', () => {
+    const review = { ...newReview(), best: snap(1, { mean: 3.5 }) }
+    expect(parseConceptReview(JSON.parse(JSON.stringify(review)))?.best).toMatchObject({ iteration: 1, gateFailures: 0 })
+    expect(parseConceptReview({ ...review, best: { iteration: -1 } })).not.toHaveProperty('best')
+  })
+
+  it('critiqueForIteration shows the held iteration’s critique', () => {
+    const review = { ...newReview(), critiques: [rec(0), rec(1), rec(2)] }
+    expect(critiqueForIteration(review, 1)?.iteration).toBe(1)
+    expect(critiqueForIteration({ critiques: [rec(2)], best: snap(0, { mean: 3.4 }) }, 0)?.mean).toBe(3.4)
+    expect(critiqueForIteration({ critiques: [rec(0)] }, 1)?.iteration).toBe(0) // not yet critiqued: the one it answers
   })
 })

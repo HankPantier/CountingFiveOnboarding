@@ -2,13 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { DesignConceptDto } from '@/lib/design/run-types'
-import { conceptStatusLabel } from '@/lib/design/critique-ui'
+import { blockedLabel, conceptApplyBlockers, conceptStatusLabel } from '@/lib/design/critique-ui'
 import ApplyDialog from './ApplyDialog'
 import CritiqueView from './CritiqueView'
 import { PRIMARY_BTN_SM, SECONDARY_BTN_SM } from './styles'
 
 // One card per concept: name, palette swatches, type, key levers, moves and
 // render / critique-loop status, the critique itself, with Preview (drives the live iframe) and Apply.
+// A concept whose render checks would refuse Apply is flagged up front
+// (WS-B): a "Blocked" chip, and "Fix in chat" in place of Apply… — it hands
+// the concept and its failures to the revision chat.
 export default function ConceptCards({
   sessionId,
   concepts,
@@ -16,6 +19,7 @@ export default function ConceptCards({
   maxRevisions,
   onSelect,
   onApplied,
+  onFixInChat,
 }: {
   sessionId: string
   concepts: DesignConceptDto[]
@@ -23,6 +27,7 @@ export default function ConceptCards({
   maxRevisions: number
   onSelect: (id: string) => void
   onApplied: (versionNo: number, warnings: string[]) => void | Promise<void>
+  onFixInChat?: (concept: DesignConceptDto) => void
 }) {
   // One apply dialog at a time: while it is open every Apply… is disabled, so
   // an in-flight apply can never be unmounted by opening another concept's
@@ -41,6 +46,7 @@ export default function ConceptCards({
       {concepts.map((c) => {
         const usable = c.status === 'ready' && c.palette !== null
         const selected = c.id === selectedId
+        const blockers = conceptApplyBlockers(c)
         return (
           <li
             key={c.id}
@@ -51,9 +57,16 @@ export default function ConceptCards({
                 <h3 className="truncate font-heading text-sm font-semibold text-text-primary">{c.name}</h3>
                 {c.tagline && <p className="font-body text-xs text-text-muted">{c.tagline}</p>}
               </div>
-              <span className="shrink-0 rounded-pill bg-surface-subtle px-2 py-0.5 font-heading text-[10px] font-semibold text-text-secondary">
-                {conceptStatusLabel(c, maxRevisions)}
-              </span>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className="rounded-pill bg-surface-subtle px-2 py-0.5 font-heading text-[10px] font-semibold text-text-secondary">
+                  {conceptStatusLabel(c, maxRevisions)}
+                </span>
+                {usable && blockers.length > 0 && (
+                  <span className="rounded-pill border border-error/30 bg-error/10 px-2 py-0.5 font-heading text-[10px] font-semibold text-error" title={blockers.join('\n')}>
+                    {blockedLabel(blockers)}
+                  </span>
+                )}
+              </div>
             </div>
 
             {c.palette && (
@@ -98,18 +111,32 @@ export default function ConceptCards({
                 >
                   {selected ? 'Previewing' : 'Preview'}
                 </button>
-                <button
-                  ref={(el) => {
-                    applyButtons.current[c.id] = el
-                  }}
-                  type="button"
-                  aria-label={`Apply ${c.name}…`}
-                  onClick={() => setApplyingId(c.id)}
-                  disabled={applyingId !== null}
-                  className={PRIMARY_BTN_SM}
-                >
-                  Apply…
-                </button>
+                {blockers.length > 0 ? (
+                  onFixInChat && (
+                    <button
+                      type="button"
+                      aria-label={`Fix ${c.name} in the chat`}
+                      title="Apply would refuse this concept — hand it and its render-check failures to the revision chat."
+                      onClick={() => onFixInChat(c)}
+                      className={PRIMARY_BTN_SM}
+                    >
+                      Fix in chat
+                    </button>
+                  )
+                ) : (
+                  <button
+                    ref={(el) => {
+                      applyButtons.current[c.id] = el
+                    }}
+                    type="button"
+                    aria-label={`Apply ${c.name}…`}
+                    onClick={() => setApplyingId(c.id)}
+                    disabled={applyingId !== null}
+                    className={PRIMARY_BTN_SM}
+                  >
+                    Apply…
+                  </button>
+                )}
               </div>
             )}
             {applyingId === c.id && (

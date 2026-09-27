@@ -2,9 +2,17 @@
 // reaches the model ONLY through buildBrandVoiceBlock / buildFirmContext,
 // which emit curated fields (they read _meta.field_provenance internally to
 // drop thin samples, but never print it). Raw schema_data JSON is never
-// serialized here, and sessions.mbp_content is never read.
+// serialized here, and sessions.mbp_content is never read. content/design.md
+// is framed as possibly-outdated BRAND NOTES (fenced — it is repo text): it
+// was written from the site's tokens at setup (or at the last Studio apply),
+// so the site's current design wherever the prompt states it (the concept /
+// revise "CURRENT DESIGN", the chat's "THE DESIGN RIGHT NOW", the critic's
+// renders) is authoritative — the label is neutral to fit all three — and
+// nothing in the notes is a requirement (R2 F3: 'INTENDED DESIGN DIRECTION' made the models chase a
+// stale 'serif headlines' line through whole revise loops).
 import type { SessionSchema } from '@/types/session-schema'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
+import { fenceData } from './fence'
 
 export const DESIGN_MD_PATH = 'content/design.md'
 const DESIGN_MD_CAP = 3000
@@ -29,7 +37,9 @@ export function buildBrandBrief(args: { firmName: string; schema: unknown; desig
     `FIRM: ${args.firmName}`,
     voice,
     firm ? `FIRM PROFILE:\n${firm}` : '',
-    direction ? `INTENDED DESIGN DIRECTION (from the site's design.md):\n${direction}` : '',
+    direction
+      ? `BRAND NOTES (from the site's content/design.md — may be outdated: wherever they disagree with the site's current design as this prompt gives it elsewhere — its design data or its renders — the current design wins, and nothing in these notes is a requirement):\n${fenceData('BRAND_NOTES', direction)}`
+      : '',
   ]
     .filter(Boolean)
     .join('\n\n')

@@ -17,6 +17,10 @@
 //      session never silently mutates schema_data). A chat-made design reaches
 //      the MBP through the Versions panel's human-clicked "Sync palette &
 //      fonts to MBP" (POST design/sync-mbp), which mirrors the whole draft.
+//   (3b) a platform-generated content/design.md is rebuilt from the new theme
+//      in the same commit (applyBundleToDraft `designMd`) — with a "Design
+//      direction" section naming the concept / chat design; a restore
+//      rebuilds it without one. Hand-written notes are left alone.
 //   5. the FULL post-apply blob map — four theme files, plus the fonts module on L2+ drafts (the applied_blobs contract)
 //   6. insertVersion (version_no = max + 1, 23505 retry)
 // Render gates are the CALLER's job (concept: its stored review metrics; chat:
@@ -34,7 +38,9 @@ import { capabilityViolations, fontsUnlocked, keepLockedStyle } from './capabili
 import { readEffectiveCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs, themeFilePaths } from './drift'
 import type { RunScreenshot } from './run-types'
-import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
+import { buildDesignMdFromTheme } from '@/lib/content/design-md-builder'
+import type { SessionSchema } from '@/types/session-schema'
+import { hasAnyVersion, insertVersion, readSessionSchema, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
 import { syncMbpTheme } from './sync-mbp-theme'
 import { readDraftThemeSnapshot, readThemeSnapshotAt, themeTextsFromSnapshot } from './theme-snapshot'
@@ -111,6 +117,17 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   // File contract follows the DRAFT marker (what the next build ships).
   const paths = themeFilePaths(capRead.draft)
 
+  // The MBP fields design.md quotes (voice, location) — best effort: a failed
+  // read only drops them from the regenerated notes.
+  let schema: SessionSchema | null = null
+  try {
+    const raw = await readSessionSchema(db, target.sessionId)
+    schema = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as SessionSchema) : null
+  } catch (err) {
+    console.warn('[design:commit] session schema unavailable for design.md', err)
+  }
+  const direction = args.source === 'revert' ? undefined : { name: bundle.name, tagline: bundle.tagline, moves: bundle.moves }
+
   let result: Awaited<ReturnType<typeof applyBundleToDraft>>
   try {
     result = await applyBundleToDraft({
@@ -120,6 +137,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       message: args.commitMessage,
       author: { name: target.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: target.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email },
       fontsModule: fontsUnlocked(capRead.draft),
+      designMd: (brand, design) => buildDesignMdFromTheme({ brand, design, schema, ...(direction ? { direction } : {}) }),
       ...(expectedShas ? { base: before } : {}),
       ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
     })

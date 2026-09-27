@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DesignStudioState } from '@/lib/design/studio-types'
-import type { DesignRunDto } from '@/lib/design/run-types'
+import type { DesignConceptDto, DesignRunDto } from '@/lib/design/run-types'
+import { fixInChatMessage } from '@/lib/design/critique-ui'
+import { DEFAULT_CHAT_PAGE } from '@/lib/design/chat-types'
 import { NUDGE_TIMEOUT_MS, RUN_POLL_MS, SIGNED_VIEW_STALE_MS, nudgeStepUrl, runIsActive, shouldNudgeRun, startSequentialPoll, stabilizeSignedUrls, type NudgeState, type SignedUrlCache } from '@/lib/design/studio-ui'
-import DesignChat from './DesignChat'
+import DesignChat, { type ChatSeed } from './DesignChat'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
 import RunPanel from './RunPanel'
@@ -32,6 +34,16 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
   const urlCache = useRef<SignedUrlCache>(new Map())
   // Stalled-run nudges (see shouldNudgeRun): one in flight, debounced.
   const nudge = useRef<NudgeState>({ inFlight: false, lastNudgeAt: null })
+  // "Fix in chat" (WS-B): the concept + message handed to the chat composer.
+  // Cleared once the chat took it; the nonce keeps counting so every click
+  // is a new hand-off.
+  const [chatSeed, setChatSeed] = useState<ChatSeed | null>(null)
+  const seedNonce = useRef(0)
+  const fixInChat = useCallback((c: DesignConceptDto) => {
+    seedNonce.current += 1
+    setChatSeed({ nonce: seedNonce.current, conceptId: c.id, conceptName: c.name, text: fixInChatMessage(c) })
+  }, [])
+  const seedUsed = useCallback(() => setChatSeed(null), [])
 
   const load = useCallback(async () => {
     const loadId = ++loadSeq.current
@@ -141,12 +153,14 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
           <div className="flex min-w-0 flex-col gap-4">
             {/* Keyed by run so a new run starts with fresh selection / applied state.
                 PF10: only an apply changes the theme — cancel / retry just reload. */}
-            {run && <RunPanel key={run.id} sessionId={sessionId} run={run} onChanged={load} onApplied={onThemeChanged} />}
+            {run && <RunPanel key={run.id} sessionId={sessionId} run={run} onChanged={load} onApplied={onThemeChanged} onFixInChat={fixInChat} />}
             <RunLauncher sessionId={sessionId} inputs={state.inputs} disabled={active} onStarted={load} />
             <InputsPanel sessionId={sessionId} inputs={state.inputs} suggestions={state.suggestions} onChanged={load} />
           </div>
           <div className="flex min-w-0 flex-col gap-4">
-            <DesignChat sessionId={sessionId} page="/" onCommitted={themeChanged} />
+            {/* The chat previews + gates the page the run's concepts were judged
+                on (WS-B, R2 I9b) — not always "/". */}
+            <DesignChat sessionId={sessionId} page={run?.pagePath ?? DEFAULT_CHAT_PAGE} seed={chatSeed} onSeedUsed={seedUsed} onCommitted={themeChanged} />
             <VersionsPanel
               sessionId={sessionId}
               versions={state.versions}

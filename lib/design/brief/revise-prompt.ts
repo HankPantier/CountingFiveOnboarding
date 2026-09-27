@@ -1,8 +1,10 @@
 // Pure. The Design Studio revise prompt (P4): the SAME static prefix as
 // concept generation (art direction + contract — one cache entry for both)
 // and the same shared parts (firm, current design + palette rule, page
-// markup, admin brief; no reference images — a revision fixes the concept,
-// it doesn't restart it). Then per iteration: the run's other concepts, this
+// markup, admin brief; no admin reference images — a revision fixes the
+// concept, it doesn't restart it — but the current site's desktop + mobile
+// renders, the "before", identical for every revision of the run so they sit
+// in the cached shared prefix). Then per iteration: the run's other concepts, this
 // concept's full bundle (with its CSS), the fenced critique, the render-check
 // failures (each measured colour named by its palette role, plus how to fix
 // a contrast pair), its claim-check notes (concept-consistency — P7), its desktop +
@@ -18,7 +20,7 @@ import { conceptConsistencyNotes } from '../concept-consistency'
 import { PASS_MIN_MEAN, PASS_MIN_SCORE, RUBRIC_KEYS, RUBRIC_LABELS, minDistinctivenessFor, type CritiqueRecord } from '../critique'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
-import { buildSharedParts, buildStaticPrefix, priorConceptsBlock, type BuiltPrompt, type PriorConcept, type SharedPromptArgs } from './index'
+import { buildSharedParts, buildStaticPrefix, priorConceptsBlock, type BuiltPrompt, type PriorConcept, type PromptImage, type SharedPromptArgs } from './index'
 
 export type RevisePromptArgs = SharedPromptArgs & {
   position: number
@@ -30,6 +32,9 @@ export type RevisePromptArgs = SharedPromptArgs & {
   gateFailures: string[]
   desktop: Uint8Array | null
   mobile: Uint8Array | null
+  // The current site's renders (the run's "before") — the ONLY images in the
+  // shared parts; the admin's reference images in `images` are left out.
+  beforeImages?: PromptImage[]
 }
 
 export function formatCritique(c: CritiqueRecord): string {
@@ -104,10 +109,15 @@ export function annotatePaletteHexes(line: string, palette: DesignBundle['palett
 const CONTRAST_FIX_HINT =
   'A contrast failure names the measured text and background colours: change that palette pair (e.g. action text on a primary panel needs 3:1 for large text, 4.5:1 for small), or restyle that element with a scoped rule on its own block — [data-block="<id>"] … — using a colour variable that passes.'
 
+const OVERFLOW_FIX_HINT =
+  'An overflow names its culprit after "e.g." (a block, an element, or a ::before/::after with its computed position and offsets). Remove the viewport-unit or large negative offset / width on it — keep decorative bleed inside the block (% or px), or draw a full-bleed band with a box-shadow spread or clip-path, which never widen the page.'
+const NOT_CRITIQUED =
+  'This version was NOT critiqued: a hard render check failed first, so the art director never saw it. Fix the failures below and keep the concept’s direction.'
+
 const image = (bytes: Uint8Array): DynamicPart => ({ type: 'image', image: bytes, mediaType: 'image/webp' })
 
 export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
-  const parts = buildSharedParts({ ...args, images: [] })
+  const parts = buildSharedParts({ ...args, images: args.beforeImages ?? [] })
   const sharedPartCount = parts.length
   const k = args.position + 1
 
@@ -127,6 +137,7 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
       text: `CLAIM CHECK — your description and your levers disagree. Set the lever or change the words:\n${claims.map((c) => `- ${c}`).join('\n')}`,
     })
   }
+  if (!args.critique && args.gateFailures.length > 0) parts.push({ type: 'text', text: NOT_CRITIQUED })
   if (args.gateFailures.length > 0) {
     parts.push({
       type: 'text',
@@ -134,6 +145,7 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
         'RENDER-CHECK FAILURES — hard gates: a concept with any of these cannot be applied. Fix every one.',
         ...args.gateFailures.map((f) => `- ${annotatePaletteHexes(f, args.bundle.palette)}`),
         ...(args.gateFailures.some((f) => f.includes(':1 — needs')) ? [CONTRAST_FIX_HINT] : []),
+        ...(args.gateFailures.some((f) => f.includes('wider than the screen')) ? [OVERFLOW_FIX_HINT] : []),
       ].join('\n'),
     })
   }

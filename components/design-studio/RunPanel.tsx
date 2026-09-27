@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { DesignRunDto } from '@/lib/design/run-types'
+import type { DesignConceptDto, DesignRunDto } from '@/lib/design/run-types'
 import { applicableConcepts, formatUsd, runIsActive, runStatusLabel } from '@/lib/design/studio-ui'
 import BeforeAfter from './BeforeAfter'
 import CompareGrid from './CompareGrid'
@@ -20,11 +20,13 @@ export default function RunPanel({
   run,
   onChanged,
   onApplied,
+  onFixInChat,
 }: {
   sessionId: string
   run: DesignRunDto
   onChanged: () => void | Promise<void>
   onApplied?: () => void
+  onFixInChat?: (concept: DesignConceptDto) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -111,6 +113,7 @@ export default function RunPanel({
           selectedId={selected?.id ?? null}
           maxRevisions={run.maxRevisions}
           onSelect={setSelectedId}
+          onFixInChat={onFixInChat}
           onApplied={async (versionNo, warnings) => {
             setAppliedNo(versionNo)
             setAppliedWarnings(warnings)

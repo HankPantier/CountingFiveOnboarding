@@ -37,11 +37,30 @@ const TONE: Record<'success' | 'warning' | 'error', string> = {
   error: 'border-error/20 bg-error/10 text-error',
 }
 
+type Adopt = { conceptId: string; name: string }
+
 // The Design Studio revision chat (P5). History is server-owned
 // (design_chat_messages): GET loads it, each send posts only the new message.
 // No Stop button: a turn keeps running server-side until it has committed or
 // reported, so a stop would only hide the result.
-export default function DesignChat({ sessionId, page, onCommitted }: { sessionId: string; page: string; onCommitted: () => void }) {
+// "Fix in chat" (WS-B): a concept handed over from a run card — its id rides
+// with the next message (the server adds its bundle to that turn) and `text`
+// prefills the composer. `nonce` makes a repeat click on the same card count.
+export type ChatSeed = { nonce: number; conceptId: string; conceptName: string; text: string }
+
+export default function DesignChat({
+  sessionId,
+  page,
+  seed = null,
+  onSeedUsed,
+  onCommitted,
+}: {
+  sessionId: string
+  page: string
+  seed?: ChatSeed | null
+  onSeedUsed?: () => void
+  onCommitted: () => void
+}) {
   const [history, setHistory] = useState<DesignChatMessage[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [epoch, setEpoch] = useState(0)
@@ -84,6 +103,8 @@ export default function DesignChat({ sessionId, page, onCommitted }: { sessionId
           sessionId={sessionId}
           page={page}
           initial={history}
+          seed={seed}
+          onSeedUsed={onSeedUsed}
           onCommitted={onCommitted}
           onCleared={() => {
             setHistory(null)
@@ -104,6 +125,8 @@ function ChatBody({
   sessionId,
   page,
   initial,
+  seed,
+  onSeedUsed,
   onCommitted,
   onCleared,
   onStale,
@@ -111,6 +134,8 @@ function ChatBody({
   sessionId: string
   page: string
   initial: DesignChatMessage[]
+  seed: ChatSeed | null
+  onSeedUsed?: () => void
   onCommitted: () => void
   onCleared: () => void
   // The history's signed image URLs have (nearly) expired: reload it.
@@ -125,15 +150,20 @@ function ChatBody({
         prepareSendMessagesRequest: ({ messages, body }) => {
           const last = messages[messages.length - 1]
           const ids: unknown = body?.attachmentIds
-          return { body: { text: last ? messageText(last) : '', attachmentIds: Array.isArray(ids) ? ids : [], page } }
+          const conceptId: unknown = body?.conceptId
+          return {
+            body: { text: last ? messageText(last) : '', attachmentIds: Array.isArray(ids) ? ids : [], page, ...(typeof conceptId === 'string' ? { conceptId } : {}) },
+          }
         },
       }),
     [sessionId, page]
   )
   const [text, setText] = useState('')
   const [pending, setPending] = useState<ChatAttachmentDto[]>([])
+  // The concept a "Fix in chat" hand-off attached to the next message.
+  const [adopt, setAdopt] = useState<Adopt | null>(null)
   // What the in-flight send carried, so a refused turn can hand it back.
-  const inFlight = useRef<{ text: string; attachments: ChatAttachmentDto[] } | null>(null)
+  const inFlight = useRef<{ text: string; attachments: ChatAttachmentDto[]; adopt: Adopt | null } | null>(null)
   // Transcript length when the current turn was sent (commit detection only
   // looks at messages after it).
   const turnStart = useRef(initial.length)
@@ -152,10 +182,28 @@ function ChatBody({
       setMessages((ms) => (ms.length > 0 && ms[ms.length - 1].role === 'user' ? ms.slice(0, -1) : ms))
       setText((t) => (t.trim() ? t : sent.text))
       setPending((p) => [...sent.attachments, ...p])
+      const lostAdopt = sent.adopt
+      if (lostAdopt) setAdopt((a) => a ?? lostAdopt)
     },
   })
   const busy = status === 'submitted' || status === 'streaming'
   const refused = error instanceof ChatRequestError
+
+  // A new hand-off (adjusted while rendering, so no effect-driven setState):
+  // prefill the composer and attach the concept — once no turn is running.
+  const [seenSeed, setSeenSeed] = useState(0)
+  if (seed && seed.nonce !== seenSeed && !busy) {
+    setSeenSeed(seed.nonce)
+    setText(seed.text)
+    setAdopt({ conceptId: seed.conceptId, name: seed.conceptName })
+  }
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (seenSeed === 0) return
+    inputRef.current?.focus()
+    inputRef.current?.scrollIntoView({ block: 'nearest' })
+    onSeedUsed?.()
+  }, [seenSeed, onSeedUsed])
 
   const [annotate, setAnnotate] = useState<AnnotateSource | null>(null)
   const closeAnnotate = useCallback(() => setAnnotate(null), [])
@@ -225,12 +273,17 @@ function ChatBody({
     const t = text.trim()
     if (!t || busy || uploading) return
     const attachments = pending
-    inFlight.current = { text: t, attachments }
+    const handoff = adopt
+    inFlight.current = { text: t, attachments, adopt: handoff }
     turnStart.current = messages.length
     setText('')
     setPending([])
+    setAdopt(null)
     setNotice(null)
-    void sendMessage({ text: t, metadata: { attachments } }, { body: { attachmentIds: attachments.map((a) => a.id) } })
+    void sendMessage(
+      { text: t, metadata: { attachments } },
+      { body: { attachmentIds: attachments.map((a) => a.id), ...(handoff ? { conceptId: handoff.conceptId } : {}) } }
+    )
   }
 
   // AnnotateCanvas shows a failure itself (the promise rejects into it).
@@ -360,10 +413,19 @@ function ChatBody({
             ))}
           </ul>
         )}
+        {adopt && (
+          <p className="flex items-center gap-1.5 self-start rounded-pill border border-brand-cyan/40 bg-surface-card py-0.5 pl-2 pr-1 font-body text-[11px] text-text-secondary">
+            Bringing “{adopt.name}” to the draft
+            <button type="button" onClick={() => setAdopt(null)} aria-label="Don’t attach the concept" className={`rounded-pill px-1 font-heading text-[11px] font-semibold text-text-secondary hover:text-error ${FOCUS}`}>
+              ✕
+            </button>
+          </p>
+        )}
         <label htmlFor="design-chat-input" className="sr-only">
           Message
         </label>
         <textarea
+          ref={inputRef}
           id="design-chat-input"
           value={text}
           maxLength={CHAT_TEXT_MAX}

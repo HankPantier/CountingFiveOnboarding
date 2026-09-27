@@ -11,8 +11,13 @@
 //   critique — ONE Opus vision call (critic.ts) → done or revise.
 //   revise   — ONE Opus call (concept-reviser.ts) → a new bundle → render.
 // A concept stays 'refining' for its whole loop and ends 'ready' with its
-// latest valid bundle. Model units re-read the run's cost AFTER claiming,
-// check the cap first, and persist spend BEFORE settling the concept. A
+// BEST evaluated iteration (review.best — appliable first, then the critic's
+// verdict, mean and craft), not merely its latest: a last revision that
+// regressed falls back to the better one, its renders and metrics. A render
+// whose page overflows skips the critic (a hard gate the critic can't wave
+// through) and goes straight to a targeted revision. Model units re-read
+// the run's cost AFTER claiming, check the cap first, and persist spend
+// BEFORE settling the concept. A
 // failing critique / revision ends that concept's loop with a note; it never
 // fails the run — except an account-level provider rejection (usage limit,
 // credits, API key, permission): every later unit would fail the same way, so
@@ -21,25 +26,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
-import { parseDesignBundle } from './bundle'
+import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleToRepoFiles } from './bundle-files'
 import { buildCritiquePrompt } from './brief/critique-prompt'
 import { buildRevisePrompt } from './brief/revise-prompt'
+import type { PromptImage } from './brief'
 import { critiqueConcept } from './critic'
 import { reviseConcept } from './concept-reviser'
 import { composedThemeFromFiles } from './composed-theme'
 import { distinctnessReport } from './distinctness'
-import { metricGateFailures, type RenderMetrics } from './metrics'
+import { metricGateFailures, type GateFailure, type RenderMetrics } from './metrics'
 import { loadRenderShell, renderAndStoreFolds } from './render/render-folds'
 import {
   decideAfterCritique,
   dropAttemptNotes,
   endReview,
-  latestCritique,
+  iterationToRestore,
+  keptIterationNote,
   newReview,
   parseConceptReview,
   shouldRetryRender,
   withCritique,
+  withEvaluatedIteration,
   withoutRenderRetries,
   withReviewNotes,
   type ConceptReview,
@@ -60,9 +68,9 @@ import {
   type DesignRunRow,
 } from './run-store'
 import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
-import { CONCEPT_STOPPED_MID_REVIEW, hasStalledConcept, parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
+import { CONCEPT_STOPPED_MID_REVIEW, currentSiteCaption, hasStalledConcept, parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
 import { fontsNotReadyViewports } from './screenshots'
-import type { RunScreenshot } from './run-types'
+import type { RunBaseSnapshot, RunScreenshot } from './run-types'
 import { STEP_MODEL_BUDGET_MS, type StepContext, type StepOutcome } from './step-types'
 import { downloadDesignImage, removeDesignPaths } from './storage'
 import { providerRejectionMessage } from './model-call'
@@ -262,7 +270,23 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
     initialScreenshots: iteration === 0 ? result.shots : review.initialScreenshots,
   }
   let status: ConceptUnitPatch['status'] = 'refining'
-  if (rendered) {
+  let restored: RestorePatch | null = null
+  // A page wider than the screen is a hard gate the critic can't wave
+  // through: skip the (paid) critique and send the concept straight to a
+  // targeted revision naming the culprit — or, out of revisions, end its loop
+  // on its best evaluated iteration.
+  const overflow = rendered && result.metrics?.viewports.some((v) => v.overflow) ? await overflowGate(db, ctx, run, result.metrics) : null
+  if (rendered && overflow) {
+    next = withEvaluatedIteration(next, { iteration, bundle: claimed.bundle, screenshots: result.shots, metrics: result.metrics, critique: null, gateFailures: overflow.all.length })
+    next = withReviewNotes(next, [overflowSkipNote(iteration, overflow.overflow)])
+    if (iteration < run.max_revisions) {
+      next = { ...next, next: 'revise' }
+    } else {
+      restored = restorePatch(next, iteration, { evaluated: true, gateFailures: overflow.all.length })
+      next = endReview(restored?.review ?? next, 'max_revisions', restored ? [restored.note] : [])
+      status = 'ready'
+    }
+  } else if (rendered) {
     next = { ...next, next: 'critique' }
   } else {
     // Unrenderable ⇒ uncritiquable: the concept stays applicable (P3 rule).
@@ -271,25 +295,86 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
     ])
     status = 'ready'
   }
-  const patch: ConceptUnitPatch = { status, review: next, screenshots: result.shots, error: result.error }
+  const patch: ConceptUnitPatch = restored
+    ? { status, review: next, screenshots: restored.screenshots, bundle: restored.bundle, iterations: restored.iteration, error: result.error }
+    : { status, review: next, screenshots: result.shots, error: result.error }
   const settled = mode === 'initial' ? await settleInitialRender(db, run.id, claimed, patch) : await settleConceptUnit(db, run.id, claimed, patch)
   if (!settled) return { kind: 'noop', reason: 'the concept changed while rendering' }
 
-  // R8c: the concept's previous render is superseded; the iteration-0 set
-  // stays (BeforeAfter), and nothing just written is ever deleted (a retried
-  // iteration reuses the same deterministic paths).
-  const keep = new Set([...next.initialScreenshots, ...result.shots].map((s) => s.path))
-  const superseded = parseScreenshots(claimed.screenshots)
-    .map((s) => s.path)
-    .filter((p) => !keep.has(p))
-  if (superseded.length > 0) {
-    try {
-      await removeDesignPaths(db, superseded)
-    } catch (err) {
-      console.warn('[design-run] could not delete superseded renders', err)
-    }
-  }
+  // R8c: the concept's previous render is superseded; the iteration-0 set and
+  // the best iteration's renders stay (BeforeAfter / a later fallback), and
+  // nothing the row now references is deleted (a retried iteration reuses the
+  // same deterministic paths). A restore drops the renders just made.
+  await removeUnreferenced(
+    db,
+    [...parseScreenshots(claimed.screenshots), ...(review.best?.screenshots ?? []), ...(restored ? result.shots : [])],
+    next,
+    patch.screenshots ?? []
+  )
   return afterUnit(db, run.id, 'render', claimed.id)
+}
+
+// After a critique that made THIS version the best: the previous best's
+// renders are no longer referenced (unless they are the iteration-0 set).
+async function dropReplacedBest(db: Db, before: ConceptReview, after: ConceptReview, rowShots: RunScreenshot[]): Promise<void> {
+  const old = before.best
+  if (!old || old.iteration === after.best?.iteration) return
+  await removeUnreferenced(db, old.screenshots, after, rowShots)
+}
+
+// Renders no longer referenced by the concept (its row screenshots, the
+// iteration-0 set, the best snapshot) — best-effort delete.
+async function removeUnreferenced(db: Db, candidates: RunScreenshot[], review: ConceptReview, rowShots: RunScreenshot[]): Promise<void> {
+  const keep = new Set([...review.initialScreenshots, ...(review.best?.screenshots ?? []), ...rowShots].map((s) => s.path))
+  const drop = [...new Set(candidates.map((s) => s.path))].filter((p) => !keep.has(p))
+  if (drop.length === 0) return
+  try {
+    await removeDesignPaths(db, drop)
+  } catch (err) {
+    console.warn('[design-run] could not delete superseded renders', err)
+  }
+}
+
+type OverflowGate = { all: GateFailure[]; overflow: GateFailure[] }
+
+// The render's baseline-diffed gate failures when at least one is a NEW
+// overflow (the current site didn't overflow), else null. The baseline is
+// re-read: a first render may have just (re)made it.
+async function overflowGate(db: Db, ctx: StepContext, run: DesignRunRow, metrics: RenderMetrics): Promise<OverflowGate | null> {
+  const fresh = await getRun(db, ctx.sessionId, run.id)
+  const base = parseBaseSnapshot((fresh ?? run).base_snapshot)
+  const all = metricGateFailures(metrics, base.metrics ?? null)
+  const overflow = all.filter((f) => f.kind === 'overflow')
+  return overflow.length > 0 ? { all, overflow } : null
+}
+
+export function overflowSkipNote(iteration: number, overflow: GateFailure[]): string {
+  const which = iteration === 0 ? 'The first design' : `Revision ${iteration}`
+  return `${which} was not critiqued: ${overflow[0].message} — sent straight to a revision to fix it.`.slice(0, 400)
+}
+
+type RestorePatch = { review: ConceptReview; note: string; bundle: DesignBundle; screenshots: RunScreenshot[]; iteration: number }
+
+// The review + row fields that put the concept back on its best iteration,
+// or null to keep the current one (iterationToRestore; an unparseable stored
+// best is ignored).
+function restorePatch(review: ConceptReview, currentIteration: number, current: { evaluated: boolean; gateFailures: number }): RestorePatch | null {
+  const snap = iterationToRestore(review, { iteration: currentIteration, ...current })
+  if (!snap) return null
+  const parsed = parseDesignBundle(snap.bundle)
+  if (!parsed.ok) return null
+  return {
+    review: { ...review, metrics: snap.metrics, metricsIteration: snap.metrics ? snap.iteration : null },
+    note: keptIterationNote(snap, currentIteration),
+    bundle: parsed.bundle,
+    screenshots: snap.screenshots,
+    iteration: snap.iteration,
+  }
+}
+
+// The current version's new render-check failures (0 when unmeasured).
+function currentGateCount(review: ConceptReview, base: RunBaseSnapshot): number {
+  return review.metrics ? metricGateFailures(review.metrics, base.metrics ?? null).length : 0
 }
 
 // A render the live site refused with a transient 5xx (typically Vercel's 508
@@ -347,10 +432,33 @@ async function failOnRejection(db: Db, runId: string, claimed: DesignConceptRow,
   return { kind: 'failed', error: message }
 }
 
-// Ends a concept's loop (ready, latest valid bundle kept) after a model unit.
-async function endLoop(db: Db, runId: string, claimed: DesignConceptRow, unit: ReviewUnit, review: ConceptReview, outcome: ReviewOutcome, notes: string[]): Promise<StepOutcome> {
-  const done = await settleConceptUnit(db, runId, claimed, { status: 'ready', review: endReview(review, outcome, notes) })
-  return done ? afterSettle(db, runId, unit, claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
+// Ends a concept's loop (ready) after a model unit, on its BEST evaluated
+// iteration (restorePatch): `current.evaluated` = the current version was
+// critiqued / gate-skipped, so a different stored best has beaten it.
+async function endLoop(
+  db: Db,
+  runId: string,
+  claimed: DesignConceptRow,
+  unit: ReviewUnit,
+  review: ConceptReview,
+  outcome: ReviewOutcome,
+  notes: string[],
+  current: { evaluated: boolean; gateFailures: number }
+): Promise<StepOutcome> {
+  const restored = restorePatch(review, claimed.iterations, current)
+  const patch: ConceptUnitPatch = restored
+    ? {
+        status: 'ready',
+        review: endReview(restored.review, outcome, [...notes, restored.note]),
+        bundle: restored.bundle,
+        iterations: restored.iteration,
+        screenshots: restored.screenshots,
+      }
+    : { status: 'ready', review: endReview(review, outcome, notes) }
+  const done = await settleConceptUnit(db, runId, claimed, patch)
+  if (!done) return { kind: 'noop', reason: 'the concept changed meanwhile' }
+  if (restored) await removeUnreferenced(db, parseScreenshots(claimed.screenshots), patch.review, restored.screenshots)
+  return afterSettle(db, runId, unit, claimed.id)
 }
 
 export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conceptId: string, now: Now): Promise<StepOutcome> {
@@ -358,16 +466,18 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
   const s = await startModelUnit(db, ctx, runId, conceptId, 'critique')
   if (!s.ok) return s.outcome
   const { row: claimed, review, run, priorCost, capUsd } = s
-  if (priorCost >= capUsd) return endLoop(db, runId, claimed, 'critique', review, 'cost_cap', [capLoopNote(capUsd)])
+  // Endings before a critique lands: this version was not judged.
+  const unevaluated = { evaluated: false, gateFailures: currentGateCount(review, parseBaseSnapshot(run.base_snapshot)) }
+  if (priorCost >= capUsd) return endLoop(db, runId, claimed, 'critique', review, 'cost_cap', [capLoopNote(capUsd)], unevaluated)
 
   let costUsd: number | undefined
   let reportedSpend: number | undefined
   try {
     const parsed = parseDesignBundle(claimed.bundle)
-    if (!parsed.ok) return await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: the stored concept is no longer valid.'])
+    if (!parsed.ok) return await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: the stored concept is no longer valid.'], unevaluated)
     const base = parseBaseSnapshot(run.base_snapshot)
     const gathered = await gatherBriefBasics(db, ctx, run, base.pagePath, { markup: false })
-    if (!gathered.ok) return await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', [`Not critiqued: ${gathered.error}`])
+    if (!gathered.ok) return await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', [`Not critiqued: ${gathered.error}`], unevaluated)
     const b = gathered.basics
     const shots = parseScreenshots(claimed.screenshots)
     const [currentImage, desktop, mobile] = await Promise.all([
@@ -375,7 +485,7 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
       loadImage(db, shots.find((x) => x.viewport === 'desktop')),
       loadImage(db, shots.find((x) => x.viewport === 'mobile')),
     ])
-    if (!desktop) return await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: its render could not be read.'])
+    if (!desktop) return await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: its render could not be read.'], unevaluated)
     // Every other usable concept of the run (validated bundles) + the current site.
     const others = usablePriors(await listConcepts(db, runId), claimed.id)
     const gate = review.metrics ? metricGateFailures(review.metrics, base.metrics ?? null).map((f) => f.message) : []
@@ -415,10 +525,17 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
     if (result.rejection) return await failOnRejection(db, runId, claimed, review, result.rejection)
     if (!result.critique) {
       return result.stoppedReason === 'cost_cap'
-        ? await endLoop(db, runId, claimed, 'critique', review, 'cost_cap', [capLoopNote(capUsd)])
-        : await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: the critique could not be completed.'])
+        ? await endLoop(db, runId, claimed, 'critique', review, 'cost_cap', [capLoopNote(capUsd)], unevaluated)
+        : await endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: the critique could not be completed.'], unevaluated)
     }
-    const next = withCritique({ ...review, claim: null }, result.critique)
+    const next = withEvaluatedIteration(withCritique({ ...review, claim: null }, result.critique), {
+      iteration: claimed.iterations,
+      bundle: claimed.bundle,
+      screenshots: shots,
+      metrics: review.metrics,
+      critique: result.critique,
+      gateFailures: gate.length,
+    })
     const decision = decideAfterCritique({
       passed: result.critique.passed,
       gateFailures: gate.length,
@@ -427,16 +544,20 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
       capReached: costUsd >= capUsd,
     })
     if (decision.kind === 'done') {
-      return await endLoop(db, runId, claimed, 'critique', next, decision.outcome, decision.outcome === 'cost_cap' ? [capLoopNote(capUsd)] : [])
+      return await endLoop(db, runId, claimed, 'critique', next, decision.outcome, decision.outcome === 'cost_cap' ? [capLoopNote(capUsd)] : [], {
+        evaluated: true,
+        gateFailures: gate.length,
+      })
     }
     const settled = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: { ...next, next: 'revise' } })
+    if (settled) await dropReplacedBest(db, review, next, shots)
     return settled ? await afterSettle(db, runId, 'critique', claimed.id) : { kind: 'noop', reason: 'the concept changed meanwhile' }
   } catch (err) {
     if (err instanceof AfterSettleError) throw err.cause // settled: the step route errors the run
     console.error('[design-run] critique failed', err)
     const spend = costUsd ?? (reportedSpend === undefined ? undefined : priorCost + reportedSpend)
     if (spend !== undefined) await persistSpend(db, runId, spend)
-    return endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: the critique step failed.'])
+    return endLoop(db, runId, claimed, 'critique', review, 'critic_unavailable', ['Not critiqued: the critique step failed.'], unevaluated)
   }
 }
 
@@ -445,34 +566,47 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
   const s = await startModelUnit(db, ctx, runId, conceptId, 'revise')
   if (!s.ok) return s.outcome
   const { row: claimed, review, run, priorCost, capUsd } = s
-  if (priorCost >= capUsd) return endLoop(db, runId, claimed, 'revise', review, 'cost_cap', [capLoopNote(capUsd)])
+  // A revise only ever follows this version's critique (or its overflow skip).
+  const evaluated = { evaluated: true, gateFailures: currentGateCount(review, parseBaseSnapshot(run.base_snapshot)) }
+  if (priorCost >= capUsd) return endLoop(db, runId, claimed, 'revise', review, 'cost_cap', [capLoopNote(capUsd)], evaluated)
   const round = claimed.iterations + 1
 
   let costUsd: number | undefined
   let reportedSpend: number | undefined
   try {
     const parsed = parseDesignBundle(claimed.bundle)
-    if (!parsed.ok) return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', ['Revision skipped: the stored concept is no longer valid.'])
+    if (!parsed.ok) return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', ['Revision skipped: the stored concept is no longer valid.'], evaluated)
     const base = parseBaseSnapshot(run.base_snapshot)
     const gathered = await gatherBriefBasics(db, ctx, run, base.pagePath, { markup: true })
-    if (!gathered.ok) return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision skipped: ${gathered.error}`])
+    if (!gathered.ok) return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision skipped: ${gathered.error}`], evaluated)
     const b = gathered.basics
     const shots = parseScreenshots(claimed.screenshots)
-    const [desktop, mobile] = await Promise.all([
+    const [desktop, mobile, beforeDesktop, beforeMobile] = await Promise.all([
       loadImage(db, shots.find((x) => x.viewport === 'desktop')),
       loadImage(db, shots.find((x) => x.viewport === 'mobile')),
+      loadImage(db, base.screenshots.find((x) => x.viewport === 'desktop')),
+      loadImage(db, base.screenshots.find((x) => x.viewport === 'mobile')),
     ])
+    // The current site's renders (WS-B, R2 I1a): the reviser sees the "before"
+    // it must improve on, in the shared (cached) parts of every revision.
+    const beforeImages: PromptImage[] = [
+      ...(beforeDesktop ? [{ caption: currentSiteCaption(base.pagePath), adminText: null, bytes: beforeDesktop, mediaType: 'image/webp' }] : []),
+      ...(beforeDesktop && beforeMobile ? [{ caption: currentSiteCaption(base.pagePath, 'mobile'), adminText: null, bytes: beforeMobile, mediaType: 'image/webp' }] : []),
+    ]
     const others = usablePriors(await listConcepts(db, runId), claimed.id)
     const gate = review.metrics ? metricGateFailures(review.metrics, base.metrics ?? null).map((f) => f.message) : []
     const result = await reviseConcept({
       prompt: buildRevisePrompt({
         ...sharedPromptArgs(b, run, base.pagePath, []),
+        beforeImages,
         position: claimed.position,
         conceptCount: run.concept_count,
         round,
         bundle: parsed.bundle,
         others,
-        critique: latestCritique(review),
+        // Only a critique OF this version (an overflow-skipped version has
+        // none — an older critique would describe a different design).
+        critique: [...review.critiques].reverse().find((c) => c.iteration === claimed.iterations) ?? null,
         gateFailures: gate,
         desktop,
         mobile,
@@ -498,14 +632,14 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
     await persistSpend(db, runId, costUsd) // BEFORE the concept is settled
     if (result.rejection) return await failOnRejection(db, runId, claimed, review, result.rejection)
     if (!result.concept) {
-      if (result.stoppedReason === 'cost_cap') return await endLoop(db, runId, claimed, 'revise', review, 'cost_cap', [capLoopNote(capUsd)])
+      if (result.stoppedReason === 'cost_cap') return await endLoop(db, runId, claimed, 'revise', review, 'cost_cap', [capLoopNote(capUsd)], evaluated)
       const why =
         result.errors.length > 0
           ? revisionRejectionReason(result.errors)
           : result.stoppedReason === 'deadline'
             ? 'it ran out of time'
             : 'there was no usable answer'
-      return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision ${round} was not usable (${why}) — kept the previous version.`])
+      return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision ${round} was not usable (${why}) — kept the previous version.`], evaluated)
     }
     const nextReview = withReviewNotes(
       { ...withoutRenderRetries(review), claim: null, next: 'render', metrics: null, metricsIteration: null },
@@ -518,7 +652,7 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
     console.error('[design-run] revise failed', err)
     const spend = costUsd ?? (reportedSpend === undefined ? undefined : priorCost + reportedSpend)
     if (spend !== undefined) await persistSpend(db, runId, spend)
-    return endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', ['Revision skipped: the revision step failed.'])
+    return endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', ['Revision skipped: the revision step failed.'], evaluated)
   }
 }
 

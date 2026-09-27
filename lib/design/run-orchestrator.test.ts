@@ -225,6 +225,19 @@ describe('runDesignStep — later concepts', () => {
     expect(last.patch.baseSnapshot?.notes[0]).toBe('earlier note') // appended, never replaced
   })
 
+  it('also shows the mobile "before" (WS-B) while the image budget fits every admin reference', async () => {
+    const MOBILE_SHOT = { ...CURRENT_SHOT, viewport: 'mobile', path: CURRENT_SHOT.path.replace('desktop', 'mobile'), width: 390 }
+    m.getRun.mockResolvedValue(
+      makeRunRow({ status: 'generating', input_ids: [IID], cost_usd: 0.5, base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: [CURRENT_SHOT, MOBILE_SHOT], notes: [] }) })
+    )
+    m.listConcepts.mockResolvedValue([pending(0)])
+    await runDesignStep(CTX)
+    expect(m.download).toHaveBeenCalledWith({}, MOBILE_SHOT.path)
+    expect(promptText()).toContain('The client\'s CURRENT design of / (mobile, 390 px)')
+    const parts = (m.generateConcept.mock.calls[0][0] as { prompt: { parts: { type: string }[] } }).prompt.parts
+    expect(parts.filter((p) => p.type === 'image')).toHaveLength(2)
+  })
+
   it('a rejected position is kept and generation continues at the next position', async () => {
     m.listConcepts.mockResolvedValue([pending(0)])
     m.generateConcept.mockResolvedValue({ concept: null, errors: ['palette.primary: must be a #rrggbb hex colour'], costUsd: 0.4, estimatedUsd: 0, notes: [], stoppedReason: 'no_output' })

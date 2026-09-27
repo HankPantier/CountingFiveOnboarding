@@ -38,6 +38,11 @@ describe('parseChatRequest', () => {
     const r = parseChatRequest({ text: '  calmer cards ', attachmentIds: [A1, A1.toUpperCase()], page: '/services' })
     expect(r).toEqual({ ok: true, request: { text: 'calmer cards', attachmentIds: [A1], page: '/services' } })
   })
+  it('accepts an optional concept id ("Fix in chat"), lower-cased; rejects a non-uuid', () => {
+    expect(parseChatRequest({ text: 'fix it', conceptId: A1.toUpperCase() })).toEqual({ ok: true, request: { text: 'fix it', attachmentIds: [], page: null, conceptId: A1 } })
+    expect(parseChatRequest({ text: 'fix it', conceptId: 'c1' }).ok).toBe(false)
+    expect(parseChatRequest({ text: 'fix it', conceptId: null })).toEqual({ ok: true, request: { text: 'fix it', attachmentIds: [], page: null } })
+  })
   it('rejects empty/oversized text, bad ids, too many images and odd pages', () => {
     expect(parseChatRequest({ text: '   ' }).ok).toBe(false)
     expect(parseChatRequest({ text: 'x'.repeat(CHAT_TEXT_MAX + 1) }).ok).toBe(false)

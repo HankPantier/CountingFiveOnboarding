@@ -42,6 +42,14 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // - Task 11 (2026-09-26): ONE added TOKEN CONTRACT line — small action text
 //   is auto-corrected (--color-action-text / --color-action-on-primary at
 //   4.5:1), so the model can pick a bold action colour. Nothing else moved.
+// - WS-B layout guards (2026-09-27): the CSS RULES "Forbidden" line gains ONE
+//   clause at its end — viewport units in horizontal offsets / widths and
+//   negative offsets beyond -200px / -12.5rem / -50% (the authoring-time
+//   layoutGuardErrors rules that stop a Harbor-Light-style 2800 px page).
+//   Nothing else moved.
+// - WS-B fix round (2026-09-27): that same clause now names the horizontal
+//   translate and horizontal-padding rules and says the negative-offset limit
+//   is horizontal only (vertical negative margins allowed). Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -120,6 +128,11 @@ describe('buildConceptPrompt (dynamic parts)', () => {
     expect(all).toContain('Warm and direct')
     expect(all).toContain('Calm, trustworthy, modern.')
     expect(all).not.toContain('version: alpha')
+    // WS-B: possibly-outdated, fenced notes — never an 'intended direction'.
+    expect(all).toContain('BRAND NOTES (from the site\'s content/design.md — may be outdated: wherever they disagree with the site\'s current design as this prompt gives it elsewhere')
+    expect(all).not.toContain('in the CURRENT DESIGN are authoritative') // neutral: the critic + chat prompts name their sections differently
+    expect(all).toContain('<<<BRAND_NOTES\n## Overview')
+    expect(all).not.toContain('INTENDED DESIGN DIRECTION')
   })
   it('fences the admin brief, admin input notes and page HTML as data', () => {
     expect(all).toContain(fenceData('ADMIN_BRIEF', 'Make it feel like a boutique law library.'))

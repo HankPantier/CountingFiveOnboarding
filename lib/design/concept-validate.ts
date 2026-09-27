@@ -5,7 +5,11 @@
 //   2. zod (parseDesignBundle)
 //   3. capability tier (fonts below L2 / style below L3 → current, with a note)
 //   4. palette freedom "keep" → the current palette, with a note
-//   5. render the repo files with removeLegacy (sanitizes every CSS fragment)
+//   5. render the repo files with removeLegacy (sanitizes every CSS fragment),
+//      then the authoring-time layout guards (layoutGuardErrors: no viewport
+//      units in horizontal offsets / widths, no large negative offsets) on
+//      every fragment — unless the caller checks only what it just wrote
+//      (the design chat: layoutGuards 'none', it guards its edit itself)
 //   6. checkThemeContrast (the same hard gate apply uses). The action-colour
 //      pairs are NOT checked here: small action text is auto-corrected in
 //      theme.css, and the large-text pairs (checkActionContrast) are Theme
@@ -22,6 +26,7 @@ import {
   type DesignBundle,
 } from './bundle'
 import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from './bundle-files'
+import { layoutGuardErrors } from './css-sanitizer'
 import type { PriorConcept } from './brief'
 import { enforceCapabilities } from './capabilities'
 import { conceptConsistencyNotes } from './concept-consistency'
@@ -35,6 +40,10 @@ export type ConceptContext = {
   paletteFreedom: PaletteFreedom
   draftFiles: RepoThemeFiles
   model: string
+  // 'all' (default): every CSS fragment must pass layoutGuardErrors. 'none':
+  // the caller guards the CSS it authored itself (the chat edits one fragment
+  // of a bundle that may carry older, already-applied CSS).
+  layoutGuards?: 'all' | 'none'
 }
 export type ValidConcept = { bundle: DesignBundle; files: RenderedThemeFiles; notes: string[] }
 export type ConceptValidation = { ok: true; concept: ValidConcept } | { ok: false; errors: string[] }
@@ -96,6 +105,10 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
 
   const rendered = bundleToRepoFiles(bundle, ctx.draftFiles, { removeLegacy: true })
   if (!rendered.ok) return { ok: false, errors: rendered.errors }
+  if ((ctx.layoutGuards ?? 'all') === 'all') {
+    const layout = cssLayoutErrors(rendered.css)
+    if (layout.length > 0) return { ok: false, errors: layout }
+  }
 
   const brand = JSON.parse(rendered.files.brandText) as BrandJson
   const contrast = checkThemeContrast(brand)
@@ -103,6 +116,17 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
     return { ok: false, errors: contrast.map((f) => `contrast ${formatContrastFailure(f)}`) }
   }
   return { ok: true, concept: { bundle: { ...bundle, css: rendered.css }, files: rendered.files, notes } }
+}
+
+// layoutGuardErrors over every fragment of a (sanitized) bundle css, each
+// prefixed with its fragment like the sanitizer's own errors.
+export function cssLayoutErrors(css: DesignBundle['css']): string[] {
+  const out: string[] = []
+  if (css.global?.trim()) out.push(...layoutGuardErrors(css.global).map((e) => `css.global: ${e}`))
+  for (const [key, body] of Object.entries(css.blocks)) {
+    if (body?.trim()) out.push(...layoutGuardErrors(body).map((e) => `css.blocks.${key}: ${e}`))
+  }
+  return out
 }
 
 // P7: the concept's self-consistency notes (concept-consistency.ts) appended
