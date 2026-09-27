@@ -20,6 +20,7 @@ import { parseNavJson } from '@/lib/editor/nav-config'
 import { toPathname, type Move } from '@/lib/editor/nav-urls'
 import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
 import { reconcileDirtyAfterSave } from '@/lib/ui/dirty-buffers'
+import { readRedirectWarnings, redirectWarningMessage } from '@/lib/editor/redirect-warnings'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -367,12 +368,10 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
-      const data = (await res.json()) as { commitSha: string; blobSha: string; redirectWarnings?: string[] }
+      const data = (await res.json()) as { commitSha: string; blobSha: string }
       // The nav save kept redirects.csv rows that still shadow a real page
-      // (never removed automatically): tell the admin.
-      if (data.redirectWarnings?.length) {
-        setError(`Saved. Redirect check: ${data.redirectWarnings.join(' ')}`)
-      }
+      // (never removed automatically): shown once the save has settled.
+      const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
       // Always adopt the new blob sha (the saved content is now the base), but
       // only clear the dirty buffer if it still equals what we sent — typing
       // that happened while the save was in flight stays dirty.
@@ -387,6 +386,7 @@ export default function EditorShell({
         await refreshTree()
       }
       await refreshStatus()
+      if (redirectNotice) setError(redirectNotice)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -477,6 +477,7 @@ export default function EditorShell({
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
       const data = (await res.json()) as { commitSha: string; blobSha: string }
+      const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
       setLoaded((prev) => new Map(prev).set(conflict.path, { content: mine, sha: data.blobSha }))
       setDirty((prev) => reconcileDirtyAfterSave(prev, conflict.path, mine))
       setConflict(null)
@@ -485,6 +486,7 @@ export default function EditorShell({
         await refreshTree()
       }
       await refreshStatus()
+      if (redirectNotice) setError(redirectNotice)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
     } finally {
@@ -715,10 +717,8 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string; message?: string }
         throw new Error(data.error === 'stale_sha' ? (data.message ?? 'File changed on the server.') : (data.error ?? `Move failed: ${res.status}`))
       }
-      const data = (await res.json()) as { toPath: string; redirectWarnings?: string[] }
-      if (data.redirectWarnings?.length) {
-        setError(`Moved. Redirect check: ${data.redirectWarnings.join(' ')}`)
-      }
+      const data = (await res.json()) as { toPath: string }
+      const redirectNotice = redirectWarningMessage('Moved', readRedirectWarnings(data))
       const oldPath = selectedPath
       setLoaded((prev) => {
         const m = new Map(prev)
@@ -734,6 +734,8 @@ export default function EditorShell({
       await refreshStatus()
       await select(data.toPath)
       setPublishResult('Moved — Publish to update the live site.')
+      // After select(), which clears the banner on load.
+      if (redirectNotice) setError(redirectNotice)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Move failed')
     } finally {
@@ -755,6 +757,7 @@ export default function EditorShell({
     setPublishResult(null)
     setBulkStatus(`Moving 0 of ${paths.length}…`)
     const failures: { name: string; reason: string }[] = []
+    const bulkRedirectWarnings: string[] = []
     let done = 0
     for (const p of paths) {
       const name = p.split('/').pop() ?? p
@@ -788,6 +791,8 @@ export default function EditorShell({
               ? (data.message ?? 'changed on the server')
               : (data.error ?? `HTTP ${res.status}`)
           failures.push({ name, reason })
+        } else {
+          bulkRedirectWarnings.push(...readRedirectWarnings(await res.json().catch(() => ({}))))
         }
       } catch {
         failures.push({ name, reason: 'network error' })
@@ -804,17 +809,19 @@ export default function EditorShell({
     await refreshStatus()
     setBulkStatus(null)
     setPageActioning(false)
+    const bulkNotice = redirectWarningMessage('Redirects', bulkRedirectWarnings)
     if (failures.length > 0) {
       setError(
         `Moved ${paths.length - failures.length} of ${paths.length}. Failed: ${failures
           .map((f) => `${f.name} (${f.reason})`)
-          .join('; ')}`
+          .join('; ')}` + (bulkNotice ? ` ${bulkNotice}` : '')
       )
       return false
     }
     setPublishResult(
       `Moved ${paths.length} ${dest.type === 'resources' ? 'to Resources' : 'under ' + dest.parentUrl} — Publish to update the live site.`
     )
+    if (bulkNotice) setError(redirectWarningMessage(`Moved ${paths.length}`, bulkRedirectWarnings))
     return true
   }
 
@@ -865,6 +872,7 @@ export default function EditorShell({
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
       const data = (await res.json()) as { commitSha: string; blobSha: string; moved: number }
+      const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
       setLoaded((prev) => new Map(prev).set(NAV_PATH, { content: contents, sha: data.blobSha }))
       setNavMoves([])
 
@@ -889,6 +897,8 @@ export default function EditorShell({
         await refreshTree()
         await refreshStatus()
       }
+      // After any select(), which clears the banner on load.
+      if (redirectNotice) setError(redirectNotice)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Navigation update failed')
