@@ -52,6 +52,11 @@ export type OrphanSweepDeps = {
   listDeadRuns: (cutoffIso: string, limit: number) => Promise<DeadRun[]>
   // Storage paths design versions of this session use as screenshots.
   versionPaths: (sessionId: string) => Promise<Set<string>>
+  // Re-read right before deleting: true only while the run is STILL the dead
+  // run we listed (same error/cancelled status, same updated_at). A Retry
+  // moves it out of 'error' (and restamps it), so its renders are never
+  // removed from under a resumed run.
+  runStillDead: (run: DeadRun) => Promise<boolean>
   // Stamp the run's renders as swept (CAS on status + updated_at; false = the
   // run changed, e.g. a Retry, so it is left alone).
   markRunSwept: (run: DeadRun, at: string) => Promise<boolean>
@@ -169,7 +174,10 @@ export async function sweepDeadRunRenders(deps: OrphanSweepDeps, now: number, bu
       const keep = files.length > 0 ? await deps.versionPaths(run.sessionId) : new Set<string>()
       const drop = files.filter((p) => !keep.has(p))
       const room = budget - removed
-      if (drop.length > 0) await deps.remove(drop.slice(0, room))
+      if (drop.length > 0) {
+        if (!(await deps.runStillDead(run))) continue
+        await deps.remove(drop.slice(0, room))
+      }
       removed += Math.min(drop.length, room)
       // Stamp only a fully emptied folder; a partial one is finished next time.
       if (drop.length <= room) await deps.markRunSwept(run, at)
@@ -205,6 +213,16 @@ export function designStorageSweepDeps(supabase: SupabaseClient<Database>): Orph
       return (data ?? []).map((r) => ({ id: r.id, sessionId: r.session_id, status: r.status, updatedAt: r.updated_at, baseSnapshot: r.base_snapshot }))
     },
     versionPaths: (sessionId) => versionScreenshotPathSet(supabase, sessionId),
+    runStillDead: async (run) => {
+      const { data, error } = await supabase.from('design_runs').select('status, updated_at').eq('id', run.id).maybeSingle()
+      if (error) throw new Error(`dead run re-read failed: ${error.message}`)
+      return (
+        !!data &&
+        (DEAD_RUN_STATUSES as readonly string[]).includes(data.status) &&
+        data.status === run.status &&
+        data.updated_at === run.updatedAt
+      )
+    },
     markRunSwept: async (run, at) => {
       // updated_at is NOT bumped: the stamp is bookkeeping, not activity.
       const snapshot = { ...(isObject(run.baseSnapshot) ? run.baseSnapshot : {}), rendersSweptAt: at }

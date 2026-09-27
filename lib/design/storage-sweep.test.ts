@@ -35,6 +35,7 @@ function deps(tree: Record<string, StorageEntry[]>, referenced: string[], over: 
     referencedAttachmentIds: async () => new Set(referenced),
     listDeadRuns: async () => [],
     versionPaths: async () => new Set(),
+    runStillDead: async () => true,
     markRunSwept: async (run) => {
       swept.push(run.id)
       return true
@@ -152,6 +153,41 @@ describe('sweepDeadRunRenders', () => {
     expect(limit).toBeGreaterThan(0)
   })
 
+  it('a run a Retry revived between listing and deleting keeps its renders (re-read right before remove)', async () => {
+    const order: string[] = []
+    const { d, removed, swept } = deps({ [prefix]: [{ name: 'concept-0-r0-desktop.webp', id: 'b' }] }, [], {
+      listDeadRuns: async () => [dead],
+      runStillDead: async (run) => {
+        order.push(`check:${run.id}`)
+        return false
+      },
+    })
+    expect(await sweepDeadRunRenders(d, NOW)).toBe(0)
+    expect(order).toEqual([`check:${RUN}`])
+    expect(removed).toEqual([])
+    expect(swept).toEqual([])
+  })
+
+  it('checks the run is still dead immediately before each remove', async () => {
+    const calls: string[] = []
+    const { d } = deps({ [prefix]: [{ name: 'a.webp', id: 'a' }] }, [], {
+      listDeadRuns: async () => [dead],
+      versionPaths: async () => {
+        calls.push('versions')
+        return new Set()
+      },
+      runStillDead: async () => {
+        calls.push('check')
+        return true
+      },
+      remove: async () => {
+        calls.push('remove')
+      },
+    })
+    await sweepDeadRunRenders(d, NOW)
+    expect(calls).toEqual(['versions', 'check', 'remove'])
+  })
+
   it('an already-empty folder is only stamped (no remove call)', async () => {
     const { d, removed, swept } = deps({}, [], { listDeadRuns: async () => [dead] })
     expect(await sweepDeadRunRenders(d, NOW)).toBe(0)
@@ -181,6 +217,24 @@ describe('sweepDeadRunRenders', () => {
 })
 
 describe('designStorageSweepDeps (service-role queries)', () => {
+  it('runStillDead: only the same dead status + updated_at counts', async () => {
+    const run = { id: RUN, sessionId: SID, status: 'error', updatedAt: 'u1', baseSnapshot: null }
+    const f = fakeSupabase({
+      design_runs: [
+        { data: { status: 'error', updated_at: 'u1' } },
+        { data: { status: 'queued', updated_at: 'u2' } },
+        { data: { status: 'error', updated_at: 'u2' } },
+        { data: null },
+      ],
+    })
+    const deps = designStorageSweepDeps(f.client)
+    expect(await deps.runStillDead(run)).toBe(true)
+    expect(await deps.runStillDead(run)).toBe(false)
+    expect(await deps.runStillDead(run)).toBe(false)
+    expect(await deps.runStillDead(run)).toBe(false)
+    expect(f.opsFor('design_runs')).toContainEqual(['eq', 'id', RUN])
+  })
+
   it('lists only unswept error/cancelled runs older than the cutoff, oldest first, bounded', async () => {
     const f = fakeSupabase({ design_runs: [{ data: [{ id: RUN, session_id: SID, status: 'error', updated_at: 'u', base_snapshot: null }] }] })
     const runs = await designStorageSweepDeps(f.client).listDeadRuns('2026-09-18T00:00:00Z', 10)
