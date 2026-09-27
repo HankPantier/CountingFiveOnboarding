@@ -9,6 +9,7 @@
 //   3. site.config.ts siteUrl on MAIN. Before DNS cutover that is the client's
 //      OLD site; the shell builders refuse it (no Revaltus marker → 422).
 // Never client input.
+import { after } from 'next/server'
 import { createServerClient } from '@/lib/supabase/server'
 import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
 import { deriveVercelPreviewUrl } from './vercel-alias'
@@ -75,6 +76,32 @@ export async function cacheVercelPreviewUrl(args: { jobId: string; githubRepo: s
   return url
 }
 
+export const DERIVE_DEADLINE_MS = 6_000
+const TIMED_OUT = Symbol('timed-out')
+
+async function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms)
+  })
+  try {
+    return await Promise.race([p, deadline])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+// Keep a timed-out lookup alive past the response (Vercel freezes the
+// function otherwise). Outside a request scope (scripts, tests) after()
+// throws; the promise then simply runs on in-process.
+function keepAliveAfterResponse(task: Promise<unknown>): void {
+  try {
+    after(() => task.then(() => undefined))
+  } catch {
+    // not in a request scope
+  }
+}
+
 export async function resolvePreviewSiteUrl(args: { jobId: string; githubRepo: string }): Promise<ResolvedPreviewUrl> {
   const supabase = createServerClient()
   const { data: job, error } = await supabase
@@ -86,8 +113,15 @@ export async function resolvePreviewSiteUrl(args: { jobId: string; githubRepo: s
   // cutover that is the client's OLD live site. Callers map throws to 5xx.
   if (error) throw new Error(`content_jobs preview_url read failed: ${error.message}`)
   if (job?.preview_url) return { url: job.preview_url, source: 'override' }
-  const derived = await cacheVercelPreviewUrl(args)
-  if (derived) return { url: derived, source: 'vercel' }
+  // Hot path (Theme shell, render, capability read): the first lookup can be
+  // several GitHub calls + a site fetch. Past the deadline, fall back to the
+  // siteUrl for THIS request and let the lookup + cache write finish in the
+  // background; a timeout is not a miss (never negative-cached), so the next
+  // request uses the cached result.
+  const task = cacheVercelPreviewUrl(args)
+  const derived = await withDeadline(task, DERIVE_DEADLINE_MS)
+  if (derived === TIMED_OUT) keepAliveAfterResponse(task)
+  else if (derived) return { url: derived, source: 'vercel' }
   return { url: await readSiteConfigSiteUrl(args.githubRepo, MAIN_BRANCH), source: 'config' }
 }
 

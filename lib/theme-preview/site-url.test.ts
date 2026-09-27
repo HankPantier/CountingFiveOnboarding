@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 
 const state: {
   result: { data: unknown; error: { message: string } | null }
@@ -31,9 +31,11 @@ vi.mock('@/lib/github/repo-files', () => ({
   MAIN_BRANCH: 'main',
   readSiteConfigSiteUrl: () => readSiteConfigSiteUrl(),
 }))
+const afterCbs: (() => Promise<void>)[] = []
+vi.mock('next/server', () => ({ after: (cb: () => Promise<void>) => afterCbs.push(cb) }))
 vi.mock('./vercel-alias', () => ({ deriveVercelPreviewUrl: (repo: string) => derive(repo) }))
 
-import { DERIVE_RETRY_MS, __resetPreviewUrlCacheForTests, cacheVercelPreviewUrl, getPreviewSiteUrl, resolvePreviewSiteUrl } from './site-url'
+import { DERIVE_DEADLINE_MS, DERIVE_RETRY_MS, __resetPreviewUrlCacheForTests, cacheVercelPreviewUrl, getPreviewSiteUrl, resolvePreviewSiteUrl } from './site-url'
 
 const ARGS = { jobId: 'j', githubRepo: 'o/r' }
 
@@ -85,6 +87,63 @@ describe('resolvePreviewSiteUrl — fallback order', () => {
     await expect(getPreviewSiteUrl(ARGS)).rejects.toThrow(/preview_url read failed/)
     expect(derive).not.toHaveBeenCalled()
     expect(readSiteConfigSiteUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe('resolvePreviewSiteUrl — lookup deadline', () => {
+  beforeEach(() => {
+    __resetPreviewUrlCacheForTests()
+    readSiteConfigSiteUrl.mockClear()
+    derive.mockReset()
+    state.updates = []
+    state.updateError = null
+    afterCbs.length = 0
+    state.result = { data: { preview_url: null }, error: null }
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('falls back to siteUrl after the deadline, finishes the lookup + cache write in after(), and does not negative-cache', async () => {
+    let release: (v: string) => void = () => {}
+    derive.mockReturnValue(new Promise<string>((r) => (release = r)))
+    const p = resolvePreviewSiteUrl(ARGS)
+    await vi.advanceTimersByTimeAsync(DERIVE_DEADLINE_MS)
+    await expect(p).resolves.toEqual({ url: 'https://old-live.example.com', source: 'config' })
+    expect(afterCbs).toHaveLength(1)
+
+    release('https://slow.vercel.app/')
+    await afterCbs[0]()
+    expect(state.updates.map((u) => u.values)).toEqual([expect.objectContaining({ preview_url: 'https://slow.vercel.app/' })])
+    // The next request (DB row still null here) uses the memoized hit — no
+    // second derivation, no fallback.
+    await expect(resolvePreviewSiteUrl(ARGS)).resolves.toEqual({ url: 'https://slow.vercel.app/', source: 'vercel' })
+    expect(derive).toHaveBeenCalledTimes(1)
+  })
+
+  it('a lookup that finishes inside the deadline is used directly', async () => {
+    derive.mockResolvedValue('https://fast.vercel.app/')
+    const p = resolvePreviewSiteUrl(ARGS)
+    await vi.advanceTimersByTimeAsync(10)
+    await expect(p).resolves.toEqual({ url: 'https://fast.vercel.app/', source: 'vercel' })
+    expect(afterCbs).toHaveLength(0)
+  })
+
+  it('a timeout is not recorded as a miss: the next request joins the still-running lookup', async () => {
+    let release: (v: string) => void = () => {}
+    derive.mockReturnValue(new Promise<string>((r) => (release = r)))
+    const p = resolvePreviewSiteUrl(ARGS)
+    await vi.advanceTimersByTimeAsync(DERIVE_DEADLINE_MS)
+    await p
+    // A negative-cached miss would return at once with no background task;
+    // instead the second request waits on the same lookup again.
+    const q = resolvePreviewSiteUrl(ARGS)
+    await vi.advanceTimersByTimeAsync(DERIVE_DEADLINE_MS)
+    await expect(q).resolves.toMatchObject({ source: 'config' })
+    expect(afterCbs).toHaveLength(2)
+    expect(derive).toHaveBeenCalledTimes(1)
+    release('https://later.vercel.app/')
+    await Promise.all(afterCbs.map((cb) => cb()))
+    await expect(resolvePreviewSiteUrl(ARGS)).resolves.toEqual({ url: 'https://later.vercel.app/', source: 'vercel' })
   })
 })
 
