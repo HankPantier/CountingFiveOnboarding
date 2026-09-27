@@ -8,6 +8,7 @@ import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import type { FlagsPatch } from './ThemeControls'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
+import { fetchShellWithRetry, type ShellFetchResult } from '@/lib/theme-preview/shell-fetch'
 
 // Regenerate theme.css client-side (generateThemeCss is pure) so a color/font
 // pick re-skins the preview instantly, before the draft commit round-trips.
@@ -94,23 +95,44 @@ export default function ThemeStudio({
   }, [sessionId])
 
   // Fetch the real-site shell (expensive external fetch) + theme sources. No-op
-  // with a clear message when no preview URL is set yet.
-  const loadPreview = useCallback(async () => {
-    setError(null)
-    setWrongSite(false)
-    setShellHtml(null)
-    const shellRes = await fetch(`/api/edit/${sessionId}/theme/shell`)
-    if (!shellRes.ok) {
-      const data = (await shellRes.json().catch(() => ({}))) as { error?: string; code?: string }
-      // 422 not_revaltus: the URL is the client's old site (pre-cutover), not
-      // the Revaltus build — shown as a fix-the-URL notice, never a blank frame.
-      if (data.code === 'not_revaltus') setWrongSite(true)
-      throw new Error(data.error ?? `Failed to load the preview (${shellRes.status})`)
-    }
-    const shell = (await shellRes.json()) as { shellHtml: string }
-    setShellHtml(shell.shellHtml)
-    await loadSources()
-  }, [sessionId, loadSources])
+  // with a clear message when no preview URL is set yet. `source` is the
+  // preview URL's origin (PreviewUrlInfo.source): unless it is an operator
+  // override, a 422 not_revaltus is retried once ~3 s later, since it usually
+  // means a cold Vercel-address lookup timed out and fell back to the old
+  // site while the address was being cached (see lib/theme-preview/shell-fetch.ts).
+  const loadPreview = useCallback(
+    async (source: PreviewUrlInfo['source'] | undefined) => {
+      setError(null)
+      setWrongSite(false)
+      setShellHtml(null)
+      const fetchShell = async (): Promise<ShellFetchResult> => {
+        const res = await fetch(`/api/edit/${sessionId}/theme/shell`)
+        if (res.ok) return { ok: true, shellHtml: ((await res.json()) as { shellHtml: string }).shellHtml }
+        const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string }
+        return { ok: false, status: res.status, error: data.error ?? `Failed to load the preview (${res.status})`, code: data.code }
+      }
+      const { result, retried } = await fetchShellWithRetry(fetchShell, source)
+      if (!result.ok) {
+        // 422 not_revaltus: the URL is the client's old site (pre-cutover), not
+        // the Revaltus build — shown as a fix-the-URL notice, never a blank frame.
+        if (result.code === 'not_revaltus') setWrongSite(true)
+        throw new Error(result.error)
+      }
+      setShellHtml(result.shellHtml)
+      // A retry that succeeded used a newly cached Vercel address: refresh the
+      // URL bar so it shows what is actually previewed.
+      if (retried) {
+        const res = await fetch(`/api/edit/${sessionId}/theme/preview-url`)
+        if (res.ok) {
+          const pi = (await res.json()) as PreviewUrlInfo
+          setInfo(pi)
+          setUrlInput(pi.effectiveUrl ?? '')
+        }
+      }
+      await loadSources()
+    },
+    [sessionId, loadSources]
+  )
 
   // Initial load: resolve the preview URL, then load the preview if one exists.
   const init = useCallback(async () => {
@@ -121,7 +143,7 @@ export default function ThemeStudio({
       const pi = (await res.json()) as PreviewUrlInfo
       setInfo(pi)
       setUrlInput(pi.effectiveUrl ?? '')
-      if (pi.effectiveUrl) await loadPreview()
+      if (pi.effectiveUrl) await loadPreview(pi.source)
       else setError('No preview URL set. Enter the site URL above (e.g. https://acme.vercel.app) and load it.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
@@ -153,7 +175,7 @@ export default function ThemeStudio({
         if (!res.ok) throw new Error(data.error ?? `Failed to save (${res.status})`)
         setInfo(data)
         setUrlInput(data.effectiveUrl ?? '')
-        if (data.effectiveUrl) await loadPreview()
+        if (data.effectiveUrl) await loadPreview(data.source)
         else {
           setShellHtml(null)
           setError('No preview URL set. Enter the site URL above and load it.')
