@@ -391,7 +391,15 @@ ${view().visible}
             // identical write would be a pointless empty commit.
             // Phrase removals also reach the hidden trailer (a firm rename must
             // update the JSON-LD), but never its headings/labels, and never dashes.
-            const nextTrailer = applyRemovalsToTrailer(trailer, removals, ci)
+            // The JSON-LD must still parse with the same keys, else the trailer
+            // change is dropped. Trailer hits count toward `applied`, so the
+            // model's report matches what was committed.
+            const trailerRes = applyRemovalsToTrailer(trailer, removals, ci)
+            const nextTrailer = trailerRes.trailer
+            const applied = res.applied.map((a, i) => ({
+              find: a.find,
+              removed: a.removed + (trailerRes.applied[i]?.removed ?? 0),
+            }))
             const changed = res.next !== visible || nextTrailer !== trailer
             if (changed) {
               try {
@@ -430,7 +438,7 @@ ${view().visible}
             return {
               success: true,
               ...(changed ? {} : { noChange: true }),
-              applied: res.applied,
+              applied,
               dashesStripped: res.dashesStripped,
               residual: res.residual,
               firmWide,

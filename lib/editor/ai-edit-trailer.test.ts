@@ -75,15 +75,28 @@ describe('remove_text stripDashes scrubs body prose only', () => {
 })
 
 describe('applyRemovalsToTrailer', () => {
-  it('lets a firm rename reach the hidden JSON-LD', () => {
-    const next = applyRemovalsToTrailer(TRAILER, [{ find: 'Accord Advisors', replace: 'Accord CPAs' }], false)
-    expect(next).toContain('{"name":"Accord CPAs"}')
-    expect(next).toContain('## SEO & AIO Metadata')
+  it('lets a firm rename reach the hidden JSON-LD and counts the trailer hits', () => {
+    const r = applyRemovalsToTrailer(TRAILER, [{ find: 'Accord Advisors', replace: 'Accord CPAs' }], false)
+    expect(r.trailer).toContain('{"name":"Accord CPAs"}')
+    expect(r.trailer).toContain('## SEO & AIO Metadata')
+    expect(r.applied).toEqual([{ find: 'Accord Advisors', removed: 2 }])
+  })
+
+  it('discards a rename that injects quotes (the JSON-LD would stop parsing)', () => {
+    const r = applyRemovalsToTrailer(TRAILER, [{ find: 'Accord Advisors', replace: 'Accord "CPA" Advisors' }], false)
+    expect(r.trailer).toBe(TRAILER)
+    expect(r.applied).toEqual([{ find: 'Accord Advisors', removed: 0 }])
+  })
+
+  it('discards removing a JSON-LD key ("name"), which changes the key set', () => {
+    const r = applyRemovalsToTrailer(TRAILER, [{ find: 'name' }], false)
+    expect(r.trailer).toBe(TRAILER)
+    expect(r.applied[0].removed).toBe(0)
   })
 
   it('discards removals that would change a heading, rule or label line', () => {
-    expect(applyRemovalsToTrailer(TRAILER, [{ find: 'SEO & AIO Metadata' }], false)).toBe(TRAILER)
-    expect(applyRemovalsToTrailer(TRAILER, [{ find: 'Internal Links' }], false)).toBe(TRAILER)
-    expect(applyRemovalsToTrailer(TRAILER, [{ find: '—', replace: ',' }], false)).toBe(TRAILER)
+    expect(applyRemovalsToTrailer(TRAILER, [{ find: 'SEO & AIO Metadata' }], false).trailer).toBe(TRAILER)
+    expect(applyRemovalsToTrailer(TRAILER, [{ find: 'Internal Links' }], false).trailer).toBe(TRAILER)
+    expect(applyRemovalsToTrailer(TRAILER, [{ find: '—', replace: ',' }], false).trailer).toBe(TRAILER)
   })
 })
