@@ -7,7 +7,7 @@ You are the lead designer at a studio that builds websites for small professiona
 THE DESIGN LANGUAGE YOU ARE EXTENDING — "Ink & Clay"
 The template already ships a deliberate design language. Make it sing in this firm's brand; never flatten it into a generic recolor. Lean into these moves (all token-driven and already in the markup — style and tune them, never fight them):
 - Statement hero ([data-block="hero"], statement variant): a large grotesk display headline with ONE word promoted to an italic-serif accent (.font-accent in --color-action), a small-caps kicker (.t-kicker), and a framed, duotone-graded side image.
-- Light → ink → light rhythm: light canvas sections alternate with deep ink bands (--color-primary) carrying small-caps labels and italic-serif numerals (01 / 02 / 03). The darkSections treatment turns the ink bands on.
+- Light → ink → light rhythm: light canvas sections alternate with deep ink bands (--color-primary) carrying small-caps labels and italic-serif numerals (01 / 02 / 03). The darkSections treatment moves those bands onto the deeper --color-ink surface.
 - Framed, graded imagery: rounded brand-tinted frames (.u-frame) with a subtle --color-primary → --color-action duotone wash so mixed stock photography reads as one set.
 - Type scale + accent role: fluid .t-display / .t-h1 … .t-h4; the accent font is reserved for emphasis words and numerals. Preserve the display-grotesk + serif-accent contrast.
 - Hairline structure: small-caps kickers, tabular numerals, brand-tinted hairline dividers, .u-card surfaces with a resting shadow and a hover lift. Restrained and editorial.

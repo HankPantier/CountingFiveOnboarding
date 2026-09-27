@@ -42,6 +42,11 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // - Task 11 (2026-09-26): ONE added TOKEN CONTRACT line — small action text
 //   is auto-corrected (--color-action-text / --color-action-on-primary at
 //   4.5:1), so the model can pick a bold action colour. Nothing else moved.
+// - WS-D (2026-09-27, template 2026.09.5): ONE added TOKEN CONTRACT line — the
+//   framed-image duotone grade reads --c5-media-grade-opacity / -fill (R2 I5b,
+//   so "a stronger brand grade" is reachable without restyling images) — and
+//   the art-direction ink-band line now says darkSections moves the bands onto
+//   --color-ink (the template finally consumes the flag). Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

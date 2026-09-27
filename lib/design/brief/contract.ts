@@ -15,6 +15,7 @@ export const TOKEN_CONTRACT = `TOKEN CONTRACT (theme.css is regenerated from you
 - Spacing --c5-space-xs … --c5-space-2xl; radius --radius-sm/md/lg/pill and --radius; fonts --font-heading, --font-body, --font-accent.
 - Type scale --type-display, --type-h1 … --type-h4, --type-body-lg, --type-small, --type-caption, --tracking-display, --tracking-tight; utilities .t-display, .t-h1 … .t-h4, .t-body-lg, .t-small, .t-kicker.
 - Composition utilities: .font-accent, .u-card, .u-card-interactive, .u-frame, .u-icon-square; motion/overlay tokens --duration-base, --overlay-soft, --overlay-medium.
+- Image grade: the duotone wash on framed images reads --c5-media-grade-opacity (default 0.24) and --c5-media-grade-fill (default linear-gradient(150deg, var(--color-primary) 0%, var(--color-action) 130%)); set them on :root in css.global for a stronger or re-tinted grade instead of restyling the images.
 - Buttons: the CTA uses --color-action; secondary = primary-tint fill; tertiary = action outline.`
 
 function leversSection(caps: DesignCapabilities): string {
