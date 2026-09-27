@@ -129,7 +129,8 @@ describe('buildConceptPrompt (dynamic parts)', () => {
     expect(all).toContain('Calm, trustworthy, modern.')
     expect(all).not.toContain('version: alpha')
     // WS-B: possibly-outdated, fenced notes — never an 'intended direction'.
-    expect(all).toContain('BRAND NOTES (from the site\'s content/design.md — may be outdated;')
+    expect(all).toContain('BRAND NOTES (from the site\'s content/design.md — may be outdated: wherever they disagree with the site\'s current design as this prompt gives it elsewhere')
+    expect(all).not.toContain('in the CURRENT DESIGN are authoritative') // neutral: the critic + chat prompts name their sections differently
     expect(all).toContain('<<<BRAND_NOTES\n## Overview')
     expect(all).not.toContain('INTENDED DESIGN DIRECTION')
   })

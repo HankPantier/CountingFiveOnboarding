@@ -5,8 +5,10 @@
 // serialized here, and sessions.mbp_content is never read. content/design.md
 // is framed as possibly-outdated BRAND NOTES (fenced — it is repo text): it
 // was written from the site's tokens at setup (or at the last Studio apply),
-// so the CURRENT DESIGN part is authoritative, and nothing in the notes is a
-// requirement (R2 F3: 'INTENDED DESIGN DIRECTION' made the models chase a
+// so the site's current design wherever the prompt states it (the concept /
+// revise "CURRENT DESIGN", the chat's "THE DESIGN RIGHT NOW", the critic's
+// renders) is authoritative — the label is neutral to fit all three — and
+// nothing in the notes is a requirement (R2 F3: 'INTENDED DESIGN DIRECTION' made the models chase a
 // stale 'serif headlines' line through whole revise loops).
 import type { SessionSchema } from '@/types/session-schema'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
@@ -36,7 +38,7 @@ export function buildBrandBrief(args: { firmName: string; schema: unknown; desig
     voice,
     firm ? `FIRM PROFILE:\n${firm}` : '',
     direction
-      ? `BRAND NOTES (from the site's content/design.md — may be outdated; the palette, type, tokens and treatments in the CURRENT DESIGN are authoritative, and nothing in these notes is a requirement):\n${fenceData('BRAND_NOTES', direction)}`
+      ? `BRAND NOTES (from the site's content/design.md — may be outdated: wherever they disagree with the site's current design as this prompt gives it elsewhere — its design data or its renders — the current design wins, and nothing in these notes is a requirement):\n${fenceData('BRAND_NOTES', direction)}`
       : '',
   ]
     .filter(Boolean)
