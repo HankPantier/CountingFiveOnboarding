@@ -5,6 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   job: null as Record<string, unknown> | null,
   tablesRead: [] as string[],
+  lastDeploy: null as string | null,
+}))
+
+vi.mock('@/lib/github/repo-files', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/github/repo-files')>()),
+  findLastDeployCommitSha: async () => h.lastDeploy,
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -23,7 +29,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 import { assembleContentPackage } from './package-assembler'
-import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE } from './brand-gate'
+import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY } from './brand-gate'
 
 const PALETTE = Object.fromEntries(
   ['primary', 'secondary', 'complementary', 'action', 'nearBlack', 'nearWhite'].map((r) => [r, { hex: '#123456', name: r }]),
@@ -44,6 +50,15 @@ describe('assembleContentPackage — brand gate', () => {
     const res = await assembleContentPackage('job-1', { name: 'op', email: null })
     expect(res).toEqual({ ok: false, status: 409, error: DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE })
     expect(h.tablesRead).toEqual(['content_jobs'])
+  })
+
+  it('on a live site, says saving step 1 does not change its colours (PIPE-3)', async () => {
+    h.job = { ...baseJob, github_repo: 'o/live', palette: null, design_tokens: TOKENS }
+    h.lastDeploy = 'abc123'
+    const res = await assembleContentPackage('job-1', { name: 'op', email: null })
+    expect(res).toEqual({ ok: false, status: 409, error: DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY })
+    expect(DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY).toMatch(/does not change its colours/)
+    h.lastDeploy = null
   })
 
   it('lets a locked job past the gate (fails later on the missing session, not the brand)', async () => {

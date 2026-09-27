@@ -41,7 +41,7 @@ import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/design-variant-injector'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
-import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
+import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY, isDesignSystemLocked } from '@/lib/content/brand-gate'
 import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
 import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
 import { applyLogoNavDefault, applyLogoTone, preflightLogo } from '@/lib/content/logo-preflight'
@@ -186,7 +186,14 @@ export async function assembleContentPackage(
   // behaviour silently shipped FALLBACK_PALETTE (generic slate/teal), which is
   // how most live sites ended up unbranded. Fail loudly instead.
   if (!isDesignSystemLocked(job)) {
-    return { ok: false, status: 409, error: DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE }
+    // On a live site the colours come from its own brand.json/theme.css (site
+    // config a re-deploy never overwrites), so say that instead of claiming a
+    // fallback palette would ship. Best effort: a failed lookup keeps the
+    // first-deploy wording.
+    const live = job.github_repo
+      ? await findLastDeployCommitSha(job.github_repo).catch(() => null)
+      : null
+    return { ok: false, status: 409, error: live ? DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY : DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE }
   }
 
   const { data: session } = await supabase

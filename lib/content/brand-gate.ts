@@ -38,6 +38,12 @@ export const DESIGN_SYSTEM_REQUIRED_FOR_SITEMAP =
 export const DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE =
   'This site has no locked Design System (palette + type), so it would ship the generic fallback colours. Open step 1 “Design System”, review the logo palette and click Save, then package again.'
 
+// Re-deploy of a live site: brand.json / design.json / theme.css are site
+// config a re-deploy never overwrites, so locking step 1 does not change the
+// live colours — only Theme Studio or Design Studio does.
+export const DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY =
+  'Packaging needs a locked Design System (palette + type): open step 1 “Design System”, review the logo palette and click Save, then package again. This site is already live, so saving step 1 does not change its colours; use Theme Studio or Design Studio for that.'
+
 export const DESIGN_SYSTEM_REQUIRED_FOR_EXPORT =
   'This site has no locked palette, so the export would use generic colours. Open step 1 “Design System” on the content job, review the logo palette and click Save, then export again.'
 
