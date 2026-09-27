@@ -176,6 +176,11 @@ describe('redirects.csv on re-deploy', () => {
     const merged = mergeRedirectsCsv(header + '"/a,b",/x,301,r\n', header + '"/a,b",/y,301,r\n', null)
     expect(merged).toBe(header + '"/a,b",/x,301,r\n')
   })
+
+  it('heals a trailing-slash draft source and treats it as the same key as a generated one', () => {
+    const merged = mergeRedirectsCsv(header + '/a/,/x,301,r\n', header + '/a,/y,301,r\n', null)
+    expect(merged).toBe(header + '/a,/x,301,r\n')
+  })
 })
 
 describe('previewPreservedFiles', () => {

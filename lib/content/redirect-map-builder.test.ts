@@ -24,7 +24,7 @@ describe('buildRedirectsCsv — Phase I annotated destinations', () => {
       NEW_SITEMAP
     )
     expect(issues).toHaveLength(0)
-    expect(csv).toContain('/resources/blog/,/resources/articles,301')
+    expect(csv).toContain('/resources/blog,/resources/articles,301')
   })
 
   it('treats keep-with-new_url as a redirect when the old URL is gone', () => {
@@ -82,7 +82,7 @@ describe('buildRedirectsCsv — sources are root-relative paths', () => {
       ],
       NEW_SITEMAP
     )
-    expect(csv).toContain('\n/about-us/,/contact,301')
+    expect(csv).toContain('\n/about-us,/contact,301')
     expect(csv).toContain('\n/hours,/contact,301')
     expect(csv).not.toContain('https://')
   })
@@ -94,7 +94,7 @@ describe('buildRedirectsCsv — query-string sources', () => {
       [{ url: '/services/?ref=nav#top', title: 'T', live: true, action: 'redirect', new_url: '/contact' }],
       NEW_SITEMAP
     )
-    expect(csv).toContain('\n/services/,/contact,301')
+    expect(csv).toContain('\n/services,/contact,301')
     expect(csv).not.toContain('ref=nav')
     expect(csv).not.toContain('#top')
   })
@@ -139,5 +139,14 @@ describe('buildRedirectsCsv — never shadows a real page or loops', () => {
     )
     expect(csv).not.toMatch(/^\/services\/,/m)
     expect(issues[0].reason).toMatch(/itself/)
+  })
+
+  it('emits sources without the old site trailing slash (Next never matches /a/)', () => {
+    const { csv } = buildRedirectsCsv(
+      [{ url: 'https://www.firm.com/services/tax/', title: 'T', live: true, action: 'redirect', new_url: '/services' }],
+      SITEMAP
+    )
+    expect(csv).toMatch(/^\/services\/tax,\/services,301,/m)
+    expect(csv).not.toContain('/services/tax/,')
   })
 })

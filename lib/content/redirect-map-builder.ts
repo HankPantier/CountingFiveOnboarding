@@ -1,6 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { toSitePath } from './url-path'
-import { sanitizeRedirectsCsv } from '@/lib/editor/redirects'
+import { normalizeRedirectSource, sanitizeRedirectsCsv } from '@/lib/editor/redirects'
 
 type CurrentSitemapEntry = NonNullable<SessionSchema['current_sitemap']>[number]
 
@@ -45,7 +45,9 @@ const sanitizeUrl = toSitePath
 // The redirect SOURCE as Next.js needs it: a root-relative path with no
 // ?query or #hash (Next's build rejects either, and never matches on them).
 // Old-site urls are stored absolute (https://www.firm.com/about-us/), so keep
-// only the path (trailing slash and case as the old site had them). Returns
+// only the path, case as the old site had it. The trailing slash is dropped:
+// the template runs with trailingSlash: false, so Next 308s `/a/` to `/a`
+// before custom redirects run and a `/a/` source never matches. Returns
 // null when nothing redirectable is left: a WordPress `/?page_id=12` is just
 // `/` (the home page), and an unparseable absolute url has no path.
 function sourcePath(oldUrl: string): string | null {
@@ -60,6 +62,7 @@ function sourcePath(oldUrl: string): string | null {
     path = oldUrl.replace(/[?#].*$/, '')
     if (path && !path.startsWith('/')) path = `/${path}`
   }
+  path = normalizeRedirectSource(path)
   return path && path !== '/' ? path : null
 }
 

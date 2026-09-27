@@ -5,6 +5,8 @@ import {
   findRedirectProblems,
   blogPathFromJson,
   liveRedirectWarnings,
+  normalizeRedirectSource,
+  normalizeRedirectSources,
   pageUrlsFromPaths,
   parseRedirectRows,
   resolveRedirectTarget,
@@ -192,5 +194,32 @@ describe('helpers', () => {
   it('resolves a destination to the end of its chain', () => {
     expect(resolveRedirectTarget(`${H}/a,/b,301,x\n/b,/c,301,x\n`, '/a')).toBe('/c')
     expect(resolveRedirectTarget(`${H}/a,/b,301,x\n/b,/a,301,x\n`, '/a')).toBe('/a')
+  })
+})
+
+describe('trailing-slash sources (PIPE-1)', () => {
+  it('normalizeRedirectSource strips the slash but keeps / and absolute urls', () => {
+    expect(normalizeRedirectSource('/services/tax/')).toBe('/services/tax')
+    expect(normalizeRedirectSource('/a//')).toBe('/a')
+    expect(normalizeRedirectSource('/')).toBe('/')
+    expect(normalizeRedirectSource('/a')).toBe('/a')
+    expect(normalizeRedirectSource('https://x.com/a/')).toBe('https://x.com/a/')
+  })
+
+  it('sanitizeRedirectsCsv rewrites only the rows with a trailing-slash source', () => {
+    const text = `${H}# note\n/meet-our-team/,/about/our-team,301,x\n/b,/c/,301,y\n`
+    expect(sanitizeRedirectsCsv(text)).toBe(`${H}# note\n/meet-our-team,/about/our-team,301,x\n/b,/c/,301,y\n`)
+  })
+
+  it('applyRedirectAdds normalizes new and existing sources', () => {
+    const { content } = applyRedirectAdds(`${H}/old/,/x,301,r\n`, [{ from: '/a/', to: '/b' }], 'moved')
+    expect(pairs(content)).toEqual(['/old>/x', '/a>/b'])
+  })
+
+  it('normalizeRedirectSources is idempotent and leaves loops alone', () => {
+    const text = `${H}/a/,/b,301,x\n/b,/a,301,x\n`
+    const once = normalizeRedirectSources(text)
+    expect(once).toBe(`${H}/a,/b,301,x\n/b,/a,301,x\n`)
+    expect(normalizeRedirectSources(once)).toBe(once)
   })
 })

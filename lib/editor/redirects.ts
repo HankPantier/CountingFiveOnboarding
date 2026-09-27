@@ -53,6 +53,28 @@ export function redirectKey(url: string): string {
   return (toPathname(t) ?? t).toLowerCase()
 }
 
+/**
+ * A root-relative redirect source without its trailing slash (`/` itself is
+ * kept). The template's next.config has trailingSlash: false, so Next first
+ * 308s `/a/` to `/a` and then matches custom sources strictly: a `/a/` row
+ * never fires. Absolute or empty values are returned unchanged.
+ */
+export function normalizeRedirectSource(from: string): string {
+  const t = from.trim()
+  if (!t.startsWith('/') || t.length < 2 || !t.endsWith('/')) return from
+  return t.replace(/\/+$/, '') || '/'
+}
+
+// Rewrite rows whose source has a trailing slash (see normalizeRedirectSource).
+// Every other line keeps its bytes.
+function normalizeSourceLines(lines: Line[]): Line[] {
+  return lines.map((l) => {
+    if (l.kind !== 'row') return l
+    const from = normalizeRedirectSource(l.row.from)
+    return from === l.row.from ? l : { kind: 'row', row: { ...l.row, from }, text: null }
+  })
+}
+
 // A Next.js path-pattern source (`/blog/:slug`, `/old/*`, `/(a|b)`) matches
 // many urls, so it is never compared against individual live pages.
 // The check runs on the PATH, so an absolute `https://host/about` (whose
@@ -221,7 +243,7 @@ export function applyRedirectAdds(
   opts: RedirectOptions = {}
 ): { content: string; changed: boolean; warnings: LiveRedirectWarning[] } {
   const original = text ?? ''
-  let lines = parseLines(text ?? REDIRECTS_HEADER)
+  let lines = normalizeSourceLines(parseLines(text ?? REDIRECTS_HEADER))
   const batchTargets = new Set(adds.map((m) => redirectKey(m.to)))
 
   for (const add of adds) {
@@ -258,7 +280,9 @@ export function applyRedirectAdds(
       }
       next.push(l)
     }
-    if (!placed) next.push({ kind: 'row', row: { from: add.from, to: add.to, status: '301', reason }, text: null })
+    if (!placed) {
+      next.push({ kind: 'row', row: { from: normalizeRedirectSource(add.from), to: add.to, status: '301', reason }, text: null })
+    }
     lines = next
   }
 
@@ -348,14 +372,23 @@ export function validateRedirectsCsv(text: string, opts: RedirectOptions = {}): 
 }
 
 /**
- * Make an existing redirects.csv loop-free without adding anything: drops
+ * Make an existing redirects.csv loop-free without adding anything: strips
+ * trailing slashes from sources (a `/a/` source never matches), drops
  * self-redirects and breaks loops (newest row dropped). Rows over live pages
  * are kept (see liveRedirectWarnings). Untouched rows, comments and the header
  * are kept byte-for-byte. Used by the deploy merge, which is what heals the
  * loops already on live sites.
  */
 export function sanitizeRedirectsCsv(text: string): string {
-  return serializeLines(breakCycles(dropSelfRows(parseLines(text))))
+  return serializeLines(breakCycles(dropSelfRows(normalizeSourceLines(parseLines(text)))))
+}
+
+/**
+ * Only strip trailing slashes from sources (no loop breaking). Used by the
+ * one-off repair script for redirects.csv files already on client repos.
+ */
+export function normalizeRedirectSources(text: string): string {
+  return serializeLines(normalizeSourceLines(parseLines(text)))
 }
 
 /** Resolve a destination through existing rows to the end of its chain. */
