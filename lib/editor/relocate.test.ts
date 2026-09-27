@@ -158,6 +158,23 @@ describe('relocateFile — page → post drops the generator trailer', () => {
   })
 })
 
+describe('relocateFile — re-run onto a custom blog path (EDIT-1)', () => {
+  it('a post already at the destination with a legacy /resources canonical is a no-op, not a collision', async () => {
+    h.moveFile.mockReset()
+    h.writeFile.mockReset()
+    h.readFile.mockReset().mockImplementation(async (_repo: string, path: string) => {
+      if (path === 'content/posts/x.md') return { path, content: '---\ncanonical_url: /resources/x\n---\n\nBody.\n', sha: 'occ' }
+      throw new h.FileNotFoundError(path)
+    })
+    const res = await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/pages/services--x.md', toPath: 'content/posts/x.md', fromUrl: '/services/x', toUrl: '/insights/x', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(res).toEqual({ blobSha: 'occ', moved: false, redirectWarnings: [] })
+    expect(h.moveFile).not.toHaveBeenCalled()
+  })
+})
+
 describe('relocateFile — post → page on a custom blog path (EDIT-1)', () => {
   it('swaps a /resources/<slug> canonical and redirects from the live blog url', async () => {
     const post = '---\ncanonical_url: /resources/x\n---\n\nBody.\n'

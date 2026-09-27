@@ -229,7 +229,12 @@ export async function relocateFile(
   }
   if (occupant) {
     const occUrl = frontmatterUrl(occupant.content)
-    if (occUrl && toPathname(occUrl) === toPathname(toUrl)) {
+    // A post moved in by an earlier run may still carry the internal
+    // /resources/<slug> canonical on a custom blog path site (toUrl is then
+    // <blogPath>/<slug>): that is the same page already in place, not a collision.
+    const destSlug = /^content\/posts\/(.+)\.md$/.exec(toPath)?.[1]
+    const occPath = occUrl ? toPathname(occUrl) : null
+    if (occPath && (occPath === toPathname(toUrl) || (destSlug && occPath === `/resources/${destSlug}`))) {
       return { blobSha: occupant.sha, moved: false, redirectWarnings: [] }
     }
     throw new DestinationOccupiedError(fromUrl, toUrl)
