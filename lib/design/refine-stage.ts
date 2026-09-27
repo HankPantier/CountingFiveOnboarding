@@ -443,7 +443,11 @@ async function endLoop(
   review: ConceptReview,
   outcome: ReviewOutcome,
   notes: string[],
-  current: { evaluated: boolean; gateFailures: number }
+  current: { evaluated: boolean; gateFailures: number },
+  // The review BEFORE this unit's critique: when that critique made the
+  // current iteration the new best and ended the loop, the previous best's
+  // renders are referenced by nothing any more (dropReplacedBest).
+  before?: ConceptReview
 ): Promise<StepOutcome> {
   const restored = restorePatch(review, claimed.iterations, current)
   const patch: ConceptUnitPatch = restored
@@ -458,6 +462,7 @@ async function endLoop(
   const done = await settleConceptUnit(db, runId, claimed, patch)
   if (!done) return { kind: 'noop', reason: 'the concept changed meanwhile' }
   if (restored) await removeUnreferenced(db, parseScreenshots(claimed.screenshots), patch.review, restored.screenshots)
+  else if (before) await dropReplacedBest(db, before, patch.review, parseScreenshots(claimed.screenshots))
   return afterSettle(db, runId, unit, claimed.id)
 }
 
@@ -544,10 +549,17 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
       capReached: costUsd >= capUsd,
     })
     if (decision.kind === 'done') {
-      return await endLoop(db, runId, claimed, 'critique', next, decision.outcome, decision.outcome === 'cost_cap' ? [capLoopNote(capUsd)] : [], {
-        evaluated: true,
-        gateFailures: gate.length,
-      })
+      return await endLoop(
+        db,
+        runId,
+        claimed,
+        'critique',
+        next,
+        decision.outcome,
+        decision.outcome === 'cost_cap' ? [capLoopNote(capUsd)] : [],
+        { evaluated: true, gateFailures: gate.length },
+        review
+      )
     }
     const settled = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: { ...next, next: 'revise' } })
     if (settled) await dropReplacedBest(db, review, next, shots)
