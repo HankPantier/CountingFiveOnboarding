@@ -6,7 +6,7 @@ import { isSiteOwner } from '@/lib/auth/access'
 import { safePath } from '../_path'
 import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
 import { lastSegment } from '@/lib/editor/nav-urls'
-import { DestinationOccupiedError, relocateFile } from '@/lib/editor/relocate'
+import { DestinationOccupiedError, readSiteBlogPath, relocateFile } from '@/lib/editor/relocate'
 import { appendNavItem, retargetNavUrl, stripNavReference } from '@/lib/editor/nav-mutations'
 import { DRAFT_BRANCH, StaleShaError, ensureDraftBranch, listTree } from '@/lib/github/repo-files'
 
@@ -93,12 +93,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       { status: 400 }
     )
   }
-  const fromUrl = contentPathToUrl(fromPath)
+  // Posts are served only under the site's blog path (content/blog.json, e.g.
+  // /insights), so the 301 and canonical must use it, not /resources.
+  let blogPath: string
+  try {
+    blogPath = await readSiteBlogPath(ctx.githubRepo)
+  } catch (err) {
+    return internalError('edit:move', err, "Couldn't read the site's blog settings")
+  }
+  const fromUrl = contentPathToUrl(fromPath, blogPath)
   if (!fromUrl) {
     return NextResponse.json({ error: 'Could not resolve the current page URL' }, { status: 400 })
   }
 
-  const toPath = urlToContentPath(body.toUrl)
+  const toPath = urlToContentPath(body.toUrl, blogPath)
   if (!toPath) {
     return NextResponse.json(
       { error: 'Invalid destination — the home page and external URLs cannot be targeted' },
@@ -106,7 +114,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     )
   }
   // Canonicalize the destination url from its resolved path (normalizes slashes).
-  const toUrl = contentPathToUrl(toPath) as string
+  const toUrl = contentPathToUrl(toPath, blogPath) as string
 
   const willMove = fromPath !== toPath
   if (!willMove && navAction !== 'add') {

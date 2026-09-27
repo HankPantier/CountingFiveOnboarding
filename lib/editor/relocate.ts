@@ -122,6 +122,20 @@ export async function readBlogPath(githubRepo: string, tree: Array<{ path: strin
   }
 }
 
+// The site's post base path read straight from the draft (no tree listing):
+// /resources when content/blog.json is absent or unreadable. Move callers use
+// it to build post urls, since the template serves posts only there. Any read
+// error other than a missing file is thrown: guessing /resources on a custom
+// path site would write a 301 to a url that 404s.
+export async function readSiteBlogPath(githubRepo: string): Promise<string> {
+  try {
+    return blogPathFromJson((await readFile(githubRepo, BLOG_JSON_PATH, DRAFT_BRANCH)).content)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return blogPathFromJson(null)
+    throw err
+  }
+}
+
 // Root-relative urls of every published page on the draft, for the live-page
 // warnings. A branch tree read right after a move can lag, so the caller's
 // own moves are applied on top: sources are vacated, destinations are live.
@@ -227,7 +241,13 @@ export async function relocateFile(
   // A page file carries buildPageMarkdown's review trailer, which only the
   // PAGE renderer trims. Moved into content/posts/ it rendered live (the
   // "**Internal Links:**" dump on /insights/*), so drop it on the way in.
-  const swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
+  let swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
+  // A post on a custom blog path may still carry the internal /resources/<slug>
+  // canonical; swap that form too so the moved page never keeps a post url.
+  const postSlug = /^content\/posts\/(.+)\.md$/.exec(fromPath)?.[1]
+  if (swapped === moved.content && postSlug && fromUrl !== `/resources/${postSlug}`) {
+    swapped = swapFrontmatterUrl(moved.content, `/resources/${postSlug}`, toUrl)
+  }
   let fixed = swapped
   let warning: string | undefined
   if (toPath.startsWith('content/posts/')) {

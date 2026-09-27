@@ -781,6 +781,9 @@ export default function EditorShell({
         continue
       }
       const lastSlug = name.replace(/\.md$/, '').split('--').pop() ?? ''
+      // `/resources/<slug>` only names the post file here: the move route maps
+      // it to the site's blog path (content/blog.json, e.g. /insights) for the
+      // canonical and the 301.
       const toUrl = dest.type === 'resources' ? `/resources/${lastSlug}` : `${dest.parentUrl}/${lastSlug}`
       const navAction = dest.type === 'resources' ? 'remove' : 'retarget'
       try {

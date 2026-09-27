@@ -136,6 +136,25 @@ describe('relocateFile — page → post drops the generator trailer', () => {
   })
 })
 
+describe('relocateFile — post → page on a custom blog path (EDIT-1)', () => {
+  it('swaps a /resources/<slug> canonical and redirects from the live blog url', async () => {
+    const post = '---\ncanonical_url: /resources/x\n---\n\nBody.\n'
+    h.moveFile.mockReset().mockResolvedValueOnce({ commitSha: 'moveCommit' })
+    h.writeFile.mockReset().mockResolvedValue({ commitSha: 'c', blobSha: 'blobB' })
+    h.readFile.mockReset().mockImplementation(async (_repo: string, path: string, ref: string) => {
+      if (path === 'content/pages/services--x.md' && ref === 'moveCommit') return { path, content: post, sha: 'blobA' }
+      if (path === 'content/redirects.csv') return { path, content: 'old_url,new_url,status_code,reason\n', sha: 'r1' }
+      throw new h.FileNotFoundError(path)
+    })
+    await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/posts/x.md', toPath: 'content/pages/services--x.md', fromUrl: '/insights/x', toUrl: '/services/x', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(h.writeFile.mock.calls[0][2]).toBe('---\ncanonical_url: /services/x\n---\n\nBody.\n')
+    expect(h.writeFile.mock.calls[1][2]).toBe('old_url,new_url,status_code,reason\n/insights/x,/services/x,301,moved\n')
+  })
+})
+
 describe('csvField', () => {
   it('quotes commas, quotes and newlines so a url cannot shift or inject rows', () => {
     expect(csvField('/a')).toBe('/a')

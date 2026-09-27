@@ -21,7 +21,7 @@ import { buildStarterPage, generateNewPage } from '@/lib/content/new-page-genera
 import { appendNavItem, retargetNavUrl, stripNavReference } from '@/lib/editor/nav-mutations'
 import { parseNavJson, serializeNavJson } from '@/lib/editor/nav-config'
 import { contentPathToUrl, urlToContentPath } from '@/lib/editor/content-paths'
-import { DestinationOccupiedError, relocateFile } from '@/lib/editor/relocate'
+import { DestinationOccupiedError, readSiteBlogPath, relocateFile } from '@/lib/editor/relocate'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { buildNicheSuggestions } from '@/lib/mbp/niche-suggestions'
 import {
@@ -308,13 +308,20 @@ RULES
           ) {
             return { error: 'fromPath must be a .md under content/pages or content/posts.' }
           }
-          const fromUrl = contentPathToUrl(fromPath)
+          // Posts are served only under the site's blog path (e.g. /insights).
+          let blogPath: string
+          try {
+            blogPath = await readSiteBlogPath(githubRepo)
+          } catch (err) {
+            return toolError('site-assistant:move', err, "Couldn't read the site's blog settings.")
+          }
+          const fromUrl = contentPathToUrl(fromPath, blogPath)
           if (!fromUrl) return { error: 'Could not resolve the current page URL.' }
-          const toPath = urlToContentPath(toUrl)
+          const toPath = urlToContentPath(toUrl, blogPath)
           if (!toPath) {
             return { error: 'Invalid destination — the home page and external URLs cannot be targeted.' }
           }
-          const destUrl = contentPathToUrl(toPath) as string
+          const destUrl = contentPathToUrl(toPath, blogPath) as string
           if (fromPath === toPath) return { error: 'Source and destination are the same.' }
 
           // Refuse moving a page that has nested sub-pages (would orphan them).
