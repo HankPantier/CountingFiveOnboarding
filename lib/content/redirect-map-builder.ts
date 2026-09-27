@@ -42,6 +42,21 @@ const CSV_HEADER = 'old_url,new_url,status_code,reason\n'
 // ("/contact (merge into contact page)"), and trims trailing slashes.
 const sanitizeUrl = toSitePath
 
+// The redirect SOURCE as Next.js needs it: a root-relative path. Old-site urls
+// are stored absolute (https://www.firm.com/about-us/); Next rejects a source
+// without a leading '/', so keep only the path (trailing slash and case as the
+// old site had them). Anything unparseable is returned as-is.
+function sourcePath(oldUrl: string): string {
+  if (/^https?:\/\//i.test(oldUrl)) {
+    try {
+      return new URL(oldUrl).pathname || '/'
+    } catch {
+      return oldUrl
+    }
+  }
+  return oldUrl.startsWith('/') ? oldUrl : `/${oldUrl}`
+}
+
 // Emit a CSV migration plan from the firm's current site to the new sitemap.
 // Validates redirect targets against the confirmed sitemap and returns both
 // the CSV and a list of issues. Warn-and-proceed: issues never block the CSV.
@@ -123,7 +138,7 @@ export function buildRedirectsCsv(
           : 'redirected to new structure'
 
       rows.push(
-        [csvEscape(oldUrl), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
+        [csvEscape(sourcePath(oldUrl)), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
       )
     } else if (!validNewUrls.has(sanitizeUrl(oldUrl) ?? oldUrl)) {
       // 'keep' (or any other non-redirect action) whose URL doesn't appear in
@@ -132,7 +147,7 @@ export function buildRedirectsCsv(
       // instead of warning about a broken link.
       if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl)) {
         rows.push(
-          [csvEscape(oldUrl), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
+          [csvEscape(sourcePath(oldUrl)), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
         )
       } else {
         issues.push({

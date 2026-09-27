@@ -73,6 +73,21 @@ describe('buildRedirectsCsv — Phase I annotated destinations', () => {
   })
 })
 
+describe('buildRedirectsCsv — sources are root-relative paths', () => {
+  it('writes an absolute old-site url as its path (Next needs a leading /)', () => {
+    const { csv } = buildRedirectsCsv(
+      [
+        { url: 'https://www.acme.com/about-us/', title: 'T', live: true, action: 'redirect', new_url: '/contact' },
+        { url: 'https://www.acme.com/hours', title: 'T', live: true, action: 'keep', new_url: '/contact' },
+      ],
+      NEW_SITEMAP
+    )
+    expect(csv).toContain('\n/about-us/,/contact,301')
+    expect(csv).toContain('\n/hours,/contact,301')
+    expect(csv).not.toContain('https://')
+  })
+})
+
 describe('buildRedirectsCsv — never shadows a real page or loops', () => {
   const SITEMAP = [
     { url: '/services', title: 'Services' },
