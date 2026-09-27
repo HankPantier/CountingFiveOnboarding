@@ -102,7 +102,15 @@ function keepAliveAfterResponse(task: Promise<unknown>): void {
   }
 }
 
-export async function resolvePreviewSiteUrl(args: { jobId: string; githubRepo: string }): Promise<ResolvedPreviewUrl> {
+// deriveDeadlineMs: how long this request waits on a cold Vercel lookup
+// (default DERIVE_DEADLINE_MS). Callers that run under their own, tighter
+// overall deadline (the capability read) pass a shorter one.
+export type ResolvePreviewOptions = { deriveDeadlineMs?: number }
+
+export async function resolvePreviewSiteUrl(
+  args: { jobId: string; githubRepo: string },
+  opts: ResolvePreviewOptions = {}
+): Promise<ResolvedPreviewUrl> {
   const supabase = createServerClient()
   const { data: job, error } = await supabase
     .from('content_jobs')
@@ -119,14 +127,17 @@ export async function resolvePreviewSiteUrl(args: { jobId: string; githubRepo: s
   // background; a timeout is not a miss (never negative-cached), so the next
   // request uses the cached result.
   const task = cacheVercelPreviewUrl(args)
-  const derived = await withDeadline(task, DERIVE_DEADLINE_MS)
+  const derived = await withDeadline(task, opts.deriveDeadlineMs ?? DERIVE_DEADLINE_MS)
   if (derived === TIMED_OUT) keepAliveAfterResponse(task)
   else if (derived) return { url: derived, source: 'vercel' }
   return { url: await readSiteConfigSiteUrl(args.githubRepo, MAIN_BRANCH), source: 'config' }
 }
 
-export async function getPreviewSiteUrl(args: { jobId: string; githubRepo: string }): Promise<string | null> {
-  return (await resolvePreviewSiteUrl(args)).url
+export async function getPreviewSiteUrl(
+  args: { jobId: string; githubRepo: string },
+  opts: ResolvePreviewOptions = {}
+): Promise<string | null> {
+  return (await resolvePreviewSiteUrl(args, opts)).url
 }
 
 const isVercelAppHost = (url: string): boolean => {

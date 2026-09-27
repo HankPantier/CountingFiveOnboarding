@@ -40,12 +40,17 @@ export function parseShellCapabilities(html: string): string[] {
 // safeGet alone can take ~6 hops × 10 s; callers run inside 30–60 s routes
 // and the chat commit reserve, so a slow site degrades to 'unverified' fast.
 export const SHELL_READ_DEADLINE_MS = 6_000
+// A cold Vercel-address lookup inside that budget gets half of it, leaving
+// time for the site.config fallback + the page fetch; otherwise the nested
+// 6 s races would always lose to this one and waste the fallback work. The
+// lookup itself keeps running (and caches) in the background either way.
+export const SHELL_DERIVE_DEADLINE_MS = 3_000
 const UNVERIFIED: ShellCapabilities = { status: 'unverified' }
 
 async function fetchShell(args: { jobId: string; githubRepo: string }): Promise<ShellCapabilities> {
   let siteUrl: string | null
   try {
-    siteUrl = await getPreviewSiteUrl(args)
+    siteUrl = await getPreviewSiteUrl(args, { deriveDeadlineMs: SHELL_DERIVE_DEADLINE_MS })
   } catch {
     return UNVERIFIED
   }

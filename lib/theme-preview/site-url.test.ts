@@ -120,6 +120,17 @@ describe('resolvePreviewSiteUrl — lookup deadline', () => {
     expect(derive).toHaveBeenCalledTimes(1)
   })
 
+  it('honours a shorter per-call deadline (the capability read passes ~3 s)', async () => {
+    derive.mockReturnValue(new Promise<string | null>(() => {}))
+    const p = resolvePreviewSiteUrl(ARGS, { deriveDeadlineMs: 3000 })
+    let settled = false
+    void p.then(() => (settled = true))
+    await vi.advanceTimersByTimeAsync(2999)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(p).resolves.toEqual({ url: 'https://old-live.example.com', source: 'config' })
+  })
+
   it('a lookup that finishes inside the deadline is used directly', async () => {
     derive.mockResolvedValue('https://fast.vercel.app/')
     const p = resolvePreviewSiteUrl(ARGS)
