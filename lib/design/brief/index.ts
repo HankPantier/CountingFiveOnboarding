@@ -71,6 +71,12 @@ export function buildStaticPrefix(caps: DesignCapabilities): string {
   return prefix
 }
 
+// Per-run (dynamic) text, so adding it moved no cached-prefix bytes. Mirrors
+// checkThemeContrast's action / primary pair (a new, changed pair is rejected;
+// the site's own unchanged pair is grandfathered).
+export const ACTION_ON_PRIMARY_RULE =
+  'Action-colour text also sits ON the primary colour (inner-page kickers at 12px, stat figures, the price estimate): a new action / primary pair must reach 4.5:1 or the palette is rejected.'
+
 export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: DesignBundle['palette']): string {
   if (freedom === 'keep') {
     const hexes = Object.entries(palette)
@@ -79,9 +85,9 @@ export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: Desi
     return `PALETTE: keep — every concept uses EXACTLY these six hex values: ${hexes}. Differentiate the concepts through type, tokens, treatments and CSS.`
   }
   if (freedom === 'free') {
-    return 'PALETTE: free — invent a palette per concept from the brand brief, the references and the art direction. The current palette is a hint, not a rule.'
+    return `PALETTE: free — invent a palette per concept from the brand brief, the references and the art direction. The current palette is a hint, not a rule. ${ACTION_ON_PRIMARY_RULE}`
   }
-  return 'PALETTE: evolve — start from the current palette. Each concept may shift hue (up to about 30°), saturation and lightness and may replace secondary / complementary, but primary must stay recognisably the same colour family and action must stay a vivid, high-contrast CTA colour.'
+  return `PALETTE: evolve — start from the current palette. Each concept may shift hue (up to about 30°), saturation and lightness and may replace secondary / complementary, but primary must stay recognisably the same colour family and action must stay a vivid, high-contrast CTA colour. ${ACTION_ON_PRIMARY_RULE}`
 }
 
 function currentDesignJson(current: DesignBundle): string {

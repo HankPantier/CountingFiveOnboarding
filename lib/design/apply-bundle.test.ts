@@ -93,6 +93,23 @@ describe('applyBundleToDraft', () => {
     expect(writeFiles).not.toHaveBeenCalled()
   })
 
+  it('blocks a NEW action / primary failure (2026-09-26 pair) with a fix hint', async () => {
+    const vermilion = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: vermilion, removeLegacy: false, message: 'm', author: AUTHOR })
+    expect(r).toMatchObject({ ok: false, status: 422 })
+    if (!r.ok) expect(r.error).toMatch(/action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — .*action colour/)
+    expect(writeFiles).not.toHaveBeenCalled()
+  })
+
+  it('does not lock a site out of its own saved palette: the same failing action / primary is grandfathered', async () => {
+    const saved = JSON.parse(files.get('content/brand.json')!.content)
+    saved.palette = { ...saved.palette, primary: '#003a42', action: '#cc381e' }
+    files.set('content/brand.json', { content: JSON.stringify(saved, null, 2), sha: 'sb' })
+    const keep = { ...VALID, palette: { ...VALID.palette, primary: '#003A42', action: '#CC381E' } }
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: keep, removeLegacy: false, message: 'm', author: AUTHOR })
+    expect(r.ok).toBe(true)
+  })
+
   it('returns 422 when the bundle CSS fails the sanitizer', async () => {
     const bad = { ...VALID, css: { blocks: { hero: 'body { display: none; }' } } }
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: bad, removeLegacy: false, message: 'm', author: AUTHOR })

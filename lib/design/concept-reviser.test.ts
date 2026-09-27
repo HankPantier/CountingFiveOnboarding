@@ -15,7 +15,7 @@ import { reviseConcept, type ReviseConceptArgs } from './concept-reviser'
 type Opts = { system?: string; beforeAttempt?: (n: 1 | 2) => boolean | Promise<boolean>; onAttempt?: (u: unknown, f: string) => Promise<void> | void; [k: string]: unknown }
 const USAGE = { inputTokens: 20_000, outputTokens: 10_000, inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 } }
 const NOW = 1_000_000
-const REVISED = { ...VALID, name: 'Harbor Ledger II', palette: { ...VALID.palette, primary: '#1f4d3d', action: '#f25c05' } }
+const REVISED = { ...VALID, name: 'Harbor Ledger II', palette: { ...VALID.palette, primary: '#1f4d3d', action: '#ffa94d' } }
 const args = (over: Partial<ReviseConceptArgs> = {}): ReviseConceptArgs => ({
   prompt: { staticPrefix: 'STATIC', parts: [{ type: 'text', text: 'SHARED' }, { type: 'text', text: 'TASK' }], sharedPartCount: 1 },
   context: { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: 'claude-opus-5-5' },

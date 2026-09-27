@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { generateThemeCss, checkThemeContrast } from './theme-css-generator'
+import { generateThemeCss, checkThemeContrast, formatContrastFailure, ACTION_ON_PRIMARY_PAIR } from './theme-css-generator'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 
@@ -54,5 +54,52 @@ describe('checkThemeContrast', () => {
     }
     const failures = checkThemeContrast(bad)
     expect(failures.length).toBeGreaterThan(0)
+  })
+})
+
+describe('checkThemeContrast — action / primary (2026-09-26)', () => {
+  // The Task 8 concept: vermilion action on a deep-teal primary (2.46:1). The
+  // page-header kicker (12px/600) is action-on-primary small text ⇒ 4.5:1.
+  const failing = { ...brand.palette, primary: '#003a42', action: '#cc381e' }
+  const fixture = brand.palette // #00C1DE on #003B71 ≈ 5.19:1
+
+  it('flags action text on the primary surface below 4.5:1, with a fix hint', () => {
+    const failures = checkThemeContrast({ palette: failing })
+    const pair = failures.find((f) => f.name === ACTION_ON_PRIMARY_PAIR)
+    expect(pair).toMatchObject({ minRatio: 4.5, fg: '#cc381e' })
+    expect(pair!.ratio).toBeCloseTo(2.47, 1)
+    expect(pair!.hint).toMatch(/action colour/)
+    expect(formatContrastFailure(pair!)).toMatch(/^action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — /)
+  })
+
+  it('passes the fixture palette and checks against the AA-corrected primary surface', () => {
+    expect(checkThemeContrast({ palette: fixture }).find((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBeUndefined()
+  })
+
+  it('is boundary-exact at 4.5:1', () => {
+    // #767676 on white is the canonical 4.54:1; on primary white (AA-picked fg ⇒ primary kept) it passes.
+    const pass = { ...brand.palette, primary: '#ffffff', nearBlack: '#000000', nearWhite: '#ffffff', action: '#767676' }
+    const fail = { ...pass, action: '#777777' } // 4.48:1
+    expect(checkThemeContrast({ palette: pass }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(false)
+    expect(checkThemeContrast({ palette: fail }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
+  })
+
+  it('is grandfathered when the baseline palette already has the same action + primary (case-insensitive)', () => {
+    const baseline = { ...failing, primary: '#003A42', action: '#CC381E', secondary: '#123456' }
+    expect(checkThemeContrast({ palette: failing }, { baseline }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(false)
+  })
+
+  it('is NOT grandfathered once either colour changes — a new failing pair is still caught', () => {
+    const baseline = { ...failing, action: '#00c1de' }
+    expect(checkThemeContrast({ palette: failing }, { baseline }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
+  })
+
+  it('never grandfathers the pre-existing pairs', () => {
+    const bad = { ...brand.palette, nearWhite: '#111111', nearBlack: '#000000' }
+    expect(checkThemeContrast({ palette: bad }, { baseline: bad }).length).toBeGreaterThan(0)
+  })
+
+  it('formats failures without a hint exactly as before', () => {
+    expect(formatContrastFailure({ name: 'ink-fg / ink', ratio: 3.2, minRatio: 4.5, bg: '#000', fg: '#111' })).toBe('ink-fg / ink: 3.20:1 (need 4.5:1)')
   })
 })

@@ -32,7 +32,7 @@ const B = rawOf(OXBLOOD)
 const C = rawOf({
   ...VALID,
   name: 'Pine Assembly',
-  palette: { ...VALID.palette, primary: '#1f4d3d', action: '#f25c05' },
+  palette: { ...VALID.palette, primary: '#1f4d3d', action: '#ffa94d' },
   tokens: { ...VALID.tokens, roundness: 'sharp', density: 'airy' },
 })
 const BROKEN = { ...B, palette: { ...VALID.palette, primary: 'blue' } }

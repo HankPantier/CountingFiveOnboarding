@@ -9,7 +9,7 @@
 //   6. checkThemeContrast (the same hard gate apply uses)
 // The stored bundle carries the SANITIZED css (what apply would write).
 import type { BrandJson } from '@/types/brand-json'
-import { checkThemeContrast } from '@/lib/content/theme-css-generator'
+import { checkThemeContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'
 import {
   BUNDLE_MAX_MOVES,
   BUNDLE_MOVE_MAX_LENGTH,
@@ -94,9 +94,11 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
   const rendered = bundleToRepoFiles(bundle, ctx.draftFiles, { removeLegacy: true })
   if (!rendered.ok) return { ok: false, errors: rendered.errors }
 
-  const contrast = checkThemeContrast(JSON.parse(rendered.files.brandText) as BrandJson)
+  // Baseline = the site's current palette: a concept that keeps an action /
+  // primary pair the site already fails isn't rejected for it (grandfathered).
+  const contrast = checkThemeContrast(JSON.parse(rendered.files.brandText) as BrandJson, { baseline: ctx.current.palette })
   if (contrast.length > 0) {
-    return { ok: false, errors: contrast.map((f) => `contrast ${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`) }
+    return { ok: false, errors: contrast.map((f) => `contrast ${formatContrastFailure(f)}`) }
   }
   return { ok: true, concept: { bundle: { ...bundle, css: rendered.css }, files: rendered.files, notes } }
 }

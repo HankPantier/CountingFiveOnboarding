@@ -82,6 +82,17 @@ describe('validateConceptBundle', () => {
     if (!r.ok) expect(r.errors[0]).toMatch(/^css\.global:/)
   })
 
+  it('rejects a concept that introduces a failing action / primary pair, naming the fix', () => {
+    const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }, CTX)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.errors).toEqual([expect.stringMatching(/^contrast action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — /)])
+  })
+  it('keeps a site whose current palette already fails action / primary designable (keep + evolve-unchanged)', () => {
+    const legacy = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }
+    const ctx = { ...CTX, current: legacy }
+    expect(validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, primary: '#5c1a2b' } }, { ...ctx, paletteFreedom: 'keep' }).ok).toBe(true)
+    expect(validateConceptBundle({ ...rawOf(VALID), palette: legacy.palette }, ctx).ok).toBe(true)
+  })
   it('rejects a palette that fails WCAG contrast', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, nearBlack: '#fafaf6', nearWhite: '#fafaf7' } }, CTX)
     expect(r.ok).toBe(false)

@@ -65,11 +65,36 @@ function ensureContrast(bgHex: string, fgHex: string, minRatio = 4.5): string {
   }
 }
 
-export type ContrastFailure = { name: string; ratio: number; minRatio: number; bg: string; fg: string }
+export type ContrastFailure = { name: string; ratio: number; minRatio: number; bg: string; fg: string; hint?: string }
+
+// Action-colour text on a --color-primary surface: the page-header kicker
+// (.t-kicker, 12px/600 uppercase — small text, so AA 4.5:1), the stats-bar
+// figures and the page-header accent word (display size) and the pricing
+// calculator's estimate figure (36px bold). The kicker sets the bar, so the
+// pair needs 4.5:1. Not auto-corrected by the theme generator (unlike the
+// *-fg / surface pairs), so it is the one pair a palette can fail on its own.
+export const ACTION_ON_PRIMARY_PAIR = 'action / primary'
+const ACTION_ON_PRIMARY_HINT =
+  'action-colour text sits on the primary colour (inner-page kicker, stat figures, price estimate) — pick a brighter or lighter action colour, or a darker primary'
+
+export type ContrastGateOptions = {
+  /** The palette the site already has. A pair the site already fails with the
+   * SAME colours is not reported (only action / primary is grandfathered:
+   * it joined the gate on 2026-09-26, after palettes were saved) — the Design
+   * Studio mustn't refuse to keep a client's existing palette. */
+  baseline?: BrandJson['palette']
+}
+
+const sameHex = (a: string | undefined, b: string | undefined) =>
+  typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase()
+
+export function formatContrastFailure(f: ContrastFailure): string {
+  return `${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)${f.hint ? ` — ${f.hint}` : ''}`
+}
 
 // Report every fg/bg pair the theme exposes that ships under WCAG AA, so the
 // caller can surface it to the operator. Never throws.
-export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
+export function checkThemeContrast(brand: Pick<BrandJson, 'palette'>, opts: ContrastGateOptions = {}): ContrastFailure[] {
   const { palette } = brand
   const primaryFg = pickForeground(palette.primary, palette.nearWhite, palette.nearBlack)
   const secondaryFg = pickForeground(palette.secondary, palette.nearWhite, palette.nearBlack)
@@ -83,7 +108,7 @@ export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
   const ink = setLightness(chroma.mix(palette.nearBlack, palette.primary, 0.4, 'lab').hex(), 12)
   const inkFg = pickForeground(ink, palette.nearWhite, palette.nearBlack)
 
-  const pairs: Array<{ name: string; bg: string; fg: string; minRatio: number }> = [
+  const pairs: Array<{ name: string; bg: string; fg: string; minRatio: number; hint?: string }> = [
     { name: 'foreground / background', bg: palette.nearWhite, fg: palette.nearBlack, minRatio: 4.5 },
     { name: 'primary-fg / primary', bg: primaryBg, fg: primaryFg, minRatio: 4.5 },
     { name: 'secondary-fg / secondary', bg: secondaryBg, fg: secondaryFg, minRatio: 4.5 },
@@ -92,10 +117,15 @@ export function checkThemeContrast(brand: BrandJson): ContrastFailure[] {
     { name: 'footer muted text (text-bg/90)', bg: palette.nearBlack, fg: footerMutedText, minRatio: 4.5 },
     { name: 'ink-fg / ink', bg: ink, fg: inkFg, minRatio: 4.5 },
   ]
+  const { baseline } = opts
+  const grandfathered = !!baseline && sameHex(baseline.action, palette.action) && sameHex(baseline.primary, palette.primary)
+  if (!grandfathered) {
+    pairs.push({ name: ACTION_ON_PRIMARY_PAIR, bg: primaryBg, fg: palette.action, minRatio: 4.5, hint: ACTION_ON_PRIMARY_HINT })
+  }
   const failures: ContrastFailure[] = []
-  for (const { name, bg, fg, minRatio } of pairs) {
+  for (const { name, bg, fg, minRatio, hint } of pairs) {
     const ratio = chroma.contrast(bg, fg)
-    if (ratio < minRatio) failures.push({ name, ratio, minRatio, bg, fg })
+    if (ratio < minRatio) failures.push({ name, ratio, minRatio, bg, fg, ...(hint ? { hint } : {}) })
   }
   return failures
 }

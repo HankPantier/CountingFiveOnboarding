@@ -6,7 +6,7 @@ import { parseTemplateMarker } from '../capabilities'
 import { DEFAULT_CAPABILITIES } from '../run-types'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
-import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, type ConceptPromptArgs } from './index'
+import { ACTION_ON_PRIMARY_RULE, DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, paletteFreedomInstruction, type ConceptPromptArgs } from './index'
 
 // Byte-stability goldens captured from 04ea820 (the commit immediately before
 // Task 22 introduced style axes) — ruling PF9 binds the L1/L2 prompt bytes
@@ -269,5 +269,15 @@ describe('style axes in the brief', () => {
     expect(extractOutputFormat(buildStaticPrefix(L2))).toBe(extractOutputFormat(readGolden('static-prefix-l2.golden.txt')))
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain('"style":{')
     expect(buildStaticPrefix(L2)).not.toContain('"style":{')
+  })
+})
+
+describe('palette instruction names the action / primary gate (dynamic, not the cached prefix)', () => {
+  it('evolve and free carry the 4.5:1 action-on-primary rule; keep does not need it', () => {
+    expect(paletteFreedomInstruction('evolve', VALID.palette)).toContain(ACTION_ON_PRIMARY_RULE)
+    expect(paletteFreedomInstruction('free', VALID.palette)).toContain(ACTION_ON_PRIMARY_RULE)
+    expect(paletteFreedomInstruction('keep', VALID.palette)).not.toContain(ACTION_ON_PRIMARY_RULE)
+    expect(ACTION_ON_PRIMARY_RULE).toContain('4.5:1')
+    expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain(ACTION_ON_PRIMARY_RULE)
   })
 })
