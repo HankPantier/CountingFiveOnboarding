@@ -1,0 +1,157 @@
+{
+  "_note": "Fleet roster — client site repos on the Revaltus template. managed:true = receives template/theme rollouts (the 11 repos with the current template: src/styles/theme.css + content/design.json + c5-template.json). managed:false = older snapshots, never auto-synced. Reconciled 2026-09-27 against GitHub (all 11 on template 2026.09.4). Before ANY theme/template rollout, show this roster and confirm which repos to include.",
+  "clients": [
+    {
+      "slug": "HankPantier/Abramson-Company-LLC",
+      "displayName": "Abramson Company LLC",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Accord-Advisors",
+      "displayName": "Accord Advisors",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Aurora-Consulting-Group",
+      "displayName": "Aurora Consulting Group",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/bblcpa",
+      "displayName": "BBL CPA",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Berg-Advisors",
+      "displayName": "Berg Advisors",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/BussCPA",
+      "displayName": "Buss CPA",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Kinexus-CPAs-Advisors",
+      "displayName": "Kinexus CPAs & Advisors",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/korbey-lague-site",
+      "displayName": "Korbey Lague",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Slachta-Accounting",
+      "displayName": "Slachta Accounting",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Stephen-P.-Pryor-CPA",
+      "displayName": "Stephen P. Pryor CPA",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/TruCount-CPA",
+      "displayName": "TruCount CPA",
+      "liveUrl": null,
+      "themeGroup": "revaltus-template",
+      "managed": true,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/TEBO-maintenance",
+      "displayName": "Tebo Repair",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/ali-gidfar",
+      "displayName": "Ali Gidfar",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/arbor-anglers",
+      "displayName": "Arbor Anglers",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/FoxPages",
+      "displayName": "FoxPages",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/kay-twelve",
+      "displayName": "Kay Twelve",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/lentine-app",
+      "displayName": "Lentine",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Nexsan-Skills",
+      "displayName": "Nexsan Legal",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    },
+    {
+      "slug": "HankPantier/Nexsan-Content-Creation",
+      "displayName": "Nexsan Skills",
+      "liveUrl": null,
+      "themeGroup": null,
+      "managed": false,
+      "paused": false
+    }
+  ]
+}
