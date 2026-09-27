@@ -6,6 +6,7 @@ type CompanionOpts = { mode: string; expectedSha?: string; companions: Companion
 const h = vi.hoisted(() => ({
   brandText: '' as string | null,
   siteOwner: false,
+  preflight: vi.fn(),
   lightLogo: false,
   conclusive: true,
   writeBinaryFile: vi.fn(async (..._args: unknown[]) => ({ commitSha: 'c1', blobSha: 'b1' })),
@@ -21,7 +22,10 @@ vi.mock('../_helpers', () => ({
   }),
 }))
 vi.mock('@/lib/content/logo-preflight', () => ({
-  preflightLogo: async (buffer: Buffer) => ({ buffer, lightLogo: h.lightLogo, toneConclusive: h.conclusive, trimmed: null, plate: null, notes: [] }),
+  preflightLogo: async (buffer: Buffer, name: string) => {
+    h.preflight(buffer, name)
+    return { buffer, lightLogo: h.lightLogo, toneConclusive: h.conclusive, trimmed: null, plate: null, notes: [] }
+  },
 }))
 vi.mock('@/lib/github/repo-files', () => {
   class FileNotFoundError extends Error {}
@@ -72,6 +76,7 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     h.lightLogo = false
     h.conclusive = true
     h.siteOwner = false
+    h.preflight.mockClear()
   })
 
   it('clears a stale light tone in the same commit when the logo is replaced with a dark one', async () => {
@@ -87,6 +92,13 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     expect(opts.companions[0]!.path).toBe('content/brand.json')
     expect(opts.companions[0]!.expectedSha).toBe('brand-sha')
     expect(JSON.parse(opts.companions[0]!.content).logo.tone).toBeUndefined()
+    // Detection ran on the bytes that were UPLOADED (not the old file), and
+    // the same bytes are what gets committed.
+    const [detected, name] = h.preflight.mock.calls[0] as [Buffer, string]
+    expect(Buffer.isBuffer(detected)).toBe(true)
+    expect(detected.equals(PNG)).toBe(true)
+    expect(name).toBe('public/content-assets/logo.png')
+    expect((h.writeBinaryFileWithCompanions.mock.calls[0]![2] as Buffer).equals(PNG)).toBe(true)
     const data = (await res.json()) as { blobSha: string; logoTone?: string }
     expect(data.blobSha).toBe('b2')
     expect(data.logoTone).toMatch(/cleared/)
@@ -109,9 +121,10 @@ describe('PUT /api/edit/[id]/asset — logo tone re-derivation', () => {
     expect(((await res.json()) as { logoTone?: string }).logoTone).toBeUndefined()
   })
 
-  it('leaves brand.json alone for a non-logo image', async () => {
+  it('leaves brand.json alone for a non-logo image (and never runs detection)', async () => {
     h.brandText = brand({ primary: 'logo.png', alt: 'A logo', tone: 'light' })
     await put('public/content-assets/hero.png')
+    expect(h.preflight).not.toHaveBeenCalled()
     expect(h.writeBinaryFileWithCompanions).not.toHaveBeenCalled()
     expect(h.writeBinaryFile).toHaveBeenCalledTimes(1)
   })
