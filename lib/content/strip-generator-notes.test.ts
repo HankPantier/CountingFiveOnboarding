@@ -176,3 +176,35 @@ describe('repairPageTrailer — real page whose SEO marker was edited away', () 
     expect(repairPageTrailer(page).changed).toBe(false)
   })
 })
+
+describe('CRLF files', () => {
+  const crlf = (s: string) => s.replace(/\n/g, '\r\n')
+
+  it('strips a CRLF post exactly like its LF twin, frontmatter byte-identical', () => {
+    const lf = stripGeneratorNotesFromFile(POST)
+    const r = stripGeneratorNotesFromFile(crlf(POST))
+    expect(r.changed).toBe(true)
+    expect(r.content).toBe(crlf(lf.content))
+    expect(r.removed).toEqual(lf.removed)
+    expect(stripGeneratorNotesFromFile(r.content).changed).toBe(false)
+  })
+
+  it('backfills into CRLF frontmatter with CRLF line endings', () => {
+    const r = stripGeneratorNotesFromFile(crlf(POST.replace(/^internal_links: .*$/m, 'internal_links: []')))
+    expect(r.backfilled).toEqual(['internal_links'])
+    expect(r.content).toMatch(/\r\ninternal_links: \[\{"url":"\/services\/outsourced-accounting"/)
+    expect(r.content.replace(/\r\n/g, '')).not.toContain('\n')
+  })
+
+  it('parses CRLF trailer sections', () => {
+    const n = parseGeneratorNotes(crlf(stripGeneratorNotesFromBody(POST).removedText))
+    expect(n.internalLinks).toHaveLength(2)
+    expect(n.faqBlock).toHaveLength(1)
+    expect(n.answerBlock).not.toContain('\r')
+  })
+
+  it('repairs a CRLF orphan page with CRLF line endings', () => {
+    const r = repairPageTrailer(crlf(ORPHAN_PAGE))
+    expect(r.content).toBe(crlf(repairPageTrailer(ORPHAN_PAGE).content))
+  })
+})

@@ -34,15 +34,15 @@ export type GeneratorNoteLabel = (typeof GENERATOR_NOTE_LABELS)[number] | 'Call 
 // `---` rule line, optional blank lines, then the EXACT generator heading
 // (case-sensitive; `&amp;` tolerated for HTML-escaped copies). The rule is
 // required so a heading that merely mentions SEO in prose never anchors a cut.
-const SEO_TRAILER_RE = /(^|\n)-{3,}[ \t]*\n(?:[ \t]*\n)*## SEO &(?:amp;)? AIO Metadata[ \t]*(?=\n|$)/
+const SEO_TRAILER_RE = /(^|\r?\n)-{3,}[ \t]*\r?\n(?:[ \t]*\r?\n)*## SEO &(?:amp;)? AIO Metadata[ \t]*(?=\r?\n|$)/
 // "## Structured Data — paste into `<head>`". The AI editor's dash scrub turned
 // the em-dash into a comma on some pages, so the separator may vary.
 const STRUCTURED_TRAILER_RE =
-  /(^|\n)-{3,}[ \t]*\n(?:[ \t]*\n)*## Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`[ \t]*(?=\n|$)/
+  /(^|\r?\n)-{3,}[ \t]*\r?\n(?:[ \t]*\r?\n)*## Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`[ \t]*(?=\r?\n|$)/
 
 const LABEL_ALT = GENERATOR_NOTE_LABELS.map((l) => l.replace(/[-]/g, '\\-')).join('|')
 // A generator label on a line of its own: `**Internal Links:**`.
-const LABEL_LINE_RE = new RegExp(`^[ \\t]*\\*\\*(${LABEL_ALT}):\\*\\*[ \\t]*$`, 'gm')
+const LABEL_LINE_RE = new RegExp(`^[ \\t]*\\*\\*(${LABEL_ALT}):\\*\\*[ \\t]*\\r?$`, 'gm')
 const CTA_LINE_RE = /^[ \t]*\*\*Call to Action:\*\*[ \t]+\[/m
 
 export interface ParsedGeneratorNotes {
@@ -59,6 +59,11 @@ export interface BodyStripResult {
   removed: string[]
   /** The exact text cut from the body ('' when nothing was cut). */
   removedText: string
+}
+
+// Line ending of a file — CRLF when the file uses it, else LF.
+function eolOf(text: string): string {
+  return text.includes('\r\n') ? '\r\n' : '\n'
 }
 
 function trailerStart(body: string, re: RegExp): number {
@@ -90,8 +95,8 @@ function bareLabelRunStart(body: string): number {
     if (labelsIn(tail).filter((l) => l !== 'Call to Action').length < 2) return -1
     // Take a directly preceding `---` rule with it.
     const before = body.slice(0, start)
-    const rule = /\n[ \t]*-{3,}[ \t]*\n(?:[ \t]*\n)*$/.exec(before)
-    return rule ? rule.index + 1 : start
+    const rule = /\r?\n[ \t]*-{3,}[ \t]*\r?\n(?:[ \t]*\r?\n)*$/.exec(before)
+    return rule ? rule.index + (before[rule.index] === '\r' ? 2 : 1) : start
   }
   return -1
 }
@@ -129,12 +134,12 @@ export function stripGeneratorNotesFromBody(body: string): BodyStripResult {
   removed.push(...labelsIn(removedText))
   if (trailerStart(removedText, STRUCTURED_TRAILER_RE) >= 0) removed.push('Structured Data')
   const kept = body.slice(0, cut).replace(/\s+$/, '')
-  return { body: kept ? `${kept}\n` : '', removed, removedText }
+  return { body: kept ? `${kept}${eolOf(body)}` : '', removed, removedText }
 }
 
 // Text under `**Label:**` up to the next label line or the Structured Data rule.
 function sectionText(text: string, label: string): string | null {
-  const re = new RegExp(`^[ \\t]*\\*\\*${label.replace(/[-]/g, '\\-')}:\\*\\*[ \\t]*$`, 'm')
+  const re = new RegExp(`^[ \\t]*\\*\\*${label.replace(/[-]/g, '\\-')}:\\*\\*[ \\t]*\\r?$`, 'm')
   const m = re.exec(text)
   if (!m) return null
   const rest = text.slice(m.index + m[0].length)
@@ -142,7 +147,7 @@ function sectionText(text: string, label: string): string | null {
   const ends = [
     rest.search(LABEL_LINE_RE),
     rest.search(/^[ \t]*\*\*Call to Action:\*\*/m),
-    rest.search(/^[ \t]*-{3,}[ \t]*$/m),
+    rest.search(/^[ \t]*-{3,}[ \t]*\r?$/m),
   ].filter((i) => i >= 0)
   return rest.slice(0, ends.length ? Math.min(...ends) : rest.length).trim()
 }
@@ -150,7 +155,7 @@ function sectionText(text: string, label: string): string | null {
 function bulletLines(section: string | null): string[] {
   if (!section) return []
   return section
-    .split('\n')
+    .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.startsWith('- '))
     .map((l) => l.slice(2).trim())
@@ -169,7 +174,7 @@ export function parseGeneratorNotes(trailer: string): ParsedGeneratorNotes {
   const faqBlock: ParsedGeneratorNotes['faqBlock'] = []
   const faq = sectionText(trailer, 'FAQ Block')
   if (faq) {
-    for (const m of faq.matchAll(/\*\*Q:\s*(.+?)\*\*[ \t]*\nA:[ \t]*([\s\S]+?)(?=\n\s*\*\*Q:|$)/g)) {
+    for (const m of faq.matchAll(/\*\*Q:\s*(.+?)\*\*[ \t]*\r?\nA:[ \t]*([\s\S]+?)(?=\r?\n\s*\*\*Q:|$)/g)) {
       faqBlock.push({ question: m[1].trim(), answer: m[2].trim() })
     }
   }
@@ -184,14 +189,20 @@ export function parseGeneratorNotes(trailer: string): ParsedGeneratorNotes {
 
 // ── File-level (frontmatter + body) ─────────────────────────────────────────
 
-function splitFrontmatter(content: string): { head: string; fmInner: string; body: string } | null {
-  if (!content.startsWith('---\n')) return null
-  const close = content.indexOf('\n---', 4)
-  if (close < 0) return null
-  let bodyStart = close + 4
-  while (bodyStart < content.length && content[bodyStart] !== '\n') bodyStart++
-  if (content[bodyStart] === '\n') bodyStart++
-  return { head: content.slice(0, bodyStart), fmInner: content.slice(4, close), body: content.slice(bodyStart) }
+function splitFrontmatter(
+  content: string
+): { open: string; fmInner: string; close: string; body: string } | null {
+  const open = /^---[ \t]*\r?\n/.exec(content)
+  if (!open) return null
+  const rest = content.slice(open[0].length)
+  const close = /(^|\r?\n)---[ \t]*(?:\r?\n|$)/.exec(rest)
+  if (!close) return null
+  return {
+    open: open[0],
+    fmInner: rest.slice(0, close.index),
+    close: close[0],
+    body: rest.slice(close.index + close[0].length),
+  }
 }
 
 // Empty / missing value for a top-level frontmatter key. Returns the line index
@@ -240,7 +251,8 @@ export function stripGeneratorNotesFromFile(content: string): FileStripResult {
     ['faq_block', notes.faqBlock, notes.faqBlock.length > 0],
     ['llm_citation_note', notes.llmCitationNote, !!notes.llmCitationNote],
   ]
-  const lines = parts.fmInner.split('\n')
+  const eol = eolOf(content)
+  const lines = parts.fmInner.split(/\r?\n/)
   const backfilled: string[] = []
   for (const [key, value, has] of candidates) {
     if (!has) continue
@@ -251,9 +263,7 @@ export function stripGeneratorNotesFromFile(content: string): FileStripResult {
     else lines.push(line)
     backfilled.push(key)
   }
-  const head = backfilled.length
-    ? `---\n${lines.join('\n')}${parts.head.slice(4 + parts.fmInner.length)}`
-    : parts.head
+  const head = parts.open + (backfilled.length ? lines.join(eol) : parts.fmInner) + parts.close
   return {
     content: head + res.body,
     changed: true,
@@ -276,6 +286,7 @@ export function repairPageTrailer(content: string): { content: string; changed: 
   const seo = trailerStart(content, SEO_TRAILER_RE)
   if (seo >= 0 && seo < structured) return { content, changed: false }
   const before = content.slice(0, structured).replace(/\s+$/, '')
-  const next = `${before}\n\n---\n## SEO & AIO Metadata\n\n${content.slice(structured)}`
+  const eol = eolOf(content)
+  const next = `${before}${eol}${eol}---${eol}## SEO & AIO Metadata${eol}${eol}${content.slice(structured)}`
   return { content: next, changed: true }
 }
