@@ -118,6 +118,14 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
     expect(validateRedirectsCsv(`${H}/a?utm=1,/a,301,x\n`)).toMatch(/redirects to itself/)
   })
 
+  it('an absolute source is not a pattern: it is still checked against live pages', () => {
+    const text = `${H}https://old.example.com/about,/team,301,x\n`
+    expect(findRedirectProblems(text, { livePaths: ['/about'] }).shadowedPages).toEqual(['/about'])
+    expect(liveRedirectWarnings(text, { livePaths: ['/about'] })).toEqual([
+      { from: 'https://old.example.com/about', to: '/team' },
+    ])
+  })
+
   it('never checks a pattern source (:param, *) against live pages', () => {
     const text = `${H}/blog/:slug,/insights/:slug,301,x\n/old/*,/,301,x\n`
     expect(validateRedirectsCsv(text, { livePaths: ['/blog/:slug', '/old/*'] })).toBeNull()

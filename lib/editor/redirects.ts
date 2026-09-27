@@ -55,8 +55,11 @@ export function redirectKey(url: string): string {
 
 // A Next.js path-pattern source (`/blog/:slug`, `/old/*`, `/(a|b)`) matches
 // many urls, so it is never compared against individual live pages.
+// The check runs on the PATH, so an absolute `https://host/about` (whose
+// scheme colon is not a pattern) is still compared against live pages.
 function isPatternSource(url: string): boolean {
-  return /[:*(]/.test(url)
+  const t = url.trim().replace(/[?#].*$/, '')
+  return /[:*(]/.test(toPathname(t) ?? t)
 }
 
 // RFC 4180 field quoting — a comma, quote or newline must never shift columns.
