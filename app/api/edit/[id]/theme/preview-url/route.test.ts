@@ -80,6 +80,26 @@ describe('PATCH /theme/preview-url', () => {
     expect((await res.json()).source).toBe('vercel')
   })
 
+  it('still answers 200 with the saved value when the follow-up lookup fails', async () => {
+    m.resolve.mockRejectedValue(new Error('content_jobs preview_url read failed: timeout'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await PATCH(patch('https://acme.vercel.app'), params)
+    warn.mockRestore()
+    expect(res.status).toBe(200)
+    expect(m.updates[0]).toMatchObject({ preview_url: 'https://acme.vercel.app/' })
+    expect(await res.json()).toEqual({
+      previewUrl: 'https://acme.vercel.app/',
+      source: 'override',
+      configUrl: null,
+      effectiveUrl: 'https://acme.vercel.app/',
+    })
+  })
+
+  it('a failed save is still a 500', async () => {
+    m.updateError = { message: 'db down' }
+    expect((await PATCH(patch('https://acme.vercel.app'), params)).status).toBe(500)
+  })
+
   it('rejects a malformed URL with 400', async () => {
     expect((await PATCH(patch('not a url'), params)).status).toBe(400)
     expect(m.updates).toHaveLength(0)

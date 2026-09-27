@@ -88,10 +88,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Failed to save the preview URL.' }, { status: 500 })
   }
 
-  // Cleared → re-resolve the default (the verified Vercel address when there is one).
+  // Cleared → re-resolve the default (the verified Vercel address when there
+  // is one). The value IS saved at this point, so a failed follow-up lookup
+  // (DB/GitHub hiccup) still answers 200 with what was saved, not a 500.
   try {
     return NextResponse.json(await previewUrlInfo(ctx))
   } catch (err) {
-    return internalError('theme-preview-url', err, 'Could not look up the preview URL.')
+    console.warn('[theme-preview-url] Saved the preview URL but could not re-resolve it:', err instanceof Error ? err.message : err)
+    const saved: PreviewUrlInfo = { previewUrl: next, source: next ? 'override' : 'siteUrl', configUrl: null, effectiveUrl: next }
+    return NextResponse.json(saved)
   }
 }
