@@ -1,7 +1,7 @@
 // Server-only (bundle-files → css-sanitizer → lightningcss). Turns ONE raw
 // model concept into a canonical, safe DesignBundle — or a list of errors the
 // repair retry can quote back to the model:
-//   1. force schemaVersion/meta
+//   1. force schemaVersion/meta; clamp over-long prose (clampConceptProse)
 //   2. zod (parseDesignBundle)
 //   3. capability tier (fonts below L2 / style below L3 → current, with a note)
 //   4. palette freedom "keep" → the current palette, with a note
@@ -10,7 +10,14 @@
 // The stored bundle carries the SANITIZED css (what apply would write).
 import type { BrandJson } from '@/types/brand-json'
 import { checkThemeContrast } from '@/lib/content/theme-css-generator'
-import { parseDesignBundle, type DesignBundle } from './bundle'
+import {
+  BUNDLE_MAX_MOVES,
+  BUNDLE_MOVE_MAX_LENGTH,
+  BUNDLE_RATIONALE_MAX_LENGTH,
+  BUNDLE_TAGLINE_MAX_LENGTH,
+  parseDesignBundle,
+  type DesignBundle,
+} from './bundle'
 import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from './bundle-files'
 import type { PriorConcept } from './brief'
 import { enforceCapabilities } from './capabilities'
@@ -31,6 +38,30 @@ export type ConceptValidation = { ok: true; concept: ValidConcept } | { ok: fals
 
 const KEEP_NOTE = 'Palette freedom is "keep" — the current palette was restored.'
 
+// Cuts `text` to at most `max` chars at a word boundary, ending in "…".
+export function clampProse(text: string, max: number): string {
+  if (text.length <= max) return text
+  const cut = text.slice(0, max - 1)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`
+}
+
+// The descriptive prose (tagline, rationale, moves) is shown to people and
+// quoted to the critic; it never changes how the design renders. A model
+// answer that runs over its caps is clamped here instead of failing zod — a
+// revision whose rationale grew past 2000 chars (it narrates what changed on
+// top of the original) used to throw away a whole paid-for revision
+// ("rationale: Too big") with no repair turn. Non-strings are left for zod.
+export function clampConceptProse(candidate: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...candidate }
+  if (typeof out.tagline === 'string') out.tagline = clampProse(out.tagline, BUNDLE_TAGLINE_MAX_LENGTH)
+  if (typeof out.rationale === 'string') out.rationale = clampProse(out.rationale, BUNDLE_RATIONALE_MAX_LENGTH)
+  if (Array.isArray(out.moves) && out.moves.every((m) => typeof m === 'string')) {
+    out.moves = (out.moves as string[]).slice(0, BUNDLE_MAX_MOVES).map((m) => clampProse(m, BUNDLE_MOVE_MAX_LENGTH))
+  }
+  return out
+}
+
 export function parseConceptsEnvelope(value: unknown): unknown[] | null {
   if (Array.isArray(value)) return value
   if (isPlainObject(value) && Array.isArray(value.concepts)) return value.concepts
@@ -44,7 +75,7 @@ function samePalette(a: DesignBundle['palette'], b: DesignBundle['palette']): bo
 export function validateConceptBundle(raw: unknown, ctx: ConceptContext): ConceptValidation {
   if (!isPlainObject(raw)) return { ok: false, errors: ['The concept is not a JSON object.'] }
   const notes: string[] = []
-  const candidate: Record<string, unknown> = { ...raw }
+  const candidate: Record<string, unknown> = clampConceptProse(raw)
   delete candidate.meta
   delete candidate.schemaVersion
 
@@ -82,7 +113,7 @@ export function withConsistencyNotes(concept: ValidConcept, caps: DesignCapabili
 // repair turn alongside its errors); [] when it doesn't even parse.
 export function rawConsistencyNotes(raw: unknown, ctx: Pick<ConceptContext, 'caps' | 'model'>): string[] {
   if (!isPlainObject(raw)) return []
-  const parsed = parseDesignBundle({ ...raw, schemaVersion: 1, meta: { source: 'concept', model: ctx.model } })
+  const parsed = parseDesignBundle({ ...clampConceptProse(raw), schemaVersion: 1, meta: { source: 'concept', model: ctx.model } })
   return parsed.ok ? conceptConsistencyNotes(parsed.bundle, ctx.caps) : []
 }
 
