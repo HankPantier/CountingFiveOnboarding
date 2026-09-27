@@ -1,0 +1,6 @@
+{
+  "_note": "Rollout 3 (template 85a3bd3 → d97c04b) and its follow-up fb02628 (tint refresh, same templateVersion). Encodes scratchpad t3/roll3.sh: theme.css gets ONLY the action-text token lines via lib/content/add-action-text-vars.ts (existing palette lines untouched; a file that already has them gets only stale -text-tint values refreshed). The generate-theme.ts drift on 10 repos was 'behind' — the gate now classifies that as WRITE-BEHIND automatically.",
+  "templateVersion": "2026.09.4",
+  "notes": "theme.css gains AA-corrected small-text action tokens (added lines only; existing palette values untouched); kickers, badges and tertiary labels use them with a raw-action fallback; generate-theme brought current.",
+  "themeCss": "additive-helper"
+}

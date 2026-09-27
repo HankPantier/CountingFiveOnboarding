@@ -1,0 +1,14 @@
+{
+  "_note": "T3 (template a540d1e → 1e15b09). Encodes the rulings of scratchpad t3/apply.sh: fonts module seeded DEFAULT only if absent, two package.json scripts inserted before \"validate\", .gitattributes line-merged, content/.template-default never shipped (automatic), marker last (automatic).",
+  "templateVersion": "2026.09.2",
+  "notes": "Generated next/font module (DEFAULT = today's fonts, no visual change), c5-template.json capability marker, inert style-axis hooks + style-axes.css, and the noindex /design-specimen page.",
+  "packageJson": {
+    "addScripts": {
+      "generate-fonts": "tsx scripts/generate-fonts.ts",
+      "design-contracts": "tsx scripts/generate-design-contracts.ts"
+    },
+    "anchorBefore": "validate"
+  },
+  "gitattributes": "merge-lines",
+  "seedIfAbsent": ["src/app/fonts.generated.ts"]
+}
