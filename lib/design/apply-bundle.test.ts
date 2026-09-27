@@ -93,38 +93,16 @@ describe('applyBundleToDraft', () => {
     expect(writeFiles).not.toHaveBeenCalled()
   })
 
-  it('blocks a NEW action / primary failure (2026-09-26 pair) with a fix hint', async () => {
-    const vermilion = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }
-    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: vermilion, removeLegacy: false, message: 'm', author: AUTHOR })
-    expect(r).toMatchObject({ ok: false, status: 422 })
-    if (!r.ok) expect(r.error).toMatch(/action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — .*action colour/)
-    expect(writeFiles).not.toHaveBeenCalled()
-  })
-
-  it('does not lock a site out of its own saved palette: the same failing action / primary is grandfathered', async () => {
-    const saved = JSON.parse(files.get('content/brand.json')!.content)
-    saved.palette = { ...saved.palette, primary: '#003a42', action: '#cc381e' }
-    files.set('content/brand.json', { content: JSON.stringify(saved, null, 2), sha: 'sb' })
-    const keep = { ...VALID, palette: { ...VALID.palette, primary: '#003A42', action: '#CC381E' } }
-    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: keep, removeLegacy: false, message: 'm', author: AUTHOR })
-    expect(r.ok).toBe(true)
-  })
-
-  it("v0 restore after a concept changed the palette: the site's own original (failing) pair is not refused", async () => {
-    // v0 = the original design: vermilion on teal (2.47:1). A concept then
-    // changed action → the draft now holds the passing fixture palette.
-    const v0 = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }
-    const recorded = [{ action: '#cc381e', primary: '#003a42' }, { action: VALID.palette.action, primary: VALID.palette.primary }]
-    const refused = await applyBundleToDraft({ githubRepo: 'o/r', bundle: v0, removeLegacy: false, message: 'm', author: AUTHOR })
-    expect(refused).toMatchObject({ ok: false, status: 422 }) // without the recorded pairs it is a new failure
-    const restored = await applyBundleToDraft({ githubRepo: 'o/r', bundle: v0, removeLegacy: false, message: 'm', author: AUTHOR, grandfatheredPairs: recorded })
-    expect(restored.ok).toBe(true)
-  })
-
-  it('recorded pairs grandfather only action / primary — never a different failing pair', async () => {
-    const other = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#d9481f' } }
-    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: other, removeLegacy: false, message: 'm', author: AUTHOR, grandfatheredPairs: [{ action: '#cc381e', primary: '#003a42' }] })
-    expect(r).toMatchObject({ ok: false, status: 422 })
+  it('never 422s for the advisory action-colour pairs (action / primary, action / background)', async () => {
+    for (const palette of [
+      { ...VALID.palette, primary: '#003a42', action: '#cc381e' }, // action / primary 2.47:1
+      { ...VALID.palette, action: '#ff8e27', nearWhite: '#ffffff' }, // action / background 2.29:1
+    ]) {
+      writeFiles.mockClear()
+      const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: { ...VALID, palette }, removeLegacy: false, message: 'm', author: AUTHOR })
+      expect(r.ok).toBe(true)
+      expect(writeFiles).toHaveBeenCalledTimes(1)
+    }
   })
 
   it('returns 422 when the bundle CSS fails the sanitizer', async () => {

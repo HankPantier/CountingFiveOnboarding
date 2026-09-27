@@ -51,6 +51,7 @@ vi.mock('@/lib/content/theme-css-generator', async (orig) => ({
   ...((await orig()) as object),
   generateThemeCss: vi.fn(() => ':root{}'),
   checkThemeContrast: vi.fn(() => []),
+  checkActionContrast: vi.fn(() => []),
 }))
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: vi.fn(() => ({})) }))
@@ -60,7 +61,7 @@ import { PATCH } from './route'
 import { patchDesignTypography } from '@/lib/editor/theme-edit'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { normalizeTypography } from './_theme'
-import { checkThemeContrast } from '@/lib/content/theme-css-generator'
+import { checkActionContrast } from '@/lib/content/theme-css-generator'
 
 const params = Promise.resolve({ id: '11111111-1111-1111-1111-111111111111' })
 const patchFlags = () =>
@@ -94,15 +95,17 @@ describe('PATCH /api/edit/[id]/theme — optimistic locks', () => {
     expect(files.find((f) => f.path === 'src/styles/theme.css')?.expectedSha).toBe('themeSha')
   })
 
-  it('a palette failing action / primary still saves; the failure comes back as a warning with its fix hint', async () => {
-    vi.mocked(checkThemeContrast).mockReturnValueOnce([
-      { name: 'action / primary', ratio: 2.46, minRatio: 4.5, bg: '#003a42', fg: '#cc381e', hint: 'pick a brighter or lighter action colour, or a darker primary' },
+  it('failing action pairs (advisory) still save; they come back as warnings with their fix hints', async () => {
+    vi.mocked(checkActionContrast).mockReturnValueOnce([
+      { name: 'action / primary', ratio: 2.46, minRatio: 4.5, bg: '#003a42', fg: '#cc381e', hint: 'a darker primary reads better' },
+      { name: 'action / background', ratio: 2.29, minRatio: 4.5, bg: '#ffffff', fg: '#ff8e27', hint: 'a darker action colour reads better' },
     ])
     const res = await patchFlags()
     expect(res.status).toBe(200)
     expect(h.writeFiles).toHaveBeenCalledTimes(1)
     expect((await res.json()).contrastWarnings).toEqual([
-      'action / primary: 2.46:1 (need 4.5:1) — pick a brighter or lighter action colour, or a darker primary',
+      'action / primary: 2.46:1 (need 4.5:1) — a darker primary reads better',
+      'action / background: 2.29:1 (need 4.5:1) — a darker action colour reads better',
     ])
   })
 

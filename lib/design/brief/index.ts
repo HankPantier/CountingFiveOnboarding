@@ -72,10 +72,10 @@ export function buildStaticPrefix(caps: DesignCapabilities): string {
 }
 
 // Per-run (dynamic) text, so adding it moved no cached-prefix bytes. Mirrors
-// checkThemeContrast's action / primary pair (a new, changed pair is rejected;
-// the site's own unchanged pair is grandfathered).
+// checkActionContrast — advisory, never a rejection (see its comment for why
+// both action pairs can't pass together on a dark primary).
 export const ACTION_ON_PRIMARY_RULE =
-  'Action-colour text also sits ON the primary colour (inner-page kickers at 12px, stat figures, the price estimate): a new action / primary pair must reach 4.5:1 or the palette is rejected.'
+  'Action-colour text also appears as small kicker text on the primary colour and on the page background — keep it legible on both (4.5:1 is ideal); the platform reports this as advisory, it never rejects a palette.'
 
 export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: DesignBundle['palette']): string {
   if (freedom === 'keep') {

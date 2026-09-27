@@ -34,7 +34,7 @@ import { capabilityViolations, fontsUnlocked, keepLockedStyle } from './capabili
 import { readEffectiveCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs, themeFilePaths } from './drift'
 import type { RunScreenshot } from './run-types'
-import { hasAnyVersion, insertVersion, listRecordedActionPrimaryPairs, VersionConflictError, type DesignVersionRow } from './store'
+import { hasAnyVersion, insertVersion, VersionConflictError, type DesignVersionRow } from './store'
 import type { ThemeBlobShas } from './studio-types'
 import { syncMbpTheme } from './sync-mbp-theme'
 import { readDraftThemeSnapshot, readThemeSnapshotAt, themeTextsFromSnapshot } from './theme-snapshot'
@@ -110,10 +110,6 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
   // File contract follows the DRAFT marker (what the next build ships).
   const paths = themeFilePaths(capRead.draft)
-  // The site's own recorded palettes (v0 = its original design): restoring one
-  // is never refused for a legacy action / primary pair. New concepts and chat
-  // edits are still gated upstream against the current palette only.
-  const grandfatheredPairs = await listRecordedActionPrimaryPairs(db, target.sessionId)
 
   let result: Awaited<ReturnType<typeof applyBundleToDraft>>
   try {
@@ -124,7 +120,6 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       message: args.commitMessage,
       author: { name: target.adminName ?? DEFAULT_COMMIT_AUTHOR.name, email: target.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email },
       fontsModule: fontsUnlocked(capRead.draft),
-      grandfatheredPairs,
       ...(expectedShas ? { base: before } : {}),
       ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
     })

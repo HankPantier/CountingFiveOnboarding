@@ -35,6 +35,10 @@ import { ACTION_ON_PRIMARY_RULE, DESIGN_SYSTEM_PROMPT, buildConceptPrompt, build
 // - Task 10 fix round 1 (2026-09-26): the pricing-calculator entry now says
 //   action on primary must reach 4.5:1 (the palette gate's threshold — the
 //   pair also colours the 12px page-header kicker), not "3:1 (large text)".
+// - Task 10 round 3 (2026-09-26): action contrast pairs became ADVISORY (both
+//   can't pass together on a dark primary — see checkActionContrast), so the
+//   pricing-calculator entry no longer claims a hard 4.5:1 requirement: it
+//   says to keep the figure and panel text legible (ideally ≥4.5:1).
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -275,12 +279,14 @@ describe('style axes in the brief', () => {
   })
 })
 
-describe('palette instruction names the action / primary gate (dynamic, not the cached prefix)', () => {
-  it('evolve and free carry the 4.5:1 action-on-primary rule; keep does not need it', () => {
+describe('palette instruction names the advisory action-text contrast (dynamic, not the cached prefix)', () => {
+  it('evolve and free carry the advisory action-text legibility rule; keep does not need it', () => {
     expect(paletteFreedomInstruction('evolve', VALID.palette)).toContain(ACTION_ON_PRIMARY_RULE)
     expect(paletteFreedomInstruction('free', VALID.palette)).toContain(ACTION_ON_PRIMARY_RULE)
     expect(paletteFreedomInstruction('keep', VALID.palette)).not.toContain(ACTION_ON_PRIMARY_RULE)
-    expect(ACTION_ON_PRIMARY_RULE).toContain('4.5:1')
+    expect(ACTION_ON_PRIMARY_RULE).toMatch(/advisory/)
+    expect(ACTION_ON_PRIMARY_RULE).not.toMatch(/rejected\b(?! a palette)/)
+    expect(ACTION_ON_PRIMARY_RULE).toContain('never rejects')
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain(ACTION_ON_PRIMARY_RULE)
   })
 })

@@ -14,6 +14,7 @@ import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
 import { CSS_TARGETS } from '../css-targets'
 import { MAX_TARGET_BYTES, MAX_TARGET_LINES, MAX_TOTAL_BYTES, MAX_TOTAL_LINES, countCssLines, cssByteLength, cssCaps, totalCssSize, type CssSizeScope } from '../css-budget'
+import { checkActionContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'
 import { conceptConsistencyNotes } from '../concept-consistency'
 import { PASS_MIN_MEAN, PASS_MIN_SCORE, RUBRIC_KEYS, RUBRIC_LABELS, minDistinctivenessFor, type CritiqueRecord } from '../critique'
 import { CSS_RULES_REMINDER } from './contract'
@@ -125,6 +126,14 @@ export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
     parts.push({
       type: 'text',
       text: `CLAIM CHECK — your description and your levers disagree. Set the lever or change the words:\n${claims.map((c) => `- ${c}`).join('\n')}`,
+    })
+  }
+  // Advisory until the theme auto-corrects action text (checkActionContrast).
+  const actionContrast = checkActionContrast({ palette: args.bundle.palette })
+  if (actionContrast.length > 0) {
+    parts.push({
+      type: 'text',
+      text: `PALETTE CONTRAST (advisory, not a gate — improve it where it doesn't cost the direction; kicker and price text should stay legible):\n${actionContrast.map((f) => `- ${formatContrastFailure(f)}`).join('\n')}`,
     })
   }
   if (args.gateFailures.length > 0) {

@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { generateThemeCss, checkThemeContrast, formatContrastFailure, ACTION_ON_PRIMARY_PAIR } from './theme-css-generator'
+import chroma from 'chroma-js'
+import {
+  generateThemeCss,
+  checkThemeContrast,
+  checkActionContrast,
+  actionContrastNotes,
+  formatContrastFailure,
+  ACTION_ON_PRIMARY_PAIR,
+  ACTION_ON_BACKGROUND_PAIR,
+} from './theme-css-generator'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 
@@ -57,52 +66,51 @@ describe('checkThemeContrast', () => {
   })
 })
 
-describe('checkThemeContrast — action / primary (2026-09-26)', () => {
-  // The Task 8 concept: vermilion action on a deep-teal primary (2.46:1). The
-  // page-header kicker (12px/600) is action-on-primary small text ⇒ 4.5:1.
+describe('checkActionContrast — advisory action-colour pairs', () => {
+  // The Task 8 concept: vermilion action on a deep-teal primary.
   const failing = { ...brand.palette, primary: '#003a42', action: '#cc381e' }
-  const fixture = brand.palette // #00C1DE on #003B71 ≈ 5.19:1
 
-  it('flags action text on the primary surface below 4.5:1, with a fix hint', () => {
-    const failures = checkThemeContrast({ palette: failing })
-    const pair = failures.find((f) => f.name === ACTION_ON_PRIMARY_PAIR)
+  it('flags action text on the AA-corrected primary below 4.5:1, with a fix hint', () => {
+    const pair = checkActionContrast({ palette: failing }).find((f) => f.name === ACTION_ON_PRIMARY_PAIR)
     expect(pair).toMatchObject({ minRatio: 4.5, fg: '#cc381e' })
     expect(pair!.ratio).toBeCloseTo(2.47, 1)
-    expect(pair!.hint).toMatch(/action colour/)
-    expect(formatContrastFailure(pair!)).toMatch(/^action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — /)
+    expect(formatContrastFailure(pair!)).toMatch(/^action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — .*action colour/)
   })
 
-  it('passes the fixture palette and checks against the AA-corrected primary surface', () => {
-    expect(checkThemeContrast({ palette: fixture }).find((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBeUndefined()
+  it('flags action text on the page background (nearWhite) below 4.5:1', () => {
+    // bblcpa-style bright orange on white ≈ 2.29:1.
+    const pair = checkActionContrast({ palette: { ...brand.palette, action: '#ff8e27', nearWhite: '#ffffff' } }).find(
+      (f) => f.name === ACTION_ON_BACKGROUND_PAIR
+    )
+    expect(pair).toMatchObject({ minRatio: 4.5, bg: '#ffffff', fg: '#ff8e27' })
+    expect(pair!.ratio).toBeCloseTo(2.29, 1)
+    expect(pair!.hint).toMatch(/darker action colour/)
   })
 
-  it('is boundary-exact at 4.5:1', () => {
-    // #767676 on white is the canonical 4.54:1; on primary white (AA-picked fg ⇒ primary kept) it passes.
-    const pass = { ...brand.palette, primary: '#ffffff', nearBlack: '#000000', nearWhite: '#ffffff', action: '#767676' }
-    const fail = { ...pass, action: '#777777' } // 4.48:1
-    expect(checkThemeContrast({ palette: pass }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(false)
-    expect(checkThemeContrast({ palette: fail }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
+  it('is boundary-exact at 4.5:1 on the background', () => {
+    const on = (action: string) => checkActionContrast({ palette: { ...brand.palette, nearWhite: '#ffffff', action } }).some((f) => f.name === ACTION_ON_BACKGROUND_PAIR)
+    expect(on('#767676')).toBe(false) // 4.54:1
+    expect(on('#777777')).toBe(true) // 4.48:1
   })
 
-  it('is grandfathered when the baseline palette already has the same action + primary (case-insensitive)', () => {
-    const baseline = { ...failing, primary: '#003A42', action: '#CC381E', secondary: '#123456' }
-    expect(checkThemeContrast({ palette: failing }, { baseline }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(false)
+  it('both pairs cannot pass together on a dark primary (why they are advisory)', () => {
+    // contrast(a,primary) × contrast(a,bg) = contrast(primary,bg) ≈ 10.35 < 20.25 for navy on #f7f5f2.
+    for (let l = 0; l <= 100; l += 2) {
+      const hex = chroma.hsl(20, 1, l / 100).hex()
+      expect(checkActionContrast({ palette: { ...brand.palette, action: hex } }).length).toBeGreaterThan(0)
+    }
   })
 
-  it('is NOT grandfathered once either colour changes — a new failing pair is still caught', () => {
-    const baseline = { ...failing, action: '#00c1de' }
-    expect(checkThemeContrast({ palette: failing }, { baseline }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
+  it('never appears in the hard gate — checkThemeContrast is the pre-2026-09-26 set', () => {
+    expect(checkThemeContrast({ palette: failing }).map((f) => f.name)).not.toContain(ACTION_ON_PRIMARY_PAIR)
+    expect(checkThemeContrast({ palette: { ...brand.palette, action: '#ff8e27' } })).toEqual([])
+    expect(checkThemeContrast(brand).map((f) => f.name)).toEqual([])
   })
 
-  it('grandfathers any listed recorded pair (a restore of an earlier palette), case-insensitively', () => {
-    const grandfathered = [{ action: '#00c1de', primary: '#003b71' }, { action: '#CC381E', primary: '#003A42' }]
-    expect(checkThemeContrast({ palette: failing }, { baseline: fixture, grandfathered }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(false)
-    expect(checkThemeContrast({ palette: failing }, { baseline: fixture, grandfathered: [grandfathered[0]] }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
-  })
-
-  it('never grandfathers the pre-existing pairs', () => {
-    const bad = { ...brand.palette, nearWhite: '#111111', nearBlack: '#000000' }
-    expect(checkThemeContrast({ palette: bad }, { baseline: bad }).length).toBeGreaterThan(0)
+  it('actionContrastNotes labels them advisory', () => {
+    const notes = actionContrastNotes({ palette: failing })
+    expect(notes.length).toBeGreaterThan(0)
+    for (const n of notes) expect(n).toMatch(/^Contrast \(advisory, not blocking\): action \/ (primary|background): /)
   })
 
   it('formats failures without a hint exactly as before', () => {

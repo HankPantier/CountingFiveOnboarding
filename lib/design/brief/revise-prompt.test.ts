@@ -152,10 +152,26 @@ describe('every /design-specimen block is a CSS target in the brief', () => {
   })
 })
 
-describe('the pricing-calculator hint matches the palette gate', () => {
-  it('states 4.5:1 for action on primary, never the old 3:1 large-text bar', () => {
+describe('the pricing-calculator hint is advisory (no hard action / primary requirement)', () => {
+  it('asks for legible panel text, never a hard gate', () => {
     const prefix = buildStaticPrefix(DEFAULT_CAPABILITIES)
-    expect(prefix).toContain('requires action on primary to reach 4.5:1')
+    expect(prefix).toContain('legible on the primary (ideally ≥4.5:1)')
+    expect(prefix).not.toContain('requires action on primary')
     expect(prefix).not.toContain('must reach 3:1 (large text)')
+  })
+})
+
+describe('revise prompt: advisory palette contrast', () => {
+  const textFor = (palette: typeof VALID.palette) => texts(buildRevisePrompt({ ...ARGS, bundle: { ...VALID, palette } }).parts)
+  it('lists failing action pairs as advisory, not as render-check gates', () => {
+    const text = textFor({ ...VALID.palette, primary: '#003a42', action: '#cc381e' })
+    expect(text).toContain('PALETTE CONTRAST (advisory, not a gate')
+    expect(text).toContain('- action / primary: 2.4')
+    expect(text).not.toMatch(/RENDER-CHECK FAILURES[^\n]*\n(- [^\n]*\n)*- action \//)
+  })
+  it('adds nothing when both action pairs pass', () => {
+    // #767676 on white: 4.54:1; on the white primary it is the same pair.
+    const text = textFor({ ...VALID.palette, primary: '#ffffff', nearWhite: '#ffffff', nearBlack: '#000000', action: '#767676' })
+    expect(text).not.toContain('PALETTE CONTRAST')
   })
 })

@@ -16,7 +16,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError } from '@/lib/github/repo-files'
-import { checkThemeContrast, formatContrastFailure, type ActionPrimaryPair } from '@/lib/content/theme-css-generator'
+import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { bundleToRepoFiles } from './bundle-files'
 import { FONTS_MODULE_PATH } from './drift'
@@ -48,15 +48,6 @@ export async function readOptional(repo: string, path: string): Promise<{ conten
   }
 }
 
-function currentPalette(brandText: string): BrandJson['palette'] | undefined {
-  try {
-    const parsed = JSON.parse(brandText) as Partial<BrandJson>
-    return parsed.palette && typeof parsed.palette === 'object' ? parsed.palette : undefined
-  } catch {
-    return undefined
-  }
-}
-
 export async function applyBundleToDraft(args: {
   githubRepo: string
   bundle: DesignBundle
@@ -70,11 +61,8 @@ export async function applyBundleToDraft(args: {
   overridesVerbatim?: string
   // L2+ DRAFT (marker declares fonts): also write/guard src/app/fonts.generated.ts
   fontsModule?: boolean
-  // action / primary pairs the site has recorded (design_versions) — see
-  // checkThemeContrast's `grandfathered`.
-  grandfatheredPairs?: ReadonlyArray<ActionPrimaryPair>
 }): Promise<ApplyBundleResult> {
-  const { githubRepo, bundle, removeLegacy, message, author, base, overridesVerbatim, fontsModule = false, grandfatheredPairs = [] } = args
+  const { githubRepo, bundle, removeLegacy, message, author, base, overridesVerbatim, fontsModule = false } = args
   await ensureDraftBranch(githubRepo)
 
   const fromBase = (p: string): { content: string; sha: string } | null => {
@@ -106,12 +94,9 @@ export async function applyBundleToDraft(args: {
   const brand = JSON.parse(rendered.files.brandText) as BrandJson
   const design = JSON.parse(rendered.files.designText) as DesignJson
 
-  // Baseline = the draft's palette before this apply, plus every pair the
-  // site has recorded (v0 included): an action / primary pair (gated since
-  // 2026-09-26) the site already had doesn't block keeping or restoring it.
-  const contrast = checkThemeContrast(brand, { baseline: currentPalette(brandFile.content), grandfathered: grandfatheredPairs })
+  const contrast = checkThemeContrast(brand)
   if (contrast.length > 0) {
-    const detail = contrast.map(formatContrastFailure).join('; ')
+    const detail = contrast.map((f) => `${f.name}: ${f.ratio.toFixed(2)}:1 (need ${f.minRatio}:1)`).join('; ')
     return { ok: false, status: 422, error: `The palette fails contrast checks — ${detail}.` }
   }
 

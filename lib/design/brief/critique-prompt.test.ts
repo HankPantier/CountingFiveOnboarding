@@ -89,3 +89,15 @@ describe('buildCritiquePrompt', () => {
     expect(t.type === 'text' && t.text).toContain('promises serif headlines')
   })
 })
+
+describe('critique prompt: advisory palette contrast', () => {
+  it('shows failing action pairs as advisory legibility input, separate from render-check failures', () => {
+    const t = texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } } } }).parts)
+    expect(t).toContain('PALETTE CONTRAST (advisory — measured on the palette, not a gate')
+    expect(t).toContain('- action / primary: 2.4')
+  })
+  it('adds nothing when both action pairs pass', () => {
+    const palette = { ...VALID.palette, primary: '#ffffff', nearWhite: '#ffffff', nearBlack: '#000000', action: '#767676' }
+    expect(texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: { ...VALID, palette } } }).parts)).not.toContain('PALETTE CONTRAST')
+  })
+})

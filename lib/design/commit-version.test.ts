@@ -14,7 +14,6 @@ const m = vi.hoisted(() => ({
   sync: vi.fn(async (..._a: unknown[]) => {}),
   insertVersion: vi.fn(),
   hasAnyVersion: vi.fn(),
-  recordedPairs: vi.fn(async (..._a: unknown[]) => [] as { action: string; primary: string }[]),
 }))
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r), readThemeSnapshotAt: (r: string, s: unknown) => m.snapshotAt(r, s) }))
 vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
@@ -24,7 +23,6 @@ vi.mock('./store', async (orig) => ({
   ...((await orig()) as object),
   insertVersion: (...a: unknown[]) => m.insertVersion(...a),
   hasAnyVersion: (...a: unknown[]) => m.hasAnyVersion(...a),
-  listRecordedActionPrimaryPairs: (...a: unknown[]) => m.recordedPairs(...a),
 }))
 
 import { VersionConflictError } from './store'
@@ -150,13 +148,6 @@ describe('commitDesignVersion', () => {
     // Not the lagging snapshot's old brand sha: the first commit's written blob.
     expect(second.ok && second.appliedBlobs).toEqual({ ...first.appliedBlobs, 'content/design.json': '7'.repeat(40) })
     expect(m.snapshot).toHaveBeenCalledTimes(2) // first commit only (before + after)
-  })
-
-  it("hands apply the site's recorded action / primary pairs (restore grandfathering)", async () => {
-    m.recordedPairs.mockResolvedValueOnce([{ action: '#cc381e', primary: '#003a42' }])
-    await commitDesignVersion(DB, args())
-    expect(m.recordedPairs.mock.calls[0][1]).toBe(args().target.sessionId)
-    expect(m.apply.mock.calls[0][0]).toMatchObject({ grandfatheredPairs: [{ action: '#cc381e', primary: '#003a42' }] })
   })
 
   it('without expectedShas, apply gets no base (today’s behaviour)', async () => {
