@@ -54,6 +54,11 @@ export type ConceptReview = {
   // The best evaluated iteration so far (see iterationBeats). Absent until the
   // first critique / gate skip.
   best?: IterationSnapshot
+  // Revisions this concept actually went through (each one a paid model call).
+  // Kept apart from the row's `iterations`, which a best-iteration fallback
+  // rewinds to the kept iteration. Absent on reviews written before it existed
+  // (revisionsUsedOf derives a floor for those).
+  revisionsUsed?: number
 }
 
 export function newReview(): ConceptReview {
@@ -91,7 +96,26 @@ export function parseConceptReview(value: unknown): ConceptReview | null {
       const best = parseIterationSnapshot(value.best)
       return best ? { best } : {}
     })(),
+    ...(nonNegInt(value.revisionsUsed) ? { revisionsUsed: value.revisionsUsed } : {}),
   }
+}
+
+/**
+ * How many revisions a concept really used. `iterations` (the row column) is
+ * the version it is ON, which a best-iteration fallback rewinds; the review's
+ * revisionsUsed counter is not. For a review from before the counter, the
+ * highest iteration the review ever recorded is the floor.
+ */
+export function revisionsUsedOf(review: ConceptReview | null, iterations: number): number {
+  if (!review) return iterations
+  if (review.revisionsUsed !== undefined) return Math.max(review.revisionsUsed, iterations)
+  const seen = [
+    iterations,
+    review.metricsIteration ?? 0,
+    review.best?.iteration ?? 0,
+    ...review.critiques.map((c) => c.iteration),
+  ]
+  return Math.max(...seen)
 }
 
 const nonNegInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0

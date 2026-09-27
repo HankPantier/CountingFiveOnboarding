@@ -473,6 +473,16 @@ describe('reviseUnit', () => {
     expect(m.gather.mock.calls[0][4]).toEqual({ markup: true })
     expect(texts(m.revise.mock.calls[0][0])).toContain('revision round 1')
     expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { costUsd: 0.4 })
+    expect(unitPatch().review.revisionsUsed).toBe(1)
+  })
+
+  it('counts revisions on the review, separate from the version the row is on', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'revise', critiques: [crit(false)], revisionsUsed: 2 }, { iterations: 1 })])
+    m.getRun.mockResolvedValue({ ...RUN, max_revisions: 3 })
+    m.revise.mockResolvedValue({ concept: { bundle: REVISED, files: FILES, notes: [] }, errors: [], notes: [], costUsd: 0.4, estimatedUsd: 0, stoppedReason: null })
+    await reviseUnit({} as never, CTX, RID, CID, () => 1_000)
+    expect(unitPatch().iterations).toBe(2)
+    expect(unitPatch().review.revisionsUsed).toBe(3)
   })
 
   it('a provider rejection (bad API key) releases the claim (revise next) and errors the run', async () => {
@@ -598,6 +608,17 @@ describe('best iteration (Harbor Light)', () => {
     expect(patch.review).toMatchObject({ outcome: 'max_revisions', next: 'done', metrics: OK_METRICS, metricsIteration: 1 })
     expect(patch.review.notes.at(-1)).toMatch(/^Kept revision 1 \(mean 3\.50, craft 4; passes the render checks\) — revision 2 ranked lower/)
     expect(m.remove).toHaveBeenCalledWith({}, R2.map((s) => s.path))
+  })
+
+  it('a fallback rewinds iterations but keeps the revisions actually spent', async () => {
+    m.listConcepts.mockResolvedValue([
+      looping({ critiques: [R1_CRIT], best: BEST_R1, revisionsUsed: 2 }, { iterations: 2, bundle: asJson(HARBOR_R2), screenshots: asJson(R2) }),
+    ])
+    m.critique.mockResolvedValue({ critique: R2_CRIT, errors: [], costUsd: 0.1, estimatedUsd: 0, stoppedReason: null })
+    await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    const patch = unitPatch()
+    expect(patch.iterations).toBe(1)
+    expect(patch.review.revisionsUsed).toBe(2)
   })
 
   it('a last revision that ranks higher stays (no restore)', async () => {

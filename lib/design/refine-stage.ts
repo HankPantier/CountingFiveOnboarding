@@ -45,6 +45,7 @@ import {
   keptIterationNote,
   newReview,
   parseConceptReview,
+  revisionsUsedOf,
   shouldRetryRender,
   withCritique,
   withEvaluatedIteration,
@@ -654,7 +655,15 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
       return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision ${round} was not usable (${why}) — kept the previous version.`], evaluated)
     }
     const nextReview = withReviewNotes(
-      { ...withoutRenderRetries(review), claim: null, next: 'render', metrics: null, metricsIteration: null },
+      {
+        ...withoutRenderRetries(review),
+        claim: null,
+        next: 'render',
+        metrics: null,
+        metricsIteration: null,
+        // Counted per successful revision, never rewound by a fallback.
+        revisionsUsed: revisionsUsedOf(review, claimed.iterations) + 1,
+      },
       [...b.notes, ...result.notes].map((n) => `Revision ${round}: ${n}`)
     )
     const settled = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: nextReview, bundle: result.concept.bundle, iterations: round })

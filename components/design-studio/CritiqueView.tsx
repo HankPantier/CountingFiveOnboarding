@@ -6,14 +6,14 @@ import { TONE_BAR, TONE_CHIP, TONE_TEXT, critiqueChip, revisionsLabel, scoreRows
 // One concept's critique: verdict chip, revision count, the six rubric scores
 // as compact bars, render-check failures, and (collapsed) reasons, issues and
 // loop notes.
-export default function CritiqueView({ review, iterations, maxRevisions }: { review: ConceptReviewDto; iterations: number; maxRevisions: number }) {
+export default function CritiqueView({ review, revisionsUsed, maxRevisions }: { review: ConceptReviewDto; revisionsUsed: number; maxRevisions: number }) {
   const chip = critiqueChip(review)
   const latest = review.latest
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border-default bg-surface-subtle p-2">
       <div className="flex flex-wrap items-center gap-2">
         {chip && <span className={`rounded-pill border px-2 py-0.5 font-heading text-[10px] font-semibold ${TONE_CHIP[chip.tone]}`}>{chip.label}</span>}
-        <span className="font-body text-[11px] text-text-muted">{revisionsLabel(iterations, maxRevisions)}</span>
+        <span className="font-body text-[11px] text-text-muted">{revisionsLabel(revisionsUsed, maxRevisions)}</span>
         {!review.measured && <span className="font-body text-[11px] text-text-muted">· render checks not run</span>}
         {review.measured && review.unmeasuredViewports.length > 0 && (
           <span className="font-body text-[11px] text-text-muted">· {review.unmeasuredViewports.join(' + ')} render checks not run</span>

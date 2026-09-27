@@ -97,7 +97,10 @@ export type DesignConceptDto = {
   // Non-blocking: the concept's current render was captured before its
   // webfonts loaded (fontsNotReadyNote), else null.
   fontsNote: string | null
+  // The version the concept is ON (a best-iteration fallback rewinds it).
   iterations: number
+  // Revisions actually spent — use this for "revisions used", not iterations.
+  revisionsUsed: number
   review: ConceptReviewDto | null
 }
 
