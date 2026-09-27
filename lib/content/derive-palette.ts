@@ -20,7 +20,7 @@ import { ensureTextContrast } from '@/lib/content/theme-css-generator'
 export const NEUTRAL_PALETTE: PaletteData = {
   primary:       { hex: '#231f20', name: 'Primary' },
   secondary:     { hex: '#098195', name: 'Secondary' },
-  complementary: { hex: '#71003B', name: 'Complementary' },
+  complementary: { hex: '#D6EDF1', name: 'Complementary' }, // OKLCH 0.93 tint of the action hue
   action:        { hex: '#007D8C', name: 'Action' },
   nearBlack:     { hex: '#1A1A2E', name: 'Text / Dark' },
   nearWhite:     { hex: '#F5F7FA', name: 'Background / Light' },
@@ -49,6 +49,8 @@ const HUE_FAMILY_DEG = 25     // buckets within this hue distance are one colour
 const DISTINCT_HUE_DEG = 35   // an accent must differ from the primary by this much
 const MIN_FAMILY_SHARE = 0.03 // families under this share of brand pixels are noise
 const DEEP_PRIMARY_SHARE = 0.2
+const MIDTONE_L = 0.45        // a deep hue lighter than this is "mid-tone" …
+const WORDMARK_INK_L = 0.3    // … and yields to a near-black wordmark this dark
 const NEUTRAL_PRIMARY_SHARE = 0.1
 const ACCENT_MIN_SHARE = 0.05
 const LIGHT_LOGO_LUMINANCE = 0.6
@@ -278,7 +280,12 @@ export function pickLogoBrandColors(colors: WeightedColor[]): LogoBrandColors | 
 
   // Primary: the heaviest DEEP hue with real presence, else the logo's charcoal,
   // else the heaviest hue (deepened / replaced later if too light).
-  const deep = hues.find((f) => f.lch.l <= DEEP_L && share(f.weight) >= DEEP_PRIMARY_SHARE)
+  // Exception — a near-black wordmark beside a MID-TONE brand hue (Pryor: black
+  // name + plum tree): the ink becomes the primary and the hue the action, the
+  // same charcoal + brand-colour CTA pattern as Accord/Buss. A mid-tone primary
+  // leaves no room for a CTA colour that reads on it.
+  let deep = hues.find((f) => f.lch.l <= DEEP_L && share(f.weight) >= DEEP_PRIMARY_SHARE)
+  if (deep && deep.lch.l > MIDTONE_L && neutral && neutral.lch.l < WORDMARK_INK_L) deep = undefined
   let primaryFam: Family | null = deep ?? null
   let primaryIsNeutral = false
   if (!primaryFam && neutral) {
@@ -319,7 +326,7 @@ function curatedAccentHue(primaryHue: number, primaryIsNeutral: boolean): number
   if (h < 170) return 70 // green → amber
   if (h < 220) return 40 // teal / cyan → coral
   if (h < 285) return 55 // blue / navy → orange
-  return 195 // purple / plum / magenta → teal
+  return 75 // purple / plum / magenta → warm gold (teal was a near-complement)
 }
 
 const YELLOW_BAND: [number, number] = [85, 118]

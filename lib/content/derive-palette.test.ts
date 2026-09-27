@@ -37,7 +37,7 @@ describe('derivePalette golden: the 8 stored client logos', () => {
     ['accord', '#3a3a3c', '#a31e37', false], // charcoal + crimson (was: mint action, grey page)
     ['abramson', '#782223', null, false], // maroon; the grey wordmark is not a brand colour
     ['bblcpa', '#003768', null, false], // navy
-    ['pryor', '#964876', null, false], // the plum tree, not the white plate (was: near-white primary)
+    ['pryor', '#191919', '#964876', false], // black wordmark + mid-tone plum tree → ink primary, plum CTA (was: near-white primary)
     ['berg', '#fdec55', null, true], // white wordmark + yellow bulb → light logo
     ['aurora', '#595a5c', '#ee589a', false], // grey wordmark + multicolour lotus
   ]
@@ -78,6 +78,14 @@ describe('derivePalette golden: the 8 stored client logos', () => {
     expect(hue(palette.action.hex)).toBeLessThan(90)
   })
 
+  it('Pryor: plum is the action on a plum-tinted ink primary, not teal on plum', () => {
+    const { palette } = paletteFor('pryor')
+    expect(palette.action.hex).toBe('#964876')
+    expect(hue(palette.primary.hex)).toBeGreaterThan(300) // faint plum tint
+    // 1.28:1 with the old teal-on-plum pairing
+    expect(chroma.contrast(palette.action.hex, palette.primary.hex)).toBeGreaterThan(2.5)
+  })
+
   it('tints a charcoal primary faintly instead of shipping flat black', () => {
     const { palette } = paletteFor('buss')
     const [l, c] = chroma(palette.primary.hex).oklch()
@@ -94,6 +102,24 @@ describe('buildLogoPalette / derivePalette', () => {
     const h = hue(p.action.hex)
     expect(h).toBeGreaterThan(30)
     expect(h).toBeLessThan(80)
+  })
+
+  it('curates a warm gold (not a teal near-complement) for a one-hue plum logo', () => {
+    const p = derivePalette('#5a2a4f', '#5a2a4f')
+    expect(hue(p.action.hex)).toBeGreaterThan(55)
+    expect(hue(p.action.hex)).toBeLessThan(95)
+  })
+
+  it('keeps a DEEP hue as primary even beside a black wordmark (bblcpa-style navy)', () => {
+    const picked = pickLogoBrandColors([
+      { hex: '#003768', weight: 70 },
+      { hex: '#111111', weight: 30 },
+    ])
+    expect(picked?.primary).toBe('#003768')
+  })
+
+  it('NEUTRAL_PALETTE complementary is a soft tint, not maroon', () => {
+    expect(chroma(NEUTRAL_PALETTE.complementary.hex).oklch()[0]).toBeGreaterThan(0.9)
   })
 
   it('treats a hue-distinct secondary as the action source', () => {
