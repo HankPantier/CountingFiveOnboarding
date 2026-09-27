@@ -13,12 +13,23 @@
 // (unchanged ones ride along as same-blob guard entries; a written file absent
 // from the base is guarded as must-not-exist), so the writeFiles guard is the
 // only staleness check (StaleShaError when the draft moved).
+//
+// `designMd` (optional, WS-B): when the commit changes the theme and
+// content/design.md is one this platform generated (isGeneratedDesignMd), it
+// is rewritten from the new brand/design in the SAME commit — the next Studio
+// run is then briefed against the applied theme, not the one before it. A
+// hand-written design.md is never touched; a failed read skips it (the theme
+// apply never fails over its notes). In base mode the file is written
+// unguarded: the base snapshot does not cover it and a branch read right
+// after a commit can lag.
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { DRAFT_BRANCH, ensureDraftBranch, readFile, writeFiles, FileNotFoundError } from '@/lib/github/repo-files'
 import { checkThemeContrast } from '@/lib/content/theme-css-generator'
 import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH, THEME_CSS_PATH } from '@/app/api/edit/[id]/theme/_theme'
+import { isGeneratedDesignMd } from '@/lib/content/design-md-builder'
 import { bundleToRepoFiles } from './bundle-files'
+import { DESIGN_MD_PATH } from './brief/brand'
 import { FONTS_MODULE_PATH } from './drift'
 import type { DesignBundle } from './bundle'
 import type { DraftThemeSnapshot } from './theme-snapshot'
@@ -48,6 +59,25 @@ export async function readOptional(repo: string, path: string): Promise<{ conten
   }
 }
 
+// The design.md rewrite for this commit, or null (absent, hand-written,
+// unchanged, or unreadable).
+async function designMdChange(
+  repo: string,
+  build: () => string | null,
+  baseMode: boolean
+): Promise<{ path: string; content: string; expectedSha: string | undefined } | null> {
+  try {
+    const current = await readOptional(repo, DESIGN_MD_PATH)
+    if (!current || !isGeneratedDesignMd(current.content)) return null
+    const next = build()
+    if (next === null || next === current.content) return null
+    return { path: DESIGN_MD_PATH, content: next, expectedSha: baseMode ? undefined : current.sha }
+  } catch (err) {
+    console.warn('[design:apply] design.md was not regenerated', err)
+    return null
+  }
+}
+
 export async function applyBundleToDraft(args: {
   githubRepo: string
   bundle: DesignBundle
@@ -61,6 +91,8 @@ export async function applyBundleToDraft(args: {
   overridesVerbatim?: string
   // L2+ DRAFT (marker declares fonts): also write/guard src/app/fonts.generated.ts
   fontsModule?: boolean
+  // Rebuilds a platform-generated content/design.md from the new theme.
+  designMd?: (brand: BrandJson, design: DesignJson) => string
 }): Promise<ApplyBundleResult> {
   const { githubRepo, bundle, removeLegacy, message, author, base, overridesVerbatim, fontsModule = false } = args
   await ensureDraftBranch(githubRepo)
@@ -121,6 +153,8 @@ export async function applyBundleToDraft(args: {
   if (changes.length === 0) {
     return { ok: true, commitSha: null, blobs: {}, changedPaths: [], brand, design, css: rendered.css }
   }
+  const notes = args.designMd ? await designMdChange(githubRepo, () => args.designMd?.(brand, design) ?? null, base !== undefined) : null
+  if (notes) changes.push(notes)
 
   const changedPaths = changes.map((c) => c.path)
   // Base mode: guard the unchanged base files too (same content = same blob,

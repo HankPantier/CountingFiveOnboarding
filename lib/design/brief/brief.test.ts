@@ -125,6 +125,10 @@ describe('buildConceptPrompt (dynamic parts)', () => {
     expect(all).toContain('Warm and direct')
     expect(all).toContain('Calm, trustworthy, modern.')
     expect(all).not.toContain('version: alpha')
+    // WS-B: possibly-outdated, fenced notes — never an 'intended direction'.
+    expect(all).toContain('BRAND NOTES (from the site\'s content/design.md — may be outdated;')
+    expect(all).toContain('<<<BRAND_NOTES\n## Overview')
+    expect(all).not.toContain('INTENDED DESIGN DIRECTION')
   })
   it('fences the admin brief, admin input notes and page HTML as data', () => {
     expect(all).toContain(fenceData('ADMIN_BRIEF', 'Make it feel like a boutique law library.'))

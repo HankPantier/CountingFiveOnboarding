@@ -2,7 +2,7 @@ import chroma from 'chroma-js'
 import type { PaletteData } from '@/types/palette'
 import type { DesignTokens, Roundness, Density } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
-import { findPairing, type TypePairingFeel } from './type-pairing-catalog'
+import { TYPE_PAIRINGS, findPairing, type TypePairingFeel } from './type-pairing-catalog'
 import { arr, isSentinelNone } from './schema-coerce'
 
 type BuilderInput = {
@@ -12,6 +12,12 @@ type BuilderInput = {
   brand: SessionSchema['brand'] | undefined
   business: SessionSchema['business'] | undefined
   location: { city: string; state: string } | null
+  // The Google Fonts URL for the leading comment when the fonts are not a
+  // catalog pairing (a Design Studio theme) — else the pairing's own URL.
+  fontsUrl?: string
+  // A Design Studio design's name / tagline / moves (our validated bundle
+  // text), written as a closing "Design direction" section.
+  direction?: { name: string; tagline: string; moves: string[] }
 }
 
 function yamlEscape(s: string): string {
@@ -152,7 +158,7 @@ function buildOverview(input: BuilderInput): string {
   const feelLine: Record<typeof tokens.visualFeel, string> = {
     classic: 'Visual direction is classic: restrained typography, sturdy structure, considered detailing.',
     modern: 'Visual direction is modern: clean type, generous whitespace, confident accents.',
-    editorial: 'Visual direction is editorial: serif headlines, considered hierarchy, room for long reads.',
+    editorial: 'Visual direction is editorial: considered hierarchy, a comfortable measure, room for long reads.',
   }
   return `## Overview
 
@@ -193,17 +199,29 @@ function buildColorsSection(input: BuilderInput): string {
 The palette is rooted in **${palette.primary.name}** as the structural primary and **${palette.action.name}** as the action color used sparingly for CTAs. Near-black (${palette.nearBlack.hex}) and near-white (${palette.nearWhite.hex}) provide high-contrast surface pairings. The complementary accent (${palette.complementary.hex}) is reserved for badges and visual punctuation — never large fills.`
 }
 
+// Headline wording comes ONLY from the fonts actually set and the
+// headlineStyle treatment — never from visualFeel or the pairing's feel, which
+// used to print "serif headlines" next to "Nunito for headlines".
 function buildTypographySection(input: BuilderInput): string {
-  const pairing = findPairing(input.tokens.typePairing.id)
+  const { headingFont, bodyFont, accentFont, id } = input.tokens.typePairing
+  const pairing = findPairing(id)
+  const samePairing = pairing && pairing.headingFont === headingFont && pairing.bodyFont === bodyFont
   const blurb: Record<TypePairingFeel, string> = {
     modern: 'A clean, neutral sans throughout favors clarity over decoration. Tight letter-spacing on headlines keeps the typography editorial without feeling cold.',
-    editorial: 'Serif headlines pair with a humanist sans body. The combination gives long-form pages (About, Services) a considered, journalistic weight.',
-    classic: 'High-contrast classic typography signals authority and continuity. Use sparingly on headlines; let the sans body do the reading work.',
+    editorial: 'Display headlines pair with a humanist body face. The combination gives long-form pages (About, Services) a considered, journalistic weight.',
+    classic: 'High-contrast classic typography signals authority and continuity. Use sparingly on headlines; let the body face do the reading work.',
     warm: 'Rounded forms throughout give the typography an approachable, human feel. Body sizes step up to 1rem for comfortable long-form reading.',
   }
+  const accent = accentFont ? `, ${accentFont} as the accent face (emphasis words, numerals)` : ''
+  const treatment =
+    input.tokens.headlineStyle === 'serif'
+      ? ' Headlines use the serif display treatment.'
+      : input.tokens.headlineStyle === 'sans'
+        ? ` Headlines are set in ${headingFont} (the sans treatment).`
+        : ''
   return `## Typography
 
-${pairing?.headingFont ?? 'Heading font'} for headlines, ${pairing?.bodyFont ?? 'body font'} for body copy. ${pairing ? blurb[pairing.feel] : ''}`
+${headingFont} for headlines, ${bodyFont} for body copy${accent}.${treatment}${samePairing ? ` ${blurb[pairing.feel]}` : ''}`
 }
 
 function buildLayoutSection(input: BuilderInput): string {
@@ -245,7 +263,7 @@ function buildDosDontsSection(input: BuilderInput): string {
   const feelDo: Record<typeof tokens.visualFeel, string> = {
     classic: 'Keep typography restrained — let structural choices carry the brand',
     modern: 'Keep hero copy short — let typography and whitespace carry the weight',
-    editorial: 'Use serif headlines for long-form pages; reserve sans for UI chrome',
+    editorial: 'Give long-form pages room: considered hierarchy and a comfortable measure',
   }
   const avoidWords = arr(brand?.toneToAvoid)
     .map(w => (typeof w === 'string' ? w.trim() : ''))
@@ -254,11 +272,12 @@ function buildDosDontsSection(input: BuilderInput): string {
     ? `\n- Don't use words from the firm's avoid list: ${avoidWords.map(w => `"${w.replace(/"/g, '\\"')}"`).join(', ')}`
     : ''
 
+  const serifDo = tokens.headlineStyle === 'serif' ? '\n- Keep the serif headline treatment consistent across pages' : ''
   return `## Do's and Don'ts
 
 **Do**
 - Use the action color for one CTA per screen
-- ${feelDo[tokens.visualFeel]}
+- ${feelDo[tokens.visualFeel]}${serifDo}
 - Pair CTAs against high-contrast backgrounds
 
 **Don't**
@@ -267,9 +286,18 @@ function buildDosDontsSection(input: BuilderInput): string {
 - Don't introduce a third heading font${avoidLine}`
 }
 
+function buildDirectionSection(input: BuilderInput): string {
+  const d = input.direction
+  if (!d) return ''
+  const one = (t: string) => t.replace(/\s+/g, ' ').trim()
+  const head = `**${one(d.name)}**${d.tagline.trim() ? ` — ${one(d.tagline)}` : ''}`
+  const moves = d.moves.map(one).filter(Boolean).map((m) => `- ${m}`)
+  return `## Design direction\n\nThe current look was set in the Design Studio: ${head}${moves.length ? `\n\n${moves.join('\n')}` : ''}`
+}
+
 export function buildDesignMd(input: BuilderInput): string {
   const pairing = findPairing(input.tokens.typePairing.id)
-  const fontsUrl = pairing?.googleFontsUrl ?? ''
+  const fontsUrl = input.fontsUrl ?? pairing?.googleFontsUrl ?? ''
   const front = buildYamlFrontMatter(input, fontsUrl)
 
   const voice = buildVoiceSection(input)
@@ -293,6 +321,92 @@ export function buildDesignMd(input: BuilderInput): string {
     buildComponentsSection(),
     '',
     buildDosDontsSection(input),
+    ...(input.direction ? ['', buildDirectionSection(input)] : []),
   ]
   return sections.join('\n') + '\n'
+}
+
+// ── Design Studio regeneration (WS-B, R2 I6c) ───────────────────────────────
+// Apply / chat commit rewrote brand.json + design.json but never design.md,
+// so the next Studio run was briefed against the pre-apply theme. A file this
+// builder wrote is detected by its fixed scaffolding (the leading Fonts
+// comment, the alpha front matter, the rebuild description, the static
+// Elevation + Components copy and the section order). Anything else — a
+// hand-written or hand-reshaped design.md — is never overwritten.
+const GENERATED_MARKERS = [
+  /^<!-- Fonts: [^\n]*-->\n---\nversion: alpha\n/,
+  /\ndescription: "Design system for the [^\n]* website rebuild\."\n/,
+  /\n## Elevation & Depth\n\nUse navy-tinted shadows, not pure black\./,
+  /\n## Components\n\nButton-primary is the action color with on-action text/,
+]
+const GENERATED_SECTION_ORDER = ['## Overview', '## Colors', '## Typography', '## Layout', '## Elevation & Depth', '## Shapes', '## Components', "## Do's and Don'ts"]
+
+export function isGeneratedDesignMd(text: string): boolean {
+  const t = text.replace(/\r\n/g, '\n')
+  if (!GENERATED_MARKERS.every((re) => re.test(t))) return false
+  let at = -1
+  for (const h of GENERATED_SECTION_ORDER) {
+    const i = t.indexOf(`\n${h}\n`, at + 1)
+    if (i === -1) return false
+    at = i
+  }
+  return true
+}
+
+type ThemeBrand = { firm?: { name?: string }; palette: Record<'primary' | 'secondary' | 'complementary' | 'action' | 'nearBlack' | 'nearWhite', string> }
+type ThemeDesign = {
+  typography: { headingFont: string; bodyFont: string; accentFont?: string; googleFontsUrl?: string }
+  roundness: DesignTokens['roundness']
+  density: DesignTokens['density']
+  visualFeel: DesignTokens['visualFeel']
+  headlineStyle?: 'sans' | 'serif'
+  eyebrowStyle?: 'standard' | 'mono'
+  darkSections?: boolean
+}
+
+// design.md from the theme files a Studio commit just wrote (brand.json +
+// design.json) plus the MBP fields the package builder uses. Palette swatches
+// are named by role + hex (the palette tool's names are not in brand.json).
+export function buildDesignMdFromTheme(args: {
+  brand: ThemeBrand
+  design: ThemeDesign
+  schema: SessionSchema | null
+  direction?: BuilderInput['direction']
+}): string {
+  const { brand, design, schema } = args
+  const swatch = (role: string, hex: string) => ({ hex, name: `${role} ${hex}` })
+  const p = brand.palette
+  const pairing = TYPE_PAIRINGS.find((x) => x.headingFont === design.typography.headingFont && x.bodyFont === design.typography.bodyFont)
+  const loc = schema?.locations?.[0]
+  return buildDesignMd({
+    firmName: brand.firm?.name?.trim() || 'The firm',
+    palette: {
+      primary: swatch('primary', p.primary),
+      secondary: swatch('secondary', p.secondary),
+      complementary: swatch('complementary', p.complementary),
+      action: swatch('action', p.action),
+      nearBlack: swatch('near-black', p.nearBlack),
+      nearWhite: swatch('near-white', p.nearWhite),
+    },
+    tokens: {
+      typePairing: {
+        id: pairing?.id ?? 'custom',
+        headingFont: design.typography.headingFont,
+        bodyFont: design.typography.bodyFont,
+        label: pairing?.label ?? 'Custom',
+        ...(design.typography.accentFont ? { accentFont: design.typography.accentFont } : {}),
+      },
+      roundness: design.roundness,
+      density: design.density,
+      visualFeel: design.visualFeel,
+      ...(design.headlineStyle ? { headlineStyle: design.headlineStyle } : {}),
+      ...(design.eyebrowStyle ? { eyebrowStyle: design.eyebrowStyle } : {}),
+      ...(design.darkSections !== undefined ? { darkSections: design.darkSections } : {}),
+    },
+    brand: schema?.brand,
+    business: schema?.business,
+    location: loc ? { city: loc.city, state: loc.state } : null,
+    ...(design.typography.googleFontsUrl ? { fontsUrl: design.typography.googleFontsUrl } : {}),
+    ...(args.direction ? { direction: args.direction } : {}),
+  })
 }

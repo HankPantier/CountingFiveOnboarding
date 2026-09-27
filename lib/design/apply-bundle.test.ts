@@ -26,6 +26,7 @@ import { readRegion } from './bundle-files'
 import { VALID } from './__fixtures__/valid-bundle'
 import { FONTS_MODULE_PATH } from './drift'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
+import { buildDesignMd } from '@/lib/content/design-md-builder'
 
 const FIX = path.join(__dirname, '..', 'content', '__fixtures__')
 const AUTHOR = { name: 'Admin', email: 'a@example.com' }
@@ -244,5 +245,51 @@ describe('fonts module (L2+ drafts)', () => {
     await applyBundleToDraft({ ...ARGS, bundle: interBundle, fontsModule: true, base })
     const written = writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha: unknown }[]
     expect(written.find((w) => w.path === FONTS_MODULE_PATH)).toEqual({ path: FONTS_MODULE_PATH, content: FRESH, expectedSha: null })
+  })
+})
+
+describe('applyBundleToDraft — design.md (WS-B)', () => {
+  const GENERATED = buildDesignMd({
+    firmName: 'Acme CPA',
+    palette: Object.fromEntries(['primary', 'secondary', 'complementary', 'action', 'nearBlack', 'nearWhite'].map((r) => [r, { hex: '#003b71', name: r }])) as never,
+    tokens: { typePairing: { id: 'modern-sans', headingFont: 'Inter', bodyFont: 'Inter', label: 'Modern Sans' }, roundness: 'soft', density: 'balanced', visualFeel: 'editorial' },
+    brand: undefined,
+    business: undefined,
+    location: null,
+  })
+  const build = vi.fn(() => `${GENERATED}\n## Design direction\n\nHarbor\n`)
+
+  it('rewrites a platform-generated design.md in the same commit (guarded by its sha)', async () => {
+    files.set('content/design.md', { content: GENERATED, sha: 'smd' })
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })
+    expect(r.ok).toBe(true)
+    expect(writeFiles).toHaveBeenCalledTimes(1)
+    const md = (writeFiles.mock.calls[0][1] as { path: string; content: string; expectedSha?: string }[]).find((c) => c.path === 'content/design.md')
+    expect(md).toMatchObject({ expectedSha: 'smd' })
+    expect(md?.content).toContain('## Design direction')
+    const [brand, design] = build.mock.calls.at(-1) as unknown as [{ palette: unknown }, { typography: unknown }]
+    expect(brand.palette).toMatchObject({ primary: VALID.palette.primary })
+    expect(design.typography).toMatchObject({ headingFont: VALID.typography.headingFont })
+  })
+
+  it('never touches a hand-written design.md, or one that is absent', async () => {
+    files.set('content/design.md', { content: '# Our notes\nWarm and editorial.\n', sha: 'smd' })
+    await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })
+    expect((writeFiles.mock.calls[0][1] as { path: string }[]).map((c) => c.path)).not.toContain('content/design.md')
+    files.delete('content/design.md')
+    writeFiles.mockClear()
+    await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })
+    expect((writeFiles.mock.calls[0][1] as { path: string }[]).map((c) => c.path)).not.toContain('content/design.md')
+  })
+
+  it('a theme that does not change writes nothing — not even design.md', async () => {
+    files.set('content/design.md', { content: GENERATED, sha: 'smd' })
+    await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR })
+    const written = writeFiles.mock.calls[0][1] as { path: string; content: string }[]
+    for (const c of written) files.set(c.path, { content: c.content, sha: `s-${c.path}` })
+    writeFiles.mockClear()
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: VALID, removeLegacy: false, message: 'm', author: AUTHOR, designMd: build })
+    expect(r.ok && r.changedPaths).toEqual([])
+    expect(writeFiles).not.toHaveBeenCalled()
   })
 })

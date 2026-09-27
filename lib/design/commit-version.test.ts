@@ -90,6 +90,17 @@ describe('commitDesignVersion', () => {
     expect((v.screenshots as unknown[]).length).toBe(1)
   })
 
+  it('hands the apply a design.md rebuilder: the design direction for a concept / chat commit, none for a restore (WS-B)', async () => {
+    const theme = { brand: JSON.parse(BRAND_TEXT), design: JSON.parse(DESIGN_TEXT) }
+    await commitDesignVersion(DB, args({ source: 'concept', bundle: { ...VALID, name: 'Port Arthur Ledger' } }))
+    const build = (m.apply.mock.calls[0][0] as { designMd: (b: unknown, d: unknown) => string }).designMd
+    expect(build(theme.brand, theme.design)).toContain('**Port Arthur Ledger**')
+    m.snapshot.mockReset().mockResolvedValue(BEFORE)
+    await commitDesignVersion(DB, args({ source: 'revert' }))
+    const restore = (m.apply.mock.calls[1][0] as { designMd: (b: unknown, d: unknown) => string }).designMd
+    expect(restore(theme.brand, theme.design)).not.toContain('## Design direction')
+  })
+
   // PF2: expectedShas is the base the caller built on. It is handed straight to
   // applyBundleToDraft (whose writeFiles sha guard is the ONLY staleness
   // check) — no snapshot-vs-expected pre-comparison that a lagging read could
