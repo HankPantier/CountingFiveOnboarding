@@ -17,6 +17,10 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // - P7 judge rework (2026-09-26): ONE added art-direction line, the
 //   "Signature CSS" non-negotiable (2–3 scoped css.blocks moves per concept),
 //   on every tier. Nothing else in the L1/L2 bytes moved.
+// - Concept-quality blockers (2026-09-27): the CSS RULES "Allowed at-rules" +
+//   "Forbidden" lines now list everything the sanitizer rejects (incl. the new
+//   pointer-events:none-on-::before/::after-only rule), on every tier, so
+//   concepts stop spending revisions on rejected CSS. Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -244,7 +248,7 @@ describe('style axes in the brief', () => {
       expect(p).toContain('- Never emit a "style" field (style axes are not available to you).')
     }
   })
-  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line)', () => {
+  it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 full forbidden-CSS list)', () => {
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toBe(readGolden('static-prefix-l1.golden.txt'))
     expect(buildStaticPrefix(L2)).toBe(readGolden('static-prefix-l2.golden.txt'))
   })

@@ -131,14 +131,15 @@ describe('reviseConcept', () => {
       expect(r).toMatchObject({ concept: null, stoppedReason: 'no_output' })
       expect(r.errors).toEqual(['css.blocks.hero: The CSS has 75 lines (max 60).', 'after repair: css.blocks.hero: The CSS has 75 lines (max 60).'])
     })
-    it('a size error mixed with any other error → no repair', async () => {
+    it('a size error mixed with a sanitizer error → one repair turn that asks to fix the CSS', async () => {
       const mixed = { ...OVERSIZED, css: { global: 'body { position: fixed; }', blocks: { hero: OVER } } }
-      answer = { concepts: [mixed] }
+      queue = [{ concepts: [mixed] }]
       const r = await reviseConcept(args())
-      expect(r.concept).toBeNull()
-      expect(r.errors.some((e) => e.includes('75 lines'))).toBe(true)
-      expect(r.errors.length).toBeGreaterThan(1)
-      expect(m.generateJson).toHaveBeenCalledTimes(1)
+      expect(m.generateJson).toHaveBeenCalledTimes(2)
+      const user = (m.generateJson.mock.calls[1][0] as { messages: { content: unknown }[] }).messages.at(-1)
+      expect(user?.content).toContain('the CSS sanitizer rejected it')
+      expect(user?.content).toContain('75 lines')
+      expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
     })
     it('the cost cap vetoes the repair: rejected with the size errors, no extra spend', async () => {
       queue = [{ concepts: [OVERSIZED] }]
@@ -156,6 +157,48 @@ describe('reviseConcept', () => {
       expect(m.generateJson).toHaveBeenCalledTimes(1)
       expect(r).toMatchObject({ concept: null, stoppedReason: 'deadline' })
       expect(r.costUsd).toBeCloseTo(0.28, 6)
+    })
+  })
+  describe('sanitizer repair (live run a81093ea: "css.blocks.hero: pointer-events: none is not allowed")', () => {
+    const BAD_HERO = '[data-block="hero"] a { pointer-events: none; }'
+    const REJECTED = { ...rawOf(REVISED), css: { blocks: { hero: BAD_HERO } } }
+    it('a revision rejected by the sanitizer gets exactly one repair turn quoting the errors, and the repaired bundle is used', async () => {
+      queue = [{ concepts: [REJECTED] }]
+      const r = await reviseConcept(args())
+      expect(m.generateJson).toHaveBeenCalledTimes(2)
+      const repair = m.generateJson.mock.calls[1][0] as Opts & { messages: { role: string; content: unknown }[]; label: string }
+      expect(repair.label).toBe('design-revise-repair')
+      const [assistant, user] = repair.messages.slice(-2)
+      expect(assistant).toEqual({ role: 'assistant', content: JSON.stringify({ concepts: [REJECTED] }) })
+      expect(user.content).toContain('css.blocks.hero: pointer-events: none is not allowed')
+      expect(user.content).toContain('Fix ONLY the offending CSS')
+      expect(user.content).toContain('[data-block="<id>"]') // the CSS reminder
+      expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
+      expect(r.errors).toEqual([])
+      expect(r.stoppedReason).toBeNull()
+      expect(r.costUsd).toBeCloseTo(0.56, 6)
+    })
+    it('rejected twice → no concept with both errors, no third call', async () => {
+      answer = { concepts: [REJECTED] }
+      const r = await reviseConcept(args())
+      expect(m.generateJson).toHaveBeenCalledTimes(2)
+      expect(r).toMatchObject({ concept: null, stoppedReason: 'no_output' })
+      expect(r.errors).toHaveLength(2)
+      expect(r.errors[1]).toMatch(/^after repair: css\.blocks\.hero: pointer-events/)
+    })
+    it('the cost cap vetoes the repair: rejected, no extra spend', async () => {
+      queue = [{ concepts: [REJECTED] }]
+      const r = await reviseConcept(args({ costCapUsd: 0.2 }))
+      expect(m.generateJson).toHaveBeenCalledTimes(1)
+      expect(r).toMatchObject({ concept: null, stoppedReason: 'cost_cap' })
+      expect(r.costUsd).toBeCloseTo(0.28, 6)
+    })
+    it('a non-CSS failure (contrast) still gets no repair', async () => {
+      answer = { concepts: [{ ...rawOf(REVISED), palette: { ...VALID.palette, nearBlack: '#bbbbbb', nearWhite: '#ffffff' } }] }
+      const r = await reviseConcept(args())
+      expect(r.concept).toBeNull()
+      expect(r.errors.join(' ')).toContain('contrast')
+      expect(m.generateJson).toHaveBeenCalledTimes(1)
     })
   })
 })

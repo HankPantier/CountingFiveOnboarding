@@ -434,6 +434,42 @@ function isFinalKeyframeStep(selector: string): boolean {
   })
 }
 
+// Generated boxes (::before / ::after, incl. the legacy one-colon spelling).
+const GENERATED_PSEUDO_ELEMENTS = new Set(['::before', '::after', ':before', ':after'])
+
+// True when the selector's SUBJECT (its last compound, after the final
+// combinator) is a ::before / ::after pseudo-element — the rule styles a
+// generated box, never a real element. Only direct compound nodes count: a
+// pseudo-element inside :is()/:not()/… arguments doesn't make the subject one.
+function subjectIsGeneratedBox(sel: selectorParser.Selector): boolean {
+  let i = sel.nodes.length - 1
+  while (i >= 0 && sel.nodes[i].type !== 'combinator') {
+    const n = sel.nodes[i]
+    if (n.type === 'pseudo' && GENERATED_PSEUDO_ELEMENTS.has(n.value.toLowerCase())) return true
+    i--
+  }
+  return false
+}
+
+// The declaration's INNERMOST rule targets only generated boxes: every
+// selector in its comma-list has a ::before/::after subject. A nested
+// `&::before` inside `[data-block="hero"] a` qualifies; a nested `& a` inside
+// `[data-block="hero"]::before` does not (its own subject is a real element).
+function innermostRuleIsGeneratedBoxOnly(decl: Declaration): boolean {
+  let p: Node | undefined = decl.parent
+  while (p && p.type !== 'rule') {
+    if (p.type === 'root' || p.type === 'document') return false
+    p = (p as Container).parent
+  }
+  if (!p || hasAncestor(p as Rule, isKeyframes)) return false
+  try {
+    const parsed = selectorParser().astSync((p as Rule).selector)
+    return parsed.nodes.length > 0 && parsed.nodes.every(subjectIsGeneratedBox)
+  } catch {
+    return false
+  }
+}
+
 // Every selector in the owning rule's comma-list, not just the first — a
 // declaration applies to ALL of them, so a target-dependent check (currently
 // just position:fixed/sticky → navbar-only) must hold for every one.
@@ -509,7 +545,15 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
       else if (parseInt(value, 10) > 50) errors.push(`z-index: ${decl.value} is too high (max 50).`)
     }
   }
-  if (prop === 'pointer-events' && value === 'none') errors.push('pointer-events: none is not allowed.')
+  // pointer-events: none on a REAL element could make links/buttons/fields
+  // unclickable — refused. On a ::before/::after it is the standard way to keep
+  // a decorative overlay (scrim, grain, rule) from swallowing clicks meant for
+  // the content beneath; a generated box has no children and the value never
+  // reaches its host element, so it cannot disable real content. The overlay
+  // WITHOUT it is what blocks clicks, and that was always allowed.
+  if (prop === 'pointer-events' && value === 'none' && !innermostRuleIsGeneratedBoxOnly(decl)) {
+    errors.push('pointer-events: none is not allowed (only on a ::before/::after pseudo-element).')
+  }
   if ((prop === 'animation' || prop === 'animation-fill-mode') && /\b(?:forwards|backwards|both)\b/.test(value)) {
     errors.push(`${prop}: ${decl.value} may not use the forwards/backwards/both fill mode (can hide content permanently).`)
   }
