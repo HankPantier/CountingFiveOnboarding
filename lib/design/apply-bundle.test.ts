@@ -110,6 +110,23 @@ describe('applyBundleToDraft', () => {
     expect(r.ok).toBe(true)
   })
 
+  it("v0 restore after a concept changed the palette: the site's own original (failing) pair is not refused", async () => {
+    // v0 = the original design: vermilion on teal (2.47:1). A concept then
+    // changed action → the draft now holds the passing fixture palette.
+    const v0 = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }
+    const recorded = [{ action: '#cc381e', primary: '#003a42' }, { action: VALID.palette.action, primary: VALID.palette.primary }]
+    const refused = await applyBundleToDraft({ githubRepo: 'o/r', bundle: v0, removeLegacy: false, message: 'm', author: AUTHOR })
+    expect(refused).toMatchObject({ ok: false, status: 422 }) // without the recorded pairs it is a new failure
+    const restored = await applyBundleToDraft({ githubRepo: 'o/r', bundle: v0, removeLegacy: false, message: 'm', author: AUTHOR, grandfatheredPairs: recorded })
+    expect(restored.ok).toBe(true)
+  })
+
+  it('recorded pairs grandfather only action / primary — never a different failing pair', async () => {
+    const other = { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#d9481f' } }
+    const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: other, removeLegacy: false, message: 'm', author: AUTHOR, grandfatheredPairs: [{ action: '#cc381e', primary: '#003a42' }] })
+    expect(r).toMatchObject({ ok: false, status: 422 })
+  })
+
   it('returns 422 when the bundle CSS fails the sanitizer', async () => {
     const bad = { ...VALID, css: { blocks: { hero: 'body { display: none; }' } } }
     const r = await applyBundleToDraft({ githubRepo: 'o/r', bundle: bad, removeLegacy: false, message: 'm', author: AUTHOR })

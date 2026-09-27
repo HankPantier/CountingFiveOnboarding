@@ -94,6 +94,12 @@ describe('checkThemeContrast — action / primary (2026-09-26)', () => {
     expect(checkThemeContrast({ palette: failing }, { baseline }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
   })
 
+  it('grandfathers any listed recorded pair (a restore of an earlier palette), case-insensitively', () => {
+    const grandfathered = [{ action: '#00c1de', primary: '#003b71' }, { action: '#CC381E', primary: '#003A42' }]
+    expect(checkThemeContrast({ palette: failing }, { baseline: fixture, grandfathered }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(false)
+    expect(checkThemeContrast({ palette: failing }, { baseline: fixture, grandfathered: [grandfathered[0]] }).some((f) => f.name === ACTION_ON_PRIMARY_PAIR)).toBe(true)
+  })
+
   it('never grandfathers the pre-existing pairs', () => {
     const bad = { ...brand.palette, nearWhite: '#111111', nearBlack: '#000000' }
     expect(checkThemeContrast({ palette: bad }, { baseline: bad }).length).toBeGreaterThan(0)

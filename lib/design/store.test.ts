@@ -15,6 +15,7 @@ import {
   insertVersion,
   latestVersion,
   listInputs,
+  listRecordedActionPrimaryPairs,
   listVersions,
   readSessionSchema,
   updateInput,
@@ -256,5 +257,25 @@ describe('getVersion', () => {
   it('throws on a DB error', async () => {
     const f = fakeSupabase({ design_versions: [{ error: { message: 'boom' } }] })
     await expect(getVersion(f.client, SID, 'x')).rejects.toThrow(/getVersion/)
+  })
+})
+
+describe('listRecordedActionPrimaryPairs', () => {
+  it("returns every recorded version's action / primary via a JSON-path select (never the full bundle)", async () => {
+    const f = fakeSupabase({
+      design_versions: [{ data: [{ action: '#cc381e', primary: '#003a42' }, { action: '#00c1de', primary: '#003b71' }, { action: null, primary: '#000000' }] }],
+    })
+    expect(await listRecordedActionPrimaryPairs(f.client, SID)).toEqual([
+      { action: '#cc381e', primary: '#003a42' },
+      { action: '#00c1de', primary: '#003b71' },
+    ])
+    expect(f.opsFor('design_versions')).toContainEqual(['eq', 'session_id', SID])
+    const [, columns] = f.opsFor('design_versions')[0] as [string, string]
+    expect(columns).toBe('action:bundle->palette->>action, primary:bundle->palette->>primary')
+  })
+  it('fails soft on a read error (grandfathers nothing extra)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fakeSupabase({ design_versions: [{ error: { message: 'boom' } }] })
+    expect(await listRecordedActionPrimaryPairs(f.client, SID)).toEqual([])
   })
 })

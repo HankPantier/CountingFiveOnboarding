@@ -83,7 +83,13 @@ export type ContrastGateOptions = {
    * it joined the gate on 2026-09-26, after palettes were saved) — the Design
    * Studio mustn't refuse to keep a client's existing palette. */
   baseline?: BrandJson['palette']
+  /** Further action / primary pairs the site has had (every Design Studio
+   * version recorded for it, incl. the v0 baseline) — restoring one of the
+   * site's own earlier palettes is never refused for this pair. */
+  grandfathered?: ReadonlyArray<ActionPrimaryPair>
 }
+
+export type ActionPrimaryPair = { action: string; primary: string }
 
 const sameHex = (a: string | undefined, b: string | undefined) =>
   typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase()
@@ -117,8 +123,8 @@ export function checkThemeContrast(brand: Pick<BrandJson, 'palette'>, opts: Cont
     { name: 'footer muted text (text-bg/90)', bg: palette.nearBlack, fg: footerMutedText, minRatio: 4.5 },
     { name: 'ink-fg / ink', bg: ink, fg: inkFg, minRatio: 4.5 },
   ]
-  const { baseline } = opts
-  const grandfathered = !!baseline && sameHex(baseline.action, palette.action) && sameHex(baseline.primary, palette.primary)
+  const known: ActionPrimaryPair[] = [...(opts.baseline ? [opts.baseline] : []), ...(opts.grandfathered ?? [])]
+  const grandfathered = known.some((p) => sameHex(p.action, palette.action) && sameHex(p.primary, palette.primary))
   if (!grandfathered) {
     pairs.push({ name: ACTION_ON_PRIMARY_PAIR, bg: primaryBg, fg: palette.action, minRatio: 4.5, hint: ACTION_ON_PRIMARY_HINT })
   }
