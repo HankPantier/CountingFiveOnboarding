@@ -9,8 +9,10 @@ const store = vi.fn(async (..._a: unknown[]) => undefined)
 vi.mock('../_design', () => ({ requireDesignAdmin: (id: string) => gate(id) }))
 vi.mock('@/lib/theme-preview/site-url', () => ({ getPreviewSiteUrl: async () => 'https://bblcpa.vercel.app/' }))
 const shellOrigin = { value: 'https://bblcpa.vercel.app/' }
+const shellFailure: { value: { ok: false; reason: string; code?: 'not_revaltus' } | null } = { value: null }
 vi.mock('@/lib/theme-preview/build-preview-shell', () => ({
-  buildPreviewShell: async () => ({ ok: true, origin: shellOrigin.value, shellHtml: '<html data-c5-footer="brand"><head><!--__C5_THEME_SLOT__--></head><body></body></html>' }),
+  buildPreviewShell: async () =>
+    shellFailure.value ?? { ok: true, origin: shellOrigin.value, shellHtml: '<html data-c5-footer="brand"><head><!--__C5_THEME_SLOT__--></head><body></body></html>' },
 }))
 vi.mock('@/lib/design/theme-sources', () => ({
   loadDraftThemeSources: async () => ({
@@ -45,6 +47,7 @@ const req = (body: unknown) => new Request('http://x/api', { method: 'POST', bod
 
 beforeEach(() => {
   shellOrigin.value = 'https://bblcpa.vercel.app/'
+  shellFailure.value = null
   gate.mockReset()
   render.mockReset()
   store.mockClear()
@@ -68,6 +71,22 @@ describe('POST /design/render', () => {
   it('rejects an unsafe page path with 400', async () => {
     const res = await POST(req({ path: '//evil.test' }), params)
     expect(res.status).toBe(400)
+    expect(render).not.toHaveBeenCalled()
+  })
+
+  it('refuses a page without the Revaltus marker (the old site) with 422 + the message, never rendering it', async () => {
+    const reason = "https://acme.com isn't the Revaltus-built site (it may be the client's old site before DNS cutover). Set the preview URL to the site's Vercel address, e.g. https://<project>.vercel.app."
+    shellFailure.value = { ok: false, reason, code: 'not_revaltus' }
+    const res = await POST(req({}), params)
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ error: reason, code: 'not_revaltus' })
+    expect(render).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unreachable shell a 502', async () => {
+    shellFailure.value = { ok: false, reason: 'Could not reach the live site (blocked or unreachable).' }
+    const res = await POST(req({}), params)
+    expect(res.status).toBe(502)
     expect(render).not.toHaveBeenCalled()
   })
 

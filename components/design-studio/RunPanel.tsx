@@ -62,6 +62,7 @@ export default function RunPanel({
             Page {run.pagePath} · palette {run.paletteFreedom} · {formatUsd(run.costUsd)} of {formatUsd(run.costCapUsd)} cap
             {run.capabilities.level < 2 ? ' · fonts locked on this site' : ''}
           </p>
+          {run.capabilities.shellNote && <p className="font-body text-xs text-warning-strong">{run.capabilities.shellNote}</p>}
         </div>
         <div className="flex gap-2">
           {active && (

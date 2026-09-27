@@ -66,6 +66,8 @@ export default function ThemeStudio({
   const [loading, setLoading] = useState(true)
   const [busyUrl, setBusyUrl] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The preview URL answered but isn't the Revaltus-built site (422 not_revaltus).
+  const [wrongSite, setWrongSite] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [contrastWarnings, setContrastWarnings] = useState<string[]>([])
@@ -95,10 +97,14 @@ export default function ThemeStudio({
   // with a clear message when no preview URL is set yet.
   const loadPreview = useCallback(async () => {
     setError(null)
+    setWrongSite(false)
     setShellHtml(null)
     const shellRes = await fetch(`/api/edit/${sessionId}/theme/shell`)
     if (!shellRes.ok) {
-      const data = (await shellRes.json().catch(() => ({}))) as { error?: string }
+      const data = (await shellRes.json().catch(() => ({}))) as { error?: string; code?: string }
+      // 422 not_revaltus: the URL is the client's old site (pre-cutover), not
+      // the Revaltus build — shown as a fix-the-URL notice, never a blank frame.
+      if (data.code === 'not_revaltus') setWrongSite(true)
       throw new Error(data.error ?? `Failed to load the preview (${shellRes.status})`)
     }
     const shell = (await shellRes.json()) as { shellHtml: string }
@@ -135,6 +141,7 @@ export default function ThemeStudio({
     async (value: string | null) => {
       setBusyUrl(true)
       setError(null)
+      setWrongSite(false)
       try {
         const res = await fetch(`/api/edit/${sessionId}/theme/preview-url`, {
           method: 'PATCH',
@@ -395,7 +402,13 @@ export default function ThemeStudio({
             Loading the site…
           </div>
         ) : error ? (
-          <div className="flex flex-1 items-center justify-center px-6 text-center font-body text-sm text-error">
+          <div
+            role="alert"
+            className={[
+              'flex flex-1 items-center justify-center px-6 text-center font-body text-sm',
+              wrongSite ? 'text-warning-strong' : 'text-error',
+            ].join(' ')}
+          >
             {error}
           </div>
         ) : shellHtml && sources ? (

@@ -40,8 +40,16 @@ describe('readShellCapabilities', () => {
     await readShellCapabilities(args, 62_000)
     expect(m.get).toHaveBeenCalledTimes(2)
   })
-  it('a reachable shell without the meta verifies as no capabilities', async () => {
-    m.get.mockResolvedValue(page(''))
+  it('a reachable shell WITHOUT the marker is not a Revaltus site: unverified, with the reason', async () => {
+    m.get.mockResolvedValue(page('<meta name="generator" content="WordPress 6.6">'))
+    const r = await readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' })
+    expect(r.status).toBe('unverified')
+    expect(r.status === 'unverified' && r.reason).toBe(
+      "https://a.test isn't the Revaltus-built site (it may be the client's old site before DNS cutover). Set the preview URL to the site's Vercel address, e.g. https://<project>.vercel.app."
+    )
+  })
+  it('an EMPTY marker is still a Revaltus site: verified with no capabilities', async () => {
+    m.get.mockResolvedValue(page('<meta name="c5-capabilities" content="">'))
     expect(await readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' })).toEqual({ status: 'verified', capabilities: [] })
   })
   it.each([

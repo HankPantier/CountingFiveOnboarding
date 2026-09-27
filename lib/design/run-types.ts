@@ -41,6 +41,9 @@ export type DesignCapabilities = {
   // meta: 'verified' = intersected; 'unverified' = shell unreachable, draft
   // tier kept. Absent on draft-only reads and pre-P6a run snapshots.
   shell?: 'verified' | 'unverified'
+  // Why the shell is unverified when the operator can fix it (the preview URL
+  // is not the Revaltus-built site). Absent otherwise.
+  shellNote?: string
 }
 export const DEFAULT_CAPABILITIES: DesignCapabilities = { level: 1, source: 'default', templateVersion: null, capabilities: [] }
 

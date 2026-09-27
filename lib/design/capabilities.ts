@@ -20,6 +20,7 @@ export const CAPABILITY_SPECIMEN = 'specimen'
 
 const MAX_CAPABILITIES = 20
 const MAX_TOKEN_LENGTH = 40
+const MAX_SHELL_NOTE = 400
 const FONT_LOCK_NOTE = 'Fonts are locked on this site (template below L2) — kept the current typography.'
 const FONT_LOCK_VIOLATION = 'Fonts are locked on this site (template below L2) — this design changes the typography.'
 const STYLE_LOCK_NOTE = 'Style axes are not available on this site yet — the concept’s style settings were dropped.'
@@ -58,7 +59,7 @@ export function parseTemplateMarker(text: string | null): DesignCapabilities {
 // Re-read the snapshot stored in design_runs.capabilities (defensive: JSONB).
 export function capabilitiesFromJson(value: unknown): DesignCapabilities {
   if (!isPlainObject(value)) return DEFAULT_CAPABILITIES
-  const { level, source, templateVersion, shell } = value
+  const { level, source, templateVersion, shell, shellNote } = value
   if (level !== 1 && level !== 2 && level !== 3 && level !== 4) return DEFAULT_CAPABILITIES
   if (source !== 'default' && source !== 'marker') return DEFAULT_CAPABILITIES
   const capabilities = cleanList(value.capabilities)
@@ -69,6 +70,9 @@ export function capabilitiesFromJson(value: unknown): DesignCapabilities {
     templateVersion: typeof templateVersion === 'string' ? templateVersion : null,
     capabilities,
     ...(shell === 'verified' || shell === 'unverified' ? { shell } : {}),
+    ...(shell === 'unverified' && typeof shellNote === 'string' && shellNote.length > 0 && shellNote.length <= MAX_SHELL_NOTE
+      ? { shellNote }
+      : {}),
   }
 }
 
@@ -79,9 +83,13 @@ export const specimenUnlocked = (c: DesignCapabilities): boolean => c.level >= 4
 // Effective tier: a lever unlocks only when the DRAFT template (what the next
 // build ships) AND the DEPLOYED shell (what previews render on) both declare
 // it. An unreachable shell keeps the draft tier, flagged 'unverified' —
-// previews need the shell anyway, and the font preview uses Google Fonts.
+// previews need the shell anyway, and the font preview uses Google Fonts. A
+// shell that answered without the Revaltus marker (the old site before DNS
+// cutover) is unverified too, with its reason kept as `shellNote`.
 export function intersectWithShell(draft: DesignCapabilities, shell: ShellCapabilities): DesignCapabilities {
-  if (shell.status === 'unverified') return { ...draft, shell: 'unverified' }
+  if (shell.status === 'unverified') {
+    return { ...draft, shell: 'unverified', ...(shell.reason ? { shellNote: shell.reason.slice(0, MAX_SHELL_NOTE) } : {}) }
+  }
   const capabilities = draft.capabilities.filter((c) => shell.capabilities.includes(c))
   return { ...draft, capabilities, level: capabilityLevel(capabilities), shell: 'verified' }
 }
