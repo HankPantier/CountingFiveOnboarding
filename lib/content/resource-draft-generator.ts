@@ -622,6 +622,10 @@ export async function generateResourceDraft(
       deadlineAt: modelDeadline,
     })
     if (!result) throw new Error('Draft generation returned unparseable output')
+    // Posts render their body verbatim: cut any echoed generator notes BEFORE
+    // validating, so they never cost a regeneration. The validator still flags
+    // notes the strip refused to cut (content after them).
+    result.body = stripGeneratorNotesFromBody(result.body).body
 
     const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
     const validation = validateContent(result.body, [...noGoPhrases, ...clientAvoidPhrases(schema)])
@@ -646,14 +650,11 @@ export async function generateResourceDraft(
         flaggedPhrases: validation.flagged,
         deadlineAt: modelDeadline,
       })
-      if (retry) result = retry
+      if (retry) result = { ...retry, body: stripGeneratorNotesFromBody(retry.body).body }
     }
 
     result.body = stripUnapprovedExternalLinks(result.body, externalLinks)
     result.body = humanizeDashes(result.body)
-    // Deterministic backstop for the validator: posts render their body
-    // verbatim, so any echoed generator notes are cut before persisting.
-    result.body = stripGeneratorNotesFromBody(result.body).body
     warnUnknownInternalLinks(result.body, slug, targets, postSlugs)
 
     // Strip AI dash-tells from the visible frontmatter prose too (the body is

@@ -712,7 +712,18 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   // Page intent drives the deterministic coercions below (schema.org type default).
   const intent = resolvePageIntent(input.pageUrl, input.pageTitle, input.schema)
 
-  let result = await gen()
+  // Generator notes in the body are stripped deterministically BEFORE the
+  // validator runs, so an echoed metadata section never buys a full
+  // regeneration. The validator still flags notes the strip refused to cut
+  // (content after them). buildPageMarkdown writes its own trailer from
+  // `metadata`; a model-echoed one would sit above the marker the template
+  // trims at.
+  const stripNotes = (r: Awaited<ReturnType<typeof gen>>) => {
+    r.content = stripGeneratorNotesFromBody(r.content).body
+    return r
+  }
+
+  let result = stripNotes(await gen())
 
   // Global no-go phrases + deterministic writing checks (hero subhead / FAQ answer
   // length) all feed the existing anti-slop flagged→retry path: ONE combined
@@ -731,13 +742,8 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
     console.warn(
       `[content-gen] Draft flagged ${input.pageUrl}: ${allFlags.join(' | ')} — retrying`
     )
-    result = await gen(allFlags)
+    result = stripNotes(await gen(allFlags))
   }
-
-  // Deterministic backstop for the validator above: the body is reader-facing
-  // only. buildPageMarkdown writes its own trailer from `metadata`; a second,
-  // model-echoed one would sit above the marker the template trims at.
-  result.content = stripGeneratorNotesFromBody(result.content).body
 
   const annotations = parseBlockAnnotations(result.content)
   const headingCount = (result.content.match(/^##\s+/gm) || []).length
