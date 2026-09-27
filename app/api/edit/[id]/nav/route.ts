@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { staleOtherFileMessage } from '@/lib/editor/conflict-response'
 import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext, type EditContext } from '../_helpers'
@@ -219,10 +220,7 @@ export async function POST(
     // another file (e.g. content/redirects.csv, after pages already moved)
     // must never load that file's content into the nav buffer.
     if (err instanceof StaleShaError && err.path !== NAV_PATH) {
-      return NextResponse.json(
-        { error: 'The redirects file changed while saving. Pages may already have moved; reload the editor and check them.' },
-        { status: 409 }
-      )
+      return NextResponse.json({ error: staleOtherFileMessage(err.path) }, { status: 409 })
     }
     if (err instanceof StaleShaError) {
       return NextResponse.json(

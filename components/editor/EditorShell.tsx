@@ -21,6 +21,7 @@ import { toPathname, type Move } from '@/lib/editor/nav-urls'
 import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
 import { reconcileDirtyAfterSave } from '@/lib/ui/dirty-buffers'
 import { readRedirectWarnings, redirectWarningMessage } from '@/lib/editor/redirect-warnings'
+import { isStaleShaConflict, type ConflictResponse } from '@/lib/editor/conflict-response'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -353,8 +354,15 @@ export default function EditorShell({
             body: JSON.stringify({ path: selectedPath, contents: next, expectedSha: base.sha }),
           })
       if (res.status === 409) {
-        const data = (await res.json()) as { currentSha: string; currentContent: string; message?: string }
-        setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
+        const data = (await res.json()) as ConflictResponse
+        // Only a stale sha on THIS file opens the conflict bar; any other 409
+        // (e.g. the nav save's page file or redirects.csv went stale) is a
+        // plain error, never another file's content loaded into this buffer.
+        if (isStaleShaConflict(data)) {
+          setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
+        } else {
+          setError(data.error ?? 'The save conflicted with another change. Reload to continue.')
+        }
         return
       }
       if (res.status === 422) {
@@ -463,8 +471,13 @@ export default function EditorShell({
         // The file moved AGAIN while the conflict bar was open — refresh the
         // conflict to the newest server state so the choice stays valid
         // (otherwise "keep mine" loops on a stale sha forever).
-        const data = (await res.json()) as { currentSha: string; currentContent: string }
-        setConflict({ path: conflict.path, serverSha: data.currentSha, serverContent: data.currentContent })
+        const data = (await res.json()) as ConflictResponse
+        if (isStaleShaConflict(data)) {
+          setConflict({ path: conflict.path, serverSha: data.currentSha, serverContent: data.currentContent })
+        } else {
+          setConflict(null)
+          setError(data.error ?? 'The save conflicted with another change. Reload to continue.')
+        }
         return
       }
       if (res.status === 422) {
