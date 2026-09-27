@@ -42,9 +42,7 @@ import { recordTokenUsage } from '@/lib/content/token-usage'
 import { readOptional } from './apply-bundle'
 import { DESIGN_MD_PATH } from './brief/brand'
 import { buildChatSystemStatic, buildChatTurnContext } from './brief/chat-prompt'
-import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleFromRepoFiles, type RepoThemeFiles } from './bundle-files'
-import { getConcept } from './run-store'
 import { readEffectiveCapabilities } from './capabilities-read'
 import { commitWorkspace, finishTurnCommit, type CommitVersionFn } from './chat-commit'
 import {
@@ -57,7 +55,8 @@ import {
   withAttachmentImages,
   type ChatRequest,
 } from './chat-history'
-import { insertChatMessage, listChatMessages } from './chat-store'
+import { clearAdoptedConceptIf, insertChatMessage, listChatMessages, setAdoptedConceptId } from './chat-store'
+import { loadAdoptableConcept, readPersistedAdoption, type AdoptedConcept } from './chat-adopt'
 import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
 import { chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_MAX_STEPS, DEFAULT_CHAT_PAGE, TURN_BUDGET_MS, type DesignChatMessage } from './chat-types'
@@ -89,6 +88,9 @@ export type PreparedTurn = {
   baselineTheme: ComposedTheme
   baselineShas: ThemeBlobShas
   startedAt: number
+  // The "Fix in chat" concept in this turn's context (null = none). A turn
+  // that commits a version ends it.
+  adoptedConceptId: string | null
 }
 
 export type TurnIo = {
@@ -146,13 +148,17 @@ export async function prepareChatTurn(
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}`.slice(0, 500) }
 
   // "Fix in chat": the concept must be a finished concept of THIS session
-  // (getConcept scopes by the gated session id).
-  let adopt: DesignBundle | undefined
+  // (getConcept scopes by the gated session id). One handed over on an earlier
+  // message stays in context (design_chat_state) until a turn commits a
+  // version or the admin clears it — re-validated here on every turn.
+  let adopt: AdoptedConcept | null = null
+  let adoptCarried = false
   if (request.conceptId) {
-    const row = await getConcept(db, actor.sessionId, request.conceptId)
-    const parsed = row && row.status === 'ready' && row.bundle !== null ? parseDesignBundle(row.bundle) : null
-    if (!parsed?.ok) return { ok: false, status: 400, error: MISSING_CONCEPT }
-    adopt = parsed.bundle
+    adopt = await loadAdoptableConcept(db, actor.sessionId, request.conceptId)
+    if (!adopt) return { ok: false, status: 400, error: MISSING_CONCEPT }
+  } else {
+    adopt = await readPersistedAdoption(db, actor.sessionId)
+    adoptCarried = adopt !== null
   }
 
   // This turn's attachments must exist in THIS session's folder (the path is
@@ -222,8 +228,9 @@ export async function prepareChatTurn(
       drift: drift.status,
       page,
       lastTurnNote: lastTurnNote(prior),
-      ...(adopt ? { adopt } : {}),
+      ...(adopt ? { adopt: adopt.bundle, adoptCarried } : {}),
     }),
+    adoptedConceptId: adopt?.id ?? null,
     page,
     target: actor,
     baselineTheme: composedThemeFromFiles(draft.files),
@@ -240,6 +247,8 @@ export async function prepareChatTurn(
     attachmentIds: request.attachmentIds,
     createdBy: actor.adminId,
   })
+  // The turn is accepted: a newly handed-over concept now persists.
+  if (request.conceptId && adopt) await setAdoptedConceptId(db, actor.sessionId, adopt.id)
   return { ok: true, turn }
 }
 
@@ -401,6 +410,9 @@ export async function runDesignChatTurn(db: Db, actor: ChatActor, request: ChatR
         versionId: row.versionId,
         createdBy: actor.adminId,
       })
+      // A committed version ends the "Fix in chat" hand-off (only if the chat
+      // still holds THIS turn's concept — never one adopted meanwhile).
+      if (row.versionId && turn.adoptedConceptId) await clearAdoptedConceptIf(db, actor.sessionId, turn.adoptedConceptId)
       const { error } = await db.from('sessions').update({ last_activity_at: new Date().toISOString() }).eq('id', actor.sessionId)
       if (error) console.warn('[design-chat] last_activity_at not updated:', error.message)
     },

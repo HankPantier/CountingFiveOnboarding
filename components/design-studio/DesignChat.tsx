@@ -37,14 +37,17 @@ const TONE: Record<'success' | 'warning' | 'error', string> = {
   error: 'border-error/20 bg-error/10 text-error',
 }
 
-type Adopt = { conceptId: string; name: string }
+// `persisted`: the server already keeps it in the chat's context (it was sent
+// with an earlier message) — later messages don't carry the id again.
+type Adopt = { conceptId: string; name: string; persisted: boolean }
 
 // The Design Studio revision chat (P5). History is server-owned
 // (design_chat_messages): GET loads it, each send posts only the new message.
 // No Stop button: a turn keeps running server-side until it has committed or
 // reported, so a stop would only hide the result.
 // "Fix in chat" (WS-B): a concept handed over from a run card — its id rides
-// with the next message (the server adds its bundle to that turn) and `text`
+// with the next message, and the server then keeps its bundle in every turn's
+// context until a turn saves a version or the admin clears it (✕). `text`
 // prefills the composer. `nonce` makes a repeat click on the same card count.
 export type ChatSeed = { nonce: number; conceptId: string; conceptName: string; text: string }
 
@@ -62,6 +65,7 @@ export default function DesignChat({
   onCommitted: () => void
 }) {
   const [history, setHistory] = useState<DesignChatMessage[] | null>(null)
+  const [initialAdopt, setInitialAdopt] = useState<Adopt | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [epoch, setEpoch] = useState(0)
   // Bumped after a stale-URL refresh so ChatBody remounts on the NEW history.
@@ -69,7 +73,8 @@ export default function DesignChat({
 
   const load = useCallback(async () => {
     try {
-      const res = await designApi<{ messages: DesignChatMessage[] }>(`/api/edit/${sessionId}/design/chat`)
+      const res = await designApi<{ messages: DesignChatMessage[]; adopt?: { conceptId: string; name: string } | null }>(`/api/edit/${sessionId}/design/chat`)
+      setInitialAdopt(res.adopt ? { ...res.adopt, persisted: true } : null)
       setHistory(res.messages)
       setLoadError(null)
     } catch (err) {
@@ -103,6 +108,7 @@ export default function DesignChat({
           sessionId={sessionId}
           page={page}
           initial={history}
+          initialAdopt={initialAdopt}
           seed={seed}
           onSeedUsed={onSeedUsed}
           onCommitted={onCommitted}
@@ -125,6 +131,7 @@ function ChatBody({
   sessionId,
   page,
   initial,
+  initialAdopt,
   seed,
   onSeedUsed,
   onCommitted,
@@ -134,6 +141,7 @@ function ChatBody({
   sessionId: string
   page: string
   initial: DesignChatMessage[]
+  initialAdopt: Adopt | null
   seed: ChatSeed | null
   onSeedUsed?: () => void
   onCommitted: () => void
@@ -160,8 +168,10 @@ function ChatBody({
   )
   const [text, setText] = useState('')
   const [pending, setPending] = useState<ChatAttachmentDto[]>([])
-  // The concept a "Fix in chat" hand-off attached to the next message.
-  const [adopt, setAdopt] = useState<Adopt | null>(null)
+  // The "Fix in chat" concept: attached to the next message, then kept in
+  // context server-side until a version is saved or it is cleared.
+  const [adopt, setAdopt] = useState<Adopt | null>(initialAdopt)
+  const [clearingAdopt, setClearingAdopt] = useState(false)
   // What the in-flight send carried, so a refused turn can hand it back.
   const inFlight = useRef<{ text: string; attachments: ChatAttachmentDto[]; adopt: Adopt | null } | null>(null)
   // Transcript length when the current turn was sent (commit detection only
@@ -182,8 +192,10 @@ function ChatBody({
       setMessages((ms) => (ms.length > 0 && ms[ms.length - 1].role === 'user' ? ms.slice(0, -1) : ms))
       setText((t) => (t.trim() ? t : sent.text))
       setPending((p) => [...sent.attachments, ...p])
+      // A refused turn persisted nothing: a newly handed-over concept is
+      // pending again.
       const lostAdopt = sent.adopt
-      if (lostAdopt) setAdopt((a) => a ?? lostAdopt)
+      if (lostAdopt && !lostAdopt.persisted) setAdopt((a) => (a && a.conceptId !== lostAdopt.conceptId ? a : lostAdopt))
     },
   })
   const busy = status === 'submitted' || status === 'streaming'
@@ -195,7 +207,7 @@ function ChatBody({
   if (seed && seed.nonce !== seenSeed && !busy) {
     setSeenSeed(seed.nonce)
     setText(seed.text)
-    setAdopt({ conceptId: seed.conceptId, name: seed.conceptName })
+    setAdopt({ conceptId: seed.conceptId, name: seed.conceptName, persisted: false })
   }
   const inputRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
@@ -260,7 +272,11 @@ function ChatBody({
     const last = lastAssistant(messages.slice(turnStart.current))
     const committed = !!last && messageCommitted(last)
     setTurnAnnouncement(committed ? 'Reply received — a new version was saved to the draft.' : 'Reply received.')
-    if (committed) onCommitted()
+    if (committed) {
+      // A saved version ends the hand-off (the server cleared it too).
+      setAdopt((a) => (a?.persisted ? null : a))
+      onCommitted()
+    }
   }, [busy, messages, onCommitted])
 
   const canAttach = !busy && !capturing && !uploading && pending.length < MAX_ATTACHMENTS_PER_MESSAGE
@@ -278,11 +294,12 @@ function ChatBody({
     turnStart.current = messages.length
     setText('')
     setPending([])
-    setAdopt(null)
+    // The server keeps it from here on; only a new hand-off sends the id.
+    if (handoff && !handoff.persisted) setAdopt({ ...handoff, persisted: true })
     setNotice(null)
     void sendMessage(
       { text: t, metadata: { attachments } },
-      { body: { attachmentIds: attachments.map((a) => a.id), ...(handoff ? { conceptId: handoff.conceptId } : {}) } }
+      { body: { attachmentIds: attachments.map((a) => a.id), ...(handoff && !handoff.persisted ? { conceptId: handoff.conceptId } : {}) } }
     )
   }
 
@@ -325,6 +342,25 @@ function ChatBody({
       setNotice(errorMessage(err, 'The draft could not be captured.'))
     } finally {
       setCapturing(false)
+    }
+  }
+
+  // ✕ on the concept chip: a pending one is just dropped; a kept one is
+  // cleared on the server too.
+  const dropAdopt = async () => {
+    if (!adopt) return
+    if (!adopt.persisted) {
+      setAdopt(null)
+      return
+    }
+    setClearingAdopt(true)
+    try {
+      await designApi(`/api/edit/${sessionId}/design/chat/adopt`, { method: 'DELETE' })
+      setAdopt(null)
+    } catch (err) {
+      setNotice(errorMessage(err, 'The concept could not be cleared.'))
+    } finally {
+      setClearingAdopt(false)
     }
   }
 
@@ -415,8 +451,14 @@ function ChatBody({
         )}
         {adopt && (
           <p className="flex items-center gap-1.5 self-start rounded-pill border border-brand-cyan/40 bg-surface-card py-0.5 pl-2 pr-1 font-body text-[11px] text-text-secondary">
-            Bringing “{adopt.name}” to the draft
-            <button type="button" onClick={() => setAdopt(null)} aria-label="Don’t attach the concept" className={`rounded-pill px-1 font-heading text-[11px] font-semibold text-text-secondary hover:text-error ${FOCUS}`}>
+            {adopt.persisted ? `Working from “${adopt.name}” until a version is saved` : `Bringing “${adopt.name}” to the draft`}
+            <button
+              type="button"
+              onClick={() => void dropAdopt()}
+              disabled={clearingAdopt || busy}
+              aria-label={adopt.persisted ? `Stop using “${adopt.name}” in this chat` : 'Don’t attach the concept'}
+              className={`rounded-pill px-1 font-heading text-[11px] font-semibold text-text-secondary hover:text-error disabled:cursor-not-allowed disabled:text-text-muted ${FOCUS}`}
+            >
               ✕
             </button>
           </p>

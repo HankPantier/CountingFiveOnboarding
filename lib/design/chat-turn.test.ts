@@ -16,6 +16,9 @@ const m = vi.hoisted(() => ({
   effective: vi.fn(),
   readOptional: vi.fn(),
   getConcept: vi.fn(),
+  getAdopted: vi.fn(),
+  setAdopted: vi.fn(),
+  clearAdoptedIf: vi.fn(),
   turnContextThrows: false,
   convertThrows: false,
 }))
@@ -41,7 +44,13 @@ vi.mock('./brief/chat-prompt', async (orig) => {
 })
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r) }))
 vi.mock('./store', async (orig) => ({ ...((await orig()) as object), latestVersion: (...a: unknown[]) => m.latest(...a), readSessionSchema: (...a: unknown[]) => m.schema(...a) }))
-vi.mock('./chat-store', () => ({ listChatMessages: (...a: unknown[]) => m.list(...a), insertChatMessage: (...a: unknown[]) => m.insert(...a) }))
+vi.mock('./chat-store', () => ({
+  listChatMessages: (...a: unknown[]) => m.list(...a),
+  insertChatMessage: (...a: unknown[]) => m.insert(...a),
+  getAdoptedConceptId: (...a: unknown[]) => m.getAdopted(...a),
+  setAdoptedConceptId: (...a: unknown[]) => m.setAdopted(...a),
+  clearAdoptedConceptIf: (...a: unknown[]) => m.clearAdoptedIf(...a),
+}))
 vi.mock('./storage', async (orig) => ({ ...((await orig()) as object), downloadDesignImage: (...a: unknown[]) => m.download(...a) }))
 vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('./run-store', async (orig) => ({ ...((await orig()) as object), getConcept: (...a: unknown[]) => m.getConcept(...a) }))
@@ -51,6 +60,7 @@ import { bundleFromRepoFiles } from './bundle-files'
 import { ChatWorkspace } from './chat-workspace'
 import { composedThemeFromFiles } from './composed-theme'
 import { CHAT_WRAP_UP_MS, MISSING_CONCEPT, prepareChatTurn, streamChatTurn, type PreparedTurn, type TurnIo } from './chat-turn'
+import { ADOPT_CARRIED_NOTE } from './brief/chat-prompt'
 import { VALID } from './__fixtures__/valid-bundle'
 import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
 import { TURN_BUDGET_MS } from './chat-types'
@@ -77,6 +87,8 @@ beforeEach(() => {
   m.download.mockResolvedValue(new Uint8Array([1, 2, 3]))
   m.effective.mockResolvedValue({ draft: DEFAULT_CAPABILITIES, effective: DEFAULT_CAPABILITIES })
   m.readOptional.mockResolvedValue(null)
+  m.getAdopted.mockResolvedValue(null)
+  m.setAdopted.mockResolvedValue(true)
 })
 
 describe('prepareChatTurn', () => {
@@ -111,6 +123,39 @@ describe('prepareChatTurn', () => {
     expect(r.turn.turnContext).toContain('<<<CONCEPT_NOTES\nName: Sabine Tide Line')
     expect(r.turn.turnContext).not.toContain('concept "Sabine Tide Line"')
     expect(r.turn.staticSystem).not.toContain('Sabine Tide Line')
+  })
+  it('"Fix in chat": a handed-over concept is persisted for follow-up turns once the turn is accepted', async () => {
+    const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
+    m.getConcept.mockResolvedValue(makeConceptRow({ id: CID2, status: 'ready', bundle: asJson({ ...VALID, name: 'Sabine Tide Line' }) }))
+    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2 }), 0)
+    if (!r.ok) throw new Error(r.error)
+    expect(r.turn.adoptedConceptId).toBe(CID2)
+    expect(r.turn.turnContext).not.toContain(ADOPT_CARRIED_NOTE)
+    expect(m.setAdopted).toHaveBeenCalledWith(DB, SID, CID2)
+    expect(m.insert.mock.invocationCallOrder[0]).toBeLessThan(m.setAdopted.mock.invocationCallOrder[0])
+  })
+  it('"Fix in chat": a follow-up turn keeps the persisted concept in context (re-validated, session-scoped)', async () => {
+    const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
+    m.getAdopted.mockResolvedValue(CID2)
+    m.getConcept.mockResolvedValue(makeConceptRow({ id: CID2, status: 'ready', bundle: asJson({ ...VALID, name: 'Sabine Tide Line' }) }))
+    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [] }), 0)
+    if (!r.ok) throw new Error(r.error)
+    expect(m.getAdopted).toHaveBeenCalledWith(DB, SID)
+    expect(m.getConcept).toHaveBeenCalledWith(DB, SID, CID2)
+    expect(r.turn.adoptedConceptId).toBe(CID2)
+    expect(r.turn.turnContext).toContain(ADOPT_CARRIED_NOTE)
+    expect(r.turn.turnContext).toContain('<<<CONCEPT_NOTES\nName: Sabine Tide Line')
+    expect(m.setAdopted).not.toHaveBeenCalled()
+  })
+  it('"Fix in chat": a persisted concept that is no longer ready is cleared, and the turn goes on without it', async () => {
+    const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
+    m.getAdopted.mockResolvedValue(CID2)
+    m.getConcept.mockResolvedValue(null)
+    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [] }), 0)
+    if (!r.ok) throw new Error(r.error)
+    expect(r.turn.adoptedConceptId).toBeNull()
+    expect(r.turn.turnContext).not.toContain('CONCEPT TO BRING TO THE DRAFT')
+    expect(m.setAdopted).toHaveBeenCalledWith(DB, SID, null)
   })
   it('"Fix in chat": a missing / unfinished concept is a 400 before anything is saved', async () => {
     m.getConcept.mockResolvedValue(null)
@@ -225,6 +270,7 @@ describe('streamChatTurn', () => {
       baselineTheme: composedThemeFromFiles({ designText: DESIGN_TEXT, themeCss: '', overridesCss: '' }),
       baselineShas: SHAS,
       startedAt: Date.now(),
+      adoptedConceptId: null,
     }
   }
   function io(steps: LanguageModelV3StreamPart[][]) {

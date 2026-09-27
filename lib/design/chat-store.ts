@@ -79,6 +79,41 @@ export async function versionScreenshotPathSet(db: Db, sessionId: string): Promi
   return out
 }
 
+// ---- Chat state (migration 081): the "Fix in chat" concept kept in context.
+// Fail-soft on purpose: before 081 is applied (or on a DB blip) the hand-off
+// simply lasts one turn, as it did before, instead of breaking the chat.
+
+export async function getAdoptedConceptId(db: Db, sessionId: string): Promise<string | null> {
+  const { data, error } = await db.from('design_chat_state').select('adopted_concept_id').eq('session_id', sessionId).maybeSingle()
+  if (error) {
+    console.warn('[design-chat-store] adopted concept not read:', error.message)
+    return null
+  }
+  return data?.adopted_concept_id ?? null
+}
+
+/** Persist (or, with null, clear) the chat's adopted concept. Returns whether it was written. */
+export async function setAdoptedConceptId(db: Db, sessionId: string, conceptId: string | null): Promise<boolean> {
+  const { error } = await db
+    .from('design_chat_state')
+    .upsert({ session_id: sessionId, adopted_concept_id: conceptId, updated_at: new Date().toISOString() }, { onConflict: 'session_id' })
+  if (error) {
+    console.warn('[design-chat-store] adopted concept not saved:', error.message)
+    return false
+  }
+  return true
+}
+
+/** Clear the adopted concept only while it is still `conceptId` (fail-soft). */
+export async function clearAdoptedConceptIf(db: Db, sessionId: string, conceptId: string): Promise<void> {
+  const { error } = await db
+    .from('design_chat_state')
+    .update({ adopted_concept_id: null, updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('adopted_concept_id', conceptId)
+  if (error) console.warn('[design-chat-store] adopted concept not cleared:', error.message)
+}
+
 export async function clearChatHistory(db: Db, sessionId: string): Promise<ChatMessageRow[]> {
   const { data, error } = await db.from('design_chat_messages').delete().eq('session_id', sessionId).select('*')
   if (error) throw chatError('clearChatHistory', error)

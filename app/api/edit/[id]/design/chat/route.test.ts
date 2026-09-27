@@ -5,13 +5,28 @@ import { SID, makeChatRow } from '@/lib/design/__fixtures__/rows'
 
 const A1 = '0b6f1c2e-5d4a-4e8b-9c1d-2f3a4b5c6d7e'
 const PREVIEW = `design/${SID}/renders/chat/t-p1-desktop.webp`
-const m = vi.hoisted(() => ({ gate: vi.fn(), list: vi.fn(), clear: vi.fn(), sign: vi.fn(), remove: vi.fn(), run: vi.fn(), versionPaths: vi.fn() }))
+const m = vi.hoisted(() => ({
+  gate: vi.fn(),
+  list: vi.fn(),
+  clear: vi.fn(),
+  sign: vi.fn(),
+  remove: vi.fn(),
+  run: vi.fn(),
+  versionPaths: vi.fn(),
+  setAdopted: vi.fn(),
+  readAdoption: vi.fn(),
+}))
 vi.mock('../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
 vi.mock('@/lib/design/chat-store', () => ({
   listChatMessages: (...a: unknown[]) => m.list(...a),
   clearChatHistory: (...a: unknown[]) => m.clear(...a),
   versionScreenshotPathSet: (...a: unknown[]) => m.versionPaths(...a),
+  setAdoptedConceptId: (...a: unknown[]) => m.setAdopted(...a),
+}))
+vi.mock('@/lib/design/chat-adopt', async (orig) => ({
+  ...((await orig()) as object),
+  readPersistedAdoption: (...a: unknown[]) => m.readAdoption(...a),
 }))
 vi.mock('@/lib/design/storage', async (orig) => ({
   ...((await orig()) as object),
@@ -38,6 +53,8 @@ beforeEach(() => {
   m.sign.mockImplementation(async (_db: unknown, paths: string[]) => Object.fromEntries(paths.map((p) => [p, `https://signed/${p}`])))
   m.run.mockResolvedValue(new Response('stream'))
   m.versionPaths.mockResolvedValue(new Set())
+  m.setAdopted.mockResolvedValue(true)
+  m.readAdoption.mockResolvedValue(null)
 })
 
 describe('design/chat route', () => {
@@ -52,6 +69,19 @@ describe('design/chat route', () => {
     const { messages } = (await res.json()) as { messages: { metadata: { attachments: { url: string }[] }; parts: { output?: { shots: { url: string }[] } }[] }[] }
     expect(messages[0].metadata.attachments[0].url).toBe(`https://signed/design/${SID}/attachments/${A1}.webp`)
     expect(messages[1].parts[0].output?.shots[0].url).toBe(`https://signed/${PREVIEW}`)
+  })
+  it('GET returns the "Fix in chat" concept still in context (session-scoped), else null', async () => {
+    expect(((await (await GET(new Request('http://x'), params)).json()) as { adopt: unknown }).adopt).toBeNull()
+    const C = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
+    m.readAdoption.mockResolvedValue({ id: C, bundle: { name: 'Sabine Tide Line' } })
+    const body = (await (await GET(new Request('http://x'), params)).json()) as { adopt: unknown }
+    expect(body.adopt).toEqual({ conceptId: C, name: 'Sabine Tide Line' })
+    expect(m.readAdoption).toHaveBeenCalledWith({}, SID)
+  })
+  it('DELETE (clear chat) also clears the adopted concept', async () => {
+    m.clear.mockResolvedValue([])
+    await DELETE(new Request('http://x', { method: 'DELETE' }), params)
+    expect(m.setAdopted).toHaveBeenCalledWith({}, SID, null)
   })
   it('GET signs only this session’s chat preview renders (PF6)', async () => {
     const foreign = ['design/11111111-2222-4333-8444-555555555555/renders/chat/x-p1-desktop.webp', `design/${SID}/runs/r/concept.webp`, `design/${SID}/renders/chat/../../x.webp`]
