@@ -169,15 +169,17 @@ export function mergeRedirectsCsv(
 ): string {
   // Chains resolve against a loop-free copy, so a loop on draft never becomes a target.
   const loopFree = sanitizeRedirectsCsv(draft)
-  const existingFrom = new Set(draft.split('\n').filter(isDataRow).map(firstCsvField))
+  // Compared by redirectKey, so a draft `/a/` row (normalized to `/a` below)
+  // still counts as the same source as a generated `/a`.
+  const existingFrom = new Set(draft.split('\n').filter(isDataRow).map((l) => redirectKey(firstCsvField(l))))
   const previouslyShipped = new Set(
-    (lastDeployed ?? '').split('\n').filter(isDataRow).map(firstCsvField)
+    (lastDeployed ?? '').split('\n').filter(isDataRow).map((l) => redirectKey(firstCsvField(l)))
   )
   const additions = generated
     .split('\n')
     .filter(isDataRow)
     .filter((line) => {
-      const from = firstCsvField(line)
+      const from = redirectKey(firstCsvField(line))
       return !existingFrom.has(from) && !previouslyShipped.has(from)
     })
     .flatMap((line) => {

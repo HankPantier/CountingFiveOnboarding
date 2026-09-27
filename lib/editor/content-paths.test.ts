@@ -84,6 +84,15 @@ describe('urlToContentPath', () => {
     expect(urlToContentPath('/a/../b')).toBeNull()
     expect(urlToContentPath('/already--nested')).toBeNull()
   })
+
+  it('honours a custom blog path in both directions (EDIT-1)', () => {
+    expect(contentPathToUrl('content/posts/x.md', '/insights')).toBe('/insights/x')
+    expect(urlToContentPath('/insights/x', '/insights')).toBe('content/posts/x.md')
+    // /resources/<slug> still names the post file (the editor UI sends it).
+    expect(urlToContentPath('/resources/x', '/insights')).toBe('content/posts/x.md')
+    // Without the blog path, /insights/x is an ordinary nested page.
+    expect(urlToContentPath('/insights/x')).toBe('content/pages/insights--x.md')
+  })
 })
 
 describe('stripNavUrl', () => {

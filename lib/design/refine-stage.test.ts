@@ -606,6 +606,8 @@ describe('best iteration (Harbor Light)', () => {
     await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
     expect(unitPatch()).not.toHaveProperty('bundle')
     expect(unitPatch().review.best?.iteration).toBe(2)
+    // DUI-1: the replaced best's renders (r1) are referenced by nothing now.
+    expect(m.remove).toHaveBeenCalledWith({}, R1.map((s) => s.path))
   })
 
   it('a re-render that overflows skips the critic; at the revision limit it ends on the best iteration', async () => {

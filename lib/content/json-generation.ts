@@ -108,18 +108,23 @@ export async function generateJson(opts: GenerateJsonOptions): Promise<unknown |
     }
   }
 
-  let res = await attempt(1, opts.firstBudget, opts.providerOptions)
-  const rejected = !res.ok && res.finishReason === 'error' ? providerRejection(res.error) : null
-  if (rejected) {
-    console.error(`[${opts.label}] the AI provider rejected the request (${rejected.kind}) — not retrying`)
-    // Account-level outages pause every AI feature — surface the admin-shell
-    // banner from background generators too (fire-and-forget, never throws).
+  // A provider rejection (usage limit, credits, …) on EITHER attempt is logged
+  // by name and, for account-level outages, raises the admin-shell banner from
+  // background generators too (fire-and-forget, never throws).
+  const handleRejection = (r: typeof res, retrying: boolean): boolean => {
+    const rejected = !r.ok && r.finishReason === 'error' ? providerRejection(r.error) : null
+    if (!rejected) return false
+    console.error(`[${opts.label}] the AI provider rejected the request (${rejected.kind})${retrying ? ' — not retrying' : ''}`)
     if (rejected.kind === 'credit' || rejected.kind === 'usage_limit') void recordAiOutage(rejected.kind, rejected.resetDate)
-    return null
+    return true
   }
+
+  let res = await attempt(1, opts.firstBudget, opts.providerOptions)
+  if (handleRejection(res, true)) return null
   if (!res.ok && res.finishReason !== 'skipped' && opts.retryBudget) {
     console.warn(`[${opts.label}] JSON parse failed (finish=${res.finishReason}) — retrying with larger budget`)
     res = await attempt(2, opts.retryBudget, opts.retryProviderOptions ?? opts.providerOptions)
+    if (handleRejection(res, false)) return null
   }
   if (res.ok) return res.value
   if (res.finishReason !== 'skipped') {

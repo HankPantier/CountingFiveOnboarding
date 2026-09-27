@@ -8,6 +8,7 @@ import {
   listTree,
   moveFile,
   readFile,
+  StaleShaError,
   writeFile,
 } from '@/lib/github/repo-files'
 
@@ -122,6 +123,20 @@ export async function readBlogPath(githubRepo: string, tree: Array<{ path: strin
   }
 }
 
+// The site's post base path read straight from the draft (no tree listing):
+// /resources when content/blog.json is absent or unreadable. Move callers use
+// it to build post urls, since the template serves posts only there. Any read
+// error other than a missing file is thrown: guessing /resources on a custom
+// path site would write a 301 to a url that 404s.
+export async function readSiteBlogPath(githubRepo: string): Promise<string> {
+  try {
+    return blogPathFromJson((await readFile(githubRepo, BLOG_JSON_PATH, DRAFT_BRANCH)).content)
+  } catch (err) {
+    if (err instanceof FileNotFoundError) return blogPathFromJson(null)
+    throw err
+  }
+}
+
 // Root-relative urls of every published page on the draft, for the live-page
 // warnings. A branch tree read right after a move can lag, so the caller's
 // own moves are applied on top: sources are vacated, destinations are live.
@@ -165,14 +180,24 @@ export async function appendRedirects(
     if (!(err instanceof FileNotFoundError)) throw err
   }
   const livePaths = await livePageUrls(ctx, pairs)
-  const { content, changed, warnings } = applyRedirectAdds(current, pairs, reason, { livePaths })
-  if (changed) {
-    await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
-      ...(sha ? { expectedSha: sha } : {}),
-      ...author(ctx),
-    })
+  // The page has already moved by now, so a concurrent redirects.csv writer
+  // must not cost it its 301: applyRedirectAdds is pure, so re-apply once onto
+  // the version the stale-sha error carries and write again.
+  for (let attempt = 1; ; attempt++) {
+    const { content, changed, warnings } = applyRedirectAdds(current, pairs, reason, { livePaths })
+    if (!changed) return { warnings: warnings.map(formatLiveRedirectWarning) }
+    try {
+      await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
+        ...(sha ? { expectedSha: sha } : {}),
+        ...author(ctx),
+      })
+      return { warnings: warnings.map(formatLiveRedirectWarning) }
+    } catch (err) {
+      if (!(err instanceof StaleShaError) || err.path !== REDIRECTS_PATH || attempt >= 2) throw err
+      current = err.currentSha ? err.currentContent : null
+      sha = err.currentSha || undefined
+    }
   }
-  return { warnings: warnings.map(formatLiveRedirectWarning) }
 }
 
 // Relocate a single live content file (page/post) from fromPath→toPath on the
@@ -204,7 +229,12 @@ export async function relocateFile(
   }
   if (occupant) {
     const occUrl = frontmatterUrl(occupant.content)
-    if (occUrl && toPathname(occUrl) === toPathname(toUrl)) {
+    // A post moved in by an earlier run may still carry the internal
+    // /resources/<slug> canonical on a custom blog path site (toUrl is then
+    // <blogPath>/<slug>): that is the same page already in place, not a collision.
+    const destSlug = /^content\/posts\/(.+)\.md$/.exec(toPath)?.[1]
+    const occPath = occUrl ? toPathname(occUrl) : null
+    if (occPath && (occPath === toPathname(toUrl) || (destSlug && occPath === `/resources/${destSlug}`))) {
       return { blobSha: occupant.sha, moved: false, redirectWarnings: [] }
     }
     throw new DestinationOccupiedError(fromUrl, toUrl)
@@ -227,7 +257,13 @@ export async function relocateFile(
   // A page file carries buildPageMarkdown's review trailer, which only the
   // PAGE renderer trims. Moved into content/posts/ it rendered live (the
   // "**Internal Links:**" dump on /insights/*), so drop it on the way in.
-  const swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
+  let swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
+  // A post on a custom blog path may still carry the internal /resources/<slug>
+  // canonical; swap that form too so the moved page never keeps a post url.
+  const postSlug = /^content\/posts\/(.+)\.md$/.exec(fromPath)?.[1]
+  if (swapped === moved.content && postSlug && fromUrl !== `/resources/${postSlug}`) {
+    swapped = swapFrontmatterUrl(moved.content, `/resources/${postSlug}`, toUrl)
+  }
   let fixed = swapped
   let warning: string | undefined
   if (toPath.startsWith('content/posts/')) {

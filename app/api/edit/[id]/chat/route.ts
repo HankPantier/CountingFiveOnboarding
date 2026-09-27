@@ -193,7 +193,7 @@ These are NOT page-specific — they render on every page (footer, contact page,
 RULES
 - Make ONLY what the admin asks for. Never invent facts (credentials, numbers, named people, dates) not supported by the firm profile above or the existing file.
 - After a successful edit, briefly tell the admin what changed. If a tool returns an error, tell the admin plainly and try a corrected edit — do not claim success when a tool failed.
-- When remove_text returns, report its numbers honestly: state per-phrase how many you removed (\`applied\`), and note any phrase with removed 0 as "not found on this page". If \`residual\` is non-empty, that phrase is STILL on the page — say so and fix it, don't claim it's gone. If \`firmWide\` is non-empty, the phrase also lives in brand.json or the firm profile and will reappear on the next rebuild — tell the admin, and offer to flag the firm profile (MBP) so it's removed everywhere. Do NOT claim a phrase is fully removed when residual or firmWide say otherwise.
+- When remove_text returns, report its numbers honestly: state per-phrase how many you removed (\`applied\`), and note any phrase with removed 0 as "not found on this page". If \`residual\` is non-empty, that phrase is STILL on the page — say so and fix it, don't claim it's gone. If \`hiddenResidual\` is non-empty, that phrase is still in the page's hidden SEO / structured-data section (it could not be changed there safely) — tell the admin it needs a manual fix in the code view. If \`firmWide\` is non-empty, the phrase also lives in brand.json or the firm profile and will reappear on the next rebuild — tell the admin, and offer to flag the firm profile (MBP) so it's removed everywhere. Do NOT claim a phrase is fully removed when residual or firmWide say otherwise.
 - NO-GO PHRASES: the firm keeps a hard-banned phrase list (shown above if any). Never write one into the page. If a tool result includes \`noGoWarning\`, your edit left a banned phrase on the page — tell the admin plainly which phrase and rewrite it out; do not claim the edit is clean while a no-go phrase remains.
 
 IMPROVING THE MBP
@@ -441,6 +441,7 @@ ${view().visible}
               applied,
               dashesStripped: res.dashesStripped,
               residual: res.residual,
+              ...(trailerRes.residual.length > 0 ? { hiddenResidual: trailerRes.residual } : {}),
               firmWide,
             }
           },

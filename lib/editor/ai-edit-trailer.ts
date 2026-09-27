@@ -7,7 +7,7 @@
 // Accord's /services render its JSON-LD as a live code block.
 
 import { repairPageTrailer, stripGeneratorNotesFromFile } from '@/lib/content/strip-generator-notes'
-import { applyBulkRemovals, type RemovalCount } from './bulk-remove'
+import { applyBulkRemovals, countPhrase, type RemovalCount, type ResidualCount } from './bulk-remove'
 import { splitFile } from './frontmatter'
 import { humanizeBodyDashes, splitTrailers } from './page-body'
 
@@ -78,34 +78,72 @@ function jsonLdShapes(trailer: string): string[] | null {
 
 export interface TrailerRemovalResult {
   trailer: string
-  /** Per-removal hits that actually landed in the trailer (0s when discarded). */
+  /** Per-removal hits that actually landed in the trailer (0 for a refused removal). */
   applied: RemovalCount[]
+  /** Phrases still present in the hidden trailer afterwards (refused or partial). */
+  residual: ResidualCount[]
+}
+
+// True when `next` keeps the trailer's skeleton lines and every ld+json block
+// still parses with the same key set as `original`.
+function trailerShapeKept(original: string, next: string): boolean {
+  const before = trailerSkeleton(original)
+  const after = trailerSkeleton(next)
+  if (before.length !== after.length || !before.every((l, i) => l === after[i])) return false
+  const ldBefore = jsonLdShapes(original)
+  const ldAfter = jsonLdShapes(next)
+  if (ldAfter === null) return false
+  if (ldBefore !== null && (ldBefore.length !== ldAfter.length || !ldBefore.every((s, i) => s === ldAfter[i]))) {
+    return false
+  }
+  return true
 }
 
 /**
  * remove_text's phrase removals, applied to the hidden trailer so a firm-wide
  * rename also reaches the JSON-LD that the template lifts into <head>. Dashes
- * are never scrubbed here. The change is discarded (trailer kept as-is) when
- * it would alter any heading, rule, label or fence line, or when any ld+json
- * block stops parsing or changes its key set.
+ * are never scrubbed here. Removals are applied ONE AT A TIME: a removal that
+ * would alter any heading, rule, label or fence line, or make an ld+json block
+ * stop parsing or change its key set, is refused on its own (e.g. a "—"
+ * removal hitting the Structured Data heading), and the others still land.
  */
 export function applyRemovalsToTrailer(
   trailer: string,
   removals: Array<{ find: string; replace?: string }>,
   caseInsensitive: boolean
 ): TrailerRemovalResult {
-  const none = { trailer, applied: removals.map((r) => ({ find: r.find, removed: 0 })) }
-  if (!trailer || removals.length === 0) return none
-  const res = applyBulkRemovals(trailer, removals, { caseInsensitive })
-  if (res.next === trailer) return none
-  const before = trailerSkeleton(trailer)
-  const after = trailerSkeleton(res.next)
-  if (before.length !== after.length || !before.every((l, i) => l === after[i])) return none
-  const ldBefore = jsonLdShapes(trailer)
-  const ldAfter = jsonLdShapes(res.next)
-  if (ldAfter === null) return none
-  if (ldBefore !== null && (ldBefore.length !== ldAfter.length || !ldBefore.every((s, i) => s === ldAfter[i]))) {
-    return none
+  const applied: RemovalCount[] = []
+  let current = trailer
+  for (const removal of removals) {
+    if (!current) {
+      applied.push({ find: removal.find, removed: 0 })
+      continue
+    }
+    const res = applyBulkRemovals(current, [removal], { caseInsensitive })
+    if (res.next !== current && trailerShapeKept(trailer, res.next)) {
+      current = res.next
+      applied.push(res.applied[0])
+    } else {
+      applied.push({ find: removal.find, removed: 0 })
+    }
   }
-  return { trailer: res.next, applied: res.applied }
+  // Counted outside the skeleton lines (a heading's "—" is structure, not
+  // copy). Dash-only finds are skipped: dashes are never scrubbed here by
+  // design. A replacement that itself contains the find term would always count.
+  const skeleton = new Set(trailerSkeleton(trailer))
+  const values = current
+    .split(/\r?\n/)
+    .filter((l) => !skeleton.has(l))
+    .join('\n')
+  const residual: ResidualCount[] = removals
+    .filter(
+      (r) =>
+        r.find &&
+        r.find.trim() !== '' &&
+        !/^[\s—–-]+$/.test(r.find) &&
+        countPhrase(r.replace ?? '', r.find, caseInsensitive) === 0
+    )
+    .map((r) => ({ find: r.find, remaining: countPhrase(values, r.find, caseInsensitive) }))
+    .filter((r) => r.remaining > 0)
+  return { trailer: current, applied, residual }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { getPhaseStatus, isCompletePalette, isDesignSystemLocked } from './brand-gate'
+import { FALLBACK_PALETTE } from './deliverable-defaults'
+import { getPhaseStatus, isCompletePalette, isDesignSystemLocked, paletteFromBrandJson } from './brand-gate'
 
 const PALETTE = Object.fromEntries(
   ['primary', 'secondary', 'complementary', 'action', 'nearBlack', 'nearWhite'].map((r) => [r, { hex: '#1f3a5f', name: r }]),
@@ -44,5 +45,30 @@ describe('getPhaseStatus — the sitemap waits for the Design System', () => {
     expect(getPhaseStatus(3, 4)).toBe('active')
     expect(getPhaseStatus(3, 5)).toBe('locked')
     expect(getPhaseStatus(3, 2)).toBe('complete')
+  })
+})
+
+describe('paletteFromBrandJson (PIPE-4)', () => {
+  const hex = '#1f3a5f'
+  const full = { primary: hex, secondary: hex, complementary: hex, action: hex, nearBlack: hex, nearWhite: hex }
+
+  it('reads the live six-role palette in PaletteData form', () => {
+    const p = paletteFromBrandJson(JSON.stringify({ palette: full }))
+    expect(p?.primary).toEqual({ hex, name: 'primary' })
+    expect(isCompletePalette(p)).toBe(true)
+  })
+
+  it('returns null for missing, unparseable or incomplete palettes', () => {
+    expect(paletteFromBrandJson(null)).toBeNull()
+    expect(paletteFromBrandJson('{')).toBeNull()
+    expect(paletteFromBrandJson(JSON.stringify({ palette: { ...full, action: 'teal' } }))).toBeNull()
+    expect(paletteFromBrandJson(JSON.stringify({}))).toBeNull()
+  })
+
+  it('treats a brand.json carrying FALLBACK_PALETTE as NOT locked (unbranded sites stay gated)', () => {
+    const fallback = Object.fromEntries(Object.entries(FALLBACK_PALETTE).map(([role, sw]) => [role, sw.hex.toLowerCase()]))
+    expect(paletteFromBrandJson(JSON.stringify({ palette: fallback }))).toBeNull()
+    // One real colour is enough to count as a chosen palette.
+    expect(paletteFromBrandJson(JSON.stringify({ palette: { ...fallback, primary: '#003b71' } }))).not.toBeNull()
   })
 })

@@ -194,6 +194,22 @@ describe('generateJson', () => {
     errSpy.mockRestore()
   })
 
+  it('names a rejection that lands on the RETRY and raises the banner (AI-2)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    recordAiOutage.mockClear()
+    mockGen
+      .mockResolvedValueOnce(reply('not json', 'length'))
+      .mockRejectedValueOnce(
+        new APICallError({ message: 'Your credit balance is too low to access the Anthropic API.', url: 'u', requestBodyValues: {}, statusCode: 400 })
+      )
+    expect(await generateJson({ ...base, firstBudget: 1000, retryBudget: 2000 })).toBeNull()
+    expect(recordAiOutage).toHaveBeenCalledWith('credit', null)
+    expect(errSpy.mock.calls.map((c) => String(c[0]))).toEqual(['[t] the AI provider rejected the request (credit)'])
+    errSpy.mockRestore()
+    warnSpy.mockRestore()
+  })
+
   it('still retries a transient provider error (529 overloaded)', async () => {
     const err = new APICallError({ message: 'Overloaded', url: 'u', requestBodyValues: {}, statusCode: 529 })
     mockGen.mockRejectedValueOnce(err).mockResolvedValueOnce(reply('{"a":5}'))

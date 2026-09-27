@@ -106,4 +106,27 @@ describe('applyRemovalsToTrailer', () => {
     expect(applyRemovalsToTrailer(TRAILER, [{ find: 'Internal Links' }], false).trailer).toBe(TRAILER)
     expect(applyRemovalsToTrailer(TRAILER, [{ find: '—', replace: ',' }], false).trailer).toBe(TRAILER)
   })
+
+  it('refuses a "—" removal on its own and still lands the rename in the same batch (AI-1)', () => {
+    const r = applyRemovalsToTrailer(
+      TRAILER,
+      [{ find: 'Accord Advisors', replace: 'Jones LLP' }, { find: '—' }],
+      false
+    )
+    expect(r.trailer).toContain('{"name":"Jones LLP"}')
+    expect(r.trailer).toContain('## Structured Data — paste into')
+    expect(r.applied).toEqual([
+      { find: 'Accord Advisors', removed: 2 },
+      { find: '—', removed: 0 },
+    ])
+    expect(r.residual).toEqual([])
+  })
+
+  it('reports a phrase left in the hidden trailer as residual', () => {
+    // A replacement that keeps the find term never counts as residual.
+    const kept = applyRemovalsToTrailer(TRAILER, [{ find: 'Accord', replace: 'Accord CPA' }], false)
+    expect(kept.residual).toEqual([])
+    const removed = applyRemovalsToTrailer(TRAILER, [{ find: 'Accord Advisors', replace: 'A "B"' }], false)
+    expect(removed.residual).toEqual([{ find: 'Accord Advisors', remaining: 2 }])
+  })
 })

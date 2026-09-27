@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   FileNotFoundError: class FileNotFoundError extends Error {},
+  StaleShaError: class StaleShaError extends Error {
+    constructor(
+      public path: string,
+      public currentSha: string,
+      public currentContent: string
+    ) {
+      super(`stale ${path}`)
+    }
+  },
   listTree: vi.fn(async () => [] as Array<{ path: string; sha: string; type: 'blob' }>),
   moveFile: vi.fn(),
   readFile: vi.fn(),
@@ -11,6 +20,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/github/repo-files', () => ({
   DRAFT_BRANCH: 'draft',
   FileNotFoundError: h.FileNotFoundError,
+  StaleShaError: h.StaleShaError,
   listTree: h.listTree,
   moveFile: h.moveFile,
   readFile: h.readFile,
@@ -75,6 +85,18 @@ describe('appendRedirects — cycle-safe writes', () => {
     expect(res.warnings[0]).toMatch(/^\/services\/outsourced-accounting has a real page but redirects to \/services/)
   })
 
+  it('re-applies once onto a concurrent redirects.csv write instead of losing the 301 (EDIT-5)', async () => {
+    withRedirects(`${HEADER}/a,/b,301,moved\n`)
+    h.writeFile
+      .mockReset()
+      .mockRejectedValueOnce(new h.StaleShaError('content/redirects.csv', 'r9', `${HEADER}/a,/b,301,moved\n/n,/m,301,other\n`))
+      .mockResolvedValueOnce({ commitSha: 'c', blobSha: 'r10' })
+    await appendRedirects({ githubRepo: 'repo' }, [{ from: '/x', to: '/y' }], 'moved')
+    expect(h.writeFile).toHaveBeenCalledTimes(2)
+    expect(h.writeFile.mock.calls[1][2]).toBe(`${HEADER}/a,/b,301,moved\n/n,/m,301,other\n/x,/y,301,moved\n`)
+    expect(h.writeFile.mock.calls[1][5]).toMatchObject({ expectedSha: 'r9' })
+  })
+
   it('writes nothing when the row is already there', async () => {
     withRedirects(`${HEADER}/a,/b,301,moved\n`)
     await appendRedirects({ githubRepo: 'repo' }, [{ from: '/a', to: '/b' }], 'moved')
@@ -133,6 +155,42 @@ describe('relocateFile — page → post drops the generator trailer', () => {
       { fromPath: 'content/pages/a.md', toPath: 'content/pages/b.md', fromUrl: '/a', toUrl: '/b', expectedSha: 'blobA', reason: 'moved' }
     )
     expect(h.writeFile.mock.calls[0][2]).toContain('## SEO & AIO Metadata')
+  })
+})
+
+describe('relocateFile — re-run onto a custom blog path (EDIT-1)', () => {
+  it('a post already at the destination with a legacy /resources canonical is a no-op, not a collision', async () => {
+    h.moveFile.mockReset()
+    h.writeFile.mockReset()
+    h.readFile.mockReset().mockImplementation(async (_repo: string, path: string) => {
+      if (path === 'content/posts/x.md') return { path, content: '---\ncanonical_url: /resources/x\n---\n\nBody.\n', sha: 'occ' }
+      throw new h.FileNotFoundError(path)
+    })
+    const res = await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/pages/services--x.md', toPath: 'content/posts/x.md', fromUrl: '/services/x', toUrl: '/insights/x', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(res).toEqual({ blobSha: 'occ', moved: false, redirectWarnings: [] })
+    expect(h.moveFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('relocateFile — post → page on a custom blog path (EDIT-1)', () => {
+  it('swaps a /resources/<slug> canonical and redirects from the live blog url', async () => {
+    const post = '---\ncanonical_url: /resources/x\n---\n\nBody.\n'
+    h.moveFile.mockReset().mockResolvedValueOnce({ commitSha: 'moveCommit' })
+    h.writeFile.mockReset().mockResolvedValue({ commitSha: 'c', blobSha: 'blobB' })
+    h.readFile.mockReset().mockImplementation(async (_repo: string, path: string, ref: string) => {
+      if (path === 'content/pages/services--x.md' && ref === 'moveCommit') return { path, content: post, sha: 'blobA' }
+      if (path === 'content/redirects.csv') return { path, content: 'old_url,new_url,status_code,reason\n', sha: 'r1' }
+      throw new h.FileNotFoundError(path)
+    })
+    await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/posts/x.md', toPath: 'content/pages/services--x.md', fromUrl: '/insights/x', toUrl: '/services/x', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(h.writeFile.mock.calls[0][2]).toBe('---\ncanonical_url: /services/x\n---\n\nBody.\n')
+    expect(h.writeFile.mock.calls[1][2]).toBe('old_url,new_url,status_code,reason\n/insights/x,/services/x,301,moved\n')
   })
 })
 

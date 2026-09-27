@@ -21,6 +21,7 @@ import { toPathname, type Move } from '@/lib/editor/nav-urls'
 import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
 import { reconcileDirtyAfterSave } from '@/lib/ui/dirty-buffers'
 import { readRedirectWarnings, redirectWarningMessage } from '@/lib/editor/redirect-warnings'
+import { isStaleShaConflict, type ConflictResponse } from '@/lib/editor/conflict-response'
 
 const NAV_PATH = 'content/nav.json'
 
@@ -353,8 +354,15 @@ export default function EditorShell({
             body: JSON.stringify({ path: selectedPath, contents: next, expectedSha: base.sha }),
           })
       if (res.status === 409) {
-        const data = (await res.json()) as { currentSha: string; currentContent: string; message?: string }
-        setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
+        const data = (await res.json()) as ConflictResponse
+        // Only a stale sha on THIS file opens the conflict bar; any other 409
+        // (e.g. the nav save's page file or redirects.csv went stale) is a
+        // plain error, never another file's content loaded into this buffer.
+        if (isStaleShaConflict(data)) {
+          setConflict({ path: selectedPath, serverSha: data.currentSha, serverContent: data.currentContent })
+        } else {
+          setError(data.error ?? 'The save conflicted with another change. Reload to continue.')
+        }
         return
       }
       if (res.status === 422) {
@@ -368,7 +376,10 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
-      const data = (await res.json()) as { commitSha: string; blobSha: string }
+      const data = (await res.json()) as { commitSha: string; blobSha: string; contents?: string }
+      // The server may normalize what it stores (redirects.csv sources lose a
+      // trailing slash): show exactly what was committed under the new sha.
+      const savedContent = typeof data.contents === 'string' ? data.contents : next
       // The nav save kept redirects.csv rows that still shadow a real page
       // (never removed automatically): shown once the save has settled.
       const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
@@ -376,7 +387,7 @@ export default function EditorShell({
       // only clear the dirty buffer if it still equals what we sent — typing
       // that happened while the save was in flight stays dirty.
       setLoaded((prev) =>
-        new Map(prev).set(selectedPath, { content: next, sha: data.blobSha })
+        new Map(prev).set(selectedPath, { content: savedContent, sha: data.blobSha })
       )
       setDirty((prev) => reconcileDirtyAfterSave(prev, selectedPath, next))
       if (isNavSave) {
@@ -463,8 +474,13 @@ export default function EditorShell({
         // The file moved AGAIN while the conflict bar was open — refresh the
         // conflict to the newest server state so the choice stays valid
         // (otherwise "keep mine" loops on a stale sha forever).
-        const data = (await res.json()) as { currentSha: string; currentContent: string }
-        setConflict({ path: conflict.path, serverSha: data.currentSha, serverContent: data.currentContent })
+        const data = (await res.json()) as ConflictResponse
+        if (isStaleShaConflict(data)) {
+          setConflict({ path: conflict.path, serverSha: data.currentSha, serverContent: data.currentContent })
+        } else {
+          setConflict(null)
+          setError(data.error ?? 'The save conflicted with another change. Reload to continue.')
+        }
         return
       }
       if (res.status === 422) {
@@ -476,9 +492,10 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
-      const data = (await res.json()) as { commitSha: string; blobSha: string }
+      const data = (await res.json()) as { commitSha: string; blobSha: string; contents?: string }
       const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
-      setLoaded((prev) => new Map(prev).set(conflict.path, { content: mine, sha: data.blobSha }))
+      const savedMine = typeof data.contents === 'string' ? data.contents : mine
+      setLoaded((prev) => new Map(prev).set(conflict.path, { content: savedMine, sha: data.blobSha }))
       setDirty((prev) => reconcileDirtyAfterSave(prev, conflict.path, mine))
       setConflict(null)
       if (isNavConflict) {
@@ -781,6 +798,9 @@ export default function EditorShell({
         continue
       }
       const lastSlug = name.replace(/\.md$/, '').split('--').pop() ?? ''
+      // `/resources/<slug>` only names the post file here: the move route maps
+      // it to the site's blog path (content/blog.json, e.g. /insights) for the
+      // canonical and the 301.
       const toUrl = dest.type === 'resources' ? `/resources/${lastSlug}` : `${dest.parentUrl}/${lastSlug}`
       const navAction = dest.type === 'resources' ? 'remove' : 'retarget'
       try {
@@ -817,19 +837,24 @@ export default function EditorShell({
     setBulkStatus(null)
     setPageActioning(false)
     const bulkNotice = redirectWarningMessage('Redirects', bulkRedirectWarnings)
+    // Posts that kept a generator trailer render it live: say so on EVERY path,
+    // including a partial failure.
+    const trailerNotice = warnings.length
+      ? ` Heads up: ${warnings.join(', ')} still carry an SEO & AIO Metadata section with content after it; remove it by hand.`
+      : ''
     if (failures.length > 0) {
       setError(
         `Moved ${paths.length - failures.length} of ${paths.length}. Failed: ${failures
           .map((f) => `${f.name} (${f.reason})`)
-          .join('; ')}` + (bulkNotice ? ` ${bulkNotice}` : '')
+          .join('; ')}` +
+          trailerNotice +
+          (bulkNotice ? ` ${bulkNotice}` : '')
       )
       return false
     }
     setPublishResult(
       `Moved ${paths.length} ${dest.type === 'resources' ? 'to Resources' : 'under ' + dest.parentUrl} — Publish to update the live site.` +
-        (warnings.length
-          ? ` Heads up: ${warnings.join(', ')} still carry an SEO & AIO Metadata section with content after it; remove it by hand.`
-          : '')
+        trailerNotice
     )
     if (bulkNotice) setError(redirectWarningMessage(`Moved ${paths.length}`, bulkRedirectWarnings))
     return true

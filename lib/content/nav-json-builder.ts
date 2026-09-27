@@ -116,6 +116,29 @@ function namesFirm(text: string, firmName?: string): boolean {
   return /\b(cpas?|llc|pllc|pc|llp|inc|group|advisors|accounting|consulting|associates)\b/.test(s)
 }
 
+// Service words that often lead a firm's name ("Tax Pros LLC", "Accounting
+// Solutions Group") but just as often lead a page title ("About Tax Planning").
+const GENERIC_LEAD_WORDS = new Set([
+  'tax', 'taxes', 'accounting', 'accountants', 'business', 'financial', 'finance', 'bookkeeping',
+  'advisory', 'payroll', 'wealth', 'consulting', 'audit', 'cpa', 'cpas', 'small',
+])
+
+// Stricter namesFirm for the "About <Firm>" → "About" collapse: when the
+// firm's first significant word is a generic service word, the text must also
+// carry the firm's NEXT significant word (so "Tax Pros Team" names "Tax Pros
+// LLC" but "Tax Planning" does not).
+function namesFirmForAbout(text: string, firmName?: string): boolean {
+  if (!firmName) return namesFirm(text, firmName)
+  const s = normWords(text)
+  const f = normWords(firmName)
+  if (s && f && (s === f || s.replace(/ /g, '') === f.replace(/ /g, ''))) return true
+  const firmWords = significantWords(firmName)
+  if (!firmWords[0] || !GENERIC_LEAD_WORDS.has(firmWords[0])) return namesFirm(text, firmName)
+  const textWords = significantWords(text)
+  if (textWords[0] !== firmWords[0]) return false
+  return !!firmWords[1] && textWords[1] === firmWords[1]
+}
+
 // Does the label mention the firm anywhere (the whole name, or its first
 // significant word as a word)?
 function containsFirm(label: string, firmName?: string): boolean {
@@ -129,10 +152,10 @@ function containsFirm(label: string, firmName?: string): boolean {
 /**
  * Strip SEO-title noise from a nav label: "| Firm Name" segments (keeping the
  * first segment that is NOT the firm name), "- Firm" suffixes, "About Home" →
- * "About", "About <Firm>" → "About", and "…your trusted accounting partner"
- * taglines. Never shortens a clean label.
+ * "About", "About <Firm>" → "About" (not for curated labels), and "…your
+ * trusted accounting partner" taglines. Never shortens a clean label.
  */
-export function cleanNavLabel(raw: string, firmName?: string): string {
+export function cleanNavLabel(raw: string, firmName?: string, opts: { curated?: boolean } = {}): string {
   let label = raw.replace(/\s+/g, ' ').trim()
   if (label.includes('|')) {
     const parts = label.split('|').map((part) => part.trim()).filter((part) => part.length > 0)
@@ -141,8 +164,10 @@ export function cleanNavLabel(raw: string, firmName?: string): string {
   const dash = label.match(/^(.+?)\s+[-–—]\s+(.+)$/)
   if (dash && namesFirm(dash[2], firmName)) label = dash[1].trim()
   label = label.replace(/\s+your\s+(trusted|premier|local|leading|reliable|go-to|preferred)\b.*$/i, '').trim()
-  const about = label.match(/^about\s+(.+)$/i)
-  if (about && (/^home$/i.test(about[1]) || namesFirm(about[1], firmName))) label = 'About'
+  // Never on an operator-curated label: "About Tax Planning" may be exactly
+  // what they typed.
+  const about = opts.curated ? null : label.match(/^about\s+(.+)$/i)
+  if (about && (/^home$/i.test(about[1]) || namesFirmForAbout(about[1], firmName))) label = 'About'
   return label
 }
 
@@ -180,7 +205,7 @@ function cleanCuratedLabels(item: NavItem, firmName?: string): NavItem {
   const clean = item.label.length <= NAV_LABEL_MAX && !item.label.includes('|') && !containsFirm(item.label, firmName)
   return {
     ...item,
-    label: clean ? item.label : cleanNavLabel(item.label, firmName) || item.label,
+    label: clean ? item.label : cleanNavLabel(item.label, firmName, { curated: true }) || item.label,
     ...(item.children ? { children: item.children.map((c) => cleanCuratedLabels(c, firmName)) } : {}),
   }
 }

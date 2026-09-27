@@ -148,7 +148,7 @@ Tier map (reviewed 2026-09-23 against the Fable 5.1 / Opus 5.5 / Sonnet 5 / Haik
   audit/MBP/content-assistant/editor/site-assistant/theme/admin-assistant chats. Replaced
   Sonnet 4.6 on 2026-09-23. Sonnet 5 enables adaptive thinking at effort `high` by default,
   which is too slow for chat, so every chat route MUST pass `chatProviderOptions('low'|'medium')`
-  (`medium` for the page editor and site assistant, `low` elsewhere). Thinking tokens count
+  (`medium` for the page editor, site assistant and Design Studio chat, `low` elsewhere). Thinking tokens count
   against `maxOutputTokens` — leave headroom.
 - **Opus 5.5** (`CRITIC_MODEL`) — the draft critic only (`lib/content/draft-critic.ts`). A
   different, stronger tier than the writer avoids self-grading bias; in an A/B on 5 live pages

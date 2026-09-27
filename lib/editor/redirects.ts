@@ -53,6 +53,43 @@ export function redirectKey(url: string): string {
   return (toPathname(t) ?? t).toLowerCase()
 }
 
+/**
+ * A root-relative redirect source without its trailing slash (`/` itself is
+ * kept). The template's next.config has trailingSlash: false, so Next first
+ * 308s `/a/` to `/a` and then matches custom sources strictly: a `/a/` row
+ * never fires. Absolute or empty values are returned unchanged.
+ */
+export function normalizeRedirectSource(from: string): string {
+  const t = from.trim()
+  if (!t.startsWith('/') || t.length < 2 || !t.endsWith('/')) return from
+  return t.replace(/\/+$/, '') || '/'
+}
+
+// Rewrite rows whose source has a trailing slash (see normalizeRedirectSource).
+// Every other line keeps its bytes.
+function normalizeSourceLines(lines: Line[]): Line[] {
+  return lines.map((l) => {
+    if (l.kind !== 'row') return l
+    const from = normalizeRedirectSource(l.row.from)
+    return from === l.row.from ? l : { kind: 'row', row: { ...l.row, from }, text: null }
+  })
+}
+
+const CONTROL_RE = /[\u0000-\u001f\u007f]/
+
+/**
+ * Mirror of the template loader's redirectDestinationError
+ * (src/lib/redirects/parse-redirects-csv.ts): a row whose destination fails it
+ * is SKIPPED at build, so it is never an edge of the live redirect graph.
+ */
+export function redirectDestinationError(to: string): string | null {
+  const t = to.trim()
+  if (!t.startsWith('/')) return 'non-relative destination'
+  if (t.startsWith('//') || t.startsWith('/\\')) return 'protocol-relative destination'
+  if (CONTROL_RE.test(t)) return 'control character in destination'
+  return null
+}
+
 // A Next.js path-pattern source (`/blog/:slug`, `/old/*`, `/(a|b)`) matches
 // many urls, so it is never compared against individual live pages.
 // The check runs on the PATH, so an absolute `https://host/about` (whose
@@ -166,16 +203,24 @@ function keySet(paths: Iterable<string> | undefined): Set<string> {
   return out
 }
 
-// Break every loop by dropping its last-listed row (the newest one written).
+// Break every loop by dropping its last-listed ACTIVE row (the newest one
+// written). Only the first live row per source is an edge (Next applies the
+// first match), so an inert duplicate or a row the template skips is never
+// the one dropped: that would remove a fallback that is live and loop-free.
 function breakCycles(input: Line[]): Line[] {
   let lines = input
   for (;;) {
     const { cycles } = findRedirectProblems(serializeLines(lines))
     if (cycles.length === 0) return lines
     const inCycle = new Set(cycles.flat())
+    const seen = new Set<string>()
     let lastIdx = -1
     lines.forEach((l, i) => {
-      if (l.kind === 'row' && inCycle.has(redirectKey(l.row.from))) lastIdx = i
+      if (l.kind !== 'row' || redirectDestinationError(l.row.to)) return
+      const from = redirectKey(l.row.from)
+      if (from === redirectKey(l.row.to) || seen.has(from)) return
+      seen.add(from)
+      if (inCycle.has(from)) lastIdx = i
     })
     if (lastIdx < 0) return lines
     lines = lines.filter((_, i) => i !== lastIdx)
@@ -199,7 +244,11 @@ export function liveRedirectWarnings(text: string, opts: RedirectOptions = {}): 
   if (live.size === 0) return []
   return parseRedirectRows(text)
     .filter(
-      (r) => !isPatternSource(r.from) && live.has(redirectKey(r.from)) && redirectKey(r.from) !== redirectKey(r.to)
+      (r) =>
+        !redirectDestinationError(r.to) &&
+        !isPatternSource(r.from) &&
+        live.has(redirectKey(r.from)) &&
+        redirectKey(r.from) !== redirectKey(r.to)
     )
     .map((r) => ({ from: r.from, to: r.to }))
 }
@@ -221,7 +270,7 @@ export function applyRedirectAdds(
   opts: RedirectOptions = {}
 ): { content: string; changed: boolean; warnings: LiveRedirectWarning[] } {
   const original = text ?? ''
-  let lines = parseLines(text ?? REDIRECTS_HEADER)
+  let lines = normalizeSourceLines(parseLines(text ?? REDIRECTS_HEADER))
   const batchTargets = new Set(adds.map((m) => redirectKey(m.to)))
 
   for (const add of adds) {
@@ -258,7 +307,9 @@ export function applyRedirectAdds(
       }
       next.push(l)
     }
-    if (!placed) next.push({ kind: 'row', row: { from: add.from, to: add.to, status: '301', reason }, text: null })
+    if (!placed) {
+      next.push({ kind: 'row', row: { from: normalizeRedirectSource(add.from), to: add.to, status: '301', reason }, text: null })
+    }
     lines = next
   }
 
@@ -281,6 +332,11 @@ export type RedirectProblems = {
    * leading '/', e.g. an absolute old-site url) or carrying a ?query / #hash.
    */
   invalidSources: string[]
+  /**
+   * `from → to` of rows the template skips at build (destination not a same-site
+   * path, e.g. an absolute url). Never counted as edges.
+   */
+  skippedDestinations: string[]
 }
 
 /** Find redirect loops, self-redirects and redirected live pages. Pure. */
@@ -290,10 +346,16 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
   const selfRedirects: string[] = []
   const shadowedPages: string[] = []
   const invalidSources: string[] = []
+  const skippedDestinations: string[] = []
   for (const row of parseRedirectRows(text)) {
     const rawFrom = row.from.trim()
     if ((!rawFrom.startsWith('/') || /[?#]/.test(rawFrom)) && !invalidSources.includes(rawFrom)) {
       invalidSources.push(rawFrom)
+    }
+    // The template skips this row at build: it is not part of the live graph.
+    if (redirectDestinationError(row.to)) {
+      skippedDestinations.push(`${rawFrom} → ${row.to.trim()}`)
+      continue
     }
     const from = redirectKey(row.from)
     const to = redirectKey(row.to)
@@ -323,7 +385,7 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
     }
     for (const p of path) state.set(p, 'done')
   }
-  return { cycles, selfRedirects, shadowedPages, invalidSources }
+  return { cycles, selfRedirects, shadowedPages, invalidSources, skippedDestinations }
 }
 
 /**
@@ -331,8 +393,11 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
  * (the caller answers 422) or null when the file is safe to commit.
  */
 export function validateRedirectsCsv(text: string, opts: RedirectOptions = {}): string | null {
-  const { cycles, selfRedirects, shadowedPages, invalidSources } = findRedirectProblems(text, opts)
+  const { cycles, selfRedirects, shadowedPages, invalidSources, skippedDestinations } = findRedirectProblems(text, opts)
   const problems: string[] = []
+  for (const r of skippedDestinations) {
+    problems.push(`${r} is ignored by the site (the destination must be a path starting with /, not a full url)`)
+  }
   for (const s of invalidSources) {
     problems.push(
       s.startsWith('/')
@@ -348,20 +413,30 @@ export function validateRedirectsCsv(text: string, opts: RedirectOptions = {}): 
 }
 
 /**
- * Make an existing redirects.csv loop-free without adding anything: drops
+ * Make an existing redirects.csv loop-free without adding anything: strips
+ * trailing slashes from sources (a `/a/` source never matches), drops
  * self-redirects and breaks loops (newest row dropped). Rows over live pages
  * are kept (see liveRedirectWarnings). Untouched rows, comments and the header
  * are kept byte-for-byte. Used by the deploy merge, which is what heals the
  * loops already on live sites.
  */
 export function sanitizeRedirectsCsv(text: string): string {
-  return serializeLines(breakCycles(dropSelfRows(parseLines(text))))
+  return serializeLines(breakCycles(dropSelfRows(normalizeSourceLines(parseLines(text)))))
+}
+
+/**
+ * Only strip trailing slashes from sources (no loop breaking). Used by the
+ * one-off repair script for redirects.csv files already on client repos.
+ */
+export function normalizeRedirectSources(text: string): string {
+  return serializeLines(normalizeSourceLines(parseLines(text)))
 }
 
 /** Resolve a destination through existing rows to the end of its chain. */
 export function resolveRedirectTarget(text: string, url: string): string {
   const edges = new Map<string, string>()
   for (const row of parseRedirectRows(text)) {
+    if (redirectDestinationError(row.to)) continue
     const from = redirectKey(row.from)
     if (!edges.has(from)) edges.set(from, row.to)
   }

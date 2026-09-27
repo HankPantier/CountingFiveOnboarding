@@ -34,8 +34,8 @@ import { readMarker } from '../lib/fleet/special-files'
 import { git, isAncestor, revParse, showText, tryGit } from '../lib/fleet/git-local'
 import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, verifyPlanInScratch, type RepoRun, type SyncContext } from '../lib/fleet/sync'
 import { pool, verifyRepo } from '../lib/fleet/verify'
-import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
-import { effectiveCanary, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
+import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, vercelState, waitForVercel, type DeployState } from '../lib/fleet/remote'
+import { defaultCanary, effectiveCanary, releaseProven, rollbackProblems, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
 import type { ClientEntry, TargetSelection } from '../lib/fleet/types'
 
 interface Args {
@@ -249,10 +249,17 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
     console.log('Nothing to apply.')
     return blocked.length ? 1 : 0
   }
-  // The first --apply of a release (no targeted repo is on NEW yet) defaults
-  // to one canary: it has to go green on Vercel before any other repo is pushed.
-  const firstOfRelease = !runs.some((r) => r.upToDate)
-  const requestedCanary = a.canary ?? (firstOfRelease && ready.length > 1 ? 1 : 0)
+  // Until the release is PROVEN (some deployable repo already on NEW has a
+  // green Vercel status on its main head), --apply defaults to one canary that
+  // must go green before any other repo is pushed. The marker alone doesn't
+  // prove it: a canary that failed at the deploy stage is already on NEW.
+  const proven =
+    a.canary === null &&
+    releaseProven(
+      runs.map((r) => ({ upToDate: r.upToDate, noDeploy: r.client.noDeploy, slug: r.client.slug, head: r.clientHead })),
+      (slug, sha) => vercelState(slug, sha).state
+    )
+  const requestedCanary = a.canary ?? defaultCanary(proven, ready.length)
   const canary = effectiveCanary(
     ready.map((r) => ({ noDeploy: r.client.noDeploy })),
     requestedCanary
@@ -272,15 +279,21 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
 
 async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary: number, report: Record<string, unknown>): Promise<number> {
   const { toVersion } = ctx
+  const results: Record<string, unknown>[] = []
   // 1) local commit per repo (unexpected-change abort inside)
   const committed: { run: RepoRun; sha: string }[] = []
+  // A stale clone that was auto-reset (its old HEAD saved to a backup ref):
+  // shown on the repo's line and carried into the --json report.
+  const cloneWarnings = new Map<string, string>()
   for (const run of ready) {
     try {
-      const sha = applyChanges(ctx, run)
+      const sha = applyChanges(ctx, run, (w) => cloneWarnings.set(run.client.slug, w))
       committed.push({ run, sha })
-      console.log(`  ✓ ${repoName(run.client.slug)}: committed ${sha.slice(0, 7)} (local)`)
+      const w = cloneWarnings.get(run.client.slug)
+      console.log(`  ✓ ${repoName(run.client.slug)}: committed ${sha.slice(0, 7)} (local)${w ? ` — ⚠ ${w}` : ''}`)
     } catch (err) {
       console.log(`  ✗ ${repoName(run.client.slug)}: ${(err as Error).message}`)
+      results.push({ slug: run.client.slug, status: 'failed', stage: 'commit', reason: (err as Error).message })
     }
   }
   // 2) local verify, concurrency ≤ 2, one retry
@@ -293,7 +306,6 @@ async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary:
   })
   // 3) draft pre-merge → push main → merge main→draft → Vercel, one repo at a
   //    time; canary first, fail-fast (lib/fleet/push-phase.ts)
-  const results: unknown[] = []
   let failures = committed.length < ready.length ? ready.length - committed.length : 0
   const pushable: PushItem[] = []
   for (const v of verified) {
@@ -318,7 +330,11 @@ async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary:
     },
     (line) => console.log(line)
   )
-  results.push(...phase.results)
+  results.push(...phase.results.map((r) => ({ ...r })))
+  for (const r of results) {
+    const w = cloneWarnings.get(String(r.slug))
+    if (w) r.cloneWarning = w
+  }
   failures += phase.results.filter((r) => r.status !== 'pushed').length
   if (phase.stoppedBy) console.log(`\nSTOPPED after ${phase.stoppedBy} — the remaining repos were not pushed. Fix it, then re-run (synced repos show "up to date").`)
   report.results = results
@@ -359,7 +375,8 @@ async function runRollback(a: Args, targets: ClientEntry[]): Promise<number> {
   for (const p of plans) {
     const repo = repoName(p.t.slug)
     try {
-      prepareForApply(p.dir)
+      const cloneWarning = prepareForApply(p.dir)
+      if (cloneWarning) console.log(`  ⚠ ${repo}: ${cloneWarning}`)
       const rv = tryGit(p.dir, ['revert', '--no-commit', p.sha])
       if (!rv.ok) {
         tryGit(p.dir, ['revert', '--abort'])
@@ -371,10 +388,24 @@ async function runRollback(a: Args, targets: ClientEntry[]): Promise<number> {
         git(p.dir, ['reset', '-q', '--hard', 'refs/remotes/origin/main'])
         throw new Error(`verify failed at ${v.failedStep} — not pushed`)
       }
+      // Same draft pre-merge as a sync: a diverged draft blocks BEFORE main moves.
+      const pre = draftPreflight(p.dir)
+      if (!pre.ok) {
+        resetLocal(p.dir)
+        throw new Error(`draft pre-merge failed — not pushed (${pre.reason})`)
+      }
       const push = pushMain(p.dir)
       if (!push.ok) throw new Error(`push failed — ${push.err}`)
       const draft = mergeMainIntoDraft(p.t.slug, 'Merge main into draft (fleet rollback)')
-      const deploy = a.deployWait ? await waitForVercel(p.t.slug, push.sha) : { state: 'not-checked', url: null }
+      const deploy: { state: DeployState | 'timeout' | 'not-checked'; url: string | null } = a.deployWait
+        ? await waitForVercel(p.t.slug, push.sha)
+        : { state: 'not-checked', url: null }
+      const problems = rollbackProblems(draft.result, deploy.state, p.t.noDeploy)
+      if (problems.length) {
+        failures++
+        console.log(`  ✗ ${repo}: main=${push.sha.slice(0, 7)} pushed, but ${problems.join(' ')}${draft.detail ? ` (${draft.detail})` : ''} — finish the rollback by hand`)
+        continue
+      }
       console.log(`  ✓ ${repo}: main=${push.sha.slice(0, 7)} draft=${draft.result} vercel=${deploy.state}`)
     } catch (err) {
       failures++

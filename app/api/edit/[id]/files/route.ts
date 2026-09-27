@@ -5,7 +5,7 @@ import { resolveEditContext } from '../_helpers'
 import { safePath, CONTENT_MD_RE, ADMIN_BLOCKED_CONFIG } from '../_path'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
-import { pageUrlsFromPaths, validateRedirectsCsv } from '@/lib/editor/redirects'
+import { normalizeRedirectSources, pageUrlsFromPaths, validateRedirectsCsv } from '@/lib/editor/redirects'
 import { readBlogPath } from '@/lib/editor/relocate'
 import {
   DRAFT_BRANCH,
@@ -43,7 +43,8 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
-  const { path: rawPath, contents, expectedSha } = body
+  const { path: rawPath, expectedSha } = body
+  let contents = body.contents
   if (!rawPath || typeof contents !== 'string') {
     return NextResponse.json(
       { error: 'path and contents required' },
@@ -67,7 +68,11 @@ export async function PATCH(
     const yamlError = validateFrontmatterYaml(contents)
     if (yamlError) return NextResponse.json({ error: yamlError }, { status: 422 })
   }
+  const submitted = contents
   if (path === REDIRECTS_PATH) {
+    // A trailing-slash source never fires (Next 308s /a/ to /a first and
+    // matches sources strictly): store it normalized, like every other writer.
+    contents = normalizeRedirectSources(contents)
     // A redirect loop (or a live page redirected away) takes those URLs down on
     // the published site, so refuse it before it reaches draft.
     let livePaths: Set<string> | undefined
@@ -101,7 +106,9 @@ export async function PATCH(
       }
     )
     reviewContentEdit(ctx.sessionId, path, contents)
-    return NextResponse.json(result)
+    // Echo the stored text when the server normalized it, so the editor shows
+    // what was committed.
+    return NextResponse.json(contents !== submitted ? { ...result, contents } : result)
   } catch (err) {
     if (err instanceof StaleShaError) {
       return NextResponse.json(

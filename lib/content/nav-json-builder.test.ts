@@ -118,6 +118,20 @@ describe('nav labels — SEO titles never reach the header', () => {
     expect(cleanNavLabel('About RootAdvisors your trusted accounting partner', 'Accord Advisors')).toBe('About RootAdvisors')
   })
 
+  it('collapses "About <generic word> …" only when the rest still names the firm (PIPE-6)', () => {
+    expect(cleanNavLabel('About Tax Planning', 'Tax Pros LLC')).toBe('About Tax Planning')
+    expect(cleanNavLabel('About Accounting Services', 'Accounting Solutions Group')).toBe('About Accounting Services')
+    expect(cleanNavLabel('About Tax Pros', 'Tax Pros LLC')).toBe('About')
+    expect(cleanNavLabel('About Tax Pros LLC', 'Tax Pros LLC')).toBe('About')
+    // A distinctive first word still collapses as before.
+    expect(cleanNavLabel('About Berg', 'Berg Advisors')).toBe('About')
+  })
+
+  it('never applies the About collapse to a curated label', () => {
+    const curated: NavJson = { primary: [{ label: 'About Berg Advisors | Berg Advisors', url: '/about' }] }
+    expect(buildNavJson([], curated, { firmName: 'Berg Advisors' }).primary[0].label).toBe('About Berg Advisors')
+  })
+
   it('leaves clean labels untouched', () => {
     expect(cleanNavLabel('Industries We Serve', 'Berg Advisors')).toBe('Industries We Serve')
   })
@@ -201,12 +215,12 @@ describe('nav labels — review probes (firm-name matching must not eat real lab
     const curated: NavJson = {
       primary: [
         { label: 'About Home', url: '/about' }, // clean by the rule (short, no "|", no firm name)
-        { label: 'About Berg Advisors', url: '/about-us' }, // names the firm → cleaned
+        { label: 'About Berg Advisors', url: '/about-us' }, // names the firm, but curated: never collapsed to "About"
         { label: 'Berg Advisors | Accounting Services', url: '/services' },
       ],
     }
     const nav = buildNavJson([], curated, { firmName: 'Berg Advisors' })
-    expect(nav.primary.map((i) => i.label)).toEqual(['About Home', 'About', 'Accounting Services'])
+    expect(nav.primary.map((i) => i.label)).toEqual(['About Home', 'About Berg Advisors', 'Accounting Services'])
   })
 
   it('lints duplicate sibling labels', () => {

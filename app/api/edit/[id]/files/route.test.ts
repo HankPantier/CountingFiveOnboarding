@@ -96,5 +96,15 @@ describe('PATCH /api/edit/[id]/files — redirects.csv guard', () => {
     const res = await patch(`${HEADER}/old,/about,301,x\n`)
     expect(res.status).toBe(200)
     expect(h.writeFile).toHaveBeenCalledOnce()
+    // Nothing normalized: the stored text is not echoed back.
+    expect('contents' in ((await res.json()) as object)).toBe(false)
+  })
+
+  it('stores trailing-slash sources normalized and echoes the stored text (PIPE-1)', async () => {
+    const res = await patch(`${HEADER}/meet-our-team/,/about,301,x\n/old,/about/,301,y\n`)
+    expect(res.status).toBe(200)
+    const stored = `${HEADER}/meet-our-team,/about,301,x\n/old,/about/,301,y\n`
+    expect(h.writeFile.mock.calls[0][2]).toBe(stored)
+    expect(((await res.json()) as { contents?: string }).contents).toBe(stored)
   })
 })

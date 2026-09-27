@@ -1,13 +1,17 @@
 import type { NavJson, NavItem } from '@/types/nav-json'
+import { DEFAULT_BLOG_PATH } from '@/lib/content/blog-config'
 
 // Map a content markdown path to the URL it renders at on the live site, so we
 // can find (and strip) a matching nav.json entry when a page is drafted/deleted.
 //   content/pages/home.md            -> /
 //   content/pages/services--tax.md   -> /services/tax
-//   content/posts/foo.md             -> /resources/foo
+//   content/posts/foo.md             -> /resources/foo  (or <blogPath>/foo)
 // Page filenames encode URL depth with `--` (mirrors the template's slug
 // convention and FileTree's pageSegments). Returns null for non-content paths.
-export function contentPathToUrl(path: string): string | null {
+// `blogPath` is the site's post base (content/blog.json `path`, e.g. korbey
+// /insights): the template serves posts ONLY there, so any url written to a
+// redirect or a canonical must use it.
+export function contentPathToUrl(path: string, blogPath: string = DEFAULT_BLOG_PATH): string | null {
   const pageMatch = /^content\/(?:drafts\/)?pages\/(.+)\.md$/.exec(path)
   if (pageMatch) {
     const name = pageMatch[1]
@@ -16,20 +20,21 @@ export function contentPathToUrl(path: string): string | null {
   }
   const postMatch = /^content\/(?:drafts\/)?posts\/(.+)\.md$/.exec(path)
   if (postMatch) {
-    return '/resources/' + postMatch[1]
+    return `${blogPath}/${postMatch[1]}`
   }
   return null
 }
 
 // Inverse of contentPathToUrl: map a root-relative URL to the LIVE content
 // markdown path it renders from. Drafts are off-site and untargetable here.
-//   /resources/foo -> content/posts/foo.md   (blog posts are flat)
+//   /resources/foo -> content/posts/foo.md   (blog posts are flat; the site's
+//                                            blogPath, e.g. /insights/foo, too)
 //   /services/tax  -> content/pages/services--tax.md
 //   /services      -> content/pages/services.md
 // Returns null for the home page ('/'), external / non-root-relative urls, a
 // nested /resources/* (posts don't nest), and any segment containing '.', '..',
 // or '--' (which would corrupt the filename encoding or escape the root).
-export function urlToContentPath(url: string): string | null {
+export function urlToContentPath(url: string, blogPath: string = DEFAULT_BLOG_PATH): string | null {
   if (typeof url !== 'string' || !url.startsWith('/')) return null
   const slug = url.replace(/^\/+|\/+$/g, '')
   if (!slug) return null // home page — not a movable content file
@@ -43,7 +48,7 @@ export function urlToContentPath(url: string): string | null {
   if (segments.some((s) => !/^[A-Za-z0-9-]+$/.test(s) || s.includes('--'))) {
     return null
   }
-  if (segments[0] === 'resources') {
+  if (segments[0] === 'resources' || `/${segments[0]}` === blogPath) {
     // Posts live flat under content/posts/; only /resources/<one-slug> resolves.
     if (segments.length !== 2) return null
     return `content/posts/${segments[1]}.md`

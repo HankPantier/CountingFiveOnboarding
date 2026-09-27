@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { applyChanges, ensureClone, gateRepo, unexpectedChanges, verifyPlanInScratch, type SyncContext } from './sync'
+import { ORPHAN_REF_PREFIX, applyChanges, assertCloneOrigin, ensureClone, gateRepo, prepareForApply, unexpectedChanges, verifyPlanInScratch, type SyncContext } from './sync'
 import { draftPreflight, findLastFleetCommit, pushMain } from './remote'
 import { runPushPhase } from './push-phase'
 import type { ClientEntry, ReleaseManifest } from './types'
@@ -292,5 +292,64 @@ describe('gateRepo + applyChanges (local repos)', () => {
 
   it('unexpectedChanges lists every path the plan did not predict', () => {
     expect(unexpectedChanges(['a', 'b', 'next-env.d.ts'], new Set(['a', 'b']))).toEqual(['next-env.d.ts'])
+  })
+})
+
+describe('assertCloneOrigin (FLEET-4)', () => {
+  it('refuses a reused clone whose GitHub origin is another owner’s same-named repo', () => {
+    const dir = mkdtempSync(path.join(root, 'origin-check-'))
+    sh(dir, 'init', '-q')
+    sh(dir, 'remote', 'add', 'origin', 'https://github.com/other/client.git')
+    expect(() => assertCloneOrigin(dir, 'acme/client')).toThrow(/is other\/client, not acme\/client/)
+    expect(() => assertCloneOrigin(dir, 'Other/Client')).not.toThrow()
+    sh(dir, 'remote', 'set-url', 'origin', 'git@github.com:acme/client.git')
+    expect(() => assertCloneOrigin(dir, 'acme/client')).not.toThrow()
+  })
+})
+
+describe('prepareForApply — stale shallow clone cache (FLEET-1)', () => {
+  // A --depth 1 clone whose origin main then moves (a content publish).
+  function shallowClone(): { bare: string; seed: string; dir: string } {
+    const bare = path.join(root, `origin-${Math.random().toString(36).slice(2)}.git`)
+    sh(root, 'init', '-q', '--bare', '-b', 'main', bare)
+    const seed = mkdtempSync(path.join(root, 'seed-'))
+    sh(seed, 'init', '-q', '-b', 'main')
+    commit(seed, { 'a.txt': 'a\n' }, 'a')
+    commit(seed, { 'b.txt': 'b\n' }, 'b')
+    sh(seed, 'remote', 'add', 'origin', bare)
+    sh(seed, 'push', '-q', 'origin', 'main')
+    const dir = mkdtempSync(path.join(root, 'shallow-'))
+    rmSync(dir, { recursive: true, force: true })
+    sh(root, 'clone', '-q', '--depth', '1', '--branch', 'main', `file://${bare}`, dir)
+    sh(dir, 'config', 'user.name', 't')
+    sh(dir, 'config', 'user.email', 't@t')
+    commit(seed, { 'c.txt': 'c\n' }, 'c (a publish)')
+    sh(seed, 'push', '-q', 'origin', 'main')
+    sh(dir, 'fetch', '-q', '--depth', '1', 'origin', '+refs/heads/main:refs/remotes/origin/main')
+    return { bare, seed, dir }
+  }
+
+  it('unshallows and resets when main merely moved ahead (no manual rm -rf)', () => {
+    const { dir } = shallowClone()
+    expect(prepareForApply(dir)).toBeNull()
+    expect(sh(dir, 'rev-parse', 'HEAD')).toBe(sh(dir, 'rev-parse', 'refs/remotes/origin/main'))
+  })
+
+  it('saves a stale unpushed Fleet-Sync commit to a backup ref, then resets', () => {
+    const { dir } = shallowClone()
+    const stale = commit(dir, { 'sync.txt': 'x\n' }, 'chore(template): sync template 2026.09.5\n\nFleet-Sync: 2026.09.5 aaa..bbb\n')
+    const warning = prepareForApply(dir)
+    expect(warning).toMatch(/saved to refs\/fleet-orphans\//)
+    const refs = sh(dir, 'for-each-ref', '--format=%(objectname)', ORPHAN_REF_PREFIX)
+    expect(refs).toBe(stale)
+    expect(sh(dir, 'rev-parse', 'HEAD')).toBe(sh(dir, 'rev-parse', 'refs/remotes/origin/main'))
+  })
+
+  it('refuses (old message, nothing reset) when a local commit is not a Fleet-Sync commit', () => {
+    const { dir } = shallowClone()
+    const mine = commit(dir, { 'mine.txt': 'hand work\n' }, 'a hand edit someone made in the clone')
+    expect(() => prepareForApply(dir)).toThrow(/has commits not on origin\/main — refusing to discard them/)
+    expect(sh(dir, 'rev-parse', 'HEAD')).toBe(mine)
+    expect(sh(dir, 'for-each-ref', '--format=%(refname)', ORPHAN_REF_PREFIX)).toBe('')
   })
 })

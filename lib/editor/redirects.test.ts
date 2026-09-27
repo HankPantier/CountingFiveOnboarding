@@ -5,6 +5,8 @@ import {
   findRedirectProblems,
   blogPathFromJson,
   liveRedirectWarnings,
+  normalizeRedirectSource,
+  normalizeRedirectSources,
   pageUrlsFromPaths,
   parseRedirectRows,
   resolveRedirectTarget,
@@ -112,9 +114,9 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
     expect(validateRedirectsCsv(`${H}/About,/team,301,x\n`, { livePaths: ['/about'] })).toMatch(/has a real page/)
   })
 
-  it('ignores ?query and #hash for loop detection, absolute or root-relative', () => {
+  it('ignores a ?query or #hash on a root-relative destination for loop detection', () => {
     expect(findRedirectProblems(`${H}/a,/b?x=1,301,x\n/b,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
-    expect(findRedirectProblems(`${H}/a,https://x.com/b#top,301,x\n/b/,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
+    expect(findRedirectProblems(`${H}/a,/b#top,301,x\n/b/,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
     expect(validateRedirectsCsv(`${H}/a?utm=1,/a,301,x\n`)).toMatch(/redirects to itself/)
   })
 
@@ -192,5 +194,52 @@ describe('helpers', () => {
   it('resolves a destination to the end of its chain', () => {
     expect(resolveRedirectTarget(`${H}/a,/b,301,x\n/b,/c,301,x\n`, '/a')).toBe('/c')
     expect(resolveRedirectTarget(`${H}/a,/b,301,x\n/b,/a,301,x\n`, '/a')).toBe('/a')
+  })
+})
+
+describe('trailing-slash sources (PIPE-1)', () => {
+  it('normalizeRedirectSource strips the slash but keeps / and absolute urls', () => {
+    expect(normalizeRedirectSource('/services/tax/')).toBe('/services/tax')
+    expect(normalizeRedirectSource('/a//')).toBe('/a')
+    expect(normalizeRedirectSource('/')).toBe('/')
+    expect(normalizeRedirectSource('/a')).toBe('/a')
+    expect(normalizeRedirectSource('https://x.com/a/')).toBe('https://x.com/a/')
+  })
+
+  it('sanitizeRedirectsCsv rewrites only the rows with a trailing-slash source', () => {
+    const text = `${H}# note\n/meet-our-team/,/about/our-team,301,x\n/b,/c/,301,y\n`
+    expect(sanitizeRedirectsCsv(text)).toBe(`${H}# note\n/meet-our-team,/about/our-team,301,x\n/b,/c/,301,y\n`)
+  })
+
+  it('applyRedirectAdds normalizes new and existing sources', () => {
+    const { content } = applyRedirectAdds(`${H}/old/,/x,301,r\n`, [{ from: '/a/', to: '/b' }], 'moved')
+    expect(pairs(content)).toEqual(['/old>/x', '/a>/b'])
+  })
+
+  it('normalizeRedirectSources is idempotent and leaves loops alone', () => {
+    const text = `${H}/a/,/b,301,x\n/b,/a,301,x\n`
+    const once = normalizeRedirectSources(text)
+    expect(once).toBe(`${H}/a,/b,301,x\n/b,/a,301,x\n`)
+    expect(normalizeRedirectSources(once)).toBe(once)
+  })
+})
+
+describe('rows the template skips (EDIT-2) and inert duplicates (EDIT-3)', () => {
+  it('an absolute destination is not an edge, so the live loop behind it is found', () => {
+    const text = `${H}/a,https://old.com/b,301,x\n/a,/c,301,x\n/c,/a,301,x\n`
+    expect(findRedirectProblems(text).cycles).toEqual([['/a', '/c']])
+    expect(validateRedirectsCsv(text)).toMatch(/\/a → https:\/\/old\.com\/b is ignored by the site/)
+  })
+
+  it('never drops a valid row to break a loop that only exists through a skipped row', () => {
+    const text = `${H}/a,https://old.com/b,301,x\n/b,/a,301,x\n`
+    expect(findRedirectProblems(text).cycles).toEqual([])
+    expect(sanitizeRedirectsCsv(text)).toBe(text)
+  })
+
+  it('breaks a loop on its active row, keeping a later inert duplicate', () => {
+    // /b's first row loops; its second row is inert today and must survive.
+    const out = sanitizeRedirectsCsv(`${H}/a,/b,301,x\n/b,/a,301,x\n/b,/z,301,x\n`)
+    expect(pairs(out)).toEqual(['/a>/b', '/b>/z'])
   })
 })
