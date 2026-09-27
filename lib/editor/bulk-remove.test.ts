@@ -65,7 +65,18 @@ describe('applyBulkRemovals', () => {
     expect(res.next).toBe('The old brand Root Advisors Group LLC.')
   })
 
-  it('strips em/en dashes page-wide, protecting code fences and keeping numeric ranges', () => {
+  it('stripDashes leaves frontmatter and the generator trailer byte-identical (body prose only)', () => {
+    const trailer =
+      '\n---\n## SEO & AIO Metadata\n\n**Internal Links:**\n- a → /b — c\n\n---\n## Structured Data — paste into `<head>`\n\n```html\n<script></script>\n```\n'
+    const res = applyBulkRemovals(PAGE + trailer, [], { stripDashes: true })
+    const fm = PAGE.slice(0, PAGE.indexOf('\n---\n', 4) + 5)
+    expect(res.next.startsWith(fm)).toBe(true)
+    expect(res.next).toContain('meta_title: Root Advisors — 40 years of tax help')
+    expect(res.next.endsWith(trailer)).toBe(true)
+    expect(res.next).toContain('40 years of experience, led by')
+  })
+
+  it('strips em/en dashes in the body, protecting code fences and keeping numeric ranges', () => {
     const res = applyBulkRemovals(PAGE, [], { stripDashes: true })
     expect(res.dashesStripped).toBeGreaterThan(0)
     // em-dash in prose becomes a comma

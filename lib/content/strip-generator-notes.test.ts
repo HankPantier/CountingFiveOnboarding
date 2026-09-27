@@ -170,10 +170,10 @@ describe('repairPageTrailer — real page whose SEO marker was edited away', () 
     expect(repairPageTrailer(r.content)).toEqual({ content: r.content, changed: false })
   })
 
-  it('leaves a canonical page trailer alone', () => {
-    // A normal page file: SEO marker first, then Structured Data.
-    const page = POST
-    expect(repairPageTrailer(page).changed).toBe(false)
+  it('leaves an intact trailer (SEO marker, then Structured Data) alone', () => {
+    // The Accord post fixture still carries buildPageMarkdown's intact trailer,
+    // exactly the shape every page file has, so it stands in for a page here.
+    expect(repairPageTrailer(POST).changed).toBe(false)
   })
 })
 
