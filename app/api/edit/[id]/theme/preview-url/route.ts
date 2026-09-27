@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
+import { resolvePreviewSiteUrl } from '@/lib/theme-preview/site-url'
+import { internalError } from '@/lib/api/errors'
 import type { PreviewUrlInfo } from '../_theme'
 
 export const runtime = 'nodejs'
@@ -38,17 +40,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const ctx = await gate(id)
   if (ctx instanceof NextResponse) return ctx
 
-  const supabase = createServerClient()
-  const { data: job } = await supabase
-    .from('content_jobs')
-    .select('preview_url')
-    .eq('id', ctx.jobId)
-    .single()
+  try {
+    return NextResponse.json(await previewUrlInfo(ctx))
+  } catch (err) {
+    return internalError('theme-preview-url', err, 'Could not look up the preview URL.')
+  }
+}
 
-  const previewUrl = job?.preview_url ?? null
-  const configUrl = await readSiteConfigSiteUrl(ctx.githubRepo, MAIN_BRANCH)
-  const info: PreviewUrlInfo = { previewUrl, configUrl, effectiveUrl: previewUrl ?? configUrl }
-  return NextResponse.json(info)
+// What the preview fetches (resolvePreviewSiteUrl: override → verified Vercel
+// address, cached into preview_url → site.config). A derived Vercel address is
+// stored as the override, so it reports as previewUrl.
+async function previewUrlInfo(ctx: { jobId: string; githubRepo: string }): Promise<PreviewUrlInfo> {
+  const [resolved, configUrl] = await Promise.all([
+    resolvePreviewSiteUrl({ jobId: ctx.jobId, githubRepo: ctx.githubRepo }),
+    readSiteConfigSiteUrl(ctx.githubRepo, MAIN_BRANCH),
+  ])
+  const previewUrl = resolved.source === 'config' ? null : resolved.url
+  return { previewUrl, configUrl, effectiveUrl: resolved.url }
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -77,7 +85,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Failed to save the preview URL.' }, { status: 500 })
   }
 
-  const configUrl = await readSiteConfigSiteUrl(ctx.githubRepo, MAIN_BRANCH)
-  const info: PreviewUrlInfo = { previewUrl: next, configUrl, effectiveUrl: next ?? configUrl }
-  return NextResponse.json(info)
+  // Cleared → re-resolve the default (the verified Vercel address when there is one).
+  try {
+    return NextResponse.json(await previewUrlInfo(ctx))
+  } catch (err) {
+    return internalError('theme-preview-url', err, 'Could not look up the preview URL.')
+  }
 }

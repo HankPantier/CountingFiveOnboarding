@@ -67,6 +67,6 @@ export type PreviewUrlInfo = {
   previewUrl: string | null
   /** Canonical site.config.ts siteUrl on main — the fallback when no override. */
   configUrl: string | null
-  /** What the preview will actually fetch: previewUrl ?? configUrl. */
+  /** What the preview will actually fetch: previewUrl ?? (verified Vercel address) ?? configUrl. */
   effectiveUrl: string | null
 }
