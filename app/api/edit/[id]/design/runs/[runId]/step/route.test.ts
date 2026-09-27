@@ -12,7 +12,7 @@ const m = vi.hoisted(() => ({
   listConcepts: vi.fn(),
   transitionRun: vi.fn(),
   resetConcepts: vi.fn(async (..._a: unknown[]) => {}),
-  deleteConcepts: vi.fn(async (..._a: unknown[]) => {}),
+  deleteConcepts: vi.fn(async (..._a: unknown[]): Promise<unknown[]> => []),
   resumeConcepts: vi.fn(async (..._a: unknown[]) => {}),
   runDesignStep: vi.fn(),
   shouldChain: vi.fn(),
@@ -171,14 +171,26 @@ describe('POST step — admin retry', () => {
     expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
     expect(m.resetConcepts).toHaveBeenCalledWith(m.db, RID, [])
   })
-  it('a retry removes the deleted positions’ renders first (session-scoped), never the kept ones', async () => {
+  it('a retry removes the renders of the rows ITS delete removed (session-scoped), never the kept ones', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'generate' }))
     const b = makeConceptRow({ id: 'b', position: 1, status: 'error', bundle: null })
     m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'pending' }), b])
+    m.deleteConcepts.mockResolvedValueOnce([b])
     m.transitionRun.mockResolvedValue(makeRunRow({ status: 'queued' }))
     expect((await call()).status).toBe(202)
     expect(m.removeRetired).toHaveBeenCalledWith(m.db, SID, RID, [b])
-    expect(m.removeRetired.mock.invocationCallOrder[0]).toBeLessThan(m.deleteConcepts.mock.invocationCallOrder[0])
+    expect(m.deleteConcepts.mock.invocationCallOrder[0]).toBeLessThan(m.removeRetired.mock.invocationCallOrder[0])
+    expect(m.removeRetired.mock.invocationCallOrder[0]).toBeLessThan(m.transitionRun.mock.invocationCallOrder[0])
+  })
+  it('a losing Retry (its delete matched nothing — a concurrent Retry already took the rows) removes no renders', async () => {
+    m.getRun.mockResolvedValue(makeRunRow({ status: 'error', stage: 'generate' }))
+    const b = makeConceptRow({ id: 'b', position: 1, status: 'error', bundle: null })
+    m.listConcepts.mockResolvedValue([makeConceptRow({ id: 'a', status: 'pending' }), b])
+    m.deleteConcepts.mockResolvedValueOnce([])
+    m.transitionRun.mockResolvedValue(null)
+    expect((await call()).status).toBe(409)
+    expect(m.deleteConcepts).toHaveBeenCalledWith(m.db, RID, ['b'])
+    expect(m.removeRetired).not.toHaveBeenCalled()
   })
   it('a retry with nothing deleted removes no renders', async () => {
     m.getRun.mockResolvedValue(makeRunRow({ status: 'error' }))

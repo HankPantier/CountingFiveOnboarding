@@ -118,9 +118,11 @@ describe('run-store', () => {
     const empty = fakeSupabase({})
     await deleteConcepts(empty.client, RID, [])
     expect(empty.queries).toHaveLength(0)
-    const f = fakeSupabase({ design_concepts: [{ data: null }] })
-    await deleteConcepts(f.client, RID, [CID])
-    expect(f.opsFor('design_concepts')).toEqual([['delete'], ['eq', 'run_id', RID], ['in', 'id', [CID]]])
+    const f = fakeSupabase({ design_concepts: [{ data: [makeConceptRow({ id: CID })] }, { data: [] }] })
+    expect((await deleteConcepts(f.client, RID, [CID])).map((r) => r.id)).toEqual([CID])
+    expect(f.opsFor('design_concepts')).toEqual([['delete'], ['eq', 'run_id', RID], ['in', 'id', [CID]], ['select', '*']])
+    // A concurrent caller already deleted them: nothing comes back.
+    expect(await deleteConcepts(f.client, RID, [CID])).toEqual([])
   })
 
   it('claimConceptRender only claims a pending concept of this run', async () => {
