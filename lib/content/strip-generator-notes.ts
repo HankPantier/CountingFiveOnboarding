@@ -82,15 +82,20 @@ function labelsIn(text: string): string[] {
   return out
 }
 
-// A heading-less run of generator labels at the very END of a body (the model
-// echoing its metadata plan). Conservative: needs ≥2 distinct exact labels,
-// and nothing structural (a heading or a block annotation) may follow the
-// first one — a reader-facing section always starts with a heading.
+// A heading-less run of generator labels at the END of a body: the model
+// echoing its metadata plan, or an SEO trailer whose "## SEO & AIO Metadata"
+// line alone was deleted. Conservative: needs >=2 distinct exact labels, and
+// nothing structural (a heading or a block annotation) may sit between the
+// first label and the end, or the Structured Data trailer, which is allowed
+// to follow. A reader-facing section always starts with a heading.
 function bareLabelRunStart(body: string): number {
+  const structured = trailerStart(body, STRUCTURED_TRAILER_RE)
+  const limit = structured >= 0 ? structured : body.length
   const matches = [...body.matchAll(LABEL_LINE_RE)]
   for (const m of matches) {
     const start = m.index ?? 0
-    const tail = body.slice(start)
+    if (start >= limit) break
+    const tail = body.slice(start, limit)
     if (/^[ \t]*#{1,6}[ \t]/m.test(tail) || tail.includes('<!-- block:')) continue
     if (labelsIn(tail).filter((l) => l !== 'Call to Action').length < 2) return -1
     // Take a directly preceding `---` rule with it.
@@ -281,12 +286,22 @@ export function stripGeneratorNotesFromFile(content: string): FileStripResult {
  * template trims again and the schema is kept. Idempotent; no-op otherwise.
  */
 export function repairPageTrailer(content: string): { content: string; changed: boolean } {
-  const structured = trailerStart(content, STRUCTURED_TRAILER_RE)
-  if (structured < 0) return { content, changed: false }
   const seo = trailerStart(content, SEO_TRAILER_RE)
-  if (seo >= 0 && seo < structured) return { content, changed: false }
-  const before = content.slice(0, structured).replace(/\s+$/, '')
+  const structured = trailerStart(content, STRUCTURED_TRAILER_RE)
+  const run = bareLabelRunStart(content)
+  const starts = [run, structured].filter((i) => i >= 0)
+  if (starts.length === 0) return { content, changed: false }
+  const at = Math.min(...starts)
+  if (seo >= 0 && seo < at) return { content, changed: false }
   const eol = eolOf(content)
-  const next = `${before}${eol}${eol}---${eol}## SEO & AIO Metadata${eol}${eol}${content.slice(structured)}`
-  return { content: next, changed: true }
+  const marker = `---${eol}## SEO & AIO Metadata${eol}${eol}`
+  const before = content.slice(0, at).replace(/\s+$/, '')
+  if (at === run) {
+    // The label run lost only its heading: put it back under the run's own
+    // `---` rule when there is one, else open a new rule + heading.
+    const rule = /^-{3,}[ \t]*\r?\n(?:[ \t]*\r?\n)*/.exec(content.slice(at))
+    const rest = content.slice(at + (rule ? rule[0].length : 0))
+    return { content: `${before}${eol}${eol}${marker}${rest}`, changed: true }
+  }
+  return { content: `${before}${eol}${eol}${marker}${content.slice(at)}`, changed: true }
 }

@@ -208,3 +208,44 @@ describe('CRLF files', () => {
     expect(r.content).toBe(crlf(repairPageTrailer(ORPHAN_PAGE).content))
   })
 })
+
+describe('trailer whose "## SEO & AIO Metadata" line alone was deleted', () => {
+  // Same real trailer, heading line removed: a bare label run followed only by
+  // the Structured Data block.
+  const HEADLESS = POST.replace('## SEO & AIO Metadata\n', '')
+
+  it('post strip cuts the label run AND the Structured Data block, and reports both', () => {
+    const r = stripGeneratorNotesFromFile(HEADLESS)
+    expect(r.changed).toBe(true)
+    expect(r.content).toBe(stripGeneratorNotesFromFile(POST).content)
+    expect(r.removed).toEqual([
+      'Answer Block',
+      'E-E-A-T Signals',
+      'Internal Links',
+      'FAQ Block',
+      'LLM Citation Note',
+      'Structured Data',
+    ])
+  })
+
+  it('findGeneratorNotes sees it', () => {
+    expect(findGeneratorNotes(HEADLESS)).toEqual(
+      expect.arrayContaining(['Structured Data', 'Answer Block', 'Internal Links'])
+    )
+  })
+
+  it('page repair puts the marker back BEFORE the label run, not before Structured Data', () => {
+    const r = repairPageTrailer(HEADLESS)
+    expect(r.changed).toBe(true)
+    expect(r.content).toBe(POST)
+    expect(repairPageTrailer(r.content).changed).toBe(false)
+  })
+
+  it('page repair also covers a bare label run with no Structured Data block', () => {
+    const page =
+      '---\ntitle: "x"\n---\n\n## Body\n\nProse.\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- a → /b — c\n'
+    expect(repairPageTrailer(page).content).toBe(
+      '---\ntitle: "x"\n---\n\n## Body\n\nProse.\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- a → /b — c\n'
+    )
+  })
+})
