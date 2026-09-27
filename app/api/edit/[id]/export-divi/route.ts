@@ -14,7 +14,13 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { NavJson } from '@/types/nav-json'
 import type { ClientCenterJson } from '@/types/client-center'
-import { DESIGN_SYSTEM_REQUIRED_FOR_EXPORT, isCompletePalette } from '@/lib/content/brand-gate'
+import {
+  DESIGN_SYSTEM_REQUIRED_FOR_EXPORT,
+  DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER,
+  isCompletePalette,
+  paletteFromBrandJson,
+} from '@/lib/content/brand-gate'
+import { hasCapability } from '@/lib/auth/access'
 
 // archiver (zip) + GitHub reads require the Node.js runtime; a large site takes
 // dozens of GitHub reads plus (time-boxed) Pexels lookups, so allow the full
@@ -25,6 +31,7 @@ export const maxDuration = 300
 const NAV_PATH = 'content/nav.json'
 const CLIENT_CENTER_PATH = 'content/client-center.json'
 const PRICING_PLANS_PATH = 'content/pricing-plans.json'
+const BRAND_JSON_PATH = 'content/brand.json'
 const READ_CONCURRENCY = 4
 
 function gmtStamp(d: Date): string {
@@ -81,10 +88,24 @@ export async function GET(
     .select('palette')
     .eq('id', ctx.jobId)
     .maybeSingle()
+  // The export is "the live site": its palette is the draft's content/brand.json
+  // (Theme Studio / Design Studio write it), falling back to the job palette.
+  let livePalette: PaletteData | null = null
+  try {
+    livePalette = paletteFromBrandJson((await readFile(ctx.githubRepo, BRAND_JSON_PATH, DRAFT_BRANCH)).content)
+  } catch {
+    livePalette = null
+  }
+  const palette: PaletteData | null =
+    livePalette ?? (isCompletePalette(job?.palette) ? (job?.palette as PaletteData) : null)
   // No silent house navy/cyan fallback: an export without a locked palette would
   // hand the client a site in Revaltus colours (same gate as packaging).
-  if (!isCompletePalette(job?.palette)) {
-    return NextResponse.json({ error: DESIGN_SYSTEM_REQUIRED_FOR_EXPORT }, { status: 409 })
+  if (!palette) {
+    const canOpenJob = ctx.user.isAdmin || hasCapability(ctx.user, 'manager')
+    return NextResponse.json(
+      { error: canOpenJob ? DESIGN_SYSTEM_REQUIRED_FOR_EXPORT : DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER },
+      { status: 409 }
+    )
   }
 
   // Logo: signed because session-assets is private. The private-bucket contract
@@ -108,7 +129,6 @@ export async function GET(
   }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
-  const palette = job!.palette as PaletteData
   const brand = buildBrandJson(schema, palette)
   const firmName = brand.firm.name || session.website_url
 

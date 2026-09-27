@@ -20,6 +20,27 @@ export function isCompletePalette(palette: unknown): boolean {
   })
 }
 
+/**
+ * The six-role palette from a content/brand.json text (roles as hex strings),
+ * in PaletteData form, or null when the file is unparseable or incomplete.
+ * brand.json is the LIVE palette: Theme Studio and Design Studio write it.
+ */
+export function paletteFromBrandJson(text: string | null | undefined): Record<(typeof PALETTE_ROLES)[number], { hex: string; name: string }> | null {
+  if (!text) return null
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return null
+  }
+  const pal = isObject(raw) ? raw.palette : null
+  if (!isObject(pal)) return null
+  const out = Object.fromEntries(
+    PALETTE_ROLES.map((role) => [role, { hex: typeof pal[role] === 'string' ? (pal[role] as string) : '', name: role }])
+  ) as Record<(typeof PALETTE_ROLES)[number], { hex: string; name: string }>
+  return isCompletePalette(out) ? out : null
+}
+
 /** True when the value carries a type pairing (the one field every consumer needs). */
 export function isCompleteDesignTokens(tokens: unknown): boolean {
   if (!isObject(tokens) || !isObject(tokens.typePairing)) return false
@@ -46,6 +67,10 @@ export const DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY =
 
 export const DESIGN_SYSTEM_REQUIRED_FOR_EXPORT =
   'This site has no locked palette, so the export would use generic colours. Open step 1 “Design System” on the content job, review the logo palette and click Save, then export again.'
+
+// Editor / Site Owner members can't open the content job (manager-only).
+export const DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER =
+  'This site has no locked palette, so the export would use generic colours. Ask an admin or manager to lock the Design System (step 1 on the content job), then export again.'
 
 export type PhaseStatusValue = 'locked' | 'active' | 'complete'
 
