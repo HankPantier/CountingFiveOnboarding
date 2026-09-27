@@ -30,7 +30,7 @@ async function putAsset(
   assetPath: string,
   mode: 'create' | 'replace',
   expectedSha?: string
-): Promise<{ blobSha: string }> {
+): Promise<AssetWriteResult> {
   const form = new FormData()
   form.append('file', file)
   form.append('path', assetPath)
@@ -38,15 +38,18 @@ async function putAsset(
   if (expectedSha) form.append('expectedSha', expectedSha)
   const res = await fetch(`/api/edit/${sessionId}/asset`, { method: 'PUT', body: form })
   if (!res.ok) throw new Error(await errorMessage(res))
-  return (await res.json()) as { blobSha: string }
+  return (await res.json()) as AssetWriteResult
 }
+
+/** `logoTone` is set when the file was the site logo and brand.json's tone changed. */
+export type AssetWriteResult = { blobSha: string; logoTone?: string }
 
 export function replaceAsset(
   sessionId: string,
   file: File,
   assetPath: string,
   expectedSha?: string
-): Promise<{ blobSha: string }> {
+): Promise<AssetWriteResult> {
   return putAsset(sessionId, file, assetPath, 'replace', expectedSha)
 }
 
@@ -54,7 +57,7 @@ export function createAsset(
   sessionId: string,
   file: File,
   assetPath: string
-): Promise<{ blobSha: string }> {
+): Promise<AssetWriteResult> {
   return putAsset(sessionId, file, assetPath, 'create')
 }
 

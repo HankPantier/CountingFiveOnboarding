@@ -575,6 +575,51 @@ export async function writeBinaryFile(
   }
 }
 
+// writeBinaryFile's create/replace semantics, plus text files that must land in
+// the SAME commit (e.g. brand.json's logo.tone when the logo image is replaced).
+// Every file is guarded against its base-tree blob sha, so a concurrent edit to
+// either raises StaleShaError and nothing is committed.
+export async function writeBinaryFileWithCompanions(
+  slug: string,
+  path: string,
+  content: Buffer,
+  branch: string,
+  message: string,
+  options: {
+    mode: 'create' | 'replace'
+    expectedSha?: string
+    authorName?: string
+    authorEmail?: string
+    companions: { path: string; content: string; expectedSha: string | null }[]
+  }
+): Promise<{ commitSha: string; blobSha: string }> {
+  const existing = await currentSha(slug, path, branch)
+  if (options.mode === 'create' && existing !== null) throw new AssetExistsError(path)
+  if (options.mode === 'replace') {
+    if (existing === null) throw new FileNotFoundError(path)
+    if (options.expectedSha && existing !== options.expectedSha) {
+      throw new StaleShaError(path, existing, '')
+    }
+  }
+  const entries: PushEntry[] = [
+    { path, content, expectedBlobSha: existing },
+    ...options.companions.map((c) => ({ path: c.path, content: c.content, expectedBlobSha: c.expectedSha })),
+  ]
+  const writes = await createBlobs(slug, entries)
+  const commitSha = await commitTreeWrites(
+    slug,
+    branch,
+    `writeBinaryFileWithCompanions ${slug}#${branch}`,
+    writes,
+    message,
+    { authorName: options.authorName, authorEmail: options.authorEmail },
+    async (base) => {
+      for (const e of entries) await assertBlobSha(slug, e.path, e.expectedBlobSha ?? null, base, true)
+    }
+  )
+  return { commitSha, blobSha: writes.find((w) => w.path === path)?.sha ?? '' }
+}
+
 // Delete a file from the branch. expectedSha guards against deleting a blob
 // that changed since the caller last listed it.
 export async function deleteFile(

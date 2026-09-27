@@ -13,8 +13,12 @@ import {
   ensureDraftBranch,
   readBinaryFile,
   readBlobBySha,
+  readFile,
   writeBinaryFile,
+  writeBinaryFileWithCompanions,
 } from '@/lib/github/repo-files'
+import { preflightLogo } from '@/lib/content/logo-preflight'
+import { BRAND_JSON_PATH, isBrandLogoPath, retoneBrandJson } from '@/lib/content/logo-tone-sync'
 
 export const runtime = 'nodejs'
 
@@ -184,21 +188,27 @@ export async function PUT(
 
   try {
     await ensureDraftBranch(ctx.githubRepo)
-    const result = await writeBinaryFile(
-      ctx.githubRepo,
-      path,
-      buffer,
-      DRAFT_BRANCH,
-      `${mode === 'create' ? 'Add' : 'Replace'} ${path.split('/').pop()} via admin${
-        ctx.adminEmail ? ` (${ctx.adminEmail})` : ''
-      }`,
-      {
-        mode,
-        expectedSha: typeof expectedSha === 'string' ? expectedSha : undefined,
-        authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
-        authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
-      }
-    )
+    const message = `${mode === 'create' ? 'Add' : 'Replace'} ${path.split('/').pop()} via admin${
+      ctx.adminEmail ? ` (${ctx.adminEmail})` : ''
+    }`
+    const writeOptions: { mode: 'create' | 'replace'; expectedSha?: string; authorName: string; authorEmail: string } = {
+      mode,
+      expectedSha: typeof expectedSha === 'string' ? expectedSha : undefined,
+      authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name,
+      authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
+    }
+    // Replacing the site's logo re-derives brand.json logo.tone from the new
+    // image and commits both together, so a dark replacement never keeps a
+    // stale "light" tone (and a light one gets it).
+    const retone = await logoRetone(ctx.githubRepo, path, buffer)
+    if (retone) {
+      const result = await writeBinaryFileWithCompanions(ctx.githubRepo, path, buffer, DRAFT_BRANCH, message, {
+        ...writeOptions,
+        companions: [{ path: BRAND_JSON_PATH, content: retone.brandText, expectedSha: retone.brandSha }],
+      })
+      return NextResponse.json({ ...result, logoTone: retone.notice })
+    }
+    const result = await writeBinaryFile(ctx.githubRepo, path, buffer, DRAFT_BRANCH, message, writeOptions)
     return NextResponse.json(result)
   } catch (err) {
     if (err instanceof AssetExistsError) {
@@ -214,6 +224,34 @@ export async function PUT(
       )
     }
     return internalError('edit:asset:put', err, "Couldn't save the asset")
+  }
+}
+
+// When `path` is the logo brand.json references, the brand.json text with
+// logo.tone re-derived from the new image (null when unchanged, not the logo,
+// or brand.json is absent/unreadable — the image upload still proceeds).
+async function logoRetone(
+  slug: string,
+  path: string,
+  buffer: Buffer
+): Promise<{ brandText: string; brandSha: string; notice: string } | null> {
+  let brand: { content: string; sha: string }
+  try {
+    brand = await readFile(slug, BRAND_JSON_PATH, DRAFT_BRANCH)
+  } catch (err) {
+    if (!(err instanceof FileNotFoundError)) console.warn('[edit:asset] brand.json read failed; logo tone not re-derived:', err)
+    return null
+  }
+  if (!isBrandLogoPath(brand.content, path)) return null
+  const { lightLogo } = await preflightLogo(buffer, path)
+  const brandText = retoneBrandJson(brand.content, lightLogo)
+  if (brandText === null) return null
+  return {
+    brandText,
+    brandSha: brand.sha,
+    notice: lightLogo
+      ? 'The new logo is light, so brand.json now marks it tone "light" (it gets a dark plate on light surfaces).'
+      : 'The new logo is dark, so the "light" tone was cleared from brand.json.',
   }
 }
 

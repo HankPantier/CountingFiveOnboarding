@@ -41,6 +41,7 @@ export default function MediaLibrary({
   const [assets, setAssets] = useState<AssetEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [versions, setVersions] = useState<Record<string, number>>({})
   const uploadRef = useRef<HTMLInputElement>(null)
@@ -83,8 +84,10 @@ export default function MediaLibrary({
 
   const onReplace = async (entry: AssetEntry, file: File) => {
     setError(null)
+    setNotice(null)
     try {
-      await replaceAsset(sessionId, file, entry.path, entry.sha)
+      const { logoTone } = await replaceAsset(sessionId, file, entry.path, entry.sha)
+      if (logoTone) setNotice(logoTone)
       bump(entry.path)
       await refresh()
       onChanged?.()
@@ -132,6 +135,11 @@ export default function MediaLibrary({
         </div>
 
         {error && <div className="text-xs font-body text-error">{error}</div>}
+        {notice && (
+          <div role="status" className="text-xs font-body text-info">
+            {notice}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-sm font-body text-text-muted">Loading images…</div>
