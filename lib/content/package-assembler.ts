@@ -41,8 +41,10 @@ import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/design-variant-injector'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
-import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
-import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
+import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
+import { applyLogoNavDefault, preflightLogo } from '@/lib/content/logo-preflight'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
@@ -134,6 +136,8 @@ export type PackageResult =
       awaitingClient?: PageRef[]
       // Pages still pending/running — they'd otherwise be silently missing from the package.
       notReady?: PageRef[]
+      // Pages still pointing at the template's placeholder art (or an empty image src).
+      placeholderRefs?: PlaceholderRef[]
     }
   | {
       ok: true
@@ -143,6 +147,12 @@ export type PackageResult =
       sizeKB: number
       redirectIssues: RedirectIssue[]
       linkWarnings: string[]
+      // Nav labels that will crowd/overflow the header (warn-only; curated
+      // labels are never auto-shortened — see lintNavLabels).
+      navLabelWarnings: string[]
+      // What the logo preflight did or recommends (trimmed padding, light logo →
+      // inverted nav, opaque background box). Informational.
+      logoNotes: string[]
       // Referenced hero/inline images vs. what actually shipped under
       // public/content-assets/. `missing` non-empty means the site will render
       // "Image not found" on those refs — the operator should Re-pull images.
@@ -169,6 +179,13 @@ export async function assembleContentPackage(
 
   if (!job) {
     return { ok: false, status: 404, error: 'Content job not found' }
+  }
+
+  // Brand gate: never package without a locked palette + design tokens. The old
+  // behaviour silently shipped FALLBACK_PALETTE (generic slate/teal), which is
+  // how most live sites ended up unbranded. Fail loudly instead.
+  if (!isDesignSystemLocked(job)) {
+    return { ok: false, status: 409, error: DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE }
   }
 
   const { data: session } = await supabase
@@ -398,34 +415,27 @@ export async function assembleContentPackage(
   // any CMS/editor without inheriting fonts/colors. Deterministic + cheap.
   const plainTextContent = buildPlainText(pages, firmName)
 
-  const palette = job.palette as PaletteData | null
-  const designTokens = job.design_tokens as DesignTokens | null
+  // Non-null: the brand gate at the top refused a job without both.
+  const palette = job.palette as PaletteData
+  const designTokens = job.design_tokens as DesignTokens
 
-  let designMd: string | null = null
-  if (palette && designTokens) {
-    designMd = buildDesignMd({
-      firmName,
-      palette,
-      tokens: designTokens,
-      brand: schema.brand,
-      business: schema.business,
-      location: schema.locations?.[0]
-        ? { city: schema.locations[0].city, state: schema.locations[0].state }
-        : null,
-    })
-  } else {
-    console.warn(`[package] Skipping design.md — palette=${!!palette}, design_tokens=${!!designTokens}`)
-  }
+  const designMd = buildDesignMd({
+    firmName,
+    palette,
+    tokens: designTokens,
+    brand: schema.brand,
+    business: schema.business,
+    location: schema.locations?.[0]
+      ? { city: schema.locations[0].city, state: schema.locations[0].state }
+      : null,
+  })
 
   // Phase II JSON contract — emitted alongside the existing markdown outputs
-  // and consumed by the client-site template repo. brand.json + design.json
-  // are ALWAYS emitted: the template hard-requires both, so a session that
-  // packages before its palette/tokens are locked falls back to a neutral
-  // default rather than shipping a zip the template can't validate or theme.
-  const brandJson = buildBrandJson(schema, palette ?? FALLBACK_PALETTE)
-  const designJson = buildDesignJson(designTokens ?? FALLBACK_DESIGN_TOKENS)
+  // and consumed by the client-site template repo (which hard-requires both).
+  const brandJson = buildBrandJson(schema, palette)
+  const designJson = buildDesignJson(designTokens)
   const navJson = normalizeNavUrls(
-    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config),
+    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config, { firmName }),
     siteHost(session.website_url)
   )
 
@@ -470,10 +480,8 @@ export async function assembleContentPackage(
     navJson.primary.push({ label: PRICING_PLANS_NAV_LABEL, url: PRICING_PLANS_URL })
   }
 
-  if (!palette) console.warn(`[package] brand.json — palette not locked, using neutral fallback`)
-  if (!designTokens) console.warn(`[package] design.json — design tokens not locked, using neutral fallback`)
-
   // Override logo.primary with the actual uploaded logo asset filename
+  const logoNotes: string[] = []
   if (brandJson) {
     const logoAsset =
       assetEntries.find(a => a.category === 'logo') ??
@@ -483,6 +491,14 @@ export async function assembleContentPackage(
         primary: logoAsset.fileName,
         alt: brandJson.logo?.alt || `${brandJson.firm.name} logo`,
       }
+      // Logo preflight: ship it without transparent padding, and give a white/
+      // light logo the inverted (primary-colour) nav so it is visible. design.json
+      // is only written on a FIRST deploy (site config), so this default never
+      // overrides a live site's chosen nav style; an explicit style.nav wins.
+      const logoCheck = await preflightLogo(logoAsset.content, logoAsset.fileName)
+      logoAsset.content = logoCheck.buffer
+      logoNotes.push(...logoCheck.notes)
+      applyLogoNavDefault(designJson, logoCheck.lightLogo)
     } else if (palette && designJson?.typography?.headingFont) {
       // No uploaded logo — generate a branded SVG wordmark so the NavBar
       // ships with the firm name in the heading font + primary color
@@ -578,6 +594,14 @@ export async function assembleContentPackage(
     jsonLdByUrl,
   })
   const errorsFile = buildErrorsFile(pages)
+
+  // Preflight: never ship the site template's placeholder art (a solid dark
+  // block) or an image with no source as if it were real imagery.
+  const placeholderRefs = findPlaceholderRefs(pageFiles)
+  if (placeholderRefs.length > 0) {
+    console.warn(`[package] Placeholder image refs: ${placeholderRefs.map((r) => `${r.page}→${r.ref}`).join(', ')}`)
+    return { ok: false, status: 409, error: placeholderRefsMessage(placeholderRefs), placeholderRefs }
+  }
 
   const llmsTxt = buildLlmsTxt(firmName, brandDoc.summary, sitemap, pages)
   const llmsFullTxt = buildLlmsFullTxt(firmName, brandDoc.fullDoc, sitemap, pages)
@@ -773,6 +797,11 @@ export async function assembleContentPackage(
     console.warn(`[package] ${linkWarnings.length} internal-link warning(s):`, linkWarnings.join(' | '))
   }
 
+  const navLabelWarnings = lintNavLabels(navJson)
+  if (navLabelWarnings.length > 0) {
+    console.warn(`[package] ${navLabelWarnings.length} nav-label warning(s):`, navLabelWarnings.join(' | '))
+  }
+
   // Image-coverage guard: every hero/inline image ref should have a real file
   // bundled under public/content-assets/. When resolution silently returns
   // fewer (missing PEXELS_API_KEY, Pexels outage, rate-limit) the page text
@@ -794,6 +823,8 @@ export async function assembleContentPackage(
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
     linkWarnings,
+    navLabelWarnings,
+    logoNotes,
     imageCoverage,
     deploy,
   }

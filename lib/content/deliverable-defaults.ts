@@ -2,13 +2,11 @@ import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
 
 /**
- * Last-resort fallbacks for the Phase II JSON contract. The downstream client
- * template *requires* content/brand.json and content/design.json — its
- * validate-deliverable script errors and generate-theme.ts crashes without
- * them. A session normally locks a palette + design tokens before content, but
- * if a package is assembled before that happens, we still emit a valid,
- * neutral-professional brand/design rather than ship a zip the template can't
- * consume. The colours are AA-contrast-safe and deliberately generic.
+ * Neutral-professional brand/design values for scripts and tests. NOT used by
+ * packaging any more: assembleContentPackage refuses a job without a locked
+ * palette + tokens (lib/content/brand-gate.ts) instead of shipping these —
+ * silently shipping them is how most live sites ended up unbranded. The colours
+ * are AA-contrast-safe and deliberately generic.
  */
 export const FALLBACK_PALETTE: PaletteData = {
   primary: { hex: '#1F3A5F', name: 'Slate Navy' },

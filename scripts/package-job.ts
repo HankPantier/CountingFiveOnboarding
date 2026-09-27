@@ -42,6 +42,11 @@ async function main() {
     console.log(`redirect issues: ${result.redirectIssues.length}`)
     for (const i of result.redirectIssues) console.log(`  [${i.severity}] ${i.oldUrl}: ${i.reason}`)
   }
+  for (const n of result.logoNotes) console.log(`logo:    ${n}`)
+  if (result.navLabelWarnings.length) {
+    console.log(`nav label warnings: ${result.navLabelWarnings.length}`)
+    for (const w of result.navLabelWarnings) console.log(`  ${w}`)
+  }
   if (result.linkWarnings.length) {
     console.log(`link warnings: ${result.linkWarnings.length}`)
     for (const w of result.linkWarnings) console.log(`  ${w}`)

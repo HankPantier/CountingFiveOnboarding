@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
     session_id: string
     library_reviewed_at: string | null
     articles_reviewed_at: string | null
+    palette?: unknown
+    design_tokens?: unknown
   },
   outlines: [{ admin_approved: true }] as Array<{ admin_approved: boolean }>,
   firmName: 'Acme CPA' as string | null,
@@ -138,5 +140,32 @@ describe('PATCH /api/content-jobs/[id] — phase 5 gates', () => {
       { params },
     )
     expect(res.status).toBe(400)
+  })
+})
+
+const PALETTE = Object.fromEntries(
+  ['primary', 'secondary', 'complementary', 'action', 'nearBlack', 'nearWhite'].map((r) => [r, { hex: '#123456', name: r }]),
+)
+const TOKENS = { typePairing: { id: 'x', headingFont: 'Inter', bodyFont: 'Inter', label: 'Inter' }, roundness: 'soft', density: 'balanced', visualFeel: 'modern' }
+const patch = (body: unknown) =>
+  PATCH(new Request('http://test', { method: 'PATCH', body: JSON.stringify(body) }), { params })
+
+describe('PATCH /api/content-jobs/[id] — Design System gate on leaving phase 1', () => {
+  it('refuses (409) phase 1→2 when no palette/tokens are saved or sent', async () => {
+    h.job = { ...h.job, phase: 1, palette: null, design_tokens: null }
+    const res = await patch({ phase: 2 })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: string }).error).toMatch(/palette and type pairing/i)
+  })
+
+  it('advances when the same PATCH saves the palette + tokens (the Lock button)', async () => {
+    h.job = { ...h.job, phase: 1, palette: null, design_tokens: null }
+    const res = await patch({ phase: 2, palette: PALETTE, design_tokens: TOKENS })
+    expect(res.status).toBe(200)
+  })
+
+  it('advances when both are already stored', async () => {
+    h.job = { ...h.job, phase: 1, palette: PALETTE, design_tokens: TOKENS }
+    expect((await patch({ phase: 2 })).status).toBe(200)
   })
 })

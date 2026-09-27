@@ -68,6 +68,8 @@ export default function DeliverablesPhase({
   const [packageInfo, setPackageInfo] = useState<{ pageCount: number; sizeKB: number } | null>(null)
   const [deployState, setDeployState] = useState<'idle' | 'deploying' | 'deployed' | 'unknown'>('idle')
   const [linkWarnings, setLinkWarnings] = useState<string[]>([])
+  const [navLabelWarnings, setNavLabelWarnings] = useState<string[]>([])
+  const [logoNotes, setLogoNotes] = useState<string[]>([])
   const [redirectIssues, setRedirectIssues] = useState<Array<{ severity: string; oldUrl: string; reason: string }>>([])
   // Re-deploy safety: before a re-package, which draft files would be kept
   // as-is (GET /package); after one, which ones the push actually skipped.
@@ -340,6 +342,8 @@ export default function DeliverablesPhase({
       }
       setPackageInfo({ pageCount: data.pageCount, sizeKB: data.sizeKB })
       setLinkWarnings(Array.isArray(data.linkWarnings) ? data.linkWarnings : [])
+      setNavLabelWarnings(Array.isArray(data.navLabelWarnings) ? data.navLabelWarnings : [])
+      setLogoNotes(Array.isArray(data.logoNotes) ? data.logoNotes : [])
       setRedirectIssues(Array.isArray(data.redirectIssues) ? data.redirectIssues : [])
       setImageMissing(Array.isArray(data.imageCoverage?.missing) ? data.imageCoverage.missing : [])
       setPreservedAfter(data.firstDeploy === false && Array.isArray(data.preservedFiles) ? data.preservedFiles : null)
@@ -424,6 +428,8 @@ export default function DeliverablesPhase({
       }
       setPackageInfo({ pageCount: pkgData.pageCount, sizeKB: pkgData.sizeKB })
       setLinkWarnings(Array.isArray(pkgData.linkWarnings) ? pkgData.linkWarnings : [])
+      setNavLabelWarnings(Array.isArray(pkgData.navLabelWarnings) ? pkgData.navLabelWarnings : [])
+      setLogoNotes(Array.isArray(pkgData.logoNotes) ? pkgData.logoNotes : [])
       setRedirectIssues(Array.isArray(pkgData.redirectIssues) ? pkgData.redirectIssues : [])
       const missingImages: string[] = Array.isArray(pkgData.imageCoverage?.missing)
         ? pkgData.imageCoverage.missing
@@ -976,6 +982,32 @@ export default function DeliverablesPhase({
                 {linkWarnings.length > 10 && <li>…and {linkWarnings.length - 10} more</li>}
               </ul>
               <div className="text-xs">Fix them in the editor — the package still shipped.</div>
+            </div>
+          )}
+
+          {navLabelWarnings.length > 0 && (
+            <div className="bg-warning/10 border border-warning/20 text-warning-strong text-sm font-body rounded-lg px-4 py-2 space-y-1">
+              <div className="font-heading font-semibold">
+                {navLabelWarnings.length} navigation label(s) may crowd or overflow the site header:
+              </div>
+              <ul className="text-xs font-mono space-y-0.5">
+                {navLabelWarnings.slice(0, 10).map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+                {navLabelWarnings.length > 10 && <li>…and {navLabelWarnings.length - 10} more</li>}
+              </ul>
+              <div className="text-xs">Shorten them in “Curate Navigation” above before a first deploy, or in the site editor’s navigation once the site is live (a re-package keeps the live nav.json) — the package still shipped.</div>
+            </div>
+          )}
+
+          {logoNotes.length > 0 && (
+            <div className="bg-info/10 border border-info/20 text-info text-sm font-body rounded-lg px-4 py-2 space-y-1">
+              <div className="font-heading font-semibold">Logo check</div>
+              <ul className="text-xs space-y-0.5 list-disc pl-4">
+                {logoNotes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
             </div>
           )}
 

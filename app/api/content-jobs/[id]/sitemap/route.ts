@@ -10,6 +10,7 @@ import { normUrl } from '@/lib/content/sitemap-proposer'
 import { toSitePath } from '@/lib/content/url-path'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
+import { DESIGN_SYSTEM_REQUIRED_FOR_SITEMAP, isDesignSystemLocked } from '@/lib/content/brand-gate'
 
 type SitemapPage = NonNullable<SessionSchema['proposed_sitemap']>[number]
 
@@ -112,7 +113,7 @@ export async function POST(
   // simultaneous confirms both pass a read-check, but only one flips the job.
   const { data: jobRow } = await supabase
     .from('content_jobs')
-    .select('phase, updated_at')
+    .select('phase, updated_at, palette, design_tokens')
     .eq('id', id)
     .single()
   if (!jobRow) return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
@@ -121,6 +122,11 @@ export async function POST(
       { error: 'The sitemap is already confirmed. Unapprove it before confirming a new one.' },
       { status: 409 }
     )
+  }
+  // Hard gate: the Design System (palette + tokens) must be locked first, or the
+  // job reaches packaging with no brand and ships the generic fallback look.
+  if (!isDesignSystemLocked(jobRow)) {
+    return NextResponse.json({ error: DESIGN_SYSTEM_REQUIRED_FOR_SITEMAP }, { status: 409 })
   }
 
   // Persist the confirmed sitemap first — the seeds depend on it being current.

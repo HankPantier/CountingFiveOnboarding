@@ -8,6 +8,12 @@ const SKIP = new Set(['none', 'transparent', 'currentcolor', 'inherit', 'context
 // rasterizing it. Skips keywords (none/currentColor/url(...)) and anything chroma
 // can't parse.
 export function extractSvgColors(svg: string): string[] {
+  return extractSvgColorWeights(svg).map((c) => c.hex)
+}
+
+// The same colours with their occurrence counts, for the weighted logo-colour
+// picker (lib/content/derive-palette.ts → pickLogoBrandColors).
+export function extractSvgColorWeights(svg: string): Array<{ hex: string; weight: number }> {
   const counts = new Map<string, number>()
   const re = /(?:fill|stroke|stop-color)\s*[:=]\s*["']?\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]*\)|hsla?\([^)]*\)|[a-zA-Z]+)/g
   let m: RegExpExecArray | null
@@ -17,29 +23,5 @@ export function extractSvgColors(svg: string): string[] {
     const hex = chroma(raw).hex().toLowerCase()
     counts.set(hex, (counts.get(hex) ?? 0) + 1)
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([hex]) => hex)
-}
-
-// Picks the two most useful brand colors from extracted SVG colors: the most
-// frequent saturated, non-neutral color as primary, and the next hue-distinct
-// one as secondary. Returns null when nothing usable is present (caller falls
-// back to neutral defaults).
-export function pickBrandColors(colors: string[]): { primary: string; secondary: string } | null {
-  const branded = colors.filter((h) => {
-    const l = chroma(h).luminance()
-    const s = chroma(h).get('hsl.s')
-    return l > 0.05 && l < 0.95 && s > 0.12
-  })
-  const ranked = branded.length ? branded : colors
-  if (ranked.length === 0) return null
-  const primary = ranked[0]
-  const pHue = chroma(primary).get('hsl.h')
-  const secondary =
-    ranked.find((h) => {
-      const hue = chroma(h).get('hsl.h')
-      if (Number.isNaN(hue) || Number.isNaN(pHue)) return h !== primary
-      const d = Math.abs(hue - pHue)
-      return Math.min(d, 360 - d) > 30
-    }) ?? ranked[1] ?? primary
-  return { primary, secondary }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([hex, weight]) => ({ hex, weight }))
 }

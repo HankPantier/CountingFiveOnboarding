@@ -229,7 +229,7 @@ export default function DesignSystemPhase({
               {loading ? 'Generating…' : 'Generate color palette from logo'}
             </button>
             <span className="text-xs text-text-muted font-body">
-              Pulls primary &amp; secondary from the logo, with derived complementary, action, and WCAG-AA neutrals.
+              Pulls the primary and accent from the logo (ignoring white backgrounds), with an AA action colour and a near-white page.
             </span>
           </div>
         )}

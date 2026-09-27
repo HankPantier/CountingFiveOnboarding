@@ -82,15 +82,146 @@ function slugToLabel(url: string): string {
     .join(' ')
 }
 
-/**
- * Determine the effective label for an item.
- * Use the title field if non-empty, otherwise fall back to humanized slug.
- */
-function getLabel(entry: SitemapEntry): string {
-  if (entry.title && entry.title.trim().length > 0) {
-    return entry.title
+// Nav labels longer than this overflow the header (Berg's SEO-title labels
+// pushed a 1440px page to 1782px). The package preflight lints against it.
+export const NAV_LABEL_MAX = 30
+
+const normWords = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+const NAME_STOPWORDS = new Set(['the', 'our', 'a', 'an', 'and', 'of', 'at', 'for', 'to', 'in', 'on', 'by', 'with', 'your'])
+
+// The words of a name that carry meaning ("The Berg Group" → berg, group).
+const significantWords = (s: string): string[] =>
+  normWords(s)
+    .split(' ')
+    .filter((w) => w.length > 1 && !NAME_STOPWORDS.has(w))
+
+// Does `text` name the firm? The whole name (spaces optional: "BussCPA" for
+// "Buss CPA"), or text whose first significant word is the firm's first
+// significant word ("Berg Partners" for "The Berg Group"). Stopwords never
+// match ("About The Team" is not "The Berg Group"). Without a firm name, falls
+// back to generic firm-name words (CPA, LLC, Group, Advisors, …).
+function namesFirm(text: string, firmName?: string): boolean {
+  const s = normWords(text)
+  if (!s) return false
+  if (firmName) {
+    const f = normWords(firmName)
+    if (!f) return false
+    if (s === f || s.replace(/ /g, '') === f.replace(/ /g, '')) return true
+    const firmFirst = significantWords(firmName)[0]
+    const textFirst = significantWords(text)[0]
+    if (!firmFirst || !textFirst) return false
+    return textFirst === firmFirst || (textFirst.startsWith(firmFirst) && s.replace(/ /g, '').startsWith(firmFirst))
   }
-  return slugToLabel(entry.url)
+  return /\b(cpas?|llc|pllc|pc|llp|inc|group|advisors|accounting|consulting|associates)\b/.test(s)
+}
+
+// Does the label mention the firm anywhere (the whole name, or its first
+// significant word as a word)?
+function containsFirm(label: string, firmName?: string): boolean {
+  if (!firmName) return false
+  const l = ` ${normWords(label)} `
+  const f = normWords(firmName)
+  const first = significantWords(firmName)[0]
+  return (!!f && l.includes(` ${f} `)) || (!!first && l.includes(` ${first} `))
+}
+
+/**
+ * Strip SEO-title noise from a nav label: "| Firm Name" segments (keeping the
+ * first segment that is NOT the firm name), "- Firm" suffixes, "About Home" →
+ * "About", "About <Firm>" → "About", and "…your trusted accounting partner"
+ * taglines. Never shortens a clean label.
+ */
+export function cleanNavLabel(raw: string, firmName?: string): string {
+  let label = raw.replace(/\s+/g, ' ').trim()
+  if (label.includes('|')) {
+    const parts = label.split('|').map((part) => part.trim()).filter((part) => part.length > 0)
+    label = parts.find((part) => !namesFirm(part, firmName)) ?? parts[0] ?? ''
+  }
+  const dash = label.match(/^(.+?)\s+[-–—]\s+(.+)$/)
+  if (dash && namesFirm(dash[2], firmName)) label = dash[1].trim()
+  label = label.replace(/\s+your\s+(trusted|premier|local|leading|reliable|go-to|preferred)\b.*$/i, '').trim()
+  const about = label.match(/^about\s+(.+)$/i)
+  if (about && (/^home$/i.test(about[1]) || namesFirm(about[1], firmName))) label = 'About'
+  return label
+}
+
+const TRAILING_STOPWORDS = new Set(['and', 'or', 'for', 'the', 'of', 'to', 'with', 'in', 'a', 'an', '&', 'at', 'by', 'on'])
+
+// Cut at a word boundary to <= max chars, dropping dangling stopwords/punctuation.
+function truncateLabel(label: string, max: number): string {
+  const words = label.split(' ')
+  const out: string[] = []
+  for (const w of words) {
+    if ([...out, w].join(' ').length > max) break
+    out.push(w)
+  }
+  while (out.length > 1 && TRAILING_STOPWORDS.has(out[out.length - 1].toLowerCase().replace(/[,;:]$/, ''))) out.pop()
+  return (out.join(' ') || label.slice(0, max)).replace(/[\s,;:–—-]+$/, '')
+}
+
+/**
+ * Determine the effective label for a sitemap-derived nav item: the page title
+ * cleaned of SEO noise; when that is still longer than NAV_LABEL_MAX, the
+ * humanized slug ("/services/tax" → "Tax"), else a word-boundary truncation.
+ */
+function getLabel(entry: SitemapEntry, firmName?: string): string {
+  const title = entry.title?.trim() ? cleanNavLabel(entry.title, firmName) : ''
+  if (title && title.length <= NAV_LABEL_MAX) return title
+  const slug = slugToLabel(entry.url)
+  if (!title || slug.length <= NAV_LABEL_MAX) return slug
+  return truncateLabel(title, NAV_LABEL_MAX)
+}
+
+// Curated (operator-saved) labels are only stripped of SEO noise — never
+// shortened — and a label that is already clean (short, no "|", no firm name)
+// is left exactly as the operator typed it. The preflight lints the rest.
+function cleanCuratedLabels(item: NavItem, firmName?: string): NavItem {
+  const clean = item.label.length <= NAV_LABEL_MAX && !item.label.includes('|') && !containsFirm(item.label, firmName)
+  return {
+    ...item,
+    label: clean ? item.label : cleanNavLabel(item.label, firmName) || item.label,
+    ...(item.children ? { children: item.children.map((c) => cleanCuratedLabels(c, firmName)) } : {}),
+  }
+}
+
+// Dropdown rows wrap inside their menu, so only sentence-length ones are flagged.
+export const NAV_DROPDOWN_LABEL_MAX = 50
+
+/**
+ * Nav labels that will crowd or overflow the header: any label still carrying
+ * a "|", a top-level label longer than NAV_LABEL_MAX, or a dropdown label
+ * longer than NAV_DROPDOWN_LABEL_MAX. Returns one operator-facing line each.
+ */
+export function lintNavLabels(nav: NavJson): string[] {
+  const out: string[] = []
+  // Two siblings with the same label read as one link twice (Aurora's two
+  // "Meet Our Team" pages).
+  const lintDuplicates = (items: NavItem[], where: string) => {
+    const counts = new Map<string, { label: string; n: number }>()
+    for (const i of items) {
+      const key = i.label.trim().toLowerCase()
+      const c = counts.get(key)
+      if (c) c.n++
+      else counts.set(key, { label: i.label, n: 1 })
+    }
+    for (const { label, n } of counts.values()) {
+      if (n > 1) out.push(`Nav label "${label}" appears ${n} times ${where} — give each page a distinct label.`)
+    }
+  }
+  const visit = (item: NavItem, depth: number) => {
+    const where = depth === 0 ? 'top-level' : 'dropdown'
+    const max = depth === 0 ? NAV_LABEL_MAX : NAV_DROPDOWN_LABEL_MAX
+    if (item.label.includes('|')) out.push(`Nav label "${item.label}" (${where}) contains "|" — use a short page name.`)
+    else if (item.label.length > max)
+      out.push(`Nav label "${item.label}" (${where}) is ${item.label.length} characters — keep it to ${max} or fewer.`)
+    lintDuplicates(item.children ?? [], `under "${item.label}"`)
+    for (const child of item.children ?? []) visit(child, depth + 1)
+  }
+  lintDuplicates(nav.primary, 'in the top-level menu')
+  for (const item of nav.primary) visit(item, 0)
+  if (nav.cta) visit(nav.cta, 0)
+  return out
 }
 
 /**
@@ -146,13 +277,15 @@ export function normalizeNavUrls(nav: NavJson, host: string): NavJson {
 
 export function buildNavJson(
   sitemap: SitemapEntry[],
-  curated?: unknown
+  curated?: unknown,
+  options: { firmName?: string } = {}
 ): NavJson {
+  const { firmName } = options
   // If curated config is provided and passes validation, use it
   if (curated !== null && curated !== undefined) {
     const validated = validateNavJson(curated)
     if (validated) {
-      return validated
+      return { ...validated, primary: validated.primary.map((item) => cleanCuratedLabels(item, firmName)) }
     }
     // Validation failed — log warning and fall through to sitemap logic
     console.warn(
@@ -212,7 +345,7 @@ export function buildNavJson(
       seen.add(child.url)
       const grandchildren = buildChildren(child.url, depth + 1, seen)
       out.push({
-        label: getLabel(child),
+        label: getLabel(child, firmName),
         url: child.url,
         ...(grandchildren.length > 0 && { children: grandchildren }),
       })
@@ -223,7 +356,7 @@ export function buildNavJson(
   const primaryNav: NavItem[] = rootItems.map((root): NavItem => {
     const children = buildChildren(root.url, 1, new Set<string>([root.url]))
     return {
-      label: getLabel(root),
+      label: getLabel(root, firmName),
       url: root.url,
       ...(children.length > 0 && { children }),
     }

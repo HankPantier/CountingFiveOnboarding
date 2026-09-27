@@ -5,6 +5,7 @@ import { requireContentJobAccess } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
 import { runContentGeneration } from '@/lib/content/content-generator'
 import { discoverImportableArticles } from '@/lib/content/article-import-discovery'
+import { isDesignSystemLocked } from '@/lib/content/brand-gate'
 import type { SessionSchema } from '@/types/session-schema'
 import {
   validateContentJobPatch,
@@ -62,7 +63,7 @@ export async function PATCH(
     }
     const { data: job } = await supabase
       .from('content_jobs')
-      .select('phase, session_id, library_reviewed_at, articles_reviewed_at')
+      .select('phase, session_id, library_reviewed_at, articles_reviewed_at, palette, design_tokens')
       .eq('id', id)
       .single()
     if (!job) return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
@@ -70,6 +71,21 @@ export async function PATCH(
 
     const transitionError = checkPhaseTransition(job.phase, body.phase)
     if (transitionError) return NextResponse.json({ error: transitionError }, { status: 409 })
+
+    // Leaving phase 1 requires a locked Design System — the one this PATCH
+    // saves, or the one already stored.
+    if (job.phase <= 1 && body.phase >= 2) {
+      const effective = {
+        palette: body.palette !== undefined ? body.palette : job.palette,
+        design_tokens: body.design_tokens !== undefined ? body.design_tokens : job.design_tokens,
+      }
+      if (!isDesignSystemLocked(effective)) {
+        return NextResponse.json(
+          { error: 'Save a complete palette and type pairing before leaving the Design System step.' },
+          { status: 409 },
+        )
+      }
+    }
     updates.phase = body.phase
 
     if (crossesIntoGeneration(job.phase, body.phase)) {
