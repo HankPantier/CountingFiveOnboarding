@@ -1,5 +1,6 @@
 import { generateText, type ModelMessage } from 'ai'
 import { extractJson } from './extract-json'
+import { providerRejection } from '@/lib/ai/provider-rejection'
 
 type GenTextOpts = Parameters<typeof generateText>[0]
 type ProviderOptions = GenTextOpts['providerOptions']
@@ -14,6 +15,9 @@ type Usage = Awaited<ReturnType<typeof generateText>>['usage']
 //
 // The helper NEVER throws: a model error or an unparseable response both resolve
 // to `null`, which callers treat as "use the deterministic fallback".
+// An account-level provider rejection (usage limit reached, credits out, bad
+// API key, permission denied — lib/ai/provider-rejection.ts) skips the retry:
+// it would fail identically.
 //
 // IMPORTANT: pass `providerOptions` ONLY for non-Haiku models — `effort` errors on
 // Haiku 4.5. Omit it entirely for Haiku calls.
@@ -67,7 +71,7 @@ export async function generateJson(opts: GenerateJsonOptions): Promise<unknown |
     attemptNo: 1 | 2,
     maxOutputTokens: number,
     providerOptions: ProviderOptions
-  ): Promise<{ ok: true; value: unknown } | { ok: false; finishReason: string }> => {
+  ): Promise<{ ok: true; value: unknown } | { ok: false; finishReason: string; error?: unknown }> => {
     if (!(await allowed(attemptNo))) return { ok: false, finishReason: 'skipped' }
     let finishReason = 'error'
     try {
@@ -99,11 +103,16 @@ export async function generateJson(opts: GenerateJsonOptions): Promise<unknown |
       } catch {
         // observation must never fail the generation
       }
-      return { ok: false, finishReason }
+      return { ok: false, finishReason, error }
     }
   }
 
   let res = await attempt(1, opts.firstBudget, opts.providerOptions)
+  const rejected = !res.ok && res.finishReason === 'error' ? providerRejection(res.error) : null
+  if (rejected) {
+    console.error(`[${opts.label}] the AI provider rejected the request (${rejected.kind}) — not retrying`)
+    return null
+  }
   if (!res.ok && res.finishReason !== 'skipped' && opts.retryBudget) {
     console.warn(`[${opts.label}] JSON parse failed (finish=${res.finishReason}) — retrying with larger budget`)
     res = await attempt(2, opts.retryBudget, opts.retryProviderOptions ?? opts.providerOptions)

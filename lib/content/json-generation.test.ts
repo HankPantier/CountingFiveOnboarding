@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('ai', () => ({ generateText: vi.fn() }))
 
 import { generateText } from 'ai'
+// The real provider error class (the `ai` module is mocked above).
+import { APICallError } from '@ai-sdk/provider'
 import { generateJson } from './json-generation'
 
 const mockGen = vi.mocked(generateText)
@@ -155,5 +157,30 @@ describe('generateJson', () => {
     expect(await generateJson(opts)).toEqual({ a: 1 })
     expect(timeoutSpy.mock.calls.map((c) => c[0])).toEqual([7_000, 3_000])
     timeoutSpy.mockRestore()
+  })
+
+  it('does not retry an account-level provider rejection (usage limit) — it would fail identically', async () => {
+    const err = new APICallError({
+      message: 'You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC.',
+      url: 'u',
+      requestBodyValues: {},
+      statusCode: 400,
+    })
+    mockGen.mockRejectedValue(err)
+    const failed: string[] = []
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await generateJson({ ...base, firstBudget: 1000, retryBudget: 2000, onAttemptFailed: (i) => failed.push(i.finishReason) })
+    expect(res).toBeNull()
+    expect(mockGen).toHaveBeenCalledTimes(1)
+    expect(failed).toEqual(['error'])
+    expect(String(errSpy.mock.calls[0][0])).toContain('rejected the request (usage_limit)')
+    errSpy.mockRestore()
+  })
+
+  it('still retries a transient provider error (529 overloaded)', async () => {
+    const err = new APICallError({ message: 'Overloaded', url: 'u', requestBodyValues: {}, statusCode: 529 })
+    mockGen.mockRejectedValueOnce(err).mockResolvedValueOnce(reply('{"a":5}'))
+    expect(await generateJson({ ...base, firstBudget: 1000, retryBudget: 2000 })).toEqual({ a: 5 })
+    expect(mockGen).toHaveBeenCalledTimes(2)
   })
 })

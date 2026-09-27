@@ -1,8 +1,9 @@
-import { APICallError, LoadAPIKeyError } from 'ai'
+import { APICallError, LoadAPIKeyError, RetryError } from 'ai'
 import {
   aiErrorMessageFor,
   aiErrorKindFromText,
   isProviderIssueKind,
+  usageLimitResetDate,
   type AiErrorInfo,
   type AiErrorKind,
 } from './ai-error-text'
@@ -16,7 +17,7 @@ import { recordAiCreditExhausted } from './ai-service-status'
 // structured APICallError inspection (server-only, pulls the `ai` SDK).
 
 export type { AiErrorInfo, AiErrorKind } from './ai-error-text'
-export { ANTHROPIC_STATUS_URL, classifyAiErrorText } from './ai-error-text'
+export { ANTHROPIC_STATUS_URL, classifyAiErrorText, usageLimitResetDate } from './ai-error-text'
 
 // Map an HTTP status (from an APICallError) to a kind. 529 is Anthropic's
 // "overloaded"; 5xx are transient upstream failures; 429 is a throttle; 401/403
@@ -33,14 +34,19 @@ function kindFromStatus(status: number | undefined): AiErrorKind | null {
   return null
 }
 
-function infoFor(kind: AiErrorKind): AiErrorInfo {
-  return { isProviderIssue: isProviderIssueKind(kind), kind, userMessage: aiErrorMessageFor(kind) }
+function infoFor(kind: AiErrorKind, text = ''): AiErrorInfo {
+  return { isProviderIssue: isProviderIssueKind(kind), kind, userMessage: aiErrorMessageFor(kind, { resetDate: usageLimitResetDate(text) }) }
 }
 
 export function classifyAiError(error: unknown): AiErrorInfo {
   // streamText/generateText frequently wrap the underlying provider error in
-  // `.cause`, so inspect the error and one level of cause.
-  const candidates: unknown[] = [error, (error as { cause?: unknown } | null)?.cause]
+  // `.cause`, so inspect the error and one level of cause. After the SDK's
+  // backoff gives up it throws a RetryError whose `lastError` is the provider's.
+  const candidates: unknown[] = [
+    error,
+    (error as { cause?: unknown } | null)?.cause,
+    RetryError.isInstance(error) ? error.lastError : undefined,
+  ]
 
   for (const e of candidates) {
     if (!e) continue
@@ -55,10 +61,10 @@ export function classifyAiError(error: unknown): AiErrorInfo {
       // the HTTP-status bucket (a credit error is a 400 that must NOT surface as
       // "shorten your request"), so it wins over kindFromStatus.
       const kind =
-        textKind === 'credit' || textKind === 'auth'
+        textKind === 'credit' || textKind === 'auth' || textKind === 'usage_limit'
           ? textKind
           : kindFromStatus(e.statusCode) ?? (e.isRetryable ? 'timeout' : textKind)
-      if (kind) return infoFor(kind)
+      if (kind) return infoFor(kind, text)
     }
 
     if (LoadAPIKeyError.isInstance(e)) {
@@ -67,7 +73,7 @@ export function classifyAiError(error: unknown): AiErrorInfo {
 
     const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
     const kind = aiErrorKindFromText(msg)
-    if (kind) return infoFor(kind)
+    if (kind) return infoFor(kind, msg)
   }
 
   return infoFor('unknown')

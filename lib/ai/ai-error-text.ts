@@ -2,7 +2,7 @@
 // components (no `ai`/provider SDK dependency). lib/ai/ai-error.ts builds on
 // this to also inspect structured APICallError objects server-side.
 
-export type AiErrorKind = 'overloaded' | 'rate_limit' | 'timeout' | 'auth' | 'credit' | 'bad_request' | 'unknown'
+export type AiErrorKind = 'overloaded' | 'rate_limit' | 'timeout' | 'auth' | 'credit' | 'usage_limit' | 'bad_request' | 'unknown'
 
 export interface AiErrorInfo {
   // True when the failure looks like a Claude/Anthropic outage, throttle,
@@ -23,7 +23,14 @@ export function isProviderIssueKind(kind: AiErrorKind): boolean {
 // Where users can check for a real Anthropic outage.
 export const ANTHROPIC_STATUS_URL = 'https://status.anthropic.com'
 
-export function aiErrorMessageFor(kind: AiErrorKind): string {
+// The date an account-level usage limit lifts, when the provider's message
+// carries it ("You will regain access on 2026-10-01 at 00:00 UTC.").
+export function usageLimitResetDate(text: string): string | null {
+  const m = /regain access on (\d{4}-\d{2}-\d{2})/i.exec(text)
+  return m ? m[1] : null
+}
+
+export function aiErrorMessageFor(kind: AiErrorKind, detail: { resetDate?: string | null } = {}): string {
   switch (kind) {
     case 'overloaded':
       return `The AI service (Claude) looks temporarily unavailable or overloaded, so this request may not have finished. Wait a minute and try again — your saved work is safe. If it keeps happening, check ${ANTHROPIC_STATUS_URL}.`
@@ -35,6 +42,8 @@ export function aiErrorMessageFor(kind: AiErrorKind): string {
       return `The AI service rejected our credentials, so AI features are unavailable right now. This is a configuration issue on our side — please tell an administrator. Your saved work is safe.`
     case 'credit':
       return `AI features are paused because the account's Claude API credits have run out. Retrying won't help until an administrator adds credits — please tell them. Your saved work is safe.`
+    case 'usage_limit':
+      return `AI features are paused because the account's Claude API usage limit has been reached${detail.resetDate ? ` (access returns ${detail.resetDate})` : ''}. Retrying won't help until an administrator raises the limit in the Anthropic Console — please tell them. Your saved work is safe.`
     case 'bad_request':
       return `The AI service couldn't process that request — the page or your instruction may be too long or complex. Try a shorter, more specific instruction. If it keeps happening, tell an administrator. Your saved work is safe.`
     default:
@@ -46,6 +55,13 @@ export function aiErrorMessageFor(kind: AiErrorKind): string {
 // a stored generation_error). Conservative keyword match so ordinary app
 // errors aren't mislabelled.
 export function aiErrorKindFromText(msg: string): AiErrorKind | null {
+  // An account-level spend/usage limit ("You have reached your specified API
+  // usage limits. You will regain access on …"). Arrives as a 400
+  // invalid_request_error, so it must win over bad_request (and over a 429
+  // status bucket) — retrying won't help until the limit is raised.
+  if (/api usage limits?|reached your (?:specified )?(?:api )?usage limit|usage limits? (?:reached|exceeded)|regain access on/i.test(msg)) {
+    return 'usage_limit'
+  }
   if (/\boverloaded\b|overloaded_error|\b529\b|service unavailable/i.test(msg)) return 'overloaded'
   if (/rate.?limit|\btoo many requests\b|\b429\b/i.test(msg)) return 'rate_limit'
   if (/ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|fetch failed|network error|\btimed? ?out\b/i.test(msg)) {
@@ -75,7 +91,7 @@ export function aiErrorKindFromText(msg: string): AiErrorKind | null {
 export function classifyAiErrorText(text: string | null | undefined): AiErrorInfo {
   const kind = text ? aiErrorKindFromText(text) : null
   return kind
-    ? { isProviderIssue: true, kind, userMessage: aiErrorMessageFor(kind) }
+    ? { isProviderIssue: true, kind, userMessage: aiErrorMessageFor(kind, { resetDate: usageLimitResetDate(text ?? '') }) }
     : { isProviderIssue: false, kind: 'unknown', userMessage: aiErrorMessageFor('unknown') }
 }
 
