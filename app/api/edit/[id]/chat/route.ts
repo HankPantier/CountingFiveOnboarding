@@ -26,6 +26,7 @@ import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
 import { splitTrailers, setFaqAccordionBody } from '@/lib/editor/page-body'
+import { repairPageTrailer, stripGeneratorNotesFromFile } from '@/lib/content/strip-generator-notes'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
@@ -120,9 +121,19 @@ export async function POST(
     // byte-for-byte alone: it holds URLs, JSON blobs (faq_block, internal_links)
     // and quoted YAML that a blind text rewrite can corrupt — remove_text's
     // explicit stripDashes handles SEO fields when asked.
+    //
+    // The generator trailer (`## SEO & AIO Metadata` / `## Structured Data`) is
+    // left verbatim: scrubbing it turned "Structured Data — paste into" into
+    // "Structured Data, paste into", and a page whose SEO marker the model then
+    // deleted rendered its JSON-LD as a live code block. Pages get the marker
+    // restored; a post has no trimming renderer, so any trailer is dropped.
     const { body: nextBody } = splitFile(next)
     const head = next.slice(0, next.length - nextBody.length)
-    const scrubbed = head + humanizeDashes(nextBody)
+    const { content: prose, trailer } = splitTrailers(nextBody)
+    const dashClean = head + humanizeDashes(prose) + trailer
+    const scrubbed = path!.startsWith('content/posts/')
+      ? stripGeneratorNotesFromFile(dashClean).content
+      : repairPageTrailer(dashClean).content
     // Reject any edit that would leave the file with invalid YAML frontmatter
     // before it lands in the draft — otherwise it surfaces as a broken `next
     // build` at deploy time. The tool executors catch this throw and return the
