@@ -33,7 +33,7 @@ import { git, isAncestor, revParse, showText, tryGit } from '../lib/fleet/git-lo
 import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, type RepoRun, type SyncContext } from '../lib/fleet/sync'
 import { pool, verifyRepo } from '../lib/fleet/verify'
 import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
-import { runPushPhase, type PushItem } from '../lib/fleet/push-phase'
+import { effectiveCanary, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
 import type { ClientEntry, TargetSelection } from '../lib/fleet/types'
 
 interface Args {
@@ -231,7 +231,12 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
   // The first --apply of a release (no targeted repo is on NEW yet) defaults
   // to one canary: it has to go green on Vercel before any other repo is pushed.
   const firstOfRelease = !runs.some((r) => r.upToDate)
-  const canary = a.canary ?? (firstOfRelease && ready.length > 1 ? 1 : 0)
+  const requestedCanary = a.canary ?? (firstOfRelease && ready.length > 1 ? 1 : 0)
+  const canary = effectiveCanary(
+    ready.map((r) => ({ noDeploy: r.client.noDeploy })),
+    requestedCanary
+  )
+  if (canary < requestedCanary) console.warn(`⚠ canary capped at ${canary}: only ${canary} deployable (non-noDeploy) repo(s) are ready`)
   const canaryNote = canary ? ` The first ${canary} repo(s) are a canary and must deploy green before the rest are pushed.` : ''
   if (!(await confirm(`APPLY template ${toVersion} to ${ready.length} repo(s) and push to their LIVE main branch?${canaryNote}`, a.yes))) {
     console.log('Aborted.')

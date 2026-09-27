@@ -60,6 +60,11 @@ export function orderForCanary<T extends { noDeploy: boolean }>(items: T[]): T[]
   return [...items.filter((i) => !i.noDeploy), ...items.filter((i) => i.noDeploy)]
 }
 
+/** Canary slots actually usable: never more than the batch's deployable (non-noDeploy) repos. */
+export function effectiveCanary(items: { noDeploy: boolean }[], requested: number): number {
+  return Math.max(0, Math.min(requested, items.filter((i) => !i.noDeploy).length))
+}
+
 export async function runPushPhase(
   items: PushItem[],
   opts: PushOptions,
@@ -67,12 +72,16 @@ export async function runPushPhase(
   log: (line: string) => void = () => {}
 ): Promise<PushPhaseResult> {
   const ordered = orderForCanary(items)
+  const canarySlots = effectiveCanary(items, opts.canary)
+  if (canarySlots < opts.canary) {
+    log(`  ⚠ canary capped at ${canarySlots}: only ${canarySlots} deployable repo(s) in this batch (noDeploy repos can't prove a deploy)`)
+  }
   const results: PushResult[] = []
   let stoppedBy: string | null = null
 
   for (let i = 0; i < ordered.length; i++) {
     const item = ordered[i]
-    const canary = i < opts.canary
+    const canary = i < canarySlots && !item.noDeploy
     if (stoppedBy) {
       try {
         ops.resetLocal(item.dir)

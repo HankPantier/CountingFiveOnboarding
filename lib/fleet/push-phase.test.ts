@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { runPushPhase, type PushItem, type PushOps } from './push-phase'
+import { effectiveCanary, runPushPhase, type PushItem, type PushOps } from './push-phase'
 import type { DeployState } from './remote'
 
 const item = (name: string, noDeploy = false): PushItem => ({ slug: `o/${name}`, dir: `/w/${name}`, noDeploy })
@@ -89,6 +89,19 @@ describe('runPushPhase', () => {
       ['o/b', 'failed', false],
       ['o/korbey', 'pushed', false],
     ])
+  })
+
+  it('caps the canary at the deployable repos (never a noDeploy slot) and warns', async () => {
+    const f = fakeOps({ korbey: { deploy: 'none' } })
+    const lines: string[] = []
+    const r = await runPushPhase([item('korbey', true), item('a')], { ...opts, canary: 2, deployWait: false }, f.ops, (l) => lines.push(l))
+    expect(r.results.map((x) => [x.slug, x.status, x.canary])).toEqual([
+      ['o/a', 'pushed', true],
+      ['o/korbey', 'pushed', false],
+    ])
+    expect(lines[0]).toMatch(/canary capped at 1/)
+    expect(effectiveCanary([item('korbey', true)], 1)).toBe(0)
+    expect(effectiveCanary([item('a'), item('b')], 1)).toBe(1)
   })
 
   it('isolation: a throw inside one repo is that repo’s failure, never a crash of the loop', async () => {
