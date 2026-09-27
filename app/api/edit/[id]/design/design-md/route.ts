@@ -14,6 +14,7 @@ import {
 } from '@/lib/design/design-md-adopt'
 import { latestVersion, readSessionSchema } from '@/lib/design/store'
 import { readDraftThemeSnapshot, themeTextsFromSnapshot } from '@/lib/design/theme-snapshot'
+import { BRAND_PATH, DESIGN_PATH } from '../../theme/_theme'
 import type { EditContext } from '../../_helpers'
 import { requireDesignAdmin } from '../_design'
 
@@ -46,9 +47,14 @@ const CHANGED_SINCE_PREVIEW = 'The draft changed since you reviewed it — revie
 const SHA_RE = /^[0-9a-f]{40}$/i
 const HASH_RE = /^[0-9a-f]{64}$/i
 
+type SourceGuard = { path: string; content: string; expectedSha: string }
+
 // The generated design.md for the draft's CURRENT theme, plus the file it
-// would replace.
-async function build(ctx: EditContext): Promise<{ ok: true; preview: DesignMdPreview } | { ok: false; status: 409; error: string }> {
+// would replace and the brand.json + design.json it was built from (as
+// unchanged-content guards for the commit).
+async function build(
+  ctx: EditContext
+): Promise<{ ok: true; preview: DesignMdPreview; sources: SourceGuard[] } | { ok: false; status: 409; error: string }> {
   const db = createServerClient()
   const [snapshot, current, schema, latest] = await Promise.all([
     readDraftThemeSnapshot(ctx.githubRepo),
@@ -61,7 +67,16 @@ async function build(ctx: EditContext): Promise<{ ok: true; preview: DesignMdPre
   const direction = directionFromVersionBundle(latest?.source ?? null, latest?.bundle)
   const generated = generateDesignMd({ brandText: draft.files.brandText, designText: draft.files.designText, schema, ...(direction ? { direction } : {}) })
   if (!generated.ok) return { ok: false, status: 409, error: generated.error }
-  return { ok: true, preview: previewDesignMd(current, generated.text) }
+  const sources: SourceGuard[] = []
+  for (const [path, content] of [
+    [BRAND_PATH, draft.files.brandText],
+    [DESIGN_PATH, draft.files.designText],
+  ] as const) {
+    const sha = snapshot.shas[path]
+    if (!sha) return { ok: false, status: 409, error: 'The draft’s theme files could not be read — refresh and try again.' }
+    sources.push({ path, content, expectedSha: sha })
+  }
+  return { ok: true, preview: previewDesignMd(current, generated.text), sources }
 }
 
 // "Regenerate design.md" (Design Studio → Versions). Admin-only.
@@ -111,9 +126,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
     if (preview.unchanged) return NextResponse.json({ error: 'design.md already matches the generated file.' }, { status: 409 })
 
+    // brand.json + design.json ride along UNCHANGED (same content ⇒ same
+    // blob, so the tree doesn't change for them) purely as guards: a theme
+    // edit landing after this build makes the commit a 409 instead of writing
+    // notes that describe the previous theme.
     const written = await writeFiles(
       ctx.githubRepo,
-      [{ path: DESIGN_MD_PATH, content: preview.next, expectedSha }],
+      [{ path: DESIGN_MD_PATH, content: preview.next, expectedSha }, ...built.sources],
       DRAFT_BRANCH,
       `Regenerate design.md from the current theme via Design Studio${ctx.adminEmail ? ` (${ctx.adminEmail})` : ''}`,
       { authorName: ctx.adminName ?? DEFAULT_COMMIT_AUTHOR.name, authorEmail: ctx.adminEmail ?? DEFAULT_COMMIT_AUTHOR.email }

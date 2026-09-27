@@ -36,7 +36,16 @@ import { GET, POST } from './route'
 
 const params = { params: Promise.resolve({ id: SID }) }
 const CTX = { sessionId: SID, jobId: 'job-1', githubRepo: 'o/r', adminId: 'admin-1', adminEmail: 'a@x.com', user: { isAdmin: true } }
-const SNAP = { shas: {}, texts: { 'content/brand.json': BRAND_TEXT, 'content/design.json': DESIGN_TEXT } }
+const BRAND_SHA = 'a'.repeat(40)
+const DESIGN_SHA = 'b'.repeat(40)
+const SNAP = {
+  shas: { 'content/brand.json': BRAND_SHA, 'content/design.json': DESIGN_SHA },
+  texts: { 'content/brand.json': BRAND_TEXT, 'content/design.json': DESIGN_TEXT },
+}
+const GUARDS = [
+  { path: 'content/brand.json', content: BRAND_TEXT, expectedSha: BRAND_SHA },
+  { path: 'content/design.json', content: DESIGN_TEXT, expectedSha: DESIGN_SHA },
+]
 const SHA = 'c'.repeat(40)
 const HAND = '# Our brand\n\nNavy and gold.\n'
 const NEXT = (() => {
@@ -75,20 +84,20 @@ describe('design/design-md route', () => {
     expect(m.writeFiles).not.toHaveBeenCalled()
   })
 
-  it('POST commits exactly the reviewed text, guarded by the reviewed blob sha', async () => {
+  it('POST commits exactly the reviewed text, guarded by the reviewed blob sha + brand.json/design.json unchanged', async () => {
     const res = await post({ expectedSha: SHA, nextHash: hashDesignMd(NEXT) })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, commitSha: 'commit-1' })
     const [repo, files, branch] = m.writeFiles.mock.calls[0] as [string, { path: string; content: string; expectedSha: string | null }[], string]
     expect(repo).toBe('o/r')
     expect(branch).toBe('draft')
-    expect(files).toEqual([{ path: 'content/design.md', content: NEXT, expectedSha: SHA }])
+    expect(files).toEqual([{ path: 'content/design.md', content: NEXT, expectedSha: SHA }, ...GUARDS])
   })
 
   it('POST creates a missing file with a must-not-exist guard', async () => {
     m.readOptional.mockResolvedValue(null)
     expect((await post({ expectedSha: null, nextHash: hashDesignMd(NEXT) })).status).toBe(200)
-    expect((m.writeFiles.mock.calls[0] as unknown[])[1]).toEqual([{ path: 'content/design.md', content: NEXT, expectedSha: null }])
+    expect((m.writeFiles.mock.calls[0] as unknown[])[1]).toEqual([{ path: 'content/design.md', content: NEXT, expectedSha: null }, ...GUARDS])
   })
 
   it('POST refuses when the theme or the file changed since the preview (409, nothing written)', async () => {
@@ -97,8 +106,10 @@ describe('design/design-md route', () => {
     expect(m.writeFiles).not.toHaveBeenCalled()
   })
 
-  it('POST maps a concurrent edit (stale guard) to 409', async () => {
-    m.writeFiles.mockRejectedValue(new StaleShaError('content/design.md', 'f'.repeat(40), 'x'))
+  it('POST maps a concurrent edit (stale guard) to 409 — design.md, or a theme change to brand.json / design.json', async () => {
+    m.writeFiles.mockRejectedValueOnce(new StaleShaError('content/design.md', 'f'.repeat(40), 'x'))
+    expect((await post({ expectedSha: SHA, nextHash: hashDesignMd(NEXT) })).status).toBe(409)
+    m.writeFiles.mockRejectedValueOnce(new StaleShaError('content/brand.json', 'f'.repeat(40), '{}'))
     expect((await post({ expectedSha: SHA, nextHash: hashDesignMd(NEXT) })).status).toBe(409)
   })
 
