@@ -47,7 +47,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch; flags?: DesignFlagsPatch }
+// regenerate: rewrite theme.css (+ the fonts module on L2+) from the CURRENT
+// brand.json + design.json with no value change — the "Regenerate theme files"
+// action on the Design Studio stale notices.
+type ThemePatchBody = { palette?: PalettePatch; typography?: TypographyPatch; flags?: DesignFlagsPatch; regenerate?: boolean }
 
 // PATCH — direct (non-AI) theme edits from the Theme Studio pickers. Applies a
 // palette and/or typography change: commits brand.json/design.json + the
@@ -66,7 +69,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = (await req.json().catch(() => ({}))) as ThemePatchBody
-  if (!body.palette && !body.typography && !body.flags) {
+  const regenerate = body.regenerate === true
+  if (!body.palette && !body.typography && !body.flags && !regenerate) {
     return NextResponse.json({ error: 'Nothing to change.' }, { status: 400 })
   }
 
@@ -125,7 +129,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     designChanged = fontsChanged || treatmentsChanged
 
-    if (!brandChanged && !designChanged) {
+    if (!brandChanged && !designChanged && !regenerate) {
       return NextResponse.json({ ok: true, note: 'No change — those values were already set.' })
     }
 
@@ -136,6 +140,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // purely to lock its sha, and an absent theme.css must still be absent (a
     // concurrent Design Studio apply that created it wins → 409, not clobbered).
     const themeCss = generateThemeCss(brand, design)
+    let derivedUnchanged = themeCss === themeFile.content
     const changes: { path: string; content: string; expectedSha: string | null }[] = [
       { path: THEME_CSS_PATH, content: themeCss, expectedSha: themeFile.sha || null },
       { path: BRAND_PATH, content: brandChanged ? brandText : brandFile.content, expectedSha: brandFile.sha },
@@ -147,6 +152,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (fontsUnlocked(await readDesignCapabilities(githubRepo))) {
       const fontsFile = (await load(FONTS_MODULE_PATH, true))!
       const fontsModule = generateFontsModule(normalizeTypography(design.typography)).source
+      derivedUnchanged = derivedUnchanged && fontsModule === fontsFile.content
       changes.push({ path: FONTS_MODULE_PATH, content: fontsModule, expectedSha: fontsFile.sha || null })
     }
 
@@ -155,18 +161,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       fontsChanged && 'fonts',
       treatmentsChanged && 'treatments',
     ].filter(Boolean) as string[]
-    await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: update ${changedParts.join(' + ')} (${adminEmail ?? 'admin'})`, {
+    const regenerateOnly = !brandChanged && !designChanged
+    // Nothing to regenerate when the derived files already match — no empty commit.
+    if (regenerateOnly && derivedUnchanged) {
+      return NextResponse.json({ ok: true, note: 'Theme files already match brand.json + design.json.' })
+    }
+    const summary = regenerateOnly ? 'regenerate theme files' : `update ${changedParts.join(' + ')}`
+    await writeFiles(githubRepo, changes, DRAFT_BRANCH, `Theme: ${summary} (${adminEmail ?? 'admin'})`, {
       authorName: adminName ?? DEFAULT_COMMIT_AUTHOR.name,
       authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
     })
 
-    // MBP sync: keep the profile in step with the site (best-effort).
-    await syncMbpTheme(createServerClient(), {
-      sessionId,
-      jobId,
-      brand: brandChanged ? brand : undefined,
-      design: designChanged ? design : undefined,
-    })
+    // MBP sync: keep the profile in step with the site (best-effort). A pure
+    // regenerate changed no brand/design value, so there's nothing to sync.
+    if (!regenerateOnly) {
+      await syncMbpTheme(createServerClient(), {
+        sessionId,
+        jobId,
+        brand: brandChanged ? brand : undefined,
+        design: designChanged ? design : undefined,
+      })
+    }
 
     return NextResponse.json({
       ok: true,

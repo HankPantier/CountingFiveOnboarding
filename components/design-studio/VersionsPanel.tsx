@@ -78,6 +78,11 @@ export default function VersionsPanel({
       await designApi(`/api/edit/${sessionId}/design/sync-mbp`, { method: 'POST', json: {} })
       return 'The MBP now lists the draft’s palette and fonts.'
     }, 'Failed to sync the MBP')
+  const regenerate = () =>
+    run(async () => {
+      const res = await designApi<{ note?: string }>(`/api/edit/${sessionId}/theme`, { method: 'PATCH', json: { regenerate: true } })
+      return res.note ?? 'Regenerated the theme files on the draft from brand.json + design.json.'
+    }, 'Failed to regenerate the theme files')
   const capture = () =>
     run(async () => {
       const res = await designApi<{ versionNo: number }>(`/api/edit/${sessionId}/design/versions/import`, { method: 'POST', json: {} })
@@ -165,6 +170,22 @@ export default function VersionsPanel({
               </p>
             </>
           )}
+        </div>
+      )}
+
+      {/* Fix the stale notices in place: the theme PATCH with
+          { regenerate: true } rewrites theme.css (+ the fonts module on L2+)
+          from the draft's current brand.json + design.json. Admin-only route. */}
+      {(themeCssStale === true || fontsModuleStale === true) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <InlineConfirm
+            label="Regenerate theme files"
+            prompt="Rewrite theme.css (and the fonts module) on the draft from brand.json + design.json? The live site changes when you publish."
+            confirmLabel="Regenerate"
+            busy={busy}
+            onConfirm={regenerate}
+            tone="neutral"
+          />
         </div>
       )}
 
