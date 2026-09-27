@@ -4,7 +4,7 @@ import type { Tables } from '@/types/database'
 import { parseDesignBundle } from './bundle'
 import { capabilitiesFromJson } from './capabilities'
 import { metricGateFailures, type RenderMetrics } from './metrics'
-import { latestCritique, parseConceptReview, renderGateWarnings, unmeasuredViewports, type ConceptReview } from './review'
+import { critiqueForIteration, parseConceptReview, renderGateWarnings, unmeasuredViewports, type ConceptReview } from './review'
 import { isRunStalled, parseBaseSnapshot, parseScreenshots } from './run-state'
 import { fontsNotReadyNote } from './screenshots'
 import { CONCEPT_STATUSES, PALETTE_FREEDOMS, RUN_STATUSES, type ConceptStatus, type RunStatus } from './studio-types'
@@ -44,12 +44,14 @@ export function runScreenshotPaths(
     .filter((p, i, all) => all.indexOf(p) === i)
 }
 
-function toReviewDto(review: ConceptReview | null, signed: Record<string, string>, baseline: RenderMetrics | null): ConceptReviewDto | null {
+function toReviewDto(review: ConceptReview | null, signed: Record<string, string>, baseline: RenderMetrics | null, iteration: number): ConceptReviewDto | null {
   if (!review) return null
   return {
     next: review.next,
     activeUnit: review.claim?.unit ?? null,
-    latest: latestCritique(review),
+    // The critique of the version the concept holds (a loop that fell back
+    // to an earlier, better iteration shows that iteration's critique).
+    latest: critiqueForIteration(review, iteration),
     critiqueCount: review.critiques.length,
     outcome: review.outcome,
     measured: review.metrics !== null,
@@ -81,7 +83,7 @@ export function toConceptDto(row: ConceptRow, signed: Record<string, string>, ba
     screenshots: toShots(parseScreenshots(row.screenshots), signed),
     fontsNote: fontsNotReadyNote(parseScreenshots(row.screenshots)),
     iterations: row.iterations,
-    review: toReviewDto(parseConceptReview(row.critique), signed, baseline),
+    review: toReviewDto(parseConceptReview(row.critique), signed, baseline, row.iterations),
   }
 }
 

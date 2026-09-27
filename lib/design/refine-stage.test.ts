@@ -565,3 +565,103 @@ describe('finishConceptUnit', () => {
     expect(m.transitionRun).not.toHaveBeenCalled()
   })
 })
+
+// WS-B (R2 F5/I4): the loop ends on its BEST evaluated iteration, not its last.
+// The production case: Harbor Light r1 scored 3.50 (craft 4, no render-check
+// failure); r2 — the last allowed revision — 3.33 (craft 2) with a 2800 px
+// overflow, and the concept got stuck on the un-appliable r2.
+describe('best iteration (Harbor Light)', () => {
+  const scored = (iteration: number, s: Partial<CritiqueRecord['scores']>): CritiqueRecord => {
+    const scores = { brandFit: 4, distinctiveness: 3, hierarchy: 4, legibility: 4, consistency: 3, craft: 4, ...s }
+    const mean = Math.round((Object.values(scores).reduce((a, b) => a + b, 0) / 6) * 100) / 100
+    return { ...crit(false), iteration, scores, mean }
+  }
+  const R1_CRIT = scored(1, { legibility: 3 }) // 3.50, craft 4
+  const R2_CRIT = scored(2, { craft: 2 }) // 3.33, craft 2
+  const HARBOR_R1 = { ...VALID, name: 'Harbor Light' }
+  const HARBOR_R2 = { ...REVISED, name: 'Harbor Light' }
+  const BEST_R1 = { iteration: 1, bundle: HARBOR_R1, screenshots: R1, metrics: OK_METRICS, critique: R1_CRIT, gateFailures: 0 }
+  const OVERFLOW_2800 = {
+    v: 1 as const,
+    viewports: [
+      { viewport: 'desktop' as const, textChecked: 5, textUnverified: 0, contrast: [], overflow: { scrollWidth: 2800, viewportWidth: 1440, offenders: ['block:hero#0::before (2800px)'] }, hidden: [] },
+    ],
+  }
+
+  it('the critique of a worse last revision ends the loop on the better earlier one (bundle, renders, metrics)', async () => {
+    m.listConcepts.mockResolvedValue([looping({ critiques: [R1_CRIT], best: BEST_R1 }, { iterations: 2, bundle: asJson(HARBOR_R2), screenshots: asJson(R2) })])
+    m.critique.mockResolvedValue({ critique: R2_CRIT, errors: [], costUsd: 0.1, estimatedUsd: 0, stoppedReason: null })
+    await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    const patch = unitPatch()
+    expect(patch).toMatchObject({ status: 'ready', iterations: 1, screenshots: R1 })
+    expect(patch.bundle).toMatchObject({ palette: HARBOR_R1.palette })
+    expect(patch.review).toMatchObject({ outcome: 'max_revisions', next: 'done', metrics: OK_METRICS, metricsIteration: 1 })
+    expect(patch.review.notes.at(-1)).toMatch(/^Kept revision 1 \(mean 3\.50, craft 4; passes the render checks\) — revision 2 ranked lower/)
+    expect(m.remove).toHaveBeenCalledWith({}, R2.map((s) => s.path))
+  })
+
+  it('a last revision that ranks higher stays (no restore)', async () => {
+    m.listConcepts.mockResolvedValue([looping({ critiques: [R1_CRIT], best: BEST_R1 }, { iterations: 2, screenshots: asJson(R2) })])
+    m.critique.mockResolvedValue({ critique: scored(2, { craft: 5 }), errors: [], costUsd: 0.1, estimatedUsd: 0, stoppedReason: null })
+    await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    expect(unitPatch()).not.toHaveProperty('bundle')
+    expect(unitPatch().review.best?.iteration).toBe(2)
+  })
+
+  it('a re-render that overflows skips the critic; at the revision limit it ends on the best iteration', async () => {
+    m.listConcepts.mockResolvedValue([
+      looping({ next: 'render', metrics: null, metricsIteration: null, critiques: [R1_CRIT], best: BEST_R1 }, { iterations: 2, bundle: asJson(HARBOR_R2), screenshots: asJson(R1) }),
+    ])
+    m.renderFolds.mockResolvedValue({ shots: R2, desktopWebp: Buffer.from([1]), metrics: OVERFLOW_2800, error: null })
+    await renderUnit({} as never, CTX, RUN, CID, 'rerender')
+    expect(m.critique).not.toHaveBeenCalled()
+    const patch = unitPatch()
+    expect(patch).toMatchObject({ status: 'ready', iterations: 1, screenshots: R1 })
+    expect(patch.review).toMatchObject({ outcome: 'max_revisions', metrics: OK_METRICS })
+    expect(
+      patch.review.notes.some((n) => n.startsWith('Revision 2 was not critiqued: Desktop (1440): the page is wider than the screen (2800 px at 1440 px) — e.g. hero::before'))
+    ).toBe(true)
+    expect(patch.review.notes.some((n) => n.startsWith('Kept revision 1'))).toBe(true)
+    expect(m.remove).toHaveBeenCalledWith({}, R2.map((s) => s.path)) // the just-made r2 renders; r1 is referenced again
+  })
+
+  it('a first design that overflows goes straight to a revision (no critique spent), recorded as evaluated', async () => {
+    m.claimConceptRender.mockResolvedValue(makeConceptRow({ status: 'refining', screenshots: asJson([]) }))
+    m.listConcepts.mockResolvedValue([makeConceptRow({ status: 'refining' })])
+    m.renderFolds.mockResolvedValue({ shots: R0, desktopWebp: Buffer.from([1]), metrics: OVERFLOW_2800, error: null })
+    await renderUnit({} as never, CTX, RUN, CID, 'initial')
+    const patch = m.settleInitialRender.mock.calls[0][3] as UnitPatch
+    expect(patch.status).toBe('refining')
+    expect(patch.review.next).toBe('revise')
+    expect(patch.review.best).toMatchObject({ iteration: 0, critique: null, gateFailures: 1 })
+    expect(patch.review.notes[0]).toMatch(/^The first design was not critiqued: .*2800 px/)
+  })
+
+  it('an overflow the current site already had is not a new failure — the critic still runs', async () => {
+    const baseRun = makeRunRow({ status: 'refining', base_snapshot: asJson({ pagePath: '/', themeShas: {}, screenshots: CURRENT, notes: [], metrics: OVERFLOW_2800 }) })
+    m.getRun.mockResolvedValue(baseRun)
+    m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null }, { iterations: 1, screenshots: asJson(R0) })])
+    m.renderFolds.mockResolvedValue({ shots: R1, desktopWebp: Buffer.from([1]), metrics: OVERFLOW_2800, error: null })
+    await renderUnit({} as never, CTX, baseRun, CID, 'rerender')
+    expect(unitPatch().review.next).toBe('critique')
+  })
+
+  it('the revision after an overflow skip gets no stale critique of an older version', async () => {
+    const skipped = { iteration: 1, bundle: HARBOR_R2, screenshots: R1, metrics: OVERFLOW_2800, critique: null, gateFailures: 1 }
+    m.listConcepts.mockResolvedValue([looping({ next: 'revise', metrics: OVERFLOW_2800, critiques: [scored(0, {})], best: skipped }, { iterations: 1, screenshots: asJson(R1) })])
+    m.revise.mockResolvedValue({ concept: { bundle: REVISED, files: FILES, notes: [] }, errors: [], notes: [], costUsd: 0.4, estimatedUsd: 0, stoppedReason: null })
+    await reviseUnit({} as never, CTX, RID, CID, () => 1_000)
+    const prompt = texts(m.revise.mock.calls[0][0])
+    expect(prompt).not.toContain('THE ART DIRECTOR’S CRITIQUE')
+    expect(prompt).toContain('wider than the screen')
+  })
+
+  it('an unusable last revision falls back to the best iteration', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'revise', critiques: [R1_CRIT, R2_CRIT], best: BEST_R1 }, { iterations: 2, bundle: asJson(HARBOR_R2), screenshots: asJson(R2) })])
+    m.getRun.mockResolvedValue({ ...RUN, max_revisions: 3 })
+    m.revise.mockResolvedValue({ concept: null, errors: ['palette.primary: bad hex'], notes: [], costUsd: 0.4, estimatedUsd: 0, stoppedReason: 'no_output' })
+    await reviseUnit({} as never, CTX, RID, CID, () => 1_000)
+    expect(unitPatch()).toMatchObject({ status: 'ready', iterations: 1, screenshots: R1 })
+    expect(unitPatch().review.outcome).toBe('invalid_revision')
+  })
+})
