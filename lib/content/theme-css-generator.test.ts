@@ -9,6 +9,8 @@ import {
   formatContrastFailure,
   ACTION_ON_PRIMARY_PAIR,
   ACTION_ON_BACKGROUND_PAIR,
+  deriveActionTextColors,
+  ensureTextContrast,
 } from './theme-css-generator'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
@@ -65,39 +67,38 @@ describe('checkThemeContrast', () => {
   })
 })
 
-describe('checkActionContrast — advisory action-colour pairs', () => {
+describe('checkActionContrast — advisory LARGE-text action pairs (3:1)', () => {
   // The Task 8 concept: vermilion action on a deep-teal primary.
   const failing = { ...brand.palette, primary: '#003a42', action: '#cc381e' }
 
-  it('flags action text on the AA-corrected primary below 4.5:1, with a fix hint', () => {
+  it('flags raw action as large text on the AA-corrected primary below 3:1, with a fix hint', () => {
     const pair = checkActionContrast({ palette: failing }).find((f) => f.name === ACTION_ON_PRIMARY_PAIR)
-    expect(pair).toMatchObject({ minRatio: 4.5, fg: '#cc381e' })
+    expect(pair).toMatchObject({ minRatio: 3, fg: '#cc381e' })
     expect(pair!.ratio).toBeCloseTo(2.47, 1)
-    expect(formatContrastFailure(pair!)).toMatch(/^action \/ primary: 2\.4\d:1 \(need 4\.5:1\) — .*action colour/)
+    expect(formatContrastFailure(pair!)).toMatch(/^action \(large text\) \/ primary: 2\.4\d:1 \(need 3:1\) — .*large display text/)
   })
 
-  it('flags action text on the page background (nearWhite) below 4.5:1', () => {
-    // bblcpa-style bright orange on white ≈ 2.29:1.
+  it('flags raw action as large text on the page background below 3:1', () => {
+    // bblcpa-style bright orange on white ≈ 2.29:1 — still a large-accent warning.
     const pair = checkActionContrast({ palette: { ...brand.palette, action: '#ff8e27', nearWhite: '#ffffff' } }).find(
       (f) => f.name === ACTION_ON_BACKGROUND_PAIR
     )
-    expect(pair).toMatchObject({ minRatio: 4.5, bg: '#ffffff', fg: '#ff8e27' })
+    expect(pair).toMatchObject({ minRatio: 3, bg: '#ffffff', fg: '#ff8e27' })
     expect(pair!.ratio).toBeCloseTo(2.29, 1)
-    expect(pair!.hint).toMatch(/darker action colour/)
+    expect(pair!.hint).toMatch(/headline accent/)
   })
 
-  it('is boundary-exact at 4.5:1 on the background', () => {
+  it('is boundary-exact at 3:1 on the background', () => {
     const on = (action: string) => checkActionContrast({ palette: { ...brand.palette, nearWhite: '#ffffff', action } }).some((f) => f.name === ACTION_ON_BACKGROUND_PAIR)
-    expect(on('#767676')).toBe(false) // 4.54:1
-    expect(on('#777777')).toBe(true) // 4.48:1
+    expect(on('#949494')).toBe(false) // 3.03:1
+    expect(on('#959595')).toBe(true) // 2.99:1
   })
 
-  it('both pairs cannot pass together on a dark primary (why they are advisory)', () => {
-    // contrast(a,primary) × contrast(a,bg) = contrast(primary,bg) ≈ 10.35 < 20.25 for navy on #f7f5f2.
-    for (let l = 0; l <= 100; l += 2) {
-      const hex = chroma.hsl(20, 1, l / 100).hex()
-      expect(checkActionContrast({ palette: { ...brand.palette, action: hex } }).length).toBeGreaterThan(0)
-    }
+  it('no longer warns in the 3:1–4.5:1 band (small text there is auto-corrected)', () => {
+    // #00C1DE on navy = 5.19, on #F7F5F2 = 1.99 → only the background pair.
+    expect(checkActionContrast(brand).map((f) => f.name)).toEqual([ACTION_ON_BACKGROUND_PAIR])
+    // A mid orange at ~3.2:1 on both surfaces of the navy fixture: no warning.
+    expect(checkActionContrast({ palette: { ...brand.palette, action: '#f45100' } })).toEqual([])
   })
 
   it('never appears in the hard gate — checkThemeContrast is the pre-2026-09-26 set', () => {
@@ -106,8 +107,66 @@ describe('checkActionContrast — advisory action-colour pairs', () => {
     expect(checkThemeContrast(brand).map((f) => f.name)).toEqual([])
   })
 
-
   it('formats failures without a hint exactly as before', () => {
     expect(formatContrastFailure({ name: 'ink-fg / ink', ratio: 3.2, minRatio: 4.5, bg: '#000', fg: '#111' })).toBe('ink-fg / ink: 3.20:1 (need 4.5:1)')
+  })
+})
+
+const tokenValues = (css: string, name: string) => [...css.matchAll(new RegExp(`${name}: ([^;]+);`, 'g'))].map((m) => m[1])
+const hueDelta = (a: string, b: string) => {
+  const d = Math.abs(chroma(a).oklch()[2] - chroma(b).oklch()[2]) % 360
+  return Math.min(d, 360 - d)
+}
+
+describe('small-text action tokens (--color-action-text / --color-action-on-primary)', () => {
+  it('golden: house default darkens on the canvas, stays raw on the primary and in .dark', () => {
+    expect(tokenValues(golden, '--color-action-text')).toEqual(['#007c90', '#007c90', '#00C1DE'])
+    expect(tokenValues(golden, '--color-action-on-primary')).toEqual(['#00C1DE', '#00C1DE'])
+  })
+
+  it('returns an already-passing colour EXACTLY and is boundary-exact', () => {
+    expect(ensureTextContrast('#00C1DE', '#003B71')).toBe('#00C1DE')
+    const exact = chroma.contrast('#777777', '#ffffff')
+    expect(ensureTextContrast('#777777', '#ffffff', exact)).toBe('#777777')
+    expect(ensureTextContrast('#777777', '#ffffff', exact + 0.001)).not.toBe('#777777')
+  })
+
+  it('bblcpa palette: canvas 2.29 → ≥4.5, primary already passes', () => {
+    const out = deriveActionTextColors({ action: '#ff8e27', primary: '#003767', nearWhite: '#FeFefe', nearBlack: '#222222' })
+    expect(chroma.contrast(out.actionText, '#FeFefe')).toBeGreaterThanOrEqual(4.5)
+    expect(chroma.contrast(out.actionText, '#FeFefe')).toBeLessThan(4.6)
+    expect(hueDelta(out.actionText, '#ff8e27')).toBeLessThan(2)
+    expect(out.actionOnPrimary).toBe('#ff8e27')
+    expect(out.darkActionText).toBe('#ff8e27')
+  })
+
+  it('lightens on a dark primary the raw action fails (vermilion on teal)', () => {
+    const out = deriveActionTextColors({ action: '#cc381e', primary: '#003a42', nearWhite: '#fafaf7', nearBlack: '#1a1c1e' })
+    expect(out.actionText).toBe('#cc381e')
+    expect(chroma.contrast(out.actionOnPrimary, '#003a42')).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('hue scan: both tokens pass on the navy fixture at every hue, hue held', () => {
+    for (let h = 0; h < 360; h += 10) {
+      const action = chroma.oklch(0.75, 0.14, h).hex()
+      const out = deriveActionTextColors({ ...brand.palette, action })
+      expect(chroma.contrast(out.actionText, brand.palette.nearWhite), `h=${h}`).toBeGreaterThanOrEqual(4.5)
+      expect(chroma.contrast(out.actionOnPrimary, brand.palette.primary), `h=${h}`).toBeGreaterThanOrEqual(4.5)
+      if (out.actionText !== action) expect(hueDelta(out.actionText, action), `h=${h}`).toBeLessThan(4)
+    }
+  })
+
+  it('R1: an action that passes both light surfaces is emitted verbatim for every light-mode token', () => {
+    // Needs contrast(bg, primary) ≥ 20.25 — black primary on white; #C45300 sits in the band.
+    const css = generateThemeCss(
+      { palette: { ...brand.palette, action: '#C45300', primary: '#000000', nearWhite: '#FFFFFF', nearBlack: '#000000' } },
+      design
+    )
+    expect(tokenValues(css, '--color-action-text').slice(0, 2)).toEqual(['#C45300', '#C45300'])
+    expect(tokenValues(css, '--color-action-on-primary')).toEqual(['#C45300', '#C45300'])
+  })
+
+  it('never throws on a bad colour', () => {
+    expect(ensureTextContrast('nope', '#ffffff')).toBe('nope')
   })
 })

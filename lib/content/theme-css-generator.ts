@@ -65,6 +65,75 @@ function ensureContrast(bgHex: string, fgHex: string, minRatio = 4.5): string {
   }
 }
 
+// ---- Small-text action colour (auto-corrected) ------------------------------
+// Port of the template's src/lib/theme/action-text-contrast.ts — keep in sync
+// (theme.css.golden guards the output). One action colour can't clear 4.5:1 on
+// both the page background and a dark primary (contrast(a,bg) × contrast(a,p)
+// = contrast(bg,p)), so theme.css ships a text variant per surface. Moves OKLCH
+// lightness only in 0.001 steps away from the surface (the side it already
+// sits on first); hue held, chroma reduced only to stay inside sRGB (binary
+// search, never per-channel clipping). First passing hex wins; a colour that
+// already passes is returned EXACTLY (same string/case). Never throws.
+const ACTION_TEXT_L_STEP = 0.001
+const ACTION_TEXT_CHROMA_STEPS = 24
+
+function inGamutHex(l: number, c: number, h: number): string {
+  const direct = chroma.oklch(l, c, h)
+  if (!direct.clipped()) return direct.hex()
+  let lo = 0
+  let hi = c
+  for (let i = 0; i < ACTION_TEXT_CHROMA_STEPS; i++) {
+    const mid = (lo + hi) / 2
+    if (chroma.oklch(l, mid, h).clipped()) hi = mid
+    else lo = mid
+  }
+  return chroma.oklch(l, lo, h).hex()
+}
+
+export function ensureTextContrast(textHex: string, surfaceHex: string, minRatio = 4.5): string {
+  try {
+    if (chroma.contrast(textHex, surfaceHex) >= minRatio) return textHex
+    const [l0, c0, h0] = chroma(textHex).oklch()
+    const achromatic = isNaN(h0)
+    const h = achromatic ? 0 : h0
+    const c = achromatic ? 0 : c0
+    const lighter = chroma(textHex).luminance() > chroma(surfaceHex).luminance()
+    const directions = lighter ? [1, -1] : [-1, 1]
+    for (const dir of directions) {
+      for (let i = 1; ; i++) {
+        const l = l0 + dir * i * ACTION_TEXT_L_STEP
+        if (l < 0 || l > 1) break
+        const candidate = inGamutHex(l, c, h)
+        if (chroma.contrast(candidate, surfaceHex) >= minRatio) return candidate
+      }
+    }
+    const black = inGamutHex(0, 0, h)
+    const white = inGamutHex(1, 0, h)
+    return chroma.contrast(black, surfaceHex) >= chroma.contrast(white, surfaceHex) ? black : white
+  } catch {
+    return textHex
+  }
+}
+
+export type ActionTextPalette = Pick<BrandJson['palette'], 'action' | 'primary' | 'nearWhite' | 'nearBlack'>
+export type ActionTextColors = { actionText: string; actionOnPrimary: string; darkActionText: string }
+
+// The three emitted small-text tokens, from the same palette values theme.css
+// already carries (--color-action / -primary-hex / -near-white / -near-black):
+// --color-action-text vs the page background (nearWhite), -on-primary vs the
+// AA-corrected primary, and the .dark --color-action-text vs the dark card
+// (the lighter dark surface — clearing it clears the dark background too).
+export function deriveActionTextColors(palette: ActionTextPalette): ActionTextColors {
+  const primaryFg = pickForeground(palette.primary, palette.nearWhite, palette.nearBlack)
+  const primaryBg = ensureContrast(palette.primary, primaryFg)
+  const darkCard = setLightness(palette.nearBlack, 13)
+  return {
+    actionText: ensureTextContrast(palette.action, palette.nearWhite),
+    actionOnPrimary: ensureTextContrast(palette.action, primaryBg),
+    darkActionText: ensureTextContrast(palette.action, darkCard),
+  }
+}
+
 export type ContrastFailure = { name: string; ratio: number; minRatio: number; bg: string; fg: string; hint?: string }
 
 export function formatContrastFailure(f: ContrastFailure): string {
@@ -111,34 +180,29 @@ function failingPairs(pairs: ContrastPair[]): ContrastFailure[] {
   return failures
 }
 
-// ADVISORY (never a gate): raw --color-action used as small text on the two
-// surfaces the template puts it on. .t-kicker is 0.75rem/600 in
-// var(--color-action) — on the page background (hero / section kickers, card
-// dates; --color-background = palette.nearWhite, emitted uncorrected) and on
-// the AA-corrected primary (page-header kicker, stat figures, calculator
-// estimate) — so AA wants 4.5:1 on both. They cannot BOTH pass on a
-// dark-primary site: contrast(a, primary) × contrast(a, background) =
-// contrast(primary, background), and 4.5 × 4.5 = 20.25:1 needs a near-black
-// primary (navy #003b71 on #f7f5f2 tops out at ~3.2:1 on both). So these are
-// Theme Studio warnings only until the theme generator emits auto-corrected
-// action-text tokens (that task reuses this helper). The Design Studio does
-// not use them at all: a concept can't satisfy both, so feeding them to the
-// critic / reviser would penalise and chase an impossible target. Real
-// rendered-text contrast (render-check, metrics.ts) is a separate gate.
-export const ACTION_ON_PRIMARY_PAIR = 'action / primary'
-export const ACTION_ON_BACKGROUND_PAIR = 'action / background'
+// ADVISORY (never a gate): the raw --color-action as LARGE text. Small action
+// text (kickers, dates, badges) is auto-corrected by the generator
+// (--color-action-text / --color-action-on-primary, 4.5:1 by construction), so
+// those pairs no longer warn. What still renders the raw action as text is
+// large display type — the italic headline accent word (canvas heroes on the
+// page background; page-header on the primary), stat figures and the pricing
+// estimate (primary) — which WCAG holds to 3:1. Theme Studio warnings only;
+// the Design Studio does not use them. Rendered-text contrast (render-check,
+// metrics.ts) is a separate gate.
+export const ACTION_ON_PRIMARY_PAIR = 'action (large text) / primary'
+export const ACTION_ON_BACKGROUND_PAIR = 'action (large text) / background'
 const ACTION_ON_PRIMARY_HINT =
-  'action-colour text sits on the primary colour (inner-page kicker, stat figures, price estimate) — a brighter or lighter action colour, or a darker primary, reads better'
+  'the action colour is used for large display text on the primary (page-header accent word, stat figures, price estimate) — a brighter or lighter action colour, or a darker primary, reads better'
 const ACTION_ON_BACKGROUND_HINT =
-  'action-colour text sits on the page background (hero and section kickers, card dates) — a deeper, darker action colour reads better'
+  'the action colour is used for the large headline accent word on the page background — a deeper, darker action colour reads better'
 
 export function checkActionContrast(brand: Pick<BrandJson, 'palette'>): ContrastFailure[] {
   const { palette } = brand
   const primaryFg = pickForeground(palette.primary, palette.nearWhite, palette.nearBlack)
   const primaryBg = ensureContrast(palette.primary, primaryFg)
   return failingPairs([
-    { name: ACTION_ON_PRIMARY_PAIR, bg: primaryBg, fg: palette.action, minRatio: 4.5, hint: ACTION_ON_PRIMARY_HINT },
-    { name: ACTION_ON_BACKGROUND_PAIR, bg: palette.nearWhite, fg: palette.action, minRatio: 4.5, hint: ACTION_ON_BACKGROUND_HINT },
+    { name: ACTION_ON_PRIMARY_PAIR, bg: primaryBg, fg: palette.action, minRatio: 3, hint: ACTION_ON_PRIMARY_HINT },
+    { name: ACTION_ON_BACKGROUND_PAIR, bg: palette.nearWhite, fg: palette.action, minRatio: 3, hint: ACTION_ON_BACKGROUND_HINT },
   ])
 }
 
@@ -183,6 +247,9 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   const darkMutedForeground = ensureContrast(setLightness(palette.nearWhite, 60), darkMuted)
   const darkBorder = setLightness(palette.nearBlack, 24)
 
+  // Small-text action colours, AA-corrected per surface (see ensureTextContrast).
+  const { actionText, actionOnPrimary, darkActionText } = deriveActionTextColors(palette)
+
   const [sr, sg, sb] = chroma(palette.primary).rgb()
   const shadowRgb = `${sr}, ${sg}, ${sb}`
 
@@ -215,6 +282,11 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   /* Custom brand tokens — used directly by block components via var() */
   --color-action: ${palette.action};
   --color-action-foreground: ${palette.nearWhite};
+  /* Action colour for SMALL text, AA-corrected (lightness only) against the
+   * page background / the primary surface. Equal to --color-action when the
+   * raw colour already passes. */
+  --color-action-text: ${actionText};
+  --color-action-on-primary: ${actionOnPrimary};
   --color-primary-hex: ${palette.primary};
   --color-near-black: ${palette.nearBlack};
   --color-near-white: ${palette.nearWhite};
@@ -292,6 +364,11 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   /* Custom brand tokens */
   --color-action: ${palette.action};
   --color-action-foreground: ${palette.nearWhite};
+  /* Action colour for SMALL text, AA-corrected (lightness only) against the
+   * page background / the primary surface. Equal to --color-action when the
+   * raw colour already passes. */
+  --color-action-text: ${actionText};
+  --color-action-on-primary: ${actionOnPrimary};
   --color-primary-hex: ${palette.primary};
   --color-near-black: ${palette.nearBlack};
   --color-near-white: ${palette.nearWhite};
@@ -346,6 +423,8 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   --color-muted-foreground: hsl(${toHslTokens(darkMutedForeground)});
   --color-border: hsl(${toHslTokens(darkBorder)});
   --color-input: hsl(${toHslTokens(darkBorder)});
+  /* Small action text re-corrected for the dark neutral surfaces. */
+  --color-action-text: ${darkActionText};
 }
 `
 }

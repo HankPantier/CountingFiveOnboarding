@@ -7,8 +7,9 @@
 //   4. palette freedom "keep" → the current palette, with a note
 //   5. render the repo files with removeLegacy (sanitizes every CSS fragment)
 //   6. checkThemeContrast (the same hard gate apply uses). The action-colour
-//      pairs (checkActionContrast) are NOT checked here — they are Theme
-//      Studio warnings until the theme auto-corrects action text.
+//      pairs are NOT checked here: small action text is auto-corrected in
+//      theme.css, and the large-text pairs (checkActionContrast) are Theme
+//      Studio warnings only.
 // The stored bundle carries the SANITIZED css (what apply would write).
 import type { BrandJson } from '@/types/brand-json'
 import { checkThemeContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'

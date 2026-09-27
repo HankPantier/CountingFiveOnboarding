@@ -27,6 +27,11 @@
   /* Custom brand tokens — used directly by block components via var() */
   --color-action: #00C1DE;
   --color-action-foreground: #F7F5F2;
+  /* Action colour for SMALL text, AA-corrected (lightness only) against the
+   * page background / the primary surface. Equal to --color-action when the
+   * raw colour already passes. */
+  --color-action-text: #007c90;
+  --color-action-on-primary: #00C1DE;
   --color-primary-hex: #003B71;
   --color-near-black: #1A1C1E;
   --color-near-white: #F7F5F2;
@@ -104,6 +109,11 @@
   /* Custom brand tokens */
   --color-action: #00C1DE;
   --color-action-foreground: #F7F5F2;
+  /* Action colour for SMALL text, AA-corrected (lightness only) against the
+   * page background / the primary surface. Equal to --color-action when the
+   * raw colour already passes. */
+  --color-action-text: #007c90;
+  --color-action-on-primary: #00C1DE;
   --color-primary-hex: #003B71;
   --color-near-black: #1A1C1E;
   --color-near-white: #F7F5F2;
@@ -158,4 +168,6 @@
   --color-muted-foreground: hsl(36 24% 60%);
   --color-border: hsl(213 7% 24%);
   --color-input: hsl(213 7% 24%);
+  /* Small action text re-corrected for the dark neutral surfaces. */
+  --color-action-text: #00C1DE;
 }

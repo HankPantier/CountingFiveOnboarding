@@ -39,6 +39,9 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   can't pass together on a dark primary — see checkActionContrast), so the
 //   pricing-calculator entry no longer claims a hard 4.5:1 requirement: it
 //   says to keep the figure and panel text legible (ideally ≥4.5:1).
+// - Task 11 (2026-09-26): ONE added TOKEN CONTRACT line — small action text
+//   is auto-corrected (--color-action-text / --color-action-on-primary at
+//   4.5:1), so the model can pick a bold action colour. Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
