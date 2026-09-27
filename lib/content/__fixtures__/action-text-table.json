@@ -1,0 +1,117 @@
+[
+  {
+    "name": "house-default",
+    "palette": {
+      "primary": "#003B71",
+      "secondary": "#6C7278",
+      "complementary": "#B8422E",
+      "action": "#00C1DE",
+      "nearBlack": "#1A1C1E",
+      "nearWhite": "#F7F5F2"
+    },
+    "light": {
+      "actionText": "#007a8d",
+      "actionTextCanvas": "#007a8d",
+      "actionTextTint": "#007385",
+      "actionOnPrimary": "#00C1DE",
+      "actionOnInk": "#00C1DE"
+    },
+    "dark": {
+      "actionText": "#00C1DE",
+      "actionTextCanvas": "#00C1DE",
+      "actionTextTint": "#00C1DE"
+    }
+  },
+  {
+    "name": "bblcpa",
+    "palette": {
+      "primary": "#003767",
+      "secondary": "#043464",
+      "complementary": "#f57f09",
+      "action": "#ff8e27",
+      "nearBlack": "#222222",
+      "nearWhite": "#FeFefe"
+    },
+    "light": {
+      "actionText": "#ab5900",
+      "actionTextCanvas": "#ab5900",
+      "actionTextTint": "#aa5800",
+      "actionOnPrimary": "#ff8e27",
+      "actionOnInk": "#ff8e27"
+    },
+    "dark": {
+      "actionText": "#ff8e27",
+      "actionTextCanvas": "#ff8e27",
+      "actionTextTint": "#ff8e27"
+    }
+  },
+  {
+    "name": "accord-advisors",
+    "palette": {
+      "primary": "#1F3A5F",
+      "secondary": "#5A6B7B",
+      "complementary": "#C2703D",
+      "action": "#0E8C9C",
+      "nearBlack": "#1A1C1E",
+      "nearWhite": "#F8F8F6"
+    },
+    "light": {
+      "actionText": "#007b8a",
+      "actionTextCanvas": "#007b8a",
+      "actionTextTint": "#00717f",
+      "actionOnPrimary": "#46b1c1",
+      "actionOnInk": "#1790a0"
+    },
+    "dark": {
+      "actionText": "#2f9faf",
+      "actionTextCanvas": "#2f9faf",
+      "actionTextTint": "#34a2b2"
+    }
+  },
+  {
+    "name": "light-primary",
+    "palette": {
+      "primary": "#F2C94C",
+      "secondary": "#E0E0E0",
+      "complementary": "#9B51E0",
+      "action": "#2F80ED",
+      "nearBlack": "#1B1B1B",
+      "nearWhite": "#FFFFFF"
+    },
+    "light": {
+      "actionText": "#176cd7",
+      "actionTextCanvas": "#176cd7",
+      "actionTextTint": "#0f67d2",
+      "actionOnPrimary": "#0054b2",
+      "actionOnInk": "#398af7"
+    },
+    "dark": {
+      "actionText": "#4091ff",
+      "actionTextCanvas": "#4091ff",
+      "actionTextTint": "#4895ff"
+    }
+  },
+  {
+    "name": "achromatic",
+    "palette": {
+      "primary": "#333333",
+      "secondary": "#777777",
+      "complementary": "#555555",
+      "action": "#999999",
+      "nearBlack": "#111111",
+      "nearWhite": "#FAFAFA"
+    },
+    "light": {
+      "actionText": "#6e6e6f",
+      "actionTextCanvas": "#6e6e6f",
+      "actionTextTint": "#6a6a6a",
+      "actionOnPrimary": "#9b9b9b",
+      "actionOnInk": "#999999"
+    },
+    "dark": {
+      "actionText": "#999999",
+      "actionTextCanvas": "#999999",
+      "actionTextTint": "#9b9b9b"
+    }
+  }
+]

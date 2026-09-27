@@ -176,8 +176,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       eyebrowStyle: design.eyebrowStyle ?? 'standard',
       darkSections: design.darkSections ?? false,
       // Advisory, never blocking: the save above already landed, so a palette
-      // that fails a pair is saved and the warning — with its fix hint for the
-      // action-colour pairs (checkActionContrast) — shows in the Controls.
+      // that fails a pair is saved and the warning shows in the Controls. Small
+      // action text is auto-corrected in theme.css (--color-action-text /
+      // -on-primary), so checkActionContrast only warns for the raw action as
+      // LARGE text (headline accent, stat figures, estimate) under 3:1.
       contrastWarnings: [...checkThemeContrast(brand), ...checkActionContrast(brand)].map(formatContrastFailure),
     })
   } catch (err) {

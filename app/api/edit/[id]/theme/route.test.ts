@@ -97,15 +97,15 @@ describe('PATCH /api/edit/[id]/theme — optimistic locks', () => {
 
   it('failing action pairs (advisory) still save; they come back as warnings with their fix hints', async () => {
     vi.mocked(checkActionContrast).mockReturnValueOnce([
-      { name: 'action / primary', ratio: 2.46, minRatio: 4.5, bg: '#003a42', fg: '#cc381e', hint: 'a darker primary reads better' },
-      { name: 'action / background', ratio: 2.29, minRatio: 4.5, bg: '#ffffff', fg: '#ff8e27', hint: 'a darker action colour reads better' },
+      { name: 'action (large text) / primary', ratio: 2.46, minRatio: 3, bg: '#003a42', fg: '#cc381e', hint: 'a darker primary reads better' },
+      { name: 'action (large text) / background', ratio: 2.29, minRatio: 3, bg: '#ffffff', fg: '#ff8e27', hint: 'a darker action colour reads better' },
     ])
     const res = await patchFlags()
     expect(res.status).toBe(200)
     expect(h.writeFiles).toHaveBeenCalledTimes(1)
     expect((await res.json()).contrastWarnings).toEqual([
-      'action / primary: 2.46:1 (need 4.5:1) — a darker primary reads better',
-      'action / background: 2.29:1 (need 4.5:1) — a darker action colour reads better',
+      'action (large text) / primary: 2.46:1 (need 3:1) — a darker primary reads better',
+      'action (large text) / background: 2.29:1 (need 3:1) — a darker action colour reads better',
     ])
   })
 
