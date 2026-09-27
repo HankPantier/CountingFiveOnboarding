@@ -70,6 +70,24 @@ export interface BodyStripResult {
 const TRAILER_HEADING_LINE_RE =
   /^## (?:SEO &(?:amp;)? AIO Metadata|Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`)[ \t]*\r?$/
 
+const re = (r: RegExp) => ({ source: r.source, flags: r.flags })
+
+/**
+ * The trailer anchors as plain data. Byte-mirrored with the client template
+ * (src/lib/content/strip-generator-notes.ts there) through
+ * lib/content/__fixtures__/generator-trailer.template.json; a parity test
+ * fails when either side drifts. Copy the fixture, don't retype it.
+ */
+export const GENERATOR_TRAILER_ANCHORS = {
+  version: 1,
+  labels: [...GENERATOR_NOTE_LABELS],
+  seoTrailer: re(SEO_TRAILER_RE),
+  structuredTrailer: re(STRUCTURED_TRAILER_RE),
+  labelLine: re(LABEL_LINE_RE),
+  ctaLine: re(CTA_LINE_RE),
+  trailerHeadingLine: re(TRAILER_HEADING_LINE_RE),
+}
+
 // Headings in `text` other than the two trailer headings, ignoring fenced code.
 function foreignHeadings(text: string): string[] {
   return text

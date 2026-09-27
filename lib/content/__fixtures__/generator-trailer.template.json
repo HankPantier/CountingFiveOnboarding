@@ -1,0 +1,135 @@
+{
+  "anchors": {
+    "version": 1,
+    "labels": [
+      "Answer Block",
+      "E-E-A-T Signals",
+      "Internal Links",
+      "FAQ Block",
+      "LLM Citation Note"
+    ],
+    "seoTrailer": {
+      "source": "(^|\\r?\\n)-{3,}[ \\t]*\\r?\\n(?:[ \\t]*\\r?\\n)*## SEO &(?:amp;)? AIO Metadata[ \\t]*(?=\\r?\\n|$)",
+      "flags": ""
+    },
+    "structuredTrailer": {
+      "source": "(^|\\r?\\n)-{3,}[ \\t]*\\r?\\n(?:[ \\t]*\\r?\\n)*## Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`[ \\t]*(?=\\r?\\n|$)",
+      "flags": ""
+    },
+    "labelLine": {
+      "source": "^[ \\t]*\\*\\*(Answer Block|E\\-E\\-A\\-T Signals|Internal Links|FAQ Block|LLM Citation Note):\\*\\*[ \\t]*\\r?$",
+      "flags": "gm"
+    },
+    "ctaLine": {
+      "source": "^[ \\t]*\\*\\*Call to Action:\\*\\*[ \\t]+\\[",
+      "flags": "m"
+    },
+    "trailerHeadingLine": {
+      "source": "^## (?:SEO &(?:amp;)? AIO Metadata|Structured Data ?(?:—|–|-|,|:)? ?paste into `<head>`)[ \\t]*\\r?$",
+      "flags": ""
+    }
+  },
+  "vectors": [
+    {
+      "name": "full trailer (SEO & AIO + Structured Data)",
+      "body": "## Plan early\n\nProse.\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n\n---\n## Structured Data — paste into `<head>`\n\n```html\n<script type=\"application/ld+json\">{}</script>\n```\n",
+      "expected": "## Plan early\n\nProse.\n",
+      "removed": [
+        "SEO & AIO Metadata",
+        "Answer Block",
+        "Internal Links",
+        "Structured Data"
+      ],
+      "refused": false
+    },
+    {
+      "name": "SEO & AIO only",
+      "body": "## Plan early\n\nProse.\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n",
+      "expected": "## Plan early\n\nProse.\n",
+      "removed": [
+        "SEO & AIO Metadata",
+        "Answer Block",
+        "Internal Links"
+      ],
+      "refused": false
+    },
+    {
+      "name": "Structured Data only, dash-scrubbed separator",
+      "body": "## Plan early\n\nProse.\n\n---\n## Structured Data, paste into `<head>`\n\n```html\n<script type=\"application/ld+json\">{}</script>\n```\n",
+      "expected": "## Plan early\n\nProse.\n",
+      "removed": [
+        "Structured Data"
+      ],
+      "refused": false
+    },
+    {
+      "name": "SEO heading line deleted, Structured Data follows",
+      "body": "## Plan early\n\nProse.\n\n---\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n\n---\n## Structured Data — paste into `<head>`\n\n```html\n<script type=\"application/ld+json\">{}</script>\n```\n",
+      "expected": "## Plan early\n\nProse.\n",
+      "removed": [
+        "Answer Block",
+        "Internal Links",
+        "Structured Data"
+      ],
+      "refused": false
+    },
+    {
+      "name": "CRLF full trailer",
+      "body": "## Plan early\r\n\r\nProse.\r\n\r\n---\r\n## SEO & AIO Metadata\r\n\r\n**Answer Block:**\r\nA.\r\n\r\n**Internal Links:**\r\n- tax → /services/tax — why\r\n\r\n---\r\n## Structured Data — paste into `<head>`\r\n\r\n```html\r\n<script type=\"application/ld+json\">{}</script>\r\n```\r\n",
+      "expected": "## Plan early\r\n\r\nProse.\r\n",
+      "removed": [
+        "SEO & AIO Metadata",
+        "Answer Block",
+        "Internal Links",
+        "Structured Data"
+      ],
+      "refused": false
+    },
+    {
+      "name": "HTML-escaped ampersand",
+      "body": "## Plan early\n\nProse.\n\n---\n## SEO &amp; AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n",
+      "expected": "## Plan early\n\nProse.\n",
+      "removed": [
+        "SEO & AIO Metadata",
+        "Answer Block",
+        "Internal Links"
+      ],
+      "refused": false
+    },
+    {
+      "name": "NEGATIVE: reader-facing FAQ + Related links",
+      "body": "## Plan early\n\nProse.\n\n**FAQ**\n\n**Q: When?**\nA: Now.\n\n## Related links\n\n- [Tax](/services/tax)\n",
+      "expected": "## Plan early\n\nProse.\n\n**FAQ**\n\n**Q: When?**\nA: Now.\n\n## Related links\n\n- [Tax](/services/tax)\n",
+      "removed": [],
+      "refused": false
+    },
+    {
+      "name": "NEGATIVE: single stray label",
+      "body": "## Plan early\n\nProse.\n\n**Internal Links:**\nThese help readers.\n",
+      "expected": "## Plan early\n\nProse.\n\n**Internal Links:**\nThese help readers.\n",
+      "removed": [],
+      "refused": false
+    },
+    {
+      "name": "NEGATIVE: different-case SEO heading",
+      "body": "## Plan early\n\nProse.\n\n---\n## seo & aio metadata\n\nProse.\n",
+      "expected": "## Plan early\n\nProse.\n\n---\n## seo & aio metadata\n\nProse.\n",
+      "removed": [],
+      "refused": false
+    },
+    {
+      "name": "NEGATIVE: Structured Data heading without the paste-into shape",
+      "body": "## Plan early\n\nProse.\n\n---\n## Structured data for small firms\n\nProse.\n",
+      "expected": "## Plan early\n\nProse.\n\n---\n## Structured data for small firms\n\nProse.\n",
+      "removed": [],
+      "refused": false
+    },
+    {
+      "name": "REFUSED: real content after the trailer",
+      "body": "## Plan early\n\nProse.\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n\n## Added later\n\nCopy.\n",
+      "expected": "## Plan early\n\nProse.\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n\n## Added later\n\nCopy.\n",
+      "removed": [],
+      "refused": true
+    }
+  ]
+}
