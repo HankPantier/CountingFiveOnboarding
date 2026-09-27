@@ -42,19 +42,25 @@ const CSV_HEADER = 'old_url,new_url,status_code,reason\n'
 // ("/contact (merge into contact page)"), and trims trailing slashes.
 const sanitizeUrl = toSitePath
 
-// The redirect SOURCE as Next.js needs it: a root-relative path. Old-site urls
-// are stored absolute (https://www.firm.com/about-us/); Next rejects a source
-// without a leading '/', so keep only the path (trailing slash and case as the
-// old site had them). Anything unparseable is returned as-is.
-function sourcePath(oldUrl: string): string {
+// The redirect SOURCE as Next.js needs it: a root-relative path with no
+// ?query or #hash (Next's build rejects either, and never matches on them).
+// Old-site urls are stored absolute (https://www.firm.com/about-us/), so keep
+// only the path (trailing slash and case as the old site had them). Returns
+// null when nothing redirectable is left: a WordPress `/?page_id=12` is just
+// `/` (the home page), and an unparseable absolute url has no path.
+function sourcePath(oldUrl: string): string | null {
+  let path: string
   if (/^https?:\/\//i.test(oldUrl)) {
     try {
-      return new URL(oldUrl).pathname || '/'
+      path = new URL(oldUrl).pathname
     } catch {
-      return oldUrl
+      return null
     }
+  } else {
+    path = oldUrl.replace(/[?#].*$/, '')
+    if (path && !path.startsWith('/')) path = `/${path}`
   }
-  return oldUrl.startsWith('/') ? oldUrl : `/${oldUrl}`
+  return path && path !== '/' ? path : null
 }
 
 // Emit a CSV migration plan from the firm's current site to the new sitemap.
@@ -131,6 +137,16 @@ export function buildRedirectsCsv(
         continue
       }
 
+      const source = sourcePath(oldUrl)
+      if (!source) {
+        issues.push({
+          severity: 'warning',
+          oldUrl,
+          reason: 'no path to redirect once the ?query / #hash is removed (Next.js cannot redirect on a query string) — row dropped',
+        })
+        continue
+      }
+
       // Valid redirect row
       const reason =
         entry.action === 'consolidate'
@@ -138,16 +154,23 @@ export function buildRedirectsCsv(
           : 'redirected to new structure'
 
       rows.push(
-        [csvEscape(sourcePath(oldUrl)), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
+        [csvEscape(source), csvEscape(newUrl), '301', csvEscape(reason)].join(',')
       )
     } else if (!validNewUrls.has(sanitizeUrl(oldUrl) ?? oldUrl)) {
       // 'keep' (or any other non-redirect action) whose URL doesn't appear in
       // the new sitemap. Phase I sometimes marks these 'keep' but still fills
       // new_url with where the content went — honor that intent as a redirect
       // instead of warning about a broken link.
-      if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl)) {
+      const source = sourcePath(oldUrl)
+      if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl) && !source) {
+        issues.push({
+          severity: 'warning',
+          oldUrl,
+          reason: 'no path to redirect once the ?query / #hash is removed (Next.js cannot redirect on a query string) — row dropped',
+        })
+      } else if (newUrl && newUrl !== sanitizeUrl(oldUrl) && validNewUrls.has(newUrl) && source) {
         rows.push(
-          [csvEscape(sourcePath(oldUrl)), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
+          [csvEscape(source), csvEscape(newUrl), '301', csvEscape('content moved in new structure')].join(',')
         )
       } else {
         issues.push({

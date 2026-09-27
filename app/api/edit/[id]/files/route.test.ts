@@ -85,6 +85,13 @@ describe('PATCH /api/edit/[id]/files — redirects.csv guard', () => {
     expect((await patch(`${HEADER}/insights/tax-tips,/insights,301,x\n`)).status).toBe(422)
   })
 
+  it('422s a source next build would reject (query string, absolute url)', async () => {
+    expect((await patch(`${HEADER}/?page_id=12,/about,301,x\n`)).status).toBe(422)
+    const res = await patch(`${HEADER}https://old.example.com/team,/about,301,x\n`)
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toMatch(/must be a path starting with \//)
+  })
+
   it('commits a clean redirects file', async () => {
     const res = await patch(`${HEADER}/old,/about,301,x\n`)
     expect(res.status).toBe(200)

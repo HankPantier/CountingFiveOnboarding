@@ -273,6 +273,11 @@ export type RedirectProblems = {
   selfRedirects: string[]
   /** Sources that have a real page in the tree (only when livePaths is given). */
   shadowedPages: string[]
+  /**
+   * Sources `next build` rejects or never matches: not root-relative (no
+   * leading '/', e.g. an absolute old-site url) or carrying a ?query / #hash.
+   */
+  invalidSources: string[]
 }
 
 /** Find redirect loops, self-redirects and redirected live pages. Pure. */
@@ -281,7 +286,12 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
   const edges = new Map<string, string>()
   const selfRedirects: string[] = []
   const shadowedPages: string[] = []
+  const invalidSources: string[] = []
   for (const row of parseRedirectRows(text)) {
+    const rawFrom = row.from.trim()
+    if ((!rawFrom.startsWith('/') || /[?#]/.test(rawFrom)) && !invalidSources.includes(rawFrom)) {
+      invalidSources.push(rawFrom)
+    }
     const from = redirectKey(row.from)
     const to = redirectKey(row.to)
     if (from === to) {
@@ -310,7 +320,7 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
     }
     for (const p of path) state.set(p, 'done')
   }
-  return { cycles, selfRedirects, shadowedPages }
+  return { cycles, selfRedirects, shadowedPages, invalidSources }
 }
 
 /**
@@ -318,8 +328,15 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
  * (the caller answers 422) or null when the file is safe to commit.
  */
 export function validateRedirectsCsv(text: string, opts: RedirectOptions = {}): string | null {
-  const { cycles, selfRedirects, shadowedPages } = findRedirectProblems(text, opts)
+  const { cycles, selfRedirects, shadowedPages, invalidSources } = findRedirectProblems(text, opts)
   const problems: string[] = []
+  for (const s of invalidSources) {
+    problems.push(
+      s.startsWith('/')
+        ? `${s} has a ?query or #hash (Next.js redirect sources are paths only)`
+        : `${s} must be a path starting with / (not a full url)`
+    )
+  }
   for (const c of cycles) problems.push(`redirect loop ${[...c, c[0]].join(' → ')}`)
   for (const s of selfRedirects) problems.push(`${s} redirects to itself`)
   for (const s of shadowedPages) problems.push(`${s} has a real page but is redirected away`)

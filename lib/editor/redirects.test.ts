@@ -123,6 +123,17 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
     expect(validateRedirectsCsv(text, { livePaths: ['/blog/:slug', '/old/*'] })).toBeNull()
   })
 
+  it('rejects sources next build refuses: no leading /, or a ?query / #hash', () => {
+    expect(validateRedirectsCsv(`${H}https://old.example.com/about,/about-us,301,x\n`)).toMatch(
+      /https:\/\/old\.example\.com\/about must be a path starting with \//
+    )
+    expect(validateRedirectsCsv(`${H}about,/about-us,301,x\n`)).toMatch(/must be a path starting with \//)
+    expect(validateRedirectsCsv(`${H}/?page_id=12,/about-us,301,x\n`)).toMatch(/has a \?query or #hash/)
+    expect(validateRedirectsCsv(`${H}/team#jane,/about-us,301,x\n`)).toMatch(/has a \?query or #hash/)
+    // A query string on the DESTINATION is fine.
+    expect(validateRedirectsCsv(`${H}/old,/contact?from=old,301,x\n`)).toBeNull()
+  })
+
   it('passes a clean chain-free file', () => {
     expect(validateRedirectsCsv(`${H}/a,/b,301,x\n/c,/b,301,x\n`)).toBeNull()
   })

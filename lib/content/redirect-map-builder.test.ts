@@ -88,6 +88,35 @@ describe('buildRedirectsCsv — sources are root-relative paths', () => {
   })
 })
 
+describe('buildRedirectsCsv — query-string sources', () => {
+  it('strips ?query / #hash from a source path', () => {
+    const { csv } = buildRedirectsCsv(
+      [{ url: '/services/?ref=nav#top', title: 'T', live: true, action: 'redirect', new_url: '/contact' }],
+      NEW_SITEMAP
+    )
+    expect(csv).toContain('\n/services/,/contact,301')
+    expect(csv).not.toContain('ref=nav')
+    expect(csv).not.toContain('#top')
+  })
+
+  it('drops (and reports) a WordPress /?page_id=12 that leaves only the home path', () => {
+    const redirect = buildRedirectsCsv(
+      [{ url: '/?page_id=12', title: 'T', live: true, action: 'redirect', new_url: '/contact' }],
+      NEW_SITEMAP
+    )
+    expect(redirect.csv).not.toContain(',/contact,301')
+    expect(redirect.issues).toEqual([expect.objectContaining({ oldUrl: '/?page_id=12', reason: expect.stringMatching(/query string/) })])
+
+    // keep-with-new_url path, on a sitemap without a home page entry.
+    const keep = buildRedirectsCsv(
+      [{ url: 'https://www.acme.com/?p=4', title: 'T', live: true, action: 'keep', new_url: '/contact' }],
+      [{ url: '/contact', title: 'Contact' }]
+    )
+    expect(keep.csv).not.toContain(',/contact,301')
+    expect(keep.issues).toEqual([expect.objectContaining({ reason: expect.stringMatching(/query string/) })])
+  })
+})
+
 describe('buildRedirectsCsv — never shadows a real page or loops', () => {
   const SITEMAP = [
     { url: '/services', title: 'Services' },
