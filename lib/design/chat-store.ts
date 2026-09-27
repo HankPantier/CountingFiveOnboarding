@@ -63,6 +63,19 @@ export async function isAttachmentReferenced(db: Db, sessionId: string, attachme
   return (data ?? []).length > 0
 }
 
+// Every attachment id this session's messages reference — one query, for the
+// hourly orphan sweep (lib/design/storage-sweep.ts).
+export async function referencedAttachmentIds(db: Db, sessionId: string): Promise<Set<string>> {
+  const { data, error } = await db
+    .from('design_chat_messages')
+    .select('attachment_ids')
+    .eq('session_id', sessionId)
+  if (error) throw chatError('referencedAttachmentIds', error)
+  const out = new Set<string>()
+  for (const row of data ?? []) for (const id of row.attachment_ids) out.add(id.toLowerCase())
+  return out
+}
+
 // Every storage path a design version of this session uses as a screenshot
 // (chat versions reuse their chat preview renders), so clearing the chat
 // never deletes a version's thumbnail.

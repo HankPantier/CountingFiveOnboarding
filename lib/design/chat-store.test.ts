@@ -8,6 +8,7 @@ import {
   insertChatMessage,
   isAttachmentReferenced,
   listChatMessages,
+  referencedAttachmentIds,
   setAdoptedConceptId,
 } from './chat-store'
 
@@ -37,6 +38,11 @@ describe('chat store', () => {
     expect(f.opsFor('design_chat_messages')).toContainEqual(['contains', 'attachment_ids', [A1]])
     expect(f.opsFor('design_chat_messages')).toContainEqual(['eq', 'session_id', SID])
     expect(await isAttachmentReferenced(f.client, SID, A1)).toBe(false)
+  })
+  it('collects every attachment id the session references in one query (lower-cased)', async () => {
+    const f = fakeSupabase({ design_chat_messages: [{ data: [{ attachment_ids: [A1.toUpperCase()] }, { attachment_ids: [] }] }] })
+    expect(await referencedAttachmentIds(f.client, SID)).toEqual(new Set([A1]))
+    expect(f.opsFor('design_chat_messages')).toContainEqual(['eq', 'session_id', SID])
   })
   it('clears the session history and returns the deleted rows', async () => {
     const f = fakeSupabase({ design_chat_messages: [{ data: [makeChatRow({ attachment_ids: [A1] })] }] })
