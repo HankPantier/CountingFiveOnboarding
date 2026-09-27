@@ -430,7 +430,7 @@ export async function assembleContentPackage(
   const brandJson = buildBrandJson(schema, palette)
   const designJson = buildDesignJson(designTokens)
   const navJson = normalizeNavUrls(
-    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config),
+    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config, { firmName }),
     siteHost(session.website_url)
   )
 
