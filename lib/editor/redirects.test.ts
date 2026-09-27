@@ -116,7 +116,7 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
 
   it('ignores ?query and #hash for loop detection, absolute or root-relative', () => {
     expect(findRedirectProblems(`${H}/a,/b?x=1,301,x\n/b,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
-    expect(findRedirectProblems(`${H}/a,https://x.com/b#top,301,x\n/b/,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
+    expect(findRedirectProblems(`${H}/a,/b#top,301,x\n/b/,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
     expect(validateRedirectsCsv(`${H}/a?utm=1,/a,301,x\n`)).toMatch(/redirects to itself/)
   })
 
@@ -221,5 +221,19 @@ describe('trailing-slash sources (PIPE-1)', () => {
     const once = normalizeRedirectSources(text)
     expect(once).toBe(`${H}/a,/b,301,x\n/b,/a,301,x\n`)
     expect(normalizeRedirectSources(once)).toBe(once)
+  })
+})
+
+describe('rows the template skips (EDIT-2)', () => {
+  it('an absolute destination is not an edge, so the live loop behind it is found', () => {
+    const text = `${H}/a,https://old.com/b,301,x\n/a,/c,301,x\n/c,/a,301,x\n`
+    expect(findRedirectProblems(text).cycles).toEqual([['/a', '/c']])
+    expect(validateRedirectsCsv(text)).toMatch(/\/a → https:\/\/old\.com\/b is ignored by the site/)
+  })
+
+  it('never drops a valid row to break a loop that only exists through a skipped row', () => {
+    const text = `${H}/a,https://old.com/b,301,x\n/b,/a,301,x\n`
+    expect(findRedirectProblems(text).cycles).toEqual([])
+    expect(sanitizeRedirectsCsv(text)).toBe(text)
   })
 })

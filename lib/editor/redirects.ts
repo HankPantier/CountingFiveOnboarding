@@ -75,6 +75,21 @@ function normalizeSourceLines(lines: Line[]): Line[] {
   })
 }
 
+const CONTROL_RE = /[\u0000-\u001f\u007f]/
+
+/**
+ * Mirror of the template loader's redirectDestinationError
+ * (src/lib/redirects/parse-redirects-csv.ts): a row whose destination fails it
+ * is SKIPPED at build, so it is never an edge of the live redirect graph.
+ */
+export function redirectDestinationError(to: string): string | null {
+  const t = to.trim()
+  if (!t.startsWith('/')) return 'non-relative destination'
+  if (t.startsWith('//') || t.startsWith('/\\')) return 'protocol-relative destination'
+  if (CONTROL_RE.test(t)) return 'control character in destination'
+  return null
+}
+
 // A Next.js path-pattern source (`/blog/:slug`, `/old/*`, `/(a|b)`) matches
 // many urls, so it is never compared against individual live pages.
 // The check runs on the PATH, so an absolute `https://host/about` (whose
@@ -221,7 +236,11 @@ export function liveRedirectWarnings(text: string, opts: RedirectOptions = {}): 
   if (live.size === 0) return []
   return parseRedirectRows(text)
     .filter(
-      (r) => !isPatternSource(r.from) && live.has(redirectKey(r.from)) && redirectKey(r.from) !== redirectKey(r.to)
+      (r) =>
+        !redirectDestinationError(r.to) &&
+        !isPatternSource(r.from) &&
+        live.has(redirectKey(r.from)) &&
+        redirectKey(r.from) !== redirectKey(r.to)
     )
     .map((r) => ({ from: r.from, to: r.to }))
 }
@@ -305,6 +324,11 @@ export type RedirectProblems = {
    * leading '/', e.g. an absolute old-site url) or carrying a ?query / #hash.
    */
   invalidSources: string[]
+  /**
+   * `from → to` of rows the template skips at build (destination not a same-site
+   * path, e.g. an absolute url). Never counted as edges.
+   */
+  skippedDestinations: string[]
 }
 
 /** Find redirect loops, self-redirects and redirected live pages. Pure. */
@@ -314,10 +338,16 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
   const selfRedirects: string[] = []
   const shadowedPages: string[] = []
   const invalidSources: string[] = []
+  const skippedDestinations: string[] = []
   for (const row of parseRedirectRows(text)) {
     const rawFrom = row.from.trim()
     if ((!rawFrom.startsWith('/') || /[?#]/.test(rawFrom)) && !invalidSources.includes(rawFrom)) {
       invalidSources.push(rawFrom)
+    }
+    // The template skips this row at build: it is not part of the live graph.
+    if (redirectDestinationError(row.to)) {
+      skippedDestinations.push(`${rawFrom} → ${row.to.trim()}`)
+      continue
     }
     const from = redirectKey(row.from)
     const to = redirectKey(row.to)
@@ -347,7 +377,7 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
     }
     for (const p of path) state.set(p, 'done')
   }
-  return { cycles, selfRedirects, shadowedPages, invalidSources }
+  return { cycles, selfRedirects, shadowedPages, invalidSources, skippedDestinations }
 }
 
 /**
@@ -355,8 +385,11 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
  * (the caller answers 422) or null when the file is safe to commit.
  */
 export function validateRedirectsCsv(text: string, opts: RedirectOptions = {}): string | null {
-  const { cycles, selfRedirects, shadowedPages, invalidSources } = findRedirectProblems(text, opts)
+  const { cycles, selfRedirects, shadowedPages, invalidSources, skippedDestinations } = findRedirectProblems(text, opts)
   const problems: string[] = []
+  for (const r of skippedDestinations) {
+    problems.push(`${r} is ignored by the site (the destination must be a path starting with /, not a full url)`)
+  }
   for (const s of invalidSources) {
     problems.push(
       s.startsWith('/')
@@ -395,6 +428,7 @@ export function normalizeRedirectSources(text: string): string {
 export function resolveRedirectTarget(text: string, url: string): string {
   const edges = new Map<string, string>()
   for (const row of parseRedirectRows(text)) {
+    if (redirectDestinationError(row.to)) continue
     const from = redirectKey(row.from)
     if (!edges.has(from)) edges.set(from, row.to)
   }
