@@ -41,7 +41,7 @@ import { buildBrandJson } from '@/lib/content/brand-json-builder'
 import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/design-variant-injector'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
-import { FALLBACK_PALETTE, FALLBACK_DESIGN_TOKENS } from '@/lib/content/deliverable-defaults'
+import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
 import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
@@ -169,6 +169,13 @@ export async function assembleContentPackage(
 
   if (!job) {
     return { ok: false, status: 404, error: 'Content job not found' }
+  }
+
+  // Brand gate: never package without a locked palette + design tokens. The old
+  // behaviour silently shipped FALLBACK_PALETTE (generic slate/teal), which is
+  // how most live sites ended up unbranded. Fail loudly instead.
+  if (!isDesignSystemLocked(job)) {
+    return { ok: false, status: 409, error: DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE }
   }
 
   const { data: session } = await supabase
@@ -398,8 +405,9 @@ export async function assembleContentPackage(
   // any CMS/editor without inheriting fonts/colors. Deterministic + cheap.
   const plainTextContent = buildPlainText(pages, firmName)
 
-  const palette = job.palette as PaletteData | null
-  const designTokens = job.design_tokens as DesignTokens | null
+  // Non-null: the brand gate at the top refused a job without both.
+  const palette = job.palette as PaletteData
+  const designTokens = job.design_tokens as DesignTokens
 
   let designMd: string | null = null
   if (palette && designTokens) {
@@ -418,12 +426,9 @@ export async function assembleContentPackage(
   }
 
   // Phase II JSON contract — emitted alongside the existing markdown outputs
-  // and consumed by the client-site template repo. brand.json + design.json
-  // are ALWAYS emitted: the template hard-requires both, so a session that
-  // packages before its palette/tokens are locked falls back to a neutral
-  // default rather than shipping a zip the template can't validate or theme.
-  const brandJson = buildBrandJson(schema, palette ?? FALLBACK_PALETTE)
-  const designJson = buildDesignJson(designTokens ?? FALLBACK_DESIGN_TOKENS)
+  // and consumed by the client-site template repo (which hard-requires both).
+  const brandJson = buildBrandJson(schema, palette)
+  const designJson = buildDesignJson(designTokens)
   const navJson = normalizeNavUrls(
     buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config),
     siteHost(session.website_url)
@@ -469,9 +474,6 @@ export async function assembleContentPackage(
   if (shipPricingPlans && !navJson.primary.some(item => item.url === PRICING_PLANS_URL)) {
     navJson.primary.push({ label: PRICING_PLANS_NAV_LABEL, url: PRICING_PLANS_URL })
   }
-
-  if (!palette) console.warn(`[package] brand.json — palette not locked, using neutral fallback`)
-  if (!designTokens) console.warn(`[package] design.json — design tokens not locked, using neutral fallback`)
 
   // Override logo.primary with the actual uploaded logo asset filename
   if (brandJson) {

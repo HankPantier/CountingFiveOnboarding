@@ -11,12 +11,13 @@ import type { PaletteData } from '@/types/palette'
 import type { DesignTokens } from '@/types/design-tokens'
 import type { SessionSchema } from '@/types/session-schema'
 import type { NavJson } from '@/types/nav-json'
+import { getPhaseStatus as getGatedPhaseStatus, isDesignSystemLocked } from '@/lib/content/brand-gate'
 
-export function getPhaseStatus(jobPhase: number, thisPhase: number): PhaseStatus {
-  if (thisPhase < jobPhase) return 'complete'
-  if (thisPhase === jobPhase) return 'active'
-  if (thisPhase === jobPhase + 1) return 'active'
-  return 'locked'
+// The sitemap card stays locked until the Design System is locked (see
+// lib/content/brand-gate.ts); the Design System card stays open on a job that
+// got past phase 1 without one.
+export function getPhaseStatus(jobPhase: number, thisPhase: number, designLocked = true): PhaseStatus {
+  return getGatedPhaseStatus(jobPhase, thisPhase, designLocked)
 }
 
 type SitemapEntry = { url: string; title: string; parent?: string; status?: string }
@@ -46,10 +47,11 @@ export default function PhaseStepper({
   confirmedSitemap: SitemapEntry[]
   githubRepo: string | null
 }) {
+  const designLocked = isDesignSystemLocked({ palette: existingPalette, design_tokens: existingTokens })
   return (
     <div className="space-y-4">
       {[1, 2, 3, 4, 5, 6].map(phase => {
-        const status = getPhaseStatus(currentPhase, phase)
+        const status = getPhaseStatus(currentPhase, phase, designLocked)
         const isComplete = status === 'complete'
 
         let content: React.ReactNode = null
@@ -63,7 +65,8 @@ export default function PhaseStepper({
               existingTokens={existingTokens}
               brand={brand}
               logoUrl={logoUrl}
-              isLocked={isComplete}
+              // Past phase 1, saving must not move the job back to phase 2.
+              isLocked={currentPhase > 1}
             />
           )
         } else if (phase === 2) {
