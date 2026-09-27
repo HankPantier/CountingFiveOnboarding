@@ -114,7 +114,7 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
     expect(validateRedirectsCsv(`${H}/About,/team,301,x\n`, { livePaths: ['/about'] })).toMatch(/has a real page/)
   })
 
-  it('ignores ?query and #hash for loop detection, absolute or root-relative', () => {
+  it('ignores a ?query or #hash on a root-relative destination for loop detection', () => {
     expect(findRedirectProblems(`${H}/a,/b?x=1,301,x\n/b,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
     expect(findRedirectProblems(`${H}/a,/b#top,301,x\n/b/,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
     expect(validateRedirectsCsv(`${H}/a?utm=1,/a,301,x\n`)).toMatch(/redirects to itself/)
