@@ -597,6 +597,10 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
 //     of the padding shorthand — the same rule either way) unless inside min() /
 //     clamp() (bounded), nor in the X component of a translate
 //     (transform: translateX / translate / translate3d, the translate property);
+//     min() counts as bounded only with a viewport-free argument, clamp() only
+//     with a viewport-free MIN (and VAL or MAX);
+//   - no huge POSITIVE horizontal offset (≥ 1600px / 100rem/em) in the same
+//     horizontal offsets or a translateX;
 //   - no large negative HORIZONTAL offset (≤ -200px, ≤ -12.5rem/em, ≤ -50%)
 //     in left/right/inset-inline*/margin-left/right/margin-inline* (and the
 //     horizontal parts of inset / margin) or text-indent. Vertical negatives
@@ -622,12 +626,21 @@ const HORIZONTAL_PADDING_PROPS = new Set(['padding-inline', 'padding-inline-star
 const NEGATIVE_LENGTH_RE = /(^|[\s,(])-(\d+(?:\.\d+)?|\.\d+)(px|rem|em|%)(?![\w%])/gi
 const LARGE_NEGATIVE: Record<string, number> = { px: 200, rem: 12.5, em: 12.5, '%': 50 }
 
-// The value with every min( … ) / clamp( … ) call removed (their result is
-// bounded by a non-viewport argument in practice).
+// Does a (sub)value carry a viewport unit once its bounded calls are removed?
+function hasViewportUnit(value: string): boolean {
+  return VIEWPORT_UNIT_RE.test(withoutBoundedCalls(value))
+}
+
+// The value with every BOUNDED min( … ) / clamp( … ) call replaced by 0, and
+// every unbounded one by a viewport-unit marker (so the caller still sees it):
+//   - min(a, b, …) is bounded when any argument is viewport-free (the result
+//     can't exceed it): min(100%, 60vw) yes, min(120vw, 130vh) no;
+//   - clamp(MIN, VAL, MAX) is bounded when MIN is viewport-free (a viewport
+//     floor — clamp(110vw, …) — always wins) and VAL or MAX is too.
 function withoutBoundedCalls(value: string): string {
   let out = value
   for (let guard = 0; guard < 20; guard++) {
-    const m = /\b(?:min|clamp)\(/i.exec(out)
+    const m = /\b(min|clamp)\(/i.exec(out)
     if (!m) break
     let depth = 0
     let end = -1
@@ -639,9 +652,28 @@ function withoutBoundedCalls(value: string): string {
       }
     }
     if (end === -1) break
-    out = `${out.slice(0, m.index)}0${out.slice(end + 1)}`
+    const args = splitTopLevelCommas(out.slice(m.index + m[0].length, end))
+    const free = args.map((a) => !hasViewportUnit(a))
+    const bounded =
+      m[1].toLowerCase() === 'min' ? free.some(Boolean) : free.length === 3 && free[0] && (free[1] || free[2])
+    out = `${out.slice(0, m.index)}${bounded ? '0' : '1vw'}${out.slice(end + 1)}`
   }
   return out
+}
+
+// A positive horizontal offset this large only ever pushes content past the
+// right edge of any screen (the widest layout is 1440px); nothing legit sits
+// 1600px to the side. % is never flagged: `left: 100%` is a normal tooltip.
+const POSITIVE_LENGTH_RE = /(^|[\s,(])\+?(\d+(?:\.\d+)?|\.\d+)(px|rem|em)(?![\w%])/gi
+const LARGE_POSITIVE: Record<string, number> = { px: 1600, rem: 100, em: 100 }
+
+function largePositive(value: string): string | null {
+  for (const m of value.matchAll(POSITIVE_LENGTH_RE)) {
+    const n = parseFloat(m[2])
+    const unit = m[3].toLowerCase()
+    if (n >= LARGE_POSITIVE[unit]) return `${m[2]}${m[3]}`
+  }
+  return null
 }
 
 function largeNegative(value: string): string | null {
@@ -720,6 +752,13 @@ export function layoutGuardErrors(css: string): string[] {
     const negParts = HORIZONTAL_OFFSET_PROPS.has(prop) || prop === 'text-indent' ? [value] : BOX_SHORTHANDS.has(prop) ? horizontalParts(value) : []
     const neg = negParts.map(largeNegative).find((n) => n !== null)
     if (neg) errors.push(`${shown} is not allowed — a negative horizontal offset of ${neg} (beyond -200px / -12.5rem / -50%) pushes content off the page.`)
+    const posParts = HORIZONTAL_OFFSET_PROPS.has(prop)
+      ? [value]
+      : BOX_SHORTHANDS.has(prop)
+        ? horizontalParts(value)
+        : translateXParts(prop, value)
+    const pos = posParts.map(largePositive).find((n) => n !== null)
+    if (pos) errors.push(`${shown} is not allowed — a horizontal offset of ${pos} (1600px / 100rem or more) pushes content past the screen edge; ${BLEED_HINT}.`)
   })
   return Array.from(new Set(errors))
 }

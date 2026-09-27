@@ -851,6 +851,42 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
     expect(layoutGuardErrors('[data-block="hero"] { padding-block: 8vh; padding-top: 10vw; }')).toEqual([])
   })
 
+  it('min() / clamp() count as bounded only without a viewport floor (DUI-3)', () => {
+    expect(layoutGuardErrors('[data-block="hero"]::before { width: clamp(110vw, 50%, 130vw); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"]::before { width: min(120vw, 130vh); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { padding-inline: clamp(5vw, 2rem, 3rem); }')).toHaveLength(1)
+    // Negatives: the common, legit forms stay allowed.
+    for (const css of [
+      '[data-block="hero"] { width: min(100vw, 1200px); }',
+      '[data-block="hero"] { width: min(100%, 60vw); }',
+      '[data-block="hero"] { width: clamp(20rem, 60vw, 70rem); }',
+      '[data-block="hero"] { padding-inline: clamp(1rem, 5vw, 3rem); }',
+      '[data-block="hero"] { width: clamp(1rem, min(5vw, 2rem), 3rem); }',
+      '[data-block="hero"] { transform: translateX(min(2vw, 1rem)); }',
+    ]) {
+      expect(layoutGuardErrors(css)).toEqual([])
+    }
+  })
+
+  it('rejects huge positive horizontal offsets, allows ordinary ones (DUI-3)', () => {
+    expect(layoutGuardErrors('[data-block="hero"]::before { left: 3000px; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"]::before { transform: translateX(3000px); }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"]::before { inset: 0 auto auto 2000px; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"]::before { margin-left: 120rem; }')).toHaveLength(1)
+    // Negatives: positioning and centring patterns real designs use.
+    for (const css of [
+      '[data-block="hero"]::before { left: 50%; transform: translateX(-50%); }',
+      '[data-block="hero"] .tip { left: 100%; margin-left: 12px; }',
+      '[data-block="hero"]::after { left: 120px; right: 24px; }',
+      '[data-block="hero"] { margin: 0 auto; max-width: 1200px; }',
+      '[data-block="hero"]::before { width: 200%; left: -25%; transform: rotate(-3deg); }',
+      '[data-block="hero"] { transform: translateX(100%); translate: 40px 0; }',
+      '[data-block="hero"] { margin-top: 2000px; top: 1600px; }',
+    ]) {
+      expect(layoutGuardErrors(css)).toEqual([])
+    }
+  })
+
   it('treats the padding shorthand like padding-inline (DUI-2)', () => {
     expect(layoutGuardErrors('[data-block="hero"] { padding: 0 5vw; }')).toHaveLength(1)
     expect(layoutGuardErrors('[data-block="hero"] { padding: 4rem 6vw; }')).toHaveLength(1)
