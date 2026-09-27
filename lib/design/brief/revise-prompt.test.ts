@@ -161,17 +161,14 @@ describe('the pricing-calculator hint is advisory (no hard action / primary requ
   })
 })
 
-describe('revise prompt: advisory palette contrast', () => {
-  const textFor = (palette: typeof VALID.palette) => texts(buildRevisePrompt({ ...ARGS, bundle: { ...VALID, palette } }).parts)
-  it('lists failing action pairs as advisory, not as render-check gates', () => {
-    const text = textFor({ ...VALID.palette, primary: '#003a42', action: '#cc381e' })
-    expect(text).toContain('PALETTE CONTRAST (advisory, not a gate')
-    expect(text).toContain('- action / primary: 2.4')
-    expect(text).not.toMatch(/RENDER-CHECK FAILURES[^\n]*\n(- [^\n]*\n)*- action \//)
-  })
-  it('adds nothing when both action pairs pass', () => {
-    // #767676 on white: 4.54:1; on the white primary it is the same pair.
-    const text = textFor({ ...VALID.palette, primary: '#ffffff', nearWhite: '#ffffff', nearBlack: '#000000', action: '#767676' })
-    expect(text).not.toContain('PALETTE CONTRAST')
+describe('revise prompt: no palette-level action contrast', () => {
+  it('a palette whose action pairs fail adds no contrast section; measured contrast failures still gate', () => {
+    const palette = { ...VALID.palette, primary: '#003a42', action: '#cc381e' }
+    const t = texts(buildRevisePrompt({ ...ARGS, bundle: { ...VALID, palette } }).parts)
+    expect(t).not.toContain('PALETTE CONTRAST')
+    const measured = 'Desktop (1440): “~$169–$229” (pricing-calculator › p) is 2.43:1 — needs 3:1 (text #cc381e on #003a42)'
+    const g = texts(buildRevisePrompt({ ...ARGS, bundle: { ...VALID, palette }, gateFailures: [measured] }).parts)
+    expect(g).toContain('RENDER-CHECK FAILURES — hard gates')
+    expect(g).toContain('2.43:1 — needs 3:1')
   })
 })

@@ -71,12 +71,6 @@ export function buildStaticPrefix(caps: DesignCapabilities): string {
   return prefix
 }
 
-// Per-run (dynamic) text, so adding it moved no cached-prefix bytes. Mirrors
-// checkActionContrast — advisory, never a rejection (see its comment for why
-// both action pairs can't pass together on a dark primary).
-export const ACTION_ON_PRIMARY_RULE =
-  'Action-colour text also appears as small kicker text on the primary colour and on the page background — keep it legible on both (4.5:1 is ideal); the platform reports this as advisory, it never rejects a palette.'
-
 export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: DesignBundle['palette']): string {
   if (freedom === 'keep') {
     const hexes = Object.entries(palette)
@@ -85,9 +79,9 @@ export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: Desi
     return `PALETTE: keep — every concept uses EXACTLY these six hex values: ${hexes}. Differentiate the concepts through type, tokens, treatments and CSS.`
   }
   if (freedom === 'free') {
-    return `PALETTE: free — invent a palette per concept from the brand brief, the references and the art direction. The current palette is a hint, not a rule. ${ACTION_ON_PRIMARY_RULE}`
+    return 'PALETTE: free — invent a palette per concept from the brand brief, the references and the art direction. The current palette is a hint, not a rule.'
   }
-  return `PALETTE: evolve — start from the current palette. Each concept may shift hue (up to about 30°), saturation and lightness and may replace secondary / complementary, but primary must stay recognisably the same colour family and action must stay a vivid, high-contrast CTA colour. ${ACTION_ON_PRIMARY_RULE}`
+  return 'PALETTE: evolve — start from the current palette. Each concept may shift hue (up to about 30°), saturation and lightness and may replace secondary / complementary, but primary must stay recognisably the same colour family and action must stay a vivid, high-contrast CTA colour.'
 }
 
 function currentDesignJson(current: DesignBundle): string {

@@ -6,7 +6,6 @@ import {
   generateThemeCss,
   checkThemeContrast,
   checkActionContrast,
-  actionContrastNotes,
   formatContrastFailure,
   ACTION_ON_PRIMARY_PAIR,
   ACTION_ON_BACKGROUND_PAIR,
@@ -107,11 +106,6 @@ describe('checkActionContrast — advisory action-colour pairs', () => {
     expect(checkThemeContrast(brand).map((f) => f.name)).toEqual([])
   })
 
-  it('actionContrastNotes labels them advisory', () => {
-    const notes = actionContrastNotes({ palette: failing })
-    expect(notes.length).toBeGreaterThan(0)
-    for (const n of notes) expect(n).toMatch(/^Contrast \(advisory, not blocking\): action \/ (primary|background): /)
-  })
 
   it('formats failures without a hint exactly as before', () => {
     expect(formatContrastFailure({ name: 'ink-fg / ink', ratio: 3.2, minRatio: 4.5, bg: '#000', fg: '#111' })).toBe('ink-fg / ink: 3.20:1 (need 4.5:1)')

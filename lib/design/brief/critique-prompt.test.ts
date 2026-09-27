@@ -90,14 +90,11 @@ describe('buildCritiquePrompt', () => {
   })
 })
 
-describe('critique prompt: advisory palette contrast', () => {
-  it('shows failing action pairs as advisory legibility input, separate from render-check failures', () => {
+describe('critique prompt: no palette-level action contrast', () => {
+  it('a palette whose action pairs fail adds no contrast section (only measured render checks count)', () => {
     const t = texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: { ...VALID, palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } } } }).parts)
-    expect(t).toContain('PALETTE CONTRAST (advisory — measured on the palette, not a gate')
-    expect(t).toContain('- action / primary: 2.4')
-  })
-  it('adds nothing when both action pairs pass', () => {
-    const palette = { ...VALID.palette, primary: '#ffffff', nearWhite: '#ffffff', nearBlack: '#000000', action: '#767676' }
-    expect(texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: { ...VALID, palette } } }).parts)).not.toContain('PALETTE CONTRAST')
+    expect(t).not.toContain('PALETTE CONTRAST')
+    expect(t).not.toContain('action / primary')
+    expect(t).toContain('RENDER-CHECK FAILURES') // the measured gate is untouched
   })
 })

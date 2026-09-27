@@ -12,7 +12,6 @@
 //                  + mobile renders, the task.
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
-import { checkActionContrast, formatContrastFailure } from '@/lib/content/theme-css-generator'
 import { conceptConsistencyNotes } from '../concept-consistency'
 import {
   MAX_CRITIQUE_ISSUES,
@@ -132,15 +131,6 @@ export function buildCritiquePrompt(args: CritiquePromptArgs): BuiltPrompt {
     parts.push({
       type: 'text',
       text: `CLAIM CHECK (measured by the platform — the concept's description vs the levers it set):\n${claims.map((c) => `- ${c}`).join('\n')}`,
-    })
-  }
-  // Advisory until the theme auto-corrects action text (checkActionContrast):
-  // the critic weighs it under legibility; it never blocks.
-  const actionContrast = checkActionContrast({ palette: bundle.palette })
-  if (actionContrast.length > 0) {
-    parts.push({
-      type: 'text',
-      text: `PALETTE CONTRAST (advisory — measured on the palette, not a gate; weigh it under legibility):\n${actionContrast.map((f) => `- ${formatContrastFailure(f)}`).join('\n')}`,
     })
   }
   parts.push({

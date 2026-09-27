@@ -6,7 +6,7 @@ import { parseTemplateMarker } from '../capabilities'
 import { DEFAULT_CAPABILITIES } from '../run-types'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
-import { ACTION_ON_PRIMARY_RULE, DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, paletteFreedomInstruction, type ConceptPromptArgs } from './index'
+import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, paletteFreedomInstruction, type ConceptPromptArgs } from './index'
 
 // Byte-stability goldens captured from 04ea820 (the commit immediately before
 // Task 22 introduced style axes) — ruling PF9 binds the L1/L2 prompt bytes
@@ -279,14 +279,8 @@ describe('style axes in the brief', () => {
   })
 })
 
-describe('palette instruction names the advisory action-text contrast (dynamic, not the cached prefix)', () => {
-  it('evolve and free carry the advisory action-text legibility rule; keep does not need it', () => {
-    expect(paletteFreedomInstruction('evolve', VALID.palette)).toContain(ACTION_ON_PRIMARY_RULE)
-    expect(paletteFreedomInstruction('free', VALID.palette)).toContain(ACTION_ON_PRIMARY_RULE)
-    expect(paletteFreedomInstruction('keep', VALID.palette)).not.toContain(ACTION_ON_PRIMARY_RULE)
-    expect(ACTION_ON_PRIMARY_RULE).toMatch(/advisory/)
-    expect(ACTION_ON_PRIMARY_RULE).not.toMatch(/rejected\b(?! a palette)/)
-    expect(ACTION_ON_PRIMARY_RULE).toContain('never rejects')
-    expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain(ACTION_ON_PRIMARY_RULE)
+describe('palette instruction carries no action-contrast target (it cannot be met until the theme auto-corrects)', () => {
+  it('evolve / free / keep never mention a contrast ratio for action text', () => {
+    for (const f of ['evolve', 'free', 'keep'] as const) expect(paletteFreedomInstruction(f, VALID.palette)).not.toMatch(/\d(\.\d)?:1|kicker|legible/i)
   })
 })

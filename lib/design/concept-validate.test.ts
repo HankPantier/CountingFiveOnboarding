@@ -19,10 +19,6 @@ describe('parseConceptsEnvelope', () => {
   })
 })
 
-// Advisory action-contrast notes (checkActionContrast) ride along on most
-// palettes; these assertions are about the other notes.
-const nonAdvisory = (notes: string[]) => notes.filter((n) => !n.startsWith('Contrast (advisory'))
-
 describe('validateConceptBundle', () => {
   it('accepts a good concept, forcing schemaVersion + concept meta, and renders its files', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), meta: { source: 'baseline' } }, CTX)
@@ -33,7 +29,7 @@ describe('validateConceptBundle', () => {
     expect(r.concept.files.themeCss.length).toBeGreaterThan(100)
     expect(r.concept.files.overridesCss).toContain('/* design-studio:hero */')
     expect(r.concept.bundle.css.blocks.hero).toBeTruthy()
-    expect(nonAdvisory(r.concept.notes)).toEqual([])
+    expect(r.concept.notes).toEqual([])
   })
 
   it('rejects a schema violation with the zod path', () => {
@@ -47,7 +43,7 @@ describe('validateConceptBundle', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.concept.bundle.style).toBeUndefined()
-    expect(nonAdvisory(r.concept.notes)).toEqual([expect.stringContaining('Style axes are not available on this site yet')])
+    expect(r.concept.notes).toEqual([expect.stringContaining('Style axes are not available on this site yet')])
     expect(JSON.parse(r.concept.files.designText).style).toBeUndefined()
   })
 
@@ -57,7 +53,7 @@ describe('validateConceptBundle', () => {
     expect(r.ok).toBe(true)
     if (!r.ok) return
     expect(r.concept.bundle.style).toEqual({ cards: 'flat' })
-    expect(nonAdvisory(r.concept.notes)).toEqual([])
+    expect(r.concept.notes).toEqual([])
     expect(JSON.parse(r.concept.files.designText).style).toEqual({ cards: 'flat' })
   })
 
@@ -77,7 +73,7 @@ describe('validateConceptBundle', () => {
   it('restores the current palette when palette freedom is keep', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, primary: '#5c1a2b' } }, { ...CTX, paletteFreedom: 'keep' })
     expect(r.ok && r.concept.bundle.palette.primary).toBe(VALID.palette.primary)
-    expect(r.ok && nonAdvisory(r.concept.notes)).toEqual([expect.stringContaining('keep')])
+    expect(r.ok && r.concept.notes).toEqual([expect.stringContaining('keep')])
   })
 
   it('rejects CSS the sanitizer refuses', () => {
@@ -86,16 +82,15 @@ describe('validateConceptBundle', () => {
     if (!r.ok) expect(r.errors[0]).toMatch(/^css\.global:/)
   })
 
-  it('never rejects for the action-colour pairs — they come back as advisory notes', () => {
-    // vermilion on deep teal: action / primary 2.47:1 (and any evolve/free concept)
-    const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, primary: '#003a42', action: '#cc381e' } }, CTX)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.concept.notes).toContainEqual(expect.stringMatching(/^Contrast \(advisory, not blocking\): action \/ primary: 2\.4\d:1/))
-    // bright orange on white: action / background ≈ 2.29:1
-    const o = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, action: '#ff8e27', nearWhite: '#ffffff' } }, CTX)
-    expect(o.ok).toBe(true)
-    if (o.ok) expect(o.concept.notes).toContainEqual(expect.stringMatching(/^Contrast \(advisory, not blocking\): action \/ background: 2\.2\d:1/))
+  it('never rejects or notes the action-colour pairs (Theme Studio warnings only)', () => {
+    for (const palette of [
+      { ...VALID.palette, primary: '#003a42', action: '#cc381e' }, // action / primary 2.47:1
+      { ...VALID.palette, action: '#ff8e27', nearWhite: '#ffffff' }, // action / background 2.29:1
+    ]) {
+      const r = validateConceptBundle({ ...rawOf(VALID), palette }, CTX)
+      expect(r.ok).toBe(true)
+      if (r.ok) expect(r.concept.notes).toEqual([])
+    }
   })
   it('rejects a palette that fails WCAG contrast', () => {
     const r = validateConceptBundle({ ...rawOf(VALID), palette: { ...VALID.palette, nearBlack: '#fafaf6', nearWhite: '#fafaf7' } }, CTX)

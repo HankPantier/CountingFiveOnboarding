@@ -120,8 +120,11 @@ function failingPairs(pairs: ContrastPair[]): ContrastFailure[] {
 // dark-primary site: contrast(a, primary) × contrast(a, background) =
 // contrast(primary, background), and 4.5 × 4.5 = 20.25:1 needs a near-black
 // primary (navy #003b71 on #f7f5f2 tops out at ~3.2:1 on both). So these are
-// warnings until the theme generator emits auto-corrected action-text tokens;
-// the Studio shows them to the operator, critic and reviser, never rejects.
+// Theme Studio warnings only until the theme generator emits auto-corrected
+// action-text tokens (that task reuses this helper). The Design Studio does
+// not use them at all: a concept can't satisfy both, so feeding them to the
+// critic / reviser would penalise and chase an impossible target. Real
+// rendered-text contrast (render-check, metrics.ts) is a separate gate.
 export const ACTION_ON_PRIMARY_PAIR = 'action / primary'
 export const ACTION_ON_BACKGROUND_PAIR = 'action / background'
 const ACTION_ON_PRIMARY_HINT =
@@ -139,11 +142,6 @@ export function checkActionContrast(brand: Pick<BrandJson, 'palette'>): Contrast
   ])
 }
 
-// Advisory notes for the Design Studio (validation notes, critic + reviser
-// input). Empty when both action pairs pass.
-export function actionContrastNotes(brand: Pick<BrandJson, 'palette'>): string[] {
-  return checkActionContrast(brand).map((f) => `Contrast (advisory, not blocking): ${formatContrastFailure(f)}.`)
-}
 
 // Regenerate the full theme.css contents from brand.json + design.json. The
 // output string must match the template's generate-theme.ts exactly.
