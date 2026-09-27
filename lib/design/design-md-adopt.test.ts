@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { designMdRewrite } from '@/lib/content/design-md-builder'
 import { BRAND_TEXT, DESIGN_TEXT } from './__fixtures__/theme-texts'
 import { designMdState, diffLines, directionFromVersionBundle, generateDesignMd, hashDesignMd, previewDesignMd } from './design-md-adopt'
-import { diffHunks } from './design-md-ui'
+import { designMdReplaceIsDestructive, diffHunks } from './design-md-ui'
 
 const gen = () => {
   const g = generateDesignMd({ brandText: BRAND_TEXT, designText: DESIGN_TEXT, schema: { business: { name: 'Acme CPA' } } })
@@ -68,6 +68,16 @@ describe('diffLines / previewDesignMd', () => {
     expect(p.removed).toBe(1)
     expect(previewDesignMd({ content: next, sha: 'b'.repeat(40) }, next).unchanged).toBe(true)
     expect(previewDesignMd(null, next)).toMatchObject({ state: 'absent', currentSha: null, unchanged: false })
+  })
+})
+
+describe('designMdReplaceIsDestructive', () => {
+  it('hand-written, edited AND legacy files get the destructive confirm; absent / untouched do not', () => {
+    expect(designMdReplaceIsDestructive('hand-written')).toBe(true)
+    expect(designMdReplaceIsDestructive('edited')).toBe(true)
+    expect(designMdReplaceIsDestructive('legacy')).toBe(true)
+    expect(designMdReplaceIsDestructive('absent')).toBe(false)
+    expect(designMdReplaceIsDestructive('untouched')).toBe(false)
   })
 })
 

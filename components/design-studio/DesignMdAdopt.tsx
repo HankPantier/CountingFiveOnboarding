@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { DESIGN_MD_STATE_COPY, diffHunks, type DesignMdPreviewDto } from '@/lib/design/design-md-ui'
+import { DESIGN_MD_STATE_COPY, designMdReplaceIsDestructive, diffHunks, type DesignMdPreviewDto } from '@/lib/design/design-md-ui'
 import InlineConfirm from './InlineConfirm'
 import { designApi, errorMessage } from './api'
 import { SECONDARY_BTN_SM } from './styles'
@@ -48,6 +48,7 @@ export default function DesignMdAdopt({ sessionId, onChanged }: { sessionId: str
   }
 
   const hunks = preview ? diffHunks(preview.diff) : null
+  const destructive = preview ? designMdReplaceIsDestructive(preview.state) : false
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border-default px-3 py-2">
@@ -69,7 +70,7 @@ export default function DesignMdAdopt({ sessionId, onChanged }: { sessionId: str
 
       {preview && hunks && (
         <div className="flex flex-col gap-2">
-          <p className={`font-body text-xs ${preview.state === 'hand-written' || preview.state === 'edited' ? 'text-warning-strong' : 'text-text-secondary'}`}>
+          <p className={`font-body text-xs ${destructive ? 'text-warning-strong' : 'text-text-secondary'}`}>
             {DESIGN_MD_STATE_COPY[preview.state]}
           </p>
           {preview.unchanged ? (
@@ -108,14 +109,16 @@ export default function DesignMdAdopt({ sessionId, onChanged }: { sessionId: str
               <InlineConfirm
                 label={preview.state === 'absent' ? 'Create design.md' : 'Replace design.md'}
                 prompt={
-                  preview.state === 'hand-written' || preview.state === 'edited'
-                    ? 'Replace the hand-written design.md on the draft with the generated one? The removed lines above are lost (git history keeps them).'
-                    : 'Write the generated design.md to the draft?'
+                  preview.state === 'legacy'
+                    ? 'Replace this older design.md with the generated one? Any hand edits in it are lost (git history keeps them).'
+                    : destructive
+                      ? 'Replace the hand-written design.md on the draft with the generated one? The removed lines above are lost (git history keeps them).'
+                      : 'Write the generated design.md to the draft?'
                 }
                 confirmLabel={preview.state === 'absent' ? 'Create' : 'Replace'}
                 busy={busy}
                 onConfirm={adopt}
-                tone={preview.state === 'hand-written' || preview.state === 'edited' ? 'destructive' : 'neutral'}
+                tone={destructive ? 'destructive' : 'neutral'}
               />
             )}
             <button type="button" onClick={() => setPreview(null)} disabled={busy} className={SECONDARY_BTN_SM}>

@@ -28,6 +28,16 @@ export const DESIGN_MD_STATE_COPY: Record<DesignMdState, string> = {
   untouched: 'This design.md is the platform’s own and Studio commits already keep it up to date.',
 }
 
+/**
+ * Whether replacing the current file can lose writing nobody generated from
+ * THIS theme: a hand-written or hand-edited file, and a legacy one too (it
+ * predates edit detection, so hand edits in it can't be ruled out). Those get
+ * the destructive confirm; only a missing or untouched file does not.
+ */
+export function designMdReplaceIsDestructive(state: DesignMdState): boolean {
+  return state === 'hand-written' || state === 'edited' || state === 'legacy'
+}
+
 export type DiffRow = DiffLine | { op: 'gap'; skipped: number }
 
 /**
