@@ -35,7 +35,7 @@ const afterCbs: (() => Promise<void>)[] = []
 vi.mock('next/server', () => ({ after: (cb: () => Promise<void>) => afterCbs.push(cb) }))
 vi.mock('./vercel-alias', () => ({ deriveVercelPreviewUrl: (repo: string) => derive(repo) }))
 
-import { DERIVE_DEADLINE_MS, DERIVE_RETRY_MS, __resetPreviewUrlCacheForTests, cacheVercelPreviewUrl, getPreviewSiteUrl, isDerivedVercelUrl, resolvePreviewSiteUrl } from './site-url'
+import { DERIVE_DEADLINE_MS, DERIVE_RETRY_MS, __resetPreviewUrlCacheForTests, cacheVercelPreviewUrl, classifyStoredPreviewUrl, getPreviewSiteUrl, lookupVercelPreviewUrl, resolvePreviewSiteUrl } from './site-url'
 
 const ARGS = { jobId: 'j', githubRepo: 'o/r' }
 
@@ -189,20 +189,41 @@ describe('cacheVercelPreviewUrl', () => {
   })
 })
 
-describe('isDerivedVercelUrl', () => {
+describe('classifyStoredPreviewUrl', () => {
   beforeEach(() => {
     __resetPreviewUrlCacheForTests()
     derive.mockReset()
+    afterCbs.length = 0
   })
 
-  it('is true only when the stored URL equals the derived Vercel address', async () => {
+  it('warm hit: vercel only when the stored URL equals the derived alias', async () => {
     derive.mockResolvedValue('https://acme.vercel.app/')
-    expect(await isDerivedVercelUrl(ARGS, 'https://acme.vercel.app/')).toBe(true)
-    expect(await isDerivedVercelUrl(ARGS, 'https://staging.acme.test/')).toBe(false)
+    await lookupVercelPreviewUrl('o/r', 1000)
+    expect(classifyStoredPreviewUrl('o/r', 'https://acme.vercel.app/', 2000)).toBe('vercel')
+    expect(classifyStoredPreviewUrl('o/r', 'https://other.vercel.app/', 2000)).toBe('override')
+    expect(classifyStoredPreviewUrl('o/r', 'https://staging.acme.test/', 2000)).toBe('override')
+    expect(derive).toHaveBeenCalledTimes(1)
+    expect(afterCbs).toHaveLength(0)
   })
 
-  it('is false when nothing is derived', async () => {
+  it('warm miss (nothing derivable): override, even for a vercel.app host', async () => {
     derive.mockResolvedValue(null)
-    expect(await isDerivedVercelUrl(ARGS, 'https://acme.vercel.app/')).toBe(false)
+    await lookupVercelPreviewUrl('o/r', 1000)
+    expect(classifyStoredPreviewUrl('o/r', 'https://acme.vercel.app/', 2000)).toBe('override')
+    expect(afterCbs).toHaveLength(0)
+  })
+
+  it('cold: answers at once (provisional by host) and refreshes the lookup in after()', async () => {
+    let release: (v: string) => void = () => {}
+    derive.mockReturnValue(new Promise<string>((r) => (release = r)))
+    expect(classifyStoredPreviewUrl('o/r', 'https://acme.vercel.app/', 1000)).toBe('vercel')
+    expect(classifyStoredPreviewUrl('o/r', 'https://staging.acme.test/', 1000)).toBe('override')
+    expect(afterCbs.length).toBeGreaterThan(0)
+    expect(derive).toHaveBeenCalledTimes(1) // shared in-flight refresh
+    release('https://acme-cpa.vercel.app/')
+    await Promise.all(afterCbs.map((cb) => cb()))
+    // Now warm: the provisional answer is corrected.
+    expect(classifyStoredPreviewUrl('o/r', 'https://acme.vercel.app/', 2000)).toBe('override')
+    expect(classifyStoredPreviewUrl('o/r', 'https://acme-cpa.vercel.app/', 2000)).toBe('vercel')
   })
 })

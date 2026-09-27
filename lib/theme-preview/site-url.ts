@@ -129,16 +129,26 @@ export async function getPreviewSiteUrl(args: { jobId: string; githubRepo: strin
   return (await resolvePreviewSiteUrl(args)).url
 }
 
-// Is a STORED preview_url just the auto-derived Vercel address (cached by
-// cacheVercelPreviewUrl) rather than an operator's own override? Compared
-// against the (memoized) lookup, bounded by the same deadline; a timed-out
-// or failed lookup answers false, i.e. "treat it as the operator's".
-export async function isDerivedVercelUrl(args: { jobId: string; githubRepo: string }, storedUrl: string): Promise<boolean> {
-  const task = lookupVercelPreviewUrl(args.githubRepo)
-  const alias = await withDeadline(task, DERIVE_DEADLINE_MS)
-  if (alias === TIMED_OUT) {
-    keepAliveAfterResponse(task)
+const isVercelAppHost = (url: string): boolean => {
+  try {
+    return new URL(url).hostname.toLowerCase().endsWith('.vercel.app')
+  } catch {
     return false
   }
-  return alias !== null && alias === storedUrl
+}
+
+// Is a STORED preview_url the auto-derived Vercel address (cached by
+// cacheVercelPreviewUrl) or an operator's own override? Answers from the
+// in-memory lookup result only — never waits on GitHub:
+// - warm hit: 'vercel' iff it equals the derived alias;
+// - warm miss (nothing derivable): 'override';
+// - cold: provisionally 'vercel' for a *.vercel.app host, else 'override',
+//   and the lookup is refreshed in after() so the next read is exact.
+export function classifyStoredPreviewUrl(githubRepo: string, storedUrl: string, now: number = Date.now()): 'vercel' | 'override' {
+  const hit = found.get(githubRepo)
+  if (hit && now - hit.at < DERIVE_RETRY_MS) return hit.url === storedUrl ? 'vercel' : 'override'
+  const last = failedAt.get(githubRepo)
+  if (last !== undefined && now - last < DERIVE_RETRY_MS) return 'override'
+  keepAliveAfterResponse(lookupVercelPreviewUrl(githubRepo, now))
+  return isVercelAppHost(storedUrl) ? 'vercel' : 'override'
 }

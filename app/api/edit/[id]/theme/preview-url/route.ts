@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveEditContext } from '../../_helpers'
 import { createServerClient } from '@/lib/supabase/server'
 import { MAIN_BRANCH, readSiteConfigSiteUrl } from '@/lib/github/repo-files'
-import { isDerivedVercelUrl, resolvePreviewSiteUrl } from '@/lib/theme-preview/site-url'
+import { classifyStoredPreviewUrl, resolvePreviewSiteUrl } from '@/lib/theme-preview/site-url'
 import { internalError } from '@/lib/api/errors'
 import type { PreviewUrlInfo } from '../_theme'
 
@@ -50,14 +50,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // What the preview fetches (resolvePreviewSiteUrl: stored preview_url →
 // verified Vercel address, cached into preview_url → site.config). A stored
 // value equal to the derived Vercel address is reported as source 'vercel',
-// not as an operator override, so the UI can tell them apart.
+// not as an operator override, so the UI can tell them apart. That check
+// reads only the in-memory lookup result (classifyStoredPreviewUrl) and never
+// waits on GitHub.
 async function previewUrlInfo(ctx: { jobId: string; githubRepo: string }): Promise<PreviewUrlInfo> {
   const args = { jobId: ctx.jobId, githubRepo: ctx.githubRepo }
   const [resolved, configUrl] = await Promise.all([resolvePreviewSiteUrl(args), readSiteConfigSiteUrl(ctx.githubRepo, MAIN_BRANCH)])
   let source: PreviewUrlInfo['source']
   if (resolved.source === 'config') source = 'siteUrl'
   else if (resolved.source === 'vercel') source = 'vercel'
-  else source = resolved.url && (await isDerivedVercelUrl(args, resolved.url)) ? 'vercel' : 'override'
+  else source = resolved.url ? classifyStoredPreviewUrl(ctx.githubRepo, resolved.url) : 'override'
   const previewUrl = resolved.source === 'config' ? null : resolved.url
   return { previewUrl, source, configUrl, effectiveUrl: resolved.url }
 }

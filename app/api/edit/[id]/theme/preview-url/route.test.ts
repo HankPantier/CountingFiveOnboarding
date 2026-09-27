@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const SID = '7ce3c00a-f6ad-41f3-86cc-6bdfc3af7184'
 const m = vi.hoisted(() => ({
   resolve: vi.fn(),
-  isDerived: vi.fn(async (_a: unknown, _u: string) => false),
+  classify: vi.fn((_repo: string, _u: string): 'vercel' | 'override' => 'override'),
   updateError: null as { message: string } | null,
   updates: [] as unknown[],
 }))
@@ -13,7 +13,7 @@ vi.mock('../../_helpers', () => ({
 }))
 vi.mock('@/lib/theme-preview/site-url', () => ({
   resolvePreviewSiteUrl: (a: unknown) => m.resolve(a),
-  isDerivedVercelUrl: (a: unknown, u: string) => m.isDerived(a, u),
+  classifyStoredPreviewUrl: (repo: string, u: string) => m.classify(repo, u),
 }))
 vi.mock('@/lib/github/repo-files', () => ({ MAIN_BRANCH: 'main', readSiteConfigSiteUrl: async () => 'https://www.acmecpa.com' }))
 vi.mock('@/lib/supabase/server', () => ({
@@ -37,7 +37,7 @@ const patch = (previewUrl: unknown) =>
 
 beforeEach(() => {
   m.resolve.mockReset()
-  m.isDerived.mockReset().mockResolvedValue(false)
+  m.classify.mockReset().mockReturnValue('override')
   m.updateError = null
   m.updates = []
 })
@@ -56,10 +56,10 @@ describe('GET /theme/preview-url — source', () => {
 
   it("reports a stored URL equal to the derived Vercel address as 'vercel', not an override", async () => {
     m.resolve.mockResolvedValue({ url: 'https://acme.vercel.app/', source: 'override' })
-    m.isDerived.mockResolvedValue(true)
+    m.classify.mockReturnValue('vercel')
     const body = await (await GET(new Request('http://x'), params)).json()
     expect(body.source).toBe('vercel')
-    expect(m.isDerived).toHaveBeenCalledWith({ jobId: 'j', githubRepo: 'o/r' }, 'https://acme.vercel.app/')
+    expect(m.classify).toHaveBeenCalledWith('o/r', 'https://acme.vercel.app/')
   })
 
   it("reports a freshly derived address as 'vercel' and the site.config fallback as 'siteUrl'", async () => {
