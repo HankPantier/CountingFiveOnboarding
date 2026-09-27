@@ -42,7 +42,8 @@ import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { applyInkBands, deriveHeroEyebrow, isHomePage } from '@/lib/content/design-variant-injector'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
-import { buildNavJson, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
+import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
@@ -134,6 +135,8 @@ export type PackageResult =
       awaitingClient?: PageRef[]
       // Pages still pending/running — they'd otherwise be silently missing from the package.
       notReady?: PageRef[]
+      // Pages still pointing at the template's placeholder art (or an empty image src).
+      placeholderRefs?: PlaceholderRef[]
     }
   | {
       ok: true
@@ -143,6 +146,9 @@ export type PackageResult =
       sizeKB: number
       redirectIssues: RedirectIssue[]
       linkWarnings: string[]
+      // Nav labels that will crowd/overflow the header (warn-only; curated
+      // labels are never auto-shortened — see lintNavLabels).
+      navLabelWarnings: string[]
       // Referenced hero/inline images vs. what actually shipped under
       // public/content-assets/. `missing` non-empty means the site will render
       // "Image not found" on those refs — the operator should Re-pull images.
@@ -581,6 +587,14 @@ export async function assembleContentPackage(
   })
   const errorsFile = buildErrorsFile(pages)
 
+  // Preflight: never ship the site template's placeholder art (a solid dark
+  // block) or an image with no source as if it were real imagery.
+  const placeholderRefs = findPlaceholderRefs(pageFiles)
+  if (placeholderRefs.length > 0) {
+    console.warn(`[package] Placeholder image refs: ${placeholderRefs.map((r) => `${r.page}→${r.ref}`).join(', ')}`)
+    return { ok: false, status: 409, error: placeholderRefsMessage(placeholderRefs), placeholderRefs }
+  }
+
   const llmsTxt = buildLlmsTxt(firmName, brandDoc.summary, sitemap, pages)
   const llmsFullTxt = buildLlmsFullTxt(firmName, brandDoc.fullDoc, sitemap, pages)
   const robotsTxt = buildRobotsTxt(session.website_url)
@@ -775,6 +789,11 @@ export async function assembleContentPackage(
     console.warn(`[package] ${linkWarnings.length} internal-link warning(s):`, linkWarnings.join(' | '))
   }
 
+  const navLabelWarnings = lintNavLabels(navJson)
+  if (navLabelWarnings.length > 0) {
+    console.warn(`[package] ${navLabelWarnings.length} nav-label warning(s):`, navLabelWarnings.join(' | '))
+  }
+
   // Image-coverage guard: every hero/inline image ref should have a real file
   // bundled under public/content-assets/. When resolution silently returns
   // fewer (missing PEXELS_API_KEY, Pexels outage, rate-limit) the page text
@@ -796,6 +815,7 @@ export async function assembleContentPackage(
     sizeKB: Math.round(zipBuffer.length / 1024),
     redirectIssues,
     linkWarnings,
+    navLabelWarnings,
     imageCoverage,
     deploy,
   }
