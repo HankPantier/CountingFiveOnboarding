@@ -2,20 +2,22 @@
 -- 081: Design Studio chat state — the "Fix in chat" concept persists
 -- ============================================================
 --
--- "Fix in chat" handed a run concept to the chat for ONE turn only: the
--- concept's bundle rode with that message, and every follow-up turn lost it.
--- The chat has no row of its own (design_chat_messages is per message), so this
--- one-row-per-session table holds the chat's durable state:
+-- "Fix in chat" handed a run concept to the chat for ONE turn only. The chat
+-- now re-sends the concept id with every message while its chip shows (the
+-- server re-validates it each turn), so follow-up turns keep it without this
+-- table. What the table adds is surviving a RELOAD: the chat has no row of its
+-- own (design_chat_messages is per message), so this one-row-per-session table
+-- remembers the chip:
 --
---   adopted_concept_id  the concept the chat keeps in context until a turn
---                       commits a version, the admin clears it, or the chat is
---                       cleared. Validated on every turn exactly like the
---                       per-message id (a READY concept of THIS session).
---                       ON DELETE SET NULL: a deleted run drops it.
+--   adopted_concept_id  the concept in play until a turn commits a version,
+--                       the admin clears it, or the chat is cleared.
+--                       Validated on read exactly like the per-message id (a
+--                       READY concept of THIS session). ON DELETE SET NULL: a
+--                       deleted run drops it.
 --
--- The app works BEFORE this migration too: lib/design/chat-store.ts reads and
--- writes this table fail-soft (a missing table just means the hand-off lasts
--- one turn, as before).
+-- The app works BEFORE this migration too: lib/design/chat-store.ts treats a
+-- missing table as "nothing stored" (warned once per process), so the only
+-- loss is the chip after a reload.
 --
 -- Idempotent. Run in Supabase → SQL Editor, then regenerate types/database.ts.
 -- ============================================================

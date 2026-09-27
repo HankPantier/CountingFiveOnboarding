@@ -56,7 +56,8 @@ import {
   type ChatRequest,
 } from './chat-history'
 import { clearAdoptedConceptIf, insertChatMessage, listChatMessages, setAdoptedConceptId } from './chat-store'
-import { loadAdoptableConcept, readPersistedAdoption, type AdoptedConcept } from './chat-adopt'
+import { loadAdoptableConcept, type AdoptedConcept } from './chat-adopt'
+import { MISSING_CONCEPT } from './chat-ui'
 import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
 import { chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_MAX_STEPS, DEFAULT_CHAT_PAGE, TURN_BUDGET_MS, type DesignChatMessage } from './chat-types'
@@ -123,7 +124,7 @@ export function chatStepTools(now: () => number, turnDeadlineAt: number): { acti
 }
 
 const MISSING_ATTACHMENT = 'An attached image could not be found — attach it again.'
-export const MISSING_CONCEPT = 'That concept is no longer available — open the run and pick it again.'
+export { MISSING_CONCEPT }
 
 async function inlineImage(db: Db, sessionId: string, attachmentId: string): Promise<InlineImage> {
   const bytes = await downloadDesignImage(db, attachmentStoragePath(sessionId, attachmentId))
@@ -147,19 +148,17 @@ export async function prepareChatTurn(
   const current = bundleFromRepoFiles(draftFiles, { name: latestName ?? 'Current design', source: 'chat' })
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}`.slice(0, 500) }
 
-  // "Fix in chat": the concept must be a finished concept of THIS session
-  // (getConcept scopes by the gated session id). One handed over on an earlier
-  // message stays in context (design_chat_state) until a turn commits a
-  // version or the admin clears it — re-validated here on every turn.
+  // "Fix in chat": the client sends the concept id on EVERY turn while its
+  // chip shows, and it is re-validated here each time: a finished concept of
+  // THIS session (getConcept scopes by the gated session id), else a 400 the
+  // chat answers by dropping the chip. design_chat_state (migration 081) only
+  // lets the chip survive a reload; the turn never depends on it.
   let adopt: AdoptedConcept | null = null
-  let adoptCarried = false
   if (request.conceptId) {
     adopt = await loadAdoptableConcept(db, actor.sessionId, request.conceptId)
     if (!adopt) return { ok: false, status: 400, error: MISSING_CONCEPT }
-  } else {
-    adopt = await readPersistedAdoption(db, actor.sessionId)
-    adoptCarried = adopt !== null
   }
+  const adoptCarried = adopt !== null && request.conceptCarried === true
 
   // This turn's attachments must exist in THIS session's folder (the path is
   // built from the gated session id, so a foreign id can't reach anything).
@@ -247,8 +246,9 @@ export async function prepareChatTurn(
     attachmentIds: request.attachmentIds,
     createdBy: actor.adminId,
   })
-  // The turn is accepted: a newly handed-over concept now persists.
-  if (request.conceptId && adopt) await setAdoptedConceptId(db, actor.sessionId, adopt.id)
+  // The turn is accepted: remember the concept for a reload (idempotent upsert;
+  // fail-soft — a missing table only costs the reload).
+  if (adopt) await setAdoptedConceptId(db, actor.sessionId, adopt.id)
   return { ok: true, turn }
 }
 

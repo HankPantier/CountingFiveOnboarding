@@ -134,28 +134,34 @@ describe('prepareChatTurn', () => {
     expect(m.setAdopted).toHaveBeenCalledWith(DB, SID, CID2)
     expect(m.insert.mock.invocationCallOrder[0]).toBeLessThan(m.setAdopted.mock.invocationCallOrder[0])
   })
-  it('"Fix in chat": a follow-up turn keeps the persisted concept in context (re-validated, session-scoped)', async () => {
+  it('"Fix in chat": a follow-up turn re-sends the concept (carried) — kept in context and re-validated, never read from the table', async () => {
     const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
-    m.getAdopted.mockResolvedValue(CID2)
     m.getConcept.mockResolvedValue(makeConceptRow({ id: CID2, status: 'ready', bundle: asJson({ ...VALID, name: 'Sabine Tide Line' }) }))
-    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [] }), 0)
+    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2, conceptCarried: true }), 0)
     if (!r.ok) throw new Error(r.error)
-    expect(m.getAdopted).toHaveBeenCalledWith(DB, SID)
     expect(m.getConcept).toHaveBeenCalledWith(DB, SID, CID2)
+    expect(m.getAdopted).not.toHaveBeenCalled()
     expect(r.turn.adoptedConceptId).toBe(CID2)
     expect(r.turn.turnContext).toContain(ADOPT_CARRIED_NOTE)
     expect(r.turn.turnContext).toContain('<<<CONCEPT_NOTES\nName: Sabine Tide Line')
-    expect(m.setAdopted).not.toHaveBeenCalled()
+    // Idempotent upsert every turn — only for a reload.
+    expect(m.setAdopted).toHaveBeenCalledWith(DB, SID, CID2)
   })
-  it('"Fix in chat": a persisted concept that is no longer ready is cleared, and the turn goes on without it', async () => {
+  it('"Fix in chat": works without migration 081 — a failed chat-state write never fails the turn', async () => {
     const CID2 = '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90'
-    m.getAdopted.mockResolvedValue(CID2)
-    m.getConcept.mockResolvedValue(null)
+    m.getConcept.mockResolvedValue(makeConceptRow({ id: CID2, status: 'ready', bundle: asJson({ ...VALID, name: 'Sabine Tide Line' }) }))
+    m.setAdopted.mockResolvedValue(false)
+    const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [], conceptId: CID2, conceptCarried: true }), 0)
+    if (!r.ok) throw new Error(r.error)
+    expect(r.turn.turnContext).toContain('CONCEPT TO BRING TO THE DRAFT')
+  })
+  it('"Fix in chat": a turn without a concept id carries none (the chip was cleared)', async () => {
+    m.getAdopted.mockResolvedValue('2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90')
     const r = await prepareChatTurn(DB, ACTOR, req({ attachmentIds: [] }), 0)
     if (!r.ok) throw new Error(r.error)
     expect(r.turn.adoptedConceptId).toBeNull()
     expect(r.turn.turnContext).not.toContain('CONCEPT TO BRING TO THE DRAFT')
-    expect(m.setAdopted).toHaveBeenCalledWith(DB, SID, null)
+    expect(m.getConcept).not.toHaveBeenCalled()
   })
   it('"Fix in chat": a missing / unfinished concept is a 400 before anything is saved', async () => {
     m.getConcept.mockResolvedValue(null)

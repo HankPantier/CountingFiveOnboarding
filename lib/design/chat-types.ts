@@ -53,4 +53,7 @@ export interface DesignChatRequestBody {
   // "Fix in chat" (WS-B): a Studio concept of this session the admin wants
   // brought to the draft; its validated bundle joins this turn's context.
   conceptId?: string
+  // The concept was handed over on an EARLIER message and is still in play —
+  // the client re-sends it every turn while its chip shows (only a prompt note).
+  conceptCarried?: boolean
 }

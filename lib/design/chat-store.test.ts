@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { fakeSupabase } from './__fixtures__/fake-supabase'
 import { SID, makeChatRow } from './__fixtures__/rows'
 import {
@@ -10,6 +10,7 @@ import {
   listChatMessages,
   referencedAttachmentIds,
   setAdoptedConceptId,
+  __resetChatStateWarningForTests,
 } from './chat-store'
 
 const A1 = '0b6f1c2e-5d4a-4e8b-9c1d-2f3a4b5c6d7e'
@@ -61,10 +62,26 @@ describe('chat store', () => {
     expect(f.opsFor('design_chat_state', 2)).toContainEqual(['eq', 'adopted_concept_id', C])
     expect(f.opsFor('design_chat_state', 2)).toContainEqual(['eq', 'session_id', SID])
   })
-  it('the adopted concept is fail-soft (a missing table = no hand-off, never a crash)', async () => {
-    const f = fakeSupabase({ design_chat_state: [{ error: { message: 'relation does not exist' } }, { error: { message: 'nope' } }] })
+  it('before migration 081 (table missing): reads are null, writes/clears count as done, warned ONCE per process', async () => {
+    __resetChatStateWarningForTests()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const missing = { code: 'PGRST205', message: "Could not find the table 'public.design_chat_state' in the schema cache" }
+    const f = fakeSupabase({ design_chat_state: [{ error: missing }, { error: missing }, { error: { code: '42P01', message: 'relation "design_chat_state" does not exist' } }, { error: missing }] })
+    expect(await getAdoptedConceptId(f.client, SID)).toBeNull()
+    expect(await setAdoptedConceptId(f.client, SID, null)).toBe(true)
+    expect(await setAdoptedConceptId(f.client, SID, '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90')).toBe(true)
+    await clearAdoptedConceptIf(f.client, SID, '2d8b3e4f-7a6c-4a0d-9e3f-4b5c6d7e8f90')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toMatch(/081/)
+    warn.mockRestore()
+  })
+  it('a real DB error (table present) is a failed write and warns each time', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const f = fakeSupabase({ design_chat_state: [{ error: { code: '57014', message: 'timeout' } }, { error: { code: '57014', message: 'timeout' } }] })
     expect(await getAdoptedConceptId(f.client, SID)).toBeNull()
     expect(await setAdoptedConceptId(f.client, SID, null)).toBe(false)
+    expect(warn).toHaveBeenCalledTimes(2)
+    warn.mockRestore()
   })
   it('throws on DB errors', async () => {
     const f = fakeSupabase({ design_chat_messages: [{ error: { message: 'boom' } }] })

@@ -16,7 +16,7 @@ import {
 } from './chat-types'
 
 export type ChatMessageRow = Tables<'design_chat_messages'>
-export type ChatRequest = { text: string; attachmentIds: string[]; page: string | null; conceptId?: string }
+export type ChatRequest = { text: string; attachmentIds: string[]; page: string | null; conceptId?: string; conceptCarried?: boolean }
 type Parts = DesignChatMessage['parts']
 
 export function parseChatRequest(raw: unknown): { ok: true; request: ChatRequest } | { ok: false; error: string } {
@@ -41,7 +41,8 @@ export function parseChatRequest(raw: unknown): { ok: true; request: ChatRequest
     if (typeof raw.conceptId !== 'string' || !isUuid(raw.conceptId)) return { ok: false, error: 'conceptId must be a concept id.' }
     conceptId = raw.conceptId.toLowerCase()
   }
-  return { ok: true, request: { text, attachmentIds, page, ...(conceptId ? { conceptId } : {}) } }
+  const carried = conceptId !== undefined && raw.conceptCarried === true
+  return { ok: true, request: { text, attachmentIds, page, ...(conceptId ? { conceptId } : {}), ...(carried ? { conceptCarried: true } : {}) } }
 }
 
 const PAGE_ERROR = 'page must be a site path like /services.'

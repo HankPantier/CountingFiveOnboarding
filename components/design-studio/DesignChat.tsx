@@ -6,7 +6,7 @@ import { useChat } from '@ai-sdk/react'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
 import { messageText } from '@/lib/design/chat-history'
 import { CHAT_TEXT_MAX, MAX_ATTACHMENTS_PER_MESSAGE, type ChatAttachmentDto, type DesignChatMessage } from '@/lib/design/chat-types'
-import { chatBlocks, chatRequestErrorText, lastAssistant, messageCommitted, restoresComposer, type ChatBlock } from '@/lib/design/chat-ui'
+import { adoptAfterRefusal, chatBlocks, chatRequestErrorText, lastAssistant, messageCommitted, restoresComposer, type ChatBlock } from '@/lib/design/chat-ui'
 import { SIGNED_VIEW_STALE_MS, isNearBottom } from '@/lib/design/studio-ui'
 import AnnotateCanvas, { type AnnotateSource } from './AnnotateCanvas'
 import InlineConfirm from './InlineConfirm'
@@ -37,8 +37,10 @@ const TONE: Record<'success' | 'warning' | 'error', string> = {
   error: 'border-error/20 bg-error/10 text-error',
 }
 
-// `persisted`: the server already keeps it in the chat's context (it was sent
-// with an earlier message) — later messages don't carry the id again.
+// `persisted`: it rode with an earlier message (or came back with the history)
+// and is still in play. The id is re-sent with EVERY message while the chip
+// shows — the server re-validates it each turn, so nothing depends on the
+// server-side copy (design_chat_state), which only restores the chip on reload.
 type Adopt = { conceptId: string; name: string; persisted: boolean }
 
 // The Design Studio revision chat (P5). History is server-owned
@@ -46,8 +48,8 @@ type Adopt = { conceptId: string; name: string; persisted: boolean }
 // No Stop button: a turn keeps running server-side until it has committed or
 // reported, so a stop would only hide the result.
 // "Fix in chat" (WS-B): a concept handed over from a run card — its id rides
-// with the next message, and the server then keeps its bundle in every turn's
-// context until a turn saves a version or the admin clears it (✕). `text`
+// with every message (the server adds its bundle to each turn's context) until
+// a turn saves a version or the admin clears it (✕). `text`
 // prefills the composer. `nonce` makes a repeat click on the same card count.
 export type ChatSeed = { nonce: number; conceptId: string; conceptName: string; text: string }
 
@@ -159,8 +161,14 @@ function ChatBody({
           const last = messages[messages.length - 1]
           const ids: unknown = body?.attachmentIds
           const conceptId: unknown = body?.conceptId
+          const carried = body?.conceptCarried === true
           return {
-            body: { text: last ? messageText(last) : '', attachmentIds: Array.isArray(ids) ? ids : [], page, ...(typeof conceptId === 'string' ? { conceptId } : {}) },
+            body: {
+              text: last ? messageText(last) : '',
+              attachmentIds: Array.isArray(ids) ? ids : [],
+              page,
+              ...(typeof conceptId === 'string' ? { conceptId, ...(carried ? { conceptCarried: true } : {}) } : {}),
+            },
           }
         },
       }),
@@ -192,10 +200,9 @@ function ChatBody({
       setMessages((ms) => (ms.length > 0 && ms[ms.length - 1].role === 'user' ? ms.slice(0, -1) : ms))
       setText((t) => (t.trim() ? t : sent.text))
       setPending((p) => [...sent.attachments, ...p])
-      // A refused turn persisted nothing: a newly handed-over concept is
-      // pending again.
-      const lostAdopt = sent.adopt
-      if (lostAdopt && !lostAdopt.persisted) setAdopt((a) => (a && a.conceptId !== lostAdopt.conceptId ? a : lostAdopt))
+      // The concept itself is gone / no longer ready (its 400): drop its chip,
+      // so the restored message can be sent without it.
+      setAdopt((a) => adoptAfterRefusal(a, sent.adopt, err.status, err.message))
     },
   })
   const busy = status === 'submitted' || status === 'streaming'
@@ -294,12 +301,17 @@ function ChatBody({
     turnStart.current = messages.length
     setText('')
     setPending([])
-    // The server keeps it from here on; only a new hand-off sends the id.
+    // Still in play after this message; the id rides with every send.
     if (handoff && !handoff.persisted) setAdopt({ ...handoff, persisted: true })
     setNotice(null)
     void sendMessage(
       { text: t, metadata: { attachments } },
-      { body: { attachmentIds: attachments.map((a) => a.id), ...(handoff && !handoff.persisted ? { conceptId: handoff.conceptId } : {}) } }
+      {
+        body: {
+          attachmentIds: attachments.map((a) => a.id),
+          ...(handoff ? { conceptId: handoff.conceptId, ...(handoff.persisted ? { conceptCarried: true } : {}) } : {}),
+        },
+      }
     )
   }
 
