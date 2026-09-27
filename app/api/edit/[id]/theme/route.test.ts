@@ -191,6 +191,30 @@ describe('PATCH /api/edit/[id]/theme — regenerate (stale-notice button)', () =
     expect(files.find((f) => f.path === FONTS)?.content).toBe(generateFontsModule(normalizeTypography({})).source)
   })
 
+  it('refuses (409 fallbackPalette) to regenerate a FALLBACK-palette site until the operator confirms', async () => {
+    const fallback = { primary: '#1F3A5F', secondary: '#5A6B7B', complementary: '#C2703D', action: '#0E8C9C', nearBlack: '#1A1C1E', nearWhite: '#F8F8F6' }
+    h.fs.set('content/brand.json', { content: JSON.stringify({ palette: fallback }), sha: 'brandSha' })
+    h.fs.set('src/styles/theme.css', { content: 'house cyan', sha: 'themeSha' })
+    const refused = await regenerate()
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ fallbackPalette: true })
+    expect(h.writeFiles).not.toHaveBeenCalled()
+    const ok = await PATCH(
+      new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ regenerate: true, allowFallbackPalette: true }) }),
+      { params }
+    )
+    expect(ok.status).toBe(200)
+    expect(h.writeFiles).toHaveBeenCalledTimes(1)
+  })
+
+  it('on an L1 draft says the fonts module was not touched', async () => {
+    h.fs.set('src/styles/theme.css', { content: 'old', sha: 'themeSha' })
+    const res = await regenerate()
+    expect((await res.json()).note).toMatch(/fonts module was not touched/)
+    const files = h.writeFiles.mock.calls[0][1] as { path: string }[]
+    expect(files.map((f) => f.path)).not.toContain(FONTS)
+  })
+
   it('is a no-op (no empty commit) when the derived files already match', async () => {
     h.fs.set('src/styles/theme.css', { content: ':root{}', sha: 'themeSha' })
     const res = await regenerate()
