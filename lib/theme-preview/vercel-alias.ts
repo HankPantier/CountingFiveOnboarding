@@ -88,8 +88,10 @@ export async function isRevaltusSite(url: string): Promise<boolean> {
 }
 
 const MAX_DEPLOYMENTS = 3
+export const VERCEL_BOT = 'vercel[bot]'
 
-// Latest Production deployments → their sha's Vercel commit status → the
+// Latest Production deployments (created by vercel[bot]) → their sha's
+// Vercel commit statuses (created by vercel[bot]) → the
 // project → https://<project>.vercel.app/, returned only once verified (the
 // page has the Revaltus marker). Null when GitHub has no Vercel deploys for
 // the repo (no Vercel project yet, or the App lacks Deployments / Commit
@@ -98,16 +100,19 @@ export async function deriveVercelPreviewUrl(githubRepo: string): Promise<string
   try {
     const octokit = getOctokit()
     const { owner, repo } = resolveRepo(githubRepo)
-    const { data: deployments } = await octokit.repos.listDeployments({ owner, repo, environment: 'Production', per_page: MAX_DEPLOYMENTS })
+    const { data: deployments } = await octokit.repos.listDeployments({ owner, repo, environment: 'Production', per_page: 10 })
     const tried = new Set<string>()
-    for (const d of deployments.slice(0, MAX_DEPLOYMENTS)) {
-      const [statuses, combined] = await Promise.all([
+    // Only records Vercel itself wrote: anyone with repo write access can
+    // create a deployment or a commit status with any context/target_url.
+    for (const d of deployments.filter((x) => x.creator?.login === VERCEL_BOT).slice(0, MAX_DEPLOYMENTS)) {
+      const [statuses, commitStatuses] = await Promise.all([
         octokit.repos.listDeploymentStatuses({ owner, repo, deployment_id: d.id, per_page: 10 }),
-        octokit.repos.getCombinedStatusForRef({ owner, repo, ref: d.sha }),
+        octokit.repos.listCommitStatusesForRef({ owner, repo, ref: d.sha, per_page: 30 }),
       ])
-      const environmentUrl = statuses.data.find((s) => s.state === 'success' && s.environment_url)?.environment_url ?? null
-      const targetUrls = combined.data.statuses
-        .filter((s) => /^vercel/i.test(s.context) && typeof s.target_url === 'string')
+      const environmentUrl =
+        statuses.data.find((s) => s.state === 'success' && s.environment_url && s.creator?.login === VERCEL_BOT)?.environment_url ?? null
+      const targetUrls = commitStatuses.data
+        .filter((s) => s.creator?.login === VERCEL_BOT && /^vercel/i.test(s.context) && typeof s.target_url === 'string')
         .map((s) => s.target_url as string)
       const project = pickVercelProject({ environmentUrl, targetUrls })
       if (!project) continue

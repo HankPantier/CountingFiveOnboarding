@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const m = vi.hoisted(() => ({
   listDeployments: vi.fn(),
   listDeploymentStatuses: vi.fn(),
-  getCombinedStatusForRef: vi.fn(),
+  listCommitStatusesForRef: vi.fn(),
   get: vi.fn(),
 }))
 vi.mock('@/lib/github/app-client', () => ({
@@ -11,7 +11,7 @@ vi.mock('@/lib/github/app-client', () => ({
     repos: {
       listDeployments: (a: unknown) => m.listDeployments(a),
       listDeploymentStatuses: (a: unknown) => m.listDeploymentStatuses(a),
-      getCombinedStatusForRef: (a: unknown) => m.getCombinedStatusForRef(a),
+      listCommitStatusesForRef: (a: unknown) => m.listCommitStatusesForRef(a),
     },
   }),
   resolveRepo: (slug: string) => {
@@ -102,19 +102,20 @@ describe('alias derivation from real deployment samples', () => {
 
 describe('deriveVercelPreviewUrl', () => {
   const tru = SAMPLES[1]
+  const BOT = { login: 'vercel[bot]' }
   const marked = { status: 200, contentType: 'text/html', finalUrl: tru.alias, body: '<html><head><meta name="c5-capabilities" content="fonts"/></head></html>' }
 
   beforeEach(() => {
-    m.listDeployments.mockReset().mockResolvedValue({ data: [{ id: 1, sha: 'e723a50' }] })
-    m.listDeploymentStatuses.mockReset().mockResolvedValue({ data: [{ state: 'success', environment_url: tru.environmentUrl }] })
-    m.getCombinedStatusForRef.mockReset().mockResolvedValue({ data: { statuses: [{ context: 'Vercel', state: 'success', target_url: tru.targetUrl }] } })
+    m.listDeployments.mockReset().mockResolvedValue({ data: [{ id: 1, sha: 'e723a50', creator: BOT }] })
+    m.listDeploymentStatuses.mockReset().mockResolvedValue({ data: [{ state: 'success', environment_url: tru.environmentUrl, creator: BOT }] })
+    m.listCommitStatusesForRef.mockReset().mockResolvedValue({ data: [{ context: 'Vercel', state: 'success', target_url: tru.targetUrl, creator: BOT }] })
     m.get.mockReset().mockResolvedValue(marked)
   })
 
   it('reads the latest Production deployment and returns the verified <project>.vercel.app', async () => {
     expect(await deriveVercelPreviewUrl('hankpantier/TruCount-CPA')).toBe('https://tru-count-cpa.vercel.app/')
     expect(m.listDeployments).toHaveBeenCalledWith(expect.objectContaining({ owner: 'hankpantier', repo: 'TruCount-CPA', environment: 'Production' }))
-    expect(m.getCombinedStatusForRef).toHaveBeenCalledWith(expect.objectContaining({ ref: 'e723a50' }))
+    expect(m.listCommitStatusesForRef).toHaveBeenCalledWith(expect.objectContaining({ ref: 'e723a50' }))
     expect(m.get).toHaveBeenCalledWith('https://tru-count-cpa.vercel.app/')
   })
 
@@ -126,10 +127,34 @@ describe('deriveVercelPreviewUrl', () => {
   it('returns null with no Production deployments or no Vercel status', async () => {
     m.listDeployments.mockResolvedValue({ data: [] })
     expect(await deriveVercelPreviewUrl('o/r')).toBeNull()
-    m.listDeployments.mockResolvedValue({ data: [{ id: 1, sha: 'a' }] })
-    m.getCombinedStatusForRef.mockResolvedValue({ data: { statuses: [{ context: 'ci/build', state: 'success', target_url: 'https://ci.test' }] } })
+    m.listDeployments.mockResolvedValue({ data: [{ id: 1, sha: 'a', creator: BOT }] })
+    m.listCommitStatusesForRef.mockResolvedValue({ data: [{ context: 'ci/build', state: 'success', target_url: 'https://ci.test', creator: BOT }] })
     expect(await deriveVercelPreviewUrl('o/r')).toBeNull()
     expect(m.get).not.toHaveBeenCalled()
+  })
+
+  it('ignores a "Vercel" commit status created by anyone but vercel[bot]', async () => {
+    m.listCommitStatusesForRef.mockResolvedValue({
+      data: [{ context: 'Vercel', state: 'success', target_url: 'https://vercel.com/hankpantiers-projects/attacker-site/x', creator: { login: 'mallory' } }],
+    })
+    expect(await deriveVercelPreviewUrl('hankpantier/TruCount-CPA')).toBeNull()
+    expect(m.get).not.toHaveBeenCalled()
+  })
+
+  it('uses the vercel[bot] status even when a forged one is listed first', async () => {
+    m.listCommitStatusesForRef.mockResolvedValue({
+      data: [
+        { context: 'Vercel', state: 'success', target_url: 'https://vercel.com/hankpantiers-projects/attacker-site/x', creator: { login: 'mallory' } },
+        { context: 'Vercel', state: 'success', target_url: tru.targetUrl, creator: BOT },
+      ],
+    })
+    expect(await deriveVercelPreviewUrl('hankpantier/TruCount-CPA')).toBe('https://tru-count-cpa.vercel.app/')
+  })
+
+  it('ignores a Production deployment not created by vercel[bot]', async () => {
+    m.listDeployments.mockResolvedValue({ data: [{ id: 1, sha: 'e723a50', creator: { login: 'mallory' } }] })
+    expect(await deriveVercelPreviewUrl('hankpantier/TruCount-CPA')).toBeNull()
+    expect(m.listCommitStatusesForRef).not.toHaveBeenCalled()
   })
 
   it('never throws (e.g. the App lacks Deployments read access)', async () => {
