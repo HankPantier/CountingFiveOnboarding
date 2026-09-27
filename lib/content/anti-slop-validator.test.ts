@@ -138,3 +138,17 @@ describe('cleanHeading', () => {
     expect(cleanHeading('Tax planning — for practices')).toBe('Tax planning, for practices')
   })
 })
+
+describe('validateContent — generator notes in the body', () => {
+  it('flags an SEO & AIO trailer echoed into the body', () => {
+    const body = `${CLEAN}\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nx\n\n**Internal Links:**\n- a → /b — c\n`
+    const r = validateContent(body)
+    expect(r.passed).toBe(false)
+    expect(r.flagged.some((f) => f.startsWith('Generator notes in the body (SEO & AIO Metadata'))).toBe(true)
+  })
+
+  it('does not flag a reader-facing FAQ or Related links section', () => {
+    const body = `${CLEAN}\n\n## Common questions\n\n**Q: When should I file?**\nA: By April 15.\n\n## Related links\n\n- [Payroll](/services/payroll)\n`
+    expect(validateContent(body).flagged.some((f) => f.startsWith('Generator notes'))).toBe(false)
+  })
+})

@@ -48,6 +48,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
 import { asJson } from '@/lib/supabase/json-typed'
+import { stripGeneratorNotesFromBody } from './strip-generator-notes'
 
 export type Cta = { text: string; url: string }
 const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
@@ -346,7 +347,7 @@ ${buildFirmContext(schema)}
 PALETTE TONE: ${paletteTone}
 
 OUTPUT: Return a JSON object with two keys:
-1. "content" — the full page copy in markdown. Use ## for H2s matching the approved outline. Write naturally, as if for a human reader first, search engine second.
+1. "content" — the full page copy in markdown. Use ## for H2s matching the approved outline. Write naturally, as if for a human reader first, search engine second. Reader-facing copy ONLY: never append metadata sections (Answer Block, E-E-A-T Signals, Internal Links, FAQ Block, LLM Citation Note, SEO notes, structured data) to the content; those belong in "metadata".
 2. "metadata" — a JSON object with these fields:
    - meta_title (50-60 chars, contains primary keyword)
    - meta_description (150-160 chars, compelling + keyword)
@@ -732,6 +733,11 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
     )
     result = await gen(allFlags)
   }
+
+  // Deterministic backstop for the validator above: the body is reader-facing
+  // only. buildPageMarkdown writes its own trailer from `metadata`; a second,
+  // model-echoed one would sit above the marker the template trims at.
+  result.content = stripGeneratorNotesFromBody(result.content).body
 
   const annotations = parseBlockAnnotations(result.content)
   const headingCount = (result.content.match(/^##\s+/gm) || []).length

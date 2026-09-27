@@ -26,6 +26,7 @@ import {
 } from '@/lib/github/repo-files'
 import { buildCrossLinkIndex, type InternalLinkTarget } from './internal-link-targets'
 import { buildPostMarkdown } from './post-markdown'
+import { stripGeneratorNotesFromBody } from './strip-generator-notes'
 import { insertReverseLinks } from './reverse-linker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
@@ -158,7 +159,7 @@ ${buildFormatRules(contentType, location)}
 
 OUTPUT: Return a JSON object:
 {
-  "body": "the full post markdown",
+  "body": "the full post markdown: reader-facing prose ONLY. Never append metadata sections (Answer Block, E-E-A-T Signals, Internal Links, FAQ Block, LLM Citation Note, SEO notes, structured data); those go in frontmatter",
   "frontmatter": {
     "title": "final post title (may refine the working title)",
     "excerpt": "1-2 sentence listing-card excerpt",
@@ -650,6 +651,9 @@ export async function generateResourceDraft(
 
     result.body = stripUnapprovedExternalLinks(result.body, externalLinks)
     result.body = humanizeDashes(result.body)
+    // Deterministic backstop for the validator: posts render their body
+    // verbatim, so any echoed generator notes are cut before persisting.
+    result.body = stripGeneratorNotesFromBody(result.body).body
     warnUnknownInternalLinks(result.body, slug, targets, postSlugs)
 
     // Strip AI dash-tells from the visible frontmatter prose too (the body is

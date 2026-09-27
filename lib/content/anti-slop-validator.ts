@@ -1,4 +1,5 @@
 import { findNoGoHits } from './no-go-match'
+import { findGeneratorNotes } from './strip-generator-notes'
 
 const BANNED_PHRASES = [
   "in today's",
@@ -97,6 +98,14 @@ export function validateContent(
 
   for (const hit of findNoGoHits(content, extraBannedPhrases)) {
     flagged.push(`No-go phrase: "${hit}"`)
+  }
+
+  // Generator metadata (Answer Block / Internal Links / FAQ Block / … or the
+  // SEO & AIO / Structured Data trailers) belongs in the JSON fields — in a
+  // body it renders live on posts. Flag → the existing retry path.
+  const notes = findGeneratorNotes(content)
+  if (notes.length) {
+    flagged.push(`Generator notes in the body (${notes.join(', ')}): put metadata in the JSON fields only`)
   }
 
   if (SENTENCE_START_PATTERN.test(content)) {
