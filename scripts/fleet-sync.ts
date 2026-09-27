@@ -34,8 +34,8 @@ import { readMarker } from '../lib/fleet/special-files'
 import { git, isAncestor, revParse, showText, tryGit } from '../lib/fleet/git-local'
 import { FLEET_TRAILER, applyChanges, ensureClone, gateRepo, prepareForApply, verifyPlanInScratch, type RepoRun, type SyncContext } from '../lib/fleet/sync'
 import { pool, verifyRepo } from '../lib/fleet/verify'
-import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, vercelState, waitForVercel } from '../lib/fleet/remote'
-import { defaultCanary, effectiveCanary, releaseProven, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
+import { draftPreflight, findLastFleetCommit, mergeMainIntoDraft, pushMain, vercelState, waitForVercel, type DeployState } from '../lib/fleet/remote'
+import { defaultCanary, effectiveCanary, releaseProven, rollbackProblems, runPushPhase, type PushItem } from '../lib/fleet/push-phase'
 import type { ClientEntry, TargetSelection } from '../lib/fleet/types'
 
 interface Args {
@@ -378,10 +378,24 @@ async function runRollback(a: Args, targets: ClientEntry[]): Promise<number> {
         git(p.dir, ['reset', '-q', '--hard', 'refs/remotes/origin/main'])
         throw new Error(`verify failed at ${v.failedStep} — not pushed`)
       }
+      // Same draft pre-merge as a sync: a diverged draft blocks BEFORE main moves.
+      const pre = draftPreflight(p.dir)
+      if (!pre.ok) {
+        resetLocal(p.dir)
+        throw new Error(`draft pre-merge failed — not pushed (${pre.reason})`)
+      }
       const push = pushMain(p.dir)
       if (!push.ok) throw new Error(`push failed — ${push.err}`)
       const draft = mergeMainIntoDraft(p.t.slug, 'Merge main into draft (fleet rollback)')
-      const deploy = a.deployWait ? await waitForVercel(p.t.slug, push.sha) : { state: 'not-checked', url: null }
+      const deploy: { state: DeployState | 'timeout' | 'not-checked'; url: string | null } = a.deployWait
+        ? await waitForVercel(p.t.slug, push.sha)
+        : { state: 'not-checked', url: null }
+      const problems = rollbackProblems(draft.result, deploy.state, p.t.noDeploy)
+      if (problems.length) {
+        failures++
+        console.log(`  ✗ ${repo}: main=${push.sha.slice(0, 7)} pushed, but ${problems.join(' ')}${draft.detail ? ` (${draft.detail})` : ''} — finish the rollback by hand`)
+        continue
+      }
       console.log(`  ✓ ${repo}: main=${push.sha.slice(0, 7)} draft=${draft.result} vercel=${deploy.state}`)
     } catch (err) {
       failures++

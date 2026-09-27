@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultCanary, effectiveCanary, releaseProven, runPushPhase, type PushItem, type PushOps } from './push-phase'
+import { defaultCanary, effectiveCanary, releaseProven, rollbackProblems, runPushPhase, type PushItem, type PushOps } from './push-phase'
 import type { DeployState } from './remote'
 
 const item = (name: string, noDeploy = false): PushItem => ({ slug: `o/${name}`, dir: `/w/${name}`, noDeploy })
@@ -146,5 +146,21 @@ describe('releaseProven / defaultCanary (FLEET-2)', () => {
 
   it('a single ready repo gets no canary', () => {
     expect(defaultCanary(false, 1)).toBe(0)
+  })
+})
+
+describe('rollbackProblems (FLEET-3)', () => {
+  it('flags a conflicted or failed draft merge and any non-green deploy', () => {
+    expect(rollbackProblems('conflict', 'failure', false)).toEqual(['draft=conflict', 'vercel=failure'])
+    expect(rollbackProblems('failed', 'success', false)).toEqual(['draft=failed'])
+    expect(rollbackProblems('merged', 'timeout', false)).toEqual(['vercel=timeout'])
+    expect(rollbackProblems('merged', 'error', false)).toEqual(['vercel=error'])
+    expect(rollbackProblems('merged', 'none', false)).toEqual(['vercel=none'])
+  })
+
+  it('accepts a clean rollback, a noDeploy repo with no status, and an unchecked deploy', () => {
+    expect(rollbackProblems('merged', 'success', false)).toEqual([])
+    expect(rollbackProblems('no-draft', 'none', true)).toEqual([])
+    expect(rollbackProblems('up-to-date', 'not-checked', false)).toEqual([])
   })
 })
