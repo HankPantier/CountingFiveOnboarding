@@ -16,6 +16,14 @@ export type AbShot = { page: string; viewport: AbViewport; file: string | null }
 // One page's render checks: gate failures are diffed against the current
 // site's metrics on the same page (metricGateFailures).
 export type AbPageCheck = { page: string; measured: AbViewport[]; gateFailures: string[]; renderError: string | null }
+
+// WS-B (R2 F10/I10): the render-check failures of EVERY rendered page, named by
+// page when there are several — what the A/B loop and critic gate on, so a
+// concept whose other pages are broken can't pass on the primary page alone
+// (the 21:43 A/B's "passed first draft" had 1.00:1 text on 3 of 5 pages).
+export function allPageGateFailures(checks: AbPageCheck[]): string[] {
+  return checks.flatMap((c) => c.gateFailures.map((f) => (checks.length > 1 ? `${c.page} — ${f}` : f)))
+}
 export type AbCallStats = {
   latencyMs: number
   calls: number // Messages API requests observed (incl. retries / repair)

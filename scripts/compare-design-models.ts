@@ -15,7 +15,11 @@
 // driven by lib/design/ab/revise-loop): revisions by the concept's OWN model
 // through reviseConcept + buildRevisePrompt, re-rendered and re-critiqued by
 // the judge, until it passes, n revisions (default 2 = design_runs'
-// max_revisions default) or the cap. Still read-only.
+// max_revisions default) or the cap. Still read-only. The loop and the judge
+// gate on the render checks of EVERY page rendered (allPageGateFailures, named
+// by page) — each revision is re-rendered on all pages — so a pass means what
+// production's apply gate would accept; the judge still sees the first page's
+// folds.
 // Output: report.html (self-contained; images by relative path) + report.json
 // + the WebP renders, in <repo>/tmp/design-ab/<sessionId>-<timestamp>/ by default.
 //
@@ -140,7 +144,7 @@ async function main() {
   const critiqueAttemptTokens = Math.max(CRITIQUE_OUTPUT_TOKENS, CRITIQUE_RETRY_OUTPUT_TOKENS)
   const { ZERO_USAGE, addUsage, apiErrorSummary, parseAnthropicUsage } = await import('../lib/design/ab/api-tap')
   type ApiUsage = import('../lib/design/ab/api-tap').ApiUsage
-  const { buildReportHtml, summarize, summaryText } = await import('../lib/design/ab/report')
+  const { allPageGateFailures, buildReportHtml, summarize, summaryText } = await import('../lib/design/ab/report')
   type AbConcept = import('../lib/design/ab/report').AbConcept
   type AbReport = import('../lib/design/ab/report').AbReport
   type AbShot = import('../lib/design/ab/report').AbShot
@@ -291,11 +295,14 @@ async function main() {
     gateFailures: r.metrics ? metricGateFailures(r.metrics, baseline).map((f) => f.message) : [],
     renderError: r.error,
   })
+  // WS-B (R2 F10/I10): the loop and the critic gate on EVERY rendered page.
+  const allPageFailures = allPageGateFailures
 
   // ── the current site: the prompt's "before" image + each page's metrics baseline
   const baselines = new Map<string, RenderMetrics | null>()
   const current: AbReport['current'] = { shots: [], checks: [] }
   let currentDesktop: Buffer | null = null
+  let currentMobile: Buffer | null = null
   if (canRender) {
     const currentTheme = composedThemeFromFiles(b.theme)
     for (const page of pages) {
@@ -303,7 +310,10 @@ async function main() {
       baselines.set(page, r.metrics)
       current.shots.push(...r.shots)
       current.checks.push(checkOf(page, r, null))
-      if (page === primaryPage) currentDesktop = r.webp.desktop ?? null
+      if (page === primaryPage) {
+        currentDesktop = r.webp.desktop ?? null
+        currentMobile = r.webp.mobile ?? null
+      }
     }
   }
 
@@ -314,6 +324,17 @@ async function main() {
   const allInputs = await listInputs(db, args.sessionId)
   const inputIds = args.inputs.kind === 'none' ? [] : args.inputs.kind === 'ids' ? args.inputs.ids : allInputs.filter((r) => !r.archived && r.capture_status === 'ok').map((r) => r.id)
   const { usable, skipped } = selectRunInputs(allInputs, inputIds)
+  // The mobile "before" too, while the budget fits every reference (as the orchestrator does).
+  if (images.length === 1 && currentMobile && images.length + 1 + usable.length <= MAX_PROMPT_IMAGES) {
+    images.push({ caption: currentSiteCaption(primaryPage, 'mobile'), adminText: null, bytes: new Uint8Array(currentMobile), mediaType: 'image/webp' })
+  }
+  // The reviser's shared "before" renders (refine-stage's revise unit).
+  const beforeImages: PromptImage[] = currentDesktop
+    ? [
+        { caption: currentSiteCaption(primaryPage), adminText: null, bytes: new Uint8Array(currentDesktop), mediaType: 'image/webp' },
+        ...(currentMobile ? [{ caption: currentSiteCaption(primaryPage, 'mobile'), adminText: null, bytes: new Uint8Array(currentMobile), mediaType: 'image/webp' }] : []),
+      ]
+    : []
   for (const s of skipped) notes.push(`Input skipped — ${s.label}: ${s.reason}`)
   for (const row of usable) {
     if (images.length >= MAX_PROMPT_IMAGES) {
@@ -547,6 +568,7 @@ async function main() {
     const others = othersOf(row)
     const prompt = buildRevisePrompt({
       ...sharedPromptArgs(b, runLike, primaryPage, []),
+      beforeImages,
       position: row.position,
       conceptCount: args.concepts,
       round: rev.round,
@@ -624,7 +646,7 @@ async function main() {
         const firstRender: LoopRender = {
           desktop: webp.desktop,
           mobile: webp.mobile ?? null,
-          gateFailures: row.checks.find((c) => c.page === primaryPage)?.gateFailures ?? [],
+          gateFailures: allPageFailures(row.checks),
           fontsNotReady: primaryFontsNotReady.get(row) ?? [],
         }
         let round: AbRevision | null = null
@@ -660,13 +682,23 @@ async function main() {
                 current?.errors.push('The revision could not be prepared for rendering.')
                 return null
               }
-              const r = await renderPage(primaryPage, theme, `concepts/${slug(row.model)}/c${row.position + 1}-r${iteration}`)
-              if (current) current.shots = r.shots
-              if (!r.webp.desktop) {
-                current?.errors.push(`Render: ${r.error ?? 'no desktop render was produced'} — not critiqued.`)
+              // Every page, so the gates match the first draft's (the critic
+              // still sees the primary page's folds).
+              const checks: AbPageCheck[] = []
+              let primary: PageRender | null = null
+              const shots: PageRender['shots'] = []
+              for (const page of pages) {
+                const r = await renderPage(page, theme, `concepts/${slug(row.model)}/c${row.position + 1}-r${iteration}`)
+                shots.push(...r.shots)
+                checks.push(checkOf(page, r, baselines.get(page) ?? null))
+                if (page === primaryPage) primary = r
+              }
+              if (current) current.shots = shots
+              if (!primary?.webp.desktop) {
+                current?.errors.push(`Render: ${primary?.error ?? 'no desktop render was produced'} — not critiqued.`)
                 return null
               }
-              return { desktop: r.webp.desktop, mobile: r.webp.mobile ?? null, gateFailures: checkOf(primaryPage, r, baselines.get(primaryPage) ?? null).gateFailures, fontsNotReady: r.fontsNotReady }
+              return { desktop: primary.webp.desktop, mobile: primary.webp.mobile ?? null, gateFailures: allPageFailures(checks), fontsNotReady: primary.fontsNotReady }
             },
           }
         )

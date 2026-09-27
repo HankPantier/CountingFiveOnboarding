@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { VALID } from '../__fixtures__/valid-bundle'
-import { buildReportHtml, conceptNotesBlock, cssBlock, escapeHtml, safeHex, safeRelativePath, summarize, summaryText, type AbCallStats, type AbConcept, type AbCritique, type AbReport, type AbRevision } from './report'
+import { allPageGateFailures, buildReportHtml, conceptNotesBlock, cssBlock, escapeHtml, safeHex, safeRelativePath, summarize, summaryText, type AbCallStats, type AbConcept, type AbCritique, type AbReport, type AbRevision } from './report'
 
 const stats = (over: Partial<AbCallStats> = {}): AbCallStats => ({
   latencyMs: 10_000,
@@ -289,5 +289,15 @@ describe('concept CSS + notes', () => {
     expect(html).toContain('2 signature blocks, no global CSS')
     // the only <style> is the report's own stylesheet
     expect(html.match(/<\/style>/g)).toHaveLength(1)
+  })
+})
+
+describe('allPageGateFailures (WS-B, R2 I10)', () => {
+  const check = (page: string, gateFailures: string[]) => ({ page, measured: ['desktop' as const, 'mobile' as const], gateFailures, renderError: null })
+  it('gates on every page, naming the page when there are several', () => {
+    const f = 'Desktop (1440): “Tax” (industry-cards › h3) is 1.00:1 — needs 3:1'
+    expect(allPageGateFailures([check('/', []), check('/services', [f]), check('/about', [f])])).toEqual([`/services — ${f}`, `/about — ${f}`])
+    expect(allPageGateFailures([check('/design-specimen', [f])])).toEqual([f])
+    expect(allPageGateFailures([check('/', []), check('/services', [])])).toEqual([])
   })
 })
