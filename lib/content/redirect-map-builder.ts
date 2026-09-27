@@ -144,9 +144,8 @@ export function buildRedirectsCsv(
     }
   }
 
-  // Belt and braces: no loops or self-redirects ever leave the builder.
-  const csv = sanitizeRedirectsCsv(header + rows.join('\n') + (rows.length > 0 ? '\n' : ''), {
-    livePaths: validNewUrls,
-  })
+  // Belt and braces: no loops or self-redirects ever leave the builder. (An old
+  // URL that is still a page in the new sitemap was already skipped above.)
+  const csv = sanitizeRedirectsCsv(header + rows.join('\n') + (rows.length > 0 ? '\n' : ''))
   return { csv, issues }
 }

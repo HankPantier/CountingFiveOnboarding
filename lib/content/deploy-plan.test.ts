@@ -304,7 +304,7 @@ describe('redirects.csv loop safety on deploy', () => {
     )
   })
 
-  it('drops rows that would redirect a page the site has', () => {
+  it('keeps a row over a page the site has and reports it as a warning', () => {
     const draft = header + '/services/outsourced-accounting,/services,301,old\n'
     const plan = planDeployPush({
       entries: [
@@ -315,7 +315,9 @@ describe('redirects.csv loop safety on deploy', () => {
       baseline: { 'content/redirects.csv': sha(header) },
       redirects: { draft, lastDeployed: header },
     })
-    expect(plan.push.find((p) => p.path === 'content/redirects.csv')).toMatchObject({ content: header })
+    // Not pushed (unchanged) and not removed: reported instead.
+    expect(plan.push.find((p) => p.path === 'content/redirects.csv')).toBeUndefined()
+    expect(plan.redirectWarnings).toEqual([{ from: '/services/outsourced-accounting', to: '/services' }])
   })
 
   it('keeps a fresh editor-move 301 when the package re-ships the moved page (skipped as removed)', () => {

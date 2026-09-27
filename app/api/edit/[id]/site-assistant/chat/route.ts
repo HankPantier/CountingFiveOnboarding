@@ -348,7 +348,14 @@ RULES
             const action = navAction ?? 'retarget'
             if (action === 'retarget') await retargetNavUrl(ctx, fromUrl, destUrl)
             else if (action === 'remove') await stripNavReference(ctx, fromPath)
-            return { success: true, fromUrl, toUrl: destUrl, moved: res.moved }
+            return {
+              success: true,
+              fromUrl,
+              toUrl: destUrl,
+              moved: res.moved,
+              // Rows still shadowing a real page: tell the admin, never auto-removed.
+              ...(res.redirectWarnings.length ? { redirectWarnings: res.redirectWarnings } : {}),
+            }
           } catch (err) {
             if (err instanceof DestinationOccupiedError) {
               return { error: `A page already exists at ${destUrl}.` }

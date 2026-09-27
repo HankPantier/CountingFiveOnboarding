@@ -10,9 +10,15 @@
 //   1. any existing row whose source is B is removed (B is a live page again);
 //   2. an existing row whose source is A is replaced (the newest move wins);
 //   3. chains collapse: an existing X→A becomes X→B;
-//   4. self-redirects (X→X, after normalization) are dropped;
-//   5. with a `livePaths` set, no row may redirect a path that has a real page;
+//   4. an add whose source is another add's destination in the same batch is
+//      skipped (a swap refills that url);
+//   5. self-redirects (X→X, after normalization) are dropped;
 //   6. any loop already in the file is broken (its newest row is dropped).
+//
+// Rows whose source has a real page are NOT removed on a save or a deploy (an
+// operator may have written them); they come back as warnings
+// (liveRedirectWarnings) for the UI. Only the code-view commit (PATCH /files,
+// validateRedirectsCsv) refuses them outright.
 //
 // Comment lines, the header and unrelated rows are kept byte-for-byte.
 
@@ -28,7 +34,7 @@ type Line = { kind: 'raw'; text: string } | { kind: 'row'; row: RedirectRow; tex
 export type RedirectAdd = { from: string; to: string }
 
 export interface RedirectOptions {
-  /** Root-relative urls that have a real page in the tree. Never redirected. */
+  /** Root-relative urls that have a real page in the tree (warned / refused). */
   livePaths?: Iterable<string>
 }
 
@@ -144,14 +150,28 @@ function breakCycles(input: Line[]): Line[] {
   }
 }
 
-// Drop self-redirects and rows that shadow a live page. Pure line filter.
-function dropUnsafeRows(lines: Line[], live: Set<string>): Line[] {
-  return lines.filter((l) => {
-    if (l.kind !== 'row') return true
-    const from = redirectKey(l.row.from)
-    if (from === redirectKey(l.row.to)) return false
-    return !live.has(from)
-  })
+// Drop self-redirects. Pure line filter.
+function dropSelfRows(lines: Line[]): Line[] {
+  return lines.filter((l) => l.kind !== 'row' || redirectKey(l.row.from) !== redirectKey(l.row.to))
+}
+
+/** A row whose source still has a real page (the redirect would shadow it). */
+export type LiveRedirectWarning = { from: string; to: string }
+
+/**
+ * Rows in `text` whose source has a real page in `livePaths`. Never removed
+ * automatically; the deploy plan and the nav/move save responses report them.
+ */
+export function liveRedirectWarnings(text: string, opts: RedirectOptions = {}): LiveRedirectWarning[] {
+  const live = keySet(opts.livePaths)
+  if (live.size === 0) return []
+  return parseRedirectRows(text)
+    .filter((r) => live.has(redirectKey(r.from)) && redirectKey(r.from) !== redirectKey(r.to))
+    .map((r) => ({ from: r.from, to: r.to }))
+}
+
+export function formatLiveRedirectWarning(w: LiveRedirectWarning): string {
+  return `${w.from} has a real page but redirects to ${w.to}, so the page is unreachable. Remove that row from redirects.csv or move the page.`
 }
 
 /**
@@ -165,15 +185,18 @@ export function applyRedirectAdds(
   adds: RedirectAdd[],
   reason: string,
   opts: RedirectOptions = {}
-): { content: string; changed: boolean } {
+): { content: string; changed: boolean; warnings: LiveRedirectWarning[] } {
   const original = text ?? ''
   let lines = parseLines(text ?? REDIRECTS_HEADER)
-  const live = keySet(opts.livePaths)
+  const batchTargets = new Set(adds.map((m) => redirectKey(m.to)))
 
   for (const add of adds) {
     const a = redirectKey(add.from)
     const b = redirectKey(add.to)
     if (!a || !b || a === b) continue
+    // 4. Another move in this batch puts a page back at A (a swap): no 301 away
+    //    from it. That move's rule 1 already cleared A's old rows.
+    if (batchTargets.has(a)) continue
 
     let placed = false
     const next: Line[] = []
@@ -205,12 +228,11 @@ export function applyRedirectAdds(
     lines = next
   }
 
-  // 4 + 5. Self-redirects and rows over a real page never survive a write,
-  // and neither does any loop already in the file.
-  lines = breakCycles(dropUnsafeRows(lines, live))
+  // 5 + 6. Self-redirects and loops never survive a write.
+  lines = breakCycles(dropSelfRows(lines))
 
   const content = serializeLines(lines)
-  return { content, changed: content !== original }
+  return { content, changed: content !== original, warnings: liveRedirectWarnings(content, opts) }
 }
 
 export type RedirectProblems = {
@@ -274,13 +296,14 @@ export function validateRedirectsCsv(text: string, opts: RedirectOptions = {}): 
 }
 
 /**
- * Make an existing redirects.csv safe without adding anything: drops
- * self-redirects, rows over live pages, and breaks loops (newest row dropped).
- * Untouched rows, comments and the header are kept byte-for-byte. Used by the
- * deploy merge, which is what heals the loops already on live sites.
+ * Make an existing redirects.csv loop-free without adding anything: drops
+ * self-redirects and breaks loops (newest row dropped). Rows over live pages
+ * are kept (see liveRedirectWarnings). Untouched rows, comments and the header
+ * are kept byte-for-byte. Used by the deploy merge, which is what heals the
+ * loops already on live sites.
  */
-export function sanitizeRedirectsCsv(text: string, opts: RedirectOptions = {}): string {
-  return serializeLines(breakCycles(dropUnsafeRows(parseLines(text), keySet(opts.livePaths))))
+export function sanitizeRedirectsCsv(text: string): string {
+  return serializeLines(breakCycles(dropSelfRows(parseLines(text))))
 }
 
 /** Resolve a destination through existing rows to the end of its chain. */

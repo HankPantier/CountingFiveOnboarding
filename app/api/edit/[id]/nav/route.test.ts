@@ -136,6 +136,20 @@ describe('POST /api/edit/[id]/nav — move validation', () => {
     )
   })
 
+  it('keeps a row over a real page and returns it as a warning for the UI', async () => {
+    seed('content/pages/a.md', '/a')
+    seed('content/pages/services--outsourced-accounting.md', '/services/outsourced-accounting')
+    const csv = 'old_url,new_url,status_code,reason\n/services/outsourced-accounting,/services,301,old\n'
+    h.fs.set('content/redirects.csv', { content: csv, sha: 'r1' })
+
+    const res = await POST(req([{ from: '/a', to: '/b' }]), { params })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { redirectWarnings: string[] }
+    expect(body.redirectWarnings).toEqual([expect.stringMatching(/^\/services\/outsourced-accounting has a real page/)])
+    expect(h.fs.get('content/redirects.csv')?.content).toBe(csv + '/a,/b,301,Nested via nav editor\n')
+  })
+
   it('moving a page back removes the old redirect instead of creating a loop (Berg)', async () => {
     seed('content/pages/b.md', '/b')
     h.fs.set('content/redirects.csv', {

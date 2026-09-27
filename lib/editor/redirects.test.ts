@@ -3,6 +3,7 @@ import {
   REDIRECTS_HEADER,
   applyRedirectAdds,
   findRedirectProblems,
+  liveRedirectWarnings,
   pageUrlsFromPaths,
   parseRedirectRows,
   resolveRedirectTarget,
@@ -53,20 +54,16 @@ describe('applyRedirectAdds', () => {
     expect(content).toBe(start)
   })
 
-  it('real-page protection: never redirects a path that has a page (Accord)', () => {
+  it('real-page protection: a row over a live page is KEPT and reported (Accord)', () => {
     const start = `${H}/services/outsourced-accounting,/services,301,old\n`
-    const live = ['/services/outsourced-accounting', '/services', '/b']
-    const { content } = applyRedirectAdds(start, [{ from: '/b', to: '/c' }], 'm', { livePaths: live })
-    expect(pairs(content)).toEqual([])
+    const live = ['/services/outsourced-accounting', '/services']
+    const { content, warnings } = applyRedirectAdds(start, [{ from: '/b', to: '/c' }], 'm', { livePaths: live })
+    expect(pairs(content)).toEqual(['/services/outsourced-accounting>/services', '/b>/c'])
+    expect(warnings).toEqual([{ from: '/services/outsourced-accounting', to: '/services' }])
   })
 
-  it('a batch swap keeps both pages live (no rows over real pages)', () => {
-    const { content } = applyRedirectAdds(
-      H,
-      [{ from: '/a', to: '/b' }, { from: '/b', to: '/a' }],
-      'swap',
-      { livePaths: ['/a', '/b'] }
-    )
+  it('a batch swap writes no 301 away from either refilled url', () => {
+    const { content } = applyRedirectAdds(H, [{ from: '/a', to: '/b' }, { from: '/b', to: '/a' }], 'swap')
     expect(pairs(content)).toEqual([])
   })
 
@@ -127,8 +124,10 @@ describe('sanitizeRedirectsCsv', () => {
     expect(sanitizeRedirectsCsv(clean)).toBe(clean)
   })
 
-  it('drops rows that shadow live pages', () => {
-    expect(sanitizeRedirectsCsv(`${H}/a,/b,301,x\n`, { livePaths: ['/a'] })).toBe(H)
+  it('keeps rows over live pages (reported by liveRedirectWarnings, never removed)', () => {
+    const text = `${H}/a,/b,301,x\n`
+    expect(sanitizeRedirectsCsv(text)).toBe(text)
+    expect(liveRedirectWarnings(text, { livePaths: ['/a'] })).toEqual([{ from: '/a', to: '/b' }])
   })
 })
 

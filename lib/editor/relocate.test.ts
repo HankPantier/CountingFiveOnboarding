@@ -36,7 +36,7 @@ describe('relocateFile — read-after-write lag', () => {
       { fromPath: 'content/pages/a.md', toPath: 'content/pages/b.md', fromUrl: '/a', toUrl: '/b', expectedSha: 'blobA', reason: 'moved' }
     )
 
-    expect(res).toEqual({ blobSha: 'blobB', moved: true })
+    expect(res).toEqual({ blobSha: 'blobB', moved: true, redirectWarnings: [] })
     expect(h.writeFile.mock.calls[0][5]).toMatchObject({ expectedSha: 'blobA' })
     expect(h.writeFile.mock.calls[1][1]).toBe('content/redirects.csv')
   })
@@ -62,13 +62,17 @@ describe('appendRedirects — cycle-safe writes', () => {
     expect(h.writeFile.mock.calls[0][2]).toBe(`${HEADER}/b,/a,301,Relocated via editor\n`)
   })
 
-  it('drops an existing row that redirects a real page away (Accord)', async () => {
+  it('keeps an existing row over a real page and returns it as a warning (Accord)', async () => {
     withRedirects(`${HEADER}/services/outsourced-accounting,/services,301,old\n`)
     h.listTree.mockResolvedValueOnce([
       { path: 'content/pages/services--outsourced-accounting.md', sha: 'x', type: 'blob' },
     ])
-    await appendRedirects({ githubRepo: 'repo' }, [{ from: '/old', to: '/new' }], 'moved')
-    expect(h.writeFile.mock.calls[0][2]).toBe(`${HEADER}/old,/new,301,moved\n`)
+    const res = await appendRedirects({ githubRepo: 'repo' }, [{ from: '/old', to: '/new' }], 'moved')
+    expect(h.writeFile.mock.calls[0][2]).toBe(
+      `${HEADER}/services/outsourced-accounting,/services,301,old\n/old,/new,301,moved\n`
+    )
+    expect(res.warnings).toHaveLength(1)
+    expect(res.warnings[0]).toMatch(/^\/services\/outsourced-accounting has a real page but redirects to \/services/)
   })
 
   it('writes nothing when the row is already there', async () => {

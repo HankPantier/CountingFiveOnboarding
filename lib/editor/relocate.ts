@@ -1,5 +1,5 @@
 import { toPathname } from './nav-urls'
-import { applyRedirectAdds, pageUrlsFromPaths, redirectKey } from './redirects'
+import { applyRedirectAdds, formatLiveRedirectWarning, pageUrlsFromPaths, redirectKey } from './redirects'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import {
   DRAFT_BRANCH,
@@ -109,8 +109,8 @@ export function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-// Root-relative urls of every published page on the draft, for real-page
-// protection. A branch tree read right after a move can lag, so the caller's
+// Root-relative urls of every published page on the draft, for the live-page
+// warnings. A branch tree read right after a move can lag, so the caller's
 // own moves are applied on top: sources are vacated, destinations are live.
 async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string>> {
   let live = new Set<string>()
@@ -120,7 +120,7 @@ async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string
     live = new Set([...urls].map(redirectKey))
   } catch (err) {
     // Fail soft: cycle safety doesn't need the tree; only the Accord-style
-    // "real page redirected away" guard degrades to this batch's targets.
+    // "real page redirected away" warning degrades to this batch's targets.
     console.warn('[redirects] page tree unavailable; real-page guard limited to this move', err)
   }
   for (const { from } of pairs) live.delete(redirectKey(from))
@@ -130,14 +130,15 @@ async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string
 
 // Add 301 redirect rows to content/redirects.csv (creating it if absent)
 // through the cycle-safe helper (lib/editor/redirects.ts): moving B back to A
-// removes the old A→B row, X→A chains collapse to X→B, self-redirects are
-// dropped and no row may redirect a path that has a real page. `reason` is the
-// CSV note column; callers pass a fixed string (never client input).
+// removes the old A→B row, X→A chains collapse to X→B, and self-redirects and
+// loops are dropped. A row whose source still has a real page is kept and
+// returned as a warning for the UI. `reason` is the CSV note column; callers
+// pass a fixed string (never client input).
 export async function appendRedirects(
   ctx: RelocateCtx,
   pairs: Move[],
   reason: string
-): Promise<void> {
+): Promise<{ warnings: string[] }> {
   let current: string | null = null
   let sha: string | undefined
   try {
@@ -148,13 +149,14 @@ export async function appendRedirects(
     if (!(err instanceof FileNotFoundError)) throw err
   }
   const livePaths = await livePageUrls(ctx, pairs)
-  const { content, changed } = applyRedirectAdds(current, pairs, reason, { livePaths })
+  const { content, changed, warnings } = applyRedirectAdds(current, pairs, reason, { livePaths })
   if (changed) {
     await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
       ...(sha ? { expectedSha: sha } : {}),
       ...author(ctx),
     })
   }
+  return { warnings: warnings.map(formatLiveRedirectWarning) }
 }
 
 // Relocate a single live content file (page/post) from fromPath→toPath on the
@@ -173,7 +175,7 @@ export async function relocateFile(
     expectedSha: string
     reason: string
   }
-): Promise<{ blobSha: string; moved: boolean }> {
+): Promise<{ blobSha: string; moved: boolean; redirectWarnings: string[] }> {
   const { fromPath, toPath, fromUrl, toUrl, expectedSha, reason } = args
 
   // Destination check: free → move; occupied by THIS page already → done;
@@ -187,7 +189,7 @@ export async function relocateFile(
   if (occupant) {
     const occUrl = frontmatterUrl(occupant.content)
     if (occUrl && toPathname(occUrl) === toPathname(toUrl)) {
-      return { blobSha: occupant.sha, moved: false }
+      return { blobSha: occupant.sha, moved: false, redirectWarnings: [] }
     }
     throw new DestinationOccupiedError(fromUrl, toUrl)
   }
@@ -215,6 +217,6 @@ export async function relocateFile(
     })
     blobSha = w.blobSha
   }
-  await appendRedirects(ctx, [{ from: fromUrl, to: toUrl }], reason)
-  return { blobSha, moved: true }
+  const { warnings } = await appendRedirects(ctx, [{ from: fromUrl, to: toUrl }], reason)
+  return { blobSha, moved: true, redirectWarnings: warnings }
 }

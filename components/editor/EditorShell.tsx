@@ -367,7 +367,12 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
-      const data = (await res.json()) as { commitSha: string; blobSha: string }
+      const data = (await res.json()) as { commitSha: string; blobSha: string; redirectWarnings?: string[] }
+      // The nav save kept redirects.csv rows that still shadow a real page
+      // (never removed automatically): tell the admin.
+      if (data.redirectWarnings?.length) {
+        setError(`Saved. Redirect check: ${data.redirectWarnings.join(' ')}`)
+      }
       // Always adopt the new blob sha (the saved content is now the base), but
       // only clear the dirty buffer if it still equals what we sent — typing
       // that happened while the save was in flight stays dirty.
@@ -710,7 +715,10 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string; message?: string }
         throw new Error(data.error === 'stale_sha' ? (data.message ?? 'File changed on the server.') : (data.error ?? `Move failed: ${res.status}`))
       }
-      const data = (await res.json()) as { toPath: string }
+      const data = (await res.json()) as { toPath: string; redirectWarnings?: string[] }
+      if (data.redirectWarnings?.length) {
+        setError(`Moved. Redirect check: ${data.redirectWarnings.join(' ')}`)
+      }
       const oldPath = selectedPath
       setLoaded((prev) => {
         const m = new Map(prev)

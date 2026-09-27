@@ -188,8 +188,10 @@ export async function POST(
       }
     }
 
+    let redirectWarnings: string[] = []
     if (toRelocate.length > 0) {
-      await appendRedirects(ctx, toRelocate.map((p) => ({ from: p.from, to: p.to })), 'Nested via nav editor')
+      const res = await appendRedirects(ctx, toRelocate.map((p) => ({ from: p.from, to: p.to })), 'Nested via nav editor')
+      redirectWarnings = res.warnings
     }
 
     const result = await writeFile(
@@ -205,6 +207,9 @@ export async function POST(
       commitSha: result.commitSha,
       blobSha: result.blobSha,
       moved: toRelocate.length,
+      // redirects.csv rows that still shadow a real page (kept, never removed
+      // automatically). The editor shows them after the save.
+      redirectWarnings,
     })
   } catch (err) {
     if (err instanceof AssetExistsError) {
