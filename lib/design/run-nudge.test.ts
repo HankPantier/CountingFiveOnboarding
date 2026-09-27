@@ -46,8 +46,8 @@ describe('nudgeStalledDesignRuns', () => {
     const trigger = vi.fn(async (_s: string, runId: string, _o: { nudge?: boolean }) => (runId === 'a' ? ('started' as const) : ('refused' as const)))
     expect(await nudgeStalledDesignRuns(f.client, now, trigger)).toEqual({ nudged: ['a'], refused: 1 })
     expect(trigger.mock.calls).toEqual([
-      ['s-a', 'a', { nudge: true }],
-      ['s-b', 'b', { nudge: true }],
+      ['s-a', 'a', { nudge: true, hop: 1 }], // the cron route is one function deep ⇒ its step is hop 1
+      ['s-b', 'b', { nudge: true, hop: 1 }],
     ])
     expect(f.opsFor('design_runs')).toContainEqual(['in', 'status', ['queued', 'capturing', 'generating', 'refining']])
     // Runs idle past the nudge ceiling are left out in SQL (they can't crowd the scan).

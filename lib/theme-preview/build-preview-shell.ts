@@ -20,7 +20,9 @@ const FONT_HEAD = `<link rel="preconnect" href="https://fonts.googleapis.com"><l
 
 export type PreviewShell =
   | { ok: true; origin: string; shellHtml: string }
-  | { ok: false; reason: string }
+  // status: the live site's HTTP status when it answered with an error (a
+  // 5xx — e.g. Vercel's 508 recursion refusal — is worth retrying later).
+  | { ok: false; reason: string; status?: number }
 
 // Pure transform of a fetched page into the re-skinnable shell. Separated from
 // the fetch so it can be unit-tested without a network. `finalUrl` is the
@@ -61,7 +63,7 @@ export async function buildPreviewShell(siteUrl: string): Promise<PreviewShell> 
   const res = await safeGet(siteUrl)
   if (!res) return { ok: false, reason: 'Could not reach the live site (blocked or unreachable).' }
   if (res.status < 200 || res.status >= 400) {
-    return { ok: false, reason: `The live site returned HTTP ${res.status}.` }
+    return { ok: false, reason: `The live site returned HTTP ${res.status}.`, status: res.status }
   }
   const ct = res.contentType.toLowerCase()
   if (ct && !ct.includes('html')) {

@@ -81,7 +81,7 @@ describe('POST /design/runs', () => {
     })
     expect(m.after).toHaveBeenCalledTimes(1)
     await (m.after.mock.calls[0][0] as () => Promise<void>)()
-    expect(m.chainOrFail).toHaveBeenCalledWith({}, SID, makeRunRow().id)
+    expect(m.chainOrFail).toHaveBeenCalledWith({}, SID, makeRunRow().id, 0)
   })
 
   it('409s when a run is already active', async () => {

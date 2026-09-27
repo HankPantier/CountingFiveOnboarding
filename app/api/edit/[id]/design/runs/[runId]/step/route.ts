@@ -5,7 +5,7 @@ import { isUuid } from '@/lib/design/input-validation'
 import { ActiveRunExistsError, deleteConcepts, getRun, listConcepts, resetConcepts, resumeConcepts, transitionRun } from '@/lib/design/run-store'
 import { parseBaseSnapshot, planRetry } from '@/lib/design/run-state'
 import { dropAttemptNotes } from '@/lib/design/review'
-import { chainOrFail, failActiveRun } from '@/lib/design/run-trigger'
+import { chainOrFail, DESIGN_HOP_HEADER, failActiveRun, parseDesignHop, stallForFreshChain } from '@/lib/design/run-trigger'
 import { RUN_ACTIVE_STATUSES } from '@/lib/design/studio-types'
 import { NUDGE_PARAM } from '@/lib/design/studio-ui'
 import { authorizeStep, type StepTarget } from '../../../_step-auth'
@@ -24,7 +24,7 @@ const WORKER_CRASHED = 'The design step crashed — press Retry.'
 // renderer (playwright-core / @sparticuz/chromium), all traced by path — see
 // next.config.ts. Loaded lazily so a packaging fault errors ONE run with a
 // retryable message instead of crashing the whole route module at cold start.
-async function runStepInBackground(target: StepTarget, runId: string): Promise<void> {
+async function runStepInBackground(target: StepTarget, runId: string, hop: number): Promise<void> {
   const db = createServerClient()
   let orchestrator: typeof import('@/lib/design/run-orchestrator')
   try {
@@ -36,7 +36,11 @@ async function runStepInBackground(target: StepTarget, runId: string): Promise<v
   }
   try {
     const outcome = await orchestrator.runDesignStep({ ...target, runId })
-    if (orchestrator.shouldChain(outcome)) await chainOrFail(db, target.sessionId, runId)
+    if (!orchestrator.shouldChain(outcome)) return
+    // A render released after a transient live-site failure must be retried
+    // from a FRESH chain, not by a self-call that inherits this depth.
+    if (outcome.kind === 'refined' && outcome.freshChain) await stallForFreshChain(db, target.sessionId, runId, 'render retry needs a fresh chain')
+    else await chainOrFail(db, target.sessionId, runId, hop)
   } catch (err) {
     console.error('[design-step] step crashed', err)
     await failActiveRun(db, runId, WORKER_CRASHED)
@@ -44,7 +48,9 @@ async function runStepInBackground(target: StepTarget, runId: string): Promise<v
 }
 
 // POST — advance a design run by one unit of work (in the background).
-//   Bearer CRON_SECRET (the self-chain): just advance.
+//   Bearer CRON_SECRET (the self-chain): just advance. Its hop comes from
+//   DESIGN_HOP_HEADER (parseDesignHop — untrusted, only ever shortens the
+//   chain); an admin (browser) step is hop 0 and the header is ignored.
 //   Admin: a failed run is RETRIED from its first unfinished stage; an active
 //   run is nudged (a stalled chain restarts; duplicate calls are no-ops thanks
 //   to the guarded claims); a finished run is a 409. The Studio poll nudges
@@ -114,8 +120,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
     }
 
+    const hop = caller.kind === 'cron' ? parseDesignHop(req.headers.get(DESIGN_HOP_HEADER)) : 0
     after(async () => {
-      await runStepInBackground(caller.target, runId)
+      await runStepInBackground(caller.target, runId, hop)
     })
     return NextResponse.json({ accepted: true }, { status: 202 })
   } catch (err) {

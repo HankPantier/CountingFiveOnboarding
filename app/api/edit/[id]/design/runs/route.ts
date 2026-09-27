@@ -73,7 +73,8 @@ export async function POST(req: Request, { params }: Params) {
     })
     after(async () => {
       try {
-        await chainOrFail(createServerClient(), ctx.sessionId, run.id)
+        // This route is hop 0 of the chain; the first step is hop 1.
+        await chainOrFail(createServerClient(), ctx.sessionId, run.id, 0)
       } catch (err) {
         // chainOrFail marks a refused kickoff stalled (the Studio / cron
         // nudge it) and fails a misconfigured one; this is a backstop against

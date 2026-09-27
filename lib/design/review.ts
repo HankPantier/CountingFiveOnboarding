@@ -17,6 +17,10 @@ export const REVIEW_OUTCOMES = ['passed', 'max_revisions', 'cost_cap', 'invalid_
 export type ReviewOutcome = (typeof REVIEW_OUTCOMES)[number]
 export const MAX_REVIEW_NOTES = 12
 export const MAX_STORED_CRITIQUES = 3
+// A render whose live-site fetch got a transient 5xx (Vercel's 508 deep in a
+// step chain) is released and retried from a fresh chain this many times
+// before the concept ends not_rendered like any other render failure.
+export const MAX_RENDER_RETRIES = 2
 
 export type ReviewClaim = { unit: ReviewUnit; at: string }
 export type ConceptReview = {
@@ -29,6 +33,9 @@ export type ConceptReview = {
   critiques: CritiqueRecord[]
   outcome: ReviewOutcome | null
   notes: string[]
+  // Transient render failures of the CURRENT version so far (absent = 0);
+  // cleared by a render that settles and by a revision (a new version).
+  renderRetries?: number
 }
 
 export function newReview(): ConceptReview {
@@ -59,7 +66,23 @@ export function parseConceptReview(value: unknown): ConceptReview | null {
     critiques: critiques.slice(-MAX_STORED_CRITIQUES),
     outcome: (REVIEW_OUTCOMES as readonly unknown[]).includes(value.outcome) ? (value.outcome as ReviewOutcome) : null,
     notes: Array.isArray(value.notes) ? value.notes.filter((n): n is string => typeof n === 'string').slice(0, MAX_REVIEW_NOTES) : [],
+    ...(typeof value.renderRetries === 'number' && Number.isInteger(value.renderRetries) && value.renderRetries > 0
+      ? { renderRetries: Math.min(value.renderRetries, MAX_RENDER_RETRIES) }
+      : {}),
   }
+}
+
+// The review without its transient-render retry count (a settled render, or a
+// revision that starts a new version).
+export function withoutRenderRetries(review: ConceptReview): ConceptReview {
+  const { renderRetries: _retries, ...rest } = review
+  return rest
+}
+
+// Whether a render that failed with this transient flag should be released
+// for a fresh-chain retry instead of ending the loop as not_rendered.
+export function shouldRetryRender(review: Pick<ConceptReview, 'renderRetries'>, retryable: boolean): boolean {
+  return retryable && (review.renderRetries ?? 0) < MAX_RENDER_RETRIES
 }
 
 export function latestCritique(review: Pick<ConceptReview, 'critiques'>): CritiqueRecord | null {
