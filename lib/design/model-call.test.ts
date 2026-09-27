@@ -5,7 +5,8 @@ vi.mock('@/lib/content/json-generation', () => ({ generateJson: (o: unknown) => 
 vi.mock('@/lib/content/token-usage', () => ({ recordTokenUsage: (a: unknown) => m.record(a) }))
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: (id: string) => ({ modelId: id }) }))
 
-import { attemptFailureReason, createDesignCaller, DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS, estimateInputUsd, type DesignCallerOptions } from './model-call'
+import { APICallError } from '@ai-sdk/provider'
+import { attemptFailureReason, createDesignCaller, providerRejectionMessage, DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS, estimateInputUsd, type DesignCallerOptions } from './model-call'
 
 type Opts = {
   system?: string
@@ -142,5 +143,78 @@ describe('per-attempt log', () => {
     expect(attemptFailureReason(new DOMException('x', 'AbortError'))).toBe('aborted (timeout)')
     expect(attemptFailureReason(new Error('socket hang up'))).toBe('Error: socket hang up')
     expect(attemptFailureReason('x'.repeat(500))).toHaveLength(200)
+  })
+})
+
+const USAGE_LIMIT = 'You have reached your specified API usage limits. You will regain access on 2026-10-01 at 00:00 UTC.'
+const httpError = (statusCode: number | undefined, message: string) => new APICallError({ message, url: 'u', requestBodyValues: {}, statusCode, isRetryable: statusCode === undefined })
+
+describe('provider errors', () => {
+  it('adds NO estimate for an attempt the provider rejected with an HTTP error (usage limit), and stops the caller', async () => {
+    m.generateJson.mockImplementation(async (o: Opts) => {
+      await o.beforeAttempt?.(1)
+      o.onAttemptFailed?.({ attempt: 1, finishReason: 'error', error: httpError(400, USAGE_LIMIT) })
+      return null
+    })
+    const spends: number[] = []
+    const caller = createDesignCaller(opts({ onSpend: (u) => spends.push(u) }))
+    expect(await caller.call(MSG, CFG)).toBeNull()
+    expect(caller.spentUsd()).toBe(0)
+    expect(caller.estimatedUsd()).toBe(0)
+    expect(spends).toEqual([])
+    expect(caller.stopReason()).toBe('provider_rejected')
+    expect(caller.rejection()).toEqual({ kind: 'usage_limit', resetDate: '2026-10-01' })
+    // No repair turn / further call after an account-level rejection.
+    expect(caller.plan(240_000)).toEqual({ ok: false, reason: 'provider_rejected' })
+  })
+
+  it('adds no estimate for a transient HTTP rejection (529) either, but does not stop the caller', async () => {
+    m.generateJson.mockImplementation(async (o: Opts) => {
+      await o.beforeAttempt?.(1)
+      o.onAttemptFailed?.({ attempt: 1, finishReason: 'error', error: httpError(529, 'Overloaded') })
+      return null
+    })
+    const caller = createDesignCaller(opts())
+    await caller.call(MSG, CFG)
+    expect(caller.spentUsd()).toBe(0)
+    expect(caller.rejection()).toBeNull()
+    expect(caller.plan(240_000).ok).toBe(true)
+  })
+
+  it('keeps the conservative estimate for a timeout abort and a status-less network failure', async () => {
+    for (const error of [new DOMException('The operation was aborted due to timeout', 'TimeoutError'), httpError(undefined, 'Cannot connect to API: fetch failed')]) {
+      m.generateJson.mockImplementation(async (o: Opts) => {
+        await o.beforeAttempt?.(1)
+        o.onAttemptFailed?.({ attempt: 1, finishReason: 'error', error })
+        return null
+      })
+      const caller = createDesignCaller(opts())
+      await caller.call(MSG, CFG)
+      const expected = estimateInputUsd('SYS', MSG) + (8_000 / 1_000_000) * 20
+      expect(caller.estimatedUsd()).toBeCloseTo(expected, 8)
+    }
+  })
+
+  it('estimates only the aborted attempt when a rejected attempt came first', async () => {
+    m.generateJson.mockImplementation(async (o: Opts) => {
+      await o.beforeAttempt?.(1)
+      o.onAttemptFailed?.({ attempt: 1, finishReason: 'error', error: httpError(529, 'Overloaded') })
+      await o.beforeAttempt?.(2)
+      o.onAttemptFailed?.({ attempt: 2, finishReason: 'error', error: new DOMException('x', 'TimeoutError') })
+      return null
+    })
+    const caller = createDesignCaller(opts())
+    await caller.call(MSG, { ...CFG, retryBudget: 12_000 })
+    expect(caller.estimatedUsd()).toBeCloseTo(estimateInputUsd('SYS', MSG) + (12_000 / 1_000_000) * 20, 8)
+  })
+
+  it('words the Studio message per kind, with the reset date, never the key', () => {
+    expect(providerRejectionMessage({ kind: 'usage_limit', resetDate: '2026-10-01' })).toBe(
+      'The AI provider rejected the request: API usage limit reached (access returns 2026-10-01). Raise the limit in the Anthropic Console, then press Retry.'
+    )
+    expect(providerRejectionMessage({ kind: 'usage_limit', resetDate: null })).not.toContain('access returns')
+    expect(providerRejectionMessage({ kind: 'auth', resetDate: null })).toContain('check ANTHROPIC_API_KEY')
+    expect(providerRejectionMessage({ kind: 'credit', resetDate: null })).toContain('credits')
+    expect(providerRejectionMessage({ kind: 'permission', resetDate: null })).toContain('permission')
   })
 })

@@ -9,7 +9,14 @@
 //   • exact usage recorded under the caller's token stage (+ cache split);
 //   • an ESTIMATED cost (input + the attempt's full maxOutputTokens) for any
 //     attempt started but never reported (aborted / failed mid-flight) — added
-//     to the run's spend so the cap stays honest, never to token_usage;
+//     to the run's spend so the cap stays honest, never to token_usage. An
+//     attempt the provider REJECTED with an HTTP error (usage limit, 401, 529,
+//     …) generated nothing and is not billed, so it adds no estimate; a timeout
+//     abort or a status-less network failure keeps it (conservative);
+//   • an account-level provider rejection (usage limit reached, credits out,
+//     bad API key, permission denied — lib/ai/provider-rejection.ts) stops the
+//     caller: no larger-budget retry, no repair turn (plan() refuses), and
+//     rejection() carries what the Studio tells the operator;
 //   • one console.warn per attempt with its duration and finish reason (or why
 //     it failed — e.g. a timeout abort), so a slow / runaway attempt is visible.
 import { anthropic } from '@ai-sdk/anthropic'
@@ -19,13 +26,14 @@ import { extractCacheUsage } from '@/lib/content/cache-control'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
 import { estimateCostUsd } from '@/lib/content/token-pricing'
 import { recordTokenUsage } from '@/lib/content/token-usage'
+import { providerRejection, requestWasRejected, type ProviderRejection } from '@/lib/ai/provider-rejection'
 
 export const MIN_CALL_TIMEOUT_MS = 90_000
 export const DEADLINE_SAFETY_MS = 20_000
 // Rough input-token cost of one ≤1568 px image part, for aborted-attempt estimates.
 export const ESTIMATED_TOKENS_PER_IMAGE = 1_600
 
-export type StopReason = 'cost_cap' | 'deadline' | 'no_output'
+export type StopReason = 'cost_cap' | 'deadline' | 'no_output' | 'provider_rejected'
 export type DesignStage = 'design_concept' | 'design_critique'
 
 export type DesignCallerOptions = {
@@ -57,14 +65,18 @@ export type DesignCaller = {
   estimatedUsd: () => number
   stopReason: () => StopReason | null
   stop: (reason: StopReason) => void
+  // The account-level provider rejection that stopped this caller, if any.
+  rejection: () => ProviderRejection | null
 }
 
 // One generateJson call's attempt bookkeeping: the estimate of every started
-// attempt, in order; the first `accounted + estimated` of them are settled.
+// attempt, in order; the first `accounted + estimated + waived` of them are
+// settled (waived: rejected by the provider — nothing generated, nothing billed).
 type CallTracker = {
   started: number[]
   accounted: number
   estimated: number
+  waived: number
   inputUsd: number
   // The attempt in flight (for the per-attempt duration log).
   current: { attempt: 1 | 2; at: number } | null
@@ -102,20 +114,41 @@ export function estimateInputUsd(system: string, messages: ModelMessage[], model
   return estimateCostUsd(modelId, tokens, 0)
 }
 
+// What the Studio shows when the provider refused the account (never the key,
+// never the raw request).
+export function providerRejectionMessage(r: ProviderRejection): string {
+  switch (r.kind) {
+    case 'usage_limit':
+      return `The AI provider rejected the request: API usage limit reached${r.resetDate ? ` (access returns ${r.resetDate})` : ''}. Raise the limit in the Anthropic Console, then press Retry.`
+    case 'credit':
+      return 'The AI provider rejected the request: the account is out of API credits. Add credits in the Anthropic Console, then press Retry.'
+    case 'auth':
+      return 'The AI provider rejected the API key — check ANTHROPIC_API_KEY, then press Retry.'
+    case 'permission':
+      return "The AI provider refused access (permission denied) — check the API key's workspace and model access in the Anthropic Console, then press Retry."
+  }
+}
+
 export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
   const now = opts.now ?? Date.now
-  const state: { spent: number; estimated: number; stop: StopReason | null } = { spent: 0, estimated: 0, stop: null }
+  const state: { spent: number; estimated: number; stop: StopReason | null; rejection: ProviderRejection | null } = {
+    spent: 0,
+    estimated: 0,
+    stop: null,
+    rejection: null,
+  }
   const modelId = opts.model ?? DESIGN_MODEL
   const model = anthropic(modelId)
 
   const plan = (capMs: number): DesignPlan => {
+    if (state.rejection) return { ok: false, reason: 'provider_rejected' }
     if (opts.costSoFarUsd + state.spent >= opts.costCapUsd) return { ok: false, reason: 'cost_cap' }
     const remaining = Math.min(capMs, opts.deadline - now() - DEADLINE_SAFETY_MS)
     return remaining < MIN_CALL_TIMEOUT_MS ? { ok: false, reason: 'deadline' } : { ok: true, timeoutMs: remaining }
   }
 
   const reconcile = (tracker: CallTracker): void => {
-    const unsettled = tracker.started.slice(tracker.accounted + tracker.estimated)
+    const unsettled = tracker.started.slice(tracker.accounted + tracker.estimated + tracker.waived)
     if (unsettled.length === 0) return
     const usd = unsettled.reduce((sum, v) => sum + v, 0)
     tracker.estimated += unsettled.length
@@ -155,7 +188,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
   }
 
   const call = async (messages: ModelMessage[], cfg: DesignCallConfig): Promise<unknown | null> => {
-    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, inputUsd: estimateInputUsd(opts.system, messages, modelId), current: null }
+    const tracker: CallTracker = { started: [], accounted: 0, estimated: 0, waived: 0, inputUsd: estimateInputUsd(opts.system, messages, modelId), current: null }
     const { capMs, ...budgets } = cfg
     const genOpts: GenerateJsonOptions = {
       model,
@@ -182,6 +215,14 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
       onAttemptFailed: ({ attempt, finishReason, error }) => {
         const why = finishReason === 'error' ? attemptFailureReason(error) : `unparseable output (finish=${finishReason})`
         console.warn(`[${opts.logTag}] attempt ${attempt} (${modelId}) failed after ${secs(tracker)} — ${why}`)
+        if (finishReason !== 'error') return
+        // Rejected with an HTTP error: nothing was generated or billed.
+        if (requestWasRejected(error)) tracker.waived++
+        const rejected = providerRejection(error)
+        if (rejected) {
+          state.rejection = rejected
+          state.stop = 'provider_rejected'
+        }
       },
     }
     try {
@@ -198,6 +239,7 @@ export function createDesignCaller(opts: DesignCallerOptions): DesignCaller {
     spentUsd: () => state.spent,
     estimatedUsd: () => state.estimated,
     stopReason: () => state.stop,
+    rejection: () => state.rejection,
     stop: (reason) => {
       state.stop = reason
     },

@@ -11,6 +11,7 @@ import { buildCachedPartsMessages, type DynamicPart } from '@/lib/content/cache-
 import { GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
 import { DESIGN_SYSTEM_PROMPT, type PriorConcept } from './brief'
 import { checkConceptCandidate, parseConceptsEnvelope, rawConsistencyNotes, withConsistencyNotes, type ConceptContext, type ValidConcept } from './concept-validate'
+import type { ProviderRejection } from '@/lib/ai/provider-rejection'
 import { createDesignCaller, MIN_CALL_TIMEOUT_MS, type StopReason } from './model-call'
 
 export { DEADLINE_SAFETY_MS, ESTIMATED_TOKENS_PER_IMAGE } from './model-call'
@@ -62,9 +63,12 @@ export type GeneratedConcept = {
   // never reported usage (aborted / failed mid-flight). Not in token_usage.
   estimatedUsd: number
   notes: string[]
-  // null when a concept came back; otherwise why not (a budget veto, or no
-  // usable output).
+  // null when a concept came back; otherwise why not (a budget veto, a
+  // provider rejection, or no usable output).
   stoppedReason: StopReason | null
+  // Set when the AI provider refused the account (usage limit, credits, key,
+  // permission): every further call would fail the same way.
+  rejection: ProviderRejection | null
 }
 
 type Slot = { concept: ValidConcept | null; errors: string[] }
@@ -106,6 +110,7 @@ export async function generateConcept(args: GenerateConceptArgs): Promise<Genera
       estimatedUsd: caller.estimatedUsd(),
       notes,
       stoppedReason: slot.concept ? null : (caller.stopReason() ?? 'no_output'),
+      rejection: caller.rejection(),
     }
   }
 
@@ -132,6 +137,7 @@ export async function generateConcept(args: GenerateConceptArgs): Promise<Genera
   const repairPlan = caller.plan(REPAIR_CALL_TIMEOUT_MS)
   if (!repairPlan.ok) {
     caller.stop(repairPlan.reason)
+    if (repairPlan.reason === 'provider_rejected') return done(slot)
     notes.push(
       repairPlan.reason === 'cost_cap'
         ? 'Skipped the repair pass — the run hit its cost cap.'

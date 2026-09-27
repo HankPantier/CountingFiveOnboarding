@@ -14,7 +14,10 @@
 // latest valid bundle. Model units re-read the run's cost AFTER claiming,
 // check the cap first, and persist spend BEFORE settling the concept. A
 // failing critique / revision ends that concept's loop with a note; it never
-// fails the run.
+// fails the run — except an account-level provider rejection (usage limit,
+// credits, API key, permission): every later unit would fail the same way, so
+// the claim is released (the concept keeps its next unit) and the run errors
+// with the specific cause; Retry resumes the concept once the account is fixed.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
@@ -61,6 +64,8 @@ import { CONCEPT_STOPPED_MID_REVIEW, hasStalledConcept, parseBaseSnapshot, parse
 import type { RunScreenshot } from './run-types'
 import { STEP_MODEL_BUDGET_MS, type StepContext, type StepOutcome } from './step-types'
 import { downloadDesignImage, removeDesignPaths } from './storage'
+import { providerRejectionMessage } from './model-call'
+import type { ProviderRejection } from '@/lib/ai/provider-rejection'
 import { readDraftThemeTexts } from './theme-snapshot'
 
 type Db = SupabaseClient<Database>
@@ -330,6 +335,17 @@ async function startModelUnit(db: Db, ctx: StepContext, runId: string, conceptId
   return { ok: true, row: c.row, review: c.review, run, priorCost: Number(run.cost_usd), capUsd: Number(run.cost_cap_usd) }
 }
 
+// The provider refused the account mid-loop: release the unit claim (the
+// concept keeps its review and next unit, so planRetry resumes it) and error
+// the run with the specific cause.
+async function failOnRejection(db: Db, runId: string, claimed: DesignConceptRow, review: ConceptReview, rejection: ProviderRejection): Promise<StepOutcome> {
+  const message = providerRejectionMessage(rejection)
+  const released = await settleConceptUnit(db, runId, claimed, { status: 'refining', review: { ...review, claim: null } })
+  if (!released) return { kind: 'noop', reason: 'the concept changed meanwhile' }
+  await transitionRun(db, runId, ['refining'], { status: 'error', error: message })
+  return { kind: 'failed', error: message }
+}
+
 // Ends a concept's loop (ready, latest valid bundle kept) after a model unit.
 async function endLoop(db: Db, runId: string, claimed: DesignConceptRow, unit: ReviewUnit, review: ConceptReview, outcome: ReviewOutcome, notes: string[]): Promise<StepOutcome> {
   const done = await settleConceptUnit(db, runId, claimed, { status: 'ready', review: endReview(review, outcome, notes) })
@@ -394,6 +410,7 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
     })
     costUsd = priorCost + result.costUsd
     await persistSpend(db, runId, costUsd) // BEFORE the concept is settled
+    if (result.rejection) return await failOnRejection(db, runId, claimed, review, result.rejection)
     if (!result.critique) {
       return result.stoppedReason === 'cost_cap'
         ? await endLoop(db, runId, claimed, 'critique', review, 'cost_cap', [capLoopNote(capUsd)])
@@ -477,6 +494,7 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
     })
     costUsd = priorCost + result.costUsd
     await persistSpend(db, runId, costUsd) // BEFORE the concept is settled
+    if (result.rejection) return await failOnRejection(db, runId, claimed, review, result.rejection)
     if (!result.concept) {
       if (result.stoppedReason === 'cost_cap') return await endLoop(db, runId, claimed, 'revise', review, 'cost_cap', [capLoopNote(capUsd)])
       const why =

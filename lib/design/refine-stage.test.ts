@@ -353,6 +353,19 @@ describe('critiqueUnit', () => {
     expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { costUsd: 1.6 })
   })
 
+  it('a provider rejection (usage limit) does NOT end the loop: the claim is released (critique next) and the run errors with the specific message', async () => {
+    m.listConcepts.mockResolvedValue([looping()])
+    m.critique.mockResolvedValue(result(null, { costUsd: 0, stoppedReason: 'provider_rejected', rejection: { kind: 'usage_limit', resetDate: '2026-10-01' } }))
+    const out = await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    const message =
+      'The AI provider rejected the request: API usage limit reached (access returns 2026-10-01). Raise the limit in the Anthropic Console, then press Retry.'
+    expect(out).toEqual({ kind: 'failed', error: message })
+    expect(unitPatch().status).toBe('refining')
+    expect(unitPatch().review).toMatchObject({ next: 'critique', claim: null })
+    expect(unitPatch().review.outcome ?? null).toBeNull()
+    expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { status: 'error', error: message })
+  })
+
   it('no usable critique ends the loop as critic_unavailable', async () => {
     m.listConcepts.mockResolvedValue([looping()])
     m.critique.mockResolvedValue(result(null))
@@ -443,6 +456,15 @@ describe('reviseUnit', () => {
     expect(m.gather.mock.calls[0][4]).toEqual({ markup: true })
     expect(texts(m.revise.mock.calls[0][0])).toContain('revision round 1')
     expect(m.transitionRun).toHaveBeenCalledWith({}, RID, ['refining'], { costUsd: 0.4 })
+  })
+
+  it('a provider rejection (bad API key) releases the claim (revise next) and errors the run', async () => {
+    m.listConcepts.mockResolvedValue([looping({ next: 'revise', critiques: [crit(false)] })])
+    m.revise.mockResolvedValue({ concept: null, errors: [], notes: [], costUsd: 0, estimatedUsd: 0, stoppedReason: 'provider_rejected', rejection: { kind: 'auth', resetDate: null } })
+    const out = await reviseUnit({} as never, CTX, RID, CID, () => 1_000)
+    expect(out).toEqual({ kind: 'failed', error: 'The AI provider rejected the API key — check ANTHROPIC_API_KEY, then press Retry.' })
+    expect(unitPatch()).toMatchObject({ status: 'refining' })
+    expect(unitPatch().review).toMatchObject({ next: 'revise', claim: null })
   })
 
   it('an unusable revision keeps the previous bundle and ends the loop', async () => {

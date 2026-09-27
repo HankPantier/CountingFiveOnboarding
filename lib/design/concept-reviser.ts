@@ -20,6 +20,7 @@ import { CSS_RULES_REMINDER } from './brief/contract'
 import { CONCEPT_OUTPUT_TOKENS, REPAIR_CALL_TIMEOUT_MS, REPAIR_OUTPUT_TOKENS } from './concept-generator'
 import { isCssSizeCapError } from './css-budget'
 import { checkConceptCandidate, parseConceptsEnvelope, withConsistencyNotes, type ConceptContext, type ValidConcept } from './concept-validate'
+import type { ProviderRejection } from '@/lib/ai/provider-rejection'
 import { createDesignCaller, type StopReason } from './model-call'
 
 export const REVISE_CALL_CAP_MS = 300_000
@@ -46,6 +47,8 @@ export type ReviseConceptResult = {
   costUsd: number
   estimatedUsd: number
   stoppedReason: StopReason | null
+  // Set when the AI provider refused the account (see GeneratedConcept).
+  rejection: ProviderRejection | null
 }
 
 export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConceptResult> {
@@ -74,7 +77,7 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
     label: 'design-revise',
     capMs: REVISE_CALL_CAP_MS,
   })
-  const money = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd() }
+  const money = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd(), rejection: caller.rejection() }
   const fail = (errors: string[], stoppedReason: StopReason): ReviseConceptResult => ({ ...money, concept: null, errors, notes: [], stoppedReason })
   if (raw === null) return fail([], caller.stopReason() ?? 'no_output')
   const candidate = parseConceptsEnvelope(raw)?.[0]
@@ -101,7 +104,7 @@ export async function reviseConcept(args: ReviseConceptArgs): Promise<ReviseConc
       capMs: REPAIR_CALL_TIMEOUT_MS,
     }
   )
-  const after = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd() }
+  const after = { costUsd: caller.spentUsd(), estimatedUsd: caller.estimatedUsd(), rejection: caller.rejection() }
   const fixed = repaired === null ? null : checkConceptCandidate(parseConceptsEnvelope(repaired)?.[0], args.context, args.others, 'after repair: ')
   if (fixed?.ok) {
     const concept = withConsistencyNotes(fixed.concept, args.context.caps)
