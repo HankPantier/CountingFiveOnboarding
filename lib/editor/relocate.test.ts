@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   FileNotFoundError: class FileNotFoundError extends Error {},
+  listTree: vi.fn(async () => [] as Array<{ path: string; sha: string; type: 'blob' }>),
   moveFile: vi.fn(),
   readFile: vi.fn(),
   writeFile: vi.fn(),
@@ -10,12 +11,13 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/github/repo-files', () => ({
   DRAFT_BRANCH: 'draft',
   FileNotFoundError: h.FileNotFoundError,
+  listTree: h.listTree,
   moveFile: h.moveFile,
   readFile: h.readFile,
   writeFile: h.writeFile,
 }))
 
-import { csvField, frontmatterUrl, relocateFile, swapFrontmatterUrl, unquoteYamlScalar } from './relocate'
+import { appendRedirects, csvField, frontmatterUrl, relocateFile, swapFrontmatterUrl, unquoteYamlScalar } from './relocate'
 
 describe('relocateFile — read-after-write lag', () => {
   it('reads the moved page at the move commit, not the lagging branch', async () => {
@@ -37,6 +39,42 @@ describe('relocateFile — read-after-write lag', () => {
     expect(res).toEqual({ blobSha: 'blobB', moved: true })
     expect(h.writeFile.mock.calls[0][5]).toMatchObject({ expectedSha: 'blobA' })
     expect(h.writeFile.mock.calls[1][1]).toBe('content/redirects.csv')
+  })
+})
+
+describe('appendRedirects — cycle-safe writes', () => {
+  const HEADER = 'old_url,new_url,status_code,reason\n'
+
+  function withRedirects(content: string) {
+    h.readFile.mockImplementation(async (_repo: string, path: string) => {
+      if (path === 'content/redirects.csv') return { path, content, sha: 'r1' }
+      throw new h.FileNotFoundError(path)
+    })
+    h.writeFile.mockReset()
+    h.writeFile.mockResolvedValue({ commitSha: 'c', blobSha: 'r2' })
+  }
+
+  it('AI relocation back to the old url removes the reverse row (no loop)', async () => {
+    withRedirects(`${HEADER}/a,/b,301,Relocated via editor\n`)
+    // A lagging tree still lists the source page: it must not block the new row.
+    h.listTree.mockResolvedValueOnce([{ path: 'content/pages/b.md', sha: 'x', type: 'blob' }])
+    await appendRedirects({ githubRepo: 'repo' }, [{ from: '/b', to: '/a' }], 'Relocated via editor')
+    expect(h.writeFile.mock.calls[0][2]).toBe(`${HEADER}/b,/a,301,Relocated via editor\n`)
+  })
+
+  it('drops an existing row that redirects a real page away (Accord)', async () => {
+    withRedirects(`${HEADER}/services/outsourced-accounting,/services,301,old\n`)
+    h.listTree.mockResolvedValueOnce([
+      { path: 'content/pages/services--outsourced-accounting.md', sha: 'x', type: 'blob' },
+    ])
+    await appendRedirects({ githubRepo: 'repo' }, [{ from: '/old', to: '/new' }], 'moved')
+    expect(h.writeFile.mock.calls[0][2]).toBe(`${HEADER}/old,/new,301,moved\n`)
+  })
+
+  it('writes nothing when the row is already there', async () => {
+    withRedirects(`${HEADER}/a,/b,301,moved\n`)
+    await appendRedirects({ githubRepo: 'repo' }, [{ from: '/a', to: '/b' }], 'moved')
+    expect(h.writeFile).not.toHaveBeenCalled()
   })
 })
 

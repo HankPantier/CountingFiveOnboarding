@@ -287,3 +287,43 @@ describe('theme files as site config (Task 18b)', () => {
     ])
   })
 })
+
+describe('redirects.csv loop safety on deploy', () => {
+  const header = 'old_url,new_url,status_code,reason\n'
+
+  it('heals a loop already on draft and never appends a row that closes one', () => {
+    const draft = header + '/a,/b,301,editor\n/b,/a,301,editor\n'
+    const merged = mergeRedirectsCsv(draft, header + '/c,/a,301,gen\n', null)
+    expect(merged).toBe(header + '/a,/b,301,editor\n/c,/b,301,gen\n')
+  })
+
+  it('collapses a generated row through an existing chain', () => {
+    const draft = header + '/a,/b,301,editor\n'
+    expect(mergeRedirectsCsv(draft, header + '/old,/a,301,gen\n', null)).toBe(
+      draft + '/old,/b,301,gen\n'
+    )
+  })
+
+  it('drops rows that would redirect a page the site has', () => {
+    const draft = header + '/services/outsourced-accounting,/services,301,old\n'
+    const plan = planDeployPush({
+      entries: [
+        { path: 'content/redirects.csv', content: header },
+        { path: 'content/pages/services--outsourced-accounting.md', content: 'x' },
+      ],
+      draftBlobs: new Map([['content/redirects.csv', sha(draft)]]),
+      baseline: { 'content/redirects.csv': sha(header) },
+      redirects: { draft, lastDeployed: header },
+    })
+    expect(plan.push[0]).toMatchObject({ path: 'content/redirects.csv', content: header })
+  })
+
+  it('sanitizes the generated file on a first deploy', () => {
+    const plan = planDeployPush({
+      entries: [{ path: 'content/redirects.csv', content: header + '/a,/b,301,x\n/b,/a,301,x\n' }],
+      draftBlobs: new Map(),
+      baseline: null,
+    })
+    expect(plan.push[0].content).toBe(header + '/a,/b,301,x\n')
+  })
+})

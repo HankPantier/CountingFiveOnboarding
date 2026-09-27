@@ -1,5 +1,6 @@
 import type { SessionSchema } from '@/types/session-schema'
 import { toSitePath } from './url-path'
+import { sanitizeRedirectsCsv } from '@/lib/editor/redirects'
 
 type CurrentSitemapEntry = NonNullable<SessionSchema['current_sitemap']>[number]
 
@@ -99,6 +100,22 @@ export function buildRedirectsCsv(
         continue // drop from CSV
       }
 
+      // Never redirect a URL the new site still has a page at (Accord:
+      // /services/outsourced-accounting was consolidated away while its page
+      // shipped) — the redirect would shadow the page. Same for a self-redirect.
+      const oldPath = sanitizeUrl(oldUrl)
+      if (oldPath && (oldPath === newUrl || validNewUrls.has(oldPath))) {
+        issues.push({
+          severity: 'warning',
+          oldUrl,
+          reason:
+            oldPath === newUrl
+              ? `redirects to itself — dropped`
+              : `marked '${entry.action}' but the new sitemap still has a page at ${oldPath} — redirect dropped so the page stays reachable`,
+        })
+        continue
+      }
+
       // Valid redirect row
       const reason =
         entry.action === 'consolidate'
@@ -127,6 +144,9 @@ export function buildRedirectsCsv(
     }
   }
 
-  const csv = header + rows.join('\n') + (rows.length > 0 ? '\n' : '')
+  // Belt and braces: no loops or self-redirects ever leave the builder.
+  const csv = sanitizeRedirectsCsv(header + rows.join('\n') + (rows.length > 0 ? '\n' : ''), {
+    livePaths: validNewUrls,
+  })
   return { csv, issues }
 }

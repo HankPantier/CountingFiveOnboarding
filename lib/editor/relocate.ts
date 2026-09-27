@@ -1,8 +1,10 @@
 import { toPathname } from './nav-urls'
+import { applyRedirectAdds, pageUrlsFromPaths, redirectKey } from './redirects'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import {
   DRAFT_BRANCH,
   FileNotFoundError,
+  listTree,
   moveFile,
   readFile,
   writeFile,
@@ -107,33 +109,46 @@ export function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-// Append 301 redirect rows to content/redirects.csv (creating it if absent),
-// skipping any from-url that already has one. `reason` is the CSV note column;
-// callers pass a fixed string (never client input) so it can't corrupt the CSV.
+// Root-relative urls of every published page on the draft, for real-page
+// protection. A branch tree read right after a move can lag, so the caller's
+// own moves are applied on top: sources are vacated, destinations are live.
+async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string>> {
+  let live = new Set<string>()
+  try {
+    const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
+    live = pageUrlsFromPaths(tree.filter((e) => e.type === 'blob').map((e) => e.path))
+  } catch (err) {
+    // Fail soft: cycle safety doesn't need the tree; only the Accord-style
+    // "real page redirected away" guard degrades to this batch's targets.
+    console.warn('[redirects] page tree unavailable; real-page guard limited to this move', err)
+  }
+  for (const { from } of pairs) live.delete(redirectKey(from))
+  for (const { to } of pairs) live.add(redirectKey(to))
+  return live
+}
+
+// Add 301 redirect rows to content/redirects.csv (creating it if absent)
+// through the cycle-safe helper (lib/editor/redirects.ts): moving B back to A
+// removes the old A→B row, X→A chains collapse to X→B, self-redirects are
+// dropped and no row may redirect a path that has a real page. `reason` is the
+// CSV note column; callers pass a fixed string (never client input).
 export async function appendRedirects(
   ctx: RelocateCtx,
   pairs: Move[],
   reason: string
 ): Promise<void> {
-  let content = ''
+  let current: string | null = null
   let sha: string | undefined
   try {
     const f = await readFile(ctx.githubRepo, REDIRECTS_PATH, DRAFT_BRANCH)
-    content = f.content
+    current = f.content
     sha = f.sha
   } catch (err) {
     if (!(err instanceof FileNotFoundError)) throw err
-    content = 'old_url,new_url,status_code,reason\n'
   }
-  if (!content.endsWith('\n')) content += '\n'
-  const existing = new Set(content.split('\n').map((l) => l.split(',')[0]))
-  let added = false
-  for (const { from, to } of pairs) {
-    if (existing.has(from)) continue
-    content += `${[from, to, '301', reason].map(csvField).join(',')}\n`
-    added = true
-  }
-  if (added) {
+  const livePaths = await livePageUrls(ctx, pairs)
+  const { content, changed } = applyRedirectAdds(current, pairs, reason, { livePaths })
+  if (changed) {
     await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
       ...(sha ? { expectedSha: sha } : {}),
       ...author(ctx),

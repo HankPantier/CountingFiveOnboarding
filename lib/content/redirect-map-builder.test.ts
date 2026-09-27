@@ -72,3 +72,28 @@ describe('buildRedirectsCsv — Phase I annotated destinations', () => {
     expect(issues).toHaveLength(0)
   })
 })
+
+describe('buildRedirectsCsv — never shadows a real page or loops', () => {
+  const SITEMAP = [
+    { url: '/services', title: 'Services' },
+    { url: '/services/outsourced-accounting', title: 'Outsourced accounting' },
+  ]
+
+  it('drops a consolidate row whose old URL is still a page in the new sitemap (Accord)', () => {
+    const { csv, issues } = buildRedirectsCsv(
+      [{ url: 'https://acc.example/services/outsourced-accounting/', title: 'T', live: true, action: 'consolidate', new_url: '/services' }],
+      SITEMAP
+    )
+    expect(csv).not.toContain('outsourced-accounting/,')
+    expect(issues[0].reason).toMatch(/still has a page/)
+  })
+
+  it('drops a self-redirect', () => {
+    const { csv, issues } = buildRedirectsCsv(
+      [{ url: '/services/', title: 'T', live: true, action: 'redirect', new_url: '/services' }],
+      SITEMAP
+    )
+    expect(csv).not.toMatch(/^\/services\/,/m)
+    expect(issues[0].reason).toMatch(/itself/)
+  })
+})

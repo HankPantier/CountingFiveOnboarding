@@ -22,6 +22,13 @@
 import { createHash } from 'node:crypto'
 import type { PushEntry } from '@/lib/github/repo-files'
 import { DEPLOY_MANIFEST_PATH } from '@/lib/github/deploy-commit'
+import {
+  pageUrlsFromPaths,
+  parseRedirectRows,
+  redirectKey,
+  resolveRedirectTarget,
+  sanitizeRedirectsCsv,
+} from '@/lib/editor/redirects'
 
 export { DEPLOY_MANIFEST_PATH }
 export const REDIRECTS_CSV_PATH = 'content/redirects.csv'
@@ -139,11 +146,20 @@ function isDataRow(line: string): boolean {
 // every existing line verbatim, append generated rows whose old_url isn't
 // already redirected. A row that was in the last-deployed file but is gone from
 // draft was removed on purpose — it is not re-added.
+//
+// The result is always loop-free (lib/editor/redirects.ts): a generated X→A
+// whose A is already redirected is collapsed to the end of that chain, a
+// generated row that would close a loop or redirect a live page is dropped,
+// and any loop / self-redirect / live-page row already on draft is removed —
+// which is what heals the loops already on live sites at their next deploy.
 export function mergeRedirectsCsv(
   draft: string,
   generated: string,
-  lastDeployed: string | null
+  lastDeployed: string | null,
+  livePaths?: Iterable<string>
 ): string {
+  // Chains resolve against a loop-free copy, so a loop on draft never becomes a target.
+  const loopFree = sanitizeRedirectsCsv(draft, { livePaths })
   const existingFrom = new Set(draft.split('\n').filter(isDataRow).map(firstCsvField))
   const previouslyShipped = new Set(
     (lastDeployed ?? '').split('\n').filter(isDataRow).map(firstCsvField)
@@ -155,9 +171,33 @@ export function mergeRedirectsCsv(
       const from = firstCsvField(line)
       return !existingFrom.has(from) && !previouslyShipped.has(from)
     })
-  if (additions.length === 0) return draft
+    .flatMap((line) => {
+      const [row] = parseRedirectRows(line.trim())
+      if (!row) return [line.trim()]
+      const target = resolveRedirectTarget(loopFree, row.to)
+      if (redirectKey(target) === redirectKey(row.from)) return []
+      if (target === row.to) return [line.trim()]
+      return [[row.from, target, row.status || '301', row.reason].map(csvField).join(',')]
+    })
   const base = draft.length === 0 || draft.endsWith('\n') ? draft : draft + '\n'
-  return base + additions.map((l) => l.trim()).join('\n') + '\n'
+  const merged = additions.length === 0 ? draft : base + additions.join('\n') + '\n'
+  const safe = sanitizeRedirectsCsv(merged, { livePaths })
+  // sanitize normalizes a missing final newline; don't churn the file for that.
+  return safe === merged || safe === merged + '\n' ? merged : safe
+}
+
+function asText(content: string | Buffer): string {
+  return typeof content === 'string' ? content : content.toString('utf-8')
+}
+
+function csvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
+}
+
+// Urls of every published page the deployed site will have: what's already on
+// draft plus what this package ships.
+function livePageUrls(input: PlanInput): Set<string> {
+  return pageUrlsFromPaths([...input.draftBlobs.keys(), ...input.entries.map((e) => e.path)])
 }
 
 export type PlanInput = {
@@ -174,13 +214,20 @@ export function planDeployPush(input: PlanInput): DeployPlan {
   const { entries, draftBlobs, baseline } = input
   const manifestGuard = draftBlobs.get(DEPLOY_MANIFEST_PATH) ?? null
 
+  const live = livePageUrls(input)
+
   if (baseline === null) {
+    const safeEntries = entries.map((e) =>
+      e.path === REDIRECTS_CSV_PATH
+        ? { ...e, content: sanitizeRedirectsCsv(asText(e.content), { livePaths: live }) }
+        : e
+    )
     const blobs: Record<string, string> = {}
-    for (const e of entries) blobs[e.path] = gitBlobSha(e.content)
+    for (const e of safeEntries) blobs[e.path] = gitBlobSha(e.content)
     return {
       firstDeploy: true,
       push: [
-        ...entries,
+        ...safeEntries,
         { path: DEPLOY_MANIFEST_PATH, content: serializeDeployManifest(blobs), expectedBlobSha: manifestGuard },
       ],
       skipped: [],
@@ -197,7 +244,7 @@ export function planDeployPush(input: PlanInput): DeployPlan {
     const base = baseline[e.path] ?? null
 
     if (e.path === REDIRECTS_CSV_PATH) {
-      const generated = typeof e.content === 'string' ? e.content : e.content.toString('utf-8')
+      const generated = sanitizeRedirectsCsv(asText(e.content), { livePaths: live })
       if (draft === null) {
         push.push({ path: e.path, content: generated, expectedBlobSha: null })
         nextManifest[e.path] = gitBlobSha(generated)
@@ -209,7 +256,7 @@ export function planDeployPush(input: PlanInput): DeployPlan {
         skipped.push({ path: e.path, reason: 'edited' })
         continue
       }
-      const merged = mergeRedirectsCsv(current, generated, input.redirects?.lastDeployed ?? null)
+      const merged = mergeRedirectsCsv(current, generated, input.redirects?.lastDeployed ?? null, live)
       if (merged !== current) push.push({ path: e.path, content: merged, expectedBlobSha: draft })
       nextManifest[e.path] = gitBlobSha(merged)
       continue
