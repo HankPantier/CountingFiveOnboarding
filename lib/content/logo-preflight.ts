@@ -36,6 +36,16 @@ const noChange = (buffer: Buffer, lightLogo = false): LogoPreflight => ({
 export const LIGHT_LOGO_NOTE =
   'The logo is mostly white/light, so it would disappear on the light header. A first deploy ships the inverted (primary-colour) navigation so it shows; on a live site switch Navigation to “inverted” in Theme Studio, or upload a dark version of the logo.'
 
+/**
+ * A white/light logo gets the inverted (primary-colour) nav so it is visible —
+ * unless design.json already chose a nav style. Mutates and returns designJson.
+ * design.json is first-deploy site config, so this never changes a live site.
+ */
+export function applyLogoNavDefault<T extends { style?: Record<string, string> }>(designJson: T, lightLogo: boolean): T {
+  if (lightLogo && !designJson.style?.nav) designJson.style = { ...designJson.style, nav: 'inverted' }
+  return designJson
+}
+
 /** Analyse (and, for padded transparent rasters, trim) the logo. Never throws. */
 export async function preflightLogo(buffer: Buffer, fileName: string): Promise<LogoPreflight> {
   if (/\.svg$/i.test(fileName)) {

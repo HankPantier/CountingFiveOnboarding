@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
-import { LIGHT_LOGO_NOTE, preflightLogo } from './logo-preflight'
+import { applyLogoNavDefault, LIGHT_LOGO_NOTE, preflightLogo } from './logo-preflight'
 
 // A w×h PNG: `bg` (RGBA) everywhere with a centred bw×bh box of `fg`.
 async function png(
@@ -59,6 +59,20 @@ describe('preflightLogo', () => {
     const r = await preflightLogo(svg, 'wordmark.svg')
     expect(r.buffer).toBe(svg)
     expect(r.lightLogo).toBe(true)
+  })
+
+  it('light logo → design.json style.nav=inverted, unless a nav style is already chosen', () => {
+    expect(applyLogoNavDefault({ roundness: 'soft' } as { roundness: string; style?: Record<string, string> }, true).style).toEqual({ nav: 'inverted' })
+    expect(applyLogoNavDefault({ style: { cards: 'flat' } }, true).style).toEqual({ cards: 'flat', nav: 'inverted' })
+    expect(applyLogoNavDefault({ style: { nav: 'bordered' } }, true).style).toEqual({ nav: 'bordered' })
+    expect(applyLogoNavDefault({} as { style?: Record<string, string> }, false).style).toBeUndefined()
+  })
+
+  it('wires a real white logo end-to-end into the nav default', async () => {
+    const logo = await png(300, 64, TRANSPARENT, { r: 255, g: 255, b: 255 }, 296, 60)
+    const design: { style?: Record<string, string> } = {}
+    applyLogoNavDefault(design, (await preflightLogo(logo, 'logo.png')).lightLogo)
+    expect(design.style?.nav).toBe('inverted')
   })
 
   it('never throws on an undecodable file', async () => {

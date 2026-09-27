@@ -20,6 +20,12 @@ describe('isDesignSystemLocked', () => {
     expect(isCompletePalette({ ...PALETTE, action: { hex: 'teal', name: 'Action' } })).toBe(false)
     expect(isCompletePalette([])).toBe(false)
   })
+
+  it('accepts #rgb, #rrggbb and #rrggbbaa only', () => {
+    const withAction = (hex: string) => isCompletePalette({ ...PALETTE, action: { hex, name: 'Action' } })
+    for (const ok of ['#abc', '#aabbcc', '#aabbccdd']) expect(withAction(ok)).toBe(true)
+    for (const bad of ['#abcd', '#abcde', '#aabbccd', '#aabbccddee']) expect(withAction(bad)).toBe(false)
+  })
 })
 
 describe('getPhaseStatus — the sitemap waits for the Design System', () => {

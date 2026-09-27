@@ -44,7 +44,7 @@ import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/content/brand-gate'
 import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
 import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
-import { preflightLogo } from '@/lib/content/logo-preflight'
+import { applyLogoNavDefault, preflightLogo } from '@/lib/content/logo-preflight'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
@@ -419,21 +419,16 @@ export async function assembleContentPackage(
   const palette = job.palette as PaletteData
   const designTokens = job.design_tokens as DesignTokens
 
-  let designMd: string | null = null
-  if (palette && designTokens) {
-    designMd = buildDesignMd({
-      firmName,
-      palette,
-      tokens: designTokens,
-      brand: schema.brand,
-      business: schema.business,
-      location: schema.locations?.[0]
-        ? { city: schema.locations[0].city, state: schema.locations[0].state }
-        : null,
-    })
-  } else {
-    console.warn(`[package] Skipping design.md — palette=${!!palette}, design_tokens=${!!designTokens}`)
-  }
+  const designMd = buildDesignMd({
+    firmName,
+    palette,
+    tokens: designTokens,
+    brand: schema.brand,
+    business: schema.business,
+    location: schema.locations?.[0]
+      ? { city: schema.locations[0].city, state: schema.locations[0].state }
+      : null,
+  })
 
   // Phase II JSON contract — emitted alongside the existing markdown outputs
   // and consumed by the client-site template repo (which hard-requires both).
@@ -503,9 +498,7 @@ export async function assembleContentPackage(
       const logoCheck = await preflightLogo(logoAsset.content, logoAsset.fileName)
       logoAsset.content = logoCheck.buffer
       logoNotes.push(...logoCheck.notes)
-      if (logoCheck.lightLogo && !designJson.style?.nav) {
-        designJson.style = { ...designJson.style, nav: 'inverted' }
-      }
+      applyLogoNavDefault(designJson, logoCheck.lightLogo)
     } else if (palette && designJson?.typography?.headingFont) {
       // No uploaded logo — generate a branded SVG wordmark so the NavBar
       // ships with the firm name in the heading font + primary color

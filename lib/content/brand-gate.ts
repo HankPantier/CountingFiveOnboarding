@@ -4,7 +4,8 @@
 // silently shipped FALLBACK_PALETTE (generic slate/teal) — the main reason the
 // fleet looked unbranded. Pure + client-safe (PhaseStepper imports it).
 
-const HEX_RE = /^#[0-9a-fA-F]{3,8}$/
+// #rgb, #rrggbb, or #rrggbbaa — the forms chroma-js and the theme generator accept.
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const PALETTE_ROLES = ['primary', 'secondary', 'complementary', 'action', 'nearBlack', 'nearWhite'] as const
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -36,6 +37,9 @@ export const DESIGN_SYSTEM_REQUIRED_FOR_SITEMAP =
 
 export const DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE =
   'This site has no locked Design System (palette + type), so it would ship the generic fallback colours. Open step 1 “Design System”, review the logo palette and click Save, then package again.'
+
+export const DESIGN_SYSTEM_REQUIRED_FOR_EXPORT =
+  'This site has no locked palette, so the export would use generic colours. Open step 1 “Design System” on the content job, review the logo palette and click Save, then export again.'
 
 export type PhaseStatusValue = 'locked' | 'active' | 'complete'
 

@@ -14,6 +14,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { NavJson } from '@/types/nav-json'
 import type { ClientCenterJson } from '@/types/client-center'
+import { DESIGN_SYSTEM_REQUIRED_FOR_EXPORT, isCompletePalette } from '@/lib/content/brand-gate'
 
 // archiver (zip) + GitHub reads require the Node.js runtime; a large site takes
 // dozens of GitHub reads plus (time-boxed) Pexels lookups, so allow the full
@@ -25,17 +26,6 @@ const NAV_PATH = 'content/nav.json'
 const CLIENT_CENTER_PATH = 'content/client-center.json'
 const PRICING_PLANS_PATH = 'content/pricing-plans.json'
 const READ_CONCURRENCY = 4
-
-// Fallback palette (brand navy/cyan) when a job hasn't run the Design System
-// step yet — keeps the export usable instead of failing on a null palette.
-const FALLBACK_PALETTE: PaletteData = {
-  primary: { hex: '#003B71', name: 'Navy' },
-  secondary: { hex: '#00C1DE', name: 'Cyan' },
-  complementary: { hex: '#00C1DE', name: 'Cyan' },
-  action: { hex: '#00C1DE', name: 'Cyan' },
-  nearBlack: { hex: '#231F20', name: 'Near Black' },
-  nearWhite: { hex: '#F7FAFC', name: 'Near White' },
-}
 
 function gmtStamp(d: Date): string {
   return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '')
@@ -91,6 +81,11 @@ export async function GET(
     .select('palette')
     .eq('id', ctx.jobId)
     .maybeSingle()
+  // No silent house navy/cyan fallback: an export without a locked palette would
+  // hand the client a site in Revaltus colours (same gate as packaging).
+  if (!isCompletePalette(job?.palette)) {
+    return NextResponse.json({ error: DESIGN_SYSTEM_REQUIRED_FOR_EXPORT }, { status: 409 })
+  }
 
   // Logo: signed because session-assets is private. The private-bucket contract
   // (security rule 7) caps signed URLs at 1 hour, so the export README instructs
@@ -113,7 +108,7 @@ export async function GET(
   }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
-  const palette = (job?.palette as PaletteData | null) ?? FALLBACK_PALETTE
+  const palette = job!.palette as PaletteData
   const brand = buildBrandJson(schema, palette)
   const firmName = brand.firm.name || session.website_url
 
