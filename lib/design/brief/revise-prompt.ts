@@ -1,8 +1,10 @@
 // Pure. The Design Studio revise prompt (P4): the SAME static prefix as
 // concept generation (art direction + contract — one cache entry for both)
 // and the same shared parts (firm, current design + palette rule, page
-// markup, admin brief; no reference images — a revision fixes the concept,
-// it doesn't restart it). Then per iteration: the run's other concepts, this
+// markup, admin brief; no admin reference images — a revision fixes the
+// concept, it doesn't restart it — but the current site's desktop + mobile
+// renders, the "before", identical for every revision of the run so they sit
+// in the cached shared prefix). Then per iteration: the run's other concepts, this
 // concept's full bundle (with its CSS), the fenced critique, the render-check
 // failures (each measured colour named by its palette role, plus how to fix
 // a contrast pair), its claim-check notes (concept-consistency — P7), its desktop +
@@ -18,7 +20,7 @@ import { conceptConsistencyNotes } from '../concept-consistency'
 import { PASS_MIN_MEAN, PASS_MIN_SCORE, RUBRIC_KEYS, RUBRIC_LABELS, minDistinctivenessFor, type CritiqueRecord } from '../critique'
 import { CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
-import { buildSharedParts, buildStaticPrefix, priorConceptsBlock, type BuiltPrompt, type PriorConcept, type SharedPromptArgs } from './index'
+import { buildSharedParts, buildStaticPrefix, priorConceptsBlock, type BuiltPrompt, type PriorConcept, type PromptImage, type SharedPromptArgs } from './index'
 
 export type RevisePromptArgs = SharedPromptArgs & {
   position: number
@@ -30,6 +32,9 @@ export type RevisePromptArgs = SharedPromptArgs & {
   gateFailures: string[]
   desktop: Uint8Array | null
   mobile: Uint8Array | null
+  // The current site's renders (the run's "before") — the ONLY images in the
+  // shared parts; the admin's reference images in `images` are left out.
+  beforeImages?: PromptImage[]
 }
 
 export function formatCritique(c: CritiqueRecord): string {
@@ -112,7 +117,7 @@ const NOT_CRITIQUED =
 const image = (bytes: Uint8Array): DynamicPart => ({ type: 'image', image: bytes, mediaType: 'image/webp' })
 
 export function buildRevisePrompt(args: RevisePromptArgs): BuiltPrompt {
-  const parts = buildSharedParts({ ...args, images: [] })
+  const parts = buildSharedParts({ ...args, images: args.beforeImages ?? [] })
   const sharedPartCount = parts.length
   const k = args.position + 1
 

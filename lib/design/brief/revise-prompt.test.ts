@@ -173,6 +173,20 @@ describe('revise prompt: no palette-level action contrast', () => {
   })
 })
 
+describe('the current site in the revise prompt (WS-B)', () => {
+  it('puts the before renders — and only them — in the shared (cached) parts', () => {
+    const before = [
+      { caption: 'CURRENT desktop', adminText: null, bytes: new Uint8Array([7]), mediaType: 'image/webp' },
+      { caption: 'CURRENT mobile', adminText: null, bytes: new Uint8Array([8]), mediaType: 'image/webp' },
+    ]
+    const built = buildRevisePrompt({ ...ARGS, beforeImages: before })
+    const shared = built.parts.slice(0, built.sharedPartCount)
+    expect(shared).toEqual(buildSharedParts({ ...SHARED, images: before }))
+    expect(shared.filter((p) => p.type === 'image')).toHaveLength(2)
+    expect(built.parts.filter((p) => p.type === 'image')).toHaveLength(4) // + the concept's own folds
+  })
+})
+
 describe('overflow + uncritiqued versions (WS-B)', () => {
   const textOf = (a: RevisePromptArgs) => texts(buildRevisePrompt(a).parts)
   it('an overflow failure brings the culprit hint; an uncritiqued version says so', () => {

@@ -30,6 +30,7 @@ import { parseDesignBundle, type DesignBundle } from './bundle'
 import { bundleToRepoFiles } from './bundle-files'
 import { buildCritiquePrompt } from './brief/critique-prompt'
 import { buildRevisePrompt } from './brief/revise-prompt'
+import type { PromptImage } from './brief'
 import { critiqueConcept } from './critic'
 import { reviseConcept } from './concept-reviser'
 import { composedThemeFromFiles } from './composed-theme'
@@ -67,7 +68,7 @@ import {
   type DesignRunRow,
 } from './run-store'
 import { gatherBriefBasics, sharedPromptArgs } from './run-gather'
-import { CONCEPT_STOPPED_MID_REVIEW, hasStalledConcept, parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
+import { CONCEPT_STOPPED_MID_REVIEW, currentSiteCaption, hasStalledConcept, parseBaseSnapshot, parseScreenshots, usablePriors } from './run-state'
 import { fontsNotReadyViewports } from './screenshots'
 import type { RunBaseSnapshot, RunScreenshot } from './run-types'
 import { STEP_MODEL_BUDGET_MS, type StepContext, type StepOutcome } from './step-types'
@@ -580,15 +581,24 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
     if (!gathered.ok) return await endLoop(db, runId, claimed, 'revise', review, 'invalid_revision', [`Revision skipped: ${gathered.error}`], evaluated)
     const b = gathered.basics
     const shots = parseScreenshots(claimed.screenshots)
-    const [desktop, mobile] = await Promise.all([
+    const [desktop, mobile, beforeDesktop, beforeMobile] = await Promise.all([
       loadImage(db, shots.find((x) => x.viewport === 'desktop')),
       loadImage(db, shots.find((x) => x.viewport === 'mobile')),
+      loadImage(db, base.screenshots.find((x) => x.viewport === 'desktop')),
+      loadImage(db, base.screenshots.find((x) => x.viewport === 'mobile')),
     ])
+    // The current site's renders (WS-B, R2 I1a): the reviser sees the "before"
+    // it must improve on, in the shared (cached) parts of every revision.
+    const beforeImages: PromptImage[] = [
+      ...(beforeDesktop ? [{ caption: currentSiteCaption(base.pagePath), adminText: null, bytes: beforeDesktop, mediaType: 'image/webp' }] : []),
+      ...(beforeDesktop && beforeMobile ? [{ caption: currentSiteCaption(base.pagePath, 'mobile'), adminText: null, bytes: beforeMobile, mediaType: 'image/webp' }] : []),
+    ]
     const others = usablePriors(await listConcepts(db, runId), claimed.id)
     const gate = review.metrics ? metricGateFailures(review.metrics, base.metrics ?? null).map((f) => f.message) : []
     const result = await reviseConcept({
       prompt: buildRevisePrompt({
         ...sharedPromptArgs(b, run, base.pagePath, []),
+        beforeImages,
         position: claimed.position,
         conceptCount: run.concept_count,
         round,

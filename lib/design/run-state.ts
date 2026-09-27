@@ -17,7 +17,7 @@ import { parseRenderMetrics } from './metrics'
 import { isClaimLive, parseConceptReview } from './review'
 import { parseScreenshots } from './screenshots'
 import { INPUT_KIND_LABELS, RUN_ACTIVE_STATUSES, type DesignInputKind, type ThemeBlobShas } from './studio-types'
-import { DEFAULT_RUN_PAGE, DESIGN_STEP_MAX_LIFETIME_MS, MAX_RUN_INPUTS, type RunBaseSnapshot, type RunStage } from './run-types'
+import { DEFAULT_RUN_PAGE, DESIGN_STEP_MAX_LIFETIME_MS, MAX_RUN_INPUTS, type RunBaseSnapshot, type RunStage, type RunViewport } from './run-types'
 
 export { parseScreenshots } from './screenshots'
 
@@ -253,8 +253,8 @@ export function inputCaption(row: InputRow): string {
 }
 
 // The caption of the current-site "before" render in a concept prompt.
-export function currentSiteCaption(pagePath: string): string {
-  return `The client's CURRENT design of ${pagePath} (desktop, 1440 px) — the "before" to improve on.`
+export function currentSiteCaption(pagePath: string, viewport: RunViewport = 'desktop'): string {
+  return `The client's CURRENT design of ${pagePath} (${viewport === 'desktop' ? 'desktop, 1440 px' : 'mobile, 390 px'}) — the "before" to improve on.`
 }
 
 // An input image's admin label + notes for the prompt (fenced by the brief

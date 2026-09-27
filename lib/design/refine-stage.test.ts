@@ -654,6 +654,7 @@ describe('best iteration (Harbor Light)', () => {
     const prompt = texts(m.revise.mock.calls[0][0])
     expect(prompt).not.toContain('THE ART DIRECTOR’S CRITIQUE')
     expect(prompt).toContain('wider than the screen')
+    expect(prompt).toContain("The client's CURRENT design of / (desktop, 1440 px)") // the before render, shared
   })
 
   it('an unusable last revision falls back to the best iteration', async () => {

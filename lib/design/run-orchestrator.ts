@@ -270,6 +270,18 @@ async function generateStage(
     }
 
     const { usable, skipped } = selectRunInputs(await listInputs(db, ctx.sessionId), run.input_ids)
+    // The mobile "before" too (WS-B, R2 I1a) — right after the desktop one,
+    // and only while the image budget still fits every admin reference (the
+    // admin's inputs win a tight budget). Read from storage for every
+    // position, so the shared (cached) parts stay byte-identical.
+    const mobileBefore = currentShots.find((s) => s.viewport === 'mobile')
+    if (images.length === 1 && mobileBefore && images.length + 1 + usable.length <= MAX_PROMPT_IMAGES) {
+      try {
+        images.push({ caption: currentSiteCaption(base.pagePath, 'mobile'), adminText: null, bytes: await downloadDesignImage(db, mobileBefore.path), mediaType: 'image/webp' })
+      } catch (err) {
+        console.warn('[design-run] current-site mobile render download failed', err)
+      }
+    }
     for (const s of skipped) notes.push(`Input skipped — ${s.label}: ${s.reason}`)
     for (const row of usable) {
       if (images.length >= MAX_PROMPT_IMAGES) {
