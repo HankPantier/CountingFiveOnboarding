@@ -8,6 +8,7 @@ import {
   listTree,
   moveFile,
   readFile,
+  StaleShaError,
   writeFile,
 } from '@/lib/github/repo-files'
 
@@ -179,14 +180,24 @@ export async function appendRedirects(
     if (!(err instanceof FileNotFoundError)) throw err
   }
   const livePaths = await livePageUrls(ctx, pairs)
-  const { content, changed, warnings } = applyRedirectAdds(current, pairs, reason, { livePaths })
-  if (changed) {
-    await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
-      ...(sha ? { expectedSha: sha } : {}),
-      ...author(ctx),
-    })
+  // The page has already moved by now, so a concurrent redirects.csv writer
+  // must not cost it its 301: applyRedirectAdds is pure, so re-apply once onto
+  // the version the stale-sha error carries and write again.
+  for (let attempt = 1; ; attempt++) {
+    const { content, changed, warnings } = applyRedirectAdds(current, pairs, reason, { livePaths })
+    if (!changed) return { warnings: warnings.map(formatLiveRedirectWarning) }
+    try {
+      await writeFile(ctx.githubRepo, REDIRECTS_PATH, content, DRAFT_BRANCH, 'Add redirects via admin', {
+        ...(sha ? { expectedSha: sha } : {}),
+        ...author(ctx),
+      })
+      return { warnings: warnings.map(formatLiveRedirectWarning) }
+    } catch (err) {
+      if (!(err instanceof StaleShaError) || err.path !== REDIRECTS_PATH || attempt >= 2) throw err
+      current = err.currentSha ? err.currentContent : null
+      sha = err.currentSha || undefined
+    }
   }
-  return { warnings: warnings.map(formatLiveRedirectWarning) }
 }
 
 // Relocate a single live content file (page/post) from fromPath→toPath on the

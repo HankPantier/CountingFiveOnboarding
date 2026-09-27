@@ -215,6 +215,15 @@ export async function POST(
     if (err instanceof AssetExistsError) {
       return NextResponse.json({ error: 'A page already exists at the destination.' }, { status: 422 })
     }
+    // Only a nav.json conflict opens the editor's conflict bar: a stale sha on
+    // another file (e.g. content/redirects.csv, after pages already moved)
+    // must never load that file's content into the nav buffer.
+    if (err instanceof StaleShaError && err.path !== NAV_PATH) {
+      return NextResponse.json(
+        { error: 'The redirects file changed while saving. Pages may already have moved; reload the editor and check them.' },
+        { status: 409 }
+      )
+    }
     if (err instanceof StaleShaError) {
       return NextResponse.json(
         {

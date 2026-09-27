@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   FileNotFoundError: class FileNotFoundError extends Error {},
+  StaleShaError: class StaleShaError extends Error {
+    constructor(
+      public path: string,
+      public currentSha: string,
+      public currentContent: string
+    ) {
+      super(`stale ${path}`)
+    }
+  },
   listTree: vi.fn(async () => [] as Array<{ path: string; sha: string; type: 'blob' }>),
   moveFile: vi.fn(),
   readFile: vi.fn(),
@@ -11,6 +20,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/github/repo-files', () => ({
   DRAFT_BRANCH: 'draft',
   FileNotFoundError: h.FileNotFoundError,
+  StaleShaError: h.StaleShaError,
   listTree: h.listTree,
   moveFile: h.moveFile,
   readFile: h.readFile,
@@ -73,6 +83,18 @@ describe('appendRedirects — cycle-safe writes', () => {
     )
     expect(res.warnings).toHaveLength(1)
     expect(res.warnings[0]).toMatch(/^\/services\/outsourced-accounting has a real page but redirects to \/services/)
+  })
+
+  it('re-applies once onto a concurrent redirects.csv write instead of losing the 301 (EDIT-5)', async () => {
+    withRedirects(`${HEADER}/a,/b,301,moved\n`)
+    h.writeFile
+      .mockReset()
+      .mockRejectedValueOnce(new h.StaleShaError('content/redirects.csv', 'r9', `${HEADER}/a,/b,301,moved\n/n,/m,301,other\n`))
+      .mockResolvedValueOnce({ commitSha: 'c', blobSha: 'r10' })
+    await appendRedirects({ githubRepo: 'repo' }, [{ from: '/x', to: '/y' }], 'moved')
+    expect(h.writeFile).toHaveBeenCalledTimes(2)
+    expect(h.writeFile.mock.calls[1][2]).toBe(`${HEADER}/a,/b,301,moved\n/n,/m,301,other\n/x,/y,301,moved\n`)
+    expect(h.writeFile.mock.calls[1][5]).toMatchObject({ expectedSha: 'r9' })
   })
 
   it('writes nothing when the row is already there', async () => {
