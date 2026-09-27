@@ -411,18 +411,6 @@ export async function assembleContentPackage(
 
   console.warn(`[package] Bundled ${assetEntries.length} session asset(s) into public/content-assets/`)
 
-  // The brand-doc LLM call and the docx render are both async/expensive; run
-  // them in parallel with each other (the deterministic stitches that depend
-  // on neither stay synchronous and run after).
-  const [brandDoc, docxBuffer, plainDocxBuffer] = await Promise.all([
-    generateBrandDoc(schema, { sessionId: job.session_id, contentJobId: id }),
-    buildDocx(pages, firmName),
-    buildPlainDocx(pages, firmName),
-  ])
-  // Styling-free plain-text rendition of the page bodies — pastes cleanly into
-  // any CMS/editor without inheriting fonts/colors. Deterministic + cheap.
-  const plainTextContent = buildPlainText(pages, firmName)
-
   // Non-null: the brand gate at the top refused a job without both.
   const palette = job.palette as PaletteData
   const designTokens = job.design_tokens as DesignTokens
@@ -617,6 +605,18 @@ export async function assembleContentPackage(
     console.warn(`[package] Placeholder image refs: ${placeholderRefs.map((r) => `${r.page}→${r.ref}`).join(', ')}`)
     return { ok: false, status: 409, error: placeholderRefsMessage(placeholderRefs), placeholderRefs }
   }
+
+  // The brand-doc LLM call and the docx render are both async/expensive; run
+  // them in parallel with each other, and only AFTER the placeholder preflight
+  // so a refused package never pays for a model call (neither feeds pageFiles).
+  const [brandDoc, docxBuffer, plainDocxBuffer] = await Promise.all([
+    generateBrandDoc(schema, { sessionId: job.session_id, contentJobId: id }),
+    buildDocx(pages, firmName),
+    buildPlainDocx(pages, firmName),
+  ])
+  // Styling-free plain-text rendition of the page bodies — pastes cleanly into
+  // any CMS/editor without inheriting fonts/colors. Deterministic + cheap.
+  const plainTextContent = buildPlainText(pages, firmName)
 
   const llmsTxt = buildLlmsTxt(firmName, brandDoc.summary, sitemap, pages)
   const llmsFullTxt = buildLlmsFullTxt(firmName, brandDoc.fullDoc, sitemap, pages)
