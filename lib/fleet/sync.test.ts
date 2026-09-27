@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { ORPHAN_REF_PREFIX, applyChanges, ensureClone, gateRepo, prepareForApply, unexpectedChanges, verifyPlanInScratch, type SyncContext } from './sync'
+import { ORPHAN_REF_PREFIX, applyChanges, assertCloneOrigin, ensureClone, gateRepo, prepareForApply, unexpectedChanges, verifyPlanInScratch, type SyncContext } from './sync'
 import { draftPreflight, findLastFleetCommit, pushMain } from './remote'
 import { runPushPhase } from './push-phase'
 import type { ClientEntry, ReleaseManifest } from './types'
@@ -292,6 +292,18 @@ describe('gateRepo + applyChanges (local repos)', () => {
 
   it('unexpectedChanges lists every path the plan did not predict', () => {
     expect(unexpectedChanges(['a', 'b', 'next-env.d.ts'], new Set(['a', 'b']))).toEqual(['next-env.d.ts'])
+  })
+})
+
+describe('assertCloneOrigin (FLEET-4)', () => {
+  it('refuses a reused clone whose GitHub origin is another owner’s same-named repo', () => {
+    const dir = mkdtempSync(path.join(root, 'origin-check-'))
+    sh(dir, 'init', '-q')
+    sh(dir, 'remote', 'add', 'origin', 'https://github.com/other/client.git')
+    expect(() => assertCloneOrigin(dir, 'acme/client')).toThrow(/is other\/client, not acme\/client/)
+    expect(() => assertCloneOrigin(dir, 'Other/Client')).not.toThrow()
+    sh(dir, 'remote', 'set-url', 'origin', 'git@github.com:acme/client.git')
+    expect(() => assertCloneOrigin(dir, 'acme/client')).not.toThrow()
   })
 })
 

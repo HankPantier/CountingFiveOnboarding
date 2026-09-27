@@ -81,13 +81,28 @@ export const FLEET_TRAILER = 'Fleet-Sync'
 
 // ── clone management ────────────────────────────────────────────────────────
 
+/**
+ * A reused clone's origin must be the repo we were asked for: the directory is
+ * keyed by repo name only, so two owners' same-named repos (or a stale dir in a
+ * custom --work) would otherwise push to one while reporting the other. Only a
+ * GitHub origin is compared (the local test fixtures clone from bare paths).
+ */
+export function assertCloneOrigin(dir: string, slug: string): void {
+  const url = tryGit(dir, ['remote', 'get-url', 'origin']).out.trim()
+  const m = /^(?:https:\/\/github\.com\/|git@github\.com:)([^/]+\/[^/]+?)(?:\.git)?\/?$/i.exec(url)
+  if (m && m[1].toLowerCase() !== slug.toLowerCase()) {
+    throw new Error(`clone at ${dir} is ${m[1]}, not ${slug} — delete it or pass another --work dir`)
+  }
+}
+
 export function ensureClone(workDir: string, slug: string, opts: { fetch: boolean }): string {
   const dir = path.join(workDir, repoName(slug))
   if (!existsSync(path.join(dir, '.git'))) {
     mkdirSync(workDir, { recursive: true })
     git(workDir, ['clone', '-q', '--depth', '1', '--branch', 'main', `https://github.com/${slug}.git`, dir])
-  } else if (opts.fetch) {
-    git(dir, ['fetch', '-q', '--depth', '1', 'origin', '+refs/heads/main:refs/remotes/origin/main'])
+  } else {
+    assertCloneOrigin(dir, slug)
+    if (opts.fetch) git(dir, ['fetch', '-q', '--depth', '1', 'origin', '+refs/heads/main:refs/remotes/origin/main'])
   }
   return dir
 }
