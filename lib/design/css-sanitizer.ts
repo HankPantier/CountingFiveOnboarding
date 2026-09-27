@@ -593,7 +593,8 @@ function checkDeclaration(decl: Declaration, leads: LeadTarget[], errors: string
 //     HORIZONTAL offset (left, right, inset-inline*, margin-left/right,
 //     margin-inline*, and the horizontal parts of inset / margin), nor in a
 //     width (width, min-width, inline-size, min-inline-size) or horizontal
-//     padding (padding-inline*, padding-left/right) unless inside min() /
+//     padding (padding-inline*, padding-left/right, and the horizontal parts
+//     of the padding shorthand — the same rule either way) unless inside min() /
 //     clamp() (bounded), nor in the X component of a translate
 //     (transform: translateX / translate / translate3d, the translate property);
 //   - no large negative HORIZONTAL offset (≤ -200px, ≤ -12.5rem/em, ≤ -50%)
@@ -704,7 +705,14 @@ export function layoutGuardErrors(css: string): string[] {
     const horizontal = HORIZONTAL_OFFSET_PROPS.has(prop) ? [value] : BOX_SHORTHANDS.has(prop) ? horizontalParts(value) : []
     if (horizontal.some((v) => VIEWPORT_UNIT_RE.test(v))) {
       errors.push(`${shown} is not allowed — viewport units in a horizontal offset can make the page wider than the screen; ${BLEED_HINT}.`)
-    } else if ((WIDTH_PROPS.has(prop) || HORIZONTAL_PADDING_PROPS.has(prop)) && VIEWPORT_UNIT_RE.test(withoutBoundedCalls(value))) {
+    } else if (
+      (WIDTH_PROPS.has(prop) || HORIZONTAL_PADDING_PROPS.has(prop)
+        ? [value]
+        : prop === 'padding'
+          ? horizontalParts(value)
+          : []
+      ).some((v) => VIEWPORT_UNIT_RE.test(withoutBoundedCalls(v)))
+    ) {
       errors.push(`${shown} is not allowed — a viewport-unit width or horizontal padding can overflow its block and the screen (wrap it in min(…) / clamp() or use %); ${BLEED_HINT}.`)
     } else if (translateXParts(prop, value).some((x) => VIEWPORT_UNIT_RE.test(withoutBoundedCalls(x)))) {
       errors.push(`${shown} is not allowed — a viewport-unit horizontal translate can push content past the screen edge; ${BLEED_HINT}.`)

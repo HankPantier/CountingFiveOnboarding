@@ -851,6 +851,17 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
     expect(layoutGuardErrors('[data-block="hero"] { padding-block: 8vh; padding-top: 10vw; }')).toEqual([])
   })
 
+  it('treats the padding shorthand like padding-inline (DUI-2)', () => {
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 0 5vw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 4rem 6vw; }')).toHaveLength(1)
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 1rem 2rem 1rem 8vw; }')).toHaveLength(1)
+    // Negatives: vertical-only viewport units, bounded or non-viewport gutters.
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 8vh 0; }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 10vh 2rem 6vh; }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 4rem clamp(1rem, 5vw, 3rem); }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="hero"] { padding: 2rem 5%; }')).toEqual([])
+  })
+
   it('leaves vertical viewport units, box-shadow / clip-path bleed and transforms alone', () => {
     const ok = [
       '[data-block="hero"] { min-height: 70vh; padding-block: 8vh; margin-top: 4vh; }',
