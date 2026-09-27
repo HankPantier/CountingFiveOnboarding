@@ -18,7 +18,7 @@ import { loadNoGoPhrases, buildNoGoPromptBlock, findNoGoHits } from '@/lib/conte
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
 import { applyFindReplace, applyBatchEdits, validatePageAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
-import { sanitizeGeneratedText, humanizeDashes } from '@/lib/content/anti-slop-validator'
+import { sanitizeGeneratedText } from '@/lib/content/anti-slop-validator'
 import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
 import { logAndFormatAiStreamError } from '@/lib/ai/ai-error'
 import { checkChatSpendLimit } from '@/lib/ai/chat-spend-limit'
@@ -26,6 +26,7 @@ import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
 import { splitTrailers, setFaqAccordionBody } from '@/lib/editor/page-body'
+import { applyRemovalsToTrailer, composeAiEditCommit, splitForModel } from '@/lib/editor/ai-edit-trailer'
 import {
   DRAFT_BRANCH,
   ensureDraftBranch,
@@ -110,19 +111,21 @@ export async function POST(
     authorEmail: adminEmail ?? DEFAULT_COMMIT_AUTHOR.email,
   }
 
+  // The model's view of the file: frontmatter + body, with the generator
+  // trailer hidden. Every tool edits this view; commitWorking re-attaches the
+  // trailer, so apply_edit(s)/remove_text can never delete or rewrite it.
+  const view = () => splitForModel(workingContent)
+
   // Write the new file to draft and advance the working copy + sha. Throws on a
   // GitHub failure or a stale sha; callers convert that into a tool error.
-  async function commitWorking(next: string, message: string): Promise<void> {
-    // Auto-scrub em/en dashes in the page BODY on every edit (code fences and
-    // `<!-- block -->` annotations are protected; numeric ranges kept). Kept here
-    // so apply_edit, set_faq, and remove_text all leave the prose dash-clean
-    // without each tool remembering to do it. Idempotent. Frontmatter is left
-    // byte-for-byte alone: it holds URLs, JSON blobs (faq_block, internal_links)
-    // and quoted YAML that a blind text rewrite can corrupt — remove_text's
-    // explicit stripDashes handles SEO fields when asked.
-    const { body: nextBody } = splitFile(next)
-    const head = next.slice(0, next.length - nextBody.length)
-    const scrubbed = head + humanizeDashes(nextBody)
+  // `nextVisible` is the edited VIEW; `trailer` defaults to the current one.
+  async function commitWorking(nextVisible: string, message: string, trailer = view().trailer): Promise<void> {
+    // Auto-scrub em/en dashes in the body prose on every edit (code fences and
+    // `<!-- block -->` annotations protected; numeric ranges kept), so every
+    // tool leaves the prose dash-clean. Frontmatter and the trailer are left
+    // byte-for-byte alone. Posts drop any trailer (no trimming renderer); pages
+    // get a missing SEO marker restored (lib/editor/ai-edit-trailer.ts).
+    const scrubbed = composeAiEditCommit(nextVisible, trailer, path!)
     // Reject any edit that would leave the file with invalid YAML frontmatter
     // before it lands in the draft — otherwise it surfaces as a broken `next
     // build` at deploy time. The tool executors catch this throw and return the
@@ -167,7 +170,7 @@ You do NOT rewrite the whole file. You make small, targeted changes with these t
 BATCH your work: a request usually implies MANY edits (rewrite several sentences, reword every mention of X, fix each section). Group them — issue ONE apply_edits call for all rewrites and ONE remove_text call for all deletions — instead of many single apply_edit calls. Batching lands them in one commit and keeps the whole request in a single run; firing edits one at a time can hit the run's step cap and stop early.
 - apply_edits({ edits: [{ find, replace, all? }] }) — apply MANY exact find/replace rewrites in ONE commit. This is the DEFAULT for any multi-part edit. Each \`find\` is an EXACT snippet copied verbatim from the file (matching whitespace, punctuation, casing); it must match exactly ONE place unless all=true. All finds are matched against the SAME current file, so don't target text that another edit in the same batch rewrites. The result lists which edits applied and which missed (re-copy an exact snippet for any miss).
 - apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Use apply_edit for LAYOUT changes to a \`<!-- block: ... -->\` annotation. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
-- remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
+- remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true; it cleans the body copy, so for SEO fields also list "—" as a removal). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
 - set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)${canEditFirmContact ? '\n- update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.' : ''}
 
 LAYOUT CHANGES (via apply_edit on the annotation comment)
@@ -201,9 +204,9 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
   // The page is its own system block AFTER the cached one: it changes with every
   // edit, so keeping it out of the marked prefix lets follow-up turns re-read
   // tools + instructions + firm context from cache.
-  const systemFile = `THE FILE BEING EDITED (${path}) — as it was at the START of this request. Every successful tool call in this run changes it; the tool results are authoritative for what changed since, so never rebuild content (e.g. a set_faq list) that re-adds text an earlier tool removed:
+  const systemFile = `THE FILE BEING EDITED (${path}) — as it was at the START of this request. Every successful tool call in this run changes it; the tool results are authoritative for what changed since, so never rebuild content (e.g. a set_faq list) that re-adds text an earlier tool removed. (A generated SEO/structured-data appendix at the end of the file is hidden from you and preserved automatically.)
 """
-${workingContent}
+${view().visible}
 """`
 
   // Phrases remove_text cleared earlier in this run. set_faq rebuilds the FAQ
@@ -240,7 +243,7 @@ ${workingContent}
             // Strip AI dash-tells from model-authored replacement text before it
             // lands in live content. humanizeDashes protects code fences and
             // block annotations, so layout edits stay intact.
-            const res = applyFindReplace(workingContent, find, sanitizeGeneratedText(replace), all ?? false)
+            const res = applyFindReplace(view().visible, find, sanitizeGeneratedText(replace), all ?? false)
             // Already applied → nothing to commit; report it as a no-op, not a save.
             if (!res.ok && res.noop) return { success: true, noChange: true, message: res.reason }
             if (!res.ok) return { error: res.reason }
@@ -253,7 +256,7 @@ ${workingContent}
             } catch (err) {
               return toolError('edit:chat', err, 'Failed to save the edit.')
             }
-            const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
+            const noGoWarning = findNoGoHits(view().visible, noGoPhrases)
             return { success: true, replacements: res.count, ...(noGoWarning.length ? { noGoWarning } : {}) }
           },
         },
@@ -283,10 +286,11 @@ ${workingContent}
               replace: sanitizeGeneratedText(e.replace),
               all: e.all,
             }))
-            const res = applyBatchEdits(workingContent, sanitized)
+            const visible = view().visible
+            const res = applyBatchEdits(visible, sanitized)
             // Only commit when something actually landed; when every find missed
             // the page is unchanged — return the misses so the model re-copies.
-            const changed = res.next !== workingContent
+            const changed = res.next !== visible
             if (changed) {
               const annotationErrors = validatePageAnnotations(res.next)
               if (annotationErrors.length > 0) {
@@ -298,7 +302,7 @@ ${workingContent}
                 return toolError('edit:chat', err, 'Failed to save the edits.')
               }
             }
-            const noGoWarning = changed ? findNoGoHits(workingContent, noGoPhrases) : []
+            const noGoWarning = changed ? findNoGoHits(view().visible, noGoPhrases) : []
             return {
               success: true,
               applied: res.applied,
@@ -318,7 +322,7 @@ ${workingContent}
               .describe('The complete FAQ list after your change (add/edit/remove/reorder).'),
           }),
           execute: async ({ items }) => {
-            const parsed = splitFile(workingContent)
+            const parsed = splitFile(view().visible)
             if (!parsed.frontmatter) {
               return { error: 'This file has no frontmatter, so it cannot store an FAQ block.' }
             }
@@ -335,9 +339,9 @@ ${workingContent}
             } catch (err) {
               return toolError('edit:chat', err, 'Failed to save the FAQ.')
             }
-            const noGoWarning = findNoGoHits(workingContent, noGoPhrases)
+            const noGoWarning = findNoGoHits(view().visible, noGoPhrases)
             const residual = removedThisRun
-              .map(r => ({ find: r.find, remaining: countPhrase(workingContent, r.find, r.caseInsensitive) }))
+              .map(r => ({ find: r.find, remaining: countPhrase(view().visible, r.find, r.caseInsensitive) }))
               .filter(r => r.remaining > 0)
             return {
               success: true,
@@ -366,14 +370,15 @@ ${workingContent}
               .default([])
               .describe('Phrases to remove/replace. May be empty when only stripDashes is set.'),
             caseInsensitive: z.boolean().optional().describe('Match regardless of letter case.'),
-            stripDashes: z.boolean().optional().describe('Also normalize em/en dashes page-wide.'),
+            stripDashes: z.boolean().optional().describe('Also normalize em/en dashes in the page body copy (not frontmatter; list "—" as a removal for SEO fields).'),
           }),
           execute: async ({ removals, caseInsensitive, stripDashes }) => {
             if (removals.length === 0 && !stripDashes) {
               return { error: 'Give at least one phrase to remove, or set stripDashes to clean em-dashes.' }
             }
             const ci = caseInsensitive ?? false
-            const res = applyBulkRemovals(workingContent, removals, {
+            const { visible, trailer } = view()
+            const res = applyBulkRemovals(visible, removals, {
               caseInsensitive: ci,
               stripDashes: stripDashes ?? false,
             })
@@ -384,10 +389,25 @@ ${workingContent}
             // Only commit when the file actually changed — a strip-dashes pass on
             // an already-clean page (or phrases not present) is a no-op, and an
             // identical write would be a pointless empty commit.
-            const changed = res.next !== workingContent
+            // Phrase removals also reach the hidden trailer (a firm rename must
+            // update the JSON-LD), but never its headings/labels, and never dashes.
+            // The JSON-LD must still parse with the same keys, else the trailer
+            // change is dropped. Trailer hits count toward `applied`, so the
+            // model's report matches what was committed.
+            const trailerRes = applyRemovalsToTrailer(trailer, removals, ci)
+            const nextTrailer = trailerRes.trailer
+            const applied = res.applied.map((a, i) => ({
+              find: a.find,
+              removed: a.removed + (trailerRes.applied[i]?.removed ?? 0),
+            }))
+            const changed = res.next !== visible || nextTrailer !== trailer
             if (changed) {
               try {
-                await commitWorking(res.next, `Remove text on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
+                await commitWorking(
+                  res.next,
+                  `Remove text on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`,
+                  nextTrailer
+                )
               } catch (err) {
                 return toolError('edit:chat', err, 'Failed to save the edit.')
               }
@@ -418,7 +438,7 @@ ${workingContent}
             return {
               success: true,
               ...(changed ? {} : { noChange: true }),
-              applied: res.applied,
+              applied,
               dashesStripped: res.dashesStripped,
               residual: res.residual,
               firmWide,

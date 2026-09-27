@@ -348,7 +348,14 @@ RULES
             const action = navAction ?? 'retarget'
             if (action === 'retarget') await retargetNavUrl(ctx, fromUrl, destUrl)
             else if (action === 'remove') await stripNavReference(ctx, fromPath)
-            return { success: true, fromUrl, toUrl: destUrl, moved: res.moved }
+            // A refused trailer strip is surfaced so the model tells the admin.
+            return {
+              success: true,
+              fromUrl,
+              toUrl: destUrl,
+              moved: res.moved,
+              ...(res.warning ? { warning: res.warning } : {}),
+            }
           } catch (err) {
             if (err instanceof DestinationOccupiedError) {
               return { error: `A page already exists at ${destUrl}.` }

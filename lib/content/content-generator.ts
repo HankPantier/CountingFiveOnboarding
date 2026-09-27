@@ -48,6 +48,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
 import { asJson } from '@/lib/supabase/json-typed'
+import { stripGeneratorNotesFromBody } from './strip-generator-notes'
 
 export type Cta = { text: string; url: string }
 const DEFAULT_CTA: Cta = { text: 'Schedule a consultation', url: '/contact' }
@@ -346,7 +347,7 @@ ${buildFirmContext(schema)}
 PALETTE TONE: ${paletteTone}
 
 OUTPUT: Return a JSON object with two keys:
-1. "content" — the full page copy in markdown. Use ## for H2s matching the approved outline. Write naturally, as if for a human reader first, search engine second.
+1. "content" — the full page copy in markdown. Use ## for H2s matching the approved outline. Write naturally, as if for a human reader first, search engine second. Reader-facing copy ONLY: never append metadata sections (Answer Block, E-E-A-T Signals, Internal Links, FAQ Block, LLM Citation Note, SEO notes, structured data) to the content; those belong in "metadata".
 2. "metadata" — a JSON object with these fields:
    - meta_title (50-60 chars, contains primary keyword)
    - meta_description (150-160 chars, compelling + keyword)
@@ -711,7 +712,18 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   // Page intent drives the deterministic coercions below (schema.org type default).
   const intent = resolvePageIntent(input.pageUrl, input.pageTitle, input.schema)
 
-  let result = await gen()
+  // Generator notes in the body are stripped deterministically BEFORE the
+  // validator runs, so an echoed metadata section never buys a full
+  // regeneration. The validator still flags notes the strip refused to cut
+  // (content after them). buildPageMarkdown writes its own trailer from
+  // `metadata`; a model-echoed one would sit above the marker the template
+  // trims at.
+  const stripNotes = (r: Awaited<ReturnType<typeof gen>>) => {
+    r.content = stripGeneratorNotesFromBody(r.content).body
+    return r
+  }
+
+  let result = stripNotes(await gen())
 
   // Global no-go phrases + deterministic writing checks (hero subhead / FAQ answer
   // length) all feed the existing anti-slop flagged→retry path: ONE combined
@@ -730,7 +742,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
     console.warn(
       `[content-gen] Draft flagged ${input.pageUrl}: ${allFlags.join(' | ')} — retrying`
     )
-    result = await gen(allFlags)
+    result = stripNotes(await gen(allFlags))
   }
 
   const annotations = parseBlockAnnotations(result.content)

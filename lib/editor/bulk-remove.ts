@@ -3,7 +3,7 @@
 // each phrase across the entire file — frontmatter (SEO fields) and body alike —
 // in a single pass, so a "remove all references to X, Y, Z" request lands in one
 // commit instead of many brittle find/replace calls. Pure and deterministic.
-import { humanizeDashes } from '@/lib/content/anti-slop-validator'
+import { humanizeBodyDashes } from './page-body'
 import { overlapSafeReplaceAll } from './replace'
 
 export interface Removal {
@@ -69,11 +69,13 @@ export function applyBulkRemovals(
 
   let dashesStripped = 0
   if (opts.stripDashes) {
-    // Difference before/after captures exactly what humanizeDashes converted:
-    // em-dashes and word-boundary en-dashes drop, numeric ranges and dashes
-    // inside protected code fences / block annotations stay.
+    // Body prose only: frontmatter and the generator trailer are never
+    // scrubbed (a trailer rewrite broke the template's trim on a live page).
+    // Difference before/after captures exactly what was converted: em-dashes
+    // and word-boundary en-dashes drop, numeric ranges and dashes inside
+    // protected code fences / block annotations stay.
     const before = countDashLike(next)
-    next = humanizeDashes(next)
+    next = humanizeBodyDashes(next)
     dashesStripped = before - countDashLike(next)
   }
 

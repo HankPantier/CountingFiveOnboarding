@@ -26,6 +26,7 @@ import {
 } from '@/lib/github/repo-files'
 import { buildCrossLinkIndex, type InternalLinkTarget } from './internal-link-targets'
 import { buildPostMarkdown } from './post-markdown'
+import { stripGeneratorNotesFromBody } from './strip-generator-notes'
 import { insertReverseLinks } from './reverse-linker'
 import { asJson } from '@/lib/supabase/json-typed'
 import { generateSocialJson, buildSocialMarkdown, socialPathForSlug } from './social-generator'
@@ -158,7 +159,7 @@ ${buildFormatRules(contentType, location)}
 
 OUTPUT: Return a JSON object:
 {
-  "body": "the full post markdown",
+  "body": "the full post markdown: reader-facing prose ONLY. Never append metadata sections (Answer Block, E-E-A-T Signals, Internal Links, FAQ Block, LLM Citation Note, SEO notes, structured data); those go in frontmatter",
   "frontmatter": {
     "title": "final post title (may refine the working title)",
     "excerpt": "1-2 sentence listing-card excerpt",
@@ -621,6 +622,10 @@ export async function generateResourceDraft(
       deadlineAt: modelDeadline,
     })
     if (!result) throw new Error('Draft generation returned unparseable output')
+    // Posts render their body verbatim: cut any echoed generator notes BEFORE
+    // validating, so they never cost a regeneration. The validator still flags
+    // notes the strip refused to cut (content after them).
+    result.body = stripGeneratorNotesFromBody(result.body).body
 
     const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
     const validation = validateContent(result.body, [...noGoPhrases, ...clientAvoidPhrases(schema)])
@@ -645,7 +650,7 @@ export async function generateResourceDraft(
         flaggedPhrases: validation.flagged,
         deadlineAt: modelDeadline,
       })
-      if (retry) result = retry
+      if (retry) result = { ...retry, body: stripGeneratorNotesFromBody(retry.body).body }
     }
 
     result.body = stripUnapprovedExternalLinks(result.body, externalLinks)

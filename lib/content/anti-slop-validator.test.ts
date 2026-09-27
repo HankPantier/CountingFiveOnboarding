@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { validateContent, humanizeDashes, cleanHeading, sanitizeGeneratedText } from './anti-slop-validator'
+import { stripGeneratorNotesFromBody } from './strip-generator-notes'
 
 const CLEAN = `## Tax planning for medical practices
 
@@ -136,5 +137,28 @@ describe('cleanHeading', () => {
       'What the Structures Actually Mean'
     )
     expect(cleanHeading('Tax planning — for practices')).toBe('Tax planning, for practices')
+  })
+})
+
+describe('validateContent — generator notes in the body', () => {
+  it('flags an SEO & AIO trailer echoed into the body', () => {
+    const body = `${CLEAN}\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nx\n\n**Internal Links:**\n- a → /b — c\n`
+    const r = validateContent(body)
+    expect(r.passed).toBe(false)
+    expect(r.flagged.some((f) => f.startsWith('Generator notes in the body (SEO & AIO Metadata'))).toBe(true)
+  })
+
+  it('generators strip first: a stripped body is not flagged; only a refused strip still is', () => {
+    const trailer = `\n\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nx\n\n**Internal Links:**\n- a → /b — c\n`
+    const cleaned = stripGeneratorNotesFromBody(`${CLEAN}${trailer}`).body
+    expect(validateContent(cleaned).flagged.some((f) => f.startsWith('Generator notes'))).toBe(false)
+    const refused = `${CLEAN}${trailer}\n## Added after the notes\n\nCopy.\n`
+    expect(stripGeneratorNotesFromBody(refused).warning).toBeDefined()
+    expect(validateContent(stripGeneratorNotesFromBody(refused).body).flagged.some((f) => f.startsWith('Generator notes'))).toBe(true)
+  })
+
+  it('does not flag a reader-facing FAQ or Related links section', () => {
+    const body = `${CLEAN}\n\n## Common questions\n\n**Q: When should I file?**\nA: By April 15.\n\n## Related links\n\n- [Payroll](/services/payroll)\n`
+    expect(validateContent(body).flagged.some((f) => f.startsWith('Generator notes'))).toBe(false)
   })
 })

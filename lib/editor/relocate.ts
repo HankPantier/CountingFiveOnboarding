@@ -1,4 +1,5 @@
 import { toPathname } from './nav-urls'
+import { stripGeneratorNotesFromFile } from '@/lib/content/strip-generator-notes'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import {
   DRAFT_BRANCH,
@@ -157,7 +158,7 @@ export async function relocateFile(
     expectedSha: string
     reason: string
   }
-): Promise<{ blobSha: string; moved: boolean }> {
+): Promise<{ blobSha: string; moved: boolean; warning?: string }> {
   const { fromPath, toPath, fromUrl, toUrl, expectedSha, reason } = args
 
   // Destination check: free → move; occupied by THIS page already → done;
@@ -190,7 +191,22 @@ export async function relocateFile(
   // after the page already moved, with no canonical fix or 301). The move
   // reuses the blob, so its sha is expectedSha.
   const moved = await readFile(ctx.githubRepo, toPath, commitSha || DRAFT_BRANCH)
-  const fixed = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
+  // A page file carries buildPageMarkdown's review trailer, which only the
+  // PAGE renderer trims. Moved into content/posts/ it rendered live (the
+  // "**Internal Links:**" dump on /insights/*), so drop it on the way in.
+  const swapped = swapFrontmatterUrl(moved.content, fromUrl, toUrl)
+  let fixed = swapped
+  let warning: string | undefined
+  if (toPath.startsWith('content/posts/')) {
+    const stripped = stripGeneratorNotesFromFile(swapped)
+    if (stripped.warning) {
+      // Content follows the trailer, so it was NOT cut: the post will render
+      // the generator notes until someone removes them by hand.
+      console.warn(`[relocate] ${toPath}: ${stripped.warning}`)
+      warning = `${stripped.warning}. Remove the SEO & AIO Metadata section from this resource by hand.`
+    }
+    fixed = stripped.content
+  }
   let blobSha = expectedSha
   if (fixed !== moved.content) {
     const w = await writeFile(ctx.githubRepo, toPath, fixed, DRAFT_BRANCH, `Update canonical for ${toUrl}`, {
@@ -200,5 +216,5 @@ export async function relocateFile(
     blobSha = w.blobSha
   }
   await appendRedirects(ctx, [{ from: fromUrl, to: toUrl }], reason)
-  return { blobSha, moved: true }
+  return { blobSha, moved: true, ...(warning ? { warning } : {}) }
 }

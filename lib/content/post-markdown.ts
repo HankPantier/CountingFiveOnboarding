@@ -1,4 +1,5 @@
 import type { ContentType } from './content-types'
+import { stripGeneratorNotesFromBody } from './strip-generator-notes'
 
 // The frontmatter fields buildPostMarkdown serializes. Both the LLM resource
 // draft (DraftFrontmatter is structurally a superset) and the verbatim article
@@ -59,5 +60,7 @@ export function buildPostMarkdown(args: {
     '---',
     '',
   ]
-  return lines.join('\n') + args.body.trim() + '\n'
+  // Posts render their body verbatim (no trailer trim in the template), so
+  // generator notes must never reach it — strip any the model echoed.
+  return lines.join('\n') + stripGeneratorNotesFromBody(args.body).body.trim() + '\n'
 }

@@ -40,6 +40,60 @@ describe('relocateFile — read-after-write lag', () => {
   })
 })
 
+describe('relocateFile — page → post drops the generator trailer', () => {
+  const TRAILER =
+    '\n---\n## SEO & AIO Metadata\n\n**Answer Block:**\nA.\n\n**Internal Links:**\n- tax → /services/tax — why\n\n---\n## Structured Data — paste into `<head>`\n\n```html\n<script type="application/ld+json">{}</script>\n```\n'
+  const page = `---\nurl: "/a"\nanswer_block: "A."\n---\n\n## Body\n\nProse.\n${TRAILER}`
+
+  function arrange(toPath: string) {
+    h.moveFile.mockReset().mockResolvedValueOnce({ commitSha: 'moveCommit' })
+    h.writeFile.mockReset().mockResolvedValue({ commitSha: 'c', blobSha: 'blobB' })
+    h.readFile.mockReset().mockImplementation(async (_repo: string, path: string, ref: string) => {
+      if (path === toPath && ref === 'moveCommit') return { path, content: page, sha: 'blobA' }
+      if (path === 'content/redirects.csv') return { path, content: 'old_url,new_url,status_code,reason\n', sha: 'r1' }
+      throw new h.FileNotFoundError(path)
+    })
+  }
+
+  it('strips it when the destination is content/posts/', async () => {
+    arrange('content/posts/a.md')
+    await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/pages/a.md', toPath: 'content/posts/a.md', fromUrl: '/a', toUrl: '/resources/a', expectedSha: 'blobA', reason: 'moved' }
+    )
+    const written = h.writeFile.mock.calls[0][2] as string
+    // internal_links was absent, so the trailer's links are kept in frontmatter.
+    expect(written).toBe(
+      '---\nurl: "/resources/a"\nanswer_block: "A."\ninternal_links: [{"url":"/services/tax","anchor_text":"tax","reason":"why"}]\n---\n\n## Body\n\nProse.\n'
+    )
+  })
+
+  it('returns a warning (and does not cut) when content follows the trailer', async () => {
+    arrange('content/posts/a.md')
+    const withTail = `${page}\n## Added later\n\nCopy.\n`
+    h.readFile.mockImplementation(async (_repo: string, path: string, ref: string) => {
+      if (path === 'content/posts/a.md' && ref === 'moveCommit') return { path, content: withTail, sha: 'blobA' }
+      if (path === 'content/redirects.csv') return { path, content: 'old_url,new_url,status_code,reason\n', sha: 'r1' }
+      throw new h.FileNotFoundError(path)
+    })
+    const res = await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/pages/a.md', toPath: 'content/posts/a.md', fromUrl: '/a', toUrl: '/resources/a', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(res.warning).toMatch(/not removed.*## Added later/)
+    expect(h.writeFile.mock.calls[0][2]).toContain('## SEO & AIO Metadata')
+  })
+
+  it('keeps it on a page → page move (the template trims it and reuses the JSON-LD)', async () => {
+    arrange('content/pages/b.md')
+    await relocateFile(
+      { githubRepo: 'repo' },
+      { fromPath: 'content/pages/a.md', toPath: 'content/pages/b.md', fromUrl: '/a', toUrl: '/b', expectedSha: 'blobA', reason: 'moved' }
+    )
+    expect(h.writeFile.mock.calls[0][2]).toContain('## SEO & AIO Metadata')
+  })
+})
+
 describe('csvField', () => {
   it('quotes commas, quotes and newlines so a url cannot shift or inject rows', () => {
     expect(csvField('/a')).toBe('/a')
