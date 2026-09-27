@@ -19,9 +19,18 @@ import {
 // hexes with today's ensureContrast, which may not be what produced the file.
 // For a file the current generator produced, the result is byte-identical to
 // generateThemeCss. Idempotent; pure; never throws (errors are returned).
+//
+// A file that already carries the full token set is REFRESHED instead: only
+// its --color-action-text-tint values are rewritten when they differ from what
+// its surfaces need (the tint now clears the badge tint over the page
+// background as well as the card, in both themes). Every other line is kept.
 
 export type AddActionTextVarsResult =
   | { status: 'added'; css: string; light: LightActionTextTokens; dark: DarkActionTextTokens | null }
+  // The file already carries the full token set but its -text-tint values are
+  // stale (computed before the tint cleared the page background as well as the
+  // card): only those value(s) are rewritten, in place.
+  | { status: 'updated'; css: string; light: LightActionTextTokens; dark: DarkActionTextTokens | null; changed: string[] }
   | { status: 'unchanged'; css: string }
   | { status: 'error'; error: string }
 
@@ -51,30 +60,27 @@ function paintedToken(block: string, name: string): string | null {
 const LIGHT_ANCHOR = /^( *)--color-action-foreground: [^;\n]+;\n/gm
 const DARK_BLOCK = /^\.dark \{\n[\s\S]*?^\}/m
 
-export function addActionTextVars(css: string): AddActionTextVarsResult {
-  if (/--color-action-text-canvas\s*:/.test(css)) return { status: 'unchanged', css }
-  if (/--color-action-(text|on-primary|on-ink|text-tint)\s*:/.test(css)) {
-    return { status: 'error', error: 'theme.css has a partial action-text token set — remove it or regenerate before patching' }
-  }
+type Derived = { light: LightActionTextTokens; dark: DarkActionTextTokens | null; darkMatch: RegExpMatchArray | null }
 
+// The tokens for the surfaces THIS file paints (light from the part before the
+// .dark block — the @theme block and :root repeat the same values).
+function deriveFromFile(css: string): Derived | { error: string } {
   const darkMatch = css.match(DARK_BLOCK)
-  // Light-mode values come from the first definition (the @theme block — :root
-  // repeats the same values), never from .dark.
   const lightCss = darkMatch && darkMatch.index !== undefined ? css.slice(0, darkMatch.index) : css
 
   const action = rawToken(lightCss, '--color-action')
-  if (!action || !HEX.test(action)) return { status: 'error', error: 'theme.css has no #rrggbb --color-action' }
+  if (!action || !HEX.test(action)) return { error: 'theme.css has no #rrggbb --color-action' }
 
   const lightNames = { background: '--color-background', muted: '--color-muted', card: '--color-card', primary: '--color-primary' } as const
   const lightSurfaces: Record<string, string> = {}
   for (const [key, name] of Object.entries(lightNames)) {
     const v = paintedToken(lightCss, name)
-    if (!v) return { status: 'error', error: `theme.css has no readable ${name} (hsl() or #rrggbb)` }
+    if (!v) return { error: `theme.css has no readable ${name} (hsl() or #rrggbb)` }
     lightSurfaces[key] = v
   }
   // Section bg="ink" paints var(--color-ink, var(--color-near-black)).
   const ink = paintedToken(lightCss, '--color-ink') ?? paintedToken(lightCss, '--color-near-black')
-  if (!ink) return { status: 'error', error: 'theme.css has no readable --color-ink or --color-near-black' }
+  if (!ink) return { error: 'theme.css has no readable --color-ink or --color-near-black' }
 
   const light = deriveLightActionTextTokens(action, {
     background: lightSurfaces.background,
@@ -84,15 +90,55 @@ export function addActionTextVars(css: string): AddActionTextVarsResult {
     ink,
   })
 
-  const anchors = css.match(LIGHT_ANCHOR)
-  if (!anchors || anchors.length === 0) return { status: 'error', error: 'theme.css has no --color-action-foreground line to anchor on' }
-
   let dark: DarkActionTextTokens | null = null
   if (darkMatch) {
+    // background AND card: -text-tint clears the badge tint over both.
     const d = { background: paintedToken(darkMatch[0], '--color-background'), muted: paintedToken(darkMatch[0], '--color-muted'), card: paintedToken(darkMatch[0], '--color-card') }
-    if (!d.background || !d.muted || !d.card) return { status: 'error', error: 'theme.css .dark block lacks readable background / muted / card' }
+    if (!d.background || !d.muted || !d.card) return { error: 'theme.css .dark block lacks readable background / muted / card' }
     dark = deriveDarkActionTextTokens(action, { background: d.background, muted: d.muted, card: d.card })
   }
+  return { light, dark, darkMatch }
+}
+
+const TINT_LINE = /^(\s*--color-action-text-tint:\s*)([^;\n]+)(;)/gm
+
+// A file that already has the full set (e.g. rolled out with 2026.09.4): rewrite
+// ONLY its -text-tint values when they differ from what its surfaces now need.
+function refreshTint(css: string): AddActionTextVarsResult {
+  const r = deriveFromFile(css)
+  if ('error' in r) return { status: 'error', error: r.error }
+  const { light, dark, darkMatch } = r
+  const splitAt = darkMatch && darkMatch.index !== undefined ? darkMatch.index : css.length
+  const changed: string[] = []
+  const fix = (part: string, want: string, label: string) =>
+    part.replace(TINT_LINE, (line, pre: string, value: string, semi: string) => {
+      if (value.trim() === want) return line
+      changed.push(`${label}${value.trim()} → ${want}`)
+      return `${pre}${want}${semi}`
+    })
+  let out = fix(css.slice(0, splitAt), light.actionTextTint, '')
+  if (darkMatch && dark) {
+    const block = fix(darkMatch[0], dark.actionTextTint, '.dark ')
+    out += block + css.slice(splitAt + darkMatch[0].length)
+  } else {
+    out += css.slice(splitAt)
+  }
+  if (changed.length === 0) return { status: 'unchanged', css }
+  return { status: 'updated', css: out, light, dark, changed }
+}
+
+export function addActionTextVars(css: string): AddActionTextVarsResult {
+  if (/--color-action-text-canvas\s*:/.test(css)) return refreshTint(css)
+  if (/--color-action-(text|on-primary|on-ink|text-tint)\s*:/.test(css)) {
+    return { status: 'error', error: 'theme.css has a partial action-text token set — remove it or regenerate before patching' }
+  }
+
+  const derived = deriveFromFile(css)
+  if ('error' in derived) return { status: 'error', error: derived.error }
+  const { light, dark } = derived
+
+  const anchors = css.match(LIGHT_ANCHOR)
+  if (!anchors || anchors.length === 0) return { status: 'error', error: 'theme.css has no --color-action-foreground line to anchor on' }
 
   let out = css.replace(
     LIGHT_ANCHOR,
