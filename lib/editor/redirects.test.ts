@@ -112,6 +112,17 @@ describe('findRedirectProblems / validateRedirectsCsv', () => {
     expect(validateRedirectsCsv(`${H}/About,/team,301,x\n`, { livePaths: ['/about'] })).toMatch(/has a real page/)
   })
 
+  it('ignores ?query and #hash for loop detection, absolute or root-relative', () => {
+    expect(findRedirectProblems(`${H}/a,/b?x=1,301,x\n/b,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
+    expect(findRedirectProblems(`${H}/a,https://x.com/b#top,301,x\n/b/,/a,301,x\n`).cycles).toEqual([['/a', '/b']])
+    expect(validateRedirectsCsv(`${H}/a?utm=1,/a,301,x\n`)).toMatch(/redirects to itself/)
+  })
+
+  it('never checks a pattern source (:param, *) against live pages', () => {
+    const text = `${H}/blog/:slug,/insights/:slug,301,x\n/old/*,/,301,x\n`
+    expect(validateRedirectsCsv(text, { livePaths: ['/blog/:slug', '/old/*'] })).toBeNull()
+  })
+
   it('passes a clean chain-free file', () => {
     expect(validateRedirectsCsv(`${H}/a,/b,301,x\n/c,/b,301,x\n`)).toBeNull()
   })

@@ -46,8 +46,17 @@ export interface RedirectOptions {
 // `/About` shadows a live `/about`. Non-path values fall back to the trimmed
 // string so they still compare consistently.
 export function redirectKey(url: string): string {
-  const t = url.trim()
+  // A ?query or #hash never takes part in source matching, and a destination
+  // `/b?x=1` lands on /b: drop both, for absolute and root-relative urls alike,
+  // so `/a,/b?x=1` + `/b,/a` is seen as the loop it is.
+  const t = url.trim().replace(/[?#].*$/, '')
   return (toPathname(t) ?? t).toLowerCase()
+}
+
+// A Next.js path-pattern source (`/blog/:slug`, `/old/*`, `/(a|b)`) matches
+// many urls, so it is never compared against individual live pages.
+function isPatternSource(url: string): boolean {
+  return /[:*(]/.test(url)
 }
 
 // RFC 4180 field quoting — a comma, quote or newline must never shift columns.
@@ -186,7 +195,9 @@ export function liveRedirectWarnings(text: string, opts: RedirectOptions = {}): 
   const live = keySet(opts.livePaths)
   if (live.size === 0) return []
   return parseRedirectRows(text)
-    .filter((r) => live.has(redirectKey(r.from)) && redirectKey(r.from) !== redirectKey(r.to))
+    .filter(
+      (r) => !isPatternSource(r.from) && live.has(redirectKey(r.from)) && redirectKey(r.from) !== redirectKey(r.to)
+    )
     .map((r) => ({ from: r.from, to: r.to }))
 }
 
@@ -277,7 +288,8 @@ export function findRedirectProblems(text: string, opts: RedirectOptions = {}): 
       selfRedirects.push(from)
       continue
     }
-    if (live.has(from) && !shadowedPages.includes(from)) shadowedPages.push(from)
+    // Pattern sources (`:slug`, `*`) are not checked against live pages.
+    if (!isPatternSource(row.from) && live.has(from) && !shadowedPages.includes(from)) shadowedPages.push(from)
     // Next.js applies the first matching rule, so a duplicate source is inert.
     if (!edges.has(from)) edges.set(from, to)
   }
