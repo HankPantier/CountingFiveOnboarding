@@ -376,7 +376,10 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
-      const data = (await res.json()) as { commitSha: string; blobSha: string }
+      const data = (await res.json()) as { commitSha: string; blobSha: string; contents?: string }
+      // The server may normalize what it stores (redirects.csv sources lose a
+      // trailing slash): show exactly what was committed under the new sha.
+      const savedContent = typeof data.contents === 'string' ? data.contents : next
       // The nav save kept redirects.csv rows that still shadow a real page
       // (never removed automatically): shown once the save has settled.
       const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
@@ -384,7 +387,7 @@ export default function EditorShell({
       // only clear the dirty buffer if it still equals what we sent — typing
       // that happened while the save was in flight stays dirty.
       setLoaded((prev) =>
-        new Map(prev).set(selectedPath, { content: next, sha: data.blobSha })
+        new Map(prev).set(selectedPath, { content: savedContent, sha: data.blobSha })
       )
       setDirty((prev) => reconcileDirtyAfterSave(prev, selectedPath, next))
       if (isNavSave) {
@@ -489,9 +492,10 @@ export default function EditorShell({
         const data = (await res.json()) as { error?: string }
         throw new Error(data.error ?? `Save failed: ${res.status}`)
       }
-      const data = (await res.json()) as { commitSha: string; blobSha: string }
+      const data = (await res.json()) as { commitSha: string; blobSha: string; contents?: string }
       const redirectNotice = redirectWarningMessage('Saved', readRedirectWarnings(data))
-      setLoaded((prev) => new Map(prev).set(conflict.path, { content: mine, sha: data.blobSha }))
+      const savedMine = typeof data.contents === 'string' ? data.contents : mine
+      setLoaded((prev) => new Map(prev).set(conflict.path, { content: savedMine, sha: data.blobSha }))
       setDirty((prev) => reconcileDirtyAfterSave(prev, conflict.path, mine))
       setConflict(null)
       if (isNavConflict) {
