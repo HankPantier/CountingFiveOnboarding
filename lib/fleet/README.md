@@ -106,7 +106,7 @@ When a client skipped a release, the manifests strictly after OLD's version and 
 
 1. **Clone and gate.** Every repo gets a dry-run plan. Blocked repos are never touched.
 2. **Local commit.**
-   - The clone must be clean. A shallow clone is unshallowed first, so a `main` that simply moved ahead (a publish) is not mistaken for local work. A local commit that is still not on origin/main (only ever a stale, unpushed Fleet-Sync commit) is saved to `refs/fleet-orphans/<ts>-<sha>` with a warning, and the clone is reset to origin/main.
+   - The clone must be clean. A shallow clone is unshallowed first, so a `main` that simply moved ahead (a publish) is not mistaken for local work. Local commits still not on origin/main are auto-reset only when every one carries the `Fleet-Sync:` trailer (a stale, unpushed sync): HEAD is saved to `refs/fleet-orphans/<ts>-<sha>`, the clone is reset to origin/main, and the warning appears on the repo line and as `cloneWarning` in the `--json` report. Any other local commit is refused ("refusing to discard them").
    - The planned bytes are written to the clone.
    - **Any working-tree change the plan did not predict aborts the repo.** The clone is then reset.
    - One commit is made, listing its paths explicitly, with the trailer `Fleet-Sync: <version> <OLD>..<NEW>`.

@@ -279,15 +279,21 @@ async function runSync(a: Args, targets: ClientEntry[]): Promise<number> {
 
 async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary: number, report: Record<string, unknown>): Promise<number> {
   const { toVersion } = ctx
+  const results: Record<string, unknown>[] = []
   // 1) local commit per repo (unexpected-change abort inside)
   const committed: { run: RepoRun; sha: string }[] = []
+  // A stale clone that was auto-reset (its old HEAD saved to a backup ref):
+  // shown on the repo's line and carried into the --json report.
+  const cloneWarnings = new Map<string, string>()
   for (const run of ready) {
     try {
-      const sha = applyChanges(ctx, run)
+      const sha = applyChanges(ctx, run, (w) => cloneWarnings.set(run.client.slug, w))
       committed.push({ run, sha })
-      console.log(`  ✓ ${repoName(run.client.slug)}: committed ${sha.slice(0, 7)} (local)`)
+      const w = cloneWarnings.get(run.client.slug)
+      console.log(`  ✓ ${repoName(run.client.slug)}: committed ${sha.slice(0, 7)} (local)${w ? ` — ⚠ ${w}` : ''}`)
     } catch (err) {
       console.log(`  ✗ ${repoName(run.client.slug)}: ${(err as Error).message}`)
+      results.push({ slug: run.client.slug, status: 'failed', stage: 'commit', reason: (err as Error).message })
     }
   }
   // 2) local verify, concurrency ≤ 2, one retry
@@ -300,7 +306,6 @@ async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary:
   })
   // 3) draft pre-merge → push main → merge main→draft → Vercel, one repo at a
   //    time; canary first, fail-fast (lib/fleet/push-phase.ts)
-  const results: unknown[] = []
   let failures = committed.length < ready.length ? ready.length - committed.length : 0
   const pushable: PushItem[] = []
   for (const v of verified) {
@@ -325,7 +330,11 @@ async function applyAndPush(a: Args, ctx: SyncContext, ready: RepoRun[], canary:
     },
     (line) => console.log(line)
   )
-  results.push(...phase.results)
+  results.push(...phase.results.map((r) => ({ ...r })))
+  for (const r of results) {
+    const w = cloneWarnings.get(String(r.slug))
+    if (w) r.cloneWarning = w
+  }
   failures += phase.results.filter((r) => r.status !== 'pushed').length
   if (phase.stoppedBy) console.log(`\nSTOPPED after ${phase.stoppedBy} — the remaining repos were not pushed. Fix it, then re-run (synced repos show "up to date").`)
   report.results = results
@@ -366,7 +375,8 @@ async function runRollback(a: Args, targets: ClientEntry[]): Promise<number> {
   for (const p of plans) {
     const repo = repoName(p.t.slug)
     try {
-      prepareForApply(p.dir)
+      const cloneWarning = prepareForApply(p.dir)
+      if (cloneWarning) console.log(`  ⚠ ${repo}: ${cloneWarning}`)
       const rv = tryGit(p.dir, ['revert', '--no-commit', p.sha])
       if (!rv.ok) {
         tryGit(p.dir, ['revert', '--abort'])

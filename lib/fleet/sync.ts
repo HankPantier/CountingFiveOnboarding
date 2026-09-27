@@ -351,11 +351,17 @@ export const ORPHAN_REF_PREFIX = 'refs/fleet-orphans/'
  * Reset the clone to origin/main before a commit. Every fetch is `--depth 1`,
  * so a newer origin/main is a parentless shallow root and a HEAD that IS in its
  * history fails the ancestry check: the clone is unshallowed first. A HEAD
- * that is still not on origin/main can only be a stale, unpushed Fleet-Sync
- * commit (the tool never keeps work in a clone); it is saved to
- * refs/fleet-orphans/<ts>-<sha> and the clone is reset. Returns that warning,
- * or null.
+ * still not on origin/main is auto-reset ONLY when every local commit is a
+ * stale, unpushed Fleet-Sync commit: it is saved to
+ * refs/fleet-orphans/<ts>-<sha> and the clone is reset (the returned
+ * warning). Any other local commit is refused, as before.
  */
+// A commit made by this tool: its message carries the `Fleet-Sync:` trailer.
+function isFleetSyncCommit(dir: string, sha: string): boolean {
+  const body = git(dir, ['log', '-1', '--format=%B', sha])
+  return new RegExp(`^${FLEET_TRAILER}: `, 'm').test(body)
+}
+
 export function prepareForApply(dir: string): string | null {
   if (changedPaths(dir).length > 0) throw new Error('local clone has uncommitted changes — clean it (or delete the clone) first')
   const head = revParse(dir, 'HEAD')
@@ -368,6 +374,13 @@ export function prepareForApply(dir: string): string | null {
     }
     const fresh = revParse(dir, 'refs/remotes/origin/main')
     if (!isAncestor(dir, head, fresh)) {
+      // Only a stale, unpushed Fleet-Sync commit is ever auto-reset. Anything
+      // else (a hand commit, a different tool) is someone's work: refuse.
+      const local = git(dir, ['rev-list', `${fresh}..${head}`]).split('\n').filter(Boolean)
+      const allFleet = local.length > 0 && local.every((c) => isFleetSyncCommit(dir, c))
+      if (!allFleet) {
+        throw new Error(`local HEAD ${head.slice(0, 7)} has commits not on origin/main — refusing to discard them`)
+      }
       const ref = `${ORPHAN_REF_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}-${head.slice(0, 7)}`
       git(dir, ['update-ref', ref, head])
       warning = `local HEAD ${head.slice(0, 7)} was not on origin/main — saved to ${ref} and reset to origin/main`
@@ -390,11 +403,12 @@ export function unexpectedChanges(actual: string[], expected: Set<string>): stri
 
 // Write the materialized changes, abort on ANY working-tree change the plan
 // didn't predict, then make one explicit-path commit. Returns the commit sha.
-export function applyChanges(ctx: SyncContext, run: RepoRun): string {
+export function applyChanges(ctx: SyncContext, run: RepoRun, onWarning?: (warning: string) => void): string {
   if (run.plan.blockers.length) throw new Error('plan has blockers')
   if (ctx.clientRevOverride) throw new Error('--client-rev is a dry-run replay option; refusing to apply')
   const { dir } = run
-  prepareForApply(dir)
+  const cloneWarning = prepareForApply(dir)
+  if (cloneWarning) onWarning?.(cloneWarning)
   const write = (c: FileChange) => {
     const abs = path.join(dir, c.path)
     if (c.content === null) {

@@ -335,13 +335,21 @@ describe('prepareForApply — stale shallow clone cache (FLEET-1)', () => {
     expect(sh(dir, 'rev-parse', 'HEAD')).toBe(sh(dir, 'rev-parse', 'refs/remotes/origin/main'))
   })
 
-  it('saves a stale unpushed local commit to a backup ref, then resets', () => {
+  it('saves a stale unpushed Fleet-Sync commit to a backup ref, then resets', () => {
     const { dir } = shallowClone()
-    const stale = commit(dir, { 'sync.txt': 'x\n' }, 'Fleet-Sync commit never pushed')
+    const stale = commit(dir, { 'sync.txt': 'x\n' }, 'chore(template): sync template 2026.09.5\n\nFleet-Sync: 2026.09.5 aaa..bbb\n')
     const warning = prepareForApply(dir)
     expect(warning).toMatch(/saved to refs\/fleet-orphans\//)
     const refs = sh(dir, 'for-each-ref', '--format=%(objectname)', ORPHAN_REF_PREFIX)
     expect(refs).toBe(stale)
     expect(sh(dir, 'rev-parse', 'HEAD')).toBe(sh(dir, 'rev-parse', 'refs/remotes/origin/main'))
+  })
+
+  it('refuses (old message, nothing reset) when a local commit is not a Fleet-Sync commit', () => {
+    const { dir } = shallowClone()
+    const mine = commit(dir, { 'mine.txt': 'hand work\n' }, 'a hand edit someone made in the clone')
+    expect(() => prepareForApply(dir)).toThrow(/has commits not on origin\/main — refusing to discard them/)
+    expect(sh(dir, 'rev-parse', 'HEAD')).toBe(mine)
+    expect(sh(dir, 'for-each-ref', '--format=%(refname)', ORPHAN_REF_PREFIX)).toBe('')
   })
 })
