@@ -50,6 +50,15 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 // - WS-B fix round (2026-09-27): that same clause now names the horizontal
 //   translate and horizontal-padding rules and says the negative-offset limit
 //   is horizontal only (vertical negative margins allowed). Nothing else moved.
+// - WS-D (2026-09-27, template 2026.09.5): ONE added TOKEN CONTRACT line — the
+//   framed-image duotone grade reads --c5-media-grade-opacity / -fill (R2 I5b,
+//   so "a stronger brand grade" is reachable without restyling images) — and
+//   the art-direction ink-band line now says darkSections moves the bands onto
+//   --color-ink (the template finally consumes the flag). Nothing else moved.
+// - WS-D fix round 1 (2026-09-27): the TOKEN CONTRACT small-action-text line
+//   no longer says large accents keep the raw action — template 2026.09.5
+//   colours the accent word / primary-band stat figures / calculator estimate
+//   with the corrected --color-action-text. Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

@@ -45,6 +45,7 @@ import { DESIGN_SYSTEM_REQUIRED_FOR_PACKAGE, isDesignSystemLocked } from '@/lib/
 import { buildNavJson, lintNavLabels, normalizeNavUrls } from '@/lib/content/nav-json-builder'
 import { findPlaceholderRefs, placeholderRefsMessage, type PlaceholderRef } from '@/lib/content/package-preflight'
 import { applyLogoNavDefault, preflightLogo } from '@/lib/content/logo-preflight'
+import { withDefaultNavCta } from '@/lib/content/nav-cta'
 import { DEFAULT_BLOG_CONFIG, serializeBlogConfig } from '@/lib/content/blog-config'
 import { getPricingCalculator } from '@/lib/content/pricing-calculator-config'
 import {
@@ -434,9 +435,13 @@ export async function assembleContentPackage(
   // and consumed by the client-site template repo (which hard-requires both).
   const brandJson = buildBrandJson(schema, palette)
   const designJson = buildDesignJson(designTokens)
-  const navJson = normalizeNavUrls(
-    buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config, { firmName }),
-    siteHost(session.website_url)
+  // Header CTA on by default (an operator-set nav.cta wins) — see nav-cta.ts.
+  const navJson = withDefaultNavCta(
+    normalizeNavUrls(
+      buildNavJson(sitemap as Parameters<typeof buildNavJson>[0], job.nav_config, { firmName }),
+      siteHost(session.website_url)
+    ),
+    sitemap
   )
 
   // Client Center — emitted only when the firm has at least one client portal

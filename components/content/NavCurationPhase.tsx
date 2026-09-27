@@ -336,8 +336,8 @@ export default function NavCurationPhase({
       )}
 
       <div className="pt-2 space-y-2">
-        <h4 className="text-sm font-heading font-semibold text-text-primary">Header CTA (optional)</h4>
-        <p className="text-xs font-body text-text-muted">A button shown in the nav bar on desktop. Leave blank to omit.</p>
+        <h4 className="text-sm font-heading font-semibold text-text-primary">Header CTA</h4>
+        <p className="text-xs font-body text-text-muted">A button shown in the nav bar, and on hero banners that don&apos;t set their own. Leave blank to use the default, “Schedule a consultation” → the contact page; remove it later in the site editor&apos;s nav settings if not wanted.</p>
         <div className="grid grid-cols-2 gap-2">
           <input
             type="text"
