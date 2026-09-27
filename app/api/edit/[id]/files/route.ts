@@ -6,6 +6,7 @@ import { safePath, CONTENT_MD_RE, ADMIN_BLOCKED_CONFIG } from '../_path'
 import { reviewContentEdit } from '@/lib/content/content-edit-review'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { pageUrlsFromPaths, validateRedirectsCsv } from '@/lib/editor/redirects'
+import { readBlogPath } from '@/lib/editor/relocate'
 import {
   DRAFT_BRANCH,
   StaleShaError,
@@ -72,7 +73,11 @@ export async function PATCH(
     let livePaths: Set<string> | undefined
     try {
       const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
-      livePaths = pageUrlsFromPaths(tree.filter((e) => e.type === 'blob').map((e) => e.path))
+      // Posts are live under the site's blog path (content/blog.json), not /resources.
+      livePaths = pageUrlsFromPaths(
+        tree.filter((e) => e.type === 'blob').map((e) => e.path),
+        await readBlogPath(ctx.githubRepo, tree)
+      )
     } catch (err) {
       // Loop detection doesn't need the tree; only the live-page check is skipped.
       console.warn('[edit:files] page tree unavailable for the redirects check', err)

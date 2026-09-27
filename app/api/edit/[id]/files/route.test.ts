@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   StaleShaError: class StaleShaError extends Error {},
   ensureDraftBranch: vi.fn(),
   listTree: vi.fn(),
+  readFile: vi.fn(),
   writeFile: vi.fn(),
   reviewContentEdit: vi.fn(),
 }))
@@ -13,7 +14,9 @@ vi.mock('@/lib/github/repo-files', () => ({
   StaleShaError: h.StaleShaError,
   ensureDraftBranch: h.ensureDraftBranch,
   listTree: h.listTree,
+  readFile: h.readFile,
   writeFile: h.writeFile,
+  FileNotFoundError: class FileNotFoundError extends Error {},
 }))
 
 vi.mock('@/lib/content/content-edit-review', () => ({ reviewContentEdit: h.reviewContentEdit }))
@@ -69,6 +72,17 @@ describe('PATCH /api/edit/[id]/files — redirects.csv guard', () => {
     h.listTree.mockRejectedValue(new Error('rate limited'))
     const res = await patch(`${HEADER}/a,/a/,301,x\n`)
     expect(res.status).toBe(422)
+  })
+
+  it("resolves post urls through the site's blog.json path (korbey /insights)", async () => {
+    h.listTree.mockResolvedValue([
+      { path: 'content/blog.json', sha: 'b', type: 'blob' },
+      { path: 'content/posts/tax-tips.md', sha: 'p', type: 'blob' },
+    ])
+    h.readFile.mockResolvedValue({ path: 'content/blog.json', content: '{"path":"/insights"}', sha: 'b' })
+    expect((await patch(`${HEADER}/resources/tax-tips,/insights/tax-tips,301,x\n`)).status).toBe(200)
+    // ...while redirecting the live post's own url is still refused.
+    expect((await patch(`${HEADER}/insights/tax-tips,/insights,301,x\n`)).status).toBe(422)
   })
 
   it('commits a clean redirects file', async () => {

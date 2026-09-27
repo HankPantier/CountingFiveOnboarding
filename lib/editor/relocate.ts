@@ -1,5 +1,5 @@
 import { toPathname } from './nav-urls'
-import { applyRedirectAdds, formatLiveRedirectWarning, pageUrlsFromPaths, redirectKey } from './redirects'
+import { applyRedirectAdds, blogPathFromJson, formatLiveRedirectWarning, pageUrlsFromPaths, redirectKey } from './redirects'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import {
   DRAFT_BRANCH,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/github/repo-files'
 
 const REDIRECTS_PATH = 'content/redirects.csv'
+const BLOG_JSON_PATH = 'content/blog.json'
 
 export type Move = { from: string; to: string }
 
@@ -109,6 +110,17 @@ export function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
+// The site's post base path from the draft's content/blog.json (only read
+// when the tree has one). /resources when absent or unreadable.
+export async function readBlogPath(githubRepo: string, tree: Array<{ path: string }>): Promise<string> {
+  if (!tree.some((e) => e.path === BLOG_JSON_PATH)) return blogPathFromJson(null)
+  try {
+    return blogPathFromJson((await readFile(githubRepo, BLOG_JSON_PATH, DRAFT_BRANCH)).content)
+  } catch {
+    return blogPathFromJson(null)
+  }
+}
+
 // Root-relative urls of every published page on the draft, for the live-page
 // warnings. A branch tree read right after a move can lag, so the caller's
 // own moves are applied on top: sources are vacated, destinations are live.
@@ -116,7 +128,10 @@ async function livePageUrls(ctx: RelocateCtx, pairs: Move[]): Promise<Set<string
   let live = new Set<string>()
   try {
     const tree = await listTree(ctx.githubRepo, DRAFT_BRANCH, 'content/')
-    const urls = pageUrlsFromPaths(tree.filter((e) => e.type === 'blob').map((e) => e.path))
+    const urls = pageUrlsFromPaths(
+      tree.filter((e) => e.type === 'blob').map((e) => e.path),
+      await readBlogPath(ctx.githubRepo, tree)
+    )
     live = new Set([...urls].map(redirectKey))
   } catch (err) {
     // Fail soft: cycle safety doesn't need the tree; only the Accord-style

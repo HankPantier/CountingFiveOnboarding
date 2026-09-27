@@ -24,6 +24,7 @@
 
 import { contentPathToUrl } from './content-paths'
 import { toPathname } from './nav-urls'
+import { DEFAULT_BLOG_PATH, normalizeBlogPath } from '@/lib/content/blog-config'
 
 export const REDIRECTS_HEADER = 'old_url,new_url,status_code,reason\n'
 
@@ -116,12 +117,31 @@ export function parseRedirectRows(text: string): RedirectRow[] {
   return parseLines(text).flatMap((l) => (l.kind === 'row' ? [l.row] : []))
 }
 
+// Public base path of the site's posts from its content/blog.json text (the
+// template remaps posts to e.g. /insights); /resources when absent or invalid.
+export function blogPathFromJson(text: string | null | undefined): string {
+  if (!text) return DEFAULT_BLOG_PATH
+  try {
+    const raw: unknown = JSON.parse(text)
+    return normalizeBlogPath(raw && typeof raw === 'object' ? (raw as { path?: unknown }).path : undefined)
+  } catch {
+    return DEFAULT_BLOG_PATH
+  }
+}
+
 // Root-relative urls of every published page/post in a list of repo paths
-// (drafts excluded — they are off-site). Used to build `livePaths`.
-export function pageUrlsFromPaths(paths: Iterable<string>): Set<string> {
+// (drafts excluded — they are off-site). Used to build `livePaths`. Posts live
+// under the site's blog path (content/blog.json `path`, e.g. korbey /insights),
+// so a `/resources/<slug>,/insights/<slug>` row is not over a live post.
+export function pageUrlsFromPaths(paths: Iterable<string>, blogPath: string = DEFAULT_BLOG_PATH): Set<string> {
   const out = new Set<string>()
   for (const p of paths) {
     if (p.startsWith('content/drafts/')) continue
+    const post = /^content\/posts\/(.+)\.md$/.exec(p)
+    if (post) {
+      out.add(`${blogPath}/${post[1]}`)
+      continue
+    }
     const url = contentPathToUrl(p)
     if (url) out.add(url)
   }

@@ -342,6 +342,22 @@ describe('redirects.csv loop safety on deploy', () => {
     expect(plan.push.map((p) => p.path)).toEqual([DEPLOY_MANIFEST_PATH])
   })
 
+  it("counts posts under the draft's blog path when warning (korbey /insights)", () => {
+    const draft = header + '/resources/tax-tips,/insights/tax-tips,301,moved\n/insights/tax-tips,/insights,301,bad\n'
+    const plan = planDeployPush({
+      entries: [{ path: 'content/redirects.csv', content: header }],
+      draftBlobs: new Map([
+        ['content/redirects.csv', sha(draft)],
+        ['content/posts/tax-tips.md', 'p'],
+        ['content/blog.json', 'b'],
+      ]),
+      baseline: { 'content/redirects.csv': sha(header) },
+      redirects: { draft, lastDeployed: header },
+      blogJson: '{"path":"/insights"}',
+    })
+    expect(plan.redirectWarnings).toEqual([{ from: '/insights/tax-tips', to: '/insights' }])
+  })
+
   it('sanitizes the generated file on a first deploy', () => {
     const plan = planDeployPush({
       entries: [{ path: 'content/redirects.csv', content: header + '/a,/b,301,x\n/b,/a,301,x\n' }],

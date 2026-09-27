@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto'
 import type { PushEntry } from '@/lib/github/repo-files'
 import { DEPLOY_MANIFEST_PATH } from '@/lib/github/deploy-commit'
 import {
+  blogPathFromJson,
   liveRedirectWarnings,
   pageUrlsFromPaths,
   parseRedirectRows,
@@ -207,9 +208,19 @@ function csvField(value: string): string {
 // pushes. A package entry the plan skips (e.g. a page the editor moved away,
 // skipped as 'removed') is NOT live, so a fresh editor-move 301 away from its
 // old url survives the re-deploy.
-function livePageUrls(draftBlobs: ReadonlyMap<string, string>, pushedPaths: Iterable<string>): Set<string> {
-  return pageUrlsFromPaths([...draftBlobs.keys(), ...pushedPaths])
+// Posts count under the site's blog path: the draft's content/blog.json (site
+// config, so draft wins), else the one this package ships, else /resources.
+function livePageUrls(
+  draftBlobs: ReadonlyMap<string, string>,
+  pushedPaths: Iterable<string>,
+  input: PlanInput
+): Set<string> {
+  const shipped = input.entries.find((e) => e.path === BLOG_JSON_PATH)
+  const blogJson = input.blogJson ?? (shipped ? asText(shipped.content) : null)
+  return pageUrlsFromPaths([...draftBlobs.keys(), ...pushedPaths], blogPathFromJson(blogJson))
 }
+
+const BLOG_JSON_PATH = 'content/blog.json'
 
 export type PlanInput = {
   entries: { path: string; content: string | Buffer }[]
@@ -219,6 +230,8 @@ export type PlanInput = {
   baseline: Readonly<Record<string, string>> | null
   /** Current draft + last-deployed redirects.csv text (re-deploy only). */
   redirects?: { draft: string | null; lastDeployed: string | null }
+  /** The draft's content/blog.json text, when it has one (posts' base path). */
+  blogJson?: string | null
 }
 
 export function planDeployPush(input: PlanInput): DeployPlan {
@@ -227,7 +240,7 @@ export function planDeployPush(input: PlanInput): DeployPlan {
 
   if (baseline === null) {
     // First deploy: a plain overlay, so every entry is pushed.
-    const live = livePageUrls(draftBlobs, entries.map((e) => e.path))
+    const live = livePageUrls(draftBlobs, entries.map((e) => e.path), input)
     const safeEntries = entries.map((e) =>
       e.path === REDIRECTS_CSV_PATH ? { ...e, content: sanitizeRedirectsCsv(asText(e.content)) } : e
     )
@@ -294,7 +307,7 @@ export function planDeployPush(input: PlanInput): DeployPlan {
   if (redirectsEntry) {
     const path = REDIRECTS_CSV_PATH
     const draft = draftBlobs.get(path) ?? null
-    const live = livePageUrls(draftBlobs, push.map((p) => p.path))
+    const live = livePageUrls(draftBlobs, push.map((p) => p.path), input)
     const generated = sanitizeRedirectsCsv(asText(redirectsEntry.content))
     const current = input.redirects?.draft ?? null
     let final: string | null = null

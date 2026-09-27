@@ -3,6 +3,7 @@ import {
   REDIRECTS_HEADER,
   applyRedirectAdds,
   findRedirectProblems,
+  blogPathFromJson,
   liveRedirectWarnings,
   pageUrlsFromPaths,
   parseRedirectRows,
@@ -142,6 +143,20 @@ describe('helpers', () => {
         'content/nav.json',
       ]),
     ]).toEqual(['/', '/services/tax', '/resources/p'])
+  })
+
+  it("puts posts under the site's blog path (content/blog.json), default /resources", () => {
+    expect(blogPathFromJson(null)).toBe('/resources')
+    expect(blogPathFromJson('{"path": "/insights", "label": "Insights"}')).toBe('/insights')
+    expect(blogPathFromJson('not json')).toBe('/resources')
+    expect([...pageUrlsFromPaths(['content/posts/tax-tips.md', 'content/pages/resources.md'], '/insights')]).toEqual([
+      '/insights/tax-tips',
+      '/resources',
+    ])
+    // korbey: the old /resources/<slug> url is NOT a live post there.
+    const row = `${H}/resources/tax-tips,/insights/tax-tips,301,moved\n`
+    const live = pageUrlsFromPaths(['content/posts/tax-tips.md'], '/insights')
+    expect(validateRedirectsCsv(row, { livePaths: live })).toBeNull()
   })
 
   it('resolves a destination to the end of its chain', () => {

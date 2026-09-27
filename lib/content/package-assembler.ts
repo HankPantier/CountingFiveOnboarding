@@ -846,6 +846,8 @@ export type DeployState = {
   redirects: { draft: string | null; lastDeployed: string | null }
   /** The draft's c5-template.json text (template capabilities); null when absent. */
   markerText: string | null
+  /** The draft's content/blog.json (posts' public base path), when present. */
+  blogJson: string | null
 }
 
 async function readTextBySha(slug: string, sha: string | null | undefined): Promise<string | null> {
@@ -891,7 +893,8 @@ export async function loadDeployState(slug: string): Promise<DeployState> {
         lastDeployed: await readTextBySha(slug, baseline[REDIRECTS_CSV_PATH]),
       }
   const markerText = await readTextBySha(slug, draftBlobs.get(TEMPLATE_MARKER_PATH))
-  return { draftBlobs, baseline, redirects, markerText }
+  const blogJson = await readTextBySha(slug, draftBlobs.get('content/blog.json'))
+  return { draftBlobs, baseline, redirects, markerText, blogJson }
 }
 
 // Decide what a push of this deliverable may write (see deploy-plan.ts). The
@@ -910,6 +913,7 @@ export async function planDeliverablePush(deploy: DeployContext): Promise<Deploy
     draftBlobs: state.draftBlobs,
     baseline: state.baseline,
     redirects: state.redirects,
+    blogJson: state.blogJson,
   })
 }
 
