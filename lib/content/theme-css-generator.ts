@@ -67,15 +67,35 @@ function ensureContrast(bgHex: string, fgHex: string, minRatio = 4.5): string {
 
 // ---- Small-text action colour (auto-corrected) ------------------------------
 // Port of the template's src/lib/theme/action-text-contrast.ts — keep in sync
-// (theme.css.golden guards the output). One action colour can't clear 4.5:1 on
-// both the page background and a dark primary (contrast(a,bg) × contrast(a,p)
-// = contrast(bg,p)), so theme.css ships a text variant per surface. Moves OKLCH
-// lightness only in 0.001 steps away from the surface (the side it already
-// sits on first); hue held, chroma reduced only to stay inside sRGB (binary
-// search, never per-channel clipping). First passing hex wins; a colour that
-// already passes is returned EXACTLY (same string/case). Never throws.
+// (theme.css.golden + the shared __fixtures__/action-text-table.json guard it).
+// One action colour can't clear 4.5:1 on both the page background and a dark
+// primary (contrast(a,bg) × contrast(a,p) = contrast(bg,p)), so theme.css ships
+// a text variant per surface family, each corrected against the colours that
+// surface actually RENDERS (surfaces are emitted as hsl() rounded to whole
+// percents, so the rendered colour — not the palette hex — is what counts):
+//   --color-action-text / -text-canvas  canvas: background, muted (flat cards), card
+//   --color-action-text-tint            10% / 15% action-tint badges on a card
+//   --color-action-on-primary / -on-ink bg-primary / Section bg="ink"
+//   .dark: -text / -text-canvas / -text-tint on the dark neutrals.
+// Moves OKLCH lightness only in 0.001 steps away from the surfaces (the side it
+// already sits on first); hue held, chroma reduced only to stay inside sRGB
+// (binary search, never per-channel clipping). The first hex that clears
+// `minRatio` on EVERY surface wins; a colour that already passes is returned
+// EXACTLY (same string/case). Never throws.
 const ACTION_TEXT_L_STEP = 0.001
 const ACTION_TEXT_CHROMA_STEPS = 24
+
+// "h s% l%" (optionally wrapped in hsl()) → the 8-bit hex a browser paints.
+export function hslTokensToHex(tokens: string): string {
+  const m = tokens.match(/(-?[\d.]+)\s+([\d.]+)%\s+([\d.]+)%/)
+  if (!m) throw new Error(`not an hsl token: ${tokens}`)
+  return chroma.hsl(Number(m[1]), Number(m[2]) / 100, Number(m[3]) / 100).hex()
+}
+
+// The colour a surface emitted as hsl(toHslTokens(hex)) actually renders.
+export function renderedHex(hex: string): string {
+  return hslTokensToHex(toHslTokens(hex))
+}
 
 function inGamutHex(l: number, c: number, h: number): string {
   const direct = chroma.oklch(l, c, h)
@@ -90,47 +110,62 @@ function inGamutHex(l: number, c: number, h: number): string {
   return chroma.oklch(l, lo, h).hex()
 }
 
-export function ensureTextContrast(textHex: string, surfaceHex: string, minRatio = 4.5): string {
+function minContrast(text: string, surfaces: string[]): number {
+  return Math.min(...surfaces.map((s) => chroma.contrast(text, s)))
+}
+
+export function ensureTextContrast(textHex: string, surface: string | string[], minRatio = 4.5): string {
   try {
-    if (chroma.contrast(textHex, surfaceHex) >= minRatio) return textHex
+    const surfaces = Array.isArray(surface) ? surface : [surface]
+    if (minContrast(textHex, surfaces) >= minRatio) return textHex
     const [l0, c0, h0] = chroma(textHex).oklch()
     const achromatic = isNaN(h0)
     const h = achromatic ? 0 : h0
     const c = achromatic ? 0 : c0
-    const lighter = chroma(textHex).luminance() > chroma(surfaceHex).luminance()
+    const lighter = chroma(textHex).luminance() > chroma(surfaces[0]).luminance()
     const directions = lighter ? [1, -1] : [-1, 1]
     for (const dir of directions) {
       for (let i = 1; ; i++) {
         const l = l0 + dir * i * ACTION_TEXT_L_STEP
         if (l < 0 || l > 1) break
         const candidate = inGamutHex(l, c, h)
-        if (chroma.contrast(candidate, surfaceHex) >= minRatio) return candidate
+        if (minContrast(candidate, surfaces) >= minRatio) return candidate
       }
     }
     const black = inGamutHex(0, 0, h)
     const white = inGamutHex(1, 0, h)
-    return chroma.contrast(black, surfaceHex) >= chroma.contrast(white, surfaceHex) ? black : white
+    return minContrast(black, surfaces) >= minContrast(white, surfaces) ? black : white
   } catch {
     return textHex
   }
 }
 
-export type ActionTextPalette = Pick<BrandJson['palette'], 'action' | 'primary' | 'nearWhite' | 'nearBlack'>
-export type ActionTextColors = { actionText: string; actionOnPrimary: string; darkActionText: string }
+// Action at `alpha` composited over `under` (how bg-[action]/10 paints).
+function tintOver(under: string, action: string, alpha: number): string {
+  return chroma.mix(under, action, alpha, 'rgb').hex()
+}
 
-// The three emitted small-text tokens, from the same palette values theme.css
-// already carries (--color-action / -primary-hex / -near-white / -near-black):
-// --color-action-text vs the page background (nearWhite), -on-primary vs the
-// AA-corrected primary, and the .dark --color-action-text vs the dark card
-// (the lighter dark surface — clearing it clears the dark background too).
-export function deriveActionTextColors(palette: ActionTextPalette): ActionTextColors {
-  const primaryFg = pickForeground(palette.primary, palette.nearWhite, palette.nearBlack)
-  const primaryBg = ensureContrast(palette.primary, primaryFg)
-  const darkCard = setLightness(palette.nearBlack, 13)
+const TINT_ALPHAS = [0.1, 0.15]
+
+// RENDERED surfaces (hex of what the browser paints).
+export type LightSurfaces = { background: string; muted: string; card: string; primary: string; ink: string }
+export type DarkSurfaces = { background: string; muted: string; card: string }
+export type LightActionTextTokens = { actionText: string; actionTextTint: string; actionOnPrimary: string; actionOnInk: string }
+export type DarkActionTextTokens = { actionText: string; actionTextTint: string }
+
+export function deriveLightActionTextTokens(action: string, s: LightSurfaces): LightActionTextTokens {
   return {
-    actionText: ensureTextContrast(palette.action, palette.nearWhite),
-    actionOnPrimary: ensureTextContrast(palette.action, primaryBg),
-    darkActionText: ensureTextContrast(palette.action, darkCard),
+    actionText: ensureTextContrast(action, [s.background, s.muted, s.card]),
+    actionTextTint: ensureTextContrast(action, TINT_ALPHAS.map((a) => tintOver(s.card, action, a))),
+    actionOnPrimary: ensureTextContrast(action, s.primary),
+    actionOnInk: ensureTextContrast(action, s.ink),
+  }
+}
+
+export function deriveDarkActionTextTokens(action: string, s: DarkSurfaces): DarkActionTextTokens {
+  return {
+    actionText: ensureTextContrast(action, [s.background, s.muted, s.card]),
+    actionTextTint: ensureTextContrast(action, TINT_ALPHAS.map((a) => tintOver(s.card, action, a))),
   }
 }
 
@@ -247,8 +282,20 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   const darkMutedForeground = ensureContrast(setLightness(palette.nearWhite, 60), darkMuted)
   const darkBorder = setLightness(palette.nearBlack, 24)
 
-  // Small-text action colours, AA-corrected per surface (see ensureTextContrast).
-  const { actionText, actionOnPrimary, darkActionText } = deriveActionTextColors(palette)
+  // Small-text action colours, AA-corrected against the RENDERED surfaces each
+  // is used on (see ensureTextContrast). Exactly palette.action when it passes.
+  const lightAction = deriveLightActionTextTokens(palette.action, {
+    background: renderedHex(palette.nearWhite),
+    muted: renderedHex(muted),
+    card: renderedHex(palette.nearWhite),
+    primary: renderedHex(primaryBg),
+    ink,
+  })
+  const darkAction = deriveDarkActionTextTokens(palette.action, {
+    background: renderedHex(darkBackground),
+    muted: renderedHex(darkMuted),
+    card: renderedHex(darkCard),
+  })
 
   const [sr, sg, sb] = chroma(palette.primary).rgb()
   const shadowRgb = `${sr}, ${sg}, ${sb}`
@@ -283,10 +330,16 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   --color-action: ${palette.action};
   --color-action-foreground: ${palette.nearWhite};
   /* Action colour for SMALL text, AA-corrected (lightness only) against the
-   * page background / the primary surface. Equal to --color-action when the
-   * raw colour already passes. */
-  --color-action-text: ${actionText};
-  --color-action-on-primary: ${actionOnPrimary};
+   * rendered surfaces it sits on: -text on the canvas (background, muted,
+   * card), -text-tint on the 10-15% action-tint badges, -on-primary / -on-ink
+   * in those sections (globals.css re-scopes -text there; -text-canvas keeps
+   * the canvas value for light cards inside them). Each equals --color-action
+   * when the raw colour already passes. */
+  --color-action-text: ${lightAction.actionText};
+  --color-action-text-canvas: ${lightAction.actionText};
+  --color-action-text-tint: ${lightAction.actionTextTint};
+  --color-action-on-primary: ${lightAction.actionOnPrimary};
+  --color-action-on-ink: ${lightAction.actionOnInk};
   --color-primary-hex: ${palette.primary};
   --color-near-black: ${palette.nearBlack};
   --color-near-white: ${palette.nearWhite};
@@ -365,10 +418,16 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   --color-action: ${palette.action};
   --color-action-foreground: ${palette.nearWhite};
   /* Action colour for SMALL text, AA-corrected (lightness only) against the
-   * page background / the primary surface. Equal to --color-action when the
-   * raw colour already passes. */
-  --color-action-text: ${actionText};
-  --color-action-on-primary: ${actionOnPrimary};
+   * rendered surfaces it sits on: -text on the canvas (background, muted,
+   * card), -text-tint on the 10-15% action-tint badges, -on-primary / -on-ink
+   * in those sections (globals.css re-scopes -text there; -text-canvas keeps
+   * the canvas value for light cards inside them). Each equals --color-action
+   * when the raw colour already passes. */
+  --color-action-text: ${lightAction.actionText};
+  --color-action-text-canvas: ${lightAction.actionText};
+  --color-action-text-tint: ${lightAction.actionTextTint};
+  --color-action-on-primary: ${lightAction.actionOnPrimary};
+  --color-action-on-ink: ${lightAction.actionOnInk};
   --color-primary-hex: ${palette.primary};
   --color-near-black: ${palette.nearBlack};
   --color-near-white: ${palette.nearWhite};
@@ -424,7 +483,9 @@ export function generateThemeCss(brand: Pick<BrandJson, 'palette'>, design: Desi
   --color-border: hsl(${toHslTokens(darkBorder)});
   --color-input: hsl(${toHslTokens(darkBorder)});
   /* Small action text re-corrected for the dark neutral surfaces. */
-  --color-action-text: ${darkActionText};
+  --color-action-text: ${darkAction.actionText};
+  --color-action-text-canvas: ${darkAction.actionText};
+  --color-action-text-tint: ${darkAction.actionTextTint};
 }
 `
 }

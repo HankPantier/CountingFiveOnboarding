@@ -9,8 +9,10 @@ import {
   formatContrastFailure,
   ACTION_ON_PRIMARY_PAIR,
   ACTION_ON_BACKGROUND_PAIR,
-  deriveActionTextColors,
+  deriveLightActionTextTokens,
   ensureTextContrast,
+  hslTokensToHex,
+  renderedHex,
 } from './theme-css-generator'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
@@ -117,11 +119,56 @@ const hueDelta = (a: string, b: string) => {
   const d = Math.abs(chroma(a).oklch()[2] - chroma(b).oklch()[2]) % 360
   return Math.min(d, 360 - d)
 }
+const cssBlock = (css: string, which: 'root' | 'dark') =>
+  which === 'root' ? css.slice(css.indexOf(':root {'), css.indexOf('.dark {')) : css.slice(css.indexOf('.dark {'))
+const tok = (blk: string, name: string) => blk.match(new RegExp(`\\n\\s*${name}: ([^;]+);`))![1]
 
-describe('small-text action tokens (--color-action-text / --color-action-on-primary)', () => {
-  it('golden: house default darkens on the canvas, stays raw on the primary and in .dark', () => {
-    expect(tokenValues(golden, '--color-action-text')).toEqual(['#007c90', '#007c90', '#00C1DE'])
+type TableRow = {
+  name: string
+  palette: BrandJson['palette']
+  light: { actionText: string; actionTextCanvas: string; actionTextTint: string; actionOnPrimary: string; actionOnInk: string }
+  dark: { actionText: string; actionTextCanvas: string; actionTextTint: string }
+}
+// Byte-identical copy of the template's src/lib/theme/__fixtures__/action-text-table.json
+// (captured from generate-theme.ts) — pins parity beyond the one golden.
+const TABLE = JSON.parse(readFileSync(path.join(FIX, 'action-text-table.json'), 'utf-8')) as TableRow[]
+
+describe('small-text action tokens', () => {
+  it('golden: house default tokens', () => {
+    expect(tokenValues(golden, '--color-action-text')).toEqual(['#007a8d', '#007a8d', '#00C1DE'])
     expect(tokenValues(golden, '--color-action-on-primary')).toEqual(['#00C1DE', '#00C1DE'])
+    expect(tokenValues(golden, '--color-action-on-ink')).toEqual(['#00C1DE', '#00C1DE'])
+  })
+
+  it.each(TABLE.map((r) => [r.name, r] as const))('palette→token table (shared with the template): %s', (_, row) => {
+    const css = generateThemeCss({ palette: row.palette }, design)
+    const r = cssBlock(css, 'root')
+    const d = cssBlock(css, 'dark')
+    expect({
+      actionText: tok(r, '--color-action-text'),
+      actionTextCanvas: tok(r, '--color-action-text-canvas'),
+      actionTextTint: tok(r, '--color-action-text-tint'),
+      actionOnPrimary: tok(r, '--color-action-on-primary'),
+      actionOnInk: tok(r, '--color-action-on-ink'),
+    }).toEqual(row.light)
+    expect({
+      actionText: tok(d, '--color-action-text'),
+      actionTextCanvas: tok(d, '--color-action-text-canvas'),
+      actionTextTint: tok(d, '--color-action-text-tint'),
+    }).toEqual(row.dark)
+    // ≥4.5 on what the browser paints (the hsl() lines), light and dark.
+    for (const sName of ['--color-background', '--color-muted', '--color-card']) {
+      expect(chroma.contrast(row.light.actionText, hslTokensToHex(tok(r, sName))), sName).toBeGreaterThanOrEqual(4.5)
+      expect(chroma.contrast(row.dark.actionText, hslTokensToHex(tok(d, sName))), `.dark ${sName}`).toBeGreaterThanOrEqual(4.5)
+    }
+    expect(chroma.contrast(row.light.actionOnPrimary, hslTokensToHex(tok(r, '--color-primary')))).toBeGreaterThanOrEqual(4.5)
+    expect(chroma.contrast(row.light.actionOnInk, tok(r, '--color-ink'))).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('Accord: on-primary clears the RENDERED primary #1f3a60 (hex #1F3A5F)', () => {
+    expect(renderedHex('#1F3A5F')).toBe('#1f3a60')
+    const accord = TABLE.find((r) => r.name === 'accord-advisors')!
+    expect(chroma.contrast(accord.light.actionOnPrimary, '#1f3a60')).toBeGreaterThanOrEqual(4.5)
   })
 
   it('returns an already-passing colour EXACTLY and is boundary-exact', () => {
@@ -131,38 +178,22 @@ describe('small-text action tokens (--color-action-text / --color-action-on-prim
     expect(ensureTextContrast('#777777', '#ffffff', exact + 0.001)).not.toBe('#777777')
   })
 
-  it('bblcpa palette: canvas 2.29 → ≥4.5, primary already passes', () => {
-    const out = deriveActionTextColors({ action: '#ff8e27', primary: '#003767', nearWhite: '#FeFefe', nearBlack: '#222222' })
-    expect(chroma.contrast(out.actionText, '#FeFefe')).toBeGreaterThanOrEqual(4.5)
-    expect(chroma.contrast(out.actionText, '#FeFefe')).toBeLessThan(4.6)
-    expect(hueDelta(out.actionText, '#ff8e27')).toBeLessThan(2)
-    expect(out.actionOnPrimary).toBe('#ff8e27')
-    expect(out.darkActionText).toBe('#ff8e27')
-  })
-
-  it('lightens on a dark primary the raw action fails (vermilion on teal)', () => {
-    const out = deriveActionTextColors({ action: '#cc381e', primary: '#003a42', nearWhite: '#fafaf7', nearBlack: '#1a1c1e' })
-    expect(out.actionText).toBe('#cc381e')
-    expect(chroma.contrast(out.actionOnPrimary, '#003a42')).toBeGreaterThanOrEqual(4.5)
-  })
-
-  it('hue scan: both tokens pass on the navy fixture at every hue, hue held', () => {
+  it('hue scan on the rendered navy fixture: both tokens pass, hue held', () => {
+    const s = { background: renderedHex(brand.palette.nearWhite), muted: renderedHex(chroma(brand.palette.nearWhite).set('hsl.l', 0.95).hex()), card: renderedHex(brand.palette.nearWhite), primary: renderedHex(brand.palette.primary), ink: '#131c2a' }
     for (let h = 0; h < 360; h += 10) {
       const action = chroma.oklch(0.75, 0.14, h).hex()
-      const out = deriveActionTextColors({ ...brand.palette, action })
-      expect(chroma.contrast(out.actionText, brand.palette.nearWhite), `h=${h}`).toBeGreaterThanOrEqual(4.5)
-      expect(chroma.contrast(out.actionOnPrimary, brand.palette.primary), `h=${h}`).toBeGreaterThanOrEqual(4.5)
-      if (out.actionText !== action) expect(hueDelta(out.actionText, action), `h=${h}`).toBeLessThan(4)
+      const t = deriveLightActionTextTokens(action, s)
+      expect(chroma.contrast(t.actionText, s.muted), `h=${h}`).toBeGreaterThanOrEqual(4.5)
+      expect(chroma.contrast(t.actionOnPrimary, s.primary), `h=${h}`).toBeGreaterThanOrEqual(4.5)
+      if (t.actionText !== action) expect(hueDelta(t.actionText, action), `h=${h}`).toBeLessThan(4)
     }
   })
 
-  it('R1: an action that passes both light surfaces is emitted verbatim for every light-mode token', () => {
-    // Needs contrast(bg, primary) ≥ 20.25 — black primary on white; #C45300 sits in the band.
+  it('R1: an action that passes canvas + primary is emitted verbatim for on-primary', () => {
     const css = generateThemeCss(
       { palette: { ...brand.palette, action: '#C45300', primary: '#000000', nearWhite: '#FFFFFF', nearBlack: '#000000' } },
       design
     )
-    expect(tokenValues(css, '--color-action-text').slice(0, 2)).toEqual(['#C45300', '#C45300'])
     expect(tokenValues(css, '--color-action-on-primary')).toEqual(['#C45300', '#C45300'])
   })
 

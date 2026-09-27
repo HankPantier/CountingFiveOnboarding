@@ -1,14 +1,13 @@
 // Rollout helper for template 2026.09.4: add ONLY the small-text action-colour
-// tokens (--color-action-text / --color-action-on-primary, + the .dark
-// override) to a client's EXISTING theme.css, computed from the palette values
-// already in that file. Does not regenerate anything else (see
+// tokens (--color-action-text / -text-canvas / -text-tint / -on-primary /
+// -on-ink, + the .dark overrides) to a client's EXISTING theme.css, computed
+// from the surfaces that file already renders. Does not regenerate anything else (see
 // lib/content/add-action-text-vars.ts). Idempotent.
 //
 //   npx tsx scripts/add-action-text-vars.ts <client-repo>/src/styles/theme.css [--check]
 //
 // --check: print what would be added and exit 1 if the file needs it (no write).
 import { readFileSync, writeFileSync } from 'node:fs'
-import chroma from 'chroma-js'
 import { addActionTextVars } from '../lib/content/add-action-text-vars'
 
 const args = process.argv.slice(2)
@@ -30,11 +29,10 @@ if (r.status === 'unchanged') {
   process.exit(0)
 }
 const action = css.match(/^\s*--color-action:\s*([^;]+);/m)?.[1].trim() ?? ''
-const nearWhite = css.match(/^\s*--color-near-white:\s*([^;]+);/m)?.[1].trim() ?? ''
 console.warn(
-  `${file}: --color-action ${action} → --color-action-text ${r.colors.actionText} ` +
-    `(${chroma.contrast(action, nearWhite).toFixed(2)} → ${chroma.contrast(r.colors.actionText, nearWhite).toFixed(2)} on ${nearWhite}), ` +
-    `--color-action-on-primary ${r.colors.actionOnPrimary}, .dark ${r.darkBlock ? r.colors.darkActionText : '(no .dark block)'}`
+  `${file}: --color-action ${action} → -text ${r.light.actionText}, -text-tint ${r.light.actionTextTint}, ` +
+    `-on-primary ${r.light.actionOnPrimary}, -on-ink ${r.light.actionOnInk}; ` +
+    (r.dark ? `.dark -text ${r.dark.actionText}, -text-tint ${r.dark.actionTextTint}` : '(no .dark block)')
 )
 if (check) process.exit(1)
 writeFileSync(file, r.css, 'utf-8')
