@@ -10,7 +10,10 @@ import { DRAFT_FILES, rawOf } from './__fixtures__/theme-texts'
 import { DESIGN_SYSTEM_PROMPT } from './brief'
 import { DEFAULT_CAPABILITIES } from './run-types'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
-import { reviseConcept, type ReviseConceptArgs } from './concept-reviser'
+import { reviseConcept, REVISE_CALL_CAP_MS, type ReviseConceptArgs } from './concept-reviser'
+import { FIRST_ATTEMPT_CAP_MS, REPAIR_CALL_TIMEOUT_MS } from './concept-generator'
+import { DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS } from './model-call'
+import { STEP_MODEL_BUDGET_MS } from './step-types'
 
 type Opts = { system?: string; beforeAttempt?: (n: 1 | 2) => boolean | Promise<boolean>; onAttempt?: (u: unknown, f: string) => Promise<void> | void; [k: string]: unknown }
 const USAGE = { inputTokens: 20_000, outputTokens: 10_000, inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -106,6 +109,57 @@ describe('reviseConcept', () => {
     const r = await reviseConcept(args({ costSoFarUsd: 4 }))
     expect(r).toMatchObject({ concept: null, stoppedReason: 'cost_cap', costUsd: 0 })
   })
+  describe('revise timeout (180 s, like the first concept attempt)', () => {
+    // Record each attempt's dynamic timeout; `clock` advances as attempts run.
+    let clock = NOW
+    const timed = (o: Opts) => o.timeoutMs as number
+    beforeEach(() => {
+      clock = NOW
+    })
+
+    it('REVISE_CALL_CAP_MS is 180 s — the same cap as FIRST_ATTEMPT_CAP_MS (same call shape)', () => {
+      expect(REVISE_CALL_CAP_MS).toBe(180_000)
+      expect(REVISE_CALL_CAP_MS).toBe(FIRST_ATTEMPT_CAP_MS)
+    })
+
+    it('budget: revise at the cap + its retry at the cap + the CSS repair fit the step budget minus the safety margin', () => {
+      expect(2 * REVISE_CALL_CAP_MS + REPAIR_CALL_TIMEOUT_MS).toBeLessThanOrEqual(STEP_MODEL_BUDGET_MS - DEADLINE_SAFETY_MS)
+      // …and the repair still clears the minimum-call veto after both attempts ran to the cap.
+      expect(STEP_MODEL_BUDGET_MS - DEADLINE_SAFETY_MS - 2 * REVISE_CALL_CAP_MS).toBeGreaterThanOrEqual(MIN_CALL_TIMEOUT_MS)
+    })
+
+    it('a fresh step caps the revise attempt at 180 s', async () => {
+      const r = await reviseConcept(args({ now: () => clock }))
+      expect(timed(m.generateJson.mock.calls[0][0] as Opts)).toBe(180_000)
+      expect(r.concept).not.toBeNull()
+    })
+
+    it('a runaway high-effort attempt aborted at the cap: the retry gets the full cap AND a CSS repair still runs', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const timeouts: number[] = []
+      m.generateJson.mockImplementationOnce(async (o: Opts) => {
+        if (!(await o.beforeAttempt?.(1))) return null
+        timeouts.push(timed(o))
+        clock += REVISE_CALL_CAP_MS // runs to the cap, aborted: no usage
+        if (!(await o.beforeAttempt?.(2))) return null
+        timeouts.push(timed(o))
+        clock += REVISE_CALL_CAP_MS // the retry also runs to its cap before answering
+        await o.onAttempt?.(USAGE, 'stop')
+        return { concepts: [OVERSIZED] }
+      })
+      m.generateJson.mockImplementationOnce(async (o: Opts) => {
+        if (!(await o.beforeAttempt?.(1))) return null
+        timeouts.push(timed(o))
+        await o.onAttempt?.(USAGE, 'stop')
+        return { concepts: [rawOf(REVISED)] }
+      })
+      const r = await reviseConcept(args({ now: () => clock }))
+      // 540 − 20 − 360 = 160 s left → the repair gets its full 150 s.
+      expect(timeouts).toEqual([180_000, 180_000, REPAIR_CALL_TIMEOUT_MS])
+      expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
+    })
+  })
+
   describe('size-only repair', () => {
     it('an over-cap revision gets exactly one repair turn (answer replayed + the exact errors) and the repaired bundle is used', async () => {
       queue = [{ concepts: [OVERSIZED] }]
