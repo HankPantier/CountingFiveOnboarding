@@ -55,6 +55,17 @@ describe('run DTO', () => {
     expect(dto.concepts[1]).toMatchObject({ name: 'Concept 2', status: 'rejected', palette: null, error: 'palette.primary: bad' })
   })
 
+  it('fontsNote: a non-blocking note when the concept’s render was captured before its webfonts loaded', () => {
+    expect(toRunDto(RUN, CONCEPTS, {}).concepts[0].fontsNote).toBeNull()
+    const late = makeConceptRow({ status: 'ready', screenshots: asJson([{ ...SHOT, fontsReady: false }]) })
+    const dto = toConceptDto(late, { [SHOT.path]: 'https://signed/shot' })
+    expect(dto.fontsNote).toBe('Fonts hadn’t finished loading when this was captured — the mobile screenshot may show fallback fonts.')
+    // The screenshot itself still renders (signed, no flag leaks into the DTO shot).
+    expect(dto.screenshots).toEqual([{ viewport: 'mobile', url: 'https://signed/shot', width: 780, height: 1568 }])
+    // A render-gate-free note: no warning or failure is added.
+    expect(dto.review).toBeNull()
+  })
+
   it('drops screenshots whose signing failed', () => {
     expect(toRunDto(RUN, CONCEPTS, {}).currentScreenshots).toEqual([])
   })

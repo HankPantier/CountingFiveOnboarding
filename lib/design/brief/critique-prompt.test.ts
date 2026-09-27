@@ -3,7 +3,7 @@ import { VALID } from '../__fixtures__/valid-bundle'
 import { parseTemplateMarker } from '../capabilities'
 import { DEFAULT_CAPABILITIES } from '../run-types'
 import { CSS_RULES_REMINDER, CSS_RULES_SECTION } from './contract'
-import { CRITIC_STATIC_PREFIX, CRITIC_SYSTEM_PROMPT, FIXED_SECTION, buildCritiquePrompt, paletteFreedomLine, type CritiquePromptArgs } from './critique-prompt'
+import { CRITIC_STATIC_PREFIX, CRITIC_SYSTEM_PROMPT, FIXED_SECTION, buildCritiquePrompt, fontsNotReadyLine, paletteFreedomLine, type CritiquePromptArgs } from './critique-prompt'
 
 const OTHER = { ...VALID, name: 'Oxblood Ledger', palette: { ...VALID.palette, primary: '#5c1a2b' } }
 const ARGS: CritiquePromptArgs = {
@@ -61,6 +61,28 @@ describe('buildCritiquePrompt', () => {
     const last = built.parts[built.parts.length - 1]
     expect(last.type === 'text' && last.text.startsWith('TASK')).toBe(true)
     expect(last.type === 'text' && last.text).toContain(CSS_RULES_REMINDER)
+  })
+  it('fonts not ready: ONE per-call line telling the critic to ignore font-family mismatches — never an issue, never in the cached part', () => {
+    expect(all).not.toContain('FONTS NOT LOADED')
+    const b = buildCritiquePrompt({ ...ARGS, fontsNotReady: ['mobile'] })
+    const idx = b.parts.findIndex((p) => p.type === 'text' && p.text.startsWith('FONTS NOT LOADED'))
+    expect(idx).toBeGreaterThanOrEqual(b.sharedPartCount)
+    expect(b.parts[idx]).toEqual({ type: 'text', text: fontsNotReadyLine(['mobile']) })
+    expect(fontsNotReadyLine(['mobile'])).toMatch(/^FONTS NOT LOADED: The mobile render was captured before the webfonts finished loading.*Ignore font-family mismatches in it/)
+    expect(fontsNotReadyLine(['desktop', 'mobile'])).toMatch(/These renders were .*Ignore font-family mismatches in them/)
+    // Not a render-check failure (those must become issues), and the prefix is untouched.
+    expect(texts(b.parts)).toContain('RENDER-CHECK FAILURES')
+    expect(texts(b.parts).match(/FONTS NOT LOADED/g)).toHaveLength(1)
+    expect(b.staticPrefix).toBe(CRITIC_STATIC_PREFIX)
+    expect(b.sharedPartCount).toBe(built.sharedPartCount)
+    // Before the concept's images, which it describes.
+    const firstConceptImage = b.parts.findIndex((p, i) => i >= b.sharedPartCount && p.type === 'image')
+    expect(idx).toBeLessThan(firstConceptImage)
+  })
+  it('fonts not ready: names only viewports whose image is actually sent', () => {
+    expect(texts(buildCritiquePrompt({ ...ARGS, mobile: null, fontsNotReady: ['mobile'] }).parts)).not.toContain('FONTS NOT LOADED')
+    expect(texts(buildCritiquePrompt({ ...ARGS, mobile: null, fontsNotReady: ['desktop', 'mobile'] }).parts)).toContain(fontsNotReadyLine(['desktop']))
+    expect(texts(buildCritiquePrompt({ ...ARGS, fontsNotReady: [] }).parts)).not.toContain('FONTS NOT LOADED')
   })
   it('says so when no render checks failed', () => {
     expect(texts(buildCritiquePrompt({ ...ARGS, gateFailures: [] }).parts)).toContain('RENDER CHECKS: no contrast, overflow or hidden-block failures')

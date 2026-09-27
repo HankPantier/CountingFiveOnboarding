@@ -6,6 +6,7 @@ import { capabilitiesFromJson } from './capabilities'
 import { metricGateFailures, type RenderMetrics } from './metrics'
 import { latestCritique, parseConceptReview, renderGateWarnings, unmeasuredViewports, type ConceptReview } from './review'
 import { isRunStalled, parseBaseSnapshot, parseScreenshots } from './run-state'
+import { fontsNotReadyNote } from './screenshots'
 import { CONCEPT_STATUSES, PALETTE_FREEDOMS, RUN_STATUSES, type ConceptStatus, type RunStatus } from './studio-types'
 import {
   RUN_STAGES,
@@ -78,6 +79,7 @@ export function toConceptDto(row: ConceptRow, signed: Record<string, string>, ba
     treatments: bundle?.treatments ?? null,
     tokens: bundle ? { roundness: bundle.tokens.roundness, density: bundle.tokens.density, visualFeel: bundle.tokens.visualFeel } : null,
     screenshots: toShots(parseScreenshots(row.screenshots), signed),
+    fontsNote: fontsNotReadyNote(parseScreenshots(row.screenshots)),
     iterations: row.iterations,
     review: toReviewDto(parseConceptReview(row.critique), signed, baseline),
   }

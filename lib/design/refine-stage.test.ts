@@ -312,6 +312,23 @@ describe('critiqueUnit', () => {
     expect(prompt).not.toContain('- vs concept 1:')
   })
 
+  it('a render captured before its webfonts loaded: the critic is told to ignore font-family mismatches (one per-call line)', async () => {
+    const shots = [{ ...R0[0], fontsReady: false }, ...R0.slice(1)]
+    m.listConcepts.mockResolvedValue([looping({}, { screenshots: asJson(shots) })])
+    m.critique.mockResolvedValue(result(crit(true)))
+    await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    const prompt = texts(m.critique.mock.calls[0][0])
+    expect(prompt).toContain(`FONTS NOT LOADED: The ${R0[0].viewport} render was captured`)
+    expect(prompt).toContain('RENDER CHECKS: no contrast')
+  })
+
+  it('fonts ready (no flag): no fonts line', async () => {
+    m.listConcepts.mockResolvedValue([looping()])
+    m.critique.mockResolvedValue(result(crit(true)))
+    await critiqueUnit({} as never, CTX, RID, CID, () => 1_000)
+    expect(texts(m.critique.mock.calls[0][0])).not.toContain('FONTS NOT LOADED')
+  })
+
   it('below the bar → revise next (still refining)', async () => {
     m.listConcepts.mockResolvedValue([looping()])
     m.critique.mockResolvedValue(result(crit(false)))
