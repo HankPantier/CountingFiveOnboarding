@@ -820,19 +820,24 @@ export default function EditorShell({
     setBulkStatus(null)
     setPageActioning(false)
     const bulkNotice = redirectWarningMessage('Redirects', bulkRedirectWarnings)
+    // Posts that kept a generator trailer render it live: say so on EVERY path,
+    // including a partial failure.
+    const trailerNotice = warnings.length
+      ? ` Heads up: ${warnings.join(', ')} still carry an SEO & AIO Metadata section with content after it; remove it by hand.`
+      : ''
     if (failures.length > 0) {
       setError(
         `Moved ${paths.length - failures.length} of ${paths.length}. Failed: ${failures
           .map((f) => `${f.name} (${f.reason})`)
-          .join('; ')}` + (bulkNotice ? ` ${bulkNotice}` : '')
+          .join('; ')}` +
+          trailerNotice +
+          (bulkNotice ? ` ${bulkNotice}` : '')
       )
       return false
     }
     setPublishResult(
       `Moved ${paths.length} ${dest.type === 'resources' ? 'to Resources' : 'under ' + dest.parentUrl} — Publish to update the live site.` +
-        (warnings.length
-          ? ` Heads up: ${warnings.join(', ')} still carry an SEO & AIO Metadata section with content after it; remove it by hand.`
-          : '')
+        trailerNotice
     )
     if (bulkNotice) setError(redirectWarningMessage(`Moved ${paths.length}`, bulkRedirectWarnings))
     return true
