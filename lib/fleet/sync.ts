@@ -330,14 +330,37 @@ export async function verifyPlanInScratch<T>(run: RepoRun, verify: (dir: string)
 
 // ── apply (local working tree + one local commit; still no push) ────────────
 
-export function prepareForApply(dir: string): void {
+export const ORPHAN_REF_PREFIX = 'refs/fleet-orphans/'
+
+/**
+ * Reset the clone to origin/main before a commit. Every fetch is `--depth 1`,
+ * so a newer origin/main is a parentless shallow root and a HEAD that IS in its
+ * history fails the ancestry check: the clone is unshallowed first. A HEAD
+ * that is still not on origin/main can only be a stale, unpushed Fleet-Sync
+ * commit (the tool never keeps work in a clone); it is saved to
+ * refs/fleet-orphans/<ts>-<sha> and the clone is reset. Returns that warning,
+ * or null.
+ */
+export function prepareForApply(dir: string): string | null {
   if (changedPaths(dir).length > 0) throw new Error('local clone has uncommitted changes — clean it (or delete the clone) first')
   const head = revParse(dir, 'HEAD')
   const remote = revParse(dir, 'refs/remotes/origin/main')
+  let warning: string | null = null
   if (head !== remote && !isAncestor(dir, head, remote)) {
-    throw new Error(`local HEAD ${head.slice(0, 7)} has commits not on origin/main — refusing to discard them`)
+    if (tryGit(dir, ['rev-parse', '--is-shallow-repository']).out.trim() === 'true') {
+      const deepen = tryGit(dir, ['fetch', '-q', '--unshallow', 'origin', '+refs/heads/main:refs/remotes/origin/main'])
+      if (!deepen.ok) throw new Error(`could not unshallow the clone: ${deepen.err.trim().split('\n')[0]}`)
+    }
+    const fresh = revParse(dir, 'refs/remotes/origin/main')
+    if (!isAncestor(dir, head, fresh)) {
+      const ref = `${ORPHAN_REF_PREFIX}${new Date().toISOString().replace(/[:.]/g, '-')}-${head.slice(0, 7)}`
+      git(dir, ['update-ref', ref, head])
+      warning = `local HEAD ${head.slice(0, 7)} was not on origin/main — saved to ${ref} and reset to origin/main`
+      console.warn(`[fleet] ${path.basename(dir)}: ${warning}`)
+    }
   }
   git(dir, ['checkout', '-q', '-B', 'main', 'refs/remotes/origin/main'])
+  return warning
 }
 
 export function commitMessage(ctx: SyncContext, run: RepoRun): string {

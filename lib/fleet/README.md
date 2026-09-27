@@ -106,7 +106,7 @@ When a client skipped a release, the manifests strictly after OLD's version and 
 
 1. **Clone and gate.** Every repo gets a dry-run plan. Blocked repos are never touched.
 2. **Local commit.**
-   - The clone must be clean, and must not hold local commits that aren't on origin/main.
+   - The clone must be clean. A shallow clone is unshallowed first, so a `main` that simply moved ahead (a publish) is not mistaken for local work. A local commit that is still not on origin/main (only ever a stale, unpushed Fleet-Sync commit) is saved to `refs/fleet-orphans/<ts>-<sha>` with a warning, and the clone is reset to origin/main.
    - The planned bytes are written to the clone.
    - **Any working-tree change the plan did not predict aborts the repo.** The clone is then reset.
    - One commit is made, listing its paths explicitly, with the trailer `Fleet-Sync: <version> <OLD>..<NEW>`.
@@ -125,7 +125,7 @@ When a client skipped a release, the manifests strictly after OLD's version and 
 ## Recovery
 
 - **The first `--apply` of a release:** run it on one repo (`--slugs Abramson-Company-LLC --apply`), check the site, then run `--all --apply`. The already-synced repo shows "up to date".
-- **"push failed — non-fast-forward"** means the client's main moved since the gate (someone published). Delete that clone (`rm -rf $TMPDIR/revaltus-fleet/<repo>`) and re-run. The gate recomputes against the new main.
+- **"push failed — non-fast-forward"** means the client's main moved since the gate (someone published). Re-run: the gate recomputes against the new main, and the unpushed local commit is saved to `refs/fleet-orphans/` and dropped from the clone automatically.
 - **"main→draft would conflict (files…)"** means the repo's draft has unpublished edits to files this release changes. Nothing was pushed. Publish or discard those draft edits in the editor, or resolve them on `draft` by hand, then re-run.
 - **"main pushed, but main→draft conflict"** means draft moved between the pre-merge and the API merge (a rare race). Main is live. Merge `main` into `draft` by hand, or through a PR, before anyone publishes.
 - **Vercel failure or timeout:**
