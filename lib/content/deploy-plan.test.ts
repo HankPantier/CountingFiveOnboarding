@@ -372,3 +372,24 @@ describe('redirects.csv loop safety on deploy', () => {
     expect(plan.push[0].content).toBe(header + '/a,/b,301,x\n')
   })
 })
+
+// Plan Phase 4 (2026.09.9): a re-package must never drop design.json keys the
+// assembler doesn't generate — the Studio/Controls-owned `layout`, `logo` and
+// `style`. design.json is SITE_CONFIG (written only when absent on draft), so a
+// re-deploy keeps the draft's file byte-for-byte; the assembler's freshly built
+// design.json (no layout/logo/style) never reaches the repo.
+describe('planDeployPush — re-package keeps design.json layout / logo / style', () => {
+  it('skips the generated design.json when the draft already has one', () => {
+    const draftDesign = JSON.stringify({ roundness: 'pill', style: { cards: 'flat' }, logo: { size: 'large' }, layout: { cards: 'list', faq: 'split' } }, null, 2) + '\n'
+    const generated = JSON.stringify({ roundness: 'pill' }, null, 2)
+    const plan = planDeployPush({
+      entries: [{ path: 'content/design.json', content: generated }],
+      draftBlobs: new Map([['content/design.json', sha(draftDesign)]]),
+      baseline: { 'content/design.json': sha(generated) },
+    })
+    expect(plan.firstDeploy).toBe(false)
+    expect(plan.push.find((p) => p.path === 'content/design.json')).toBeUndefined()
+    expect(plan.skipped).toContainEqual({ path: 'content/design.json', reason: 'site-config' })
+    expect(SITE_CONFIG_PATHS.has('content/design.json')).toBe(true)
+  })
+})
