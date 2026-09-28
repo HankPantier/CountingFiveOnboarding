@@ -96,6 +96,21 @@ describe('buildCritiquePrompt', () => {
     expect(CRITIC_STATIC_PREFIX).toContain('distinctiveness: how different is its visual SYSTEM')
     expect(CRITIC_STATIC_PREFIX).toContain('Never ask for new copy')
   })
+  it('excepts the layout presets from the FIXED component tree and names them in the rubric (2026.09.9) — no new dimension, same pass rule', () => {
+    expect(FIXED_SECTION).toContain('with ONE exception: the site-wide layout presets')
+    expect(FIXED_SECTION).toContain('the style axes and the layout presets where the site has them')
+    expect(CRITIC_STATIC_PREFIX).toContain('tokens, treatments, style axes, layout presets and signature CSS')
+    expect(CRITIC_STATIC_PREFIX).toContain('A layout preset must earn its place here')
+    // Still exactly six scored dimensions in the output format, and the same pass rule.
+    expect(CRITIC_STATIC_PREFIX).toContain('{"scores":{"brandFit":1,"distinctiveness":1,"hierarchy":1,"legibility":1,"consistency":1,"craft":1}')
+    expect(CRITIC_STATIC_PREFIX).toContain('every score is ≥ 3, the mean is ≥ 3.8')
+  })
+  it('prints the concept layout in its summary line', () => {
+    const laid = { ...VALID, layout: { cards: 'list' as const, faq: 'split' as const } }
+    const t = texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: laid } }).parts)
+    expect(t).toContain('· layout {"cards":"list","faq":"split"}')
+    expect(all).not.toContain('· layout ')
+  })
   it('states both distinctiveness bars in the prefix and the run’s own bar in the shared parts', () => {
     expect(CRITIC_STATIC_PREFIX).toContain('distinctiveness is ≥ 3 when the run\'s palette freedom is keep or evolve, or ≥ 4 when it is free')
     expect(paletteFreedomLine('keep')).toContain('The distinctiveness bar is 3.')

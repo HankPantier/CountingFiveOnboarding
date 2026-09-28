@@ -155,7 +155,7 @@ export function conceptSummaryLines(priors: PriorConcept[]): string[] {
         `- Concept ${position + 1} "${clip(bundle.name, 60)}"${bundle.tagline ? ` — ${clip(bundle.tagline, 120)}` : ''}`,
         `  Palette: ${hexes}`,
         `  Type: heading ${typography.headingFont} / body ${typography.bodyFont} / accent ${typography.accentFont}; roundness ${tokens.roundness}, density ${tokens.density}, feel ${tokens.visualFeel}`,
-        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}${bundle.style ? ` · style ${JSON.stringify(bundle.style)}` : ''}`,
+        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}${bundle.style ? ` · style ${JSON.stringify(bundle.style)}` : ''}${bundle.layout ? ` · layout ${JSON.stringify(bundle.layout)}` : ''}`,
         ...(moves ? [`  Moves: ${moves}`] : []),
       ].join('\n')
     })
