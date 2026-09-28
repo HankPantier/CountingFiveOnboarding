@@ -13,6 +13,7 @@ import { applyChatEdit, describeChatEdit, fragmentOf, sameLevers, type ChatEdit,
 import { PREVIEWS_PER_TURN } from './chat-types'
 import { checkConceptCandidate } from './concept-validate'
 import { layoutGuardErrors } from './css-sanitizer'
+import { scopeGuardErrors, scopeGuardWarnings } from './scope-guard'
 import { cssByteLength, cssCaps, countCssLines } from './css-budget'
 import type { RenderMetrics } from './metrics'
 import type { DesignCapabilities, RunScreenshot } from './run-types'
@@ -26,7 +27,8 @@ export const STYLE_LOCKED_TOOL_ERROR =
 export const LAYOUT_LOCKED_TOOL_ERROR =
   'Layout presets are locked on this site (its draft or deployed template predates 2026.09.9) — nothing was changed. Keep the current structure; restyle with tokens, treatments and block CSS instead.'
 
-export type WorkspaceInit = { current: DesignBundle; draftFiles: RepoThemeFiles; draftShas: ThemeBlobShas; caps: DesignCapabilities; model: string }
+// `adopt`: the "Fix in chat" concept, whose own CSS the scope guard lets through.
+export type WorkspaceInit = { current: DesignBundle; draftFiles: RepoThemeFiles; draftShas: ThemeBlobShas; caps: DesignCapabilities; model: string; adopt?: DesignBundle }
 export type EditOutcome = { ok: true; changed: boolean; notes: string[]; budget: string | null } | { ok: false; error: string }
 export type WorkspacePreview = { revision: number; metrics: RenderMetrics | null; baseline: RenderMetrics | null; shots: RunScreenshot[] }
 
@@ -82,6 +84,8 @@ export class ChatWorkspace {
     if (edit.kind === 'css') {
       const layout = layoutGuardErrors(edit.css)
       if (layout.length > 0) return { ok: false, error: layout.join(' ').slice(0, 1500) }
+      const scope = scopeGuardErrors(edit.css, [fragmentOf(this.working.css, edit.target), this.init.adopt ? fragmentOf(this.init.adopt.css, edit.target) : null])
+      if (scope.length > 0) return { ok: false, error: scope.join(' ').slice(0, 1500) }
     }
     const v = checkConceptCandidate(
       candidate,
@@ -96,7 +100,8 @@ export class ChatWorkspace {
     this.working = { ...v.concept.bundle, name: this.working.name, meta: { source: 'chat', model: this.init.model } }
     this.rev++
     this.pending.push(describeChatEdit(edit))
-    return { ok: true, changed: true, notes: v.concept.notes, budget: edit.kind === 'css' ? fragmentBudget(this.working.css, edit.target) : null }
+    const notes = edit.kind === 'css' ? [...v.concept.notes, ...scopeGuardWarnings(edit.css, edit.target)] : v.concept.notes
+    return { ok: true, changed: true, notes, budget: edit.kind === 'css' ? fragmentBudget(this.working.css, edit.target) : null }
   }
 
   // The files a commit (or preview) of the working copy produces — hand CSS

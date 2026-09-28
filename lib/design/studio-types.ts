@@ -76,6 +76,11 @@ export type DriftResult = { status: DriftStatus; changedPaths: string[]; sinceVe
 
 export type BaselineStatus = { status: 'ok'; created: boolean } | { status: 'error'; error: string }
 
+// POST /api/edit/[id]/design/baseline
+export interface DesignBaselineResponse {
+  baseline: BaselineStatus
+}
+
 export type InputSuggestions = { currentSite: string | null; competitors: { name: string }[] }
 
 export type DesignStudioState = {

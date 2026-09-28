@@ -18,6 +18,31 @@ function current() {
 const ws = (over: Partial<ConstructorParameters<typeof ChatWorkspace>[0]> = {}) =>
   new ChatWorkspace({ current: current(), draftFiles: DRAFT_FILES, draftShas: SHAS, caps: DEFAULT_CAPABILITIES, model: 'claude-sonnet-5', ...over })
 
+describe('ChatWorkspace scope guard', () => {
+  it('refuses a literal colour or named font in chat CSS and stages nothing', () => {
+    const w = ws()
+    const colour = w.apply({ kind: 'css', target: 'cta-banner', css: '[data-block="cta-banner"] { background: #0b2545; }' })
+    expect(colour.ok).toBe(false)
+    expect(!colour.ok && colour.error).toMatch(/set_palette/)
+    const font = w.apply({ kind: 'css', target: 'hero', css: '[data-block="hero"] h1 { font-family: Georgia, serif; }' })
+    expect(font.ok).toBe(false)
+    expect(!font.ok && font.error).toMatch(/set_fonts/)
+    expect(w.isStaged()).toBe(false)
+  })
+  it('lets a "Fix in chat" concept bring its own literal colours over', () => {
+    const concept = current()
+    const conceptCss = '[data-block="cta-banner"] { background: #0b2545; }'
+    const w = ws({ adopt: { ...concept, css: { ...concept.css, blocks: { ...concept.css.blocks, 'cta-banner': conceptCss } } } })
+    expect(w.apply({ kind: 'css', target: 'cta-banner', css: conceptCss })).toMatchObject({ ok: true, changed: true })
+  })
+  it('stages block button CSS but tells the model its scope', () => {
+    const w = ws()
+    const r = w.apply({ kind: 'css', target: 'cta-banner', css: '[data-block="cta-banner"] [data-c5="button"] { border-radius: 0; }' })
+    expect(r).toMatchObject({ ok: true, changed: true })
+    expect(r.ok && r.notes.some((n) => n.includes('only change buttons inside "cta-banner"'))).toBe(true)
+  })
+})
+
 describe('ChatWorkspace edits', () => {
   it('stages a valid palette change as a chat bundle and bumps the revision', () => {
     const w = ws()

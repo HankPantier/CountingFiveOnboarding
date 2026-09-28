@@ -1,22 +1,18 @@
 import { NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
-import { BRAND_PATH, DESIGN_PATH, OVERRIDES_PATH } from '@/app/api/edit/[id]/theme/_theme'
-import { computeDrift, draftFontsModuleKind, isFontsModuleStale, isThemeCssStale, mergeAppliedBlobs, themeFilePaths, toBlobMap } from '@/lib/design/drift'
-import { readDesignCapabilities } from '@/lib/design/capabilities-read'
+import { computeDrift, draftFontsModuleKind, isFontsModuleStale, isThemeCssStale, toBlobMap } from '@/lib/design/drift'
 import { fontsUnlocked } from '@/lib/design/capabilities'
-import { readDraftThemeSnapshot } from '@/lib/design/theme-snapshot'
-import { getBaselineOrCreate, listInputs, listVersions, readSessionSchema, type BaselineSource } from '@/lib/design/store'
+import { listInputs, listVersions, readSessionSchema } from '@/lib/design/store'
 import { signDesignPaths } from '@/lib/design/storage'
 import { buildInputSuggestions, toInputDto, toVersionDto, versionThumbnailPaths } from '@/lib/design/studio-dto'
-import type { BaselineStatus, DesignStudioState } from '@/lib/design/studio-types'
+import type { DesignStudioState } from '@/lib/design/studio-types'
 import { loadLatestRunDto } from '@/lib/design/run-view'
 import type { DesignRunDto } from '@/lib/design/run-types'
 import { requireDesignAdmin } from './_design'
+import { ensureDesignBaseline } from './_baseline'
 
 export const runtime = 'nodejs'
-
-const NO_THEME_FILES = 'This site has no brand.json / design.json yet — there is no design to import as v0.'
 
 // GET — the Design Studio's full state for one client: versions (newest
 // first), drift of the draft theme vs the latest version, whether theme.css is
@@ -31,45 +27,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   try {
     const supabase = createServerClient()
-    const [snapshot, schema, inputs] = await Promise.all([
-      readDraftThemeSnapshot(ctx.githubRepo),
+    const [{ snapshot, draftCaps, themePaths, baseline }, schema, inputs] = await Promise.all([
+      ensureDesignBaseline(supabase, ctx),
       readSessionSchema(supabase, ctx.sessionId),
       listInputs(supabase, ctx.sessionId),
     ])
-    // After the snapshot (it ensured the draft branch). The DRAFT marker decides
-    // which files the theme contract tracks (the fonts module on L2+).
-    const draftCaps = await readDesignCapabilities(ctx.githubRepo)
-    const themePaths = themeFilePaths(draftCaps)
-
-    const brandText = snapshot.texts[BRAND_PATH]
-    const designText = snapshot.texts[DESIGN_PATH]
-    let source: BaselineSource
-    if (brandText && designText) {
-      // Lazy-imported: bundle-files pulls in the sanitizer (lightningcss),
-      // which needs its own outputFileTracingIncludes entry (R7) and must
-      // never be a static import in a route module.
-      try {
-        const { bundleFromRepoFiles } = await import('@/lib/design/bundle-files')
-        source = bundleFromRepoFiles(
-          { brandText, designText, overridesCss: snapshot.texts[OVERRIDES_PATH] ?? '' },
-          { name: 'Baseline', source: 'baseline' }
-        )
-      } catch (err) {
-        console.error('[design:state] bundle-files unavailable:', err)
-        source = { ok: false, errors: ['Could not read the current theme — try again shortly.'] }
-      }
-    } else {
-      source = { ok: false, errors: [NO_THEME_FILES] }
-    }
-
-    const outcome = await getBaselineOrCreate(supabase, {
-      sessionId: ctx.sessionId,
-      createdBy: ctx.adminId,
-      source,
-      appliedBlobs: mergeAppliedBlobs(snapshot.shas, {}, themePaths),
-    })
-    const baseline: BaselineStatus =
-      outcome.status === 'error' ? { status: 'error', error: outcome.error } : { status: 'ok', created: outcome.status === 'created' }
 
     const versionRows = await listVersions(supabase, ctx.sessionId)
     const latestRow = versionRows[0] ?? null

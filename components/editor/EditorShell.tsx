@@ -12,10 +12,12 @@ import OneOffPanel from './OneOffPanel'
 import ChangesPanel from './ChangesPanel'
 import EditStatsPanel from './EditStatsPanel'
 import type { EditStatsResponse } from '@/lib/content/edit-stats'
-import ThemeStudio from './ThemeStudio'
+import ThemeStudio, { type StudioTab } from './ThemeStudio'
 import ClientCenterEditor from './ClientCenterEditor'
 import NewPageDialog from './NewPageDialog'
 import SiteAssistantChat from './SiteAssistantChat'
+import dynamic from 'next/dynamic'
+import { designPreviewRoute } from '@/lib/editor/design-drawer'
 import { parseNavJson } from '@/lib/editor/nav-config'
 import { toPathname, type Move } from '@/lib/editor/nav-urls'
 import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
@@ -26,6 +28,10 @@ import type { LayoutPresets } from '@/lib/design/layout-presets'
 import { REDIRECTS_CSV_PATH, redirectsCacheAction } from '@/lib/editor/redirect-cache'
 
 const NAV_PATH = 'content/nav.json'
+
+// Loaded on first open: the chat pulls in the AI SDK UI + annotate canvas.
+const DesignDrawer = dynamic(() => import('./DesignDrawer'), { ssr: false })
+const DesignPreviewPane = dynamic(() => import('./DesignPreviewPane'), { ssr: false })
 
 type LoadedFile = { content: string; sha: string }
 
@@ -97,6 +103,12 @@ export default function EditorShell({
   // Site-structure assistant drawer — admin-only, page-independent (available
   // over any open file, like Theme Studio but as a slide-in panel).
   const [assistantOpen, setAssistantOpen] = useState(false)
+  // Design drawer — admin-only quick design revisions (the Design Studio chat
+  // without the concept workflow) beside a live draft preview of the page.
+  const [designOpen, setDesignOpen] = useState(false)
+  // Bumped after each design commit so the preview re-reads the draft theme.
+  const [designVersion, setDesignVersion] = useState(0)
+  const [themeTab, setThemeTab] = useState<StudioTab>('controls')
   // Set when a save hits a sha conflict (someone else saved the same file).
   // The admin chooses explicitly: overwrite with their version, or take the
   // server's — no silent last-writer-wins.
@@ -1014,6 +1026,9 @@ export default function EditorShell({
   }
 
   const content = currentContent()
+  // The drawer never shows over Theme Studio (it hosts the same chat).
+  const designActive = isAdmin && designOpen && selectedPath !== THEME_VIEW
+  const designRoute = designPreviewRoute(selectedPath)
   const isNav = selectedPath === 'content/nav.json'
   const isLivePage =
     !!selectedPath &&
@@ -1084,7 +1099,7 @@ export default function EditorShell({
         onResetDraft={isAdmin ? resetDraft : undefined}
         onRepullDone={() => void refreshStatus()}
       />
-      {(isLivePage || isDraftPage) && selectedPath && (
+      {(isLivePage || isDraftPage) && selectedPath && !designActive && (
         <div className="px-6 py-2 border-b border-border-default bg-surface-default flex items-center justify-end gap-2">
           {isPostPage && publishAllowed && (
             <button
@@ -1257,13 +1272,21 @@ export default function EditorShell({
             navLoading={navLoading}
             navEditable={!viewerIsOwner}
             navBusy={pageActioning}
-            onSelect={(p) => void select(p)}
+            onSelect={(p) => {
+              setThemeTab('controls')
+              void select(p)
+            }}
             onNewPage={() => setNewPageOpen(true)}
             onBulkMove={bulkMove}
             onNavCommit={commitNav}
           />
         )}
-        {!selectedPath ? (
+        {designActive ? (
+          // Leaves room for the fixed 440px drawer on the right.
+          <div className="flex min-w-0 flex-1 pr-[min(440px,92vw)]">
+            <DesignPreviewPane sessionId={sessionId} route={designRoute} sourcesVersion={designVersion} />
+          </div>
+        ) : !selectedPath ? (
           <div className="flex-1 flex items-center justify-center text-sm font-body text-text-muted">
             Select a file from the left to begin editing.
           </div>
@@ -1286,6 +1309,7 @@ export default function EditorShell({
         ) : selectedPath === THEME_VIEW ? (
           <ThemeStudio
             sessionId={sessionId}
+            initialTab={themeTab}
             pendingCount={status?.draftAhead ?? 0}
             publishing={publishing}
             canPublish={!publishing && (status?.draftAhead ?? 0) > 0 && dirty.size === 0}
@@ -1416,15 +1440,41 @@ export default function EditorShell({
       )}
       {/* Hidden on the Theme view: it has its own assistant (the Design Studio
           chat), and this fixed button would sit over that composer's Send button. */}
-      {isAdmin && !assistantOpen && selectedPath !== THEME_VIEW && (
-        <button
-          type="button"
-          onClick={() => setAssistantOpen(true)}
-          className="fixed bottom-6 right-6 z-40 rounded-pill bg-brand-cyan px-4 py-2 font-heading text-xs font-semibold text-text-inverse shadow-elevated transition-all hover:bg-brand-cyan-dark"
-          title="Make site-wide changes — add/remove pages, edit navigation"
-        >
-          ✨ Site Assistant
-        </button>
+      {isAdmin && !assistantOpen && !designActive && selectedPath !== THEME_VIEW && (
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDesignOpen(true)}
+            className="rounded-pill bg-brand-navy px-4 py-2 font-heading text-xs font-semibold text-text-inverse shadow-elevated transition-all hover:bg-brand-navy-dark"
+            title="Quick design revisions — colors, fonts, spacing — with a live preview of this page"
+          >
+            🎨 Design
+          </button>
+          <button
+            type="button"
+            onClick={() => setAssistantOpen(true)}
+            className="rounded-pill bg-brand-cyan px-4 py-2 font-heading text-xs font-semibold text-text-inverse shadow-elevated transition-all hover:bg-brand-cyan-dark"
+            title="Make site-wide changes — add/remove pages, edit navigation"
+          >
+            ✨ Site Assistant
+          </button>
+        </div>
+      )}
+      {designActive && (
+        <DesignDrawer
+          sessionId={sessionId}
+          route={designRoute}
+          onCommitted={() => {
+            setDesignVersion((v) => v + 1)
+            void refreshStatus()
+          }}
+          onOpenStudio={() => {
+            setDesignOpen(false)
+            setThemeTab('studio')
+            void select(THEME_VIEW)
+          }}
+          onClose={() => setDesignOpen(false)}
+        />
       )}
       {isAdmin && assistantOpen && (
         <aside className="fixed inset-y-0 right-0 z-40 flex w-[400px] max-w-[92vw] flex-col border-l border-border-default bg-surface-card shadow-elevated">

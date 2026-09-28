@@ -64,3 +64,6 @@ raw-docs/screenshots/
 
 # Local script output (e.g. scripts/compare-design-models.ts → tmp/design-ab/)
 /tmp/
+
+# Claude Code agent worktrees (local scratch)
+.claude/worktrees/

@@ -31,7 +31,7 @@ function rebuildThemeCss(
   )
 }
 
-type StudioTab = 'studio' | 'controls'
+export type StudioTab = 'studio' | 'controls'
 const STUDIO_TABS: { key: StudioTab; label: string }[] = [
   { key: 'studio', label: 'Studio' },
   { key: 'controls', label: 'Controls' },
@@ -50,6 +50,7 @@ export default function ThemeStudio({
   canPublish,
   onPublish,
   onCommitted,
+  initialTab = 'controls',
 }: {
   sessionId: string
   // Draft commits ahead of live — how many changes are waiting to publish.
@@ -60,6 +61,8 @@ export default function ThemeStudio({
   // Called after a theme change lands on the draft, so the parent editor can
   // refresh its publish status / Review changes count.
   onCommitted: () => void
+  // The editor's Design drawer opens straight onto the Studio tab.
+  initialTab?: StudioTab
 }) {
   const [info, setInfo] = useState<PreviewUrlInfo | null>(null)
   const [urlInput, setUrlInput] = useState('')
@@ -79,11 +82,11 @@ export default function ThemeStudio({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [contrastWarnings, setContrastWarnings] = useState<string[]>([])
   // Controls (today's UI) stays the default; Studio is the Design Studio.
-  const [tab, setTab] = useState<StudioTab>('controls')
+  const [tab, setTab] = useState<StudioTab>(initialTab)
   // Once opened, the Studio stays mounted (hidden) like Controls: a chat turn
   // that commits while the admin is on Controls still reaches onThemeChanged,
   // so the Controls preview and the publish count refresh.
-  const [studioOpened, setStudioOpened] = useState(false)
+  const [studioOpened, setStudioOpened] = useState(initialTab === 'studio')
   const tabRefs = useRef<Partial<Record<StudioTab, HTMLButtonElement | null>>>({})
   const selectTab = useCallback((next: StudioTab, focus = false) => {
     setTab(next)

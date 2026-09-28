@@ -207,6 +207,7 @@ Spec: `docs/superpowers/specs/2026-09-24-design-studio-design.md`. It replaced t
 - **Capabilities:** gates (what a concept/chat may change, the 422 "locked" checks, the specimen pick) use the EFFECTIVE tier = draft `c5-template.json` ∩ the deployed shell's `<meta name="c5-capabilities">` (`readEffectiveCapabilities`). File-contract decisions (write/guard `src/app/fonts.generated.ts`, `applied_blobs`, drift paths) use the DRAFT marker. An unverified shell counts as the draft tier.
 - `applied_blobs` = the four theme files, plus `src/app/fonts.generated.ts` on L2+ drafts. Every theme write on an L2+ draft regenerates the fonts module; never hand-edit it.
 - Chat commits never sync the MBP. All writes go through `commitDesignVersion`.
+- **Chat scope:** every design lever is site-wide. `lib/design/scope-guard.ts` refuses chat CSS that introduces a literal colour or a named font (use `var(--color-*)` / `set_fonts`) and warns on button rules in one block's fragment; the chat prompt's `SCOPE` section routes element-level requests to site-wide levers. The editor's Design drawer (`components/editor/DesignDrawer.tsx`) calls `POST /design/baseline` first so a chat commit never 409s for a missing v0.
 - The critic scores only the levers a concept controls (palette, type, tokens, treatments, style axes, scoped CSS) — never copy, images, layout, CTAs, the chat widget or the logo. Pass rule: every dimension ≥3, mean ≥3.8, distinctiveness ≥3 for keep/evolve palette freedom and ≥4 for free.
 - Template contracts are byte-mirrored — copy, don't retype: `lib/content/__fixtures__/font-manifest.template.json` + fonts goldens, `lib/design/__fixtures__/style-axes.template.json`, `lib/design/__fixtures__/layout-presets.template.json`, and `lib/content/__fixtures__/blocks.template.json` must equal the template's `docs/design/*` files. Every template release that changes a block, variant or preset re-copies them.
 - **Template version:** the effective template version = min(draft `c5-template.json`, the deployed shell's `<meta name="c5-template-version">`); a verified shell without the meta counts as 2026.09.8. Anything that offers block variants or layout presets (Studio brief, chat hints, the `layout-presets` gate) uses the effective version; the editor's per-section Layout picker and content validation use the DRAFT version (page content renders on the draft template). Compare versions only with `compareTemplateVersions` (numeric — `2026.09.10 > 2026.09.9`).
@@ -360,3 +361,13 @@ The full design specification lives in `raw-docs/design.md`. **Read it before wr
 - Do not write `console.log` in pipeline or production paths — use `console.warn` for non-fatal operational logs, `console.error` for genuine failures
 - Do not use raw Tailwind semantic colors (`text-red-*`, `bg-amber-*`, etc.) — use the `error` / `warning` / `info` / `success` tokens defined in `app/globals.css`
 - Do not let `process.env.CRON_SECRET` be empty in any environment that has cron routes deployed
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

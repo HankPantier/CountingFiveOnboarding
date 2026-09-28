@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { VALID } from '../__fixtures__/valid-bundle'
 import { DEFAULT_CAPABILITIES, type DesignCapabilities } from '../run-types'
 import { CSS_RULES_SECTION, TOKEN_CONTRACT } from './contract'
-import { buildChatSystemStatic, buildChatTurnContext } from './chat-prompt'
+import { SCOPE, buildChatSystemStatic, buildChatTurnContext } from './chat-prompt'
 
 const L2: DesignCapabilities = { level: 2, source: 'marker', templateVersion: '2', capabilities: ['fonts'] }
 const L3: DesignCapabilities = { level: 3, source: 'marker', templateVersion: '3', capabilities: ['fonts', 'style-axes'] }
@@ -25,6 +25,7 @@ describe('buildChatSystemStatic', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
     expect(s).not.toMatch(/mirrored to the MBP automatically/)
     expect(s).toContain('Your commits do NOT update the MBP')
+    expect(s).toContain(SCOPE)
     expect(s).toMatch(/applying a concept, restoring a version, clicking “Sync palette & fonts to MBP” in Versions, or editing Controls/)
     expect(s).not.toMatch(/capturing a version/)
   })

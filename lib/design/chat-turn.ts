@@ -220,7 +220,7 @@ export async function prepareChatTurn(
     assistantId: randomUUID(),
     userMessage,
     history: withAttachmentImages(trimmed, images),
-    workspace: new ChatWorkspace({ current: current.bundle, draftFiles, draftShas: snapshot.shas, caps, model: INTERACTIVE_CHAT_MODEL }),
+    workspace: new ChatWorkspace({ current: current.bundle, draftFiles, draftShas: snapshot.shas, caps, model: INTERACTIVE_CHAT_MODEL, ...(adopt ? { adopt: adopt.bundle } : {}) }),
     staticSystem: buildChatSystemStatic({ firmName: firmNameFrom(draft.files.brandText), schema, designMd: designMd?.content ?? null, caps }),
     turnContext: buildChatTurnContext({
       bundle: current.bundle,
