@@ -1,0 +1,32 @@
+{
+  "_note": "Template 2026.09.10 (fix/cta-banner-image tip 9f606b8). File set = the CHANGELOG 'Rollout notes (template 2026.09.9 → 2026.09.10)' list = git diff 4ac337d..9f606b8 minus c5-template.json (written last) and the @visual baselines. One bug, two blocks: image-bg / image-bg-centered cta-banners and the full-bleed image / video / slider Hero rendered flat because the media (-z-20) sat in a bg-primary section with no stacking context. Both now isolate the section (src/components/blocks/media-scrim.ts) under a shared ink scrim 86% → 76% with the copy pinned near-white; the media hero's eyebrow + headline accent take a light action tint, and its photo drops the skeleton-image pulse veil. Pixel-measured over a pure-white photo on every fleet palette: banner long body ≥ 5.6:1, hero text ≥ 5.2:1. VISIBLE CHANGE: 304 rendered image banners fleet-wide + Berg and Kinexus /industries heroes; korbey's banners were already boxed (its design-overrides make the inner div the stacking context) and look the same. R1: color-bg banners, the statement hero, the no-media hero and HeroSplit are byte-identical to 2026.09.9. theme.css is not rewritten, package.json and package-lock.json are unchanged ('ignore' acknowledges).",
+  "templateVersion": "2026.09.10",
+  "notes": "Call-to-action banners and page-top hero sections set to use a background photo now actually show it: the photo appears behind the text under a dark overlay that keeps the text easy to read. Until now they showed as a plain colour block. Colour banners and every other section look exactly as before.",
+  "exclude": [
+    "\\.png$",
+    "^e2e/.*-snapshots/"
+  ],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "CHANGELOG.md",
+      "docs/blocks.md",
+      "e2e/block-layouts.spec.ts",
+      "src/app/design-specimen/layouts/page.tsx",
+      "src/components/blocks/CtaBanner.tsx",
+      "src/components/blocks/Hero.tsx",
+      "src/lib/showcase/samples.ts",
+      "src/lib/theme/template-marker.test.ts"
+    ],
+    "add": [
+      "e2e/cta-banner-image.spec.ts",
+      "e2e/hero-image.spec.ts",
+      "e2e/media-contrast.ts",
+      "src/components/blocks/cta-banner-image.test.ts",
+      "src/components/blocks/hero-media.test.ts",
+      "src/components/blocks/media-scrim.ts"
+    ],
+    "delete": []
+  }
+}
