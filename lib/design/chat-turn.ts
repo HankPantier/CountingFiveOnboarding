@@ -43,6 +43,7 @@ import { readOptional } from './apply-bundle'
 import { DESIGN_MD_PATH } from './brief/brand'
 import { buildChatSystemStatic, buildChatTurnContext } from './brief/chat-prompt'
 import { bundleFromRepoFiles, type RepoThemeFiles } from './bundle-files'
+import { layoutPresetsUnlocked } from './capabilities'
 import { readEffectiveCapabilities } from './capabilities-read'
 import { commitWorkspace, finishTurnCommit, type CommitVersionFn } from './chat-commit'
 import {
@@ -228,6 +229,7 @@ export async function prepareChatTurn(
       page,
       lastTurnNote: lastTurnNote(prior),
       ...(adopt ? { adopt: adopt.bundle, adoptCarried } : {}),
+      layoutUnlocked: layoutPresetsUnlocked(caps),
     }),
     adoptedConceptId: adopt?.id ?? null,
     page,

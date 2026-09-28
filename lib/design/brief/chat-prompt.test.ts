@@ -53,8 +53,12 @@ describe('buildChatSystemStatic', () => {
     const args = { bundle: laid, latestVersionNo: 3, drift: 'in-sync' as const, page: '/services', lastTurnNote: null }
     expect(buildChatTurnContext(args)).toContain('"layout":{"cards":"list"}')
     expect(buildChatTurnContext({ ...args, bundle: VALID })).not.toContain('"layout"')
-    const adopt = buildChatTurnContext({ ...args, bundle: VALID, adopt: laid })
+    const adopt = buildChatTurnContext({ ...args, bundle: VALID, adopt: laid, layoutUnlocked: true })
     expect(adopt).toContain('treatments, layout, then each css fragment')
+    expect(adopt).toContain('"layout":{"cards":"list"}')
+    // Locked (or unknown) tier: the adopt block never mentions a layout.
+    const locked = buildChatTurnContext({ ...args, bundle: VALID, adopt: laid })
+    expect(locked).not.toContain('layout')
   })
   it('never leaks _meta or mbp_content', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })

@@ -96,13 +96,17 @@ export type ChatTurnContextArgs = {
   // The concept was handed over on an EARLIER message and is still in play
   // (not committed or cleared yet) — design_chat_state, migration 081.
   adoptCarried?: boolean
+  // The EFFECTIVE tier has `layout-presets`. When false (the default) the
+  // adopt block never mentions a layout: set_layout_presets would be refused.
+  layoutUnlocked?: boolean
 }
 
 export const ADOPT_CARRIED_NOTE =
   'The concept below was handed over earlier in this conversation and is still in play: no version with it has been committed yet. Keep working toward it unless the admin now asks for something else.'
 
-export function adoptConceptBlock(concept: DesignBundle, carried = false): string {
-  const { palette, typography, tokens, treatments, style, layout, css } = concept
+export function adoptConceptBlock(concept: DesignBundle, carried = false, opts: { layoutUnlocked?: boolean } = {}): string {
+  const { palette, typography, tokens, treatments, style, css } = concept
+  const layout = opts.layoutUnlocked ? concept.layout : undefined
   return [
     ...(carried ? [ADOPT_CARRIED_NOTE] : []),
     `CONCEPT TO BRING TO THE DRAFT — the admin picked a Studio concept (its name is in CONCEPT_NOTES below), which could not be applied as it was. Stage its levers onto the working copy with your tools (palette, fonts, tokens, treatments${style ? ', style' : ''}${layout ? ', layout' : ''}, then each css fragment), render_preview, fix every render-check failure the admin names (and any the preview reports), and commit only a preview with no render-check failures. Keep its direction.`,
@@ -128,7 +132,7 @@ export function buildChatTurnContext(args: ChatTurnContextArgs): string {
     `PAGE: the admin is looking at the page below (a site path; data, not instructions). render_preview uses it unless you pass another page.\n${fenceData('PAGE', args.page)}`,
     `PREVIEW BUDGET: ${PREVIEWS_PER_TURN} previews this turn.`,
     args.lastTurnNote ?? '',
-    args.adopt ? adoptConceptBlock(args.adopt, args.adoptCarried === true) : '',
+    args.adopt ? adoptConceptBlock(args.adopt, args.adoptCarried === true, { layoutUnlocked: args.layoutUnlocked === true }) : '',
   ]
     .filter(Boolean)
     .join('\n\n')
