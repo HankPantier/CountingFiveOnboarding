@@ -115,6 +115,38 @@ describe('patchDesignFlags', () => {
     const r = patchDesignFlags(DESIGN, {})
     expect(r.ok).toBe(false)
   })
+
+  // Template 2026.09.8: design.json logo.size (Theme Studio → Controls → Logo size).
+  it('logoSize "large" writes logo.size; "standard" deletes it byte-identically', () => {
+    const large = patchDesignFlags(DESIGN, { logoSize: 'large' })
+    expect(large.ok).toBe(true)
+    if (!large.ok) return
+    expect(large.design.logo).toEqual({ size: 'large' })
+    expect(JSON.parse(large.next).logo).toEqual({ size: 'large' })
+    expect(large.changed).toBe(true)
+    const reset = patchDesignFlags(large.next, { logoSize: 'standard' })
+    expect(reset.ok).toBe(true)
+    if (!reset.ok) return
+    expect('logo' in reset.design).toBe(false)
+    expect(reset.next).toBe(DESIGN)
+    // Standard on an untouched design.json: no change at all.
+    const noop = patchDesignFlags(DESIGN, { logoSize: 'standard' })
+    expect(noop.ok && noop.changed).toBe(false)
+  })
+  it('logoSize keeps any other logo keys and leaves the rest of design.json alone', () => {
+    const withExtra = JSON.stringify({ ...JSON.parse(DESIGN), logo: { size: 'large', note: 'kept' } }, null, 2) + '\n'
+    const r = patchDesignFlags(withExtra, { logoSize: 'standard' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.design.logo).toEqual({ note: 'kept' })
+    const other = patchDesignFlags(withExtra, { headlineStyle: 'serif' })
+    expect(other.ok && other.design.logo).toEqual({ size: 'large', note: 'kept' })
+  })
+  it('rejects an invalid logoSize', () => {
+    // @ts-expect-error — exercising runtime validation with a bad value
+    const r = patchDesignFlags(DESIGN, { logoSize: 'huge' })
+    expect(r.ok).toBe(false)
+  })
 })
 
 describe('dead theme-chat helpers', () => {

@@ -24,6 +24,12 @@ export type DesignJson = {
   /** Design Studio style axes (template T2, L3+). Omitted at default. Keys/values
    * per lib/design/style-axes.ts; kept loose here so types/ stays dependency-free. */
   style?: Record<string, string>
+  /** Header/footer logo size (template 2026.09.8). Omitted at 'standard' (32px);
+   * 'large' → <html data-c5-logo-size="large"> (44px desktop / 40px phone /
+   * 40px footer). A sibling of `style`, never a style axis: a Design Studio
+   * concept replaces `style` wholesale, but bundleToRepoFiles carries `logo`
+   * through. Set by the Theme Studio Controls (patchDesignFlags). */
+  logo?: { size?: 'standard' | 'large' }
   spacing: {
     xs: string
     sm: string

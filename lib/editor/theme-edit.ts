@@ -9,6 +9,7 @@ import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { CURATED_FONTS, gfUrl } from '@/lib/content/type-pairing-catalog'
 import { DEFAULT_AXIS_VALUE, STYLE_AXES, STYLE_AXIS_NAMES, type StyleAxes } from '@/lib/design/style-axes'
+import { LOGO_SIZES, type LogoSize } from '@/lib/design/logo-size'
 
 export const HEX_RE = /^#[0-9a-fA-F]{6}$/
 export const PALETTE_ROLES = [
@@ -119,6 +120,9 @@ export type DesignFlagsPatch = {
   headlineStyle?: DesignJson['headlineStyle']
   eyebrowStyle?: DesignJson['eyebrowStyle']
   darkSections?: DesignJson['darkSections']
+  /** design.json `logo.size` (template 2026.09.8): 'standard' deletes it (and an
+   * emptied `logo` object), so an untouched design.json stays byte-identical. */
+  logoSize?: LogoSize
 }
 
 const HEADLINE_STYLES = ['sans', 'serif'] as const
@@ -151,6 +155,14 @@ export function patchDesignFlags(designJsonText: string, patch: DesignFlagsPatch
     if (typeof patch.darkSections !== 'boolean') return { ok: false, reason: 'darkSections must be true or false.' }
     if (!patch.darkSections) delete next.darkSections
     else next.darkSections = true
+  }
+  if (patch.logoSize !== undefined) {
+    if (!LOGO_SIZES.includes(patch.logoSize)) return { ok: false, reason: 'logoSize must be standard or large.' }
+    const logo: NonNullable<DesignJson['logo']> = { ...(design.logo ?? {}) }
+    if (patch.logoSize === 'standard') delete logo.size
+    else logo.size = patch.logoSize
+    if (Object.keys(logo).length) next.logo = logo
+    else delete next.logo
   }
 
   const nextText = serialize(next)

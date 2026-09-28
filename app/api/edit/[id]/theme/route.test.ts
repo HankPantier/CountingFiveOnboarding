@@ -58,7 +58,7 @@ vi.mock('@/lib/supabase/server', () => ({ createServerClient: vi.fn(() => ({})) 
 vi.mock('@/lib/design/theme-sources', () => ({ loadDraftThemeSources: vi.fn() }))
 
 import { PATCH } from './route'
-import { patchDesignTypography } from '@/lib/editor/theme-edit'
+import { patchDesignFlags, patchDesignTypography } from '@/lib/editor/theme-edit'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { normalizeTypography } from './_theme'
 import { checkActionContrast } from '@/lib/content/theme-css-generator'
@@ -220,6 +220,35 @@ describe('PATCH /api/edit/[id]/theme — regenerate (stale-notice button)', () =
     const res = await regenerate()
     expect(res.status).toBe(200)
     expect((await res.json()).note).toMatch(/already match/)
+    expect(h.writeFiles).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH /api/edit/[id]/theme — logo size (Controls, template 2026.09.8)', () => {
+  const patchLogo = (logoSize: string) =>
+    PATCH(new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ flags: { logoSize } }) }), { params })
+
+  it('writes design.json logo.size through the flags patcher and returns it', async () => {
+    const actual = await vi.importActual<typeof import('@/lib/editor/theme-edit')>('@/lib/editor/theme-edit')
+    vi.mocked(patchDesignFlags).mockImplementationOnce(actual.patchDesignFlags)
+    const res = await patchLogo('large')
+    expect(res.status).toBe(200)
+    expect((await res.json()).logoSize).toBe('large')
+    const files = h.writeFiles.mock.calls[0][1] as { path: string; content: string }[]
+    expect(JSON.parse(files.find((f) => f.path === 'content/design.json')!.content).logo).toEqual({ size: 'large' })
+  })
+
+  it('is admin-only like every other Control', async () => {
+    const { resolveEditContext } = await import('../_helpers')
+    vi.mocked(resolveEditContext).mockResolvedValueOnce({
+      githubRepo: 'repo',
+      sessionId: 's',
+      jobId: 'j',
+      adminEmail: 'm@x',
+      user: { id: 'm', isAdmin: false },
+    } as unknown as Awaited<ReturnType<typeof resolveEditContext>>)
+    const res = await patchLogo('large')
+    expect(res.status).toBe(403)
     expect(h.writeFiles).not.toHaveBeenCalled()
   })
 })

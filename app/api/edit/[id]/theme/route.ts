@@ -17,6 +17,7 @@ import { FALLBACK_PALETTE } from '@/lib/content/deliverable-defaults'
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
+import { logoSizeOf } from '@/lib/design/logo-size'
 import { loadDraftThemeSources } from '@/lib/design/theme-sources'
 import { readDesignCapabilities } from '@/lib/design/capabilities-read'
 import { fontsUnlocked } from '@/lib/design/capabilities'
@@ -223,6 +224,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       headlineStyle: design.headlineStyle ?? 'sans',
       eyebrowStyle: design.eyebrowStyle ?? 'standard',
       darkSections: design.darkSections ?? false,
+      logoSize: logoSizeOf(design),
       // Advisory, never blocking: the save above already landed, so a palette
       // that fails a pair is saved and the warning shows in the Controls. Small
       // action text is auto-corrected in theme.css (--color-action-text /

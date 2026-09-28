@@ -5,6 +5,7 @@
 // exact same thing.
 import type { DesignJson } from '@/types/design-json'
 import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
+import { logoSizeHtmlAttribute } from './logo-size'
 import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { styleAxisHtmlAttributes } from './style-axes'
 
@@ -31,6 +32,7 @@ export function composedThemeFromFiles(files: { designText: string; themeCss: st
       'data-headline': design.headlineStyle ?? 'sans',
       'data-eyebrow': design.eyebrowStyle ?? 'standard',
       ...styleAxisHtmlAttributes(design.style),
+      ...logoSizeHtmlAttribute(design.logo?.size),
     },
   }
 }

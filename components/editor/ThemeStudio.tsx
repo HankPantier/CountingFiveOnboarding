@@ -267,7 +267,7 @@ export default function ThemeStudio({
     [commitTheme]
   )
 
-  // Treatment flags (headline/eyebrow/dark sections). Update the local display
+  // Treatment flags (headline/eyebrow/dark sections/logo size). Update the local display
   // immediately and commit to design.json. Headline/eyebrow preview instantly
   // (ThemePreview rewrites the <html> data-attributes); dark sections only
   // show after the site rebuilds on the updated template (see ThemeControls
