@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { canPublish, getAccessibleSessionIds, getCurrentUser, getSiteOwnerSessionId, isSiteOwner } from '@/lib/auth/access'
 import EditorShell from '@/components/editor/EditorShell'
-import { readDraftTemplateVersion } from '@/lib/design/capabilities-read'
+import { readDraftLayoutPresets, readDraftTemplateVersion } from '@/lib/design/capabilities-read'
 import type { SessionSchema } from '@/types/session-schema'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -69,7 +69,12 @@ export default async function EditPage({
   // this site's next build renders. Unreadable (no draft branch yet, GitHub
   // hiccup) ⇒ null ⇒ the picker offers baseline layouts only; never blocks the
   // editor from opening.
-  const templateVersion = await readDraftTemplateVersion(job.github_repo)
+  // The draft design.json layout presets (template 2026.09.9) let the outline
+  // say which sections follow one; unreadable ⇒ null ⇒ no hint.
+  const [templateVersion, sitePresets] = await Promise.all([
+    readDraftTemplateVersion(job.github_repo),
+    readDraftLayoutPresets(job.github_repo),
+  ])
 
   return (
     <EditorShell
@@ -81,6 +86,7 @@ export default async function EditPage({
       viewerIsAdmin={user.isAdmin}
       viewerCanPublish={canPublish(user)}
       templateVersion={templateVersion}
+      sitePresets={sitePresets}
     />
   )
 }

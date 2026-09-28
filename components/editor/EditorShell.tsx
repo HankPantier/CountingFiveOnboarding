@@ -22,6 +22,7 @@ import { navUrlToPagePath, pagePathToUrl } from '@/lib/editor/sidebar-nav-tree'
 import { reconcileDirtyAfterSave } from '@/lib/ui/dirty-buffers'
 import { readRedirectWarnings, redirectWarningMessage } from '@/lib/editor/redirect-warnings'
 import { isStaleShaConflict, type ConflictResponse } from '@/lib/editor/conflict-response'
+import type { LayoutPresets } from '@/lib/design/layout-presets'
 import { REDIRECTS_CSV_PATH, redirectsCacheAction } from '@/lib/editor/redirect-cache'
 
 const NAV_PATH = 'content/nav.json'
@@ -37,6 +38,7 @@ export default function EditorShell({
   viewerIsAdmin = false,
   viewerCanPublish = false,
   templateVersion = null,
+  sitePresets = null,
 }: {
   sessionId: string
   firmName: string
@@ -56,6 +58,9 @@ export default function EditorShell({
   // The DRAFT template's version (c5-template.json), read server-side; filters
   // the section layout picker. null = unreadable ⇒ baseline layouts only.
   templateVersion?: string | null
+  // The draft design.json layout presets (template 2026.09.9), read
+  // server-side; the Sections outline marks sections that follow one.
+  sitePresets?: LayoutPresets | null
 }) {
   const [tree, setTree] = useState<TreeFile[]>([])
   const [status, setStatus] = useState<EditorStatus | null>(null)
@@ -1323,7 +1328,7 @@ export default function EditorShell({
             onMovesChange={setNavMoves}
           />
         ) : (
-          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} isAdmin={isAdmin} templateVersion={templateVersion} />
+          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} isAdmin={isAdmin} templateVersion={templateVersion} sitePresets={sitePresets} />
         )}
       </div>
       {publishResult && (

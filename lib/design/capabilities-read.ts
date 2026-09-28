@@ -8,6 +8,7 @@ import { DRAFT_BRANCH, FileNotFoundError, readFile, readFileConditional } from '
 import { TEMPLATE_MARKER_PATH, intersectWithShell, parseTemplateMarker } from './capabilities'
 import type { DesignCapabilities } from './run-types'
 import { readShellCapabilities } from './shell-capabilities'
+import { normalizeLayoutPresets, type LayoutPresets } from './layout-presets'
 
 export async function readDesignCapabilities(githubRepo: string): Promise<DesignCapabilities> {
   try {
@@ -42,6 +43,21 @@ export async function readDraftTemplateVersion(githubRepo: string): Promise<stri
   } catch (err) {
     if (!(err instanceof FileNotFoundError)) {
       console.warn('[template-version] could not read the draft template marker; using baseline layouts', err)
+    }
+    return null
+  }
+}
+
+// The DRAFT design.json `layout` presets (template 2026.09.9) for the editor's
+// "Following the site preset" hint. ETag-cached like the version read; never
+// throws: missing file, bad JSON or any GitHub error ⇒ null (no hint).
+export async function readDraftLayoutPresets(githubRepo: string): Promise<LayoutPresets | null> {
+  try {
+    const file = await readFileConditional(githubRepo, 'content/design.json', DRAFT_BRANCH)
+    return normalizeLayoutPresets((JSON.parse(file.content) as { layout?: unknown }).layout) ?? null
+  } catch (err) {
+    if (!(err instanceof FileNotFoundError) && !(err instanceof SyntaxError)) {
+      console.warn('[layout-presets] could not read the draft design.json; no preset hints', err)
     }
     return null
   }
