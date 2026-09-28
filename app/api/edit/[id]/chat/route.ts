@@ -26,6 +26,8 @@ import { splitFile, serializeFile } from '@/lib/editor/frontmatter'
 import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
 import { splitTrailers, setFaqAccordionBody } from '@/lib/editor/page-body'
+import { setSectionLayoutByHeading } from '@/lib/editor/section-layout'
+import { readDraftTemplateVersion } from '@/lib/design/capabilities-read'
 import { applyRemovalsToTrailer, composeAiEditCommit, splitForModel } from '@/lib/editor/ai-edit-trailer'
 import {
   DRAFT_BRANCH,
@@ -45,12 +47,6 @@ export const maxDuration = 300
 
 // The agent only edits markdown content files (not nav.json/config/social).
 const EDITABLE = ['content/pages/', 'content/posts/']
-
-// The block catalog the layout tools may produce (id → variants), derived from
-// BLOCK_CATALOG so it can't drift from the validator. The model picks valid
-// ids/variants from this; checkEditAnnotations (only problems an edit
-// introduces) is the hard gate on write.
-const BLOCK_CATALOG_HINT = blockCatalogHint()
 
 export async function POST(
   req: Request,
@@ -95,11 +91,19 @@ export async function POST(
   // committed version (optimistic lock catches a concurrent save).
   let workingContent: string
   let workingSha: string
+  // The DRAFT template's version filters the layout vocabulary (prompt hint +
+  // set_section_layout) to what this site's next build renders. Unreadable ⇒
+  // null ⇒ baseline layouts only; never fails the request.
+  let templateVersion: string | null = null
   try {
     await ensureDraftBranch(githubRepo)
-    const initial = await readFile(githubRepo, path, DRAFT_BRANCH)
+    const [initial, version] = await Promise.all([
+      readFile(githubRepo, path, DRAFT_BRANCH),
+      readDraftTemplateVersion(githubRepo),
+    ])
     workingContent = initial.content
     workingSha = initial.sha
+    templateVersion = version
   } catch (err) {
     if (err instanceof FileNotFoundError) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
@@ -126,18 +130,23 @@ export async function POST(
     // tool leaves the prose dash-clean. Frontmatter and the trailer are left
     // byte-for-byte alone. Posts drop any trailer (no trimming renderer); pages
     // get a missing SEO marker restored (lib/editor/ai-edit-trailer.ts).
-    const scrubbed = composeAiEditCommit(nextVisible, trailer, path!)
+    await commitFile(composeAiEditCommit(nextVisible, trailer, path!), message)
+  }
+
+  // Commit a whole file exactly as given (no scrub): set_section_layout uses it
+  // so a layout change touches only its annotation line.
+  async function commitFile(full: string, message: string): Promise<void> {
     // Reject any edit that would leave the file with invalid YAML frontmatter
     // before it lands in the draft — otherwise it surfaces as a broken `next
     // build` at deploy time. The tool executors catch this throw and return the
     // message to the model, which can retry with the value properly quoted.
-    const yamlError = validateFrontmatterYaml(scrubbed)
+    const yamlError = validateFrontmatterYaml(full)
     if (yamlError) throw new ToolUserError(yamlError)
-    const res = await writeFile(githubRepo, path!, scrubbed, DRAFT_BRANCH, message, {
+    const res = await writeFile(githubRepo, path!, full, DRAFT_BRANCH, message, {
       expectedSha: workingSha,
       ...commitAuthor,
     })
-    workingContent = scrubbed
+    workingContent = full
     workingSha = res.blobSha
   }
 
@@ -156,6 +165,13 @@ export async function POST(
   const noGoPhrases = (await loadNoGoPhrases()).map(p => p.phrase)
   const noGoBlock = buildNoGoPromptBlock(noGoPhrases)
 
+  // The block catalog the layout tools may produce (id → variants) at this
+  // site's draft template version, derived from the contract so it can't drift
+  // from the validator. It only changes with the catalog epoch, so the cached
+  // prompt prefix stays stable. checkEditAnnotations (only problems an edit
+  // introduces) is the hard gate on write.
+  const blockHint = blockCatalogHint({ templateVersion })
+
   // This admin tool does NOT take the client `processing` lock (that belongs to
   // the onboarding chat); sharing it let a client conversation block admin
   // edits. useChat serializes per user.
@@ -170,20 +186,21 @@ Never introduce em-dashes or en-dashes (— –) in any copy you write; use comm
 You do NOT rewrite the whole file. You make small, targeted changes with these tools.
 BATCH your work: a request usually implies MANY edits (rewrite several sentences, reword every mention of X, fix each section). Group them — issue ONE apply_edits call for all rewrites and ONE remove_text call for all deletions — instead of many single apply_edit calls. Batching lands them in one commit and keeps the whole request in a single run; firing edits one at a time can hit the run's step cap and stop early.
 - apply_edits({ edits: [{ find, replace, all? }] }) — apply MANY exact find/replace rewrites in ONE commit. This is the DEFAULT for any multi-part edit. Each \`find\` is an EXACT snippet copied verbatim from the file (matching whitespace, punctuation, casing); it must match exactly ONE place unless all=true. All finds are matched against the SAME current file, so don't target text that another edit in the same batch rewrites. The result lists which edits applied and which missed (re-copy an exact snippet for any miss).
-- apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Use apply_edit for LAYOUT changes to a \`<!-- block: ... -->\` annotation. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
+- apply_edit({ find, replace, all? }) — same exact-snippet rewrite for a SINGLE one-off change. Use apply_edits when you have more than one. Keep every annotation and valid YAML frontmatter STRUCTURE intact — but the SEO frontmatter VALUES (meta_title, meta_description, secondary_keywords, answer_block, eeat_signals) ARE editable and count as the page's "SEO information"; edit them when the admin asks.
 - remove_text({ removals: [{ find, replace? }], caseInsensitive?, stripDashes? }) — remove or replace EVERY occurrence of one or more phrases across the WHOLE page at once (body AND SEO/frontmatter fields). Use this whenever the admin says "remove all references to / delete every mention of / strip X" (list each phrase as one removal) or "remove all em-dashes" (set stripDashes: true; it cleans the body copy, so for SEO fields also list "—" as a removal). Prefer ONE remove_text call over many apply_edit calls. Set caseInsensitive when spelling/casing may vary.
+- set_section_layout({ heading, variant?, theme? }) — change an existing section's layout (its annotation's \`variant\`) and/or ink band (\`theme: "ink"\` on, \`"none"\` off) by its \`##\` heading. Changes only that annotation line.
 - set_faq({ items }) — replace the page's ENTIRE FAQ list. Read the current FAQ from the file below, then pass the full desired list (add, edit, remove, or reorder items). This keeps the frontmatter and the on-page FAQ in sync — never hand-edit faq_block with apply_edit. (remove_text may clear a phrase from FAQ text; use set_faq to add/edit/reorder FAQ entries.)${canEditFirmContact ? '\n- update_firm_contact({ ... }) — see FIRM-WIDE CONTACT below.' : ''}
 
-LAYOUT CHANGES (via apply_edit on the annotation comment)
+LAYOUT CHANGES
 Every section's layout is set by an HTML comment before its \`##\` heading, e.g.
 \`<!-- block: content-split | variant: image-right | image: x.jpg | alt: "..." | query: "..." -->\`
-Almost any layout request is just editing that comment's \`variant\` (or moving/adding/removing the whole block). Keep its fields in this order: block | variant | image | alt | query | theme (\`theme: ink\` = the deep ink band, only on blocks that support it). Do it — don't tell the admin a layout isn't possible without first checking the variants below. What you can change:
+Almost any layout request is just that comment's \`variant\` or ink band: use set_section_layout for those (not apply_edit). Use apply_edit only to move/add/remove/convert a whole block. Keep its fields in this order: block | variant | image | alt | query | theme (\`theme: ink\` = the deep ink band; it visibly changes feature-grid, service-cards and industry-cards only, and on feature-grid/industry-cards it also changes the card layout). Do it — don't tell the admin a layout isn't possible without first checking the variants below. What you can change:
 - Image side (left/right) on \`content-split\` AND \`checklist-section\`: flip between \`image-right\`/\`image-left\` (content-split) or \`with-image-right\`/\`with-image-left\` (checklist-section). A legacy \`with-image\` checklist means image-on-right — rewrite it to \`with-image-left\` to move the photo left.
 - Column count on card grids: \`feature-grid\`/\`industry-cards\` (3-col|4-col), \`service-cards\`/\`content-cards\` (2-col|3-col), \`team-grid\` (2-col|3-col|4-col), \`stats-bar\` (3-up|4-up).
 - Text alignment: \`intro-text\` (centered|left-aligned). Steps orientation: \`process-steps\` (horizontal|vertical). Testimonials: \`testimonials\` (carousel|grid). CTA background: \`cta-banner\` (color-bg|image-bg). Pricing tiers / form type likewise via their variants.
 - Add a section: insert a new \`<!-- block: ... -->\` comment + \`## Heading\` + body at a sensible anchor. Reorder/remove: move or delete a whole block (its comment + heading + body).
 - Convert a block type (e.g. \`checklist-section\` → \`content-split\`) when the admin wants a layout the current block can't do: change the \`block:\` id to a valid one and adjust the body to fit (e.g. bullet list → prose). Confirm the intent first if it would drop content.
-Only use these block ids and variants: ${BLOCK_CATALOG_HINT}. An edit that introduces an unknown block id or an invalid variant/theme is rejected — the tool tells you why, so fix it and retry (values already on the page never block an unrelated edit). If a result carries \`layoutWarnings\` (e.g. an unrecognised hero / hero_variant), tell the admin.
+Only use these block ids and variants (what this site's template renders): ${blockHint}. An edit that introduces an unknown block id or an invalid variant/theme is rejected — the tool tells you why, so fix it and retry (values already on the page never block an unrelated edit). If a result carries \`layoutWarnings\` (e.g. an unrecognised hero / hero_variant), tell the admin.
 
 FIRM-WIDE CONTACT (phone, fax, email, hours, address)
 These are NOT page-specific — they render on every page (footer, contact page, on-page schema) from one shared source.${canEditFirmContact ? ` When the admin asks to change any of them, FIRST ask whether to apply it firm-wide or only mention it on this page:
@@ -231,7 +248,7 @@ ${view().visible}
       tools: {
         apply_edit: {
           description:
-            'Replace an exact snippet copied verbatim from the file with new text. Preserves the rest of the file. Use for copy edits and layout changes (e.g. flipping a content-split variant).',
+            'Replace an exact snippet copied verbatim from the file with new text. Preserves the rest of the file. Use for copy edits and for adding, moving or converting blocks; use set_section_layout to change a section\'s variant or ink band.',
           inputSchema: z.object({
             find: z.string().describe('Exact text to find, copied verbatim from the current file.'),
             replace: z.string().describe('Replacement text (may be empty to delete the snippet).'),
@@ -250,7 +267,7 @@ ${view().visible}
             if (!res.ok && res.noop) return { success: true, noChange: true, message: res.reason }
             if (!res.ok) return { error: res.reason }
             // Only problems this edit introduces block it; legacy values don't.
-            const check = checkEditAnnotations(before, res.next)
+            const check = checkEditAnnotations(before, res.next, { templateVersion })
             if (check.errors.length > 0) {
               return { error: `That edit would break a block annotation: ${check.errors.join(' ')}` }
             }
@@ -299,7 +316,7 @@ ${view().visible}
             // Only commit when something actually landed; when every find missed
             // the page is unchanged — return the misses so the model re-copies.
             const changed = res.next !== visible
-            const check = changed ? checkEditAnnotations(visible, res.next) : { errors: [], warnings: [] }
+            const check = changed ? checkEditAnnotations(visible, res.next, { templateVersion }) : { errors: [], warnings: [] }
             if (changed) {
               if (check.errors.length > 0) {
                 return { error: `That edit would break a block annotation: ${check.errors.join(' ')}` }
@@ -319,6 +336,54 @@ ${view().visible}
               ...(changed ? {} : { noChange: true }),
               ...(noGoWarning.length ? { noGoWarning } : {}),
               ...(check.warnings.length ? { layoutWarnings: check.warnings } : {}),
+            }
+          },
+        },
+        set_section_layout: {
+          description:
+            'Change an existing section\'s layout variant and/or ink band, found by its ## heading. Rewrites only that section\'s annotation line. Pages only.',
+          inputSchema: z.object({
+            heading: z.string().describe('The section\'s ## heading text, as it appears in the file.'),
+            variant: z
+              .string()
+              .min(1)
+              .nullable()
+              .optional()
+              .describe('New layout variant for that block, from the catalog list; null removes the variant (template default).'),
+            theme: z.enum(['ink', 'none']).optional().describe('"ink" = deep ink band on; "none" = remove the band.'),
+          }),
+          execute: async ({ heading, variant, theme }) => {
+            if (!path.startsWith('content/pages/')) {
+              return { error: 'Section layouts apply to pages only; posts render without block layouts.' }
+            }
+            // Work on the whole file (frontmatter + body + hidden trailer) and
+            // commit it unscrubbed, so exactly one annotation line changes.
+            const before = workingContent
+            const body = splitFile(before).body
+            const prefix = before.slice(0, before.length - body.length)
+            const res = setSectionLayoutByHeading(
+              body,
+              heading,
+              { variant, theme: theme === undefined ? undefined : theme === 'ink' ? 'ink' : null },
+              { templateVersion },
+            )
+            if (!res.ok) return { error: res.reason }
+            if (!res.changed) return { success: true, noChange: true, message: 'That section already has this layout.' }
+            const next = prefix + res.body
+            const check = checkEditAnnotations(before, next, { templateVersion })
+            if (check.errors.length > 0) {
+              return { error: `That layout would break a block annotation: ${check.errors.join(' ')}` }
+            }
+            try {
+              await commitFile(next, `Set section layout on ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
+            } catch (err) {
+              return toolError('edit:chat', err, 'Failed to save the layout change.')
+            }
+            return {
+              success: true,
+              block: res.blockId,
+              ...(variant !== undefined ? { variant } : {}),
+              ...(theme ? { theme } : {}),
             }
           },
         },
@@ -391,7 +456,7 @@ ${view().visible}
               caseInsensitive: ci,
               stripDashes: stripDashes ?? false,
             })
-            const annotationErrors = checkEditAnnotations(visible, res.next).errors
+            const annotationErrors = checkEditAnnotations(visible, res.next, { templateVersion }).errors
             if (annotationErrors.length > 0) {
               return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
             }

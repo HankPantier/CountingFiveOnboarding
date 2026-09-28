@@ -37,19 +37,25 @@ import {
   moveSection,
   removeSection,
 } from '@/lib/editor/section-reorder'
+import { setSectionTheme, setSectionVariant } from '@/lib/editor/section-layout'
+import {
+  CUSTOM_OPENER,
+  applyPageOpener,
+  pageOpenerHints,
+  pageOpenerSelectState,
+} from '@/lib/editor/page-opener'
 
 type EditorTab = 'editor' | 'seo' | 'media'
 
 // Editable subset of frontmatter keys. Other keys are preserved on save but
-// not exposed as form fields.
+// not exposed as form fields. `hero` / `hero_variant` are edited as one pair by
+// the "Page opener" select (lib/editor/page-opener.ts), not as free text.
 const PROMOTED_FIELDS = [
   'title',
   'meta_title',
   'meta_description',
   'target_keyword',
   'canonical_url',
-  'hero',
-  'hero_variant',
   'hero_image',
   'hero_subhead',
 ]
@@ -74,6 +80,7 @@ export default function PageEditor({
   websiteUrl,
   onChange,
   isAdmin = false,
+  templateVersion = null,
 }: {
   sessionId: string
   path: string
@@ -82,6 +89,9 @@ export default function PageEditor({
   onChange: (next: string) => void
   // Server-resolved viewer role; gates the admin-only AI SEO-field generation.
   isAdmin?: boolean
+  // The draft template's version (c5-template.json marker); filters the layout
+  // picker's choices. null = unknown ⇒ baseline layouts only.
+  templateVersion?: string | null
 }) {
   const urlPath = contentPathToUrl(path)
   const base = websiteUrl.replace(/\/+$/, '')
@@ -192,6 +202,23 @@ export default function PageEditor({
     if (blockId === 'faq-accordion' && fm) commit(setFaqBlock(fm, []), nextBody)
     else setBody(nextBody)
   }
+  // Per-section layout picker (the same outline). Each action rewrites exactly
+  // one annotation line; a refusal leaves the body alone and returns its reason.
+  const layoutHandlers = {
+    templateVersion,
+    onSetVariant: (index: number, variant: string | null) => {
+      const res = setSectionVariant(bodyContent, index, variant, { templateVersion })
+      if (!res.ok) return res.reason
+      if (res.changed) setBody(res.body)
+      return null
+    },
+    onSetTheme: (index: number, theme: string | null) => {
+      const res = setSectionTheme(bodyContent, index, theme)
+      if (!res.ok) return res.reason
+      if (res.changed) setBody(res.body)
+      return null
+    },
+  }
   const heroRaw = parsed.frontmatter?.fields['image'] ?? parsed.frontmatter?.fields['hero_image'] ?? ''
   const heroFile = heroRaw ? localImageFilename(heroRaw) : ''
   const heroSrc = heroFile
@@ -216,6 +243,7 @@ export default function PageEditor({
           </div>
         )}
         <div className="grid grid-cols-1 gap-3">
+          {!isPost && <PageOpenerSelect frontmatter={parsed.frontmatter} templateVersion={templateVersion} onChange={(next) => commit(next, bodyContent)} />}
           {promotedFields.map((key) => {
             const value = parsed.frontmatter!.fields[key] ?? ''
             return (
@@ -511,6 +539,7 @@ export default function PageEditor({
                   onReorder={onSectionReorder}
                   onMove={onSectionMove}
                   onDelete={onSectionDelete}
+                  layout={layoutHandlers}
                 />
               )}
               <RichBodyEditor
@@ -550,5 +579,46 @@ export default function PageEditor({
         </div>
       </div>
     </div>
+  )
+}
+
+// "Page opener" select: one choice ↔ the (hero, hero_variant) frontmatter pair.
+// An unrecognised current pair is shown as "Custom: …" and only replaced when
+// the operator picks another choice.
+function PageOpenerSelect({
+  frontmatter,
+  templateVersion,
+  onChange,
+}: {
+  frontmatter: Frontmatter
+  templateVersion: string | null
+  onChange: (next: Frontmatter) => void
+}) {
+  const { value, customLabel, choices } = pageOpenerSelectState(frontmatter, templateVersion)
+  const hints = pageOpenerHints(frontmatter)
+  return (
+    <label className="block">
+      <span className="block text-xs font-heading text-text-secondary mb-1">Page opener</span>
+      <select
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === value || e.target.value === CUSTOM_OPENER) return
+          onChange(applyPageOpener(frontmatter, e.target.value))
+        }}
+        className="w-full text-sm font-body px-3 py-2 rounded border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none"
+      >
+        {customLabel && <option value={CUSTOM_OPENER}>{customLabel}</option>}
+        {choices.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      {hints.map((h) => (
+        <span key={h} className="block mt-1 text-[11px] font-body text-warning-strong">
+          {h}
+        </span>
+      ))}
+    </label>
   )
 }

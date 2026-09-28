@@ -722,6 +722,33 @@ export async function readFile(
   }
 }
 
+// readFile through the ETag layer (lib/github/conditional.ts): an unchanged
+// file revalidates with a free 304. For small, hot, rarely-changing reads (the
+// template marker on every editor open / chat turn). Same errors as readFile.
+export async function readFileConditional(
+  slug: string,
+  path: string,
+  branch: string
+): Promise<FileBlob> {
+  const octokit = getOctokit()
+  const { owner, repo } = resolveRepo(slug)
+  try {
+    const data = await conditionalGet(`content:${owner}/${repo}:${branch}:${path}`, (headers) =>
+      octokit.repos.getContent({ owner, repo, path, ref: branch, headers })
+    )
+    if (Array.isArray(data) || data.type !== 'file' || typeof data.content !== 'string') {
+      throw new Error(`Path is not a file: ${path}`)
+    }
+    const content = Buffer.from(data.content, data.encoding as BufferEncoding).toString('utf-8')
+    return { path, content, sha: data.sha }
+  } catch (err) {
+    if (isRequestError(err) && err.status === 404) {
+      throw new FileNotFoundError(path)
+    }
+    throw err
+  }
+}
+
 const WRITE_FILE_ATTEMPTS = 3
 
 // Write or create a file on the given branch. If expectedSha is supplied and

@@ -48,7 +48,8 @@ function isLeadIn(section: Section): boolean {
 }
 
 // Split into an optional pinned lead-in and the movable (annotated) sections.
-function partition(body: string): { leadIn: Section | null; movable: Section[] } {
+// Shared with section-layout.ts so both panels index sections identically.
+export function partition(body: string): { leadIn: Section | null; movable: Section[] } {
   const all = splitSections(body)
   if (all.length > 0 && isLeadIn(all[0])) {
     return { leadIn: all[0], movable: all.slice(1) }

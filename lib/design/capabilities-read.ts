@@ -4,7 +4,7 @@
 // branch exists (readDraftThemeSnapshot / resolveEditContext paths do).
 // readEffectiveCapabilities adds the deployed shell's half of the handshake
 // (draft ∩ live <meta name="c5-capabilities">); the shell read never throws.
-import { DRAFT_BRANCH, FileNotFoundError, readFile } from '@/lib/github/repo-files'
+import { DRAFT_BRANCH, FileNotFoundError, readFile, readFileConditional } from '@/lib/github/repo-files'
 import { TEMPLATE_MARKER_PATH, intersectWithShell, parseTemplateMarker } from './capabilities'
 import type { DesignCapabilities } from './run-types'
 import { readShellCapabilities } from './shell-capabilities'
@@ -28,4 +28,21 @@ export type CapabilityRead = { draft: DesignCapabilities; effective: DesignCapab
 export async function readEffectiveCapabilities(args: { githubRepo: string; jobId: string }): Promise<CapabilityRead> {
   const [draft, shell] = await Promise.all([readDesignCapabilities(args.githubRepo), readShellCapabilities(args)])
   return { draft, effective: intersectWithShell(draft, shell) }
+}
+
+// The DRAFT template's version for the editor's layout vocabulary (section
+// layout picker, AI editor hint + tools). Read through the ETag layer — it runs
+// on every editor open and chat turn and the marker rarely changes. Never
+// throws: missing marker, no draft branch or any GitHub error ⇒ null (callers
+// treat null as the baseline vocabulary).
+export async function readDraftTemplateVersion(githubRepo: string): Promise<string | null> {
+  try {
+    const file = await readFileConditional(githubRepo, TEMPLATE_MARKER_PATH, DRAFT_BRANCH)
+    return parseTemplateMarker(file.content).templateVersion
+  } catch (err) {
+    if (!(err instanceof FileNotFoundError)) {
+      console.warn('[template-version] could not read the draft template marker; using baseline layouts', err)
+    }
+    return null
+  }
 }

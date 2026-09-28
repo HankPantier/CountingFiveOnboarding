@@ -1,16 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const m = vi.hoisted(() => ({ readFile: vi.fn() }))
+const m = vi.hoisted(() => ({ readFile: vi.fn(), readFileConditional: vi.fn() }))
 vi.mock('@/lib/github/repo-files', () => {
   class FileNotFoundError extends Error {}
-  return { DRAFT_BRANCH: 'draft', FileNotFoundError, readFile: (...a: unknown[]) => m.readFile(...a) }
+  return {
+    DRAFT_BRANCH: 'draft',
+    FileNotFoundError,
+    readFile: (...a: unknown[]) => m.readFile(...a),
+    readFileConditional: (...a: unknown[]) => m.readFileConditional(...a),
+  }
 })
 
 const shell = vi.hoisted(() => ({ read: vi.fn() }))
 vi.mock('./shell-capabilities', () => ({ readShellCapabilities: (a: unknown) => shell.read(a) }))
 
 import { FileNotFoundError } from '@/lib/github/repo-files'
-import { readDesignCapabilities, readEffectiveCapabilities } from './capabilities-read'
+import { readDesignCapabilities, readDraftTemplateVersion, readEffectiveCapabilities } from './capabilities-read'
 import { DEFAULT_CAPABILITIES } from './run-types'
 
 // beforeEach flushes a macrotask after mockReset(): on this Vitest 4.1.8 /
@@ -21,6 +26,7 @@ import { DEFAULT_CAPABILITIES } from './run-types'
 // what's being asserted.
 beforeEach(async () => {
   m.readFile.mockReset()
+  m.readFileConditional.mockReset()
   await new Promise((resolve) => setImmediate(resolve))
 })
 
@@ -49,5 +55,23 @@ describe('readEffectiveCapabilities', () => {
     expect(r.draft.level).toBe(4)
     expect(r.effective).toMatchObject({ level: 2, capabilities: ['fonts'], shell: 'verified' })
     expect(shell.read).toHaveBeenCalledWith({ githubRepo: 'o/r', jobId: 'j' })
+  })
+})
+
+describe('readDraftTemplateVersion', () => {
+  it('reads the draft marker through the conditional (ETag) read', async () => {
+    m.readFileConditional.mockResolvedValue({ content: '{"templateVersion":"2026.09.8","capabilities":[]}', sha: 'a'.repeat(40) })
+    expect(await readDraftTemplateVersion('o/r')).toBe('2026.09.8')
+    expect(m.readFileConditional).toHaveBeenCalledWith('o/r', 'c5-template.json', 'draft')
+    expect(m.readFile).not.toHaveBeenCalled()
+  })
+  it('returns null (baseline) on a missing marker or any GitHub error', async () => {
+    m.readFileConditional.mockRejectedValueOnce(new FileNotFoundError('missing'))
+    expect(await readDraftTemplateVersion('o/r')).toBeNull()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    m.readFileConditional.mockRejectedValueOnce(new Error('rate limited'))
+    expect(await readDraftTemplateVersion('o/r')).toBeNull()
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
   })
 })

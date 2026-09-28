@@ -145,6 +145,12 @@ describe('catalog from the template contract', () => {
     }
   })
 
+  it('filters hint variants by template version when asked (baseline today)', () => {
+    // Every current value is baseline, so a versioned hint equals the full one.
+    expect(blockCatalogHint({ templateVersion: null })).toBe(blockCatalogHint())
+    expect(blockCatalogHint({ templateVersion: '2026.09.8' })).toBe(blockCatalogHint())
+  })
+
   it('parses ink sections (theme: after query:) instead of skipping them', () => {
     const md = `<!-- block: industry-cards | variant: 3-col | theme: ink -->\n## Who we serve\n\nBody.\n\n<!-- block: cta-banner | variant: image-bg | image: a.jpg | alt: "A" | query: "q" | theme: ink -->\n## Talk to us\n\nBody.`
     const parsed = parseBlockAnnotations(md)

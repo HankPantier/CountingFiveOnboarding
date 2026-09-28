@@ -19,11 +19,20 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { ArrowDown, ArrowUp, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
 import { blockLabel, type SectionInfo } from '@/lib/editor/section-reorder'
+import { layoutOptionsFor } from '@/lib/editor/section-layout'
 
 // Read-only-of-the-body outline that lets an operator drag, nudge, or delete
-// whole page sections. All mutations are handed up as (from,to)/index callbacks;
-// the parent rewrites the body and re-derives the list, so this component holds
-// no section state of its own.
+// whole page sections and pick each section's layout (variant) and ink band.
+// All mutations are handed up as (from,to)/index callbacks; the parent rewrites
+// the body and re-derives the list, so this component holds no section state of
+// its own. Layout callbacks return a refusal reason (or null) to show inline.
+
+export type LayoutHandlers = {
+  /** Draft template version (null = unknown ⇒ baseline layouts only). */
+  templateVersion: string | null
+  onSetVariant: (index: number, variant: string | null) => string | null
+  onSetTheme: (index: number, theme: string | null) => string | null
+}
 
 const ctrlBtn =
   'border border-border-default text-text-secondary w-7 h-7 flex items-center justify-center rounded-pill transition-all hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed'
@@ -41,18 +50,105 @@ function SectionLabel({ blockId, heading }: { blockId: string; heading: string }
   )
 }
 
+const selectCls =
+  'text-xs font-body px-2 py-1 rounded border border-border-default bg-surface-card text-text-primary focus:border-brand-cyan focus:outline-none'
+
+function LayoutControls({
+  section,
+  index,
+  layout,
+}: {
+  section: SectionInfo
+  index: number
+  layout: LayoutHandlers
+}) {
+  const [error, setError] = useState<string | null>(null)
+  // The FAQ is platform-managed and has no layouts; nothing to show.
+  if (section.blockId === 'faq-accordion') return null
+  if (!section.parseable) {
+    return (
+      <p className="mt-1 text-[11px] font-body text-text-muted">
+        Layout can&apos;t be changed here: the annotation needs repair (or a heading). Edit it in code view.
+      </p>
+    )
+  }
+  const opts = layoutOptionsFor(section.blockId, section, { templateVersion: layout.templateVersion })
+  if (!opts.showLayout && !opts.ink && !opts.unrecognisedTheme) return null
+  const name = section.heading || blockLabel(section.blockId)
+  const run = (fn: () => string | null) => setError(fn())
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+      {opts.showLayout && (
+        <label className="flex items-center gap-1.5">
+          <span className="text-[11px] font-heading font-semibold text-text-secondary">Layout</span>
+          <select
+            value={opts.current}
+            aria-label={`Layout for ${name}`}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === opts.current) return
+              run(() => layout.onSetVariant(index, v === '' ? null : v))
+            }}
+            className={selectCls}
+          >
+            {opts.options.map((o) => (
+              <option key={o.value || '(none)'} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {opts.ink && (
+        <button
+          type="button"
+          aria-pressed={opts.ink.on}
+          aria-label={`Ink band for ${name}`}
+          title={opts.ink.note}
+          onClick={() => run(() => layout.onSetTheme(index, opts.ink!.on ? null : 'ink'))}
+          className={`text-[11px] font-heading font-semibold px-2.5 py-1 rounded-pill border transition-colors ${
+            opts.ink.on
+              ? 'bg-brand-navy border-brand-navy text-text-inverse'
+              : 'border-border-default text-text-secondary hover:bg-surface-subtle'
+          }`}
+        >
+          Ink band
+        </button>
+      )}
+      {opts.ink?.note && <span className="text-[11px] font-body text-text-muted">{opts.ink.note}</span>}
+      {!opts.currentRecognised && (
+        <span className="text-[11px] font-body text-warning-strong">
+          “{opts.current}” is not a layout this site’s template recognises; it renders the default.
+        </span>
+      )}
+      {opts.unrecognisedTheme && (
+        <span className="text-[11px] font-body text-warning-strong">
+          Theme “{opts.unrecognisedTheme}” is not recognised for this block.
+        </span>
+      )}
+      {error && (
+        <span role="alert" className="text-[11px] font-body text-error">
+          {error}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function SortableRow({
   section,
   index,
   total,
   onMove,
   onDelete,
+  layout,
 }: {
   section: SectionInfo
   index: number
   total: number
   onMove: (index: number, dir: 'up' | 'down') => void
   onDelete: (index: number) => void
+  layout?: LayoutHandlers
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: section.id,
@@ -70,7 +166,20 @@ function SortableRow({
         >
           <GripVertical className="w-4 h-4" />
         </button>
-        <SectionLabel blockId={section.blockId} heading={section.heading} />
+        <div className="min-w-0 flex-1">
+          <SectionLabel blockId={section.blockId} heading={section.heading} />
+          {layout && (
+            // Keyed by the section's identity AND position: a reorder, delete or
+            // edit that moves a different section into this row remounts the
+            // controls, so a refusal message never lingers on the wrong section.
+            <LayoutControls
+              key={`${index}:${section.blockId}:${section.heading}`}
+              section={section}
+              index={index}
+              layout={layout}
+            />
+          )}
+        </div>
         <button
           type="button"
           onClick={() => onMove(index, 'up')}
@@ -116,12 +225,15 @@ export default function SectionOutline({
   onReorder,
   onMove,
   onDelete,
+  layout,
 }: {
   sections: SectionInfo[]
   leadIn: { heading: string } | null
   onReorder: (from: number, to: number) => void
   onMove: (index: number, dir: 'up' | 'down') => void
   onDelete: (index: number) => void
+  // Per-section layout picker; omitted ⇒ reorder/delete only.
+  layout?: LayoutHandlers
 }) {
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -160,7 +272,13 @@ export default function SectionOutline({
         <h2 className="text-sm font-heading font-semibold text-brand-navy">Sections</h2>
         <span className="text-xs font-body text-text-muted">({sections.length})</span>
         <span className="ml-auto text-xs font-body text-text-muted">
-          {open ? 'Drag, reorder, or delete' : 'Rearrange page sections'}
+          {open
+            ? layout
+              ? 'Drag, reorder, change layout, or delete'
+              : 'Drag, reorder, or delete'
+            : layout
+              ? 'Rearrange sections and layouts'
+              : 'Rearrange page sections'}
         </span>
       </button>
 
@@ -193,6 +311,7 @@ export default function SectionOutline({
                       total={sections.length}
                       onMove={onMove}
                       onDelete={onDelete}
+                      layout={layout}
                     />
                   ))}
                 </ul>

@@ -36,6 +36,7 @@ export default function EditorShell({
   viewerIsOwner = false,
   viewerIsAdmin = false,
   viewerCanPublish = false,
+  templateVersion = null,
 }: {
   sessionId: string
   firmName: string
@@ -52,6 +53,9 @@ export default function EditorShell({
   // the publish + rollback affordances (the routes enforce both regardless).
   viewerIsAdmin?: boolean
   viewerCanPublish?: boolean
+  // The DRAFT template's version (c5-template.json), read server-side; filters
+  // the section layout picker. null = unreadable ⇒ baseline layouts only.
+  templateVersion?: string | null
 }) {
   const [tree, setTree] = useState<TreeFile[]>([])
   const [status, setStatus] = useState<EditorStatus | null>(null)
@@ -1319,7 +1323,7 @@ export default function EditorShell({
             onMovesChange={setNavMoves}
           />
         ) : (
-          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} isAdmin={isAdmin} />
+          <PageEditor key={selectedPath} sessionId={sessionId} path={selectedPath} contents={content} websiteUrl={websiteUrl} onChange={onEdit} isAdmin={isAdmin} templateVersion={templateVersion} />
         )}
       </div>
       {publishResult && (

@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
 import { canPublish, getAccessibleSessionIds, getCurrentUser, getSiteOwnerSessionId, isSiteOwner } from '@/lib/auth/access'
 import EditorShell from '@/components/editor/EditorShell'
+import { readDraftTemplateVersion } from '@/lib/design/capabilities-read'
 import type { SessionSchema } from '@/types/session-schema'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -64,6 +65,12 @@ export default async function EditPage({
   const firmName = schema?.business?.name?.trim() || session?.website_url || 'Untitled client'
   const websiteUrl = session?.website_url ?? ''
 
+  // The DRAFT template's version filters the section layout picker to layouts
+  // this site's next build renders. Unreadable (no draft branch yet, GitHub
+  // hiccup) ⇒ null ⇒ the picker offers baseline layouts only; never blocks the
+  // editor from opening.
+  const templateVersion = await readDraftTemplateVersion(job.github_repo)
+
   return (
     <EditorShell
       sessionId={id}
@@ -73,6 +80,7 @@ export default async function EditPage({
       viewerIsOwner={viewerIsOwner}
       viewerIsAdmin={user.isAdmin}
       viewerCanPublish={canPublish(user)}
+      templateVersion={templateVersion}
     />
   )
 }

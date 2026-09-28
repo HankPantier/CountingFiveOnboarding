@@ -5,7 +5,7 @@
 // (Validator: Block Assignment Rules section).
 // ---------------------------------------------------------------------------
 
-import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, type BlockSpec } from './block-catalog'
+import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, variantValuesAt, type BlockSpec } from './block-catalog'
 import { parseBlockComment, rendersAsSection, templateSectionPattern } from '@/lib/editor/block-annotation'
 
 // ---------------------------------------------------------------------------
@@ -56,10 +56,17 @@ export type ValidationResult = {
  * (frontmatter), platform-inserted blocks (faq-accordion, contact-info, map,
  * pricing pages) and config-driven blocks (booking, resource-list) are left out.
  */
-export function blockCatalogHint(): string {
+export function blockCatalogHint(opts?: { templateVersion: string | null | undefined }): string {
+  // With opts, only the variants a template at that version renders (null ⇒
+  // baseline); without, every contract variant (the generation prompts).
+  const values = (spec: BlockSpec) =>
+    opts ? variantValuesAt(spec.variants, opts.templateVersion) : spec.variants.map((v) => v.value)
   return BLOCK_IDS.map((id) => [id, BLOCK_CATALOG[id] as BlockSpec] as const)
     .filter(([, spec]) => spec.insertable)
-    .map(([id, spec]) => (spec.variants.length ? `${id} (${spec.variants.map((v) => v.value).join('|')})` : id))
+    .map(([id, spec]) => {
+      const vs = values(spec)
+      return vs.length ? `${id} (${vs.join('|')})` : id
+    })
     .join(', ')
 }
 
@@ -463,6 +470,7 @@ export type AnnotationIssueKind =
   | 'unknown-block'
   | 'frontmatter-inline'
   | 'invalid-variant'
+  | 'variant-too-new'
   | 'invalid-theme'
   | 'unparseable'
   | 'stray'
@@ -513,7 +521,15 @@ function unrenderedAnnotationIssues(body: string): AnnotationIssue[] {
   return issues
 }
 
-export function annotationSyntaxIssues(body: string): AnnotationIssue[] {
+/**
+ * `templateVersion` (optional): when given, a contract variant newer than the
+ * site's template (`since` > version; null ⇒ baseline) is an issue too — the
+ * old template would silently render its default. Omitted ⇒ any contract
+ * variant is valid (generation, which targets the current template).
+ */
+export type AnnotationCheckOpts = { templateVersion: string | null | undefined }
+
+export function annotationSyntaxIssues(body: string, opts?: AnnotationCheckOpts): AnnotationIssue[] {
   const issues: AnnotationIssue[] = unrenderedAnnotationIssues(body)
   for (const ann of parseBlockAnnotations(body)) {
     const { blockId, headingText: heading } = ann
@@ -547,6 +563,16 @@ export function annotationSyntaxIssues(body: string): AnnotationIssue[] {
           ? `Invalid variant "${ann.variant}" for block "${blockId}" on section "${heading}". Valid variants: ${variants.join(', ')}.`
           : `Block "${blockId}" on section "${heading}" has no variants; remove "variant: ${ann.variant}".`,
       })
+    } else if (ann.variant !== undefined && opts && !variantValuesAt(spec.variants, opts.templateVersion).includes(ann.variant)) {
+      const since = spec.variants.find((v) => v.value === ann.variant)?.since
+      const available = variantValuesAt(spec.variants, opts.templateVersion)
+      issues.push({
+        kind: 'variant-too-new',
+        blockId,
+        value: ann.variant,
+        heading,
+        message: `Variant "${ann.variant}" for block "${blockId}" on section "${heading}" needs template ${since ?? 'a newer release'}; this site's template doesn't render it yet. Use one of: ${available.join(', ') || '(none)'}.`,
+      })
     }
     if (ann.theme !== undefined && !spec.themes.includes(ann.theme)) {
       issues.push({
@@ -575,12 +601,12 @@ export function validateAnnotationSyntax(body: string): string[] {
  * new invalid variant (or a second copy of the same bad value) is rejected.
  * Returns [] when the edit adds no new annotation problem.
  */
-export function validateAnnotationDelta(beforeBody: string, afterBody: string): string[] {
+export function validateAnnotationDelta(beforeBody: string, afterBody: string, opts?: AnnotationCheckOpts): string[] {
   const key = (i: AnnotationIssue) => `${i.kind}\u0000${i.blockId}\u0000${i.value ?? ''}`
   const budget = new Map<string, number>()
-  for (const i of annotationSyntaxIssues(beforeBody)) budget.set(key(i), (budget.get(key(i)) ?? 0) + 1)
+  for (const i of annotationSyntaxIssues(beforeBody, opts)) budget.set(key(i), (budget.get(key(i)) ?? 0) + 1)
   const introduced: string[] = []
-  for (const i of annotationSyntaxIssues(afterBody)) {
+  for (const i of annotationSyntaxIssues(afterBody, opts)) {
     const left = budget.get(key(i)) ?? 0
     if (left > 0) budget.set(key(i), left - 1)
     else introduced.push(i.message)

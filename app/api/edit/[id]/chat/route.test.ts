@@ -13,6 +13,8 @@ const m = vi.hoisted(() => ({
   spend: null as null | Response,
   insertFiled: true,
   ctx: null as null | Record<string, unknown>,
+  marker: null as null | string,
+  path: 'content/pages/about.md',
 }))
 
 vi.mock('ai', async (orig) => ({
@@ -24,6 +26,13 @@ vi.mock('ai', async (orig) => ({
     return { toUIMessageStreamResponse: () => new Response('stream') }
   },
 }))
+// The catalog gains a future `service-cards | list` layout (since 2026.09.9) so
+// the version tests can prove the draft marker reaches the hint and the tools.
+// Every other block/variant is the real contract.
+vi.mock('@/lib/content/block-catalog', async (importOriginal) => {
+  const { catalogWithListLayout } = await import('@/lib/content/__fixtures__/catalog-with-list')
+  return catalogWithListLayout(importOriginal as never)
+})
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: () => ({}) }))
 vi.mock('../_helpers', () => ({ resolveEditContext: async () => m.ctx }))
 vi.mock('@/lib/auth/access', () => ({
@@ -54,6 +63,10 @@ vi.mock('@/lib/github/repo-files', () => {
     DRAFT_BRANCH: 'draft',
     FileNotFoundError,
     ensureDraftBranch: async () => undefined,
+    readFileConditional: async (_repo: string, path: string) => {
+      if (path !== 'c5-template.json' || m.marker === null) throw new FileNotFoundError('nope')
+      return { content: m.marker, sha: 'sha-m' }
+    },
     readFile: async (_repo: string, path: string) => {
       if (path === 'content/brand.json') throw new FileNotFoundError('nope')
       return { content: m.file, sha: 'sha-0' }
@@ -69,10 +82,9 @@ vi.mock('@/lib/github/repo-files', () => {
 import { POST } from './route'
 
 const SID = '11111111-1111-1111-1111-111111111111'
-const PAGE = 'content/pages/about.md'
 const post = () =>
   POST(
-    new Request('http://x', { method: 'POST', body: JSON.stringify({ messages: [], path: PAGE }) }),
+    new Request('http://x', { method: 'POST', body: JSON.stringify({ messages: [], path: m.path }) }),
     { params: Promise.resolve({ id: SID }) }
   )
 
@@ -83,6 +95,8 @@ beforeEach(() => {
   m.streamCalls = 0
   m.spend = null
   m.insertFiled = true
+  m.marker = null
+  m.path = 'content/pages/about.md'
   m.ctx = { githubRepo: 'o/r', sessionId: SID, jobId: 'j', adminEmail: 'a@x.com', adminName: 'A', user: { id: 'u1', isAdmin: true, capabilities: [] } }
 })
 
@@ -146,5 +160,136 @@ describe('POST /api/edit/[id]/chat', () => {
 
     const systemText = m.system!.map(s => s.content).join('\n')
     expect(systemText).toContain('call update_firm_contact')
+  })
+
+  describe('set_section_layout', () => {
+    const LAYOUT_FILE = [
+      '---',
+      'title: "About"',
+      '---',
+      '',
+      '<!-- block: content-split | variant: image-right | image: a.jpg | alt: "A desk" | query: "desk" -->',
+      '## How we work',
+      '',
+      'We plan ahead — every quarter.',
+      '',
+      '<!-- block: service-cards | variant: 3-col -->',
+      '## Our services',
+      '',
+      '### Tax',
+      '',
+      '## SEO & AIO Metadata',
+      '',
+      '**Meta:** keep — me',
+      '',
+    ].join('\n')
+
+    it('changes exactly the one annotation line (no dash scrub, trailer kept)', async () => {
+      m.file = LAYOUT_FILE
+      await post()
+      const res = await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: 'image-left' })
+      expect(res).toMatchObject({ success: true, block: 'content-split' })
+      const before = LAYOUT_FILE.split('\n')
+      const after = m.file.split('\n')
+      expect(after).toHaveLength(before.length)
+      const diff = before.flatMap((l, i) => (l === after[i] ? [] : [after[i]]))
+      expect(diff).toEqual(['<!-- block: content-split | variant: image-left | image: a.jpg | alt: "A desk" | query: "desk" -->'])
+
+      const ink = await m.tools!.set_section_layout.execute({ heading: 'Our services', theme: 'ink' })
+      expect(ink.success).toBe(true)
+      expect(m.file).toContain('<!-- block: service-cards | variant: 3-col | theme: ink -->')
+      expect(m.file).toContain('We plan ahead — every quarter.')
+    })
+
+    it('refuses bad requests without writing', async () => {
+      m.file = LAYOUT_FILE
+      await post()
+      expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: '4-col' })).error).toBeTruthy()
+      expect((await m.tools!.set_section_layout.execute({ heading: 'Nope', variant: 'image-left' })).error).toMatch(/No section/)
+      expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', theme: 'ink' })).error).toBeTruthy()
+      expect(m.file).toBe(LAYOUT_FILE)
+    })
+
+    it('reads the draft template version for the prompt hint and survives a missing marker', async () => {
+      m.marker = JSON.stringify({ templateVersion: '2026.09.8', capabilities: [] })
+      await post()
+      const systemText = m.system!.map((s) => s.content).join('\n')
+      expect(systemText).toContain('content-split (image-right|image-left)')
+      expect(systemText).toContain('set_section_layout')
+      m.marker = null
+      await post()
+      expect(m.tools!.set_section_layout).toBeDefined()
+    })
+
+    it('rejects an empty variant in the schema and removes one with explicit null', async () => {
+      m.file = LAYOUT_FILE
+      await post()
+      const schema = (m.tools!.set_section_layout as unknown as { inputSchema: { safeParse: (v: unknown) => { success: boolean } } }).inputSchema
+      expect(schema.safeParse({ heading: 'How we work', variant: '' }).success).toBe(false)
+      expect(schema.safeParse({ heading: 'How we work', variant: null }).success).toBe(true)
+      const res = await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: null })
+      expect(res).toMatchObject({ success: true, variant: null })
+      expect(m.file).toContain('<!-- block: service-cards -->\n## Our services')
+    })
+
+    it('is pages-only', async () => {
+      m.path = 'content/posts/hello.md'
+      m.file = LAYOUT_FILE
+      await post()
+      expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: 'image-left' })).error).toMatch(/pages only/)
+      expect(m.file).toBe(LAYOUT_FILE)
+    })
+  })
+
+  describe('draft template version', () => {
+    const FILE = [
+      '---',
+      'title: "About"',
+      '---',
+      '',
+      '<!-- block: service-cards | variant: 3-col -->',
+      '## Our services',
+      '',
+      '### Tax',
+      '',
+    ].join('\n')
+    const hint = () => m.system!.map((s) => s.content).join('\n')
+
+    it('an older template: the hint omits the newer layout and both tools refuse it', async () => {
+      m.marker = JSON.stringify({ templateVersion: '2026.09.8', capabilities: [] })
+      m.file = FILE
+      await post()
+      expect(hint()).toContain('service-cards (2-col|3-col)')
+      expect(hint()).not.toContain('service-cards (2-col|3-col|list)')
+
+      const viaTool = await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: 'list' })
+      expect(String(viaTool.error)).toMatch(/not a layout for service-cards/)
+
+      const viaEdit = await m.tools!.apply_edit.execute({
+        find: '<!-- block: service-cards | variant: 3-col -->',
+        replace: '<!-- block: service-cards | variant: list -->',
+      })
+      expect(String(viaEdit.error)).toMatch(/needs template 2026\.09\.9/)
+      expect(m.file).toBe(FILE)
+    })
+
+    it('no marker: baseline vocabulary, newer layout refused', async () => {
+      m.marker = null
+      m.file = FILE
+      await post()
+      expect(hint()).toContain('service-cards (2-col|3-col)')
+      expect((await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: 'list' })).error).toBeTruthy()
+      expect(m.file).toBe(FILE)
+    })
+
+    it('a template that has it: the hint offers it and the tool applies it', async () => {
+      m.marker = JSON.stringify({ templateVersion: '2026.09.9', capabilities: [] })
+      m.file = FILE
+      await post()
+      expect(hint()).toContain('service-cards (2-col|3-col|list)')
+      const res = await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: 'list' })
+      expect(res.success).toBe(true)
+      expect(m.file).toContain('<!-- block: service-cards | variant: list -->')
+    })
   })
 })

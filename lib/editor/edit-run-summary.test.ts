@@ -126,4 +126,13 @@ describe('summarizeEditRun', () => {
     expect(summary.applied).toBe(2)
     expect(summary.failed).toBe(0)
   })
+
+  it('counts set_section_layout commits, no-ops and refusals', () => {
+    const parts = [
+      { type: 'tool-set_section_layout', output: { success: true, block: 'content-split', variant: 'image-left' } },
+      { type: 'tool-set_section_layout', output: { success: true, noChange: true, message: 'already' } },
+      { type: 'tool-set_section_layout', output: { error: 'No section is titled “X”.' } },
+    ]
+    expect(summarizeEditRun(parts, 'stop')).toEqual({ applied: 1, failed: 1, unchanged: 1, incomplete: false })
+  })
 })
