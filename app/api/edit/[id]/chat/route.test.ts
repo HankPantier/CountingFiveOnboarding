@@ -56,12 +56,12 @@ vi.mock('@/lib/github/repo-files', () => {
     DRAFT_BRANCH: 'draft',
     FileNotFoundError,
     ensureDraftBranch: async () => undefined,
+    readFileConditional: async (_repo: string, path: string) => {
+      if (path !== 'c5-template.json' || m.marker === null) throw new FileNotFoundError('nope')
+      return { content: m.marker, sha: 'sha-m' }
+    },
     readFile: async (_repo: string, path: string) => {
       if (path === 'content/brand.json') throw new FileNotFoundError('nope')
-      if (path === 'c5-template.json') {
-        if (m.marker === null) throw new FileNotFoundError('nope')
-        return { content: m.marker, sha: 'sha-m' }
-      }
       return { content: m.file, sha: 'sha-0' }
     },
     writeFile: async (_r: string, _p: string, content: string) => {

@@ -27,7 +27,7 @@ import { validateFrontmatterYaml } from '@/lib/editor/frontmatter-yaml'
 import { setFaqBlock, type FaqItem } from '@/lib/editor/structured-fields'
 import { splitTrailers, setFaqAccordionBody } from '@/lib/editor/page-body'
 import { setSectionLayoutByHeading } from '@/lib/editor/section-layout'
-import { readDesignCapabilities } from '@/lib/design/capabilities-read'
+import { readDraftTemplateVersion } from '@/lib/design/capabilities-read'
 import { applyRemovalsToTrailer, composeAiEditCommit, splitForModel } from '@/lib/editor/ai-edit-trailer'
 import {
   DRAFT_BRANCH,
@@ -99,13 +99,7 @@ export async function POST(
     await ensureDraftBranch(githubRepo)
     const [initial, version] = await Promise.all([
       readFile(githubRepo, path, DRAFT_BRANCH),
-      readDesignCapabilities(githubRepo).then(
-        (c) => c.templateVersion,
-        (err: unknown) => {
-          console.warn('[edit-chat] could not read the draft template version; using baseline layouts', err)
-          return null
-        },
-      ),
+      readDraftTemplateVersion(githubRepo),
     ])
     workingContent = initial.content
     workingSha = initial.sha
