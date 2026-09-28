@@ -56,9 +56,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   try {
-    const loaded = await loadDraftThemeSources(githubRepo)
+    // Independent reads: the capability handshake (never throws) runs
+    // alongside the draft theme-source reads.
+    const [loaded, layoutLock] = await Promise.all([loadDraftThemeSources(githubRepo), layoutLockReason(githubRepo, jobId)])
     if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status })
-    return NextResponse.json({ ...loaded.sources, layoutLock: await layoutLockReason(githubRepo, jobId) })
+    return NextResponse.json({ ...loaded.sources, layoutLock })
   } catch (err) {
     return internalError('theme:get', err, 'Failed to load theme sources')
   }
