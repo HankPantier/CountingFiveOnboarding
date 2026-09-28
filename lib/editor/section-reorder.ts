@@ -11,12 +11,20 @@
 // an out-of-range index returns the body unchanged.
 
 import { splitSections, joinSections, type Section } from './markdown-sections'
+import { blockLabel } from '@/lib/content/block-catalog'
+
+// Friendly labels come from the template block catalog contract.
+export { blockLabel }
 
 export type SectionInfo = {
   /** Stable-within-a-render id for dnd/React keys (positional among movable sections). */
   id: string
   blockId: string
   variant: string
+  /** `theme:` value (e.g. 'ink'), or ''. */
+  theme: string
+  /** False for a hand-mangled or heading-less annotation the template won't render as written — never rewrite it. */
+  parseable: boolean
   /** The section's `## heading` text, or '' when it has none. */
   heading: string
 }
@@ -26,32 +34,6 @@ export type SectionOutline = {
   leadIn: { heading: string } | null
   /** Every annotated section, in order. Panel indices are into this array. */
   sections: SectionInfo[]
-}
-
-// Friendly labels for the outline; unknown ids fall back to the raw id.
-const BLOCK_LABELS: Record<string, string> = {
-  'intro-text': 'Intro text',
-  'content-split': 'Text + image',
-  'content-prose': 'Text',
-  'checklist-section': 'Checklist',
-  'process-steps': 'Process steps',
-  'feature-grid': 'Feature grid',
-  'service-cards': 'Services',
-  'content-cards': 'Content cards',
-  'team-grid': 'Team',
-  'industry-cards': 'Industries',
-  testimonials: 'Testimonials',
-  'stats-bar': 'Stats',
-  'logo-bar': 'Logos',
-  'cta-banner': 'Call to action',
-  pricing: 'Pricing',
-  'faq-accordion': 'FAQ',
-  form: 'Form',
-  'content-table': 'Table',
-}
-
-export function blockLabel(blockId: string): string {
-  return BLOCK_LABELS[blockId] ?? blockId
 }
 
 function extractHeading(sectionBody: string): string {
@@ -82,6 +64,8 @@ export function describeSections(body: string): SectionOutline {
       id: String(i),
       blockId: s.blockId,
       variant: s.variant,
+      theme: s.theme,
+      parseable: s.parseable,
       heading: extractHeading(s.body),
     })),
   }

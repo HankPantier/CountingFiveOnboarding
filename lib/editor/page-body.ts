@@ -2,6 +2,7 @@ import type { FaqItem } from './structured-fields'
 import { findTrailerStart, foreignHeadings } from '@/lib/content/strip-generator-notes'
 import { humanizeDashes } from '@/lib/content/anti-slop-validator'
 import { splitFile } from './frontmatter'
+import { parseBlockComment } from './block-annotation'
 
 // The generator appends two trailers to the page body that the template strips
 // at render (parse-page-md.ts `trimMetadataTrailer`): a human-readable
@@ -44,6 +45,17 @@ export function humanizeBodyDashes(file: string): string {
 }
 
 const FAQ_MARKER = '<!-- block: faq-accordion -->'
+// Any faq-accordion annotation line, whatever its fields/spacing (confirmed by
+// the codec). An existing marker line is kept verbatim on rewrite.
+const FAQ_MARKER_LINE_RE = /^<!--\s*block:\s*faq-accordion\b[^\n]*$/gm
+
+function findFaqMarker(content: string): { index: number; line: string } | null {
+  for (const m of content.matchAll(FAQ_MARKER_LINE_RE)) {
+    const line = m[0].replace(/\r$/, '')
+    if (parseBlockComment(line)?.blockId === 'faq-accordion') return { index: m.index ?? 0, line }
+  }
+  return null
+}
 // Same Q&A shape the template parses (md-utils.ts `parseFaqList`).
 const FAQ_PAIR_RE = /\*\*Q:\s*(.+?)\*\*\s*\nA:\s*([\s\S]+?)(?=\n\*\*Q:|$)/g
 
@@ -72,12 +84,13 @@ export function setFaqAccordionBody(
   items: FaqItem[],
   defaultHeading: string
 ): string {
-  const markerIdx = content.indexOf(FAQ_MARKER)
-  if (markerIdx >= 0) {
-    const afterMarker = content.slice(markerIdx + FAQ_MARKER.length)
+  const marker = findFaqMarker(content)
+  if (marker) {
+    const markerIdx = marker.index
+    const afterMarker = content.slice(markerIdx + marker.line.length)
     const nextBlock = afterMarker.search(/\n<!-- block:/)
     const sectionEnd =
-      nextBlock >= 0 ? markerIdx + FAQ_MARKER.length + nextBlock : content.length
+      nextBlock >= 0 ? markerIdx + marker.line.length + nextBlock : content.length
     const section = content.slice(markerIdx, sectionEnd)
     const headingMatch = section.match(/##\s+(.+)/)
     const heading = headingMatch ? headingMatch[1].trim() : defaultHeading
@@ -86,7 +99,7 @@ export function setFaqAccordionBody(
     if (items.length === 0) {
       return [before, after].filter((s) => s !== '').join('\n\n')
     }
-    const newSection = `${FAQ_MARKER}\n## ${heading}\n\n${faqProse(items)}`
+    const newSection = `${marker.line}\n## ${heading}\n\n${faqProse(items)}`
     return [before, newSection, after].filter((s) => s !== '').join('\n\n')
   }
   if (items.length === 0) return content

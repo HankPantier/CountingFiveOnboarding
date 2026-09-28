@@ -207,3 +207,17 @@ describe('heroPairWarnings', () => {
     expect(heroPairWarnings('page-header', 'image')[0]).toContain('ignored')
   })
 })
+
+describe('unrendered annotations', () => {
+  const base = `<!-- block: intro-text | variant: centered -->\n## A\n\nText.\n`
+  it('rejects a mangled annotation an edit introduces', () => {
+    const next = base.replace('intro-text | variant: centered', 'intro-text | variant: Left Aligned')
+    expect(validateAnnotationDelta(base, next)).toEqual([expect.stringContaining('template grammar')])
+  })
+  it('rejects a heading-less annotation an edit introduces, but not a legacy one', () => {
+    const stray = `<!-- block: map -->\n\n${base}`
+    expect(validateAnnotationSyntax(stray)).toEqual([expect.stringContaining('## Heading')])
+    expect(validateAnnotationDelta(base, stray)).toHaveLength(1)
+    expect(validateAnnotationDelta(stray, stray.replace('Text.', 'More text.'))).toEqual([])
+  })
+})

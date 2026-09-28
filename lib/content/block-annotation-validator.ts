@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, type BlockSpec } from './block-catalog'
+import { parseBlockComment, rendersAsSection } from '@/lib/editor/block-annotation'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -482,7 +483,13 @@ export function parseBlockAnnotations(body: string): BlockAnnotation[] {
 // already stripped.
 // ---------------------------------------------------------------------------
 
-export type AnnotationIssueKind = 'unknown-block' | 'frontmatter-inline' | 'invalid-variant' | 'invalid-theme'
+export type AnnotationIssueKind =
+  | 'unknown-block'
+  | 'frontmatter-inline'
+  | 'invalid-variant'
+  | 'invalid-theme'
+  | 'unparseable'
+  | 'stray'
 
 export type AnnotationIssue = {
   kind: AnnotationIssueKind
@@ -493,8 +500,45 @@ export type AnnotationIssue = {
   message: string
 }
 
-export function annotationSyntaxIssues(body: string): AnnotationIssue[] {
+// Annotation lines the template's split would see (`<!-- block:` at line start),
+// plus near-misses in other spacing, so a mangled edit is caught too.
+const ANNOTATION_LINE_RE = /^<!--\s*block:[^\n]*$/gm
+
+// Lines the template will NOT render as written: a mangled annotation (wrong
+// field order, uppercase, stray keys — it drops the section) or a stray one
+// with no `## heading` after it (the text below it is dropped).
+function unrenderedAnnotationIssues(body: string): AnnotationIssue[] {
   const issues: AnnotationIssue[] = []
+  for (const m of body.matchAll(ANNOTATION_LINE_RE)) {
+    const line = m[0].replace(/\r$/, '')
+    const c = parseBlockComment(line)
+    const blockId = c?.blockId ?? ''
+    if (!c || !c.strict) {
+      issues.push({
+        kind: 'unparseable',
+        blockId,
+        value: line,
+        heading: '',
+        message: `Annotation ${line} does not match the template grammar (<!-- block: id | variant: v | image: f | alt: "…" | query: "…" | theme: t -->, fields in that order, lowercase values), so that section would not render.`,
+      })
+      continue
+    }
+    const after = body.slice((m.index ?? 0) + m[0].length + 1)
+    if (!rendersAsSection(line, after)) {
+      issues.push({
+        kind: 'stray',
+        blockId,
+        value: line,
+        heading: '',
+        message: `Annotation ${line} is not followed by a "## Heading" line, so the template drops the text after it. Put the heading directly under the annotation.`,
+      })
+    }
+  }
+  return issues
+}
+
+export function annotationSyntaxIssues(body: string): AnnotationIssue[] {
+  const issues: AnnotationIssue[] = unrenderedAnnotationIssues(body)
   for (const ann of parseBlockAnnotations(body)) {
     const { blockId, headingText: heading } = ann
     const spec = blockSpec(blockId)
