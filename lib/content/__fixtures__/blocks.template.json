@@ -1,0 +1,415 @@
+{
+  "version": 1,
+  "baselineSince": "2026.09.1",
+  "fieldOrder": [
+    "variant",
+    "image",
+    "alt",
+    "query",
+    "theme"
+  ],
+  "blocks": {
+    "hero": {
+      "label": "Hero",
+      "placement": "frontmatter",
+      "insertable": false,
+      "default": "image",
+      "variants": [
+        {
+          "value": "statement",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "image",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "video",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "slider",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "hero-split": {
+      "label": "Split hero",
+      "placement": "frontmatter",
+      "insertable": false,
+      "default": "image-right",
+      "variants": [
+        {
+          "value": "image-right",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "image-left",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "page-header": {
+      "label": "Page header",
+      "placement": "frontmatter",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "intro-text": {
+      "label": "Intro text",
+      "placement": "inline",
+      "insertable": true,
+      "default": "centered",
+      "variants": [
+        {
+          "value": "centered",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "left-aligned",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "content-split": {
+      "label": "Text + image",
+      "placement": "inline",
+      "insertable": true,
+      "default": "image-right",
+      "variants": [
+        {
+          "value": "image-right",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "image-left",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "content-prose": {
+      "label": "Text",
+      "placement": "inline",
+      "insertable": true,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "checklist-section": {
+      "label": "Checklist",
+      "placement": "inline",
+      "insertable": true,
+      "default": "standalone",
+      "variants": [
+        {
+          "value": "with-image",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "with-image-right",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "with-image-left",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "standalone",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "process-steps": {
+      "label": "Process steps",
+      "placement": "inline",
+      "insertable": true,
+      "default": "vertical",
+      "variants": [
+        {
+          "value": "horizontal",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "vertical",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "feature-grid": {
+      "label": "Feature grid",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-col",
+      "variants": [
+        {
+          "value": "3-col",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "4-col",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": [
+        "ink"
+      ]
+    },
+    "service-cards": {
+      "label": "Services",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-col",
+      "variants": [
+        {
+          "value": "2-col",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "3-col",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": [
+        "ink"
+      ]
+    },
+    "content-cards": {
+      "label": "Content cards",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-col",
+      "variants": [
+        {
+          "value": "3-col",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "2-col",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "team-grid": {
+      "label": "Team",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-col",
+      "variants": [
+        {
+          "value": "2-col",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "3-col",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "4-col",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "industry-cards": {
+      "label": "Industries",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-col",
+      "variants": [
+        {
+          "value": "3-col",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "4-col",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": [
+        "ink"
+      ]
+    },
+    "testimonials": {
+      "label": "Testimonials",
+      "placement": "inline",
+      "insertable": true,
+      "default": "grid",
+      "variants": [
+        {
+          "value": "carousel",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "grid",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "stats-bar": {
+      "label": "Stats",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-up",
+      "variants": [
+        {
+          "value": "3-up",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "4-up",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": [
+        "ink"
+      ]
+    },
+    "logo-bar": {
+      "label": "Logos",
+      "placement": "inline",
+      "insertable": true,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "cta-banner": {
+      "label": "Call to action",
+      "placement": "inline",
+      "insertable": true,
+      "default": "color-bg",
+      "variants": [
+        {
+          "value": "color-bg",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "image-bg",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": [
+        "ink"
+      ]
+    },
+    "pricing": {
+      "label": "Pricing",
+      "placement": "inline",
+      "insertable": true,
+      "default": "3-tier",
+      "variants": [
+        {
+          "value": "2-tier",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "3-tier",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "4-tier",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "faq-accordion": {
+      "label": "FAQ",
+      "placement": "auto",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "form": {
+      "label": "Form",
+      "placement": "inline",
+      "insertable": true,
+      "default": "contact",
+      "variants": [
+        {
+          "value": "contact",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "quote",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "newsletter",
+          "since": "2026.09.1"
+        },
+        {
+          "value": "custom",
+          "since": "2026.09.1"
+        }
+      ],
+      "themes": []
+    },
+    "content-table": {
+      "label": "Table",
+      "placement": "inline",
+      "insertable": true,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "contact-info": {
+      "label": "Contact details",
+      "placement": "auto",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "map": {
+      "label": "Map",
+      "placement": "auto",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "booking": {
+      "label": "Booking",
+      "placement": "inline",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "resource-list": {
+      "label": "Resources",
+      "placement": "inline",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "pricing-calculator": {
+      "label": "Pricing calculator",
+      "placement": "auto",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    },
+    "pricing-plans": {
+      "label": "Pricing plans",
+      "placement": "auto",
+      "insertable": false,
+      "default": null,
+      "variants": [],
+      "themes": []
+    }
+  }
+}
