@@ -158,7 +158,11 @@ export function patchDesignFlags(designJsonText: string, patch: DesignFlagsPatch
   }
   if (patch.logoSize !== undefined) {
     if (!LOGO_SIZES.includes(patch.logoSize)) return { ok: false, reason: 'logoSize must be standard or large.' }
-    const logo: NonNullable<DesignJson['logo']> = { ...(design.logo ?? {}) }
+    // A hand-edited design.json can carry a non-object `logo` (a string, an
+    // array, null): replace it rather than spread it into a broken object.
+    const current: unknown = design.logo
+    const logo: NonNullable<DesignJson['logo']> =
+      current && typeof current === 'object' && !Array.isArray(current) ? { ...(current as NonNullable<DesignJson['logo']>) } : {}
     if (patch.logoSize === 'standard') delete logo.size
     else logo.size = patch.logoSize
     if (Object.keys(logo).length) next.logo = logo

@@ -142,6 +142,15 @@ describe('patchDesignFlags', () => {
     const other = patchDesignFlags(withExtra, { headlineStyle: 'serif' })
     expect(other.ok && other.design.logo).toEqual({ size: 'large', note: 'kept' })
   })
+  it('logoSize replaces a malformed (non-object) logo value instead of spreading it', () => {
+    for (const bad of ['large', ['x'], null, 7]) {
+      const text = JSON.stringify({ ...JSON.parse(DESIGN), logo: bad }, null, 2) + '\n'
+      const large = patchDesignFlags(text, { logoSize: 'large' })
+      expect(large.ok && large.design.logo).toEqual({ size: 'large' })
+      const standard = patchDesignFlags(text, { logoSize: 'standard' })
+      expect(standard.ok && 'logo' in standard.design).toBe(false)
+    }
+  })
   it('rejects an invalid logoSize', () => {
     // @ts-expect-error — exercising runtime validation with a bad value
     const r = patchDesignFlags(DESIGN, { logoSize: 'huge' })
