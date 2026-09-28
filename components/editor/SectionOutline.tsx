@@ -103,6 +103,7 @@ function LayoutControls({
         <button
           type="button"
           aria-pressed={opts.ink.on}
+          aria-label={`Ink band for ${name}`}
           title={opts.ink.note}
           onClick={() => run(() => layout.onSetTheme(index, opts.ink!.on ? null : 'ink'))}
           className={`text-[11px] font-heading font-semibold px-2.5 py-1 rounded-pill border transition-colors ${
@@ -111,7 +112,7 @@ function LayoutControls({
               : 'border-border-default text-text-secondary hover:bg-surface-subtle'
           }`}
         >
-          Ink band {opts.ink.on ? 'on' : 'off'}
+          Ink band
         </button>
       )}
       {opts.ink?.note && <span className="text-[11px] font-body text-text-muted">{opts.ink.note}</span>}
