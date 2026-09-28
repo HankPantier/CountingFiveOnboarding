@@ -39,10 +39,10 @@ import {
 } from '@/lib/editor/section-reorder'
 import { setSectionTheme, setSectionVariant } from '@/lib/editor/section-layout'
 import {
+  CUSTOM_OPENER,
   applyPageOpener,
-  currentPageOpener,
-  pageOpenerChoices,
   pageOpenerHints,
+  pageOpenerSelectState,
 } from '@/lib/editor/page-opener'
 
 type EditorTab = 'editor' | 'seo' | 'media'
@@ -594,8 +594,7 @@ function PageOpenerSelect({
   templateVersion: string | null
   onChange: (next: Frontmatter) => void
 }) {
-  const current = currentPageOpener(frontmatter)
-  const value = current.kind === 'choice' ? current.id : '__custom'
+  const { value, customLabel, choices } = pageOpenerSelectState(frontmatter, templateVersion)
   const hints = pageOpenerHints(frontmatter)
   return (
     <label className="block">
@@ -603,13 +602,13 @@ function PageOpenerSelect({
       <select
         value={value}
         onChange={(e) => {
-          if (e.target.value === value || e.target.value === '__custom') return
+          if (e.target.value === value || e.target.value === CUSTOM_OPENER) return
           onChange(applyPageOpener(frontmatter, e.target.value))
         }}
         className="w-full text-sm font-body px-3 py-2 rounded border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none"
       >
-        {current.kind === 'custom' && <option value="__custom">{current.label}</option>}
-        {pageOpenerChoices(templateVersion).map((c) => (
+        {customLabel && <option value={CUSTOM_OPENER}>{customLabel}</option>}
+        {choices.map((c) => (
           <option key={c.id} value={c.id}>
             {c.label}
           </option>

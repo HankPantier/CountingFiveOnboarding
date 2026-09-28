@@ -6,6 +6,7 @@ import {
   currentPageOpener,
   pageOpenerChoices,
   pageOpenerHints,
+  pageOpenerSelectState,
 } from './page-opener'
 
 function fm(lines: string[]) {
@@ -121,5 +122,18 @@ describe('pageOpenerChoices', () => {
   it('offers every baseline choice on any template', () => {
     expect(pageOpenerChoices(null).map((c) => c.id)).toEqual(PAGE_OPENER_CHOICES.map((c) => c.id))
     expect(pageOpenerChoices('2026.09.8')).toHaveLength(PAGE_OPENER_CHOICES.length)
+  })
+})
+
+describe('pageOpenerSelectState', () => {
+  it('selects the matching choice when it is offered', () => {
+    const st = pageOpenerSelectState(fm(['hero: hero', 'hero_variant: statement']).frontmatter!, null)
+    expect(st.value).toBe('statement')
+    expect(st.customLabel).toBeUndefined()
+  })
+
+  it('shows an unknown pair as a leading custom row', () => {
+    const st = pageOpenerSelectState(fm(['hero: hero', 'hero_variant: image-right']).frontmatter!, null)
+    expect(st).toMatchObject({ value: '__custom', customLabel: 'Custom: hero / image-right' })
   })
 })

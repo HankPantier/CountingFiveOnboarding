@@ -37,6 +37,31 @@ export function pageOpenerChoices(templateVersion?: string | null): PageOpenerCh
   })
 }
 
+export type PageOpenerSelectState = {
+  /** The select's value: a choice id, or CUSTOM_OPENER for the custom row. */
+  value: string
+  /** Label of the leading custom row, when the current pair isn't offered. */
+  customLabel?: string
+  choices: PageOpenerChoice[]
+}
+
+export const CUSTOM_OPENER = '__custom'
+
+/**
+ * What the Page opener select shows at this template version. A current pair
+ * that is unknown — or a known choice this site's template doesn't render
+ * (filtered out by version) — stays visible as a leading custom row, so the
+ * select never silently displays a different value than the page has.
+ */
+export function pageOpenerSelectState(fm: Frontmatter, templateVersion?: string | null): PageOpenerSelectState {
+  const choices = pageOpenerChoices(templateVersion)
+  const current = currentPageOpener(fm)
+  if (current.kind === 'custom') return { value: CUSTOM_OPENER, customLabel: current.label, choices }
+  if (choices.some((c) => c.id === current.id)) return { value: current.id, choices }
+  const label = PAGE_OPENER_CHOICES.find((c) => c.id === current.id)?.label ?? current.id
+  return { value: CUSTOM_OPENER, customLabel: `Custom: ${label} (not available on this site's template)`, choices }
+}
+
 // Frontmatter values are raw YAML scalars; the opener fields are plain words.
 function bare(raw: string | undefined): string {
   return (raw ?? '').trim().replace(/^(["'])(.*)\1$/, '$2').trim()
