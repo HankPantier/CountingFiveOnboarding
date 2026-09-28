@@ -247,6 +247,11 @@ describe('setSectionLayoutByHeading', () => {
     ])
   })
 
+  it('removes a variant with null', () => {
+    const res = setSectionLayoutByHeading(BODY, 'Welcome', { variant: null })
+    expect(res.body.split('\n')[0]).toBe('<!-- block: intro-text -->')
+  })
+
   it('removes a theme with null and reports a no-op', () => {
     const on = setSectionLayoutByHeading(BODY, 'Our Services', { theme: 'ink' })
     expect(setSectionLayoutByHeading(on.body, 'Our Services', { theme: null }).body).toBe(BODY)

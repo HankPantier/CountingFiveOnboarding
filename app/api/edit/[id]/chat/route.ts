@@ -344,7 +344,12 @@ ${view().visible}
             'Change an existing section\'s layout variant and/or ink band, found by its ## heading. Rewrites only that section\'s annotation line. Pages only.',
           inputSchema: z.object({
             heading: z.string().describe('The section\'s ## heading text, as it appears in the file.'),
-            variant: z.string().optional().describe('New layout variant for that block, from the catalog list.'),
+            variant: z
+              .string()
+              .min(1)
+              .nullable()
+              .optional()
+              .describe('New layout variant for that block, from the catalog list; null removes the variant (template default).'),
             theme: z.enum(['ink', 'none']).optional().describe('"ink" = deep ink band on; "none" = remove the band.'),
           }),
           execute: async ({ heading, variant, theme }) => {
@@ -374,7 +379,12 @@ ${view().visible}
             } catch (err) {
               return toolError('edit:chat', err, 'Failed to save the layout change.')
             }
-            return { success: true, block: res.blockId, ...(variant ? { variant } : {}), ...(theme ? { theme } : {}) }
+            return {
+              success: true,
+              block: res.blockId,
+              ...(variant !== undefined ? { variant } : {}),
+              ...(theme ? { theme } : {}),
+            }
           },
         },
         set_faq: {

@@ -214,6 +214,17 @@ describe('POST /api/edit/[id]/chat', () => {
       expect(m.tools!.set_section_layout).toBeDefined()
     })
 
+    it('rejects an empty variant in the schema and removes one with explicit null', async () => {
+      m.file = LAYOUT_FILE
+      await post()
+      const schema = (m.tools!.set_section_layout as unknown as { inputSchema: { safeParse: (v: unknown) => { success: boolean } } }).inputSchema
+      expect(schema.safeParse({ heading: 'How we work', variant: '' }).success).toBe(false)
+      expect(schema.safeParse({ heading: 'How we work', variant: null }).success).toBe(true)
+      const res = await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: null })
+      expect(res).toMatchObject({ success: true, variant: null })
+      expect(m.file).toContain('<!-- block: service-cards -->\n## Our services')
+    })
+
     it('is pages-only', async () => {
       m.path = 'content/posts/hello.md'
       m.file = LAYOUT_FILE

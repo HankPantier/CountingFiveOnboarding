@@ -240,7 +240,8 @@ function normHeading(h: string): string {
 export function setSectionLayoutByHeading(
   body: string,
   heading: string,
-  change: { variant?: string; theme?: string | null },
+  // undefined = leave as is; null = remove the field.
+  change: { variant?: string | null; theme?: string | null },
   opts: LayoutOpts = {},
 ): SectionLayoutResult & { blockId?: string } {
   if (change.variant === undefined && change.theme === undefined) {
