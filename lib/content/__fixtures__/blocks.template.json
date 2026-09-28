@@ -156,6 +156,11 @@
         {
           "value": "4-col",
           "since": "2026.09.1"
+        },
+        {
+          "value": "list",
+          "since": "2026.09.9",
+          "layout": true
         }
       ],
       "themes": [
@@ -175,6 +180,11 @@
         {
           "value": "3-col",
           "since": "2026.09.1"
+        },
+        {
+          "value": "list",
+          "since": "2026.09.9",
+          "layout": true
         }
       ],
       "themes": [
@@ -194,6 +204,11 @@
         {
           "value": "2-col",
           "since": "2026.09.1"
+        },
+        {
+          "value": "list",
+          "since": "2026.09.9",
+          "layout": true
         }
       ],
       "themes": []
@@ -215,6 +230,11 @@
         {
           "value": "4-col",
           "since": "2026.09.1"
+        },
+        {
+          "value": "list",
+          "since": "2026.09.9",
+          "layout": true
         }
       ],
       "themes": []
@@ -251,6 +271,11 @@
         {
           "value": "grid",
           "since": "2026.09.1"
+        },
+        {
+          "value": "featured",
+          "since": "2026.09.9",
+          "layout": true
         }
       ],
       "themes": []
@@ -295,6 +320,16 @@
         {
           "value": "image-bg",
           "since": "2026.09.1"
+        },
+        {
+          "value": "color-bg-centered",
+          "since": "2026.09.9",
+          "layout": true
+        },
+        {
+          "value": "image-bg-centered",
+          "since": "2026.09.9",
+          "layout": true
         }
       ],
       "themes": [
