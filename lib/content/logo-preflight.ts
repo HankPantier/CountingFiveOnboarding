@@ -117,3 +117,57 @@ export async function preflightLogo(buffer: Buffer, fileName: string): Promise<L
     return noChange(buffer)
   }
 }
+
+export type PlateTrim = { buffer: Buffer; trimmed: { from: string; to: string }; plateHex: string }
+
+/**
+ * Crop an opaque light plate (a white box baked into the image, e.g. Pryor)
+ * down to the logo ink plus a `marginRatio` of the ink height on every side,
+ * so the mark renders larger in the fixed-height header. Operator-run only
+ * (scripts/trim-client-logo.ts): package-time preflight leaves plates alone
+ * and only notes them. The plate colour is the top-left pixel and must be
+ * opaque and light; ink is any visible pixel more than `threshold` (0-255,
+ * per channel) away from it, so faint scan borders and anti-aliasing halos
+ * are dropped. Null when there is no light plate or less than MIN_TRIM_SHARE
+ * of either side would go. Never throws.
+ */
+export async function trimLogoPlate(
+  buffer: Buffer,
+  { threshold = 25, marginRatio = 0.08 }: { threshold?: number; marginRatio?: number } = {},
+): Promise<PlateTrim | null> {
+  try {
+    const meta = await sharp(buffer, { limitInputPixels: 50_000_000 }).metadata()
+    if (!meta.width || !meta.height || meta.format === 'svg' || meta.format === 'gif' || (meta.pages ?? 1) > 1) return null
+    const { data, info } = await sharp(buffer, { limitInputPixels: 50_000_000 }).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const ch = info.channels
+    const [pr, pg, pb, pa] = [data[0], data[1], data[2], data[3]]
+    if (pa < 255 || Math.min(pr, pg, pb) < 230) return null
+
+    let x0 = info.width, y0 = info.height, x1 = -1, y1 = -1
+    for (let y = 0; y < info.height; y++) {
+      for (let x = 0; x < info.width; x++) {
+        const k = (y * info.width + x) * ch
+        if (data[k + 3] === 0) continue
+        if (Math.max(Math.abs(data[k] - pr), Math.abs(data[k + 1] - pg), Math.abs(data[k + 2] - pb)) <= threshold) continue
+        if (x < x0) x0 = x
+        if (x > x1) x1 = x
+        if (y < y0) y0 = y
+        if (y > y1) y1 = y
+      }
+    }
+    if (x1 < 0) return null
+    const margin = Math.round((y1 - y0 + 1) * marginRatio)
+    const left = Math.max(0, x0 - margin)
+    const top = Math.max(0, y0 - margin)
+    const width = Math.min(info.width, x1 + margin + 1) - left
+    const height = Math.min(info.height, y1 + margin + 1) - top
+    if (1 - width / info.width < MIN_TRIM_SHARE && 1 - height / info.height < MIN_TRIM_SHARE) return null
+
+    const out = await sharp(buffer, { limitInputPixels: 50_000_000 }).extract({ left, top, width, height }).toBuffer()
+    const hex = `#${[pr, pg, pb].map((v) => v.toString(16).padStart(2, '0')).join('')}`
+    return { buffer: out, trimmed: { from: `${info.width}×${info.height}`, to: `${width}×${height}` }, plateHex: hex }
+  } catch (err) {
+    console.warn('[logo] Plate trim skipped:', err)
+    return null
+  }
+}
