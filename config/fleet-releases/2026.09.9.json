@@ -1,0 +1,60 @@
+{
+  "_note": "Template 2026.09.9 (feat/block-layouts-0909 tip 134fb8f). File set = the CHANGELOG 'Rollout notes (template 2026.09.8 → 2026.09.9)' list = git diff 2978675..134fb8f minus c5-template.json (written last) and the @visual baselines: layout variants (list on service-cards/feature-grid/content-cards/team-grid, testimonials featured, cta-banner color-bg-centered/image-bg-centered; data-layout + data-c5-slot, src/styles/block-layouts.css), site-wide design.json layout presets (html[data-c5-layout-*], src/lib/theme/layout-presets.ts, docs/design/layout-presets.json), capability layout-presets, <meta name=\"c5-template-version\">, /design-specimen?layouts=1 (src/proxy.ts rewrite → src/app/design-specimen/layouts), validate-deliverable catalog warnings, HeroProps narrowed (type-only), plus the Phase 1 block catalog contract on main since 2026.09.8 (src/lib/assembly/block-catalog.ts + test, docs/design/blocks.json, scripts/generate-design-contracts.ts). theme.css is not rewritten, package.json and package-lock.json are unchanged ('ignore' acknowledges). R1: existing variants emit no new attributes; rendered DOM differs from 2026.09.8 only in the two metas.",
+  "templateVersion": "2026.09.9",
+  "notes": "New layout choices for page sections: services, features, articles and team can show as a one-per-row list; testimonials can lead with one large featured quote; the closing call-to-action banner can be centred. Nothing changes on any site until someone picks a layout in the editor (or, later, in the Theme Studio).",
+  "exclude": [
+    "\\.png$",
+    "^e2e/.*-snapshots/"
+  ],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "CHANGELOG.md",
+      "docs/architecture.md",
+      "docs/blocks.md",
+      "e2e/design-defaults.spec.ts",
+      "next.config.ts",
+      "scripts/generate-design-contracts.ts",
+      "scripts/validate-deliverable.ts",
+      "src/app/globals.css",
+      "src/app/layout.tsx",
+      "src/components/blocks/ContentCards.tsx",
+      "src/components/blocks/CtaBanner.tsx",
+      "src/components/blocks/FeatureGrid.tsx",
+      "src/components/blocks/Hero.tsx",
+      "src/components/blocks/Section.tsx",
+      "src/components/blocks/ServiceCards.tsx",
+      "src/components/blocks/TeamGrid.tsx",
+      "src/components/blocks/Testimonials.tsx",
+      "src/components/ui/framed-media.tsx",
+      "src/lib/assembly/extract-block-props.test.ts",
+      "src/lib/assembly/extract-block-props.ts",
+      "src/lib/showcase/samples.test.ts",
+      "src/lib/showcase/samples.ts",
+      "src/lib/theme/hooks.test.ts",
+      "src/lib/theme/template-marker.test.ts",
+      "src/lib/theme/template-marker.ts",
+      "src/lib/theme/types.ts",
+      "src/proxy.test.ts",
+      "src/proxy.ts"
+    ],
+    "add": [
+      "docs/design/blocks.json",
+      "docs/design/layout-presets.json",
+      "e2e/block-layouts.spec.ts",
+      "src/app/design-specimen/layouts/page.tsx",
+      "src/components/blocks/hero-variant.test.ts",
+      "src/components/blocks/layout-slot.ts",
+      "src/lib/assembly/annotation-lint.test.ts",
+      "src/lib/assembly/annotation-lint.ts",
+      "src/lib/assembly/block-catalog.test.ts",
+      "src/lib/assembly/block-catalog.ts",
+      "src/lib/theme/block-layouts.test.ts",
+      "src/lib/theme/layout-presets.test.ts",
+      "src/lib/theme/layout-presets.ts",
+      "src/styles/block-layouts.css"
+    ],
+    "delete": []
+  }
+}
