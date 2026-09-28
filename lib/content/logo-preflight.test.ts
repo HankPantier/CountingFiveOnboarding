@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import sharp from 'sharp'
-import { applyLogoNavDefault, applyLogoTone, LIGHT_LOGO_NOTE, preflightLogo } from './logo-preflight'
+import { applyLogoNavDefault, applyLogoTone, LIGHT_LOGO_NOTE, preflightLogo, trimLogoPlate } from './logo-preflight'
 
 // A w×h PNG: `bg` (RGBA) everywhere with a centred bw×bh box of `fg`.
 async function png(
@@ -102,5 +102,36 @@ describe('preflightLogo', () => {
     const r = await preflightLogo(junk, 'logo.png')
     expect(r.buffer).toBe(junk)
     expect(r.notes).toEqual([])
+  })
+})
+
+describe('trimLogoPlate', () => {
+  const WHITE = { r: 255, g: 255, b: 255, alpha: 1 }
+
+  it('crops an opaque white plate to the ink plus a margin (Pryor)', async () => {
+    const logo = await png(600, 200, WHITE, NAVY, 400, 50)
+    const r = await trimLogoPlate(logo)
+    // ink 400×50, margin round(50 × 0.08) = 4 on every side
+    expect(r?.trimmed).toEqual({ from: '600×200', to: '408×58' })
+    expect(r?.plateHex).toBe('#ffffff')
+    const meta = await sharp(r!.buffer).metadata()
+    expect([meta.width, meta.height, meta.format]).toEqual([408, 58, 'png'])
+  })
+
+  it('ignores faint near-plate pixels (scan borders) under the threshold', async () => {
+    const base = await png(600, 200, WHITE, NAVY, 400, 50)
+    const frame = await sharp({ create: { width: 600, height: 2, channels: 4, background: { r: 240, g: 240, b: 240, alpha: 1 } } }).png().toBuffer()
+    const logo = await sharp(base).composite([{ input: frame, left: 0, top: 198 }]).png().toBuffer()
+    expect((await trimLogoPlate(logo))?.trimmed.to).toBe('408×58')
+  })
+
+  it('leaves transparent, dark-plate and barely padded logos alone', async () => {
+    expect(await trimLogoPlate(await png(400, 200, TRANSPARENT, NAVY, 300, 60))).toBeNull()
+    expect(await trimLogoPlate(await png(400, 200, { ...NAVY, alpha: 1 }, WHITE, 300, 60))).toBeNull()
+    expect(await trimLogoPlate(await png(400, 100, WHITE, NAVY, 390, 96))).toBeNull()
+  })
+
+  it('never throws on garbage', async () => {
+    expect(await trimLogoPlate(Buffer.from('not an image'))).toBeNull()
   })
 })
