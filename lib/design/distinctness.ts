@@ -1,9 +1,11 @@
 // Pure. "Are these two concepts really different?" — CIEDE2000 ΔE on the
-// primary + action colours, plus a count of differing categorical levers.
+// primary + action colours, plus a count of differing categorical levers
+// (fonts ×3, tokens ×3, treatments ×3, the layout presets ×1 — out of 10).
 // Near-duplicate = palettes within ΔE 12 AND fewer than 2 lever differences.
 // P4 feeds `distinctnessReport` to the critic (spec: distinctness.ts, ΔE via chroma-js).
 import chroma from 'chroma-js'
 import type { DesignBundle } from './bundle'
+import { describeLayout } from './layout-presets'
 
 export const NEAR_DUPLICATE_DELTA_E = 12
 export const MIN_CATEGORICAL_DIFFERENCES = 2
@@ -23,6 +25,9 @@ export function categoricalDifferences(a: DesignBundle, b: DesignBundle): number
     [a.treatments.headlineStyle, b.treatments.headlineStyle],
     [a.treatments.eyebrowStyle, b.treatments.eyebrowStyle],
     [a.treatments.darkSections, b.treatments.darkSections],
+    // The whole layout-preset object is ONE categorical lever (2026.09.9):
+    // canonical form, so absent ≡ all default and key order never matters.
+    [describeLayout(a.layout), describeLayout(b.layout)],
   ]
   return pairs.filter(([x, y]) => x !== y).length
 }

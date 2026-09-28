@@ -40,3 +40,12 @@ describe('distinctnessReport', () => {
     expect(rows[1].leverDifferences).toBe(1)
   })
 })
+
+describe('layout presets as ONE categorical lever (2026.09.9)', () => {
+  it('any layout difference counts once; absent ≡ all default; key order never matters', () => {
+    expect(categoricalDifferences(VALID, { ...VALID, layout: { cards: 'list' } })).toBe(1)
+    expect(categoricalDifferences(VALID, { ...VALID, layout: { cards: 'list', faq: 'split', team: 'list' } })).toBe(1)
+    expect(categoricalDifferences({ ...VALID, layout: { faq: 'split', cards: 'list' } }, { ...VALID, layout: { cards: 'list', faq: 'split' } })).toBe(0)
+    expect(categoricalDifferences({ ...VALID, layout: { cards: 'list' } }, { ...VALID, layout: { faq: 'split' } })).toBe(1)
+  })
+})

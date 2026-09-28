@@ -188,3 +188,30 @@ describe('conceptConsistencyNotes — no false positives (regression)', () => {
     expect(claims(says([phrase]))).toEqual([expect.stringContaining(label)])
   })
 })
+
+describe('conceptConsistencyNotes — layout presets (2026.09.9)', () => {
+  const LP = parseTemplateMarker('{"templateVersion":"2026.09.9","capabilities":["fonts","style-axes","specimen","layout-presets"]}')
+  it('"services as a list" requires layout.cards list', () => {
+    for (const m of ['Services as a list, one per row', 'Service cards in rows', 'One service per row with the icon left', 'List-style service cards']) {
+      expect(claims(says([m]), LP)).toEqual([expect.stringContaining('layout.cards is "default" — set layout.cards to "list"')])
+    }
+    expect(claims(says(['Services as a list'], { layout: { cards: 'list' } }), LP)).toEqual([])
+  })
+  it('checks the other presets', () => {
+    expect(claims(says(['A split FAQ with the heading on the left']), LP)).toEqual([expect.stringContaining('layout.faq')])
+    expect(claims(says(['Centred CTA banner to close each page']), LP)).toEqual([expect.stringContaining('layout.ctaBanner')])
+    expect(claims(says(['Team as a list with credentials beside each photo']), LP)).toEqual([expect.stringContaining('layout.team')])
+    expect(claims(says(['A featured testimonial leads the social proof']), LP)).toEqual([expect.stringContaining('layout.testimonials')])
+    expect(claims(says(['A split FAQ'], { layout: { faq: 'split' } }), LP)).toEqual([])
+  })
+  it('a centred CTA done in css.blocks keeps the promise', () => {
+    const css = { blocks: { ...TWO_BLOCKS.blocks, 'cta-banner': '[data-block="cta-banner"] > div { text-align: center; }' } }
+    expect(claims(says(['Centered CTA banner'], { css }), LP)).toEqual([])
+  })
+  it('is silent when locked, on negations and on unrelated wording', () => {
+    expect(claims(says(['Services as a list']), L3)).toEqual([])
+    for (const m of ['No services as a list', 'A list of the firm’s services in the hero copy', 'Cards with a brand hairline', 'Pull the action colour into the FAQ']) {
+      expect(claims(says([m]), LP)).toEqual([])
+    }
+  })
+})

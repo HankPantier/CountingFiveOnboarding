@@ -118,7 +118,7 @@ export function buildCritiquePrompt(args: CritiquePromptArgs): BuiltPrompt {
     parts.push({
       type: 'text',
       text: [
-        `MEASURED DISTANCE from concept ${k} (palette ΔE on primary + action; categorical lever differences out of 9):`,
+        `MEASURED DISTANCE from concept ${k} (palette ΔE on primary + action; categorical lever differences out of 10):`,
         ...args.distinctness.map((r) => `- vs ${r.label}: ΔE ${r.deltaE.toFixed(1)}, ${r.leverDifferences} lever difference${r.leverDifferences === 1 ? '' : 's'}`),
       ].join('\n'),
     })
