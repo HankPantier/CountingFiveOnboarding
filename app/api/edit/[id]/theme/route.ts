@@ -8,6 +8,7 @@ import {
   patchBrandPalette,
   patchDesignTypography,
   patchDesignFlags,
+  patchDesignLayout,
   type PalettePatch,
   type TypographyPatch,
   type DesignFlagsPatch,
@@ -19,13 +20,27 @@ import type { DesignJson } from '@/types/design-json'
 import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
 import { logoSizeOf } from '@/lib/design/logo-size'
 import { loadDraftThemeSources } from '@/lib/design/theme-sources'
-import { readDesignCapabilities } from '@/lib/design/capabilities-read'
-import { fontsUnlocked } from '@/lib/design/capabilities'
+import { readDesignCapabilities, readEffectiveCapabilities } from '@/lib/design/capabilities-read'
+import { LAYOUT_LOCKED_REASON, fontsUnlocked, layoutPresetsUnlocked } from '@/lib/design/capabilities'
+import { normalizeLayoutPresets, type LayoutPresets } from '@/lib/design/layout-presets'
 import { FONTS_MODULE_PATH } from '@/lib/design/drift'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { BRAND_PATH, DESIGN_PATH, THEME_CSS_PATH, normalizeTypography } from './_theme'
 
 export const runtime = 'nodejs'
+
+// The Controls' Layout presets follow the EFFECTIVE tier (draft marker ∩ the
+// deployed shell), like every Design Studio gate. Never throws: a failed read
+// keeps them disabled with a reason.
+async function layoutLockReason(githubRepo: string, jobId: string): Promise<string | null> {
+  try {
+    const { effective } = await readEffectiveCapabilities({ githubRepo, jobId })
+    return layoutPresetsUnlocked(effective) ? null : LAYOUT_LOCKED_REASON
+  } catch (err) {
+    console.warn('[theme] capability read failed; layout presets disabled', err)
+    return 'Couldn’t check this site’s template capabilities — reload to try again.'
+  }
+}
 
 // GET the client site's current theme sources from the draft branch — feeds the
 // Theme Studio preview + the token panel. Admin-only (same gate as PATCH).
@@ -33,7 +48,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
-  const { githubRepo } = ctx
+  const { githubRepo, jobId } = ctx
 
   const user = ctx.user
   if (!user.isAdmin) {
@@ -43,7 +58,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const loaded = await loadDraftThemeSources(githubRepo)
     if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status })
-    return NextResponse.json(loaded.sources)
+    return NextResponse.json({ ...loaded.sources, layoutLock: await layoutLockReason(githubRepo, jobId) })
   } catch (err) {
     return internalError('theme:get', err, 'Failed to load theme sources')
   }
@@ -58,6 +73,9 @@ type ThemePatchBody = {
   palette?: PalettePatch
   typography?: TypographyPatch
   flags?: DesignFlagsPatch
+  // design.json layout presets (template 2026.09.9) — refused (422) unless the
+  // EFFECTIVE tier has `layout-presets`.
+  layout?: LayoutPresets
   regenerate?: boolean
   allowFallbackPalette?: boolean
 }
@@ -87,7 +105,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const body = (await req.json().catch(() => ({}))) as ThemePatchBody
   const regenerate = body.regenerate === true
-  if (!body.palette && !body.typography && !body.flags && !regenerate) {
+  if (!body.palette && !body.typography && !body.flags && !body.layout && !regenerate) {
     return NextResponse.json({ error: 'Nothing to change.' }, { status: 400 })
   }
 
@@ -103,6 +121,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   try {
+    if (body.layout) {
+      const lock = await layoutLockReason(githubRepo, jobId)
+      if (lock) return NextResponse.json({ error: lock }, { status: 422 })
+    }
     await ensureDraftBranch(githubRepo)
     const brandFile = await load(BRAND_PATH)
     const designFile = await load(DESIGN_PATH)
@@ -122,6 +144,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     let designChanged = false
     let fontsChanged = false
     let treatmentsChanged = false
+    let layoutChanged = false
 
     if (body.palette) {
       const res = patchBrandPalette(brandText, body.palette)
@@ -144,7 +167,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       designText = res.next
       treatmentsChanged = res.changed
     }
-    designChanged = fontsChanged || treatmentsChanged
+    if (body.layout) {
+      const res = patchDesignLayout(designText, body.layout)
+      if (!res.ok) return NextResponse.json({ error: res.reason }, { status: 400 })
+      design = res.design
+      designText = res.next
+      layoutChanged = res.changed
+    }
+    designChanged = fontsChanged || treatmentsChanged || layoutChanged
 
     if (!brandChanged && !designChanged && !regenerate) {
       return NextResponse.json({ ok: true, note: 'No change — those values were already set.' })
@@ -178,6 +208,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       brandChanged && 'palette',
       fontsChanged && 'fonts',
       treatmentsChanged && 'treatments',
+      layoutChanged && 'layout presets',
     ].filter(Boolean) as string[]
     const regenerateOnly = !brandChanged && !designChanged
     // An L1 draft (template marker without `fonts`) has no live-fonts module to
@@ -212,7 +243,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         sessionId,
         jobId,
         brand: brandChanged ? brand : undefined,
-        design: designChanged ? design : undefined,
+        // The MBP mirrors fonts only; a layout-preset change has nothing to sync.
+        design: fontsChanged || treatmentsChanged ? design : undefined,
       })
     }
 
@@ -225,6 +257,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       eyebrowStyle: design.eyebrowStyle ?? 'standard',
       darkSections: design.darkSections ?? false,
       logoSize: logoSizeOf(design),
+      layout: normalizeLayoutPresets(design.layout),
       // Advisory, never blocking: the save above already landed, so a palette
       // that fails a pair is saved and the warning shows in the Controls. Small
       // action text is auto-corrected in theme.css (--color-action-text /

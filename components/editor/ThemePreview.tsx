@@ -5,6 +5,7 @@ import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import ThemeControls, { type FlagsPatch } from './ThemeControls'
+import type { LayoutPresets } from '@/lib/design/layout-presets'
 import { themeSourcesHtmlAttributes, type ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
 
 // Live 1:1 preview: the client's REAL deployed homepage (shellHtml) re-skinned
@@ -20,6 +21,7 @@ export default function ThemePreview({
   onCommitPalette,
   onChangeFont,
   onChangeFlags,
+  onChangeLayout,
 }: {
   shellHtml: string
   sources: ThemeSources
@@ -29,6 +31,7 @@ export default function ThemePreview({
   onCommitPalette: (role: PaletteRole, hex: string) => void
   onChangeFont: (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => void
   onChangeFlags: (patch: FlagsPatch) => void
+  onChangeLayout: (patch: LayoutPresets) => void
 }) {
   const srcDoc = useMemo(
     () =>
@@ -57,6 +60,8 @@ export default function ThemePreview({
         eyebrowStyle={sources.eyebrowStyle}
         darkSections={sources.darkSections}
         logoSize={sources.logoSize}
+        layout={sources.layout}
+        layoutLock={sources.layoutLock}
         fonts={CURATED_FONTS}
         contrastWarnings={contrastWarnings}
         saving={saving}
@@ -64,6 +69,7 @@ export default function ThemePreview({
         onCommitPalette={onCommitPalette}
         onChangeFont={onChangeFont}
         onChangeFlags={onChangeFlags}
+        onChangeLayout={onChangeLayout}
       />
       <iframe
         title="Theme preview"

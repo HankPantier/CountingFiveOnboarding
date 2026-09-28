@@ -12,6 +12,7 @@ const h = vi.hoisted(() => {
     StaleShaError,
     fs: new Map<string, { content: string; sha: string }>(),
     writeFiles: vi.fn(),
+    effective: vi.fn(),
   }
 })
 
@@ -56,6 +57,10 @@ vi.mock('@/lib/content/theme-css-generator', async (orig) => ({
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: vi.fn(() => ({})) }))
 vi.mock('@/lib/design/theme-sources', () => ({ loadDraftThemeSources: vi.fn() }))
+vi.mock('@/lib/design/capabilities-read', async (orig) => ({
+  ...((await orig()) as object),
+  readEffectiveCapabilities: (...a: unknown[]) => h.effective(...a),
+}))
 
 import { PATCH } from './route'
 import { patchDesignFlags, patchDesignTypography } from '@/lib/editor/theme-edit'
@@ -250,5 +255,33 @@ describe('PATCH /api/edit/[id]/theme — logo size (Controls, template 2026.09.8
     const res = await patchLogo('large')
     expect(res.status).toBe(403)
     expect(h.writeFiles).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH /api/edit/[id]/theme — layout presets (2026.09.9, effective tier)', () => {
+  const caps = (capabilities: string[]) => ({ level: 4, source: 'marker', templateVersion: '2026.09.9', capabilities })
+  const patchLayout = (layout: Record<string, string>) =>
+    PATCH(new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ layout }) }), { params })
+
+  it('refuses (422, nothing written) when the effective tier lacks layout-presets', async () => {
+    h.effective.mockResolvedValue({ draft: caps(['fonts', 'layout-presets']), effective: caps(['fonts']) })
+    const res = await patchLayout({ faq: 'split' })
+    expect(res.status).toBe(422)
+    expect((await res.json()).error).toContain('2026.09.9')
+    expect(h.writeFiles).not.toHaveBeenCalled()
+  })
+  it('writes design.json layout when unlocked, without an MBP font sync', async () => {
+    h.effective.mockResolvedValue({ draft: caps(['layout-presets']), effective: caps(['layout-presets']) })
+    const res = await patchLayout({ faq: 'split' })
+    expect(res.status).toBe(200)
+    expect((await res.json()).layout).toEqual({ faq: 'split' })
+    const files = h.writeFiles.mock.calls[0][1] as { path: string; content: string }[]
+    expect(JSON.parse(files.find((f) => f.path === 'content/design.json')!.content).layout).toEqual({ faq: 'split' })
+    expect(h.writeFiles.mock.calls[0][3]).toContain('update layout presets')
+    expect(vi.mocked(syncMbpTheme).mock.calls.at(-1)?.[1]).toMatchObject({ design: undefined })
+  })
+  it('rejects an unknown preset value (400)', async () => {
+    h.effective.mockResolvedValue({ draft: caps(['layout-presets']), effective: caps(['layout-presets']) })
+    expect((await patchLayout({ faq: 'grid' })).status).toBe(400)
   })
 })

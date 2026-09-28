@@ -9,6 +9,7 @@ import type { PaletteRole } from '@/lib/editor/theme-edit'
 import type { FlagsPatch } from './ThemeControls'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
 import { fetchShellWithRetry, type ShellFetchResult } from '@/lib/theme-preview/shell-fetch'
+import { canonicalLayout, type LayoutPresets } from '@/lib/design/layout-presets'
 
 // Regenerate theme.css client-side (generateThemeCss is pure) so a color/font
 // pick re-skins the preview instantly, before the draft commit round-trips.
@@ -195,7 +196,7 @@ export default function ThemeStudio({
   // PATCHes are serialized through a promise queue: each one commits to the
   // draft branch, so two in flight at once (quick color + font change) raced
   // on the branch ref and the loser failed or clobbered the other.
-  type ThemePatch = { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string>; flags?: FlagsPatch }
+  type ThemePatch = { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string>; flags?: FlagsPatch; layout?: LayoutPresets }
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingCommitsRef = useRef(0)
   const commitThemeNow = useCallback(
@@ -276,6 +277,17 @@ export default function ThemeStudio({
     (patch: FlagsPatch) => {
       setSources((s) => (s ? { ...s, ...patch } : s))
       void commitTheme({ flags: patch })
+    },
+    [commitTheme]
+  )
+
+  // Layout presets (template 2026.09.9): preview instantly (ThemePreview sets
+  // the html[data-c5-layout-*] attributes from sources.layout) and commit to
+  // design.json through the same PATCH. The server re-checks the capability.
+  const changeLayout = useCallback(
+    (patch: LayoutPresets) => {
+      setSources((s) => (s ? { ...s, layout: canonicalLayout({ ...(s.layout ?? {}), ...patch }) } : s))
+      void commitTheme({ layout: patch })
     },
     [commitTheme]
   )
@@ -455,6 +467,7 @@ export default function ThemeStudio({
               onCommitPalette={commitPalette}
               onChangeFont={changeFont}
               onChangeFlags={changeFlags}
+              onChangeLayout={changeLayout}
             />
           </>
         ) : null}

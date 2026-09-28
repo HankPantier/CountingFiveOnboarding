@@ -32,6 +32,10 @@ export type ThemeSources = {
   /** design.json layout presets (template 2026.09.9; normalized, non-default
    * only; absent = all default). */
   layout?: LayoutPresets
+  /** GET /theme only: why the Controls' Layout presets are disabled (the
+   * EFFECTIVE tier — draft marker ∩ deployed shell — lacks `layout-presets`),
+   * or null when they are available. Absent ⇒ treat as unavailable. */
+  layoutLock?: string | null
   /** The client's committed theme.css on draft — the real artifact the preview renders. */
   themeCss: string
   /** Per-client design-overrides.css on draft. */
