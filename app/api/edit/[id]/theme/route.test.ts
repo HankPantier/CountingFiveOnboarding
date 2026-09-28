@@ -57,12 +57,15 @@ vi.mock('@/lib/content/theme-css-generator', async (orig) => ({
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: vi.fn(() => ({})) }))
 vi.mock('@/lib/design/theme-sources', () => ({ loadDraftThemeSources: vi.fn() }))
+
 vi.mock('@/lib/design/capabilities-read', async (orig) => ({
   ...((await orig()) as object),
   readEffectiveCapabilities: (...a: unknown[]) => h.effective(...a),
 }))
 
-import { PATCH } from './route'
+import { GET, PATCH } from './route'
+import { loadDraftThemeSources } from '@/lib/design/theme-sources'
+import { LAYOUT_LOCKED_DRAFT_REASON, LAYOUT_LOCKED_SHELL_REASON } from '@/lib/design/capabilities'
 import { patchDesignFlags, patchDesignTypography } from '@/lib/editor/theme-edit'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { normalizeTypography } from './_theme'
@@ -283,5 +286,39 @@ describe('PATCH /api/edit/[id]/theme — layout presets (2026.09.9, effective ti
   it('rejects an unknown preset value (400)', async () => {
     h.effective.mockResolvedValue({ draft: caps(['layout-presets']), effective: caps(['layout-presets']) })
     expect((await patchLayout({ faq: 'grid' })).status).toBe(400)
+  })
+})
+
+describe('GET /api/edit/[id]/theme — layoutLock', () => {
+  const caps = (capabilities: string[], shell?: 'verified' | 'unverified') => ({ level: 4, source: 'marker', templateVersion: '2026.09.9', capabilities, ...(shell ? { shell } : {}) })
+  const get = async () => (await GET(new Request('http://test/theme'), { params })).json()
+  beforeEach(() => {
+    vi.mocked(loadDraftThemeSources).mockResolvedValue({ ok: true, sources: { layout: { faq: 'split' } } } as never)
+  })
+  it('null when the effective tier has layout-presets', async () => {
+    h.effective.mockResolvedValue({ draft: caps(['layout-presets']), effective: caps(['layout-presets'], 'verified') })
+    expect(await get()).toMatchObject({ layout: { faq: 'split' }, layoutLock: null })
+  })
+  it('the draft reason when the draft template is older, the shell reason when only the live build is', async () => {
+    h.effective.mockResolvedValue({ draft: caps([]), effective: caps([], 'unverified') })
+    expect((await get()).layoutLock).toBe(LAYOUT_LOCKED_DRAFT_REASON)
+    h.effective.mockResolvedValue({ draft: caps(['layout-presets']), effective: caps([], 'verified') })
+    expect((await get()).layoutLock).toBe(LAYOUT_LOCKED_SHELL_REASON)
+  })
+  it('a failed capability read disables them with a reason (never a 500)', async () => {
+    h.effective.mockRejectedValue(new Error('github down'))
+    const body = await get()
+    expect(body.layout).toEqual({ faq: 'split' })
+    expect(typeof body.layoutLock).toBe('string')
+    expect(body.layoutLock).toContain('Couldn’t check')
+  })
+})
+
+describe('PATCH /api/edit/[id]/theme — layout when the capability read throws', () => {
+  it('422, nothing written', async () => {
+    h.effective.mockRejectedValue(new Error('github down'))
+    const res = await PATCH(new Request('http://test/theme', { method: 'PATCH', body: JSON.stringify({ layout: { faq: 'split' } }) }), { params })
+    expect(res.status).toBe(422)
+    expect(h.writeFiles).not.toHaveBeenCalled()
   })
 })
