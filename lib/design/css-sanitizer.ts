@@ -31,6 +31,9 @@
 //     sized to the viewport covering other content) — closed for NEWLY
 //     AUTHORED CSS (concepts, revisions, chat edits) by layoutGuardErrors()
 //     below; not applied here, so a restore of an older version still works.
+//     The same authoring-time guard allows `order` (a11y: visual order must
+//     match reading order) only on a block's media / text slot
+//     ([data-c5-slot="media"|"body"], template 2026.09.9) — a media/text swap.
 // (content-visibility:hidden, filter opacity(), zoom, and scale < 0.2 ARE
 // rejected — closed in the pre-merge handoff review.)
 import postcss, {
@@ -725,6 +728,51 @@ function translateXParts(prop: string, value: string): string[] {
 const BLEED_HINT =
   'keep decorative bleed inside the block (% or px), or draw it with box-shadow / clip-path, which never widen the page'
 
+// `order` is a pure visual reorder, so it can put the visual order out of step
+// with the reading order. Newly authored CSS may use it ONLY for a media/text
+// swap: every selector of the rule must target a [data-c5-slot="media"] or
+// [data-c5-slot="body"] element (its last compound). Neutral values that
+// restore source order are always fine.
+const NEUTRAL_ORDER = new Set(['0', 'initial', 'unset', 'inherit', 'revert', 'revert-layer'])
+const SWAP_SLOTS = new Set(['media', 'body'])
+export const ORDER_GUARD_HINT =
+  'order is only allowed to swap a block’s media and its text: set it on [data-c5-slot="media"] or [data-c5-slot="body"] (e.g. [data-block="content-split"] [data-c5-slot="media"] { order: 2; }). Never reorder headings, cards, questions or quotes — the visual order must match the reading order'
+
+function nearestRule(decl: Declaration): Rule | null {
+  let p: Node | undefined = decl.parent as Node | undefined
+  while (p) {
+    if (p.type === 'rule') return p as Rule
+    if (p.type === 'root') return null
+    p = p.parent as Node | undefined
+  }
+  return null
+}
+
+function targetsSwapSlot(selectorText: string): boolean {
+  let ok = true
+  let any = false
+  try {
+    selectorParser((selectors) => {
+      selectors.each((sel) => {
+        any = true
+        // The subject compound: every node after the last combinator.
+        const nodes = sel.nodes
+        let start = 0
+        nodes.forEach((n, i) => {
+          if (n.type === 'combinator') start = i + 1
+        })
+        const hit = nodes
+          .slice(start)
+          .some((n) => n.type === 'attribute' && n.attribute === 'data-c5-slot' && n.operator === '=' && SWAP_SLOTS.has((n.value ?? '').trim()))
+        if (!hit) ok = false
+      })
+    }).processSync(selectorText)
+  } catch {
+    return false
+  }
+  return any && ok
+}
+
 export function layoutGuardErrors(css: string): string[] {
   let root: Root
   try {
@@ -762,6 +810,12 @@ export function layoutGuardErrors(css: string): string[] {
         : translateXParts(prop, value)
     const pos = posParts.map(largePositive).find((n) => n !== null)
     if (pos) errors.push(`${shown} is not allowed — a horizontal offset of ${pos} (1600px / 100rem or more) pushes content past the screen edge; ${BLEED_HINT}.`)
+    if (prop === 'order' && !NEUTRAL_ORDER.has(value.toLowerCase())) {
+      const rule = nearestRule(decl)
+      if (!rule || !targetsSwapSlot(rule.selector)) {
+        errors.push(`${shown} on ${(rule?.selector ?? '(no selector)').replace(/\s+/g, ' ').slice(0, 120)} is not allowed — ${ORDER_GUARD_HINT}.`)
+      }
+    }
   })
   return Array.from(new Set(errors))
 }

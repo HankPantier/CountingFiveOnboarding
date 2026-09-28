@@ -49,7 +49,7 @@ ${layoutPresetsSummary('  - layout.')}
 export const LAYOUT_PRESETS_EXCEPTION = `LAYOUT PRESETS — the one sanctioned exception to "Restyle only"
 - The layout presets are template-built, accessible alternative structures, not new markup. You may use them to restructure when it serves THIS firm's concept (e.g. services as a list for a firm with a few deep offerings, a featured testimonial for a firm with one strong client story); name the preset in a move.
 - Inside a block's own css.blocks.<id> you may also re-grid its existing items within the CSS rules below (grid-template-columns, column spans, flex-direction, gap, alignment). Never hide an item, never change the markup, never move content out of its block.
-- Use \`order\` ONLY to swap a block's media and its text (image left ↔ right). Never reorder headings, cards, questions or quotes — the visual order must match the reading order.`
+- Use \`order\` ONLY to swap a block's media and its text (image left ↔ right), on the [data-c5-slot="media"] or [data-c5-slot="body"] element — any other \`order\` is rejected. Never reorder headings, cards, questions or quotes — the visual order must match the reading order.`
 
 function styleLever(caps: DesignCapabilities): string {
   if (!styleAxesUnlocked(caps)) return '- Never emit a "style" field (style axes are not available to you).'

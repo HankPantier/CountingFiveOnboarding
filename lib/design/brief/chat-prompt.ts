@@ -63,7 +63,7 @@ function styleLine(caps: DesignCapabilities): string {
 // flag on the EFFECTIVE tier). Everything else stays restyle-only.
 function layoutLine(caps: DesignCapabilities): string {
   return layoutPresetsUnlocked(caps)
-    ? `LAYOUT PRESETS: unlocked — the one sanctioned way to restructure; each restructures every section of its family that has no explicit per-section layout (ink card bands keep theirs):\n${layoutPresetsSummary()}\nInside a block's own CSS you may also re-grid its existing items (grid columns, spans, gap, alignment) within the CSS rules; use \`order\` ONLY to swap a block's media and its text — never reorder headings, cards, questions or quotes.`
+    ? `LAYOUT PRESETS: unlocked — the one sanctioned way to restructure; each restructures every section of its family that has no explicit per-section layout (ink card bands keep theirs):\n${layoutPresetsSummary()}\nInside a block's own CSS you may also re-grid its existing items (grid columns, spans, gap, alignment) within the CSS rules; use \`order\` ONLY to swap a block's media and its text, on the [data-c5-slot="media"] or [data-c5-slot="body"] element (any other \`order\` is refused) — never reorder headings, cards, questions or quotes.`
     : 'LAYOUT PRESETS: LOCKED on this site (its draft or deployed template predates 2026.09.9). set_layout_presets will be refused — keep the current structure.'
 }
 
