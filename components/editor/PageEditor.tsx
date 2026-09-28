@@ -277,6 +277,15 @@ export default function PageEditor({
         <div className="space-y-4">
           {imageBlocks.map((blk) => (
             <div key={`${blk.commentIndex}-${blk.blockId}`}>
+              {!blk.strict ? (
+                <p className="text-xs font-body text-text-muted">
+                  <span className="font-heading text-brand-navy">
+                    {blk.heading ? `${blk.heading} (${blk.blockId})` : blk.blockId}
+                  </span>
+                  {': annotation needs repair — edit it in code view.'}
+                </p>
+              ) : (
+              <>
               <HeaderImagePicker
                 sessionId={sessionId}
                 value={blk.image ?? ''}
@@ -296,6 +305,8 @@ export default function PageEditor({
                     className="w-full text-xs font-body px-2.5 py-1.5 rounded border border-border-default focus:border-brand-cyan focus:outline-none"
                   />
                 </label>
+              )}
+              </>
               )}
             </div>
           ))}

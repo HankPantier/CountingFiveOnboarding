@@ -67,3 +67,21 @@ describe('setBlockImage alt interaction', () => {
     expect(out).toContain('| image: b.jpg | alt: "Accountant with a client" |')
   })
 })
+
+describe('leniently-parsed comments are read-only', () => {
+  const PROBE =
+    '<!-- block: cta-banner | image: a.jpg | variant: image-bg | alt: Our team | at work | foo: bar -->\n## Talk\n\nBody\n'
+  it('lists the block as non-strict and never rewrites it', () => {
+    const [ref] = extractImageBlocks(PROBE)
+    expect(ref).toMatchObject({ blockId: 'cta-banner', image: 'a.jpg', strict: false })
+    expect(setBlockImage(PROBE, ref, 'b.jpg')).toBe(PROBE)
+    expect(setBlockImage(PROBE, ref, null)).toBe(PROBE)
+    expect(setBlockAlt(PROBE, ref, 'New alt')).toBe(PROBE)
+  })
+  it('strict comments stay editable', () => {
+    const ok = '<!-- block: cta-banner | variant: image-bg | image: a.jpg -->\n## Talk\n'
+    const [ref] = extractImageBlocks(ok)
+    expect(ref.strict).toBe(true)
+    expect(setBlockImage(ok, ref, 'b.jpg')).toContain('image: b.jpg')
+  })
+})

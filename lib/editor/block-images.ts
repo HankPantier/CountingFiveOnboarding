@@ -27,6 +27,12 @@ export type ImageBlockRef = {
   query: string | null
   /** The `## …` heading that follows the comment, for display. */
   heading: string
+  /**
+   * False when the comment only parsed leniently (wrong field order, unquoted
+   * alt, stray keys). The template doesn't render it as written and the panel
+   * never rewrites it — canonicalising would guess at the author's intent.
+   */
+  strict: boolean
 }
 
 // All image-capable blocks on the page, with or without an image set.
@@ -47,6 +53,7 @@ export function extractImageBlocks(body: string): ImageBlockRef[] {
       alt: c.alt ?? null,
       query: c.query ?? null,
       heading,
+      strict: c.strict,
     })
   }
   return refs
@@ -60,7 +67,8 @@ function rewriteComment(body: string, ref: ImageBlockRef, change: CommentRewrite
     commentIndex++
     if (commentIndex !== ref.commentIndex) return full
     const c = parseBlockComment(full)
-    if (!c) return full
+    // Never canonicalise a leniently-parsed comment (see ImageBlockRef.strict).
+    if (!c || !c.strict) return full
     const image = change.image !== undefined ? change.image : (c.image ?? null)
     const alt = change.alt !== undefined ? change.alt : (c.alt ?? null)
     // No image → no alt (the alt describes the image).
