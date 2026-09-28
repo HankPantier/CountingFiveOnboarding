@@ -16,6 +16,7 @@
 
 import { markdownToHtml, inlineMarkdown } from './markdown'
 import { safeUrl } from './sanitize'
+import { templateSectionPattern } from '@/lib/editor/block-annotation'
 import type { PricingPlansConfig } from '@/types/pricing-plans'
 
 const BV = '4.27.4' // Divi _builder_version stamped on emitted modules
@@ -35,28 +36,25 @@ export type DiviSection = {
   image?: string
   alt?: string
   query?: string
+  theme?: string
   heading: string
   content: string
 }
 
-// Mirror of the validator's SECTION_PATTERN, widened to also capture the alt +
-// query attributes (kept local so this bridge stays deletable in one folder).
-const SECTION_PATTERN =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"([^"]*)")?(?:\s*\|\s*query:\s*"([^"]*)")?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
-
+// Exactly the sections the site template renders (its SECTION_PATTERN, via the
+// block-annotation codec) — incl. a trailing `theme:`, so ink bands export.
 export function parseDiviSections(body: string): DiviSection[] {
   const out: DiviSection[] = []
-  SECTION_PATTERN.lastIndex = 0
-  let m: RegExpExecArray | null
-  while ((m = SECTION_PATTERN.exec(body ?? '')) !== null) {
+  for (const m of (body ?? '').matchAll(templateSectionPattern())) {
     out.push({
       blockId: m[1],
       variant: m[2] || undefined,
       image: m[3] || undefined,
       alt: m[4] || undefined,
       query: m[5] || undefined,
-      heading: m[6].trim(),
-      content: m[7] ?? '',
+      theme: m[6] || undefined,
+      heading: m[7].trim(),
+      content: m[8] ?? '',
     })
   }
   return out

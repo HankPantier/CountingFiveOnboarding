@@ -2,9 +2,11 @@
 //
 //   <!-- block: content-split | variant: image-right | image: our-team.png | alt: "Accountants meeting a client" | query: "accountants meeting" -->
 //
-// The template's parser (parse-page-md.ts in the client repo) requires the
-// parts in exactly this order — block, variant?, image?, alt?, query? — so
-// the rewriter here preserves that ordering when adding or removing parts.
+// Parsing and rewriting go through the block-annotation codec, which keeps the
+// template parser's field order (variant | image | alt | query | theme) — so an
+// ink band (`| theme: ink`) keeps its theme and its image stays editable.
+
+import { parseBlockComment, serializeBlockComment } from './block-annotation'
 
 export const IMAGE_CAPABLE_BLOCKS = new Set([
   'content-split',
@@ -12,9 +14,8 @@ export const IMAGE_CAPABLE_BLOCKS = new Set([
   'checklist-section',
 ])
 
-// Mirrors the template's block-comment regex (without the heading/body tail).
-const BLOCK_COMMENT_RE =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"([^"]*)")?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
+// Every block comment in the body (same `<!-- block:` prefix the template splits on).
+const BLOCK_COMMENT_RE = /<!-- block:[^\n]*?-->/g
 
 export type ImageBlockRef = {
   /** Position among ALL block comments in the body — stable rewrite target. */
@@ -26,21 +27,12 @@ export type ImageBlockRef = {
   query: string | null
   /** The `## …` heading that follows the comment, for display. */
   heading: string
-}
-
-function buildComment(ref: {
-  blockId: string
-  variant: string | null
-  image: string | null
-  alt: string | null
-  query: string | null
-}): string {
-  let out = `<!-- block: ${ref.blockId}`
-  if (ref.variant) out += ` | variant: ${ref.variant}`
-  if (ref.image) out += ` | image: ${ref.image}`
-  if (ref.image && ref.alt) out += ` | alt: "${ref.alt}"`
-  if (ref.query) out += ` | query: "${ref.query}"`
-  return `${out} -->`
+  /**
+   * False when the comment only parsed leniently (wrong field order, unquoted
+   * alt, stray keys). The template doesn't render it as written and the panel
+   * never rewrites it — canonicalising would guess at the author's intent.
+   */
+  strict: boolean
 }
 
 // All image-capable blocks on the page, with or without an image set.
@@ -49,18 +41,19 @@ export function extractImageBlocks(body: string): ImageBlockRef[] {
   let commentIndex = -1
   for (const match of body.matchAll(BLOCK_COMMENT_RE)) {
     commentIndex++
-    const [, blockId, variant, image, alt, query] = match
-    if (!IMAGE_CAPABLE_BLOCKS.has(blockId)) continue
+    const c = parseBlockComment(match[0])
+    if (!c || !IMAGE_CAPABLE_BLOCKS.has(c.blockId)) continue
     const after = body.slice((match.index ?? 0) + match[0].length)
     const heading = after.match(/^\s*##\s+(.+)/)?.[1]?.trim() ?? ''
     refs.push({
       commentIndex,
-      blockId,
-      variant: variant ?? null,
-      image: image ?? null,
-      alt: alt ?? null,
-      query: query ?? null,
+      blockId: c.blockId,
+      variant: c.variant ?? null,
+      image: c.image ?? null,
+      alt: c.alt ?? null,
+      query: c.query ?? null,
       heading,
+      strict: c.strict,
     })
   }
   return refs
@@ -70,15 +63,22 @@ type CommentRewrite = { image?: string | null; alt?: string | null }
 
 function rewriteComment(body: string, ref: ImageBlockRef, change: CommentRewrite): string {
   let commentIndex = -1
-  return body.replace(BLOCK_COMMENT_RE, (full, blockId, variant, image, alt, query) => {
+  return body.replace(BLOCK_COMMENT_RE, (full: string) => {
     commentIndex++
     if (commentIndex !== ref.commentIndex) return full
-    return buildComment({
-      blockId,
-      variant: variant ?? null,
-      image: change.image !== undefined ? change.image : (image ?? null),
-      alt: change.alt !== undefined ? change.alt : (alt ?? null),
-      query: query ?? null,
+    const c = parseBlockComment(full)
+    // Never canonicalise a leniently-parsed comment (see ImageBlockRef.strict).
+    if (!c || !c.strict) return full
+    const image = change.image !== undefined ? change.image : (c.image ?? null)
+    const alt = change.alt !== undefined ? change.alt : (c.alt ?? null)
+    // No image → no alt (the alt describes the image).
+    return serializeBlockComment({
+      blockId: c.blockId,
+      variant: c.variant,
+      image: image ?? undefined,
+      alt: image && alt ? alt : undefined,
+      query: c.query,
+      theme: c.theme,
     })
   })
 }

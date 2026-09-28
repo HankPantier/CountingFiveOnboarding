@@ -21,6 +21,7 @@ import { fontsUnlocked, styleAxesUnlocked } from '../capabilities'
 import { MAX_PROMPT_IMAGES, type DesignCapabilities, type PaletteFreedom } from '../run-types'
 import { ART_DIRECTION } from './art-direction'
 import { blockCatalogHint } from './block-catalog'
+import { catalogEpoch } from '@/lib/content/block-catalog'
 import { buildBrandBrief } from './brand'
 import { buildContract, CSS_RULES_REMINDER } from './contract'
 import { fenceData } from './fence'
@@ -61,11 +62,15 @@ export type BuiltPrompt = { staticPrefix: string; parts: DynamicPart[]; sharedPa
 
 const prefixCache = new Map<string, string>()
 
+// Keyed by tier AND block-catalog epoch (caps.templateVersion is the effective
+// version: the draft marker's; the shell publishes none) — the prefix only
+// changes when the site gains a lever or a newer block variant.
 export function buildStaticPrefix(caps: DesignCapabilities): string {
-  const key = `${fontsUnlocked(caps) ? 'f' : '-'}${styleAxesUnlocked(caps) ? 's' : '-'}`
+  const epoch = catalogEpoch(caps.templateVersion)
+  const key = `${fontsUnlocked(caps) ? 'f' : '-'}${styleAxesUnlocked(caps) ? 's' : '-'}|${epoch}`
   let prefix = prefixCache.get(key)
   if (prefix === undefined) {
-    prefix = [ART_DIRECTION, blockCatalogHint(), buildContract(caps)].join('\n\n')
+    prefix = [ART_DIRECTION, blockCatalogHint(epoch), buildContract(caps)].join('\n\n')
     prefixCache.set(key, prefix)
   }
   return prefix

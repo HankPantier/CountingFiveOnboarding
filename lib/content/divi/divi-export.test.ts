@@ -436,3 +436,19 @@ describe('pricing plans → Divi', () => {
     expect(divi).toContain('[et_pb_pricing_tables')
   })
 })
+
+describe('parseDiviSections — ink bands', () => {
+  it('keeps industry-cards ink sections (theme: after the other fields)', () => {
+    const body =
+      '<!-- block: intro-text | variant: centered -->\n## Hello\n\nHi.\n\n' +
+      '<!-- block: industry-cards | variant: 3-col | theme: ink -->\n## Who we serve\n\n### Dentists\nCopy.\n\n' +
+      '<!-- block: cta-banner | variant: image-bg | image: a.jpg | alt: "A" | query: "q" | theme: ink -->\n## Talk\n\nBody.\n'
+    const s = parseDiviSections(body)
+    expect(s.map((x) => [x.blockId, x.theme, x.heading])).toEqual([
+      ['intro-text', undefined, 'Hello'],
+      ['industry-cards', 'ink', 'Who we serve'],
+      ['cta-banner', 'ink', 'Talk'],
+    ])
+    expect(s[2]).toMatchObject({ image: 'a.jpg', alt: 'A', query: 'q' })
+  })
+})

@@ -68,3 +68,16 @@ describe('extractInlineImageRefs', () => {
     expect(extractInlineImageRefs('## Just prose\n\nText.', PAGE)).toEqual([])
   })
 })
+
+describe('ink bands (theme: after query:)', () => {
+  it('resolves the image on an ink image-bg banner', () => {
+    const md = '<!-- block: cta-banner | variant: image-bg | image: team.jpg | alt: "Team" | query: "team meeting" | theme: ink -->\n## Talk\n'
+    expect(extractInlineImageRefs(md, PAGE)).toEqual([
+      { pageUrl: PAGE, filename: 'team.jpg', subjectQuery: 'team meeting', source: 'cta-banner' },
+    ])
+  })
+  it('skips a comment the template would not render (unquoted query)', () => {
+    const md = '<!-- block: content-split | variant: image-left | image: a.jpg | query: unquoted words -->\n## A\n'
+    expect(extractInlineImageRefs(md, PAGE)).toEqual([])
+  })
+})

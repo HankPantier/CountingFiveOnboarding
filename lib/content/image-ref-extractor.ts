@@ -1,4 +1,5 @@
 import type { ImageRef } from './stock-photo-resolver'
+import { findBlockComments } from '@/lib/editor/block-annotation'
 
 /**
  * Scan generated page markdown for inline image references in block
@@ -35,23 +36,24 @@ function filenameToQuery(filename: string): string {
   return noExt.replace(/[-_]+/g, ' ').trim()
 }
 
+const IMAGE_BLOCKS = new Set(['content-split', 'cta-banner', 'checklist-section'])
+
 export function extractInlineImageRefs(markdown: string, pageUrl: string): ImageRef[] {
   if (!markdown) return []
   const refs: ImageRef[] = []
 
-  // 1. Image-bearing block annotations — match the entire annotation comment
-  // and pull out image + optional query attributes. Use a non-greedy capture
-  // for the query value (allow double-quoted spaces). Annotations without an
-  // image: attribute fall through the !filename guard.
-  const ANNOTATION_RE =
-    /<!-- block: (content-split|cta-banner|checklist-section)(?:\s*\|\s*variant:\s*[a-z0-9-]+)?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"[^"]*")?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
-  let m: RegExpExecArray | null
-  while ((m = ANNOTATION_RE.exec(markdown)) !== null) {
-    const filename = m[2]?.trim()
+  // 1. Image-bearing block annotations, read through the block-annotation
+  // codec (template field order incl. a trailing `theme:`, so ink image-bg
+  // banners are resolved and counted by the image-coverage gate). Only
+  // comments the template renders (strict) count; annotations without an
+  // image: fall through the !filename guard.
+  for (const { comment: c } of findBlockComments(markdown)) {
+    if (!c || !c.strict || !IMAGE_BLOCKS.has(c.blockId)) continue
+    const filename = c.image?.trim()
     if (!filename) continue
-    const queryRaw = m[3]?.trim()
+    const queryRaw = c.query?.trim()
     const subjectQuery = queryRaw && queryRaw.length > 0 ? queryRaw : filenameToQuery(filename)
-    refs.push({ pageUrl, filename, subjectQuery, source: m[1] })
+    refs.push({ pageUrl, filename, subjectQuery, source: c.blockId })
   }
 
   // 2. content-cards entries — find each content-cards block segment, then

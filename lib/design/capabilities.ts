@@ -86,6 +86,9 @@ export const specimenUnlocked = (c: DesignCapabilities): boolean => c.level >= 4
 // previews need the shell anyway, and the font preview uses Google Fonts. A
 // shell that answered without the Revaltus marker (the old site before DNS
 // cutover) is unverified too, with its reason kept as `shellNote`.
+// templateVersion stays the draft's: the shell's meta publishes capabilities
+// only, so the effective version (min of draft and shell) is the draft's. The
+// Studio brief filters its block vocabulary by it (brief/block-catalog.ts).
 export function intersectWithShell(draft: DesignCapabilities, shell: ShellCapabilities): DesignCapabilities {
   if (shell.status === 'unverified') {
     return { ...draft, shell: 'unverified', ...(shell.reason ? { shellNote: shell.reason.slice(0, MAX_SHELL_NOTE) } : {}) }

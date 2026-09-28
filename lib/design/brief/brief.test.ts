@@ -63,6 +63,14 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   hint no longer says every logo gets a light plate (a light-tone logo sits
 //   directly on the bar). That line is L3+ only (style axes), so the L1/L2
 //   goldens are deliberately NOT regenerated: re-checked byte-identical.
+// - Block catalog contract (2026-09-28): BLOCK VOCABULARY variants now come
+//   from the template block catalog mirror (lib/content/block-catalog.ts), so
+//   the checklist-section entry lists the with-image-right / with-image-left
+//   variants the template has rendered since 2026-08-14. Nothing else moved.
+//   Fix round (same day): the vocabulary is filtered by the site's template
+//   version (variant `since` ≤ caps.templateVersion) and the prefix is cached
+//   per catalog epoch; the golden test pins 2026.09.8, so later releases'
+//   variants don't regenerate these files. Bytes unchanged.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -298,6 +306,13 @@ describe('style axes in the brief', () => {
     }
   })
   it('is byte-identical to the L1 and L2 goldens (04ea820 + the deliberate P7 signature-CSS line + the 09-27 forbidden-CSS list, pricing-calculator target and the remaining specimen-block targets)', () => {
+    // Pinned to template 2026.09.8: the block vocabulary is filtered by the
+    // site's template version, so variants a later release adds never churn
+    // these goldens. No marker (null version) = the baseline vocabulary,
+    // identical today.
+    const at = (c: typeof L2) => ({ ...c, templateVersion: '2026.09.8' })
+    expect(buildStaticPrefix(at(DEFAULT_CAPABILITIES))).toBe(readGolden('static-prefix-l1.golden.txt'))
+    expect(buildStaticPrefix(at(L2))).toBe(readGolden('static-prefix-l2.golden.txt'))
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).toBe(readGolden('static-prefix-l1.golden.txt'))
     expect(buildStaticPrefix(L2)).toBe(readGolden('static-prefix-l2.golden.txt'))
   })

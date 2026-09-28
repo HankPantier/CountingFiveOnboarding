@@ -5,6 +5,9 @@
 // (Validator: Block Assignment Rules section).
 // ---------------------------------------------------------------------------
 
+import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, type BlockSpec } from './block-catalog'
+import { parseBlockComment, rendersAsSection, templateSectionPattern } from '@/lib/editor/block-annotation'
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -13,6 +16,7 @@ export type BlockAnnotation = {
   blockId: string
   variant?: string
   image?: string
+  theme?: string
   headingText: string
   sectionContent: string // raw markdown body of the section (heading excluded)
   position: number // 0-based section index
@@ -42,60 +46,20 @@ export type ValidationResult = {
 }
 
 // ---------------------------------------------------------------------------
-// Block catalog
+// Block catalog — the template contract mirror (lib/content/block-catalog.ts).
 // ---------------------------------------------------------------------------
 
-type BlockMeta = {
-  variants: readonly string[]
-  frontmatterOnly?: true
-  autoAppended?: true
-}
-
-const BLOCK_CATALOG: Readonly<Record<string, BlockMeta>> = {
-  // Hero-category blocks — may only appear in frontmatter, not inline
-  hero: { variants: ['image', 'video', 'slider'], frontmatterOnly: true },
-  'page-header': { variants: [], frontmatterOnly: true },
-  'hero-split': { variants: ['image-right', 'image-left'], frontmatterOnly: true },
-
-  // Content blocks
-  'intro-text': { variants: ['centered', 'left-aligned'] },
-  'content-split': { variants: ['image-right', 'image-left'] },
-  'content-prose': { variants: [] },
-  'checklist-section': { variants: ['with-image', 'with-image-right', 'with-image-left', 'standalone'] },
-  'process-steps': { variants: ['horizontal', 'vertical'] },
-
-  // Card grids
-  'feature-grid': { variants: ['3-col', '4-col'] },
-  'service-cards': { variants: ['2-col', '3-col'] },
-  'content-cards': { variants: ['3-col', '2-col'] },
-  'team-grid': { variants: ['2-col', '3-col', '4-col'] },
-  'industry-cards': { variants: ['3-col', '4-col'] },
-
-  // Social proof
-  testimonials: { variants: ['carousel', 'grid'] },
-  'stats-bar': { variants: ['3-up', '4-up'] },
-  'logo-bar': { variants: [] },
-
-  // Conversion
-  'cta-banner': { variants: ['color-bg', 'image-bg'] },
-  pricing: { variants: ['2-tier', '3-tier', '4-tier'] },
-  'faq-accordion': { variants: [], autoAppended: true }, // never Claude-selected
-  form: { variants: ['contact', 'quote', 'newsletter'] },
-
-  // Utility
-  'content-table': { variants: [] },
-} as const
-
 /**
- * The inline-selectable block catalog as a compact `id (v1|v2), id, …` string,
- * derived from BLOCK_CATALOG so prompt hints can't drift from the validator.
- * Excludes frontmatter-only heroes and the auto-appended faq-accordion — the
- * model never selects those inline.
+ * The block catalog a content model may pick from, as a compact
+ * `id (v1|v2), id, …` string, derived from the contract so prompt hints can't
+ * drift from the validator. Only `insertable` blocks: page openers
+ * (frontmatter), platform-inserted blocks (faq-accordion, contact-info, map,
+ * pricing pages) and config-driven blocks (booking, resource-list) are left out.
  */
 export function blockCatalogHint(): string {
-  return Object.entries(BLOCK_CATALOG)
-    .filter(([, meta]) => !meta.frontmatterOnly && !meta.autoAppended)
-    .map(([id, meta]) => (meta.variants.length ? `${id} (${meta.variants.join('|')})` : id))
+  return BLOCK_IDS.map((id) => [id, BLOCK_CATALOG[id] as BlockSpec] as const)
+    .filter(([, spec]) => spec.insertable)
+    .map(([id, spec]) => (spec.variants.length ? `${id} (${spec.variants.map((v) => v.value).join('|')})` : id))
     .join(', ')
 }
 
@@ -103,7 +67,7 @@ export function blockCatalogHint(): string {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const HERO_BLOCKS = new Set(['hero', 'hero-split', 'page-header'])
+const isFrontmatterBlock = (blockId: string) => blockSpec(blockId)?.placement === 'frontmatter'
 
 /**
  * Count pricing-tier markers in a section body.
@@ -162,7 +126,7 @@ export function validateBlockAnnotations(
     // ------------------------------------------------------------------
     // Fatal rule 1: hero/hero-split/page-header as inline annotation
     // ------------------------------------------------------------------
-    if (HERO_BLOCKS.has(blockId)) {
+    if (isFrontmatterBlock(blockId)) {
       const suggestion = blockId === 'page-header' ? 'intro-text' : 'content-prose'
       errors.push({
         position,
@@ -176,15 +140,21 @@ export function validateBlockAnnotations(
     }
 
     // ------------------------------------------------------------------
-    // Fatal rule 2: faq-accordion inline
+    // Fatal rule 2: platform-inserted / config-driven blocks. faq-accordion
+    // is auto-appended from faq_block; contact-info, map and the pricing
+    // blocks are inserted by the builders; booking and resource-list need
+    // site config. None is chosen during content generation.
     // ------------------------------------------------------------------
-    if (blockId === 'faq-accordion') {
+    const spec = blockSpec(blockId)
+    if (spec && !spec.insertable) {
       errors.push({
         position,
         headingText,
         blockId,
         reason:
-          'faq-accordion is auto-appended by the deliverable builder — do not select it during content generation',
+          blockId === 'faq-accordion'
+            ? 'faq-accordion is auto-appended by the deliverable builder — do not select it during content generation'
+            : `${blockId} is inserted by the platform, not selected during content generation`,
         suggestion: 'content-prose',
       })
       continue
@@ -193,8 +163,7 @@ export function validateBlockAnnotations(
     // ------------------------------------------------------------------
     // Fatal rule 3: invalid block ID
     // ------------------------------------------------------------------
-    const catalogEntry = BLOCK_CATALOG[blockId]
-    if (!catalogEntry) {
+    if (!spec) {
       errors.push({
         position,
         headingText,
@@ -208,9 +177,12 @@ export function validateBlockAnnotations(
     // ------------------------------------------------------------------
     // Coercion rule 4: invalid variant (downgrade from fatal — auto-fix to first valid)
     // ------------------------------------------------------------------
-    if (variant !== undefined && catalogEntry.variants.length > 0) {
-      if (!catalogEntry.variants.includes(variant)) {
-        const fallback = catalogEntry.variants[0]
+    const variants = blockVariantValues(blockId)
+    if (variant !== undefined && variants.length > 0) {
+      if (!variants.includes(variant)) {
+        // First listed variant (the contract keeps the generator's preferred
+        // order), not the template default — e.g. checklist → with-image.
+        const fallback = variants[0]
         coercions.push({
           position,
           blockId,
@@ -218,10 +190,15 @@ export function validateBlockAnnotations(
           coercedVariant: fallback,
         })
         warnings.push(
-          `invalid variant '${variant}' on '${blockId}' at position ${position} — auto-coerced to '${fallback}' (valid: ${catalogEntry.variants.join(', ')})`
+          `invalid variant '${variant}' on '${blockId}' at position ${position} — auto-coerced to '${fallback}' (valid: ${variants.join(', ')})`
         )
         // Don't continue — remaining content rules can still run on this section
       }
+    }
+    if (ann.theme !== undefined && !spec.themes.includes(ann.theme)) {
+      warnings.push(
+        `theme '${ann.theme}' on '${blockId}' at position ${position} is ignored by the template (supported: ${spec.themes.join(', ') || 'none'})`
+      )
     }
 
     // ------------------------------------------------------------------
@@ -456,71 +433,184 @@ export function applyCoercions(markdown: string, coercions: AnnotationCoercion[]
 // ---------------------------------------------------------------------------
 
 /**
- * Regex that matches each annotated section in the markdown body.
- * Groups:
- *   1 = blockId
- *   2 = variant (optional)
- *   3 = image (optional)
- *   4 = headingText
- *   5 = sectionContent (body below the heading before next annotation or EOF)
- */
-const SECTION_PATTERN =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"[^"]*")?(?:\s*\|\s*query:\s*"[^"]*")?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
-
-/**
- * Parse a full page markdown body into an array of BlockAnnotation entries.
- * The caller must have already stripped the YAML frontmatter; pass only the body.
+ * Parse a full page markdown body into an array of BlockAnnotation entries —
+ * exactly the sections the template renders (its SECTION_PATTERN via the
+ * block-annotation codec: variant | image | alt | query | theme, then a
+ * `## heading`). The caller must have already stripped the YAML frontmatter.
  */
 export function parseBlockAnnotations(body: string): BlockAnnotation[] {
-  const results: BlockAnnotation[] = []
-  let position = 0
-  let match: RegExpExecArray | null
-
-  // Reset lastIndex in case the regex is reused across calls
-  SECTION_PATTERN.lastIndex = 0
-
-  while ((match = SECTION_PATTERN.exec(body)) !== null) {
-    results.push({
-      blockId: match[1],
-      variant: match[2] ?? undefined,
-      image: match[3] ?? undefined,
-      headingText: match[4].trim(),
-      sectionContent: match[5] ?? '',
-      position: position++,
-    })
-  }
-
-  return results
+  return [...body.matchAll(templateSectionPattern())].map((m, position) => ({
+    blockId: m[1],
+    variant: m[2] ?? undefined,
+    image: m[3] ?? undefined,
+    theme: m[6] ?? undefined,
+    headingText: m[7].trim(),
+    sectionContent: m[8] ?? '',
+    position,
+  }))
 }
 
 // ---------------------------------------------------------------------------
-// validateAnnotationSyntax
-// Lightweight, edit-time check: are every block's id and variant valid against
-// the catalog? Unlike validateBlockAnnotations (which also runs content
-// heuristics like "stats-bar needs a number" and positional rules), this only
-// flags the two things an interactive layout edit can break — an unknown block
-// id or a variant that isn't allowed for its block. It never rejects a page for
-// pre-existing content-shape issues the edit didn't introduce. Pass the page
-// body with frontmatter already stripped. Returns [] when the annotations parse
-// cleanly.
+// Edit-time syntax check
+// Lightweight: are every block's id, variant and theme valid against the
+// catalog? Unlike validateBlockAnnotations (which also runs content heuristics
+// like "stats-bar needs a number" and positional rules), this only flags what
+// an interactive layout edit can break. Pass the page body with frontmatter
+// already stripped.
 // ---------------------------------------------------------------------------
-export function validateAnnotationSyntax(body: string): string[] {
-  const errors: string[] = []
-  for (const ann of parseBlockAnnotations(body)) {
-    const entry = BLOCK_CATALOG[ann.blockId]
-    if (!entry) {
-      errors.push(
-        `Unknown block id "${ann.blockId}" on section "${ann.headingText}". Valid ids: ${Object.keys(BLOCK_CATALOG).join(', ')}.`
-      )
+
+export type AnnotationIssueKind =
+  | 'unknown-block'
+  | 'frontmatter-inline'
+  | 'invalid-variant'
+  | 'invalid-theme'
+  | 'unparseable'
+  | 'stray'
+
+export type AnnotationIssue = {
+  kind: AnnotationIssueKind
+  blockId: string
+  /** The offending variant/theme value, when the issue is about one. */
+  value?: string
+  heading: string
+  message: string
+}
+
+// Annotation lines the template's split would see (`<!-- block:` at line start),
+// plus near-misses in other spacing, so a mangled edit is caught too.
+const ANNOTATION_LINE_RE = /^<!--\s*block:[^\n]*$/gm
+
+// Lines the template will NOT render as written: a mangled annotation (wrong
+// field order, uppercase, stray keys — it drops the section) or a stray one
+// with no `## heading` after it (the text below it is dropped).
+function unrenderedAnnotationIssues(body: string): AnnotationIssue[] {
+  const issues: AnnotationIssue[] = []
+  for (const m of body.matchAll(ANNOTATION_LINE_RE)) {
+    const line = m[0].replace(/\r$/, '')
+    const c = parseBlockComment(line)
+    const blockId = c?.blockId ?? ''
+    if (!c || !c.strict) {
+      issues.push({
+        kind: 'unparseable',
+        blockId,
+        value: line,
+        heading: '',
+        message: `Annotation ${line} does not match the template grammar (<!-- block: id | variant: v | image: f | alt: "…" | query: "…" | theme: t -->, fields in that order, lowercase values), so that section would not render.`,
+      })
       continue
     }
-    if (ann.variant !== undefined && entry.variants.length > 0 && !entry.variants.includes(ann.variant)) {
-      errors.push(
-        `Invalid variant "${ann.variant}" for block "${ann.blockId}" on section "${ann.headingText}". Valid variants: ${entry.variants.join(', ')}.`
-      )
+    const after = body.slice((m.index ?? 0) + m[0].length + 1)
+    if (!rendersAsSection(line, after)) {
+      issues.push({
+        kind: 'stray',
+        blockId,
+        value: line,
+        heading: '',
+        message: `Annotation ${line} is not followed by a "## Heading" line, so the template drops the text after it. Put the heading directly under the annotation.`,
+      })
     }
   }
-  return errors
+  return issues
+}
+
+export function annotationSyntaxIssues(body: string): AnnotationIssue[] {
+  const issues: AnnotationIssue[] = unrenderedAnnotationIssues(body)
+  for (const ann of parseBlockAnnotations(body)) {
+    const { blockId, headingText: heading } = ann
+    const spec = blockSpec(blockId)
+    if (!spec) {
+      issues.push({
+        kind: 'unknown-block',
+        blockId,
+        heading,
+        message: `Unknown block id "${blockId}" on section "${heading}". Valid ids: ${blockCatalogHint()}.`,
+      })
+      continue
+    }
+    if (spec.placement === 'frontmatter') {
+      issues.push({
+        kind: 'frontmatter-inline',
+        blockId,
+        heading,
+        message: `"${blockId}" on section "${heading}" is a page opener: set it with the frontmatter hero / hero_variant fields, not a body annotation.`,
+      })
+      continue
+    }
+    const variants = blockVariantValues(blockId)
+    if (ann.variant !== undefined && !variants.includes(ann.variant)) {
+      issues.push({
+        kind: 'invalid-variant',
+        blockId,
+        value: ann.variant,
+        heading,
+        message: variants.length
+          ? `Invalid variant "${ann.variant}" for block "${blockId}" on section "${heading}". Valid variants: ${variants.join(', ')}.`
+          : `Block "${blockId}" on section "${heading}" has no variants; remove "variant: ${ann.variant}".`,
+      })
+    }
+    if (ann.theme !== undefined && !spec.themes.includes(ann.theme)) {
+      issues.push({
+        kind: 'invalid-theme',
+        blockId,
+        value: ann.theme,
+        heading,
+        message: spec.themes.length
+          ? `Invalid theme "${ann.theme}" for block "${blockId}" on section "${heading}". Valid themes: ${spec.themes.join(', ')}.`
+          : `Block "${blockId}" on section "${heading}" does not support a theme; remove "theme: ${ann.theme}".`,
+      })
+    }
+  }
+  return issues
+}
+
+/** Every syntax issue on the page, as messages. Returns [] when clean. */
+export function validateAnnotationSyntax(body: string): string[] {
+  return annotationSyntaxIssues(body).map((i) => i.message)
+}
+
+/**
+ * Only the issues an edit INTRODUCES: issues in `afterBody` beyond those
+ * already in `beforeBody`, matched by (kind, block, value) — not heading, so a
+ * copy edit on a section with a legacy `variant: default` still saves, while a
+ * new invalid variant (or a second copy of the same bad value) is rejected.
+ * Returns [] when the edit adds no new annotation problem.
+ */
+export function validateAnnotationDelta(beforeBody: string, afterBody: string): string[] {
+  const key = (i: AnnotationIssue) => `${i.kind}\u0000${i.blockId}\u0000${i.value ?? ''}`
+  const budget = new Map<string, number>()
+  for (const i of annotationSyntaxIssues(beforeBody)) budget.set(key(i), (budget.get(key(i)) ?? 0) + 1)
+  const introduced: string[] = []
+  for (const i of annotationSyntaxIssues(afterBody)) {
+    const left = budget.get(key(i)) ?? 0
+    if (left > 0) budget.set(key(i), left - 1)
+    else introduced.push(i.message)
+  }
+  return introduced
+}
+
+// ---------------------------------------------------------------------------
+// Page opener (frontmatter hero / hero_variant) — warnings only: the template
+// falls back safely (unknown hero → page header; unknown variant → default).
+// ---------------------------------------------------------------------------
+
+export function heroPairWarnings(hero: string | undefined, heroVariant: string | undefined): string[] {
+  const h = hero?.trim() || undefined
+  const v = heroVariant?.trim() || undefined
+  if (!h) {
+    return v ? [`hero_variant "${v}" is set without hero; the page renders a page header and ignores it. Set hero (hero or hero-split) too.`] : []
+  }
+  const spec = blockSpec(h)
+  if (!spec || spec.placement !== 'frontmatter') {
+    return [`hero "${h}" is not a page opener (hero, hero-split, page-header); the page renders a page header.`]
+  }
+  if (!v) return []
+  const variants = blockVariantValues(h)
+  if (variants.length === 0) return [`hero_variant "${v}" is ignored for "${h}".`]
+  if (variants.includes(v)) return []
+  if (h === 'hero' && (v === 'image-right' || v === 'image-left')) {
+    return [`hero_variant "${v}" renders as a full-bleed image hero; use hero: hero-split with hero_variant: ${v} for a split layout.`]
+  }
+  return [`hero_variant "${v}" is not valid for "${h}" (valid: ${variants.join(', ')}); the template renders "${spec.default}".`]
 }
 
 // ---------------------------------------------------------------------------
