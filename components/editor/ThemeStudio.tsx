@@ -64,6 +64,11 @@ export default function ThemeStudio({
   const [info, setInfo] = useState<PreviewUrlInfo | null>(null)
   const [urlInput, setUrlInput] = useState('')
   const [sources, setSources] = useState<ThemeSources | null>(null)
+  // The latest sources for event handlers (an optimistic change's rollback).
+  const sourcesRef = useRef<ThemeSources | null>(null)
+  useEffect(() => {
+    sourcesRef.current = sources
+  }, [sources])
   const [shellHtml, setShellHtml] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyUrl, setBusyUrl] = useState(false)
@@ -199,8 +204,10 @@ export default function ThemeStudio({
   type ThemePatch = { palette?: Partial<Record<PaletteRole, string>>; typography?: Record<string, string>; flags?: FlagsPatch; layout?: LayoutPresets }
   const commitQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingCommitsRef = useRef(0)
+  // Resolves true when the commit landed (false: refused or failed — the
+  // error is already shown), so an optimistic change can roll itself back.
   const commitThemeNow = useCallback(
-    async (patch: ThemePatch) => {
+    async (patch: ThemePatch): Promise<boolean> => {
       setSaveError(null)
       try {
         const res = await fetch(`/api/edit/${sessionId}/theme`, {
@@ -216,8 +223,10 @@ export default function ThemeStudio({
         setContrastWarnings(Array.isArray(data.contrastWarnings) ? data.contrastWarnings : [])
         await loadSources().catch(() => {})
         onCommitted()
+        return true
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : 'Failed to save theme change')
+        return false
       } finally {
         pendingCommitsRef.current -= 1
         if (pendingCommitsRef.current === 0) setSaving(false)
@@ -230,7 +239,10 @@ export default function ThemeStudio({
       pendingCommitsRef.current += 1
       setSaving(true)
       const run = commitQueueRef.current.then(() => commitThemeNow(patch))
-      commitQueueRef.current = run.catch(() => {})
+      commitQueueRef.current = run.then(
+        () => {},
+        () => {}
+      )
       return run
     },
     [commitThemeNow]
@@ -284,12 +296,21 @@ export default function ThemeStudio({
   // Layout presets (template 2026.09.9): preview instantly (ThemePreview sets
   // the html[data-c5-layout-*] attributes from sources.layout) and commit to
   // design.json through the same PATCH. The server re-checks the capability.
+  // A refused (422: locked) or failed commit rolls the optimistic change back:
+  // the patched presets return to their previous values, then the server's
+  // sources are re-read when reachable.
   const changeLayout = useCallback(
     (patch: LayoutPresets) => {
+      const before = sourcesRef.current?.layout
+      const previous = Object.fromEntries(Object.keys(patch).map((k) => [k, before?.[k as keyof LayoutPresets] ?? 'default'])) as LayoutPresets
       setSources((s) => (s ? { ...s, layout: canonicalLayout({ ...(s.layout ?? {}), ...patch }) } : s))
-      void commitTheme({ layout: patch })
+      void commitTheme({ layout: patch }).then((ok) => {
+        if (ok) return
+        setSources((s) => (s ? { ...s, layout: canonicalLayout({ ...(s.layout ?? {}), ...previous }) } : s))
+        loadSources().catch(() => {})
+      })
     },
-    [commitTheme]
+    [commitTheme, loadSources]
   )
 
   // Only an operator-typed URL is an override; the auto-derived Vercel
