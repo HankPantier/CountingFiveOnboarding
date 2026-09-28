@@ -10,6 +10,12 @@ import type { DesignJson } from '@/types/design-json'
 import { CURATED_FONTS, gfUrl } from '@/lib/content/type-pairing-catalog'
 import { DEFAULT_AXIS_VALUE, STYLE_AXES, STYLE_AXIS_NAMES, type StyleAxes } from '@/lib/design/style-axes'
 import { LOGO_SIZES, type LogoSize } from '@/lib/design/logo-size'
+import {
+  DEFAULT_LAYOUT_PRESET,
+  LAYOUT_PRESETS,
+  LAYOUT_PRESET_NAMES,
+  type LayoutPresets,
+} from '@/lib/design/layout-presets'
 
 export const HEX_RE = /^#[0-9a-fA-F]{6}$/
 export const PALETTE_ROLES = [
@@ -199,6 +205,40 @@ export function patchDesignStyle(designJsonText: string, patch: StyleAxes): Desi
   const next: DesignJson = { ...design }
   if (Object.keys(style).length) next.style = style
   else delete next.style
+  const nextText = serialize(next)
+  return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
+}
+
+// ---------------------------------------------------------------------------
+// Layout presets (template 2026.09.9, `layout-presets` capability). A SIBLING
+// design.json key, not a style axis. Merge-patch: provided presets only;
+// 'default' deletes the preset; an empty result deletes `layout` — so an
+// untouched design.json stays byte-identical. A hand-edited non-object
+// `layout` is replaced rather than spread.
+// ---------------------------------------------------------------------------
+export function patchDesignLayout(designJsonText: string, patch: LayoutPresets): DesignPatchResult {
+  let design: DesignJson
+  try {
+    design = JSON.parse(designJsonText) as DesignJson
+  } catch {
+    return { ok: false, reason: 'content/design.json is not valid JSON.' }
+  }
+  const entries = Object.entries(patch).filter(([, v]) => v !== undefined) as [string, string][]
+  if (entries.length === 0) return { ok: false, reason: 'No layout changes were provided.' }
+
+  const current: unknown = design.layout
+  const layout: Record<string, string> =
+    current && typeof current === 'object' && !Array.isArray(current) ? { ...(current as Record<string, string>) } : {}
+  for (const [name, value] of entries) {
+    if (!(LAYOUT_PRESET_NAMES as string[]).includes(name)) return { ok: false, reason: `Unknown layout preset: ${name}.` }
+    const values = LAYOUT_PRESETS[name as keyof typeof LAYOUT_PRESETS].values as readonly string[]
+    if (!values.includes(value)) return { ok: false, reason: `${name} must be one of ${values.join(', ')}.` }
+    if (value === DEFAULT_LAYOUT_PRESET) delete layout[name]
+    else layout[name] = value
+  }
+  const next: DesignJson = { ...design }
+  if (Object.keys(layout).length) next.layout = layout
+  else delete next.layout
   const nextText = serialize(next)
   return { ok: true, next: nextText, design: next, changed: nextText !== designJsonText }
 }

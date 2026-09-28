@@ -46,3 +46,22 @@ describe('parseDesignBundle — style axes (P6b)', () => {
     expect(parseDesignBundle({ ...VALID, style: { cards: 'wobbly' } }).ok).toBe(false)
   })
 })
+
+describe('parseDesignBundle — layout presets (2026.09.9)', () => {
+  it('old versions without layout still parse, with no layout key', () => {
+    const r = parseDesignBundle(VALID)
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect('layout' in r.bundle).toBe(false)
+  })
+  it('canonicalizes layout: default presets dropped, all-default → absent', () => {
+    const r = parseDesignBundle({ ...VALID, layout: { cards: 'list', faq: 'default' } })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(r.bundle.layout).toEqual({ cards: 'list' })
+    const d = parseDesignBundle({ ...VALID, layout: { faq: 'default' } })
+    expect(d.ok && 'layout' in d.bundle).toBe(false)
+  })
+  it('rejects an unknown preset or value', () => {
+    expect(parseDesignBundle({ ...VALID, layout: { cards: 'grid' } }).ok).toBe(false)
+    expect(parseDesignBundle({ ...VALID, layout: { hero: 'split' } }).ok).toBe(false)
+  })
+})

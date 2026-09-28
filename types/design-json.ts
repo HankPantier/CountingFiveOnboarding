@@ -30,6 +30,11 @@ export type DesignJson = {
    * concept replaces `style` wholesale, but bundleToRepoFiles carries `logo`
    * through. Set by the Theme Studio Controls (patchDesignFlags). */
   logo?: { size?: 'standard' | 'large' }
+  /** Site-wide layout presets (template 2026.09.9, `layout-presets` capability).
+   * Omitted at default (absent ≡ every preset 'default'). A sibling of `style`,
+   * never a style axis. Keys/values per lib/design/layout-presets.ts; kept loose
+   * here so types/ stays dependency-free. */
+  layout?: Record<string, string>
   spacing: {
     xs: string
     sm: string

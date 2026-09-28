@@ -342,3 +342,65 @@ describe('style axes (P6b)', () => {
     expect(r.ok && r.files.fontsModule).toBe(generateFontsModule(VALID.typography).source)
   })
 })
+
+describe('layout presets (2026.09.9)', () => {
+  const baseline = () => {
+    const r = bundleFromRepoFiles({ brandText, designText, overridesCss: '' }, { name: 'Current site', source: 'baseline' })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    return r.bundle
+  }
+  const withLayout = (layout: unknown) => JSON.stringify({ ...JSON.parse(designText), layout }, null, 2) + '\n'
+
+  it('reads design.json layout into the bundle (canonical; bad values dropped, not fatal)', () => {
+    const r = bundleFromRepoFiles(
+      { brandText, designText: withLayout({ cards: 'list', faq: 'default', team: 'wobbly', bogus: 'x' }), overridesCss: '' },
+      { name: 'Current site', source: 'baseline' }
+    )
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(r.bundle.layout).toEqual({ cards: 'list' })
+    const bad = bundleFromRepoFiles({ brandText, designText: withLayout('list'), overridesCss: '' }, { name: 'x', source: 'baseline' })
+    expect(bad.ok && bad.bundle.layout).toBeUndefined()
+  })
+
+  it('writes the bundle layout with replace semantics', () => {
+    const current = { brandText, designText: withLayout({ cards: 'list' }), overridesCss: '' }
+    const r = bundleToRepoFiles({ ...baseline(), layout: { faq: 'split' } }, current, { removeLegacy: true })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect(JSON.parse(r.files.designText).layout).toEqual({ faq: 'split' })
+  })
+
+  it('a layout-less bundle removes the layout key', () => {
+    const current = { brandText, designText: withLayout({ cards: 'list' }), overridesCss: '' }
+    const r = bundleToRepoFiles({ ...baseline(), layout: undefined }, current, { removeLegacy: true })
+    if (!r.ok) throw new Error(r.errors.join(' | '))
+    expect('layout' in JSON.parse(r.files.designText)).toBe(false)
+  })
+
+  it('R1: absent layout keeps design.json byte-identical, and layout never touches theme.css', () => {
+    const once = bundleToRepoFiles(baseline(), { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    const laid = bundleToRepoFiles({ ...baseline(), layout: { cards: 'list', testimonials: 'featured' } }, { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    if (!once.ok || !laid.ok) throw new Error('failed')
+    expect('layout' in JSON.parse(once.files.designText)).toBe(false)
+    expect(laid.files.themeCss).toBe(once.files.themeCss)
+    const x = { brandText: once.files.brandText, designText: once.files.designText, overridesCss: once.files.overridesCss }
+    const back = bundleFromRepoFiles(x, { name: 'Current site', source: 'baseline' })
+    if (!back.ok) throw new Error('failed')
+    const twice = bundleToRepoFiles(back.bundle, x, { removeLegacy: false })
+    expect(twice.ok && twice.files.designText).toBe(x.designText)
+  })
+
+  it('a laid-out design round-trips byte-identically once canonical, and keeps logo + style', () => {
+    const start = JSON.stringify({ ...JSON.parse(designText), logo: { size: 'large' } }, null, 2) + '\n'
+    const once = bundleToRepoFiles({ ...baseline(), style: { cards: 'flat' }, layout: { team: 'list' } }, { brandText, designText: start, overridesCss: '' }, { removeLegacy: false })
+    if (!once.ok) throw new Error('failed')
+    const written = JSON.parse(once.files.designText)
+    expect(written.layout).toEqual({ team: 'list' })
+    expect(written.logo).toEqual({ size: 'large' })
+    const x = { brandText: once.files.brandText, designText: once.files.designText, overridesCss: once.files.overridesCss }
+    const back = bundleFromRepoFiles(x, { name: 'Current site', source: 'baseline' })
+    if (!back.ok) throw new Error('failed')
+    expect(back.bundle.layout).toEqual({ team: 'list' })
+    const twice = bundleToRepoFiles(back.bundle, x, { removeLegacy: false })
+    expect(twice.ok && twice.files.designText).toBe(x.designText)
+  })
+})
