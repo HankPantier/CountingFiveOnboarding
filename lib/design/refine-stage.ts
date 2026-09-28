@@ -498,6 +498,7 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
     const result = await critiqueConcept({
       prompt: buildCritiquePrompt({
         firmName: b.firmName,
+        current: b.current,
         schema: b.schema,
         designMd: b.designMd,
         paletteFreedom: b.paletteFreedom,

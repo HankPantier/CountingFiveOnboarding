@@ -514,6 +514,7 @@ async function main() {
     if (iteration === 0) row.distinctness = distinctness
     const prompt = buildCritiquePrompt({
       firmName: b.firmName,
+      current: b.current,
       schema: b.schema,
       designMd: b.designMd,
       paletteFreedom: b.paletteFreedom,

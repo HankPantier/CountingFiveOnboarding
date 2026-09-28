@@ -24,6 +24,7 @@ import { blockCatalogHint } from './block-catalog'
 import { catalogEpoch } from '@/lib/content/block-catalog'
 import { buildBrandBrief } from './brand'
 import { buildContract, CSS_RULES_REMINDER } from './contract'
+import { LAYOUT_PRESET_NAMES, normalizeLayoutPresets } from '../layout-presets'
 import { fenceData } from './fence'
 
 export const DESIGN_SYSTEM_PROMPT =
@@ -138,8 +139,20 @@ export function buildSharedParts(args: SharedPromptArgs): DynamicPart[] {
   return parts
 }
 
+// "cards default → list, faq split → default" — the presets a concept changed
+// vs the current design; null when its layout equals the current one.
+export function layoutChangeSummary(layout: DesignBundle['layout'], currentLayout: DesignBundle['layout']): string | null {
+  const a = normalizeLayoutPresets(layout) ?? {}
+  const b = normalizeLayoutPresets(currentLayout) ?? {}
+  const changes = LAYOUT_PRESET_NAMES.filter((n) => a[n] !== b[n]).map((n) => `${n} ${b[n] ?? 'default'} → ${a[n] ?? 'default'}`)
+  return changes.length ? changes.join(', ') : null
+}
+
 // Our own serialization of validated bundles (never admin text, never CSS).
-export function conceptSummaryLines(priors: PriorConcept[]): string[] {
+// With `current` (the critic) a concept's layout is shown as its CHANGES vs
+// the current site — an unchanged layout is not the concept's lever and is
+// omitted; without it (the generator's own prior-concept list) as-is.
+export function conceptSummaryLines(priors: PriorConcept[], opts: { current?: DesignBundle } = {}): string[] {
   return [...priors]
     .sort((a, b) => a.position - b.position)
     .map(({ position, bundle }) => {
@@ -155,10 +168,16 @@ export function conceptSummaryLines(priors: PriorConcept[]): string[] {
         `- Concept ${position + 1} "${clip(bundle.name, 60)}"${bundle.tagline ? ` — ${clip(bundle.tagline, 120)}` : ''}`,
         `  Palette: ${hexes}`,
         `  Type: heading ${typography.headingFont} / body ${typography.bodyFont} / accent ${typography.accentFont}; roundness ${tokens.roundness}, density ${tokens.density}, feel ${tokens.visualFeel}`,
-        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}${bundle.style ? ` · style ${JSON.stringify(bundle.style)}` : ''}${bundle.layout ? ` · layout ${JSON.stringify(bundle.layout)}` : ''}`,
+        `  Treatments: headline ${treatments.headlineStyle}, eyebrow ${treatments.eyebrowStyle}, dark sections ${treatments.darkSections ? 'on' : 'off'}${bundle.style ? ` · style ${JSON.stringify(bundle.style)}` : ''}${layoutPart(bundle, opts.current)}`,
         ...(moves ? [`  Moves: ${moves}`] : []),
       ].join('\n')
     })
+}
+
+function layoutPart(bundle: DesignBundle, current: DesignBundle | undefined): string {
+  if (!current) return bundle.layout ? ` · layout ${JSON.stringify(bundle.layout)}` : ''
+  const diff = layoutChangeSummary(bundle.layout, current.layout)
+  return diff ? ` · layout changes vs the current site: ${diff}` : ''
 }
 
 export function priorConceptsBlock(priors: PriorConcept[]): string {
