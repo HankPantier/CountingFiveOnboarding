@@ -1,0 +1,29 @@
+{
+  "_note": "Template 2026.09.11 (release/2026.09.11-styling-hooks, merged 93b10ea). File set = the CHANGELOG 'Rollout notes (template 2026.09.10 → 2026.09.11)' list. Markup-only: styling hooks (data-component topbar / contact-drawer / section-nav; data-block resource-browser / post-image / post-body / related-posts / not-found) on the surfaces the Design Studio chat could not reach (fleet audit 2026-09-28), plus BlockRenderer rendering an unregistered annotation as content-prose on production builds instead of the 'Block not yet implemented' debug box (Aurora /privacy-policy, /meet-the-team/careers/apply). No visible change elsewhere. theme.css is not rewritten, package.json and package-lock.json are unchanged.",
+  "templateVersion": "2026.09.11",
+  "notes": "Behind-the-scenes update so every part of the site — the top contact bar, the floating Contact button and drawer, the section side menu, the blog index, blog posts and the 404 page — can be restyled from the design tools. Nothing looks different, except that a section which used to show a 'Block not yet implemented' box now shows its text normally.",
+  "exclude": [
+    "\\.png$",
+    "^e2e/.*-snapshots/"
+  ],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "CHANGELOG.md",
+      "docs/architecture.md",
+      "src/app/not-found.tsx",
+      "src/components/assembly/BlockRenderer.tsx",
+      "src/components/contact/ContactDrawer.tsx",
+      "src/components/contact/ContactFab.tsx",
+      "src/components/nav/SideNav.tsx",
+      "src/components/nav/TopUtilityBar.tsx",
+      "src/lib/content/blog-views.tsx",
+      "src/lib/theme/template-marker.test.ts"
+    ],
+    "add": [
+      "src/components/assembly/BlockRenderer.test.ts"
+    ],
+    "delete": []
+  }
+}

@@ -26,6 +26,7 @@ describe('buildChatSystemStatic', () => {
     expect(s).not.toMatch(/mirrored to the MBP automatically/)
     expect(s).toContain('Your commits do NOT update the MBP')
     expect(s).toContain(SCOPE)
+    expect(s).toContain('never style a neighbouring block instead')
     expect(s).toMatch(/applying a concept, restoring a version, clicking “Sync palette & fonts to MBP” in Versions, or editing Controls/)
     expect(s).not.toMatch(/capturing a version/)
   })

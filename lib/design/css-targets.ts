@@ -4,9 +4,9 @@ import { OVERRIDE_BLOCKS } from '@/lib/editor/theme-edit'
 import { STYLE_AXIS_ATTRIBUTES } from './style-axes'
 import { LAYOUT_PRESET_ATTRIBUTES } from './layout-presets'
 
-// Site chrome the template marks with data-component (navbar, footer, cookie
-// consent) — styleable like a block.
-export const CHROME_COMPONENTS = ['navbar', 'footer', 'cookie-consent'] as const
+// Site chrome the template marks with data-component — styleable like a block.
+// Appended only. topbar / contact-drawer / section-nav: template 2026.09.11.
+export const CHROME_COMPONENTS = ['navbar', 'footer', 'cookie-consent', 'topbar', 'contact-drawer', 'section-nav'] as const
 
 export const CSS_TARGETS = [...OVERRIDE_BLOCKS, ...CHROME_COMPONENTS] as const
 export type CssTarget = (typeof CSS_TARGETS)[number]

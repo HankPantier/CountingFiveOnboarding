@@ -280,4 +280,18 @@ export const OVERRIDE_BLOCKS = [
   'contact-info',
   'map',
   'resource-list',
+  // Appended 2026-09-28: blocks every generated page renders that were never
+  // targetable — the "Quick answer" callout (answer-callout), the related
+  // links footer and the trust-signals list. The design chat could not style
+  // them and guessed a neighbouring block instead.
+  'answer-callout',
+  'related-links',
+  'trust-signals',
+  // Appended 2026-09-28 (template 2026.09.11 adds the data-block): the blog
+  // index, a post's image / body / related reading, and the 404 page.
+  'resource-browser',
+  'post-image',
+  'post-body',
+  'related-posts',
+  'not-found',
 ] as const

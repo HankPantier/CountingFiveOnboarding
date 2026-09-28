@@ -10,11 +10,17 @@
 // text on a different surface (e.g. a --color-primary panel vs the canvas).
 import type { OVERRIDE_BLOCKS } from '@/lib/editor/theme-edit'
 import type { CHROME_COMPONENTS } from '../css-targets'
-import { blockVariantValuesAt, catalogEpoch } from '@/lib/content/block-catalog'
+import { blockVariantValuesAt, catalogEpoch, catalogVersion, compareTemplateVersions } from '@/lib/content/block-catalog'
 
-type BlockEntry = { id: (typeof OVERRIDE_BLOCKS)[number]; purpose: string; tokens?: string }
+// `since`: the template release that first renders the hook. Entries without
+// it have always been there. A site below `since` never sees the entry, so the
+// model never styles a hook its markup lacks.
+type BlockEntry = { id: (typeof OVERRIDE_BLOCKS)[number]; purpose: string; tokens?: string; since?: string }
 export type BlockSpec = BlockEntry & { variants: string[] }
-export type ChromeSpec = { id: (typeof CHROME_COMPONENTS)[number]; purpose: string }
+export type ChromeSpec = { id: (typeof CHROME_COMPONENTS)[number]; purpose: string; since?: string }
+
+/** First template release carrying the topbar / contact-drawer / section-nav / blog / 404 hooks. */
+export const STYLING_HOOKS_SINCE = '2026.09.11'
 
 const BLOCK_ENTRIES: readonly BlockEntry[] = [
   {
@@ -81,6 +87,27 @@ const BLOCK_ENTRIES: readonly BlockEntry[] = [
     purpose: 'Downloadable resources as a card grid (title, description, outline Download button), always followed by a separate newsletter [data-block="form"] section.',
     
   },
+  {
+    id: 'answer-callout',
+    purpose:
+      'The "Quick answer" callout at the top of generated pages: a bordered card (rounded-xl, --color-action left accent bar, soft action wash) with a small-caps label and a 2–3 sentence answer. Its card is the block\'s first child div.',
+    tokens: '--color-action (accent bar, icon, wash), --color-card, --color-border',
+  },
+  { id: 'related-links', purpose: '"Keep exploring" list of links to related pages at the foot of generated pages, above a top border.' },
+  { id: 'trust-signals', purpose: '"Why clients trust us" two-column list of short credibility points on a surface band.' },
+  {
+    id: 'resource-browser',
+    purpose: 'The blog / resources index: search field, topic dropdown, Newest/Oldest toggle, type filter chips and the grid of post cards (image, type badge, date, title, excerpt).',
+    since: STYLING_HOOKS_SINCE,
+  },
+  { id: 'post-image', purpose: "A blog post's featured image in a rounded frame, under the post title.", since: STYLING_HOOKS_SINCE },
+  {
+    id: 'post-body',
+    purpose: "A blog post's article body (.prose: headings, lists, tables in .prose-table-wrap) and the outline \"More …\" button under it.",
+    since: STYLING_HOOKS_SINCE,
+  },
+  { id: 'related-posts', purpose: '"Related reading" grid of post cards (image, title, excerpt) at the foot of a blog post.', since: STYLING_HOOKS_SINCE },
+  { id: 'not-found', purpose: 'The 404 page: "We can’t find that page" heading, link cards to the main pages and a "Back to …" button.', since: STYLING_HOOKS_SINCE },
 ]
 
 export const CHROME_CATALOG: readonly ChromeSpec[] = [
@@ -98,7 +125,34 @@ export const CHROME_CATALOG: readonly ChromeSpec[] = [
     id: 'cookie-consent',
     purpose: 'Sticky bottom <aside> with [data-slot="message"], [data-slot="accept"], [data-slot="decline"]. Keep Accept and Decline visually distinct.',
   },
+  { id: 'topbar', purpose: 'Thin utility bar above the navbar (footer colours): Client Center button, phone and email links.', since: STYLING_HOOKS_SINCE },
+  {
+    id: 'contact-drawer',
+    purpose: 'The floating "Contact" pill button pinned bottom-right on every page AND the slide-in contact drawer it opens (phone header, Call / Message tabs, form). Both elements carry the attribute.',
+    since: STYLING_HOOKS_SINCE,
+  },
+  { id: 'section-nav', purpose: '"In this section" side menu on section pages: left-border link list on desktop, a bordered accordion on mobile.', since: STYLING_HOOKS_SINCE },
 ]
+
+const shownAt = (since: string | undefined, templateVersion: string | null) =>
+  since === undefined || compareTemplateVersions(since, catalogVersion(templateVersion)) <= 0
+
+/**
+ * The vocabulary epoch: the newest variant OR hook `since` at or below the
+ * version. Every version with the same epoch sees byte-identical vocabulary,
+ * so prompt prefixes are cached per epoch.
+ */
+export function vocabularyEpoch(templateVersion: string | null): string {
+  let epoch = catalogEpoch(templateVersion)
+  for (const e of [...BLOCK_ENTRIES, ...CHROME_CATALOG]) {
+    if (e.since && shownAt(e.since, templateVersion) && compareTemplateVersions(e.since, epoch) > 0) epoch = e.since
+  }
+  return epoch
+}
+
+export function chromeCatalog(templateVersion: string | null): readonly ChromeSpec[] {
+  return CHROME_CATALOG.filter((c) => shownAt(c.since, templateVersion))
+}
 
 /**
  * The block vocabulary at a template version (the EFFECTIVE version: the draft
@@ -106,7 +160,7 @@ export const CHROME_CATALOG: readonly ChromeSpec[] = [
  * null/malformed ⇒ the baseline set. Pure; the same epoch gives the same list.
  */
 export function blockCatalog(templateVersion: string | null): readonly BlockSpec[] {
-  return BLOCK_ENTRIES.map((b) => ({ ...b, variants: blockVariantValuesAt(b.id, templateVersion) }))
+  return BLOCK_ENTRIES.filter((b) => shownAt(b.since, templateVersion)).map((b) => ({ ...b, variants: blockVariantValuesAt(b.id, templateVersion) }))
 }
 
 const hintCache = new Map<string, string>()
@@ -115,7 +169,7 @@ const hintCache = new Map<string, string>()
 // byte-identical text, so the prompt-cache prefix only moves when a new
 // variant actually becomes available to the site.
 export function blockCatalogHint(templateVersion: string | null): string {
-  const epoch = catalogEpoch(templateVersion)
+  const epoch = vocabularyEpoch(templateVersion)
   const cached = hintCache.get(epoch)
   if (cached !== undefined) return cached
   const blocks = blockCatalog(epoch).map((b) => {
@@ -123,7 +177,7 @@ export function blockCatalogHint(templateVersion: string | null): string {
     const tokens = b.tokens ? ` Uses: ${b.tokens}.` : ''
     return `- [data-block="${b.id}"]${variants}: ${b.purpose}${tokens}`
   })
-  const chrome = CHROME_CATALOG.map((c) => `- [data-component="${c.id}"]: ${c.purpose}`)
+  const chrome = chromeCatalog(epoch).map((c) => `- [data-component="${c.id}"]: ${c.purpose}`)
   const hint = ['BLOCK VOCABULARY (every block carries data-block on its outer element)', ...blocks, '', 'SITE CHROME (data-component)', ...chrome].join('\n')
   hintCache.set(epoch, hint)
   return hint

@@ -79,6 +79,16 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   'Restyle only'" section and a "layout" key in OUTPUT FORMAT. ART_DIRECTION
 //   and the L1/L2 goldens are deliberately unchanged (re-checked byte-identical);
 //   nothing is added to any prefix below the flag.
+// - Page-furniture targets (2026-09-28): answer-callout (the "Quick answer"
+//   card), related-links and trust-signals — rendered on every generated page
+//   but never CSS targets, so the design chat styled a neighbouring block and
+//   reported success — are appended to "Block targets" and get BLOCK
+//   VOCABULARY entries, on every tier. Same day: the template 2026.09.11
+//   hooks (resource-browser, post-image, post-body, related-posts, not-found;
+//   chrome topbar, contact-drawer, section-nav) are appended to the "Block
+//   targets" / "chrome targets" lists; their VOCABULARY entries are gated by
+//   `since: 2026.09.11`, so these goldens (pinned 2026.09.8) don't show them.
+//   Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

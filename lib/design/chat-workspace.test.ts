@@ -35,6 +35,12 @@ describe('ChatWorkspace scope guard', () => {
     const w = ws({ adopt: { ...concept, css: { ...concept.css, blocks: { ...concept.css.blocks, 'cta-banner': conceptCss } } } })
     expect(w.apply({ kind: 'css', target: 'cta-banner', css: conceptCss })).toMatchObject({ ok: true, changed: true })
   })
+  it('can style the "Quick answer" callout (answer-callout is a CSS target)', () => {
+    const w = ws()
+    const r = w.apply({ kind: 'css', target: 'answer-callout', css: '[data-block="answer-callout"] > div { border-radius: var(--radius-none); }' })
+    expect(r).toMatchObject({ ok: true, changed: true })
+    expect(w.bundle().css.blocks['answer-callout']).toContain('border-radius')
+  })
   it('stages block button CSS but tells the model its scope', () => {
     const w = ws()
     const r = w.apply({ kind: 'css', target: 'cta-banner', css: '[data-block="cta-banner"] [data-c5="button"] { border-radius: 0; }' })

@@ -20,8 +20,7 @@ import type { DesignBundle } from '../bundle'
 import { fontsUnlocked, layoutPresetsUnlocked, styleAxesUnlocked } from '../capabilities'
 import { MAX_PROMPT_IMAGES, type DesignCapabilities, type PaletteFreedom } from '../run-types'
 import { ART_DIRECTION } from './art-direction'
-import { blockCatalogHint } from './block-catalog'
-import { catalogEpoch } from '@/lib/content/block-catalog'
+import { blockCatalogHint, vocabularyEpoch } from './block-catalog'
 import { buildBrandBrief } from './brand'
 import { buildContract, CSS_RULES_REMINDER } from './contract'
 import { LAYOUT_PRESET_NAMES, normalizeLayoutPresets } from '../layout-presets'
@@ -68,7 +67,7 @@ const prefixCache = new Map<string, string>()
 // shell c5-template-version meta)) — the prefix only changes when the site
 // gains a lever or a newer block variant.
 export function buildStaticPrefix(caps: DesignCapabilities): string {
-  const epoch = catalogEpoch(caps.templateVersion)
+  const epoch = vocabularyEpoch(caps.templateVersion)
   const key = `${fontsUnlocked(caps) ? 'f' : '-'}${styleAxesUnlocked(caps) ? 's' : '-'}${layoutPresetsUnlocked(caps) ? 'l' : '-'}|${epoch}`
   let prefix = prefixCache.get(key)
   if (prefix === undefined) {
