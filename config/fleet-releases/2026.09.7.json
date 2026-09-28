@@ -1,0 +1,27 @@
+{
+  "_note": "Template 2026.09.7 (fix/accent-on-primary). File set = the CHANGELOG 'Rollout notes (template 2026.09.6 → 2026.09.7)' list: cta buttons on primary bands get a 2px on-primary inner edge when brand.json's raw action is under 3:1 on the rendered primary (html[data-c5-action-edge], src/lib/theme/action-edge.ts, src/styles/action-edge.css); surface helpers moved out of scripts/generate-theme.ts (theme.css output byte-identical); design-defaults e2e expects the brand-derived html hooks. theme.css is not rewritten, package.json and package-lock.json are unchanged ('ignore' acknowledges).",
+  "templateVersion": "2026.09.7",
+  "notes": "Call-to-action buttons on the dark brand bands (the banner near the foot of most pages) get a thin light edge so the button stays distinct from the band; only on sites whose button colour is too close to the band colour (Accord, Aurora, Abramson, korbey, Pryor, Slachta, TruCount, Berg, Buss). Kinexus and bblcpa are unchanged.",
+  "exclude": ["\\.png$", "^e2e/.*-snapshots/"],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "src/app/globals.css",
+      "src/app/layout.tsx",
+      "scripts/generate-theme.ts",
+      "src/lib/theme/hooks.test.ts",
+      "src/lib/theme/template-marker.test.ts",
+      "e2e/design-defaults.spec.ts",
+      "CHANGELOG.md"
+    ],
+    "add": [
+      "src/styles/action-edge.css",
+      "src/lib/theme/action-edge.ts",
+      "src/lib/theme/action-edge.test.ts",
+      "src/lib/theme/surface-contrast.ts",
+      "e2e/action-edge.spec.ts"
+    ],
+    "delete": []
+  }
+}
