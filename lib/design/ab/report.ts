@@ -33,7 +33,7 @@ export type AbCallStats = {
   apiErrors: string[]
 }
 // `css` is the sanitized CSS the concept ships (global + scoped signature blocks).
-export type AbBundleView = Pick<DesignBundle, 'name' | 'tagline' | 'rationale' | 'moves' | 'palette' | 'typography' | 'treatments' | 'style' | 'css'> & {
+export type AbBundleView = Pick<DesignBundle, 'name' | 'tagline' | 'rationale' | 'moves' | 'palette' | 'typography' | 'treatments' | 'style' | 'layout' | 'css'> & {
   tokens: Pick<DesignBundle['tokens'], 'roundness' | 'density' | 'visualFeel'>
 }
 export type AbCritique = { scores: RubricScores; mean: number; passed: boolean; summary: string; issues: CritiqueIssue[] }
@@ -340,7 +340,7 @@ function conceptCard(c: AbConcept, pages: string[]): string {
       .join('')
     parts.push(`<div class="swatches">${sw}</div>`)
     parts.push(
-      `<div class="small">Fonts: ${escapeHtml(b.typography.headingFont)} / ${escapeHtml(b.typography.bodyFont)} / ${escapeHtml(b.typography.accentFont)} · ${escapeHtml(b.tokens.roundness)}, ${escapeHtml(b.tokens.density)}, ${escapeHtml(b.tokens.visualFeel)} · headline ${escapeHtml(b.treatments.headlineStyle)}, eyebrow ${escapeHtml(b.treatments.eyebrowStyle)}, dark sections ${b.treatments.darkSections ? 'on' : 'off'}${b.style ? ` · style ${escapeHtml(JSON.stringify(b.style))}` : ''}</div>`
+      `<div class="small">Fonts: ${escapeHtml(b.typography.headingFont)} / ${escapeHtml(b.typography.bodyFont)} / ${escapeHtml(b.typography.accentFont)} · ${escapeHtml(b.tokens.roundness)}, ${escapeHtml(b.tokens.density)}, ${escapeHtml(b.tokens.visualFeel)} · headline ${escapeHtml(b.treatments.headlineStyle)}, eyebrow ${escapeHtml(b.treatments.eyebrowStyle)}, dark sections ${b.treatments.darkSections ? 'on' : 'off'}${b.style ? ` · style ${escapeHtml(JSON.stringify(b.style))}` : ''}${b.layout ? ` · layout ${escapeHtml(JSON.stringify(b.layout))}` : ''}</div>`
     )
     if (b.rationale) parts.push(`<h4>Rationale</h4><div class="rationale">${escapeHtml(b.rationale)}</div>`)
     if (b.moves.length) parts.push(`<h4>Moves</h4>${list(b.moves)}`)

@@ -37,6 +37,7 @@ import {
   moveSection,
   removeSection,
 } from '@/lib/editor/section-reorder'
+import type { LayoutPresets } from '@/lib/design/layout-presets'
 import { setSectionTheme, setSectionVariant } from '@/lib/editor/section-layout'
 import {
   CUSTOM_OPENER,
@@ -81,6 +82,7 @@ export default function PageEditor({
   onChange,
   isAdmin = false,
   templateVersion = null,
+  sitePresets = null,
 }: {
   sessionId: string
   path: string
@@ -92,6 +94,9 @@ export default function PageEditor({
   // The draft template's version (c5-template.json marker); filters the layout
   // picker's choices. null = unknown ⇒ baseline layouts only.
   templateVersion?: string | null
+  // The draft design.json layout presets — the outline says which sections
+  // follow one. null = none / unreadable.
+  sitePresets?: LayoutPresets | null
 }) {
   const urlPath = contentPathToUrl(path)
   const base = websiteUrl.replace(/\/+$/, '')
@@ -206,6 +211,8 @@ export default function PageEditor({
   // one annotation line; a refusal leaves the body alone and returns its reason.
   const layoutHandlers = {
     templateVersion,
+    sitePresets,
+    viewerIsAdmin: isAdmin,
     onSetVariant: (index: number, variant: string | null) => {
       const res = setSectionVariant(bodyContent, index, variant, { templateVersion })
       if (!res.ok) return res.reason

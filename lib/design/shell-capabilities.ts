@@ -12,14 +12,23 @@
 // the same SSRF-guarded, timeout-bounded safeGet the preview shell uses.
 import { safeGet } from '@/lib/audit/crawl'
 import { getPreviewSiteUrl } from '@/lib/theme-preview/site-url'
-import { SHELL_CAPABILITIES_META, findShellMarker, notRevaltusSiteMessage } from '@/lib/theme-preview/revaltus-marker'
+import {
+  SHELL_CAPABILITIES_META,
+  findShellMarker,
+  findShellTemplateVersion,
+  notRevaltusSiteMessage,
+} from '@/lib/theme-preview/revaltus-marker'
 
 export { SHELL_CAPABILITIES_META }
 // 'unverified' carries a `reason` only when there is something the operator
 // can fix: the preview URL answered but isn't the Revaltus build (no marker —
 // usually the client's old site before DNS cutover). A timeout/unreachable
 // shell stays reason-less.
-export type ShellCapabilities = { status: 'verified'; capabilities: string[] } | { status: 'unverified'; reason?: string }
+// `templateVersion`: the shell's <meta name="c5-template-version"> (template
+// 2026.09.9+); null/absent on older shells (see effectiveTemplateVersion).
+export type ShellCapabilities =
+  | { status: 'verified'; capabilities: string[]; templateVersion?: string | null }
+  | { status: 'unverified'; reason?: string }
 
 const TTL_MS = 60_000
 export const UNVERIFIED_TTL_MS = 15_000
@@ -68,7 +77,8 @@ async function fetchShell(args: { jobId: string; githubRepo: string }): Promise<
   // Keep the draft tier (unverified) but say why, so the Studio can show it.
   const marker = findShellMarker(res.body)
   if (marker === null) return { status: 'unverified', reason: notRevaltusSiteMessage(siteUrl) }
-  return { status: 'verified', capabilities: marker }
+  const templateVersion = findShellTemplateVersion(res.body)
+  return { status: 'verified', capabilities: marker, ...(templateVersion ? { templateVersion } : {}) }
 }
 
 // Cached per job + repo (checked BEFORE resolving the preview URL, so a cache

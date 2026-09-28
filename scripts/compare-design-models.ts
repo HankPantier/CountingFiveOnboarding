@@ -385,6 +385,7 @@ async function main() {
     typography: bundle.typography,
     treatments: bundle.treatments,
     style: bundle.style,
+    layout: bundle.layout,
     css: bundle.css,
     tokens: { roundness: bundle.tokens.roundness, density: bundle.tokens.density, visualFeel: bundle.tokens.visualFeel },
   })
@@ -513,6 +514,7 @@ async function main() {
     if (iteration === 0) row.distinctness = distinctness
     const prompt = buildCritiquePrompt({
       firmName: b.firmName,
+      current: b.current,
       schema: b.schema,
       designMd: b.designMd,
       paletteFreedom: b.paletteFreedom,

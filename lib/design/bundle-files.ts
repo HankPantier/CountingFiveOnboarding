@@ -5,7 +5,7 @@
 // that is replaced wholesale on every apply. Nothing here touches the network.
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
-import { patchDesignFlags, patchDesignStyle } from '@/lib/editor/theme-edit'
+import { patchDesignFlags, patchDesignLayout, patchDesignStyle } from '@/lib/editor/theme-edit'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
@@ -15,6 +15,7 @@ import { sanitizeDesignCss } from './css-sanitizer'
 import { CSS_TARGETS, isCssTarget, type CssTarget } from './css-targets'
 import { totalCssErrors } from './css-budget'
 import { DEFAULT_AXIS_VALUE, STYLE_AXIS_NAMES, normalizeStyleAxes, type StyleAxes } from './style-axes'
+import { DEFAULT_LAYOUT_PRESET, LAYOUT_PRESET_NAMES, normalizeLayoutPresets, type LayoutPresets } from './layout-presets'
 
 export const REGION_BEGIN = '/* design-studio:begin */'
 export const REGION_END = '/* design-studio:end */'
@@ -153,6 +154,7 @@ export function bundleFromRepoFiles(
       darkSections: design.darkSections ?? false,
     },
     style: normalizeStyleAxes(design.style),
+    layout: normalizeLayoutPresets(design.layout),
     css: region.css,
     meta: { source: meta.source },
   })
@@ -227,6 +229,15 @@ export function bundleToRepoFiles(
   const fullStyle = Object.fromEntries(STYLE_AXIS_NAMES.map((a) => [a, bundle.style?.[a] ?? DEFAULT_AXIS_VALUE])) as StyleAxes
   const styled = patchDesignStyle(flagged.next, fullStyle)
   if (!styled.ok) return { ok: false, errors: [styled.reason] }
+  // Layout presets: same whole-design rule (absent = default → deleted). An
+  // all-default bundle on a layout-less design.json is a no-op, so design.json
+  // stays byte-identical. Held below the `layout-presets` flag upstream
+  // (keepLockedLayout / enforceCapabilities), never here.
+  const fullLayout = Object.fromEntries(
+    LAYOUT_PRESET_NAMES.map((n) => [n, bundle.layout?.[n] ?? DEFAULT_LAYOUT_PRESET])
+  ) as LayoutPresets
+  const laidOut = patchDesignLayout(styled.next, fullLayout)
+  if (!laidOut.ok) return { ok: false, errors: [laidOut.reason] }
 
   const base = (opts.removeLegacy ? MANAGED_HEADER : removeRegion(normalizedOverrides)).trimEnd()
   const region = composeRegion(clean)
@@ -236,12 +247,12 @@ export function bundleToRepoFiles(
     ok: true,
     files: {
       brandText: serialize(nextBrand),
-      designText: styled.next,
-      themeCss: generateThemeCss(nextBrand, styled.design),
+      designText: laidOut.next,
+      themeCss: generateThemeCss(nextBrand, laidOut.design),
       overridesCss,
       // L2+ drafts only (caller decides from the DRAFT marker): the generated
       // next/font module, always derived — never hand-edited.
-      ...(opts.fontsModule ? { fontsModule: generateFontsModule(styled.design.typography).source } : {}),
+      ...(opts.fontsModule ? { fontsModule: generateFontsModule(laidOut.design.typography).source } : {}),
     },
     // The sanitized, canonical fragments that were actually written — later
     // phases should store this, not the bundle's pre-sanitize css, as the

@@ -27,7 +27,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
 import { parseDesignBundle, type DesignBundle } from './bundle'
-import { bundleToRepoFiles } from './bundle-files'
+import { bundleFromRepoFiles, bundleToRepoFiles } from './bundle-files'
+import { capabilitiesFromJson, keepLockedLevers } from './capabilities'
+import type { DesignCapabilities } from './run-types'
 import { buildCritiquePrompt } from './brief/critique-prompt'
 import { buildRevisePrompt } from './brief/revise-prompt'
 import type { PromptImage } from './brief'
@@ -196,15 +198,19 @@ async function ensureCurrentRender(db: Db, ctx: StepContext, conceptId: string):
   await transitionRun(db, ctx.runId, ['refining'], { baseSnapshot: { ...base, screenshots: shots, metrics, notes } })
 }
 
-// A concept's folds, composed exactly as the default apply writes them.
-async function renderConceptFolds(db: Db, ctx: StepContext, pagePath: string, concept: DesignConceptRow): Promise<FoldResult> {
+// A concept's folds, composed exactly as the default apply writes them —
+// including apply's keepLockedLevers: on a site whose tier lacks style axes /
+// layout presets, a concept without them keeps the draft's current ones.
+async function renderConceptFolds(db: Db, ctx: StepContext, pagePath: string, concept: DesignConceptRow, caps: DesignCapabilities): Promise<FoldResult> {
   const skip = (error: string, retryable = false): FoldResult => ({ shots: [], metrics: null, error, ...(retryable ? { retryable } : {}) })
   const parsed = parseDesignBundle(concept.bundle)
   if (!parsed.ok) return skip('The stored concept is no longer valid.')
   const theme = await readDraftThemeTexts(ctx.githubRepo)
   if (!theme.ok) return skip(theme.error)
   const { brandText, designText, overridesCss } = theme.files
-  const files = bundleToRepoFiles(parsed.bundle, { brandText, designText, overridesCss }, { removeLegacy: true })
+  const current = bundleFromRepoFiles({ brandText, designText, overridesCss: '' }, { name: 'Current design', source: 'baseline' })
+  const bundle = current.ok ? keepLockedLevers(parsed.bundle, current.bundle, caps) : parsed.bundle
+  const files = bundleToRepoFiles(bundle, { brandText, designText, overridesCss }, { removeLegacy: true })
   if (!files.ok) return skip('The concept could not be prepared for rendering.')
   const shell = await loadRenderShell(ctx, pagePath)
   if (!shell.ok) return skip(shell.reason, shell.retryable)
@@ -252,7 +258,7 @@ export async function renderUnit(db: Db, ctx: StepContext, run: DesignRunRow, co
 
   let result: FoldResult
   try {
-    result = await renderConceptFolds(db, ctx, parseBaseSnapshot(run.base_snapshot).pagePath, claimed)
+    result = await renderConceptFolds(db, ctx, parseBaseSnapshot(run.base_snapshot).pagePath, claimed, capabilitiesFromJson(run.capabilities))
   } catch (err) {
     console.error('[design-run] render step failed', err)
     result = { shots: [], metrics: null, error: RENDER_FAILED }
@@ -498,6 +504,7 @@ export async function critiqueUnit(db: Db, ctx: StepContext, runId: string, conc
     const result = await critiqueConcept({
       prompt: buildCritiquePrompt({
         firmName: b.firmName,
+        current: b.current,
         schema: b.schema,
         designMd: b.designMd,
         paletteFreedom: b.paletteFreedom,

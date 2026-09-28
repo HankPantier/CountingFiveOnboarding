@@ -34,7 +34,7 @@ import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
 import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
-import { capabilityViolations, fontsUnlocked, keepLockedStyle } from './capabilities'
+import { capabilityViolations, fontsUnlocked, keepLockedLevers } from './capabilities'
 import { readEffectiveCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs, themeFilePaths } from './drift'
 import type { RunScreenshot } from './run-types'
@@ -100,7 +100,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
     return { ok: false, status: 422, error: LEGACY_KEEP_UNCHECKED_ERROR }
   }
 
-  // Only the fonts + style matter for the capability check, so the overrides file
+  // Only the fonts + style + layout matter for the capability check, so the overrides file
   // (and any malformed region in it) is irrelevant here.
   const current = bundleFromRepoFiles(
     { brandText: draft.files.brandText, designText: draft.files.designText, overridesCss: '' },
@@ -109,9 +109,10 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   if (!current.ok) return { ok: false, status: 409, error: `The current design can’t be read: ${current.errors.join(' ')}` }
   const capRead = await readEffectiveCapabilities({ githubRepo: target.githubRepo, jobId: target.jobId })
   // Below L3 a style-less bundle (pre-P6b version/concept) keeps the draft's
-  // axes: render + record the filled bundle, or the replace-semantics render
-  // would delete them from design.json.
-  const bundle = keepLockedStyle(args.bundle, current.bundle, capRead.effective)
+  // axes, and below the `layout-presets` flag a layout-less bundle keeps the
+  // draft's layout: render + record the filled bundle, or the replace-semantics
+  // render would delete them from design.json.
+  const bundle = keepLockedLevers(args.bundle, current.bundle, capRead.effective)
   const violations = capabilityViolations(bundle, current.bundle, capRead.effective)
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
   // File contract follows the DRAFT marker (what the next build ships).

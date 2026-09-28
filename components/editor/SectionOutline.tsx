@@ -19,7 +19,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { ArrowDown, ArrowUp, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
 import { blockLabel, type SectionInfo } from '@/lib/editor/section-reorder'
-import { layoutOptionsFor } from '@/lib/editor/section-layout'
+import { layoutOptionsFor, sitePresetHint } from '@/lib/editor/section-layout'
+import type { LayoutPresets } from '@/lib/design/layout-presets'
 
 // Read-only-of-the-body outline that lets an operator drag, nudge, or delete
 // whole page sections and pick each section's layout (variant) and ink band.
@@ -30,6 +31,10 @@ import { layoutOptionsFor } from '@/lib/editor/section-layout'
 export type LayoutHandlers = {
   /** Draft template version (null = unknown ⇒ baseline layouts only). */
   templateVersion: string | null
+  /** The draft design.json `layout` presets (template 2026.09.9); null = none. */
+  sitePresets?: LayoutPresets | null
+  /** Admins set presets in Theme Studio; other roles can't reach it. */
+  viewerIsAdmin?: boolean
   onSetVariant: (index: number, variant: string | null) => string | null
   onSetTheme: (index: number, theme: string | null) => string | null
 }
@@ -63,8 +68,24 @@ function LayoutControls({
   layout: LayoutHandlers
 }) {
   const [error, setError] = useState<string | null>(null)
-  // The FAQ is platform-managed and has no layouts; nothing to show.
-  if (section.blockId === 'faq-accordion') return null
+  const presetHint = section.parseable
+    ? sitePresetHint(section.blockId, section, layout.sitePresets, { templateVersion: layout.templateVersion })
+    : null
+  const hintEl = presetHint ? (
+    <span
+      className="text-[11px] font-body text-text-muted"
+      title={
+        layout.viewerIsAdmin
+          ? 'Set site-wide in Theme Studio → Controls → Layout. A section layout chosen here wins.'
+          : 'Set site-wide by your administrator. A section layout chosen here wins.'
+      }
+    >
+      {presetHint}
+    </span>
+  ) : null
+  // The FAQ is platform-managed and has no per-section layouts; only the site
+  // preset (if any) is worth showing.
+  if (section.blockId === 'faq-accordion') return hintEl ? <div className="mt-1.5">{hintEl}</div> : null
   if (!section.parseable) {
     return (
       <p className="mt-1 text-[11px] font-body text-text-muted">
@@ -73,7 +94,7 @@ function LayoutControls({
     )
   }
   const opts = layoutOptionsFor(section.blockId, section, { templateVersion: layout.templateVersion })
-  if (!opts.showLayout && !opts.ink && !opts.unrecognisedTheme) return null
+  if (!opts.showLayout && !opts.ink && !opts.unrecognisedTheme && !hintEl) return null
   const name = section.heading || blockLabel(section.blockId)
   const run = (fn: () => string | null) => setError(fn())
   return (
@@ -116,6 +137,7 @@ function LayoutControls({
         </button>
       )}
       {opts.ink?.note && <span className="text-[11px] font-body text-text-muted">{opts.ink.note}</span>}
+      {hintEl}
       {!opts.currentRecognised && (
         <span className="text-[11px] font-body text-warning-strong">
           “{opts.current}” is not a layout this site’s template recognises; it renders the default.

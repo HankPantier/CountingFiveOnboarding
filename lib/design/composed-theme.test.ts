@@ -29,8 +29,8 @@ describe('composedThemeFromFiles', () => {
     const t = composedThemeFromFiles({ designText: '{"style":{"cards":"flat"}}', themeCss: '', overridesCss: '' })
     expect(t.htmlAttributes['data-c5-cards']).toBe('flat')
     expect(t.htmlAttributes['data-c5-nav']).toBeNull()
-    // 8 style axes + the logo size hook (template 2026.09.8).
-    expect(Object.keys(t.htmlAttributes).filter((k) => k.startsWith('data-c5-'))).toHaveLength(9)
+    // 8 style axes + the logo size hook (template 2026.09.8) + 5 layout presets (2026.09.9).
+    expect(Object.keys(t.htmlAttributes).filter((k) => k.startsWith('data-c5-'))).toHaveLength(14)
     expect(t.htmlAttributes['data-c5-logo-size']).toBeNull()
   })
   it('carries design.json logo.size so concept renders keep the site logo size', () => {
@@ -42,5 +42,14 @@ describe('composedThemeFromFiles', () => {
     const doc = composeThemeDoc('<html lang="en" data-c5-nav="bordered"><head></head><body></body></html>', t)
     expect(doc).not.toContain('data-c5-nav')
     expect(doc).toContain('data-c5-cards="flat"')
+  })
+  it('carries design.json layout presets and removes live presets the design does not set (2026.09.9)', () => {
+    const t = composedThemeFromFiles({ designText: '{"layout":{"cards":"list","faq":"default","team":"bogus"}}', themeCss: '', overridesCss: '' })
+    expect(t.htmlAttributes['data-c5-layout-cards']).toBe('list')
+    expect(t.htmlAttributes['data-c5-layout-faq']).toBeNull()
+    expect(t.htmlAttributes['data-c5-layout-team']).toBeNull()
+    const doc = composeThemeDoc('<html lang="en" data-c5-layout-faq="split"><head></head><body></body></html>', t)
+    expect(doc).not.toContain('data-c5-layout-faq')
+    expect(doc).toContain('data-c5-layout-cards="list"')
   })
 })

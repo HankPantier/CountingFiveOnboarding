@@ -8,6 +8,7 @@ import { CRITIC_STATIC_PREFIX, CRITIC_SYSTEM_PROMPT, FIXED_SECTION, buildCritiqu
 const OTHER = { ...VALID, name: 'Oxblood Ledger', palette: { ...VALID.palette, primary: '#5c1a2b' } }
 const ARGS: CritiquePromptArgs = {
   firmName: 'Korbey Lague PLLP',
+  current: VALID,
   schema: { _meta: { secret: 'META_LEAK' }, mbp_content: 'MBP_LEAK', brand: { currentTone: 'Warm and direct' } },
   designMd: null,
   paletteFreedom: 'evolve',
@@ -95,6 +96,35 @@ describe('buildCritiquePrompt', () => {
     }
     expect(CRITIC_STATIC_PREFIX).toContain('distinctiveness: how different is its visual SYSTEM')
     expect(CRITIC_STATIC_PREFIX).toContain('Never ask for new copy')
+  })
+  it('excepts the layout presets from the FIXED component tree and names them in the rubric (2026.09.9) — no new dimension, same pass rule', () => {
+    expect(FIXED_SECTION).toContain('that the concept CHANGED from the current site')
+    expect(FIXED_SECTION).toContain('A layout the concept did not change (the site\'s current layout, carried over or held) is fixed like the rest')
+    expect(FIXED_SECTION).toContain('the style axes and the layout-preset changes where the site has them')
+    expect(CRITIC_STATIC_PREFIX).toContain('tokens, treatments, style axes, layout-preset changes and signature CSS')
+    expect(CRITIC_STATIC_PREFIX).toContain('judge how far type, tokens, treatments, axes, layout-preset changes and CSS move it')
+    expect(CRITIC_STATIC_PREFIX).toContain('A layout preset the concept changed must earn its place here')
+    expect(paletteFreedomLine('keep')).toContain('style axes, layout presets (where the site has them) and CSS')
+    // Still exactly six scored dimensions in the output format, and the same pass rule.
+    expect(CRITIC_STATIC_PREFIX).toContain('{"scores":{"brandFit":1,"distinctiveness":1,"hierarchy":1,"legibility":1,"consistency":1,"craft":1}')
+    expect(CRITIC_STATIC_PREFIX).toContain('every score is ≥ 3, the mean is ≥ 3.8')
+  })
+  it('summarises the concept layout as its CHANGES vs the current site; a carried-over layout is not listed', () => {
+    const laid = { ...VALID, layout: { cards: 'list' as const, faq: 'split' as const } }
+    const t = texts(buildCritiquePrompt({ ...ARGS, concept: { ...ARGS.concept, bundle: laid } }).parts)
+    expect(t).toContain('· layout changes vs the current site: cards default → list, faq default → split')
+    expect(all).not.toContain('· layout')
+    // The site already has cards: list — only the faq change is the concept's.
+    const cur = { ...VALID, layout: { cards: 'list' as const } }
+    const t2 = texts(buildCritiquePrompt({ ...ARGS, current: cur, concept: { ...ARGS.concept, bundle: laid } }).parts)
+    expect(t2).toContain('· layout changes vs the current site: faq default → split')
+    expect(t2).not.toContain('cards default → list')
+    // Held (locked) or carried over unchanged: nothing to score.
+    const held = texts(buildCritiquePrompt({ ...ARGS, others: [], current: cur, concept: { ...ARGS.concept, bundle: cur } }).parts)
+    expect(held).not.toContain('· layout')
+    // A concept that drops the site's preset changes it too.
+    const dropped = texts(buildCritiquePrompt({ ...ARGS, current: cur, concept: { ...ARGS.concept, bundle: VALID } }).parts)
+    expect(dropped).toContain('· layout changes vs the current site: cards list → default')
   })
   it('states both distinctiveness bars in the prefix and the run’s own bar in the shared parts', () => {
     expect(CRITIC_STATIC_PREFIX).toContain('distinctiveness is ≥ 3 when the run\'s palette freedom is keep or evolve, or ≥ 4 when it is free')

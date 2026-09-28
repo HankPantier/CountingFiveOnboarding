@@ -2,6 +2,7 @@
 // sanitizer (server) and the DesignBundle schema (client-safe).
 import { OVERRIDE_BLOCKS } from '@/lib/editor/theme-edit'
 import { STYLE_AXIS_ATTRIBUTES } from './style-axes'
+import { LAYOUT_PRESET_ATTRIBUTES } from './layout-presets'
 
 // Site chrome the template marks with data-component (navbar, footer, cookie
 // consent) — styleable like a block.
@@ -17,6 +18,7 @@ export function isCssTarget(s: string): s is CssTarget {
 // <html> state attributes the template sets from design.json. CSS may key off
 // them (html[data-headline="serif"] [data-block="hero"] …). The treatment pair
 // is what the brief's byte-stable CSS rules list; the style-axis attributes
-// (T2) are advertised in the tier-dependent levers section instead.
+// (T2) and the layout-preset attributes (2026.09.9) are advertised in the
+// tier-dependent levers section instead.
 export const TREATMENT_STATE_ATTRS: readonly string[] = ['data-headline', 'data-eyebrow']
-export const HTML_STATE_ATTRS: readonly string[] = [...TREATMENT_STATE_ATTRS, ...STYLE_AXIS_ATTRIBUTES]
+export const HTML_STATE_ATTRS: readonly string[] = [...TREATMENT_STATE_ATTRS, ...STYLE_AXIS_ATTRIBUTES, ...LAYOUT_PRESET_ATTRIBUTES]

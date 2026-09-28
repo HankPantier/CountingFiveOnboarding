@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { HexColorPicker } from 'react-colorful'
 import { PALETTE_ROLES, type PaletteRole } from '@/lib/editor/theme-edit'
 import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
+import { LAYOUT_PRESETS, LAYOUT_PRESET_NAMES, type LayoutPresetName, type LayoutPresets } from '@/lib/design/layout-presets'
 
 const ROLE_LABELS: Record<PaletteRole, string> = {
   primary: 'Primary',
@@ -21,6 +22,22 @@ const FONT_SLOTS: { key: 'headingFont' | 'bodyFont' | 'accentFont'; label: strin
 ]
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
+
+// Site-wide layout presets (template 2026.09.9) — one select per preset.
+const LAYOUT_PRESET_LABELS: Record<LayoutPresetName, string> = {
+  cards: 'Card grids',
+  ctaBanner: 'CTA banner',
+  faq: 'FAQ',
+  team: 'Team',
+  testimonials: 'Testimonials',
+}
+const LAYOUT_VALUE_LABELS: Record<string, string> = {
+  default: 'Default',
+  list: 'List',
+  centered: 'Centred',
+  split: 'Split',
+  featured: 'Featured',
+}
 
 // One palette swatch + its click-to-open color-picker popover. Dragging previews
 // live (onPreview); closing the popover commits (onCommit) the final color.
@@ -136,6 +153,8 @@ export default function ThemeControls({
   eyebrowStyle,
   darkSections,
   logoSize,
+  layout,
+  layoutLock,
   fonts,
   contrastWarnings,
   saving,
@@ -143,6 +162,7 @@ export default function ThemeControls({
   onCommitPalette,
   onChangeFont,
   onChangeFlags,
+  onChangeLayout,
 }: {
   palette: ThemeSources['palette']
   typography: ThemeSources['typography']
@@ -153,6 +173,10 @@ export default function ThemeControls({
   eyebrowStyle: ThemeSources['eyebrowStyle']
   darkSections: boolean
   logoSize: ThemeSources['logoSize']
+  layout: ThemeSources['layout']
+  // Why the layout presets are disabled (the effective tier lacks
+  // `layout-presets`), or null when available. undefined ⇒ unknown ⇒ disabled.
+  layoutLock: string | null | undefined
   fonts: readonly string[]
   contrastWarnings: string[]
   saving: boolean
@@ -160,7 +184,9 @@ export default function ThemeControls({
   onCommitPalette: (role: PaletteRole, hex: string) => void
   onChangeFont: (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => void
   onChangeFlags: (patch: FlagsPatch) => void
+  onChangeLayout: (patch: LayoutPresets) => void
 }) {
+  const layoutDisabledReason = layoutLock === null ? null : (layoutLock ?? 'Checking this site’s template…')
   return (
     <div className="flex flex-col gap-2 border-b border-border-default bg-surface-subtle px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -261,13 +287,43 @@ export default function ThemeControls({
           </select>
         </label>
 
+        {/* design.json layout presets (template 2026.09.9): each restructures a
+            whole block family site-wide; a section's own layout variant wins.
+            Admin-only (the Theme Studio is); disabled below the capability. */}
+        <div className="flex flex-wrap items-center gap-3" title={layoutDisabledReason ?? undefined}>
+          <span className="font-heading text-[11px] font-semibold text-text-secondary">Layout</span>
+          {LAYOUT_PRESET_NAMES.map((name) => (
+            <label key={name} className="flex items-center gap-1.5">
+              <span className="font-body text-[11px] text-text-muted">{LAYOUT_PRESET_LABELS[name]}</span>
+              <select
+                value={layout?.[name] ?? 'default'}
+                disabled={saving || layoutDisabledReason !== null}
+                aria-describedby={layoutDisabledReason !== null ? 'theme-layout-lock' : undefined}
+                onChange={(e) => onChangeLayout({ [name]: e.target.value } as LayoutPresets)}
+                className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
+              >
+                {(LAYOUT_PRESETS[name].values as readonly string[]).map((v) => (
+                  <option key={v} value={v}>
+                    {LAYOUT_VALUE_LABELS[v] ?? v}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          {layoutDisabledReason !== null && (
+            <span id="theme-layout-lock" className="font-body text-[11px] text-text-muted">
+              {layoutDisabledReason}
+            </span>
+          )}
+        </div>
+
         <span className="font-body text-[11px] text-text-muted">
           roundness: {roundness} · density: {density} · feel: {visualFeel}
         </span>
       </div>
 
       <p className="font-body text-[11px] text-text-muted">
-        Headline and eyebrow treatments and the logo size preview here when the deployed site&rsquo;s template supports them (logo size: template 2026.09.8+). Dark sections apply only after the site rebuilds.
+        Headline and eyebrow treatments and the logo size preview here when the deployed site&rsquo;s template supports them (logo size: template 2026.09.8+; layout presets: 2026.09.9+). Dark sections apply only after the site rebuilds.
       </p>
 
       {contrastWarnings.length > 0 && (

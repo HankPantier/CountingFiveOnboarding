@@ -16,7 +16,8 @@
 // css.blocks move, live run a81093ea) never counts, and a clause with a
 // negation ("no dark sections") is skipped.
 import type { DesignBundle } from './bundle'
-import { fontsUnlocked, styleAxesUnlocked } from './capabilities'
+import { fontsUnlocked, layoutPresetsUnlocked, styleAxesUnlocked } from './capabilities'
+import type { LayoutPresetName } from './layout-presets'
 import type { DesignCapabilities } from './run-types'
 import type { StyleAxis } from './style-axes'
 
@@ -195,6 +196,56 @@ const AXIS_CLAIMS: AxisClaim[] = [
   },
 ]
 
+// Layout-preset claims (template 2026.09.9, checked only when the effective
+// tier has `layout-presets`). Same conservatism as the axis claims: the
+// structure word must sit right next to its subject — "services as a list",
+// "a split FAQ", "a centred CTA banner", "a featured testimonial".
+type LayoutClaim = { preset: LayoutPresetName; value: string; label: string; res: RegExp[]; alsoSatisfiedBy?: (b: DesignBundle) => boolean }
+const LIST_OR_ROWS = '(?:as|in)\\s+(?:an?\\s+)?(?:(?:editorial|stacked|single[\\s-]column|simple)\\s+)?(?:list|rows)\\b'
+const CENTRED = 'cent(?:er|re)d'
+const CTA = '(?:cta|call[\\s-]to[\\s-]action)'
+const LAYOUT_CLAIMS: LayoutClaim[] = [
+  {
+    preset: 'cards',
+    value: 'list',
+    label: 'services (cards) as a list',
+    res: [
+      new RegExp(`\\b(?:services?|service cards?|features?|feature cards?|cards|resources?|articles?)\\s+${LIST_OR_ROWS}`),
+      /\bone\s+(?:service|feature|card)\s+per\s+row\b/,
+      /\blist[\s-](?:style|layout)\s+(?:service\s+|feature\s+|content\s+)?cards\b/,
+    ],
+  },
+  {
+    preset: 'ctaBanner',
+    value: 'centered',
+    label: 'a centred CTA banner',
+    res: [
+      new RegExp(`\\b${CENTRED}\\s+(?:closing\\s+)?${CTA}(?:\\s+(?:banners?|bands?|blocks?))?\\b`),
+      new RegExp(`\\b${CTA}\\s+(?:banners?\\s+|bands?\\s+)?(?:is\\s+|are\\s+)?${CENTRED}\\b`),
+    ],
+    // A css.blocks cta-banner move that centres it keeps the promise anyway.
+    alsoSatisfiedBy: (b) => /text-align\s*:\s*center|justify-content\s*:\s*center/.test(b.css.blocks['cta-banner'] ?? ''),
+  },
+  {
+    preset: 'faq',
+    value: 'split',
+    label: 'a split FAQ',
+    res: [/\b(?:split|two[\s-]column)\s+faqs?\b/, /\bfaqs?\s+(?:as\s+|in\s+)?(?:an?\s+)?(?:split|two[\s-]column)\b/],
+  },
+  {
+    preset: 'team',
+    value: 'list',
+    label: 'the team as a list',
+    res: [new RegExp(`\\b(?:team|team members|partners|people|staff|bios)\\s+${LIST_OR_ROWS}`), /\bone\s+(?:team\s+)?member\s+per\s+row\b/],
+  },
+  {
+    preset: 'testimonials',
+    value: 'featured',
+    label: 'a featured testimonial',
+    res: [/\b(?:featured|pull)[\s-](?:testimonials?|quotes?|client quotes?)\b/, /\btestimonials?\s+(?:led\s+by|with)\s+(?:a\s+|one\s+)?(?:large\s+)?(?:featured|pull)[\s-]quote\b/],
+  },
+]
+
 function signatureCssNote(css: DesignBundle['css']): string | null {
   const count = Object.values(css.blocks).filter((body) => typeof body === 'string' && body.trim().length > 0).length
   if (count >= MIN_SIGNATURE_BLOCKS) return null
@@ -203,7 +254,8 @@ function signatureCssNote(css: DesignBundle['css']): string | null {
 
 // Every mismatch between what the concept SAYS and what its levers DO, plus
 // the signature-CSS floor. Style-axis claims are checked only when the axes
-// are unlocked (below L3 the site's current style is held, whatever the words).
+// are unlocked (below L3 the site's current style is held, whatever the words);
+// layout-preset claims only when the `layout-presets` flag is.
 export function conceptConsistencyNotes(bundle: DesignBundle, caps: DesignCapabilities): string[] {
   const clauses = claimClauses(bundle)
   const notes: string[] = []
@@ -229,6 +281,16 @@ export function conceptConsistencyNotes(bundle: DesignBundle, caps: DesignCapabi
       seen.add(claim.axis)
       notes.push(
         `${CLAIM_CHECK_PREFIX} the description promises ${claim.label}, but style.${claim.axis} is "${actual}" — set style.${claim.axis} to "${claim.value}" (a preset beats hand CSS), or change the wording.`
+      )
+    }
+  }
+  if (layoutPresetsUnlocked(caps)) {
+    for (const claim of LAYOUT_CLAIMS) {
+      if (!anyClause(clauses, claim.res)) continue
+      const actual: string = bundle.layout?.[claim.preset] ?? 'default'
+      if (actual === claim.value || claim.alsoSatisfiedBy?.(bundle)) continue
+      notes.push(
+        `${CLAIM_CHECK_PREFIX} the description promises ${claim.label}, but layout.${claim.preset} is "${actual}" — set layout.${claim.preset} to "${claim.value}" (the template preset), or change the wording.`
       )
     }
   }

@@ -1,12 +1,15 @@
 // Pure. The capability-filtered token + selector + output contract (ported
 // from export-design-brief's design-system.md, plus the sanitizer's rules so
 // the model writes CSS that passes). Byte-stable per capability tier: it may
-// depend on `caps` ONLY through fontsUnlocked() and styleAxesUnlocked().
+// depend on `caps` ONLY through fontsUnlocked(), styleAxesUnlocked() and
+// layoutPresetsUnlocked() (the 2026.09.9 flag — below it every line here is
+// byte-identical to the pre-preset contract).
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
 import { CHROME_COMPONENTS, CSS_TARGETS, TREATMENT_STATE_ATTRS } from '../css-targets'
-import { fontsUnlocked, styleAxesUnlocked } from '../capabilities'
+import { fontsUnlocked, layoutPresetsUnlocked, styleAxesUnlocked } from '../capabilities'
 import { styleAxesSummary } from '../style-axes'
+import { layoutPresetsSummary } from '../layout-presets'
 import type { DesignCapabilities } from '../run-types'
 
 export const TOKEN_CONTRACT = `TOKEN CONTRACT (theme.css is regenerated from your palette + tokens; never restate it)
@@ -28,8 +31,25 @@ ${typography}
 - tokens: { roundness: sharp | soft | pill, density: tight | balanced | airy, visualFeel: classic | modern | editorial, spacing: { xs, sm, md, lg, xl, 2xl }, radius: { none, sm, md, lg, pill } } — spacing/radius values are CSS lengths like "16px" or "1.5rem".
 - treatments: { headlineStyle: sans | serif, eyebrowStyle: standard | mono, darkSections: true | false }.
 - css: { global?: string, blocks: { <target>: string } } — scoped CSS, see the rules below.
-${styleLever(caps)}`
+${styleLever(caps)}${layoutLever(caps)}`
 }
+
+// Only when the EFFECTIVE tier has `layout-presets`. Nothing is added below
+// it (not even a "never emit" line) so the L1–L4 prefixes stay byte-identical.
+function layoutLever(caps: DesignCapabilities): string {
+  if (!layoutPresetsUnlocked(caps)) return ''
+  return `
+- layout (optional): site-wide LAYOUT PRESETS — { <preset>: <value> }; omit a preset (or use "default") to keep the default structure. Presets:
+${layoutPresetsSummary('  - layout.')}
+  A preset restructures every section of its family that has no explicit per-section layout; ink card bands keep theirs. When a preset is set, css.blocks.<id> may also be prefixed by it, e.g. html[data-c5-layout-cards="list"] [data-block="service-cards"] … (attribute = data-c5-layout-<kebab preset>).`
+}
+
+// The one sanctioned exception to the art direction's "Restyle only" rule —
+// added only when the layout lever is (ART_DIRECTION itself never changes).
+export const LAYOUT_PRESETS_EXCEPTION = `LAYOUT PRESETS — the one sanctioned exception to "Restyle only"
+- The layout presets are template-built, accessible alternative structures, not new markup. You may use them to restructure when it serves THIS firm's concept (e.g. services as a list for a firm with a few deep offerings, a featured testimonial for a firm with one strong client story); name the preset in a move.
+- Inside a block's own css.blocks.<id> you may also re-grid its existing items within the CSS rules below (grid-template-columns, column spans, flex-direction, gap, alignment). Never hide an item, never change the markup, never move content out of its block.
+- Use \`order\` ONLY to swap a block's media and its text (image left ↔ right), on the [data-c5-slot="media"] or [data-c5-slot="body"] element — any other \`order\` is rejected. Never reorder headings, cards, questions or quotes — the visual order must match the reading order.`
 
 function styleLever(caps: DesignCapabilities): string {
   if (!styleAxesUnlocked(caps)) return '- Never emit a "style" field (style axes are not available to you).'
@@ -51,7 +71,7 @@ export const CSS_RULES_SECTION = `CSS RULES (enforced by a strict sanitizer — 
 - Prefer the colour variables over raw hex inside CSS.`
 
 function outputFormat(caps: DesignCapabilities): string {
-  const style = styleAxesUnlocked(caps) ? ',"style":{"cards":"…"}' : ''
+  const style = (styleAxesUnlocked(caps) ? ',"style":{"cards":"…"}' : '') + (layoutPresetsUnlocked(caps) ? ',"layout":{"cards":"…"}' : '')
   return `OUTPUT FORMAT
 Return ONLY this JSON (no prose, no markdown fences):
 {"concepts":[{"name":"…","tagline":"…","rationale":"…","moves":["…"],"palette":{"primary":"#…","secondary":"#…","complementary":"#…","action":"#…","nearBlack":"#…","nearWhite":"#…"},"typography":{"headingFont":"…","bodyFont":"…","accentFont":"…"},"tokens":{"roundness":"…","density":"…","visualFeel":"…","spacing":{"xs":"…","sm":"…","md":"…","lg":"…","xl":"…","2xl":"…"},"radius":{"none":"…","sm":"…","md":"…","lg":"…","pill":"…"}},"treatments":{"headlineStyle":"…","eyebrowStyle":"…","darkSections":false}${style},"css":{"global":"…","blocks":{"hero":"…"}}}]}
@@ -59,7 +79,13 @@ name ≤ 60 chars, tagline ≤ 160, rationale ≤ 2000, at most 6 moves of ≤ 2
 }
 
 export function buildContract(caps: DesignCapabilities): string {
-  return [TOKEN_CONTRACT, leversSection(caps), CSS_RULES_SECTION, outputFormat(caps)].join('\n\n')
+  return [
+    TOKEN_CONTRACT,
+    leversSection(caps),
+    ...(layoutPresetsUnlocked(caps) ? [LAYOUT_PRESETS_EXCEPTION] : []),
+    CSS_RULES_SECTION,
+    outputFormat(caps),
+  ].join('\n\n')
 }
 
 // One-line restatement of the two rules concepts most often break (Concept-3

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as themeEdit from './theme-edit'
-import { patchBrandPalette, patchDesignTypography, patchDesignFlags, patchDesignStyle } from './theme-edit'
+import { patchBrandPalette, patchDesignTypography, patchDesignFlags, patchDesignLayout, patchDesignStyle } from './theme-edit'
 
 const BRAND = JSON.stringify(
   {
@@ -182,5 +182,35 @@ describe('patchDesignStyle', () => {
     expect(patchDesignStyle(base, { cards: 'wobbly' } as never).ok).toBe(false)
     expect(patchDesignStyle(base, { glitter: 'x' } as never).ok).toBe(false)
     expect(patchDesignStyle(base, {}).ok).toBe(false)
+  })
+})
+
+describe('patchDesignLayout (2026.09.9)', () => {
+  const base = JSON.stringify({ typography: {}, roundness: 'pill' }, null, 2) + '\n'
+  it('writes non-default presets and deletes defaults (omit-at-default ⇒ byte-identical)', () => {
+    const r = patchDesignLayout(base, { cards: 'list', faq: 'default' })
+    expect(r.ok && r.design.layout).toEqual({ cards: 'list' })
+    const back = r.ok ? patchDesignLayout(r.next, { cards: 'default' }) : null
+    expect(back?.ok && back.design.layout).toBeUndefined()
+    expect(back?.ok && back.next).toBe(base)
+  })
+  it('merge-patches: untouched presets are kept', () => {
+    const r = patchDesignLayout(base, { cards: 'list' })
+    const r2 = r.ok ? patchDesignLayout(r.next, { faq: 'split' }) : null
+    expect(r2?.ok && r2.design.layout).toEqual({ cards: 'list', faq: 'split' })
+  })
+  it('an all-default patch on a design without layout is a no-op', () => {
+    const r = patchDesignLayout(base, { cards: 'default', team: 'default' })
+    expect(r.ok && r.changed).toBe(false)
+  })
+  it('replaces a hand-edited non-object layout', () => {
+    const odd = JSON.stringify({ roundness: 'pill', layout: 'list' }, null, 2) + '\n'
+    const r = patchDesignLayout(odd, { team: 'list' })
+    expect(r.ok && r.design.layout).toEqual({ team: 'list' })
+  })
+  it('rejects unknown presets / values and empty patches', () => {
+    expect(patchDesignLayout(base, { cards: 'grid' } as never).ok).toBe(false)
+    expect(patchDesignLayout(base, { hero: 'split' } as never).ok).toBe(false)
+    expect(patchDesignLayout(base, {}).ok).toBe(false)
   })
 })

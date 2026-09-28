@@ -8,6 +8,8 @@ import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { CSS_TARGETS } from './css-targets'
 import { canonicalStyle } from './style-axes'
 import { StyleAxesInputSchema } from './style-axes-schema'
+import { canonicalLayout } from './layout-presets'
+import { LayoutPresetsInputSchema } from './layout-presets-schema'
 
 export const BUNDLE_SOURCES = ['baseline', 'concept', 'chat', 'revert', 'import'] as const
 
@@ -57,6 +59,12 @@ export const DesignBundleSchema = z.object({
   // when all default). No zod .transform here: it would make the inferred key
   // required and break every DesignBundle literal that omits `style`.
   style: StyleAxesInputSchema.optional(),
+  // Site-wide layout presets (template 2026.09.9; the `layout-presets`
+  // capability FLAG — not a level). Optional so every older version still
+  // parses; absent ≡ all default. Below the flag the site's current layout is
+  // held (enforceCapabilities / keepLockedLayout), exactly like `style`.
+  // Canonicalized in parseDesignBundle.
+  layout: LayoutPresetsInputSchema.optional(),
   css: z.object({
     global: z.string().optional(),
     blocks: z.partialRecord(z.enum(CSS_TARGETS), z.string()),
@@ -72,8 +80,9 @@ export function parseDesignBundle(
   const r = DesignBundleSchema.safeParse(input)
   if (r.success) {
     const style = canonicalStyle(r.data.style)
-    const { style: _raw, ...rest } = r.data
-    return { ok: true, bundle: style ? { ...rest, style } : rest }
+    const layout = canonicalLayout(r.data.layout)
+    const { style: _raw, layout: _rawLayout, ...rest } = r.data
+    return { ok: true, bundle: { ...rest, ...(style ? { style } : {}), ...(layout ? { layout } : {}) } }
   }
   return { ok: false, errors: r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`) }
 }

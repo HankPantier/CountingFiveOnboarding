@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextResponse } from 'next/server'
 import { CID, SID, makeConceptRow } from '@/lib/design/__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT } from '@/lib/design/__fixtures__/theme-texts'
+import { LAYOUT_PRESET_ATTRIBUTES } from '@/lib/design/layout-presets'
 import { STYLE_AXIS_ATTRIBUTES } from '@/lib/design/style-axes'
 
-const m = vi.hoisted(() => ({ gate: vi.fn(), getConcept: vi.fn(), snapshot: vi.fn() }))
+const m = vi.hoisted(() => ({ gate: vi.fn(), getConcept: vi.fn(), snapshot: vi.fn(), caps: vi.fn() }))
 vi.mock('../../../_design', () => ({ requireDesignAdmin: (id: string) => m.gate(id) }))
+vi.mock('@/lib/design/capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.caps(a) }))
 vi.mock('@/lib/supabase/server', () => ({ createServerClient: () => ({}) }))
 vi.mock('@/lib/design/run-store', () => ({ getConcept: (...a: unknown[]) => m.getConcept(...a) }))
 // readDraftThemeTexts is rebuilt over the mocked snapshot with the real pure
@@ -26,7 +28,9 @@ const call = (query = '', cid = CID) => GET(new Request(`http://x/api${query}`),
 
 beforeEach(() => {
   vi.clearAllMocks()
-  m.gate.mockResolvedValue({ sessionId: SID, githubRepo: 'o/r', user: { isAdmin: true } })
+  m.gate.mockResolvedValue({ sessionId: SID, githubRepo: 'o/r', jobId: 'job-1', user: { isAdmin: true } })
+  const l1 = { level: 1, source: 'default', templateVersion: null, capabilities: [] }
+  m.caps.mockResolvedValue({ draft: l1, effective: l1 })
   m.getConcept.mockResolvedValue(makeConceptRow({ status: 'ready' }))
   m.snapshot.mockResolvedValue({
     shas: {},
@@ -54,6 +58,8 @@ describe('GET /design/concepts/[cid]/preview', () => {
       ...Object.fromEntries(STYLE_AXIS_ATTRIBUTES.map((a) => [a, null])),
       // design.json has no logo.size: remove a live one (template 2026.09.8)
       'data-c5-logo-size': null,
+      // no design.json layout: remove any live preset (template 2026.09.9)
+      ...Object.fromEntries(LAYOUT_PRESET_ATTRIBUTES.map((a) => [a, null])),
     }) // VALID treatments
     expect(theme.typography.accentFont).toBe('Fraunces')
     expect(theme.themeCss.length).toBeGreaterThan(100)
@@ -67,5 +73,21 @@ describe('GET /design/concepts/[cid]/preview', () => {
   it('keeps legacy overrides with removeLegacy=0', async () => {
     const { theme } = await (await call('?removeLegacy=0')).json()
     expect(theme.overridesCss).toContain(LEGACY)
+  })
+  it('matches apply on a locked site: a concept without style / layout keeps the draft\'s (keepLockedLevers)', async () => {
+    const withLevers = JSON.stringify({ ...JSON.parse(DESIGN_TEXT), style: { cards: 'flat' }, layout: { faq: 'split' } })
+    m.snapshot.mockResolvedValue({ shas: {}, texts: { 'content/brand.json': BRAND_TEXT, 'content/design.json': withLevers } })
+    const { theme } = await (await call()).json()
+    expect(theme.htmlAttributes['data-c5-cards']).toBe('flat')
+    expect(theme.htmlAttributes['data-c5-layout-faq']).toBe('split')
+    expect(m.caps).toHaveBeenCalledWith({ githubRepo: 'o/r', jobId: 'job-1' })
+  })
+  it('unlocked: a concept without layout previews without it (as apply writes it)', async () => {
+    const on = { level: 4, source: 'marker', templateVersion: '2026.09.9', capabilities: ['fonts', 'style-axes', 'specimen', 'layout-presets'] }
+    m.caps.mockResolvedValue({ draft: on, effective: on })
+    const withLayout = JSON.stringify({ ...JSON.parse(DESIGN_TEXT), layout: { faq: 'split' } })
+    m.snapshot.mockResolvedValue({ shas: {}, texts: { 'content/brand.json': BRAND_TEXT, 'content/design.json': withLayout } })
+    const { theme } = await (await call()).json()
+    expect(theme.htmlAttributes['data-c5-layout-faq']).toBeNull()
   })
 })

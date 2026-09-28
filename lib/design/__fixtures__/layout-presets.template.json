@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "defaultValue": "default",
+  "presets": {
+    "cards": {
+      "attribute": "data-c5-layout-cards",
+      "blocks": [
+        "service-cards",
+        "feature-grid",
+        "content-cards"
+      ],
+      "summary": "Card grids (services, features, content cards): list = one item per row, media or icon left, text right.",
+      "values": [
+        "default",
+        "list"
+      ]
+    },
+    "ctaBanner": {
+      "attribute": "data-c5-layout-cta-banner",
+      "blocks": [
+        "cta-banner"
+      ],
+      "summary": "Call-to-action banners: centered = heading, text and button stacked and centred.",
+      "values": [
+        "default",
+        "centered"
+      ]
+    },
+    "faq": {
+      "attribute": "data-c5-layout-faq",
+      "blocks": [
+        "faq-accordion"
+      ],
+      "summary": "FAQ: split = heading in a left column, questions on the right (desktop).",
+      "values": [
+        "default",
+        "split"
+      ]
+    },
+    "team": {
+      "attribute": "data-c5-layout-team",
+      "blocks": [
+        "team-grid"
+      ],
+      "summary": "Team: list = one member per row, photo left, credentials and bio right.",
+      "values": [
+        "default",
+        "list"
+      ]
+    },
+    "testimonials": {
+      "attribute": "data-c5-layout-testimonials",
+      "blocks": [
+        "testimonials"
+      ],
+      "summary": "Testimonials (grid): featured = the first quote as a large pull quote, the rest below.",
+      "values": [
+        "default",
+        "featured"
+      ]
+    }
+  }
+}

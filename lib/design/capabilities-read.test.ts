@@ -15,7 +15,7 @@ const shell = vi.hoisted(() => ({ read: vi.fn() }))
 vi.mock('./shell-capabilities', () => ({ readShellCapabilities: (a: unknown) => shell.read(a) }))
 
 import { FileNotFoundError } from '@/lib/github/repo-files'
-import { readDesignCapabilities, readDraftTemplateVersion, readEffectiveCapabilities } from './capabilities-read'
+import { readDesignCapabilities, readDraftLayoutPresets, readDraftTemplateVersion, readEffectiveCapabilities } from './capabilities-read'
 import { DEFAULT_CAPABILITIES } from './run-types'
 
 // beforeEach flushes a macrotask after mockReset(): on this Vitest 4.1.8 /
@@ -73,5 +73,23 @@ describe('readDraftTemplateVersion', () => {
     expect(await readDraftTemplateVersion('o/r')).toBeNull()
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
+  })
+})
+
+describe('readDraftLayoutPresets (2026.09.9)', () => {
+  it('reads the normalized draft design.json layout', async () => {
+    m.readFileConditional.mockResolvedValue({ content: '{"layout":{"cards":"list","faq":"default","team":"bogus"}}', sha: 'b'.repeat(40) })
+    expect(await readDraftLayoutPresets('o/r')).toEqual({ cards: 'list' })
+    expect(m.readFileConditional).toHaveBeenCalledWith('o/r', 'content/design.json', 'draft')
+  })
+  it('null when absent, unreadable or not JSON — never throws', async () => {
+    m.readFileConditional.mockResolvedValueOnce({ content: '{"roundness":"pill"}', sha: 'c'.repeat(40) })
+    expect(await readDraftLayoutPresets('o/r')).toBeNull()
+    m.readFileConditional.mockResolvedValueOnce({ content: '{nope', sha: 'd'.repeat(40) })
+    expect(await readDraftLayoutPresets('o/r')).toBeNull()
+    m.readFileConditional.mockRejectedValueOnce(new FileNotFoundError('missing'))
+    expect(await readDraftLayoutPresets('o/r')).toBeNull()
+    m.readFileConditional.mockRejectedValueOnce(new Error('rate limited'))
+    expect(await readDraftLayoutPresets('o/r')).toBeNull()
   })
 })

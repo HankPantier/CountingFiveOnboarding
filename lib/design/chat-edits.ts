@@ -5,6 +5,7 @@
 import type { DesignBundle } from './bundle'
 import { CSS_TARGETS, type CssTarget } from './css-targets'
 import { canonicalStyle, type StyleAxes } from './style-axes'
+import { canonicalLayout, type LayoutPresets } from './layout-presets'
 
 export type CssFragmentKey = CssTarget | 'global'
 export const CSS_FRAGMENT_KEYS = ['global', ...CSS_TARGETS] as const
@@ -23,6 +24,7 @@ export type ChatEdit =
   | { kind: 'tokens'; patch: TokensPatch }
   | { kind: 'treatments'; patch: Partial<DesignBundle['treatments']> }
   | { kind: 'style'; patch: StyleAxes }
+  | { kind: 'layout'; patch: LayoutPresets }
   | { kind: 'css'; target: CssFragmentKey; css: string }
   | { kind: 'remove-css'; target: CssFragmentKey }
 
@@ -52,6 +54,8 @@ export function applyChatEdit(b: DesignBundle, e: ChatEdit): DesignBundle {
       return { ...b, treatments: { ...b.treatments, ...defined(e.patch) } }
     case 'style':
       return { ...b, style: canonicalStyle({ ...(b.style ?? {}), ...defined(e.patch) }) }
+    case 'layout':
+      return { ...b, layout: canonicalLayout({ ...(b.layout ?? {}), ...defined(e.patch) }) }
     case 'tokens': {
       const { spacing, radius, ...rest } = e.patch
       return {
@@ -76,7 +80,8 @@ export function fragmentOf(css: DesignBundle['css'], target: CssFragmentKey): st
   return body && body.trim() ? body : null
 }
 
-const levers = (b: DesignBundle) => JSON.stringify({ p: b.palette, t: b.typography, k: b.tokens, r: b.treatments, s: b.style ?? {}, c: b.css })
+const levers = (b: DesignBundle) =>
+  JSON.stringify({ p: b.palette, t: b.typography, k: b.tokens, r: b.treatments, s: b.style ?? {}, l: canonicalLayout(b.layout) ?? {}, c: b.css })
 export function sameLevers(a: DesignBundle, b: DesignBundle): boolean {
   return levers(a) === levers(b)
 }
@@ -87,6 +92,7 @@ export function describeChatEdit(e: ChatEdit): string {
     case 'fonts':
     case 'treatments':
     case 'style':
+    case 'layout':
       return `${e.kind} (${Object.keys(defined(e.patch)).join(', ')})`
     case 'tokens':
       return `tokens (${Object.keys(defined(e.patch)).join(', ')})`

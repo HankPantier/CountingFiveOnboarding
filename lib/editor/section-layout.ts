@@ -12,10 +12,14 @@
 // return the body unchanged with a reason.
 
 import {
+  LAYOUTS_SINCE,
   blockSpec,
+  catalogVersion,
+  compareTemplateVersions,
   variantValuesAt,
   type BlockSpec,
 } from '@/lib/content/block-catalog'
+import { presetForBlock, type LayoutPresets } from '@/lib/design/layout-presets'
 import { findBlockComments, serializeBlockComment, type BlockComment } from './block-annotation'
 import { joinSections, type Section } from './markdown-sections'
 import { describeSections, partition } from './section-reorder'
@@ -140,6 +144,32 @@ export function layoutOptionsFor(
     ink,
     ...(theme && !themes.includes(theme) ? { unrecognisedTheme: theme } : {}),
   }
+}
+
+// "Following the site preset: …" — the site-wide layout preset (design.json
+// `layout`, template 2026.09.9) that restructures this section, or null. Mirrors
+// the template's precedence: an explicit per-section LAYOUT variant (catalog
+// `layout: true`) wins; legacy column/background variants follow the preset;
+// ink card bands never take one (an ink cta-banner does — it renders like any
+// banner); the testimonials carousel stays a carousel. Only on drafts whose
+// template renders presets (≥ LAYOUTS_SINCE).
+const PRESET_VALUE_LABELS: Record<string, string> = { list: 'list', centered: 'centred', split: 'split', featured: 'featured' }
+
+export function sitePresetHint(
+  blockId: string,
+  current: { variant: string; theme: string },
+  sitePresets: LayoutPresets | null | undefined,
+  opts: LayoutOpts = {},
+): string | null {
+  if (compareTemplateVersions(catalogVersion(opts.templateVersion), LAYOUTS_SINCE) < 0) return null
+  const preset = presetForBlock(sitePresets, blockId)
+  if (!preset) return null
+  const variant = current.variant.trim()
+  const spec = blockSpec(blockId)
+  if (variant && spec?.variants.some((v) => v.value === variant && v.layout)) return null
+  if (blockId === 'testimonials' && variant === 'carousel') return null
+  if (current.theme.trim() === 'ink' && blockId !== 'cta-banner') return null
+  return `Following the site preset: ${PRESET_VALUE_LABELS[preset.value] ?? preset.value}`
 }
 
 export type SectionLayoutResult = { ok: true; body: string; changed: boolean } | { ok: false; body: string; reason: string }

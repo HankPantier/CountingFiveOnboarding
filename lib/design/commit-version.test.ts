@@ -255,6 +255,41 @@ describe('commitDesignVersion', () => {
     })
   })
 
+  describe('layout presets (2026.09.9 flag, effective tier)', () => {
+    const LOCKED = { level: 4 as const, source: 'marker' as const, templateVersion: '2026.09.9', capabilities: ['fonts', 'style-axes', 'specimen'] }
+    const UNLOCKED = { ...LOCKED, capabilities: [...LOCKED.capabilities, 'layout-presets'] }
+    const LAID_DESIGN = JSON.stringify({ ...JSON.parse(DESIGN_TEXT), layout: { cards: 'list' } }, null, 2)
+    beforeEach(() => {
+      m.snapshot.mockReset()
+        .mockResolvedValueOnce({ shas: BEFORE_SHAS, texts: { ...BEFORE.texts, 'content/design.json': LAID_DESIGN } })
+        .mockResolvedValueOnce({ shas: AFTER_SHAS, texts: {} })
+    })
+    const appliedLayout = () => (m.apply.mock.calls[0][0] as { bundle: { layout?: unknown } }).bundle.layout
+    const recordedLayout = () => (m.insertVersion.mock.calls[0][1] as { bundle: { layout?: unknown } }).bundle.layout
+
+    it('locked site + a bundle that sets a layout → 422, nothing applied', async () => {
+      m.effective.mockResolvedValue({ draft: UNLOCKED, effective: LOCKED })
+      const r = await commitDesignVersion(DB, args({ bundle: { ...VALID, layout: { faq: 'split' }, meta: { source: 'concept' } } }))
+      expect(r).toMatchObject({ ok: false, status: 422 })
+      expect(r.ok === false && r.error).toContain('Layout presets are locked')
+      expect(m.apply).not.toHaveBeenCalled()
+    })
+    it('locked restore of a pre-layout version keeps the draft layout (applied + recorded)', async () => {
+      m.effective.mockResolvedValue({ draft: LOCKED, effective: LOCKED })
+      const r = await commitDesignVersion(DB, args({ source: 'revert', bundle: { ...VALID, meta: { source: 'revert' } } }))
+      expect(r.ok).toBe(true)
+      expect(appliedLayout()).toEqual({ cards: 'list' })
+      expect(recordedLayout()).toEqual({ cards: 'list' })
+    })
+    it('unlocked restore of a pre-layout version removes the layout (the bundle is the whole design)', async () => {
+      m.effective.mockResolvedValue({ draft: UNLOCKED, effective: UNLOCKED })
+      const r = await commitDesignVersion(DB, args({ source: 'revert', bundle: { ...VALID, meta: { source: 'revert' } } }))
+      expect(r.ok).toBe(true)
+      expect(appliedLayout()).toBeUndefined()
+      expect(recordedLayout()).toBeUndefined()
+    })
+  })
+
   it('passes an apply refusal (contrast) through with its status', async () => {
     m.apply.mockResolvedValue({ ok: false, status: 422, error: 'The palette fails contrast checks — x.' })
     expect(await commitDesignVersion(DB, args())).toEqual({ ok: false, status: 422, error: 'The palette fails contrast checks — x.' })

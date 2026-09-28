@@ -14,6 +14,7 @@ import {
 } from '@/app/api/edit/[id]/theme/_theme'
 import { normalizeStyleAxes } from './style-axes'
 import { logoSizeOf } from './logo-size'
+import { normalizeLayoutPresets } from './layout-presets'
 
 async function readOr(githubRepo: string, path: string, fallback: string): Promise<string> {
   try {
@@ -58,6 +59,7 @@ export async function loadDraftThemeSources(
       spacing: design.spacing,
       radius: design.radius,
       style: normalizeStyleAxes(design.style),
+      layout: normalizeLayoutPresets(design.layout),
       themeCss,
       overridesCss,
     },

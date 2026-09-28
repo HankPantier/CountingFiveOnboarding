@@ -915,3 +915,42 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
     expect(sanitizeDesignCss('[data-block="hero"] { width: 100vw; }', HERO).ok).toBe(true)
   })
 })
+
+describe('layout-preset html state prefix (2026.09.9)', () => {
+  it('accepts html[data-c5-layout-*] prefixes and in-block re-gridding / order (the sanitizer itself never gates order)', () => {
+    const r = sanitizeDesignCss(
+      'html[data-c5-layout-cards="list"] [data-block="service-cards"] > div { display: grid; grid-template-columns: 1fr 2fr; } [data-block="service-cards"] [data-c5-slot="media"] { order: 2; }',
+      { kind: 'target', target: 'service-cards' }
+    )
+    expect(r.ok).toBe(true)
+  })
+  it('still rejects an unknown html state attribute', () => {
+    expect(sanitizeDesignCss('html[data-c5-layout-hero="x"] [data-block="hero"] { gap: 1rem; }', { kind: 'target', target: 'hero' }).ok).toBe(false)
+  })
+})
+
+describe('layoutGuardErrors — order only for a media/text swap (a11y, newly authored CSS)', () => {
+  it('allows order on the media / body slot', () => {
+    expect(layoutGuardErrors('[data-block="content-split"] [data-c5-slot="media"] { order: 2; }')).toEqual([])
+    expect(layoutGuardErrors("[data-block=\"content-split\"] [data-c5-slot='body'] { order: -1; }")).toEqual([])
+    expect(layoutGuardErrors('@media (min-width: 768px) { [data-block="service-cards"] [data-c5-slot=media] { order: 1; } }')).toEqual([])
+    expect(layoutGuardErrors('[data-block="service-cards"] [data-c5-slot="media"], [data-block="team-grid"] [data-c5-slot="body"] { order: 2 }')).toEqual([])
+  })
+  it('rejects a card / item reorder with a clear error', () => {
+    const e = layoutGuardErrors('[data-block="service-cards"] [data-c5-slot="item"]:first-child { order: 3; }')
+    expect(e).toHaveLength(1)
+    expect(e[0]).toContain('order: 3')
+    expect(e[0]).toContain('only allowed to swap a block’s media and its text')
+    expect(layoutGuardErrors('[data-block="faq-accordion"] details { order: -1; }')).toHaveLength(1)
+    // The slot must be the rule's SUBJECT, not an ancestor of it.
+    expect(layoutGuardErrors('[data-block="service-cards"] [data-c5-slot="media"] h3 { order: 2; }')).toHaveLength(1)
+    // Every selector in the list must qualify.
+    expect(layoutGuardErrors('[data-block="hero"] [data-c5-slot="media"], [data-block="hero"] h1 { order: 2; }')).toHaveLength(1)
+  })
+  it('neutral values (restore source order) are fine anywhere', () => {
+    expect(layoutGuardErrors('[data-block="service-cards"] > div { order: 0; } [data-block="hero"] h1 { order: initial; }')).toEqual([])
+  })
+  it('is an authoring-time guard only: the sanitizer (apply / restore of stored CSS) still accepts order anywhere', () => {
+    expect(sanitizeDesignCss('[data-block="service-cards"] > div { order: 3; }', { kind: 'target', target: 'service-cards' }).ok).toBe(true)
+  })
+})
