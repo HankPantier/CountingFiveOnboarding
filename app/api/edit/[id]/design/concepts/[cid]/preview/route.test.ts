@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextResponse } from 'next/server'
 import { CID, SID, makeConceptRow } from '@/lib/design/__fixtures__/rows'
 import { BRAND_TEXT, DESIGN_TEXT } from '@/lib/design/__fixtures__/theme-texts'
+import { LAYOUT_PRESET_ATTRIBUTES } from '@/lib/design/layout-presets'
 import { STYLE_AXIS_ATTRIBUTES } from '@/lib/design/style-axes'
 
 const m = vi.hoisted(() => ({ gate: vi.fn(), getConcept: vi.fn(), snapshot: vi.fn() }))
@@ -54,6 +55,8 @@ describe('GET /design/concepts/[cid]/preview', () => {
       ...Object.fromEntries(STYLE_AXIS_ATTRIBUTES.map((a) => [a, null])),
       // design.json has no logo.size: remove a live one (template 2026.09.8)
       'data-c5-logo-size': null,
+      // no design.json layout: remove any live preset (template 2026.09.9)
+      ...Object.fromEntries(LAYOUT_PRESET_ATTRIBUTES.map((a) => [a, null])),
     }) // VALID treatments
     expect(theme.typography.accentFont).toBe('Fraunces')
     expect(theme.themeCss.length).toBeGreaterThan(100)
