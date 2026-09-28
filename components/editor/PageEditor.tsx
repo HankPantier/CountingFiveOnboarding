@@ -38,19 +38,24 @@ import {
   removeSection,
 } from '@/lib/editor/section-reorder'
 import { setSectionTheme, setSectionVariant } from '@/lib/editor/section-layout'
+import {
+  applyPageOpener,
+  currentPageOpener,
+  pageOpenerChoices,
+  pageOpenerHints,
+} from '@/lib/editor/page-opener'
 
 type EditorTab = 'editor' | 'seo' | 'media'
 
 // Editable subset of frontmatter keys. Other keys are preserved on save but
-// not exposed as form fields.
+// not exposed as form fields. `hero` / `hero_variant` are edited as one pair by
+// the "Page opener" select (lib/editor/page-opener.ts), not as free text.
 const PROMOTED_FIELDS = [
   'title',
   'meta_title',
   'meta_description',
   'target_keyword',
   'canonical_url',
-  'hero',
-  'hero_variant',
   'hero_image',
   'hero_subhead',
 ]
@@ -238,6 +243,7 @@ export default function PageEditor({
           </div>
         )}
         <div className="grid grid-cols-1 gap-3">
+          {!isPost && <PageOpenerSelect frontmatter={parsed.frontmatter} templateVersion={templateVersion} onChange={(next) => commit(next, bodyContent)} />}
           {promotedFields.map((key) => {
             const value = parsed.frontmatter!.fields[key] ?? ''
             return (
@@ -576,3 +582,44 @@ export default function PageEditor({
   )
 }
 
+// "Page opener" select: one choice ↔ the (hero, hero_variant) frontmatter pair.
+// An unrecognised current pair is shown as "Custom: …" and only replaced when
+// the operator picks another choice.
+function PageOpenerSelect({
+  frontmatter,
+  templateVersion,
+  onChange,
+}: {
+  frontmatter: Frontmatter
+  templateVersion: string | null
+  onChange: (next: Frontmatter) => void
+}) {
+  const current = currentPageOpener(frontmatter)
+  const value = current.kind === 'choice' ? current.id : '__custom'
+  const hints = pageOpenerHints(frontmatter)
+  return (
+    <label className="block">
+      <span className="block text-xs font-heading text-text-secondary mb-1">Page opener</span>
+      <select
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === value || e.target.value === '__custom') return
+          onChange(applyPageOpener(frontmatter, e.target.value))
+        }}
+        className="w-full text-sm font-body px-3 py-2 rounded border border-border-default bg-surface-card focus:border-brand-cyan focus:outline-none"
+      >
+        {current.kind === 'custom' && <option value="__custom">{current.label}</option>}
+        {pageOpenerChoices(templateVersion).map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.label}
+          </option>
+        ))}
+      </select>
+      {hints.map((h) => (
+        <span key={h} className="block mt-1 text-[11px] font-body text-warning-strong">
+          {h}
+        </span>
+      ))}
+    </label>
+  )
+}
