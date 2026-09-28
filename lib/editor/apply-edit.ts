@@ -4,7 +4,7 @@
 // to find and its replacement, and we verify the match landed before writing.
 import { splitFile } from './frontmatter'
 import { overlapSafeReplaceAll } from './replace'
-import { heroPairWarnings, validateAnnotationDelta } from '@/lib/content/block-annotation-validator'
+import { heroPairWarnings, validateAnnotationDelta, type AnnotationCheckOpts } from '@/lib/content/block-annotation-validator'
 
 export type FindReplaceResult =
   | { ok: true; next: string; count: number }
@@ -107,10 +107,12 @@ export interface AnnotationCheck {
 // `content-prose | variant: standard`) never block an unrelated edit. A changed
 // hero / hero_variant pair that the template can't render as written is a
 // warning, not an error (it falls back safely).
-export function checkEditAnnotations(prevFile: string, nextFile: string): AnnotationCheck {
+// `opts.templateVersion` (the DRAFT template's) additionally rejects an
+// introduced variant that template doesn't render yet; omitted ⇒ not checked.
+export function checkEditAnnotations(prevFile: string, nextFile: string, opts?: AnnotationCheckOpts): AnnotationCheck {
   const prev = splitFile(prevFile)
   const next = splitFile(nextFile)
-  const errors = validateAnnotationDelta(prev.body, next.body)
+  const errors = validateAnnotationDelta(prev.body, next.body, opts)
   const pair = (fm: typeof prev.frontmatter) => {
     const f = fm?.fields ?? {}
     // Values are raw YAML scalars; the page opener fields are plain words.

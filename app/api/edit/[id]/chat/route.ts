@@ -267,7 +267,7 @@ ${view().visible}
             if (!res.ok && res.noop) return { success: true, noChange: true, message: res.reason }
             if (!res.ok) return { error: res.reason }
             // Only problems this edit introduces block it; legacy values don't.
-            const check = checkEditAnnotations(before, res.next)
+            const check = checkEditAnnotations(before, res.next, { templateVersion })
             if (check.errors.length > 0) {
               return { error: `That edit would break a block annotation: ${check.errors.join(' ')}` }
             }
@@ -316,7 +316,7 @@ ${view().visible}
             // Only commit when something actually landed; when every find missed
             // the page is unchanged — return the misses so the model re-copies.
             const changed = res.next !== visible
-            const check = changed ? checkEditAnnotations(visible, res.next) : { errors: [], warnings: [] }
+            const check = changed ? checkEditAnnotations(visible, res.next, { templateVersion }) : { errors: [], warnings: [] }
             if (changed) {
               if (check.errors.length > 0) {
                 return { error: `That edit would break a block annotation: ${check.errors.join(' ')}` }
@@ -365,7 +365,7 @@ ${view().visible}
             if (!res.ok) return { error: res.reason }
             if (!res.changed) return { success: true, noChange: true, message: 'That section already has this layout.' }
             const next = prefix + res.body
-            const check = checkEditAnnotations(before, next)
+            const check = checkEditAnnotations(before, next, { templateVersion })
             if (check.errors.length > 0) {
               return { error: `That layout would break a block annotation: ${check.errors.join(' ')}` }
             }
@@ -446,7 +446,7 @@ ${view().visible}
               caseInsensitive: ci,
               stripDashes: stripDashes ?? false,
             })
-            const annotationErrors = checkEditAnnotations(visible, res.next).errors
+            const annotationErrors = checkEditAnnotations(visible, res.next, { templateVersion }).errors
             if (annotationErrors.length > 0) {
               return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
             }
