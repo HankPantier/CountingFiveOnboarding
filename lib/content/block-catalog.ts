@@ -119,3 +119,71 @@ export function blockVariantValues(blockId: string): string[] {
 export function blockLabel(blockId: string): string {
   return blockSpec(blockId)?.label ?? blockId
 }
+
+// ---------------------------------------------------------------------------
+// Template versions (`YYYY.MM.N` — N is unbounded, so compare numerically:
+// 2026.09.10 > 2026.09.9).
+// ---------------------------------------------------------------------------
+
+const VERSION_RE = /^\d+(?:\.\d+)*$/
+
+/** True for a well-formed template version string. */
+export function isTemplateVersion(v: unknown): v is string {
+  return typeof v === 'string' && VERSION_RE.test(v)
+}
+
+/**
+ * Numeric, segment-wise comparison: <0 when a < b, 0 when equal, >0 when a > b.
+ * Missing trailing segments count as 0. Malformed input sorts below every
+ * valid version (and equal to other malformed input) so it never unlocks more.
+ */
+export function compareTemplateVersions(a: string, b: string): number {
+  const va = isTemplateVersion(a)
+  const vb = isTemplateVersion(b)
+  if (!va || !vb) return va === vb ? 0 : va ? 1 : -1
+  const pa = a.split('.').map(Number)
+  const pb = b.split('.').map(Number)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
+    if (d !== 0) return d < 0 ? -1 : 1
+  }
+  return 0
+}
+
+/**
+ * The version the block vocabulary is filtered at: the given template version,
+ * clamped up to BASELINE_SINCE (baseline values shipped before versioning, so
+ * every template renders them); no/malformed marker ⇒ the baseline.
+ */
+export function catalogVersion(templateVersion: string | null | undefined): string {
+  return isTemplateVersion(templateVersion) && compareTemplateVersions(templateVersion, BASELINE_SINCE) > 0
+    ? templateVersion
+    : BASELINE_SINCE
+}
+
+/** The variant values a template at `templateVersion` renders (since ≤ version). */
+export function variantValuesAt(variants: readonly BlockVariantSpec[], templateVersion: string | null | undefined): string[] {
+  const at = catalogVersion(templateVersion)
+  return variants.filter((v) => compareTemplateVersions(v.since, at) <= 0).map((v) => v.value)
+}
+
+/** Variant values of a block that a template at `templateVersion` renders. */
+export function blockVariantValuesAt(blockId: string, templateVersion: string | null | undefined): string[] {
+  return variantValuesAt(blockSpec(blockId)?.variants ?? [], templateVersion)
+}
+
+/**
+ * The newest `since` at or below `templateVersion` across the whole catalog —
+ * every version with the same epoch sees the same vocabulary, so prompt
+ * prefixes can be cached per epoch instead of per version string.
+ */
+export function catalogEpoch(templateVersion: string | null | undefined): string {
+  const at = catalogVersion(templateVersion)
+  let epoch = BASELINE_SINCE
+  for (const id of BLOCK_IDS) {
+    for (const v of (BLOCK_CATALOG as Record<string, BlockSpec>)[id].variants) {
+      if (compareTemplateVersions(v.since, at) <= 0 && compareTemplateVersions(v.since, epoch) > 0) epoch = v.since
+    }
+  }
+  return epoch
+}

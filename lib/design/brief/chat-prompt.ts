@@ -65,7 +65,7 @@ export function buildChatSystemStatic(args: { firmName: string; schema: unknown;
     fontsLine(args.caps),
     styleLine(args.caps),
     TOKEN_CONTRACT,
-    blockCatalogHint(),
+    blockCatalogHint(args.caps.templateVersion),
     CSS_RULES_SECTION,
     CSS_RULES_REMINDER,
     `BRAND BRIEF\n${buildBrandBrief({ firmName: args.firmName, schema: args.schema, designMd: args.designMd })}`,
