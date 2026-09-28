@@ -1,0 +1,24 @@
+{
+  "_note": "Template 2026.09.10 (fix/cta-banner-image tip a2999f7). File set = the CHANGELOG 'Rollout notes (template 2026.09.9 → 2026.09.10)' list = git diff 4ac337d..a2999f7 minus c5-template.json (written last) and the @visual baselines. One fix: image-bg / image-bg-centered cta-banners rendered flat colour because the photo (-z-20) sat in a section with no stacking context; the image section is now `isolate`, with an ink scrim (86% → 70%) and the copy token pinned to near-white (AA >= 4.5:1 over a pure-white photo, pixel-measured in e2e/cta-banner-image.spec.ts). VISIBLE CHANGE on every page with an image banner. R1: color-bg / color-bg-centered markup byte-identical to 2026.09.9. theme.css is not rewritten, package.json and package-lock.json are unchanged ('ignore' acknowledges).",
+  "templateVersion": "2026.09.10",
+  "notes": "Call-to-action banners set to use a background photo now actually show it: the photo appears behind the text under a dark overlay that keeps the text easy to read. Until now those banners showed as a plain colour block. Colour banners and every other section look exactly as before.",
+  "exclude": [
+    "\\.png$",
+    "^e2e/.*-snapshots/"
+  ],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "CHANGELOG.md",
+      "docs/blocks.md",
+      "src/components/blocks/CtaBanner.tsx",
+      "src/lib/theme/template-marker.test.ts"
+    ],
+    "add": [
+      "e2e/cta-banner-image.spec.ts",
+      "src/components/blocks/cta-banner-image.test.ts"
+    ],
+    "delete": []
+  }
+}
