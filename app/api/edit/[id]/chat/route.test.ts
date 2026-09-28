@@ -26,6 +26,13 @@ vi.mock('ai', async (orig) => ({
     return { toUIMessageStreamResponse: () => new Response('stream') }
   },
 }))
+// The catalog gains a future `service-cards | list` layout (since 2026.09.9) so
+// the version tests can prove the draft marker reaches the hint and the tools.
+// Every other block/variant is the real contract.
+vi.mock('@/lib/content/block-catalog', async (importOriginal) => {
+  const { catalogWithListLayout } = await import('@/lib/content/__fixtures__/catalog-with-list')
+  return catalogWithListLayout(importOriginal as never)
+})
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: () => ({}) }))
 vi.mock('../_helpers', () => ({ resolveEditContext: async () => m.ctx }))
 vi.mock('@/lib/auth/access', () => ({
@@ -231,6 +238,58 @@ describe('POST /api/edit/[id]/chat', () => {
       await post()
       expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: 'image-left' })).error).toMatch(/pages only/)
       expect(m.file).toBe(LAYOUT_FILE)
+    })
+  })
+
+  describe('draft template version', () => {
+    const FILE = [
+      '---',
+      'title: "About"',
+      '---',
+      '',
+      '<!-- block: service-cards | variant: 3-col -->',
+      '## Our services',
+      '',
+      '### Tax',
+      '',
+    ].join('\n')
+    const hint = () => m.system!.map((s) => s.content).join('\n')
+
+    it('an older template: the hint omits the newer layout and both tools refuse it', async () => {
+      m.marker = JSON.stringify({ templateVersion: '2026.09.8', capabilities: [] })
+      m.file = FILE
+      await post()
+      expect(hint()).toContain('service-cards (2-col|3-col)')
+      expect(hint()).not.toContain('service-cards (2-col|3-col|list)')
+
+      const viaTool = await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: 'list' })
+      expect(String(viaTool.error)).toMatch(/not a layout for service-cards/)
+
+      const viaEdit = await m.tools!.apply_edit.execute({
+        find: '<!-- block: service-cards | variant: 3-col -->',
+        replace: '<!-- block: service-cards | variant: list -->',
+      })
+      expect(String(viaEdit.error)).toMatch(/needs template 2026\.09\.9/)
+      expect(m.file).toBe(FILE)
+    })
+
+    it('no marker: baseline vocabulary, newer layout refused', async () => {
+      m.marker = null
+      m.file = FILE
+      await post()
+      expect(hint()).toContain('service-cards (2-col|3-col)')
+      expect((await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: 'list' })).error).toBeTruthy()
+      expect(m.file).toBe(FILE)
+    })
+
+    it('a template that has it: the hint offers it and the tool applies it', async () => {
+      m.marker = JSON.stringify({ templateVersion: '2026.09.9', capabilities: [] })
+      m.file = FILE
+      await post()
+      expect(hint()).toContain('service-cards (2-col|3-col|list)')
+      const res = await m.tools!.set_section_layout.execute({ heading: 'Our services', variant: 'list' })
+      expect(res.success).toBe(true)
+      expect(m.file).toContain('<!-- block: service-cards | variant: list -->')
     })
   })
 })
