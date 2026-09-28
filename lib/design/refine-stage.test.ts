@@ -183,6 +183,21 @@ describe('renderUnit', () => {
     expect(m.remove).toHaveBeenCalledWith({}, R1.map((s) => s.path))
   })
 
+  it('renders what apply writes: below the flag a layout-less concept keeps the draft layout (keepLockedLevers); unlocked it does not', async () => {
+    const withLayout = JSON.stringify({ ...JSON.parse(DESIGN_TEXT), layout: { faq: 'split' } })
+    m.texts.mockResolvedValue({ ok: true, files: { ...FILES, designText: withLayout } })
+    const row = () => looping({ next: 'render', metrics: null, metricsIteration: null }, { iterations: 1, screenshots: asJson(R0) })
+    m.listConcepts.mockResolvedValue([row()])
+    await renderUnit({} as never, CTX, RUN, CID, 'rerender')
+    const theme = (m.renderFolds.mock.calls.at(-1)?.[0] as { theme: { htmlAttributes: Record<string, string | null> } }).theme
+    expect(theme.htmlAttributes['data-c5-layout-faq']).toBe('split')
+    const on = { level: 4, source: 'marker', templateVersion: '2026.09.9', capabilities: ['fonts', 'style-axes', 'specimen', 'layout-presets'] }
+    m.listConcepts.mockResolvedValue([row()])
+    await renderUnit({} as never, CTX, { ...RUN, capabilities: asJson(on) }, CID, 'rerender')
+    const theme2 = (m.renderFolds.mock.calls.at(-1)?.[0] as { theme: { htmlAttributes: Record<string, string | null> } }).theme
+    expect(theme2.htmlAttributes['data-c5-layout-faq']).toBeNull()
+  })
+
   it('a retried re-render that rewrites the same deterministic paths deletes nothing it just wrote', async () => {
     m.listConcepts.mockResolvedValue([looping({ next: 'render', metrics: null, metricsIteration: null }, { iterations: 2, screenshots: asJson(R2) })])
     m.renderFolds.mockResolvedValue({ shots: R2, desktopWebp: Buffer.from([1]), metrics: OK_METRICS, error: null })

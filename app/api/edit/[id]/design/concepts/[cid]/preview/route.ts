@@ -6,6 +6,8 @@ import { composedThemeFromFiles } from '@/lib/design/composed-theme'
 import { isUuid } from '@/lib/design/input-validation'
 import { getConcept } from '@/lib/design/run-store'
 import { readDraftThemeTexts } from '@/lib/design/theme-snapshot'
+import { readEffectiveCapabilities } from '@/lib/design/capabilities-read'
+import { keepLockedLevers } from '@/lib/design/capabilities'
 import { requireDesignAdmin } from '../../../_design'
 
 export const runtime = 'nodejs'
@@ -24,8 +26,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (flag !== '0' && flag !== '1') return NextResponse.json({ error: 'removeLegacy must be 0 or 1.' }, { status: 400 })
 
   let bundleToRepoFiles: (typeof import('@/lib/design/bundle-files'))['bundleToRepoFiles']
+  let bundleFromRepoFiles: (typeof import('@/lib/design/bundle-files'))['bundleFromRepoFiles']
   try {
-    ;({ bundleToRepoFiles } = await import('@/lib/design/bundle-files')) // native lightningcss — lazy
+    ;({ bundleToRepoFiles, bundleFromRepoFiles } = await import('@/lib/design/bundle-files')) // native lightningcss — lazy
   } catch (err) {
     console.error('[design:concept:preview] failed to load the design engine', err)
     return NextResponse.json({ error: 'The design engine is unavailable right now.' }, { status: 503 })
@@ -38,10 +41,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const parsed = parseDesignBundle(concept.bundle)
     if (!parsed.ok) return NextResponse.json({ error: 'This concept can no longer be previewed.' }, { status: 422 })
 
-    const draft = await readDraftThemeTexts(ctx.githubRepo)
+    const [draft, capRead] = await Promise.all([
+      readDraftThemeTexts(ctx.githubRepo),
+      readEffectiveCapabilities({ githubRepo: ctx.githubRepo, jobId: ctx.jobId }),
+    ])
     if (!draft.ok) return NextResponse.json({ error: draft.error }, { status: 409 })
     const { brandText, designText, overridesCss } = draft.files
-    const files = bundleToRepoFiles(parsed.bundle, { brandText, designText, overridesCss }, { removeLegacy: flag === '1' })
+    // Match apply (commitDesignVersion): below their capability, a concept
+    // without style axes / layout presets keeps the draft's current ones.
+    const current = bundleFromRepoFiles({ brandText, designText, overridesCss: '' }, { name: 'Current design', source: 'baseline' })
+    const bundle = current.ok ? keepLockedLevers(parsed.bundle, current.bundle, capRead.effective) : parsed.bundle
+    const files = bundleToRepoFiles(bundle, { brandText, designText, overridesCss }, { removeLegacy: flag === '1' })
     if (!files.ok) return NextResponse.json({ error: files.errors.join(' ') }, { status: 422 })
     return NextResponse.json({ theme: composedThemeFromFiles(files.files) })
   } catch (err) {
