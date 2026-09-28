@@ -63,6 +63,10 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   hint no longer says every logo gets a light plate (a light-tone logo sits
 //   directly on the bar). That line is L3+ only (style axes), so the L1/L2
 //   goldens are deliberately NOT regenerated: re-checked byte-identical.
+// - Block catalog contract (2026-09-28): BLOCK VOCABULARY variants now come
+//   from the template block catalog mirror (lib/content/block-catalog.ts), so
+//   the checklist-section entry lists the with-image-right / with-image-left
+//   variants the template has rendered since 2026-08-14. Nothing else moved.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })

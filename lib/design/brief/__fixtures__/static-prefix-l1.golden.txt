@@ -27,7 +27,7 @@ BLOCK VOCABULARY (every block carries data-block on its outer element)
 - [data-block="intro-text"] (variants: centered | left-aligned): Short headline + paragraph transition between sections.
 - [data-block="content-split"] (variants: image-right | image-left): Narrative paragraph with a supporting image.
 - [data-block="content-prose"]: Long-form copy with no supporting image.
-- [data-block="checklist-section"] (variants: with-image | standalone): Benefits, inclusions or qualifying criteria. Uses: --color-action (check icon).
+- [data-block="checklist-section"] (variants: with-image | with-image-right | with-image-left | standalone): Benefits, inclusions or qualifying criteria. Uses: --color-action (check icon).
 - [data-block="process-steps"] (variants: horizontal | vertical): Numbered how-it-works sequence.
 - [data-block="feature-grid"] (variants: 3-col | 4-col): 3–8 equal-weight features with icon + short description.
 - [data-block="service-cards"] (variants: 2-col | 3-col): 2–9 named services with descriptions and links.
