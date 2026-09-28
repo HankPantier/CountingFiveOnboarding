@@ -168,7 +168,17 @@ function SortableRow({
         </button>
         <div className="min-w-0 flex-1">
           <SectionLabel blockId={section.blockId} heading={section.heading} />
-          {layout && <LayoutControls section={section} index={index} layout={layout} />}
+          {layout && (
+            // Keyed by the section's identity AND position: a reorder, delete or
+            // edit that moves a different section into this row remounts the
+            // controls, so a refusal message never lingers on the wrong section.
+            <LayoutControls
+              key={`${index}:${section.blockId}:${section.heading}`}
+              section={section}
+              index={index}
+              layout={layout}
+            />
+          )}
         </div>
         <button
           type="button"
