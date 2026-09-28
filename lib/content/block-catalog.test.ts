@@ -70,3 +70,17 @@ describe('variantValuesAt', () => {
     expect(variantValuesAt(variants, null)).toEqual(['grid'])
   })
 })
+
+describe('template 2026.09.9 layout variants', () => {
+  it('are flagged layout and appear only from 2026.09.9', async () => {
+    const { blockVariantValuesAt, catalogEpoch, LAYOUTS_SINCE } = await import('./block-catalog')
+    expect(LAYOUTS_SINCE).toBe('2026.09.9')
+    expect(blockSpec('service-cards')?.variants.find((x) => x.value === 'list')).toEqual({ value: 'list', since: '2026.09.9', layout: true })
+    expect(blockVariantValuesAt('service-cards', '2026.09.8')).toEqual(['2-col', '3-col'])
+    expect(blockVariantValuesAt('service-cards', '2026.09.9')).toEqual(['2-col', '3-col', 'list'])
+    expect(blockVariantValuesAt('cta-banner', '2026.09.9')).toEqual(['color-bg', 'image-bg', 'color-bg-centered', 'image-bg-centered'])
+    expect(blockVariantValuesAt('testimonials', null)).toEqual(['carousel', 'grid'])
+    expect(catalogEpoch('2026.09.8')).toBe('2026.09.1')
+    expect(catalogEpoch('2026.09.9')).toBe('2026.09.9')
+  })
+})

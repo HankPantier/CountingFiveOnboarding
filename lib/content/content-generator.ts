@@ -16,6 +16,7 @@ import { parseBlockAnnotations, validateBlockAnnotations, applyCoercions } from 
 import { ensureBlockMedia, deriveQuery } from './ensure-block-media'
 import { filterKnownInternalLinks } from './link-validator'
 import { buildCrossLinkIndex } from './internal-link-targets'
+import { readDesignCapabilities } from '@/lib/design/capabilities-read'
 import { truncateToTokenBudget, checkTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
 import { extractJson } from './extract-json'
@@ -672,6 +673,8 @@ export type FinalizePageInput = {
   sitemapUrls: string[]
   // Optional per-page angle/POV directive captured during outline proofing.
   angle?: string | null
+  // Draft template version (see PageGenContext.templateVersion).
+  templateVersion?: string | null
   // Optional "fix these" guidance from the draft critic on a targeted rewrite.
   revisionGuidance?: string
   // 1-based attempt number — selects the effort rung (see providerOptionsForAttempt).
@@ -749,7 +752,8 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
 
   const annotations = parseBlockAnnotations(result.content)
   const headingCount = (result.content.match(/^##\s+/gm) || []).length
-  const blockValidation = validateBlockAnnotations(annotations, input.pageUrl, result.metadata.faq_block)
+  const versionOpts = input.templateVersion === undefined ? undefined : { templateVersion: input.templateVersion }
+  const blockValidation = validateBlockAnnotations(annotations, input.pageUrl, result.metadata.faq_block, versionOpts)
 
   // Missing-annotation check: if the body has ## sections but few or no
   // annotations, Claude ignored the block-annotation rules. Force a retry
@@ -810,7 +814,7 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
     result = stripNotes(await gen([correctionNote]))
 
     const retryAnnotations = parseBlockAnnotations(result.content)
-    const retryValidation = validateBlockAnnotations(retryAnnotations, input.pageUrl, result.metadata.faq_block)
+    const retryValidation = validateBlockAnnotations(retryAnnotations, input.pageUrl, result.metadata.faq_block, versionOpts)
     if (!retryValidation.passed) {
       console.warn(
         `[content-gen] Block validation still failing after retry on ${input.pageUrl}; storing anyway:`,
@@ -826,7 +830,8 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
   const finalValidation = validateBlockAnnotations(
     finalAnnotations,
     input.pageUrl,
-    result.metadata.faq_block
+    result.metadata.faq_block,
+    versionOpts
   )
   if (finalValidation.coercions.length > 0) {
     console.warn(
@@ -1048,6 +1053,10 @@ export type PageGenContext = {
   // All research rows for the job, keyed by page_url, loaded once so the batch
   // runner doesn't fire a per-page research SELECT (N+1) inside the loop.
   researchByUrl: Map<string, ResearchRow>
+  // The site's DRAFT template version (c5-template.json), read once per job;
+  // null = repo without a marker (baseline). undefined = no repo yet or the
+  // read failed → validation accepts every contract variant (as before).
+  templateVersion?: string | null
 }
 
 async function loadPageGenContext(
@@ -1090,6 +1099,17 @@ async function loadPageGenContext(
     .single()
   if (!session) return null
 
+  // One GitHub read per job: variants newer than the draft template (e.g. the
+  // 2026.09.9 layouts on a 2026.09.8 site) get coerced like any invalid value.
+  let templateVersion: string | null | undefined
+  if (job.github_repo) {
+    try {
+      templateVersion = (await readDesignCapabilities(job.github_repo)).templateVersion
+    } catch (err) {
+      console.warn(`[content-gen] Template marker unavailable for ${job.github_repo}:`, err)
+    }
+  }
+
   // Batch-load research once for the whole job (was a per-page SELECT = N+1).
   const { data: researchRows } = await supabase
     .from('research_results')
@@ -1109,6 +1129,7 @@ async function loadPageGenContext(
     palette: (job.palette ?? null) as PaletteData | null,
     sitemapUrls,
     researchByUrl,
+    templateVersion,
   }
 }
 
@@ -1153,6 +1174,7 @@ function buildFinalizeInput(
     sessionId: ctx.sessionId,
     sitemapUrls: ctx.sitemapUrls,
     angle: outline.angle,
+    templateVersion: ctx.templateVersion,
     ...extra,
   }
 }

@@ -1,12 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { validateAnnotationDelta, annotationSyntaxIssues } from './block-annotation-validator'
+import { checkEditAnnotations } from '@/lib/editor/apply-edit'
 
-vi.mock('@/lib/content/block-catalog', async (importOriginal) => {
-  const { catalogWithListLayout } = await import('./__fixtures__/catalog-with-list')
-  return catalogWithListLayout(importOriginal as never)
-})
-
-const { validateAnnotationDelta, annotationSyntaxIssues } = await import('./block-annotation-validator')
-const { checkEditAnnotations } = await import('@/lib/editor/apply-edit')
+// The real block catalog: `service-cards | list` ships in template 2026.09.9.
 
 const body = (variant: string, extra = '') =>
   [`<!-- block: service-cards | variant: ${variant} -->`, '## Services', '', '### Tax', '', extra].join('\n')
@@ -36,5 +32,19 @@ describe('version-aware annotation checks', () => {
     const file = (v: string) => `---\ntitle: A\n---\n${body(v)}`
     expect(checkEditAnnotations(file('3-col'), file('list'), { templateVersion: '2026.09.8' }).errors).toHaveLength(1)
     expect(checkEditAnnotations(file('3-col'), file('list')).errors).toEqual([])
+  })
+})
+
+describe('generation validation (validateBlockAnnotations) with a template version', () => {
+  it('coerces a layout newer than the site template; accepts it when the template has it or no version is known', async () => {
+    const { parseBlockAnnotations, validateBlockAnnotations } = await import('./block-annotation-validator')
+    const anns = parseBlockAnnotations(body('list'))
+    const coerced = (opts?: { templateVersion: string | null }) => validateBlockAnnotations(anns, '/services', [], opts).coercions
+    expect(coerced({ templateVersion: '2026.09.8' })).toEqual([
+      expect.objectContaining({ blockId: 'service-cards', originalVariant: 'list', coercedVariant: '2-col' }),
+    ])
+    expect(coerced({ templateVersion: null })).toHaveLength(1)
+    expect(coerced({ templateVersion: '2026.09.9' })).toEqual([])
+    expect(coerced()).toEqual([])
   })
 })

@@ -145,10 +145,18 @@ describe('catalog from the template contract', () => {
     }
   })
 
-  it('filters hint variants by template version when asked (baseline today)', () => {
-    // Every current value is baseline, so a versioned hint equals the full one.
-    expect(blockCatalogHint({ templateVersion: null })).toBe(blockCatalogHint())
-    expect(blockCatalogHint({ templateVersion: '2026.09.8' })).toBe(blockCatalogHint())
+  it('filters hint variants by template version when asked', () => {
+    // No marker = the baseline; 2026.09.8 predates the layout variants.
+    const base = blockCatalogHint({ templateVersion: '2026.09.8' })
+    expect(blockCatalogHint({ templateVersion: null })).toBe(base)
+    expect(base).toContain('service-cards (2-col|3-col)')
+    expect(base).not.toMatch(/\blist\b|featured|-centered/)
+    // 2026.09.9 adds them; the unversioned hint is the full contract.
+    const next = blockCatalogHint({ templateVersion: '2026.09.9' })
+    expect(next).toContain('service-cards (2-col|3-col|list)')
+    expect(next).toContain('testimonials (carousel|grid|featured)')
+    expect(next).toContain('cta-banner (color-bg|image-bg|color-bg-centered|image-bg-centered)')
+    expect(blockCatalogHint()).toBe(next)
   })
 
   it('parses ink sections (theme: after query:) instead of skipping them', () => {
