@@ -39,6 +39,23 @@ describe('buildChatSystemStatic', () => {
     expect(s).toContain('STYLE AXES: unlocked')
     expect(s).not.toContain('Style presets for cards, buttons and sections are not available yet.')
   })
+  it('states the layout-presets lock per flag (2026.09.9)', () => {
+    const locked = buildChatSystemStatic({ ...base, caps: L3 })
+    expect(locked).toContain('set_layout_presets(')
+    expect(locked).toContain('LAYOUT PRESETS: LOCKED')
+    const s = buildChatSystemStatic({ ...base, caps: { ...L3, capabilities: [...L3.capabilities, 'layout-presets'] } })
+    expect(s).toContain('LAYOUT PRESETS: unlocked — the one sanctioned way to restructure')
+    expect(s).toContain('- faq: split')
+    expect(s).toContain('use `order` ONLY to swap a block\'s media and its text')
+  })
+  it('shows the draft layout in the turn context and the adopt block when set', () => {
+    const laid = { ...VALID, layout: { cards: 'list' as const } }
+    const args = { bundle: laid, latestVersionNo: 3, drift: 'in-sync' as const, page: '/services', lastTurnNote: null }
+    expect(buildChatTurnContext(args)).toContain('"layout":{"cards":"list"}')
+    expect(buildChatTurnContext({ ...args, bundle: VALID })).not.toContain('"layout"')
+    const adopt = buildChatTurnContext({ ...args, bundle: VALID, adopt: laid })
+    expect(adopt).toContain('treatments, layout, then each css fragment')
+  })
   it('never leaks _meta or mbp_content', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
     expect(s).not.toContain('zzz-meta-secret')

@@ -38,6 +38,11 @@ describe('chatBlocks', () => {
       { kind: 'edit', label: 'Style presets', ok: true, detail: 'nav' },
     ])
   })
+  it('labels a set_layout_presets tool part "Layout presets"', () => {
+    expect(chatBlocks(msg([{ type: 'tool-set_layout_presets', toolCallId: 'a', state: 'output-available', input: { cards: 'list' }, output: { ok: true, changed: true } }]))).toEqual([
+      { kind: 'edit', label: 'Layout presets', ok: true, detail: 'cards' },
+    ])
+  })
   it('reports a failed preview and an auto-commit', () => {
     expect(chatBlocks(msg([{ type: 'tool-render_preview', toolCallId: 'x', state: 'output-available', input: {}, output: { ok: false, error: 'The render timed out.' } }]))).toEqual([
       { kind: 'notice', tone: 'warning', text: 'Preview failed: The render timed out.', items: [] },

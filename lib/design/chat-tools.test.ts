@@ -4,7 +4,7 @@ import { SID } from './__fixtures__/rows'
 import { DRAFT_FILES } from './__fixtures__/theme-texts'
 import { bundleFromRepoFiles } from './bundle-files'
 import { DEFAULT_CAPABILITIES, type DesignCapabilities } from './run-types'
-import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR } from './chat-workspace'
+import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR, LAYOUT_LOCKED_TOOL_ERROR } from './chat-workspace'
 import type { ComposedTheme } from './composed-theme'
 
 const m = vi.hoisted(() => ({ render: vi.fn(), cached: vi.fn() }))
@@ -65,6 +65,16 @@ describe('edit tools', () => {
     expect(ws.bundle().style).toEqual({ nav: 'inverted' })
     expect(ws.isStaged()).toBe(true)
   })
+  it('has a set_layout_presets tool: refused without the flag, staged with it (2026.09.9)', async () => {
+    const locked = setup({}, L3)
+    expect(await exec(locked.tools.set_layout_presets, { cards: 'list' })).toEqual({ ok: false, error: LAYOUT_LOCKED_TOOL_ERROR })
+    expect(locked.ws.isStaged()).toBe(false)
+    const { ws, tools } = setup({}, { ...L3, level: 4, templateVersion: '2026.09.9', capabilities: ['fonts', 'style-axes', 'specimen', 'layout-presets'] })
+    expect(await exec(tools.set_layout_presets, { faq: 'split' })).toMatchObject({ ok: true, changed: true })
+    expect(ws.bundle().layout).toEqual({ faq: 'split' })
+    expect(await exec(tools.set_layout_presets, { faq: 'default' })).toMatchObject({ ok: true, changed: true })
+    expect(ws.bundle().layout).toBeUndefined()
+  })
   it('lists exactly the edit + preview + commit tools, including set_style_axes', () => {
     const { tools } = setup()
     expect(Object.keys(tools).sort()).toEqual(
@@ -74,6 +84,7 @@ describe('edit tools', () => {
         'render_preview',
         'set_block_css',
         'set_fonts',
+        'set_layout_presets',
         'set_palette',
         'set_style_axes',
         'set_tokens',

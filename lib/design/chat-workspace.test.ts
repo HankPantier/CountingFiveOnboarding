@@ -3,7 +3,7 @@ import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import { bundleFromRepoFiles } from './bundle-files'
 import { DRAFT_FILES } from './__fixtures__/theme-texts'
 import { DEFAULT_CAPABILITIES, type DesignCapabilities } from './run-types'
-import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR, STYLE_LOCKED_TOOL_ERROR } from './chat-workspace'
+import { ChatWorkspace, FONTS_LOCKED_TOOL_ERROR, LAYOUT_LOCKED_TOOL_ERROR, STYLE_LOCKED_TOOL_ERROR } from './chat-workspace'
 import { REGION_BEGIN, REGION_END } from './bundle-files'
 import { PREVIEWS_PER_TURN } from './chat-types'
 
@@ -78,6 +78,17 @@ describe('ChatWorkspace edits', () => {
     const rendered = w3.renderedFiles()
     expect(rendered.ok).toBe(true)
     expect(rendered.ok && rendered.files.designText).toContain('"cards": "flat"')
+  })
+  it('refuses layout-preset changes without the flag, stages + renders them with it (2026.09.9)', () => {
+    const locked = ws({ caps: { ...L3, level: 4, capabilities: ['fonts', 'style-axes', 'specimen'] } })
+    const before = locked.bundle()
+    expect(locked.apply({ kind: 'layout', patch: { team: 'list' } })).toEqual({ ok: false, error: LAYOUT_LOCKED_TOOL_ERROR })
+    expect(locked.bundle()).toBe(before)
+    const w = ws({ caps: { ...L3, level: 4, capabilities: ['fonts', 'style-axes', 'specimen', 'layout-presets'] } })
+    expect(w.apply({ kind: 'layout', patch: { team: 'list' } })).toMatchObject({ ok: true, changed: true })
+    expect(w.apply({ kind: 'layout', patch: { team: 'list' } })).toMatchObject({ ok: true, changed: false })
+    const rendered = w.renderedFiles()
+    expect(rendered.ok && JSON.parse(rendered.files.designText).layout).toEqual({ team: 'list' })
   })
   it('sanitizes block CSS and reports its budget; rejects unscoped CSS', () => {
     const w = ws()

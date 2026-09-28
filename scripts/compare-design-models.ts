@@ -385,6 +385,7 @@ async function main() {
     typography: bundle.typography,
     treatments: bundle.treatments,
     style: bundle.style,
+    layout: bundle.layout,
     css: bundle.css,
     tokens: { roundness: bundle.tokens.roundness, density: bundle.tokens.density, visualFeel: bundle.tokens.visualFeel },
   })
