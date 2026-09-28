@@ -90,3 +90,13 @@ describe('setFaqAccordionBody', () => {
     expect(next).toContain('**Q: Q?**\nA: A.')
   })
 })
+
+describe('setFaqAccordionBody — marker not at line start', () => {
+  it('rewrites an indented marker instead of appending a second FAQ section', () => {
+    const body = 'Intro.\n\n  <!-- block: faq-accordion -->\n## Questions\n\n**Q: A?**\nA: B.\n'
+    const next = setFaqAccordionBody(body, [{ question: 'C?', answer: 'D.' }], 'FAQ')
+    expect(next.split('block: faq-accordion').length - 1).toBe(1)
+    expect(next).toContain('## Questions\n\n**Q: C?**\nA: D.')
+    expect(next).not.toContain('**Q: A?**')
+  })
+})

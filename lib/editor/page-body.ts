@@ -54,7 +54,10 @@ function findFaqMarker(content: string): { index: number; line: string } | null 
     const line = m[0].replace(/\r$/, '')
     if (parseBlockComment(line)?.blockId === 'faq-accordion') return { index: m.index ?? 0, line }
   }
-  return null
+  // Fallback: the exact canonical marker anywhere (indented, or sharing its
+  // line) — never append a second FAQ section next to one we failed to see.
+  const index = content.indexOf(FAQ_MARKER)
+  return index >= 0 ? { index, line: FAQ_MARKER } : null
 }
 // Same Q&A shape the template parses (md-utils.ts `parseFaqList`).
 const FAQ_PAIR_RE = /\*\*Q:\s*(.+?)\*\*\s*\nA:\s*([\s\S]+?)(?=\n\*\*Q:|$)/g
