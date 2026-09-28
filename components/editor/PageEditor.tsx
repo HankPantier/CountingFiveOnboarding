@@ -43,8 +43,7 @@ import {
   CUSTOM_OPENER,
   applyPageOpener,
   pageOpenerHints,
-  pageOpenerSelectState,
-} from '@/lib/editor/page-opener'
+  pageOpenerSelectState, previewHeading } from '@/lib/editor/page-opener'
 
 type EditorTab = 'editor' | 'seo' | 'media'
 
@@ -167,7 +166,9 @@ export default function PageEditor({
     onChange(serializeFile({ frontmatter, body: nextBody + trailer }))
   }
 
-  const title = parsed.frontmatter?.fields['title'] ?? ''
+  // What the live page shows as its main heading (hero headline or the title
+  // without its "| Firm" suffix), never the raw quoted YAML value.
+  const title = previewHeading(parsed.frontmatter)
 
   // Structured SEO content edited as fields (frontmatter is the live source).
   // FAQ falls back to the on-page accordion prose for legacy pages that have no

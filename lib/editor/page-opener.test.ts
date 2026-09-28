@@ -7,6 +7,7 @@ import {
   pageOpenerChoices,
   pageOpenerHints,
   pageOpenerSelectState,
+  previewHeading,
 } from './page-opener'
 
 function fm(lines: string[]) {
@@ -135,5 +136,19 @@ describe('pageOpenerSelectState', () => {
   it('shows an unknown pair as a leading custom row', () => {
     const st = pageOpenerSelectState(fm(['hero: hero', 'hero_variant: image-right']).frontmatter!, null)
     expect(st).toMatchObject({ value: '__custom', customLabel: 'Custom: hero / image-right' })
+  })
+})
+
+describe('previewHeading', () => {
+  it('strips the quotes and the "| Firm" suffix from the title', () => {
+    expect(previewHeading(fm(['title: "Accounting Services for Individuals | Accord Advisors"']).frontmatter)).toBe('Accounting Services for Individuals')
+  })
+  it('uses hero_headline on hero openers, not on page-header', () => {
+    expect(previewHeading(fm(['title: "A | Firm"', 'hero: hero-split', 'hero_headline: "Built for your practice"']).frontmatter)).toBe('Built for your practice')
+    expect(previewHeading(fm(['title: "A | Firm"', 'hero: page-header', 'hero_headline: "Ignored"']).frontmatter)).toBe('A')
+    expect(previewHeading(fm(['title: Plain title']).frontmatter)).toBe('Plain title')
+  })
+  it('handles no frontmatter', () => {
+    expect(previewHeading(null)).toBe('')
   })
 })

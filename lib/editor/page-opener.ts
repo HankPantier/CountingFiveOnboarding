@@ -134,3 +134,18 @@ export function pageOpenerHints(fm: Frontmatter): string[] {
   }
   return []
 }
+
+/**
+ * The page's main heading as the live site renders it, for the editor preview:
+ * the template shows `hero_headline` on hero / hero-split openers, else the
+ * `title` up to the first " | " (the "| Firm" SEO suffix never renders). Mirrors
+ * T src/lib/assembly/extract-block-props.ts (heroHeadline / page-header).
+ */
+export function previewHeading(fm: Frontmatter | null | undefined): string {
+  if (!fm) return ''
+  const title = bare(fm.fields.title).split(' | ')[0].trim()
+  const hero = bare(fm.fields[heroKey(fm)])
+  const headline = bare(fm.fields.hero_headline).trim()
+  if (headline && hero && hero !== 'page-header') return headline
+  return title
+}
