@@ -14,6 +14,9 @@ import {
   keepLockedLayout,
   keepLockedLevers,
   keepLockedStyle,
+  layoutLockedReason,
+  LAYOUT_LOCKED_DRAFT_REASON,
+  LAYOUT_LOCKED_SHELL_REASON,
   layoutPresetsUnlocked,
   SHELL_WITHOUT_VERSION_META,
   parseTemplateMarker,
@@ -255,5 +258,21 @@ describe('effective template version = min(draft, shell meta)', () => {
     const c = intersectWithShell(d, v(null))
     expect(c.templateVersion).toBe('2026.09.8')
     expect(capabilitiesFromJson(JSON.parse(JSON.stringify(c)))).toEqual(c)
+  })
+})
+
+describe('layoutLockedReason — worded for the missing half', () => {
+  const on = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.9', capabilities: ['fonts', 'layout-presets'] }))
+  const off = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.8', capabilities: ['fonts'] }))
+  it('null when the effective tier has the flag (incl. an unverified shell on a 09.9 draft)', () => {
+    expect(layoutLockedReason({ draft: on, effective: intersectWithShell(on, { status: 'verified', capabilities: ['fonts', 'layout-presets'], templateVersion: '2026.09.9' }) })).toBeNull()
+    expect(layoutLockedReason({ draft: on, effective: intersectWithShell(on, { status: 'unverified' }) })).toBeNull()
+  })
+  it('draft older → the draft reason, whether or not the shell was verified', () => {
+    expect(layoutLockedReason({ draft: off, effective: intersectWithShell(off, { status: 'unverified' }) })).toBe(LAYOUT_LOCKED_DRAFT_REASON)
+    expect(layoutLockedReason({ draft: off, effective: intersectWithShell(off, { status: 'verified', capabilities: ['fonts', 'layout-presets'] }) })).toBe(LAYOUT_LOCKED_DRAFT_REASON)
+  })
+  it('draft has it but the verified live build does not → the shell reason', () => {
+    expect(layoutLockedReason({ draft: on, effective: intersectWithShell(on, { status: 'verified', capabilities: ['fonts'] }) })).toBe(LAYOUT_LOCKED_SHELL_REASON)
   })
 })

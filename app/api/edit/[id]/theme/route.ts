@@ -21,7 +21,7 @@ import { syncMbpTheme } from '@/lib/design/sync-mbp-theme'
 import { logoSizeOf } from '@/lib/design/logo-size'
 import { loadDraftThemeSources } from '@/lib/design/theme-sources'
 import { readDesignCapabilities, readEffectiveCapabilities } from '@/lib/design/capabilities-read'
-import { LAYOUT_LOCKED_REASON, fontsUnlocked, layoutPresetsUnlocked } from '@/lib/design/capabilities'
+import { fontsUnlocked, layoutLockedReason } from '@/lib/design/capabilities'
 import { normalizeLayoutPresets, type LayoutPresets } from '@/lib/design/layout-presets'
 import { FONTS_MODULE_PATH } from '@/lib/design/drift'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
@@ -34,8 +34,7 @@ export const runtime = 'nodejs'
 // keeps them disabled with a reason.
 async function layoutLockReason(githubRepo: string, jobId: string): Promise<string | null> {
   try {
-    const { effective } = await readEffectiveCapabilities({ githubRepo, jobId })
-    return layoutPresetsUnlocked(effective) ? null : LAYOUT_LOCKED_REASON
+    return layoutLockedReason(await readEffectiveCapabilities({ githubRepo, jobId }))
   } catch (err) {
     console.warn('[theme] capability read failed; layout presets disabled', err)
     return 'Couldn’t check this site’s template capabilities — reload to try again.'

@@ -47,7 +47,6 @@ const STYLE_LOCK_NOTE = 'Style axes are not available on this site yet — the c
 const STYLE_LOCK_VIOLATION = 'Style axes are locked on this site (template below L3) — this design sets style presets.'
 const LAYOUT_LOCK_NOTE = 'Layout presets are not available on this site yet (template before 2026.09.9) — the concept’s layout settings were dropped.'
 const LAYOUT_LOCK_VIOLATION = 'Layout presets are locked on this site (template before 2026.09.9) — this design sets layout presets.'
-export const LAYOUT_LOCKED_REASON = 'Layout presets need template 2026.09.9 or newer on both the draft and the deployed site.'
 const sameStyle = (a: DesignBundle['style'], b: DesignBundle['style']): boolean => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {})
 
 export function capabilityLevel(caps: string[]): CapabilityLevel {
@@ -157,6 +156,19 @@ export function keepLockedStyle(bundle: DesignBundle, current: DesignBundle, cap
 export function keepLockedLayout(bundle: DesignBundle, current: DesignBundle, caps: DesignCapabilities): DesignBundle {
   if (layoutPresetsUnlocked(caps) || bundle.layout !== undefined || !current.layout) return bundle
   return { ...bundle, layout: { ...current.layout } }
+}
+
+// Why the layout presets are locked, or null when the EFFECTIVE tier has them —
+// worded for the half that is actually missing. An unverified shell keeps the
+// draft tier, so a lock there always means the DRAFT template predates them;
+// a verified shell can be the missing half while the draft already has them.
+export const LAYOUT_LOCKED_DRAFT_REASON =
+  'Layout presets need template 2026.09.9 or newer: this site’s draft template is older. Roll the template forward first.'
+export const LAYOUT_LOCKED_SHELL_REASON =
+  'Layout presets need template 2026.09.9 or newer on the deployed site too: the draft has it, but the live build is older. Publish the draft (or wait for its deploy), then reload.'
+export function layoutLockedReason(read: { draft: DesignCapabilities; effective: DesignCapabilities }): string | null {
+  if (layoutPresetsUnlocked(read.effective)) return null
+  return layoutPresetsUnlocked(read.draft) && read.effective.shell === 'verified' ? LAYOUT_LOCKED_SHELL_REASON : LAYOUT_LOCKED_DRAFT_REASON
 }
 
 // Both holds at once — what commitDesignVersion renders and records.
