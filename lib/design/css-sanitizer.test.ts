@@ -915,3 +915,16 @@ describe('layoutGuardErrors (authoring-time, WS-B)', () => {
     expect(sanitizeDesignCss('[data-block="hero"] { width: 100vw; }', HERO).ok).toBe(true)
   })
 })
+
+describe('layout-preset html state prefix (2026.09.9)', () => {
+  it('accepts html[data-c5-layout-*] prefixes and in-block re-gridding / order', () => {
+    const r = sanitizeDesignCss(
+      'html[data-c5-layout-cards="list"] [data-block="service-cards"] > div { display: grid; grid-template-columns: 1fr 2fr; } [data-block="service-cards"] [data-c5-slot="media"] { order: 2; }',
+      { kind: 'target', target: 'service-cards' }
+    )
+    expect(r.ok).toBe(true)
+  })
+  it('still rejects an unknown html state attribute', () => {
+    expect(sanitizeDesignCss('html[data-c5-layout-hero="x"] [data-block="hero"] { gap: 1rem; }', { kind: 'target', target: 'hero' }).ok).toBe(false)
+  })
+})

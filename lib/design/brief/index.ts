@@ -17,7 +17,7 @@
 //                       image when there are reference images).
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
-import { fontsUnlocked, styleAxesUnlocked } from '../capabilities'
+import { fontsUnlocked, layoutPresetsUnlocked, styleAxesUnlocked } from '../capabilities'
 import { MAX_PROMPT_IMAGES, type DesignCapabilities, type PaletteFreedom } from '../run-types'
 import { ART_DIRECTION } from './art-direction'
 import { blockCatalogHint } from './block-catalog'
@@ -62,12 +62,13 @@ export type BuiltPrompt = { staticPrefix: string; parts: DynamicPart[]; sharedPa
 
 const prefixCache = new Map<string, string>()
 
-// Keyed by tier AND block-catalog epoch (caps.templateVersion is the effective
-// version: the draft marker's; the shell publishes none) — the prefix only
-// changes when the site gains a lever or a newer block variant.
+// Keyed by tier (fonts, style axes, the layout-presets flag) AND block-catalog
+// epoch (caps.templateVersion is the effective version: min(draft marker,
+// shell c5-template-version meta)) — the prefix only changes when the site
+// gains a lever or a newer block variant.
 export function buildStaticPrefix(caps: DesignCapabilities): string {
   const epoch = catalogEpoch(caps.templateVersion)
-  const key = `${fontsUnlocked(caps) ? 'f' : '-'}${styleAxesUnlocked(caps) ? 's' : '-'}|${epoch}`
+  const key = `${fontsUnlocked(caps) ? 'f' : '-'}${styleAxesUnlocked(caps) ? 's' : '-'}${layoutPresetsUnlocked(caps) ? 'l' : '-'}|${epoch}`
   let prefix = prefixCache.get(key)
   if (prefix === undefined) {
     prefix = [ART_DIRECTION, blockCatalogHint(epoch), buildContract(caps)].join('\n\n')
@@ -90,8 +91,8 @@ export function paletteFreedomInstruction(freedom: PaletteFreedom, palette: Desi
 }
 
 function currentDesignJson(current: DesignBundle): string {
-  const { palette, typography, tokens, treatments, style } = current
-  return JSON.stringify({ palette, typography, tokens, treatments, ...(style ? { style } : {}) })
+  const { palette, typography, tokens, treatments, style, layout } = current
+  return JSON.stringify({ palette, typography, tokens, treatments, ...(style ? { style } : {}), ...(layout ? { layout } : {}) })
 }
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)

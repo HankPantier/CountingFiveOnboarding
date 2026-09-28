@@ -5,6 +5,7 @@ import { VALID } from '../__fixtures__/valid-bundle'
 import { parseTemplateMarker } from '../capabilities'
 import { DEFAULT_CAPABILITIES } from '../run-types'
 import { CSS_RULES_REMINDER } from './contract'
+import { ART_DIRECTION } from './art-direction'
 import { fenceData } from './fence'
 import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStaticPrefix, paletteFreedomInstruction, type ConceptPromptArgs } from './index'
 
@@ -71,6 +72,13 @@ import { DESIGN_SYSTEM_PROMPT, buildConceptPrompt, buildSharedParts, buildStatic
 //   version (variant `since` ≤ caps.templateVersion) and the prefix is cached
 //   per catalog epoch; the golden test pins 2026.09.8, so later releases'
 //   variants don't regenerate these files. Bytes unchanged.
+// - Layout presets (2026-09-28, template 2026.09.9): NEW golden
+//   static-prefix-l4-layout.golden.txt for the unlocked tier (L4 + the
+//   `layout-presets` flag, effective version 2026.09.9): the style lever, the
+//   layout lever + the "LAYOUT PRESETS — the one sanctioned exception to
+//   'Restyle only'" section and a "layout" key in OUTPUT FORMAT. ART_DIRECTION
+//   and the L1/L2 goldens are deliberately unchanged (re-checked byte-identical);
+//   nothing is added to any prefix below the flag.
 const readGolden = (name: string) => readFileSync(join(__dirname, '__fixtures__', name), 'utf8')
 
 const img = (n: number) => ({ caption: `Image ${n}`, adminText: null, bytes: new Uint8Array([n]), mediaType: 'image/webp' })
@@ -322,6 +330,35 @@ describe('style axes in the brief', () => {
     expect(extractOutputFormat(buildStaticPrefix(L2))).toBe(extractOutputFormat(readGolden('static-prefix-l2.golden.txt')))
     expect(buildStaticPrefix(DEFAULT_CAPABILITIES)).not.toContain('"style":{')
     expect(buildStaticPrefix(L2)).not.toContain('"style":{')
+  })
+})
+
+describe('layout presets in the brief (2026.09.9, capability flag)', () => {
+  const L4 = parseTemplateMarker('{"templateVersion":"2026.09.9","capabilities":["fonts","style-axes","specimen"]}')
+  const L4P = parseTemplateMarker('{"templateVersion":"2026.09.9","capabilities":["fonts","style-axes","specimen","layout-presets"]}')
+  it('is byte-identical to the unlocked-tier golden', () => {
+    expect(buildStaticPrefix(L4P)).toBe(readGolden('static-prefix-l4-layout.golden.txt'))
+  })
+  it('adds the lever, the sanctioned exception and the output key only when unlocked', () => {
+    const on = buildStaticPrefix(L4P)
+    const off = buildStaticPrefix(L4)
+    for (const p of ['cards', 'ctaBanner', 'faq', 'team', 'testimonials']) expect(on).toContain(`  - layout.${p}: `)
+    expect(on).toContain('LAYOUT PRESETS — the one sanctioned exception to "Restyle only"')
+    expect(on).toContain('Use `order` ONLY to swap a block\'s media and its text')
+    expect(on).toContain('"layout":{"cards":"…"}')
+    expect(off).not.toContain('layout')
+    expect(off).not.toContain('LAYOUT PRESETS')
+    // The flag only ADDS text: removing it yields the same prefix as L4.
+    expect(on.startsWith(ART_DIRECTION)).toBe(true)
+  })
+  it('never changes ART_DIRECTION or the L1/L2 goldens (already pinned above)', () => {
+    expect(buildStaticPrefix({ ...DEFAULT_CAPABILITIES, templateVersion: '2026.09.8' })).toBe(readGolden('static-prefix-l1.golden.txt'))
+    expect(ART_DIRECTION).toContain('- Restyle only: never change the component tree')
+  })
+  it('the current design shows the site layout when it has one', () => {
+    const t = texts(buildConceptPrompt({ ...ARGS, caps: L4P, current: { ...VALID, layout: { faq: 'split' } } }).parts)
+    expect(t).toContain('"layout":{"faq":"split"}')
+    expect(texts(buildConceptPrompt({ ...ARGS, caps: L4P }).parts)).not.toContain('"layout"')
   })
 })
 

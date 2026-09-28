@@ -113,11 +113,13 @@ export function presetForBlock(
   return null
 }
 
-// One line per preset for prompts: "- cards: list — <summary>".
-export function layoutPresetsSummary(): string {
+// One line per preset for prompts: "<prefix>cards: list — <summary>" (the
+// prefix lets a prompt namespace them, e.g. "  - layout." next to the style
+// axes, which also have a `cards`).
+export function layoutPresetsSummary(prefix = '- '): string {
   return LAYOUT_PRESET_NAMES.map((p) => {
     const values = (LAYOUT_PRESETS[p].values as readonly string[]).filter((v) => v !== DEFAULT_LAYOUT_PRESET).join(' | ')
-    return `- ${p}: ${values} — ${LAYOUT_PRESETS[p].summary}`
+    return `${prefix}${p}: ${values} — ${LAYOUT_PRESETS[p].summary}`
   }).join('\n')
 }
 
