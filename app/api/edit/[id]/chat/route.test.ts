@@ -26,13 +26,9 @@ vi.mock('ai', async (orig) => ({
     return { toUIMessageStreamResponse: () => new Response('stream') }
   },
 }))
-// The catalog gains a future `service-cards | list` layout (since 2026.09.9) so
-// the version tests can prove the draft marker reaches the hint and the tools.
-// Every other block/variant is the real contract.
-vi.mock('@/lib/content/block-catalog', async (importOriginal) => {
-  const { catalogWithListLayout } = await import('@/lib/content/__fixtures__/catalog-with-list')
-  return catalogWithListLayout(importOriginal as never)
-})
+// The real block catalog: template 2026.09.9 ships `service-cards | list`
+// (since 2026.09.9), which the version tests below use to prove the draft
+// marker reaches the hint and the tools.
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: () => ({}) }))
 vi.mock('../_helpers', () => ({ resolveEditContext: async () => m.ctx }))
 vi.mock('@/lib/auth/access', () => ({

@@ -1,21 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { layoutOptionsFor, setSectionVariant } from './section-layout'
 
-// Version filtering: pretend the next template release adds a `list` layout to
-// service-cards (the Phase 3 shape), so the picker must hide it from sites
-// whose draft template is older — and refuse it in setSectionVariant.
-vi.mock('@/lib/content/block-catalog', async (importOriginal) => {
-  const orig = await importOriginal<typeof import('@/lib/content/block-catalog')>()
-  const withList = {
-    ...orig.BLOCK_CATALOG['service-cards'],
-    variants: [...orig.BLOCK_CATALOG['service-cards'].variants, { value: 'list', since: '2026.09.9', layout: true as const }],
-  }
-  return {
-    ...orig,
-    blockSpec: (id: string) => (id === 'service-cards' ? withList : orig.blockSpec(id)),
-  }
-})
-
-const { layoutOptionsFor, setSectionVariant } = await import('./section-layout')
+// Version filtering against the REAL catalog: template 2026.09.9 adds the
+// `list` layout to service-cards, so the picker must hide it from sites whose
+// draft template is older — and refuse it in setSectionVariant.
 
 const BODY = ['<!-- block: service-cards | variant: 3-col -->', '## Services', '', '### Tax', ''].join('\n')
 

@@ -1,12 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
+import { validateAnnotationDelta, annotationSyntaxIssues } from './block-annotation-validator'
+import { checkEditAnnotations } from '@/lib/editor/apply-edit'
 
-vi.mock('@/lib/content/block-catalog', async (importOriginal) => {
-  const { catalogWithListLayout } = await import('./__fixtures__/catalog-with-list')
-  return catalogWithListLayout(importOriginal as never)
-})
-
-const { validateAnnotationDelta, annotationSyntaxIssues } = await import('./block-annotation-validator')
-const { checkEditAnnotations } = await import('@/lib/editor/apply-edit')
+// The real block catalog: `service-cards | list` ships in template 2026.09.9.
 
 const body = (variant: string, extra = '') =>
   [`<!-- block: service-cards | variant: ${variant} -->`, '## Services', '', '### Tax', '', extra].join('\n')
