@@ -131,6 +131,25 @@ describe('bundleToRepoFiles', () => {
     const r = bundleToRepoFiles(VALID, { brandText: '{nope', designText, overridesCss: '' }, { removeLegacy: false })
     expect(r.ok).toBe(false)
   })
+
+  // Template 2026.09.8: logo.size is a sibling of `style`, not a style axis, so a
+  // concept apply (which replaces `style` wholesale) must carry it through.
+  it('a concept apply keeps design.json logo.size (and any other logo keys) untouched', () => {
+    const withLogo = JSON.stringify({ ...JSON.parse(designText), logo: { size: 'large', note: 'kept' } }, null, 2) + '\n'
+    const r = bundleToRepoFiles(VALID, { brandText, designText: withLogo, overridesCss: '' }, { removeLegacy: true, fontsModule: true })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const written = JSON.parse(r.files.designText)
+    expect(written.logo).toEqual({ size: 'large', note: 'kept' })
+    // … while the concept's own levers did change (golden design.json: sans, no
+    // dark sections, modern; VALID: serif headlines, dark sections, editorial).
+    expect(written.headlineStyle).toBe('serif')
+    expect(written.darkSections).toBe(true)
+    expect(written.visualFeel).toBe('editorial')
+    // And a design.json without logo gets none.
+    const plain = bundleToRepoFiles(VALID, { brandText, designText, overridesCss: '' }, { removeLegacy: true })
+    expect(plain.ok && 'logo' in JSON.parse(plain.files.designText)).toBe(false)
+  })
 })
 
 // Fix round 1: region-marker edge cases that could silently drop hand-written
