@@ -596,7 +596,9 @@ export function validateAnnotationDelta(beforeBody: string, afterBody: string): 
 export function heroPairWarnings(hero: string | undefined, heroVariant: string | undefined): string[] {
   const h = hero?.trim() || undefined
   const v = heroVariant?.trim() || undefined
-  if (!h) return []
+  if (!h) {
+    return v ? [`hero_variant "${v}" is set without hero; the page renders a page header and ignores it. Set hero (hero or hero-split) too.`] : []
+  }
   const spec = blockSpec(h)
   if (!spec || spec.placement !== 'frontmatter') {
     return [`hero "${h}" is not a page opener (hero, hero-split, page-header); the page renders a page header.`]

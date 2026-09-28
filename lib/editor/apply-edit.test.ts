@@ -242,6 +242,8 @@ Some notes.
       expect(res.errors).toEqual([])
       expect(res.warnings[0]).toContain('hero-split')
       expect(checkEditAnnotations(withHero('hero', 'image'), withHero('banner', 'image')).warnings[0]).toContain('not a page opener')
+      const noHero = PAGE.replace('title: Services', 'title: Services\nhero_variant: image')
+      expect(checkEditAnnotations(PAGE, noHero).warnings[0]).toContain('without hero')
     })
 
     it('stay quiet when the pair is valid or unchanged', () => {

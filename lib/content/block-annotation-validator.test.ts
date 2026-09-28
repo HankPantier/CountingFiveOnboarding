@@ -203,7 +203,9 @@ describe('heroPairWarnings', () => {
   it('accepts valid pairs and ignores empty ones', () => {
     expect(heroPairWarnings('hero-split', 'image-left')).toEqual([])
     expect(heroPairWarnings('page-header', undefined)).toEqual([])
-    expect(heroPairWarnings(undefined, 'image')).toEqual([])
+    expect(heroPairWarnings(undefined, undefined)).toEqual([])
+    expect(heroPairWarnings(undefined, 'image')[0]).toContain('without hero')
+    expect(heroPairWarnings('  ', 'image')[0]).toContain('without hero')
     expect(heroPairWarnings('page-header', 'image')[0]).toContain('ignored')
   })
 })
