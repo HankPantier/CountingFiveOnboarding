@@ -37,6 +37,7 @@ import {
   moveSection,
   removeSection,
 } from '@/lib/editor/section-reorder'
+import { setSectionTheme, setSectionVariant } from '@/lib/editor/section-layout'
 
 type EditorTab = 'editor' | 'seo' | 'media'
 
@@ -74,6 +75,7 @@ export default function PageEditor({
   websiteUrl,
   onChange,
   isAdmin = false,
+  templateVersion = null,
 }: {
   sessionId: string
   path: string
@@ -82,6 +84,9 @@ export default function PageEditor({
   onChange: (next: string) => void
   // Server-resolved viewer role; gates the admin-only AI SEO-field generation.
   isAdmin?: boolean
+  // The draft template's version (c5-template.json marker); filters the layout
+  // picker's choices. null = unknown ⇒ baseline layouts only.
+  templateVersion?: string | null
 }) {
   const urlPath = contentPathToUrl(path)
   const base = websiteUrl.replace(/\/+$/, '')
@@ -191,6 +196,23 @@ export default function PageEditor({
     const nextBody = removeSection(bodyContent, index)
     if (blockId === 'faq-accordion' && fm) commit(setFaqBlock(fm, []), nextBody)
     else setBody(nextBody)
+  }
+  // Per-section layout picker (the same outline). Each action rewrites exactly
+  // one annotation line; a refusal leaves the body alone and returns its reason.
+  const layoutHandlers = {
+    templateVersion,
+    onSetVariant: (index: number, variant: string | null) => {
+      const res = setSectionVariant(bodyContent, index, variant, { templateVersion })
+      if (!res.ok) return res.reason
+      if (res.changed) setBody(res.body)
+      return null
+    },
+    onSetTheme: (index: number, theme: string | null) => {
+      const res = setSectionTheme(bodyContent, index, theme)
+      if (!res.ok) return res.reason
+      if (res.changed) setBody(res.body)
+      return null
+    },
   }
   const heroRaw = parsed.frontmatter?.fields['image'] ?? parsed.frontmatter?.fields['hero_image'] ?? ''
   const heroFile = heroRaw ? localImageFilename(heroRaw) : ''
@@ -511,6 +533,7 @@ export default function PageEditor({
                   onReorder={onSectionReorder}
                   onMove={onSectionMove}
                   onDelete={onSectionDelete}
+                  layout={layoutHandlers}
                 />
               )}
               <RichBodyEditor
@@ -552,3 +575,4 @@ export default function PageEditor({
     </div>
   )
 }
+
