@@ -4,6 +4,7 @@
 // preview re-skins instantly on the client when the sources change.
 import { STYLE_AXIS_ATTRIBUTES } from '@/lib/design/style-axes'
 import { LOGO_SIZE_ATTRIBUTE } from '@/lib/design/logo-size'
+import { LAYOUT_PRESET_ATTRIBUTES } from '@/lib/design/layout-presets'
 
 // The marker the shell leaves at the end of <head> for the injected theme.
 export const THEME_SLOT = '<!--__C5_THEME_SLOT__-->'
@@ -35,9 +36,16 @@ function attrSafe(value: string | undefined): string {
 // <html> attributes the preview may rewrite. The deployed shell carries the LIVE
 // treatment attributes, so the preview has to overwrite them with the pending
 // draft values or treatment toggles would never show (same for the P6b style-axis
-// data-c5-* attributes, and the template 2026.09.8 logo size). Allowlisted so a
+// data-c5-* attributes, the template 2026.09.8 logo size and the 2026.09.9
+// data-c5-layout-* presets). Allowlisted so a
 // caller can never add event handlers or other attributes to the frame's root.
-export const PREVIEW_HTML_ATTRS: readonly string[] = ['data-headline', 'data-eyebrow', ...STYLE_AXIS_ATTRIBUTES, LOGO_SIZE_ATTRIBUTE]
+export const PREVIEW_HTML_ATTRS: readonly string[] = [
+  'data-headline',
+  'data-eyebrow',
+  ...STYLE_AXIS_ATTRIBUTES,
+  LOGO_SIZE_ATTRIBUTE,
+  ...LAYOUT_PRESET_ATTRIBUTES,
+]
 
 function escapeAttr(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

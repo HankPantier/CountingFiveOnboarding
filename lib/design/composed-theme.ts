@@ -8,6 +8,7 @@ import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 import { logoSizeHtmlAttribute } from './logo-size'
 import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
 import { styleAxisHtmlAttributes } from './style-axes'
+import { layoutPresetHtmlAttributes } from './layout-presets'
 
 export type ComposedTheme = {
   themeCss: string
@@ -33,6 +34,8 @@ export function composedThemeFromFiles(files: { designText: string; themeCss: st
       'data-eyebrow': design.eyebrowStyle ?? 'standard',
       ...styleAxisHtmlAttributes(design.style),
       ...logoSizeHtmlAttribute(design.logo?.size),
+      // Template 2026.09.9 layout presets (inert on older shells: no rules).
+      ...layoutPresetHtmlAttributes(design.layout),
     },
   }
 }

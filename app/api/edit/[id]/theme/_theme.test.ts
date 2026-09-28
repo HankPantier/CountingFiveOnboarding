@@ -40,4 +40,17 @@ describe('themeSourcesHtmlAttributes (Controls preview)', () => {
     const attrs = themeSourcesHtmlAttributes({ headlineStyle: 'sans', eyebrowStyle: 'standard' })
     expect(Object.entries(attrs).filter(([k]) => k.startsWith('data-c5-')).every(([, v]) => v === null)).toBe(true)
   })
+
+  it('layout presets (2026.09.9): the draft preset is set and passes the allowlist; a live preset the draft drops is removed', () => {
+    const shell = '<html data-c5-layout-team="list"><head><!--__C5_THEME_SLOT__--></head><body></body></html>'
+    const html = composePreviewSrcDoc({
+      shellHtml: shell,
+      themeCss: '',
+      overridesCss: '',
+      htmlAttributes: themeSourcesHtmlAttributes({ headlineStyle: 'sans', eyebrowStyle: 'standard', layout: { faq: 'split' } }),
+    })
+    const tag = /<html\b[^>]*>/.exec(html)?.[0] ?? ''
+    expect(tag).toContain('data-c5-layout-faq="split"')
+    expect(tag).not.toContain('data-c5-layout-team')
+  })
 })
