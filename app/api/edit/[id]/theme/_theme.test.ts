@@ -24,6 +24,18 @@ describe('themeSourcesHtmlAttributes (Controls preview)', () => {
     expect(tag).not.toContain('data-c5-nav')
   })
 
+  it('logo size: "large" sets data-c5-logo-size and passes the allowlist; standard / absent remove it', () => {
+    expect(themeSourcesHtmlAttributes({ headlineStyle: 'sans', eyebrowStyle: 'standard', logoSize: 'large' })['data-c5-logo-size']).toBe('large')
+    expect(themeSourcesHtmlAttributes({ headlineStyle: 'sans', eyebrowStyle: 'standard', logoSize: 'standard' })['data-c5-logo-size']).toBeNull()
+    const shell = '<html data-c5-logo-size="large"><head><!--__C5_THEME_SLOT__--></head><body></body></html>'
+    const compose = (logoSize: 'standard' | 'large') =>
+      /<html\b[^>]*>/.exec(
+        composePreviewSrcDoc({ shellHtml: shell, themeCss: '', overridesCss: '', htmlAttributes: themeSourcesHtmlAttributes({ headlineStyle: 'sans', eyebrowStyle: 'standard', logoSize }) }),
+      )?.[0] ?? ''
+    expect(compose('large')).toContain('data-c5-logo-size="large"')
+    expect(compose('standard')).not.toContain('data-c5-logo-size')
+  })
+
   it('absent style removes every axis attribute', () => {
     const attrs = themeSourcesHtmlAttributes({ headlineStyle: 'sans', eyebrowStyle: 'standard' })
     expect(Object.entries(attrs).filter(([k]) => k.startsWith('data-c5-')).every(([, v]) => v === null)).toBe(true)

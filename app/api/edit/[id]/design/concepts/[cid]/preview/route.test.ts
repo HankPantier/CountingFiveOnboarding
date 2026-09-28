@@ -52,6 +52,8 @@ describe('GET /design/concepts/[cid]/preview', () => {
       'data-eyebrow': 'mono',
       // style axes: null = remove the live attr
       ...Object.fromEntries(STYLE_AXIS_ATTRIBUTES.map((a) => [a, null])),
+      // design.json has no logo.size: remove a live one (template 2026.09.8)
+      'data-c5-logo-size': null,
     }) // VALID treatments
     expect(theme.typography.accentFont).toBe('Fraunces')
     expect(theme.themeCss.length).toBeGreaterThan(100)

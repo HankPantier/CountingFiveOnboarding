@@ -29,7 +29,13 @@ describe('composedThemeFromFiles', () => {
     const t = composedThemeFromFiles({ designText: '{"style":{"cards":"flat"}}', themeCss: '', overridesCss: '' })
     expect(t.htmlAttributes['data-c5-cards']).toBe('flat')
     expect(t.htmlAttributes['data-c5-nav']).toBeNull()
-    expect(Object.keys(t.htmlAttributes).filter((k) => k.startsWith('data-c5-'))).toHaveLength(8)
+    // 8 style axes + the logo size hook (template 2026.09.8).
+    expect(Object.keys(t.htmlAttributes).filter((k) => k.startsWith('data-c5-'))).toHaveLength(9)
+    expect(t.htmlAttributes['data-c5-logo-size']).toBeNull()
+  })
+  it('carries design.json logo.size so concept renders keep the site logo size', () => {
+    const t = composedThemeFromFiles({ designText: '{"logo":{"size":"large"}}', themeCss: '', overridesCss: '' })
+    expect(t.htmlAttributes['data-c5-logo-size']).toBe('large')
   })
   it('the composed doc removes live axis attributes the design does not set', () => {
     const t = composedThemeFromFiles({ designText: '{"style":{"cards":"flat"}}', themeCss: '', overridesCss: '' })

@@ -25,4 +25,16 @@ describe('loadDraftThemeSources', () => {
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.sources.style).toEqual({ cards: 'flat' })
   })
+  it('logoSize: standard when design.json has no logo.size, large when set', async () => {
+    const r = await loadDraftThemeSources('o/r')
+    expect(r.ok && r.sources.logoSize).toBe('standard')
+    const before = files['content/design.json']
+    files['content/design.json'] = JSON.stringify({ typography: {}, logo: { size: 'large' } })
+    try {
+      const l = await loadDraftThemeSources('o/r')
+      expect(l.ok && l.sources.logoSize).toBe('large')
+    } finally {
+      files['content/design.json'] = before
+    }
+  })
 })

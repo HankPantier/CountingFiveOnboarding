@@ -123,6 +123,7 @@ export type FlagsPatch = {
   headlineStyle?: ThemeSources['headlineStyle']
   eyebrowStyle?: ThemeSources['eyebrowStyle']
   darkSections?: boolean
+  logoSize?: ThemeSources['logoSize']
 }
 
 export default function ThemeControls({
@@ -134,6 +135,7 @@ export default function ThemeControls({
   headlineStyle,
   eyebrowStyle,
   darkSections,
+  logoSize,
   fonts,
   contrastWarnings,
   saving,
@@ -150,6 +152,7 @@ export default function ThemeControls({
   headlineStyle: ThemeSources['headlineStyle']
   eyebrowStyle: ThemeSources['eyebrowStyle']
   darkSections: boolean
+  logoSize: ThemeSources['logoSize']
   fonts: readonly string[]
   contrastWarnings: string[]
   saving: boolean
@@ -243,13 +246,28 @@ export default function ThemeControls({
           </label>
         </div>
 
+        {/* design.json logo.size (template 2026.09.8): header 44px desktop / 40px
+            phone, footer 40px — for stacked or two-line lockups. */}
+        <label className="flex items-center gap-1.5">
+          <span className="font-heading text-[11px] font-semibold text-text-secondary">Logo size</span>
+          <select
+            value={logoSize}
+            disabled={saving}
+            onChange={(e) => onChangeFlags({ logoSize: e.target.value as ThemeSources['logoSize'] })}
+            className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
+          >
+            <option value="standard">Standard</option>
+            <option value="large">Large</option>
+          </select>
+        </label>
+
         <span className="font-body text-[11px] text-text-muted">
           roundness: {roundness} · density: {density} · feel: {visualFeel}
         </span>
       </div>
 
       <p className="font-body text-[11px] text-text-muted">
-        Headline and eyebrow treatments preview here when the deployed site&rsquo;s template supports them. Dark sections apply only after the site rebuilds.
+        Headline and eyebrow treatments and the logo size preview here when the deployed site&rsquo;s template supports them (logo size: template 2026.09.8+). Dark sections apply only after the site rebuilds.
       </p>
 
       {contrastWarnings.length > 0 && (

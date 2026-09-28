@@ -1,0 +1,35 @@
+{
+  "_note": "Template 2026.09.8 (feat/logo-size, includes main 548271e). File set = the CHANGELOG 'Rollout notes (template 2026.09.7 → 2026.09.8)' list: opt-in design.json logo.size \"large\" (html[data-c5-logo-size], src/lib/theme/logo-size.ts, src/styles/logo-size.css: header 44px desktop / 40px phone, footer 40px); a header fit guard decided before first paint: an inline script (src/lib/nav/nav-fit.ts, emitted by layout.tsx) sets html[data-c5-nav-fit=\"collapse\"] when the header row with the logo at its natural width is wider than the bar, and src/styles/nav-fit.css swaps the desktop nav for the menu button (NavBar/MobileNav unchanged); src/lib/theme/action-edge.test.ts is main 548271e (template-default-only parity check), new to repos synced from 17909dc. theme.css is not rewritten, package.json and package-lock.json are unchanged ('ignore' acknowledges).",
+  "templateVersion": "2026.09.8",
+  "notes": "Header fix: when a site's menu is too long for the screen width, it now folds into the menu button instead of squeezing the logo (until now the logo shrank or vanished, mostly on tablets). New option for a bigger header and footer logo, for stacked or two-line logos (Pryor); off unless turned on per site in the Theme Studio.",
+  "exclude": [
+    "\\.png$",
+    "^e2e/.*-snapshots/"
+  ],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "src/app/globals.css",
+      "src/app/layout.tsx",
+      "src/lib/theme/types.ts",
+      "src/lib/theme/hooks.test.ts",
+      "src/lib/theme/template-marker.test.ts",
+      "src/lib/theme/action-edge.test.ts",
+      "e2e/design-defaults.spec.ts",
+      "docs/architecture.md",
+      "docs/how-to-new-site.md",
+      "CHANGELOG.md"
+    ],
+    "add": [
+      "src/styles/logo-size.css",
+      "src/styles/nav-fit.css",
+      "src/lib/theme/logo-size.ts",
+      "src/lib/theme/logo-size.test.ts",
+      "src/lib/nav/nav-fit.ts",
+      "src/lib/nav/nav-fit.test.ts",
+      "e2e/logo-size.spec.ts"
+    ],
+    "delete": []
+  }
+}

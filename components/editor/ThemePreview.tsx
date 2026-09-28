@@ -56,6 +56,7 @@ export default function ThemePreview({
         headlineStyle={sources.headlineStyle}
         eyebrowStyle={sources.eyebrowStyle}
         darkSections={sources.darkSections}
+        logoSize={sources.logoSize}
         fonts={CURATED_FONTS}
         contrastWarnings={contrastWarnings}
         saving={saving}
