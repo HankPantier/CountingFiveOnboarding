@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const m = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/lib/audit/crawl', () => ({ safeGet: (u: string) => m.get(u) }))
 
-import { findShellMarker, notRevaltusSiteMessage } from './revaltus-marker'
+import { findShellMarker, findShellTemplateVersion, notRevaltusSiteMessage } from './revaltus-marker'
 import { buildPreviewShell } from './build-preview-shell'
 
 const MARKER = '<meta name="c5-capabilities" content="fonts,style-axes,specimen"/>'
@@ -19,6 +19,16 @@ describe('findShellMarker', () => {
   })
   it('no marker is null (a WordPress / non-Revaltus page)', () => {
     expect(findShellMarker(html('<meta name="generator" content="WordPress 6.6"><meta name="description" content="fonts">'))).toBeNull()
+  })
+})
+
+describe('findShellTemplateVersion (template 2026.09.9+)', () => {
+  it('reads the version meta', () => {
+    expect(findShellTemplateVersion(html(`${MARKER}<meta name="c5-template-version" content="2026.09.9"/>`))).toBe('2026.09.9')
+  })
+  it('null when absent or malformed (an older shell)', () => {
+    expect(findShellTemplateVersion(html(MARKER))).toBeNull()
+    expect(findShellTemplateVersion(html('<meta name="c5-template-version" content="latest">'))).toBeNull()
   })
 })
 

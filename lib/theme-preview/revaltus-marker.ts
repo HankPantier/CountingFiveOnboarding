@@ -36,6 +36,21 @@ export function findShellMarker(html: string): string[] | null {
   return null
 }
 
+// Template 2026.09.9+ also emits <meta name="c5-template-version"
+// content="2026.09.9">. null when absent or malformed (an older shell).
+export const SHELL_TEMPLATE_VERSION_META = 'c5-template-version'
+const VERSION_RE = /^\d+(?:\.\d+){0,3}$/
+
+export function findShellTemplateVersion(html: string): string | null {
+  for (const match of html.slice(0, MAX_SCAN).matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0]
+    if (attr(tag, 'name')?.trim().toLowerCase() !== SHELL_TEMPLATE_VERSION_META) continue
+    const v = (attr(tag, 'content') ?? '').trim()
+    return v.length <= 40 && VERSION_RE.test(v) ? v : null
+  }
+  return null
+}
+
 export const hasRevaltusMarker = (html: string): boolean => findShellMarker(html) !== null
 
 // Show the origin (what the operator types into the preview-URL field), not

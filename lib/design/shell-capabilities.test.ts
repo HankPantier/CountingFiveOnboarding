@@ -50,6 +50,14 @@ describe('readShellCapabilities', () => {
       "https://a.test isn't the Revaltus-built site (it may be the client's old site before DNS cutover). Set the preview URL to the site's Vercel address, e.g. https://<project>.vercel.app."
     )
   })
+  it('reads the 2026.09.9+ template version meta alongside the capabilities', async () => {
+    m.get.mockResolvedValue(page('<meta name="c5-capabilities" content="fonts,layout-presets"><meta name="c5-template-version" content="2026.09.9">'))
+    expect(await readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' })).toEqual({
+      status: 'verified',
+      capabilities: ['fonts', 'layout-presets'],
+      templateVersion: '2026.09.9',
+    })
+  })
   it('an EMPTY marker is still a Revaltus site: verified with no capabilities', async () => {
     m.get.mockResolvedValue(page('<meta name="c5-capabilities" content="">'))
     expect(await readShellCapabilities({ jobId: 'j', githubRepo: 'o/r' })).toEqual({ status: 'verified', capabilities: [] })

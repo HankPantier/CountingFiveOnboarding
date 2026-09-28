@@ -9,8 +9,13 @@ import {
   capabilityViolations,
   enforceCapabilities,
   fontsUnlocked,
+  effectiveTemplateVersion,
   intersectWithShell,
+  keepLockedLayout,
+  keepLockedLevers,
   keepLockedStyle,
+  layoutPresetsUnlocked,
+  SHELL_WITHOUT_VERSION_META,
   parseTemplateMarker,
   specimenUnlocked,
   styleAxesUnlocked,
@@ -176,5 +181,79 @@ describe('intersectWithShell', () => {
     expect(capabilityLevel(['fonts', 'style-axes', 'specimen'])).toBe(4)
     expect(specimenUnlocked(L4)).toBe(true)
     expect(specimenUnlocked(L2)).toBe(false)
+  })
+})
+
+describe('layout presets (capability flag, 2026.09.9)', () => {
+  const L4 = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.8', capabilities: ['fonts', 'style-axes', 'specimen'] }))
+  const L4P = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.9', capabilities: ['fonts', 'style-axes', 'specimen', 'layout-presets'] }))
+  const laid = { ...VALID, layout: { cards: 'list' as const } }
+  it('is a flag, not a level', () => {
+    expect(L4P.level).toBe(4)
+    expect(layoutPresetsUnlocked(L4P)).toBe(true)
+    expect(layoutPresetsUnlocked(L4)).toBe(false)
+    expect(layoutPresetsUnlocked(DEFAULT_CAPABILITIES)).toBe(false)
+  })
+  it('locked: the generator drops a new layout with a note; unlocked keeps it', () => {
+    const r = enforceCapabilities(laid, VALID, L4)
+    expect(r.bundle.layout).toBeUndefined()
+    expect(r.notes.join(' ')).toContain('Layout presets are not available')
+    const ok = enforceCapabilities(laid, VALID, L4P)
+    expect(ok.bundle.layout).toEqual({ cards: 'list' })
+    expect(ok.notes).toEqual([])
+  })
+  it('locked: a layout change is restored to the current layout; an absent layout keeps it silently', () => {
+    const r = enforceCapabilities({ ...VALID, layout: { faq: 'split' as const } }, laid, L4)
+    expect(r.bundle.layout).toEqual({ cards: 'list' })
+    expect(r.notes).toHaveLength(1)
+    const kept = enforceCapabilities(VALID, laid, L4)
+    expect(kept.bundle.layout).toEqual({ cards: 'list' })
+    expect(kept.notes).toEqual([])
+    expect(keepLockedLayout(VALID, laid, L4).layout).toEqual({ cards: 'list' })
+    expect(keepLockedLayout(VALID, laid, L4P).layout).toBeUndefined()
+    expect(keepLockedLevers(VALID, { ...laid, style: { cards: 'flat' } }, L2)).toMatchObject({ layout: { cards: 'list' }, style: { cards: 'flat' } })
+  })
+  it('apply rejects a layout change when locked, allows it when unlocked', () => {
+    const v = capabilityViolations(laid, VALID, L4)
+    expect(v).toEqual([expect.stringContaining('Layout presets are locked')])
+    expect(capabilityViolations(laid, VALID, L4P)).toEqual([])
+    expect(capabilityViolations(VALID, laid, L4)).toEqual([])
+    expect(capabilityViolations(laid, laid, L4)).toEqual([])
+  })
+  it('rendering keepLockedLayout(layout-less bundle) when locked keeps design.json layout', () => {
+    const designText = JSON.stringify({ ...JSON.parse(DRAFT_FILES.designText), layout: { cards: 'list' } })
+    const r = bundleToRepoFiles(keepLockedLayout(VALID, laid, L4), { ...DRAFT_FILES, designText }, { removeLegacy: false })
+    expect(r.ok && JSON.parse(r.files.designText).layout).toEqual({ cards: 'list' })
+  })
+  it('the flag goes through the shell intersection', () => {
+    expect(layoutPresetsUnlocked(intersectWithShell(L4P, { status: 'verified', capabilities: ['fonts', 'style-axes', 'specimen'] }))).toBe(false)
+    expect(layoutPresetsUnlocked(intersectWithShell(L4P, { status: 'verified', capabilities: ['fonts', 'style-axes', 'specimen', 'layout-presets'], templateVersion: '2026.09.9' }))).toBe(true)
+    expect(layoutPresetsUnlocked(intersectWithShell(L4P, { status: 'unverified' }))).toBe(true)
+  })
+})
+
+describe('effective template version = min(draft, shell meta)', () => {
+  const v = (templateVersion?: string | null) => ({ status: 'verified' as const, capabilities: [], templateVersion })
+  it('takes the older of draft and shell', () => {
+    expect(effectiveTemplateVersion('2026.09.9', v('2026.09.9'))).toBe('2026.09.9')
+    expect(effectiveTemplateVersion('2026.09.10', v('2026.09.9'))).toBe('2026.09.9')
+    expect(effectiveTemplateVersion('2026.09.9', v('2026.09.10'))).toBe('2026.09.9')
+  })
+  it('a verified shell without the meta counts as 2026.09.8', () => {
+    expect(SHELL_WITHOUT_VERSION_META).toBe('2026.09.8')
+    expect(effectiveTemplateVersion('2026.09.9', v(undefined))).toBe('2026.09.8')
+    expect(effectiveTemplateVersion('2026.09.9', v(null))).toBe('2026.09.8')
+    expect(effectiveTemplateVersion('2026.09.9', v('garbage'))).toBe('2026.09.8')
+    expect(effectiveTemplateVersion('2026.09.5', v(null))).toBe('2026.09.5')
+  })
+  it('an unverified shell keeps the draft version; no draft version stays null', () => {
+    expect(effectiveTemplateVersion('2026.09.9', { status: 'unverified' })).toBe('2026.09.9')
+    expect(effectiveTemplateVersion(null, v('2026.09.9'))).toBeNull()
+  })
+  it('intersectWithShell carries the effective version (and it round-trips)', () => {
+    const d = parseTemplateMarker(JSON.stringify({ templateVersion: '2026.09.9', capabilities: ['fonts'] }))
+    const c = intersectWithShell(d, v(null))
+    expect(c.templateVersion).toBe('2026.09.8')
+    expect(capabilitiesFromJson(JSON.parse(JSON.stringify(c)))).toEqual(c)
   })
 })
