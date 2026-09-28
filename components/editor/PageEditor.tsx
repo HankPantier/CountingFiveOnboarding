@@ -212,6 +212,7 @@ export default function PageEditor({
   const layoutHandlers = {
     templateVersion,
     sitePresets,
+    viewerIsAdmin: isAdmin,
     onSetVariant: (index: number, variant: string | null) => {
       const res = setSectionVariant(bodyContent, index, variant, { templateVersion })
       if (!res.ok) return res.reason

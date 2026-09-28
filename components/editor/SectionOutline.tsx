@@ -33,6 +33,8 @@ export type LayoutHandlers = {
   templateVersion: string | null
   /** The draft design.json `layout` presets (template 2026.09.9); null = none. */
   sitePresets?: LayoutPresets | null
+  /** Admins set presets in Theme Studio; other roles can't reach it. */
+  viewerIsAdmin?: boolean
   onSetVariant: (index: number, variant: string | null) => string | null
   onSetTheme: (index: number, theme: string | null) => string | null
 }
@@ -70,7 +72,14 @@ function LayoutControls({
     ? sitePresetHint(section.blockId, section, layout.sitePresets, { templateVersion: layout.templateVersion })
     : null
   const hintEl = presetHint ? (
-    <span className="text-[11px] font-body text-text-muted" title="Set site-wide in Theme Studio → Controls → Layout. A section layout chosen here wins.">
+    <span
+      className="text-[11px] font-body text-text-muted"
+      title={
+        layout.viewerIsAdmin
+          ? 'Set site-wide in Theme Studio → Controls → Layout. A section layout chosen here wins.'
+          : 'Set site-wide by your administrator. A section layout chosen here wins.'
+      }
+    >
       {presetHint}
     </span>
   ) : null
