@@ -5,7 +5,7 @@
 // (Validator: Block Assignment Rules section).
 // ---------------------------------------------------------------------------
 
-import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, variantValuesAt, type BlockSpec } from './block-catalog'
+import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, blockVariantValuesAt, variantValuesAt, type BlockSpec } from './block-catalog'
 import { parseBlockComment, rendersAsSection, templateSectionPattern } from '@/lib/editor/block-annotation'
 
 // ---------------------------------------------------------------------------
@@ -120,6 +120,10 @@ export function validateBlockAnnotations(
   annotations: BlockAnnotation[],
   _pageUrl: string,
   _faqBlock: { question: string; answer: string }[],
+  // With a template version, a variant newer than the site's template counts
+  // as invalid (coerced like any other); without one, every contract variant
+  // is valid (fresh sites get the latest template).
+  opts?: { templateVersion: string | null },
 ): ValidationResult {
   const errors: ValidationError[] = []
   const warnings: string[] = []
@@ -184,7 +188,7 @@ export function validateBlockAnnotations(
     // ------------------------------------------------------------------
     // Coercion rule 4: invalid variant (downgrade from fatal — auto-fix to first valid)
     // ------------------------------------------------------------------
-    const variants = blockVariantValues(blockId)
+    const variants = opts ? blockVariantValuesAt(blockId, opts.templateVersion) : blockVariantValues(blockId)
     if (variant !== undefined && variants.length > 0) {
       if (!variants.includes(variant)) {
         // First listed variant (the contract keeps the generator's preferred

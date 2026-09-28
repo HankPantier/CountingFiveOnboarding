@@ -34,3 +34,17 @@ describe('version-aware annotation checks', () => {
     expect(checkEditAnnotations(file('3-col'), file('list')).errors).toEqual([])
   })
 })
+
+describe('generation validation (validateBlockAnnotations) with a template version', () => {
+  it('coerces a layout newer than the site template; accepts it when the template has it or no version is known', async () => {
+    const { parseBlockAnnotations, validateBlockAnnotations } = await import('./block-annotation-validator')
+    const anns = parseBlockAnnotations(body('list'))
+    const coerced = (opts?: { templateVersion: string | null }) => validateBlockAnnotations(anns, '/services', [], opts).coercions
+    expect(coerced({ templateVersion: '2026.09.8' })).toEqual([
+      expect.objectContaining({ blockId: 'service-cards', originalVariant: 'list', coercedVariant: '2-col' }),
+    ])
+    expect(coerced({ templateVersion: null })).toHaveLength(1)
+    expect(coerced({ templateVersion: '2026.09.9' })).toEqual([])
+    expect(coerced()).toEqual([])
+  })
+})
