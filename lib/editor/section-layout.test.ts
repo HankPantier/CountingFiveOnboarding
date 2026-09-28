@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { INK_TOGGLE_BLOCKS, layoutOptionsFor, setSectionTheme, setSectionVariant, variantLabel } from './section-layout'
+import {
+  INK_TOGGLE_BLOCKS,
+  layoutOptionsFor,
+  setSectionLayoutByHeading,
+  setSectionTheme,
+  setSectionVariant,
+  variantLabel,
+} from './section-layout'
 import { describeSections } from './section-reorder'
 import { BLOCK_CATALOG } from '@/lib/content/block-catalog'
 
@@ -205,5 +212,52 @@ describe('layoutOptionsFor', () => {
   it('labels unknown values readably', () => {
     expect(variantLabel('with-image-left')).toBe('Image left')
     expect(variantLabel('some-new-thing')).toBe('Some new thing')
+  })
+})
+
+describe('setSectionLayoutByHeading', () => {
+  const BODY = [
+    '<!-- block: intro-text | variant: centered -->',
+    '## Welcome',
+    '',
+    'Hi.',
+    '',
+    '<!-- block: service-cards | variant: 3-col -->',
+    '## Our **Services**',
+    '',
+    '### Tax',
+    '',
+    '<!-- block: stats-bar -->',
+    '## Numbers',
+    '',
+    '- **20** years',
+    '',
+    '<!-- block: content-prose -->',
+    '## Numbers',
+    '',
+    'Dup.',
+    '',
+  ].join('\n')
+
+  it('sets variant and theme on the named section in one line', () => {
+    const res = setSectionLayoutByHeading(BODY, 'our **services**', { variant: '2-col', theme: 'ink' })
+    expect(res).toMatchObject({ ok: true, changed: true, blockId: 'service-cards' })
+    expect(changedLines(BODY, res.body)).toEqual([
+      expect.objectContaining({ to: '<!-- block: service-cards | variant: 2-col | theme: ink -->' }),
+    ])
+  })
+
+  it('removes a theme with null and reports a no-op', () => {
+    const on = setSectionLayoutByHeading(BODY, 'Our Services', { theme: 'ink' })
+    expect(setSectionLayoutByHeading(on.body, 'Our Services', { theme: null }).body).toBe(BODY)
+    expect(setSectionLayoutByHeading(BODY, 'Welcome', { variant: 'centered' })).toMatchObject({ ok: true, changed: false, body: BODY })
+  })
+
+  it('refuses unknown, ambiguous and empty requests, and an invalid half, leaving the body unchanged', () => {
+    expect(setSectionLayoutByHeading(BODY, 'Pricing', { variant: '2-col' })).toMatchObject({ ok: false, body: BODY })
+    expect(setSectionLayoutByHeading(BODY, 'Numbers', { variant: '4-up' })).toMatchObject({ ok: false, body: BODY })
+    expect(setSectionLayoutByHeading(BODY, 'Welcome', {})).toMatchObject({ ok: false, body: BODY })
+    // A valid variant with an unsupported theme: nothing is applied.
+    expect(setSectionLayoutByHeading(BODY, 'Welcome', { variant: 'left-aligned', theme: 'ink' })).toMatchObject({ ok: false, body: BODY })
   })
 })

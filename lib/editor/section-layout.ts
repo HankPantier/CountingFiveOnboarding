@@ -18,7 +18,7 @@ import {
 } from '@/lib/content/block-catalog'
 import { findBlockComments, serializeBlockComment, type BlockComment } from './block-annotation'
 import { joinSections, type Section } from './markdown-sections'
-import { partition } from './section-reorder'
+import { describeSections, partition } from './section-reorder'
 
 // The "Ink band" toggle is offered only where it visibly changes the section.
 // The catalog also accepts `theme: ink` on cta-banner and stats-bar, but both
@@ -223,4 +223,54 @@ export function setSectionTheme(body: string, index: number, theme: string | nul
     }
     return { ...comment, theme: value }
   })
+}
+
+// Headings compare loosely (case, surrounding space/emphasis, inner runs of
+// whitespace) so the AI tool can name a section the way it reads it.
+function normHeading(h: string): string {
+  return h.replace(/^[#*_\s]+|[*_\s]+$/g, '').replace(/\s+/g, ' ').toLowerCase()
+}
+
+/**
+ * The AI editor's set_section_layout: find the one section titled `heading`
+ * and set its variant and/or theme (theme null = remove). Both changes land on
+ * that section's annotation line only. Refuses when the heading matches no
+ * section or several, and for anything setSectionVariant/Theme refuse.
+ */
+export function setSectionLayoutByHeading(
+  body: string,
+  heading: string,
+  change: { variant?: string; theme?: string | null },
+  opts: LayoutOpts = {},
+): SectionLayoutResult & { blockId?: string } {
+  if (change.variant === undefined && change.theme === undefined) {
+    return { ok: false, body, reason: 'Give a variant, a theme, or both.' }
+  }
+  const sections = describeSections(body).sections
+  const want = normHeading(heading)
+  const hits = sections.flatMap((s, i) => (normHeading(s.heading) === want ? [i] : []))
+  if (hits.length === 0) {
+    const names = sections.map((s) => s.heading).filter(Boolean)
+    return { ok: false, body, reason: `No section is titled “${heading}”. Sections: ${names.map((n) => `“${n}”`).join(', ') || 'none'}.` }
+  }
+  if (hits.length > 1) {
+    return { ok: false, body, reason: `Several sections are titled “${heading}”; edit the right annotation with apply_edit instead.` }
+  }
+  const index = hits[0]
+  const blockId = sections[index].blockId
+  let next = body
+  let changed = false
+  if (change.variant !== undefined) {
+    const r = setSectionVariant(next, index, change.variant, opts)
+    if (!r.ok) return { ...r, body, blockId }
+    next = r.body
+    changed ||= r.changed
+  }
+  if (change.theme !== undefined) {
+    const r = setSectionTheme(next, index, change.theme)
+    if (!r.ok) return { ...r, body, blockId }
+    next = r.body
+    changed ||= r.changed
+  }
+  return { ok: true, body: next, changed, blockId }
 }

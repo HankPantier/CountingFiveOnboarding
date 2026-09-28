@@ -37,6 +37,7 @@ const COMMIT_TOOL_TYPES = [
   'tool-set_faq',
   'tool-update_firm_contact',
   'tool-remove_text',
+  'tool-set_section_layout',
 ]
 
 interface RemoveTextOutput {

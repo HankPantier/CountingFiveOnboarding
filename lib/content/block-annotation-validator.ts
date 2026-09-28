@@ -5,7 +5,7 @@
 // (Validator: Block Assignment Rules section).
 // ---------------------------------------------------------------------------
 
-import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, type BlockSpec } from './block-catalog'
+import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, variantValuesAt, type BlockSpec } from './block-catalog'
 import { parseBlockComment, rendersAsSection, templateSectionPattern } from '@/lib/editor/block-annotation'
 
 // ---------------------------------------------------------------------------
@@ -56,10 +56,17 @@ export type ValidationResult = {
  * (frontmatter), platform-inserted blocks (faq-accordion, contact-info, map,
  * pricing pages) and config-driven blocks (booking, resource-list) are left out.
  */
-export function blockCatalogHint(): string {
+export function blockCatalogHint(opts?: { templateVersion: string | null | undefined }): string {
+  // With opts, only the variants a template at that version renders (null ⇒
+  // baseline); without, every contract variant (the generation prompts).
+  const values = (spec: BlockSpec) =>
+    opts ? variantValuesAt(spec.variants, opts.templateVersion) : spec.variants.map((v) => v.value)
   return BLOCK_IDS.map((id) => [id, BLOCK_CATALOG[id] as BlockSpec] as const)
     .filter(([, spec]) => spec.insertable)
-    .map(([id, spec]) => (spec.variants.length ? `${id} (${spec.variants.map((v) => v.value).join('|')})` : id))
+    .map(([id, spec]) => {
+      const vs = values(spec)
+      return vs.length ? `${id} (${vs.join('|')})` : id
+    })
     .join(', ')
 }
 

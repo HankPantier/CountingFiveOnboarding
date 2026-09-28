@@ -13,6 +13,8 @@ const m = vi.hoisted(() => ({
   spend: null as null | Response,
   insertFiled: true,
   ctx: null as null | Record<string, unknown>,
+  marker: null as null | string,
+  path: 'content/pages/about.md',
 }))
 
 vi.mock('ai', async (orig) => ({
@@ -56,6 +58,10 @@ vi.mock('@/lib/github/repo-files', () => {
     ensureDraftBranch: async () => undefined,
     readFile: async (_repo: string, path: string) => {
       if (path === 'content/brand.json') throw new FileNotFoundError('nope')
+      if (path === 'c5-template.json') {
+        if (m.marker === null) throw new FileNotFoundError('nope')
+        return { content: m.marker, sha: 'sha-m' }
+      }
       return { content: m.file, sha: 'sha-0' }
     },
     writeFile: async (_r: string, _p: string, content: string) => {
@@ -69,10 +75,9 @@ vi.mock('@/lib/github/repo-files', () => {
 import { POST } from './route'
 
 const SID = '11111111-1111-1111-1111-111111111111'
-const PAGE = 'content/pages/about.md'
 const post = () =>
   POST(
-    new Request('http://x', { method: 'POST', body: JSON.stringify({ messages: [], path: PAGE }) }),
+    new Request('http://x', { method: 'POST', body: JSON.stringify({ messages: [], path: m.path }) }),
     { params: Promise.resolve({ id: SID }) }
   )
 
@@ -83,6 +88,8 @@ beforeEach(() => {
   m.streamCalls = 0
   m.spend = null
   m.insertFiled = true
+  m.marker = null
+  m.path = 'content/pages/about.md'
   m.ctx = { githubRepo: 'o/r', sessionId: SID, jobId: 'j', adminEmail: 'a@x.com', adminName: 'A', user: { id: 'u1', isAdmin: true, capabilities: [] } }
 })
 
@@ -146,5 +153,73 @@ describe('POST /api/edit/[id]/chat', () => {
 
     const systemText = m.system!.map(s => s.content).join('\n')
     expect(systemText).toContain('call update_firm_contact')
+  })
+
+  describe('set_section_layout', () => {
+    const LAYOUT_FILE = [
+      '---',
+      'title: "About"',
+      '---',
+      '',
+      '<!-- block: content-split | variant: image-right | image: a.jpg | alt: "A desk" | query: "desk" -->',
+      '## How we work',
+      '',
+      'We plan ahead — every quarter.',
+      '',
+      '<!-- block: service-cards | variant: 3-col -->',
+      '## Our services',
+      '',
+      '### Tax',
+      '',
+      '## SEO & AIO Metadata',
+      '',
+      '**Meta:** keep — me',
+      '',
+    ].join('\n')
+
+    it('changes exactly the one annotation line (no dash scrub, trailer kept)', async () => {
+      m.file = LAYOUT_FILE
+      await post()
+      const res = await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: 'image-left' })
+      expect(res).toMatchObject({ success: true, block: 'content-split' })
+      const before = LAYOUT_FILE.split('\n')
+      const after = m.file.split('\n')
+      expect(after).toHaveLength(before.length)
+      const diff = before.flatMap((l, i) => (l === after[i] ? [] : [after[i]]))
+      expect(diff).toEqual(['<!-- block: content-split | variant: image-left | image: a.jpg | alt: "A desk" | query: "desk" -->'])
+
+      const ink = await m.tools!.set_section_layout.execute({ heading: 'Our services', theme: 'ink' })
+      expect(ink.success).toBe(true)
+      expect(m.file).toContain('<!-- block: service-cards | variant: 3-col | theme: ink -->')
+      expect(m.file).toContain('We plan ahead — every quarter.')
+    })
+
+    it('refuses bad requests without writing', async () => {
+      m.file = LAYOUT_FILE
+      await post()
+      expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: '4-col' })).error).toBeTruthy()
+      expect((await m.tools!.set_section_layout.execute({ heading: 'Nope', variant: 'image-left' })).error).toMatch(/No section/)
+      expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', theme: 'ink' })).error).toBeTruthy()
+      expect(m.file).toBe(LAYOUT_FILE)
+    })
+
+    it('reads the draft template version for the prompt hint and survives a missing marker', async () => {
+      m.marker = JSON.stringify({ templateVersion: '2026.09.8', capabilities: [] })
+      await post()
+      const systemText = m.system!.map((s) => s.content).join('\n')
+      expect(systemText).toContain('content-split (image-right|image-left)')
+      expect(systemText).toContain('set_section_layout')
+      m.marker = null
+      await post()
+      expect(m.tools!.set_section_layout).toBeDefined()
+    })
+
+    it('is pages-only', async () => {
+      m.path = 'content/posts/hello.md'
+      m.file = LAYOUT_FILE
+      await post()
+      expect((await m.tools!.set_section_layout.execute({ heading: 'How we work', variant: 'image-left' })).error).toMatch(/pages only/)
+      expect(m.file).toBe(LAYOUT_FILE)
+    })
   })
 })
