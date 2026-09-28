@@ -94,3 +94,16 @@ describe('deriveQuery', () => {
     expect(deriveQuery('', '')).toBe('professional business office')
   })
 })
+
+describe('ink bands (theme: after query:)', () => {
+  it('injects an image into an ink image-bg banner and keeps theme last', () => {
+    const md = '<!-- block: cta-banner | variant: image-bg | theme: ink -->\n## Talk to us\n\nBody.'
+    expect(ensureBlockMedia(md, PAGE, KW)).toBe(
+      '<!-- block: cta-banner | variant: image-bg | image: industries--healthcare-professionals--talk-to-us.jpg | query: "talk us healthcare professionals" | theme: ink -->\n## Talk to us\n\nBody.'
+    )
+  })
+  it('leaves a leniently-parsed comment untouched', () => {
+    const md = '<!-- block: content-split | theme: ink | variant: image-left -->\n## A\n\nB.'
+    expect(ensureBlockMedia(md, PAGE, KW)).toBe(md)
+  })
+})

@@ -40,6 +40,50 @@ const STRICT_LINE_RE = new RegExp(`^${STRICT_BODY}\\s*$`)
 // ...plus the heading the template requires right after it.
 const TEMPLATE_SECTION_HEAD_RE = new RegExp(`^${STRICT_BODY}\\s*\\n##\\s+(.+?)\\n`)
 
+/**
+ * A fresh global copy of the template parser's full SECTION_PATTERN
+ * (parse-page-md.ts). Groups: 1 blockId, 2 variant, 3 image, 4 alt, 5 query,
+ * 6 theme, 7 heading, 8 section content (up to the next annotation or EOF).
+ * Use it wherever the platform must see exactly the sections the site renders.
+ */
+export function templateSectionPattern(): RegExp {
+  return new RegExp(`${STRICT_BODY}\\s*\\n##\\s+(.+?)\\n([\\s\\S]*?)(?=\\n<!-- block:|$)`, 'g')
+}
+
+// Every block comment in a text: the `<!-- block:` prefix the template splits
+// on, through the first `-->` on that line.
+const BLOCK_COMMENT_FINDER_RE = /<!-- block:[^\n]*?-->/g
+
+export type FoundBlockComment = {
+  /** Offset of the comment in the text. */
+  index: number
+  /** The comment exactly as written. */
+  raw: string
+  /** Parsed fields, or null when even the lenient read fails. */
+  comment: ParsedBlockComment | null
+}
+
+/** Every `<!-- block: … -->` comment in the text, in order. */
+export function findBlockComments(text: string): FoundBlockComment[] {
+  return [...text.matchAll(BLOCK_COMMENT_FINDER_RE)].map((m) => ({
+    index: m.index ?? 0,
+    raw: m[0],
+    comment: parseBlockComment(m[0]),
+  }))
+}
+
+/**
+ * Rewrite block comments in place: `fn` returns the replacement text for each
+ * found comment (return `found.raw` to keep it). Nothing else in the text moves.
+ */
+export function replaceBlockComments(text: string, fn: (found: FoundBlockComment, ordinal: number) => string): string {
+  let ordinal = -1
+  return text.replace(BLOCK_COMMENT_FINDER_RE, (raw: string, index: number) => {
+    ordinal++
+    return fn({ index, raw, comment: parseBlockComment(raw) }, ordinal)
+  })
+}
+
 const LENIENT_LINE_RE = /^<!--\s*block:\s*([A-Za-z0-9][A-Za-z0-9-]*)\s*(.*?)\s*-->\s*$/
 const LENIENT_FIELD_RE = /\|\s*([A-Za-z]+)\s*:\s*("([^"]*)"|[^|]*)/g
 const FIELDS = new Set<string>(ANNOTATION_FIELD_ORDER)

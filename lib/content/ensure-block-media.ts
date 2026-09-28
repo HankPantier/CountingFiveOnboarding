@@ -8,10 +8,10 @@
 // remove unwanted images later via the editor's Section images panel.
 // ---------------------------------------------------------------------------
 
-// Same comment grammar as lib/editor/block-images.ts and the template's
-// parse-page-md.ts — part order MUST be: block | variant | image | alt | query.
-const BLOCK_COMMENT_RE =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"([^"]*)")?(?:\s*\|\s*query:\s*"([^"]+)")?\s*-->/g
+// Comments are read and rewritten through the block-annotation codec, which
+// keeps the template's part order (block | variant | image | alt | query |
+// theme) — so an ink image-bg cta-banner gets its image too, and keeps `theme:`.
+import { replaceBlockComments, serializeBlockComment } from '@/lib/editor/block-annotation'
 
 const STOPWORDS = new Set([
   'the', 'and', 'a', 'an', 'your', 'our', 'for', 'to', 'of', 'with',
@@ -65,27 +65,25 @@ export function ensureBlockMedia(
 ): string {
   const slug = pageSlug(pageUrl)
 
-  return markdown.replace(
-    BLOCK_COMMENT_RE,
-    (full, blockId: string, variant: string | undefined, image: string | undefined, alt: string | undefined, query: string | undefined, offset: number) => {
-      if (!needsImage(blockId, variant, image)) return full
+  return replaceBlockComments(markdown, ({ raw, index, comment: c }) => {
+    // A leniently-parsed comment is left alone: rewriting it would guess.
+    if (!c || !c.strict || !needsImage(c.blockId, c.variant, c.image)) return raw
 
-      // Heading for this section: first `## ` line after THIS comment
-      // (offset-based — identical comments elsewhere must not alias).
-      const after = markdown.slice(offset + full.length)
-      const heading = after.match(/^\s*##\s+(.+)/)?.[1]?.trim() ?? ''
+    // Heading for this section: first `## ` line after THIS comment
+    // (offset-based — identical comments elsewhere must not alias).
+    const after = markdown.slice(index + raw.length)
+    const heading = after.match(/^\s*##\s+(.+)/)?.[1]?.trim() ?? ''
 
-      const filename = `${slug}--${kebab(heading) || blockId}.jpg`
-      const derivedQuery = query ?? deriveQuery(heading, targetKeyword)
-
-      let out = `<!-- block: ${blockId}`
-      if (variant) out += ` | variant: ${variant}`
-      out += ` | image: ${filename}`
-      // No alt synthesis: the template already falls back to the section
-      // heading, so injecting a heading-derived alt would add nothing.
-      if (alt) out += ` | alt: "${alt}"`
-      out += ` | query: "${derivedQuery}"`
-      return `${out} -->`
-    }
-  )
+    const filename = `${slug}--${kebab(heading) || c.blockId}.jpg`
+    // No alt synthesis: the template already falls back to the section
+    // heading, so injecting a heading-derived alt would add nothing.
+    return serializeBlockComment({
+      blockId: c.blockId,
+      variant: c.variant,
+      image: filename,
+      alt: c.alt || undefined,
+      query: c.query ?? deriveQuery(heading, targetKeyword),
+      theme: c.theme,
+    })
+  })
 }

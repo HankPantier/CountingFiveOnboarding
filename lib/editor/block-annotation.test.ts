@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseBlockComment, rendersAsSection, serializeBlockComment } from './block-annotation'
+import { findBlockComments, parseBlockComment, rendersAsSection, replaceBlockComments, serializeBlockComment, templateSectionPattern } from './block-annotation'
 import { joinSections, splitSections } from './markdown-sections'
 import { describeSections } from './section-reorder'
 import { extractImageBlocks, setBlockAlt, setBlockImage } from './block-images'
@@ -124,5 +124,18 @@ describe('FAQ marker', () => {
     const next = setFaqAccordionBody(body, [{ question: 'C?', answer: 'D.' }], 'FAQ')
     expect(next).toContain('<!-- block: faq-accordion | theme: ink -->\n## Questions\n\n**Q: C?**\nA: D.')
     expect(next).not.toContain('**Q: A?**')
+  })
+})
+
+describe('shared finders', () => {
+  const body = '<!-- block: map -->\n\n<!-- block: industry-cards | variant: 3-col | theme: ink -->\n## Who\n\nx\n'
+  it('templateSectionPattern sees exactly the rendered sections, theme included', () => {
+    const ms = [...body.matchAll(templateSectionPattern())]
+    expect(ms.map((m) => [m[1], m[2], m[6], m[7]])).toEqual([['industry-cards', '3-col', 'ink', 'Who']])
+  })
+  it('findBlockComments / replaceBlockComments visit every comment in order', () => {
+    expect(findBlockComments(body).map((f) => f.comment?.blockId)).toEqual(['map', 'industry-cards'])
+    expect(replaceBlockComments(body, (f) => f.raw)).toBe(body)
+    expect(replaceBlockComments(body, (f, i) => (i === 0 ? '<!-- block: contact-info -->' : f.raw))).toContain('contact-info')
   })
 })

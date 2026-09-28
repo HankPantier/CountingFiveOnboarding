@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { BLOCK_CATALOG, BLOCK_IDS, blockSpec, blockVariantValues, type BlockSpec } from './block-catalog'
-import { parseBlockComment, rendersAsSection } from '@/lib/editor/block-annotation'
+import { parseBlockComment, rendersAsSection, templateSectionPattern } from '@/lib/editor/block-annotation'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -433,45 +433,21 @@ export function applyCoercions(markdown: string, coercions: AnnotationCoercion[]
 // ---------------------------------------------------------------------------
 
 /**
- * Regex that matches each annotated section in the markdown body — the
- * template parser's SECTION_PATTERN (parse-page-md.ts), field order
- * variant | image | alt | query | theme.
- * Groups:
- *   1 = blockId
- *   2 = variant (optional)
- *   3 = image (optional)
- *   4 = theme (optional)
- *   5 = headingText
- *   6 = sectionContent (body below the heading before next annotation or EOF)
- */
-const SECTION_PATTERN =
-  /<!-- block: ([a-z-]+)(?:\s*\|\s*variant:\s*([a-z0-9-]+))?(?:\s*\|\s*image:\s*([^\s|>]+))?(?:\s*\|\s*alt:\s*"[^"]*")?(?:\s*\|\s*query:\s*"[^"]+")?(?:\s*\|\s*theme:\s*([a-z]+))?\s*-->\s*\n##\s+(.+?)\n([\s\S]*?)(?=\n<!-- block:|$)/g
-
-/**
- * Parse a full page markdown body into an array of BlockAnnotation entries.
- * The caller must have already stripped the YAML frontmatter; pass only the body.
+ * Parse a full page markdown body into an array of BlockAnnotation entries —
+ * exactly the sections the template renders (its SECTION_PATTERN via the
+ * block-annotation codec: variant | image | alt | query | theme, then a
+ * `## heading`). The caller must have already stripped the YAML frontmatter.
  */
 export function parseBlockAnnotations(body: string): BlockAnnotation[] {
-  const results: BlockAnnotation[] = []
-  let position = 0
-  let match: RegExpExecArray | null
-
-  // Reset lastIndex in case the regex is reused across calls
-  SECTION_PATTERN.lastIndex = 0
-
-  while ((match = SECTION_PATTERN.exec(body)) !== null) {
-    results.push({
-      blockId: match[1],
-      variant: match[2] ?? undefined,
-      image: match[3] ?? undefined,
-      theme: match[4] ?? undefined,
-      headingText: match[5].trim(),
-      sectionContent: match[6] ?? '',
-      position: position++,
-    })
-  }
-
-  return results
+  return [...body.matchAll(templateSectionPattern())].map((m, position) => ({
+    blockId: m[1],
+    variant: m[2] ?? undefined,
+    image: m[3] ?? undefined,
+    theme: m[6] ?? undefined,
+    headingText: m[7].trim(),
+    sectionContent: m[8] ?? '',
+    position,
+  }))
 }
 
 // ---------------------------------------------------------------------------
