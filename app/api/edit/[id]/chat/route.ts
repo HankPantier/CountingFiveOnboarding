@@ -16,7 +16,7 @@ import { INTERACTIVE_CHAT_MODEL, chatProviderOptions } from '@/lib/content/gener
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { loadNoGoPhrases, buildNoGoPromptBlock, findNoGoHits } from '@/lib/content/no-go-phrases'
 import { insertMbpSuggestion } from '@/lib/mbp/create-suggestion'
-import { applyFindReplace, applyBatchEdits, validatePageAnnotations } from '@/lib/editor/apply-edit'
+import { applyFindReplace, applyBatchEdits, checkEditAnnotations } from '@/lib/editor/apply-edit'
 import { blockCatalogHint } from '@/lib/content/block-annotation-validator'
 import { sanitizeGeneratedText } from '@/lib/content/anti-slop-validator'
 import { applyBulkRemovals, countPhrase } from '@/lib/editor/bulk-remove'
@@ -48,7 +48,8 @@ const EDITABLE = ['content/pages/', 'content/posts/']
 
 // The block catalog the layout tools may produce (id → variants), derived from
 // BLOCK_CATALOG so it can't drift from the validator. The model picks valid
-// ids/variants from this; validateAnnotationSyntax is the hard gate on write.
+// ids/variants from this; checkEditAnnotations (only problems an edit
+// introduces) is the hard gate on write.
 const BLOCK_CATALOG_HINT = blockCatalogHint()
 
 export async function POST(
@@ -176,13 +177,13 @@ BATCH your work: a request usually implies MANY edits (rewrite several sentences
 LAYOUT CHANGES (via apply_edit on the annotation comment)
 Every section's layout is set by an HTML comment before its \`##\` heading, e.g.
 \`<!-- block: content-split | variant: image-right | image: x.jpg | alt: "..." | query: "..." -->\`
-Almost any layout request is just editing that comment's \`variant\` (or moving/adding/removing the whole block). Do it — don't tell the admin a layout isn't possible without first checking the variants below. What you can change:
+Almost any layout request is just editing that comment's \`variant\` (or moving/adding/removing the whole block). Keep its fields in this order: block | variant | image | alt | query | theme (\`theme: ink\` = the deep ink band, only on blocks that support it). Do it — don't tell the admin a layout isn't possible without first checking the variants below. What you can change:
 - Image side (left/right) on \`content-split\` AND \`checklist-section\`: flip between \`image-right\`/\`image-left\` (content-split) or \`with-image-right\`/\`with-image-left\` (checklist-section). A legacy \`with-image\` checklist means image-on-right — rewrite it to \`with-image-left\` to move the photo left.
 - Column count on card grids: \`feature-grid\`/\`industry-cards\` (3-col|4-col), \`service-cards\`/\`content-cards\` (2-col|3-col), \`team-grid\` (2-col|3-col|4-col), \`stats-bar\` (3-up|4-up).
 - Text alignment: \`intro-text\` (centered|left-aligned). Steps orientation: \`process-steps\` (horizontal|vertical). Testimonials: \`testimonials\` (carousel|grid). CTA background: \`cta-banner\` (color-bg|image-bg). Pricing tiers / form type likewise via their variants.
 - Add a section: insert a new \`<!-- block: ... -->\` comment + \`## Heading\` + body at a sensible anchor. Reorder/remove: move or delete a whole block (its comment + heading + body).
 - Convert a block type (e.g. \`checklist-section\` → \`content-split\`) when the admin wants a layout the current block can't do: change the \`block:\` id to a valid one and adjust the body to fit (e.g. bullet list → prose). Confirm the intent first if it would drop content.
-Only use these block ids and variants: ${BLOCK_CATALOG_HINT}. An edit that produces an unknown block id or an invalid variant is rejected — the tool tells you why, so fix it and retry.
+Only use these block ids and variants: ${BLOCK_CATALOG_HINT}. An edit that introduces an unknown block id or an invalid variant/theme is rejected — the tool tells you why, so fix it and retry (values already on the page never block an unrelated edit). If a result carries \`layoutWarnings\` (e.g. an unrecognised hero / hero_variant), tell the admin.
 
 FIRM-WIDE CONTACT (phone, fax, email, hours, address)
 These are NOT page-specific — they render on every page (footer, contact page, on-page schema) from one shared source.${canEditFirmContact ? ` When the admin asks to change any of them, FIRST ask whether to apply it firm-wide or only mention it on this page:
@@ -243,13 +244,15 @@ ${view().visible}
             // Strip AI dash-tells from model-authored replacement text before it
             // lands in live content. humanizeDashes protects code fences and
             // block annotations, so layout edits stay intact.
-            const res = applyFindReplace(view().visible, find, sanitizeGeneratedText(replace), all ?? false)
+            const before = view().visible
+            const res = applyFindReplace(before, find, sanitizeGeneratedText(replace), all ?? false)
             // Already applied → nothing to commit; report it as a no-op, not a save.
             if (!res.ok && res.noop) return { success: true, noChange: true, message: res.reason }
             if (!res.ok) return { error: res.reason }
-            const annotationErrors = validatePageAnnotations(res.next)
-            if (annotationErrors.length > 0) {
-              return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
+            // Only problems this edit introduces block it; legacy values don't.
+            const check = checkEditAnnotations(before, res.next)
+            if (check.errors.length > 0) {
+              return { error: `That edit would break a block annotation: ${check.errors.join(' ')}` }
             }
             try {
               await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
@@ -257,7 +260,12 @@ ${view().visible}
               return toolError('edit:chat', err, 'Failed to save the edit.')
             }
             const noGoWarning = findNoGoHits(view().visible, noGoPhrases)
-            return { success: true, replacements: res.count, ...(noGoWarning.length ? { noGoWarning } : {}) }
+            return {
+              success: true,
+              replacements: res.count,
+              ...(noGoWarning.length ? { noGoWarning } : {}),
+              ...(check.warnings.length ? { layoutWarnings: check.warnings } : {}),
+            }
           },
         },
         apply_edits: {
@@ -291,10 +299,10 @@ ${view().visible}
             // Only commit when something actually landed; when every find missed
             // the page is unchanged — return the misses so the model re-copies.
             const changed = res.next !== visible
+            const check = changed ? checkEditAnnotations(visible, res.next) : { errors: [], warnings: [] }
             if (changed) {
-              const annotationErrors = validatePageAnnotations(res.next)
-              if (annotationErrors.length > 0) {
-                return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
+              if (check.errors.length > 0) {
+                return { error: `That edit would break a block annotation: ${check.errors.join(' ')}` }
               }
               try {
                 await commitWorking(res.next, `Edit ${path.split('/').pop()} via AI (${adminEmail ?? 'admin'})`)
@@ -310,6 +318,7 @@ ${view().visible}
               ...(res.unchanged.length ? { unchanged: res.unchanged } : {}),
               ...(changed ? {} : { noChange: true }),
               ...(noGoWarning.length ? { noGoWarning } : {}),
+              ...(check.warnings.length ? { layoutWarnings: check.warnings } : {}),
             }
           },
         },
@@ -382,7 +391,7 @@ ${view().visible}
               caseInsensitive: ci,
               stripDashes: stripDashes ?? false,
             })
-            const annotationErrors = validatePageAnnotations(res.next)
+            const annotationErrors = checkEditAnnotations(visible, res.next).errors
             if (annotationErrors.length > 0) {
               return { error: `That edit would break a block annotation: ${annotationErrors.join(' ')}` }
             }

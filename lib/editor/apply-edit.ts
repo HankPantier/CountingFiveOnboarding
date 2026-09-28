@@ -4,7 +4,7 @@
 // to find and its replacement, and we verify the match landed before writing.
 import { splitFile } from './frontmatter'
 import { overlapSafeReplaceAll } from './replace'
-import { validateAnnotationSyntax } from '@/lib/content/block-annotation-validator'
+import { heroPairWarnings, validateAnnotationDelta } from '@/lib/content/block-annotation-validator'
 
 export type FindReplaceResult =
   | { ok: true; next: string; count: number }
@@ -94,10 +94,31 @@ export function applyBatchEdits(content: string, edits: BatchEdit[]): BatchEditR
   return { next, applied, failed, unchanged }
 }
 
+export interface AnnotationCheck {
+  /** Annotation problems the edit introduces — reject the edit. */
+  errors: string[]
+  /** Page-opener (hero / hero_variant) problems the edit introduces — save, but tell the admin. */
+  warnings: string[]
+}
+
 // Guard a proposed edit against breaking block annotations: strip frontmatter
-// and check every `<!-- block: … -->` still has a known id + valid variant.
-// Returns [] when the page is fine to write.
-export function validatePageAnnotations(fullFileContent: string): string[] {
-  const { body } = splitFile(fullFileContent)
-  return validateAnnotationSyntax(body)
+// and reject only problems the edit INTRODUCES (unknown id, page opener inline,
+// invalid variant/theme). Legacy values already on the page (`variant: default`,
+// `content-prose | variant: standard`) never block an unrelated edit. A changed
+// hero / hero_variant pair that the template can't render as written is a
+// warning, not an error (it falls back safely).
+export function checkEditAnnotations(prevFile: string, nextFile: string): AnnotationCheck {
+  const prev = splitFile(prevFile)
+  const next = splitFile(nextFile)
+  const errors = validateAnnotationDelta(prev.body, next.body)
+  const pair = (fm: typeof prev.frontmatter) => {
+    const f = fm?.fields ?? {}
+    // Values are raw YAML scalars; the page opener fields are plain words.
+    const bare = (raw: string | undefined) => raw?.trim().replace(/^(["'])(.*)\1$/, '$2')
+    return [bare(f.hero ?? f.hero_block), bare(f.hero_variant)] as const
+  }
+  const [h0, v0] = pair(prev.frontmatter)
+  const [h1, v1] = pair(next.frontmatter)
+  const warnings = h0 === h1 && v0 === v1 ? [] : heroPairWarnings(h1, v1)
+  return { errors, warnings }
 }

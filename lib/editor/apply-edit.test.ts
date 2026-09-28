@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyFindReplace, applyBatchEdits, validatePageAnnotations } from './apply-edit'
+import { applyFindReplace, applyBatchEdits, checkEditAnnotations } from './apply-edit'
 
 const PAGE = `---
 title: Services
@@ -150,31 +150,104 @@ describe('applyBatchEdits', () => {
   })
 })
 
-describe('validatePageAnnotations', () => {
-  it('accepts a valid page', () => {
-    expect(validatePageAnnotations(PAGE)).toEqual([])
+function edit(page: string, find: string, replace: string): string {
+  const res = applyFindReplace(page, find, replace)
+  if (!res.ok) throw new Error(res.reason)
+  return res.next
+}
+
+describe('checkEditAnnotations', () => {
+  it('accepts an unchanged valid page', () => {
+    expect(checkEditAnnotations(PAGE, PAGE)).toEqual({ errors: [], warnings: [] })
   })
 
   it('accepts a flipped variant', () => {
-    const flipped = applyFindReplace(PAGE, 'variant: image-right', 'variant: image-left')
-    if (flipped.ok) expect(validatePageAnnotations(flipped.next)).toEqual([])
+    expect(checkEditAnnotations(PAGE, edit(PAGE, 'variant: image-right', 'variant: image-left')).errors).toEqual([])
   })
 
-  it('flags an invalid variant', () => {
-    const broken = applyFindReplace(PAGE, 'variant: image-right', 'variant: sideways')
-    if (broken.ok) {
-      const errors = validatePageAnnotations(broken.next)
-      expect(errors.length).toBe(1)
-      expect(errors[0]).toContain('sideways')
-    }
+  it('flags an invalid variant the edit introduces', () => {
+    const errors = checkEditAnnotations(PAGE, edit(PAGE, 'variant: image-right', 'variant: sideways')).errors
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('sideways')
   })
 
-  it('flags an unknown block id', () => {
-    const broken = applyFindReplace(PAGE, 'block: content-split | variant: image-right', 'block: made-up-block')
-    if (broken.ok) {
-      const errors = validatePageAnnotations(broken.next)
-      expect(errors.length).toBe(1)
-      expect(errors[0]).toContain('made-up-block')
-    }
+  it('flags an unknown block id the edit introduces', () => {
+    const errors = checkEditAnnotations(PAGE, edit(PAGE, 'block: content-split | variant: image-right', 'block: made-up-block')).errors
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('made-up-block')
+  })
+
+  describe('legacy values already on the page', () => {
+    const LEGACY = `---
+title: Contact
+hero: hero
+hero_variant: statement
+---
+<!-- block: intro-text | variant: centered -->
+## Get in touch
+
+Call us any time.
+
+<!-- block: industry-cards | variant: default -->
+## Who we serve
+
+Everyone.
+
+<!-- block: content-prose | variant: standard -->
+## Notes
+
+Some notes.
+
+<!-- block: contact-info -->
+## How to Reach Us
+
+<!-- block: map -->
+## Where to Find Us
+
+<!-- block: form | variant: custom -->
+## Send a message
+
+- Name (text, required)
+`
+
+    it('do not block an unrelated copy edit (bblcpa contact page case)', () => {
+      const next = edit(LEGACY, 'intro-text | variant: centered', 'intro-text | variant: left-aligned')
+      expect(checkEditAnnotations(LEGACY, next)).toEqual({ errors: [], warnings: [] })
+      expect(checkEditAnnotations(LEGACY, edit(LEGACY, '## Notes', '## Our notes')).errors).toEqual([])
+    })
+
+    it('still reject a NEW copy of the same bad value', () => {
+      const next = edit(LEGACY, '<!-- block: intro-text | variant: centered -->', '<!-- block: intro-text | variant: default -->')
+      expect(checkEditAnnotations(LEGACY, next).errors).toHaveLength(1)
+    })
+
+    it('reject an unsupported theme and an inline page opener', () => {
+      const inked = edit(LEGACY, '<!-- block: intro-text | variant: centered -->', '<!-- block: intro-text | variant: centered | theme: ink -->')
+      expect(checkEditAnnotations(LEGACY, inked).errors[0]).toContain('does not support a theme')
+      const opener = edit(LEGACY, '<!-- block: intro-text | variant: centered -->', '<!-- block: hero-split | variant: image-right -->')
+      expect(checkEditAnnotations(LEGACY, opener).errors[0]).toContain('page opener')
+    })
+
+    it('accept an ink band where the block supports it', () => {
+      const next = edit(LEGACY, '<!-- block: industry-cards | variant: default -->', '<!-- block: industry-cards | variant: 3-col | theme: ink -->')
+      expect(checkEditAnnotations(LEGACY, next).errors).toEqual([])
+    })
+  })
+
+  describe('page opener warnings', () => {
+    const withHero = (hero: string, variant: string) => PAGE.replace('title: Services', `title: Services\nhero: ${hero}\nhero_variant: ${variant}`)
+
+    it('warn (never error) when the edit sets an unrenderable pair', () => {
+      const res = checkEditAnnotations(withHero('hero', 'statement'), withHero('hero', 'image-left'))
+      expect(res.errors).toEqual([])
+      expect(res.warnings[0]).toContain('hero-split')
+      expect(checkEditAnnotations(withHero('hero', 'image'), withHero('banner', 'image')).warnings[0]).toContain('not a page opener')
+    })
+
+    it('stay quiet when the pair is valid or unchanged', () => {
+      expect(checkEditAnnotations(withHero('hero', 'image'), withHero('hero-split', 'image-left')).warnings).toEqual([])
+      expect(checkEditAnnotations(withHero('hero', 'wobbly'), edit(withHero('hero', 'wobbly'), 'Some prose', 'Other prose')).warnings).toEqual([])
+      expect(checkEditAnnotations(withHero('hero', 'image'), withHero('"hero"', "'video'")).warnings).toEqual([])
+    })
   })
 })
