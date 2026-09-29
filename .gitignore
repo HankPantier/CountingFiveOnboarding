@@ -67,3 +67,6 @@ raw-docs/screenshots/
 
 # Claude Code agent worktrees (local scratch)
 .claude/worktrees/
+
+# Local credential notes — never commit
+raw-docs/*.env
