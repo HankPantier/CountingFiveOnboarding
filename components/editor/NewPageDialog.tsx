@@ -40,15 +40,21 @@ export default function NewPageDialog({
   sessionId,
   onClose,
   onCreated,
+  onGenerationStart,
   onGenerated,
+  onGenerationFailed,
 }: {
   sessionId: string
   onClose: () => void
   // Called once the starter file exists on the draft branch — select it.
   /** redirectNotice: a redirects.csv row that shadowed the url was removed. */
   onCreated: (path: string, redirectNotice?: string) => void
+  // AI first draft lifecycle. These fire even after "Run in background" closes
+  // the dialog, so the editor can flag the page as still drafting.
+  onGenerationStart: (path: string) => void
   // Called when the AI first draft finishes — reload the file to show it.
   onGenerated: (path: string) => void
+  onGenerationFailed: (path: string, message: string) => void
 }) {
   const router = useRouter()
   const [pageType, setPageType] = useState<PageType>('standard')
@@ -108,19 +114,22 @@ export default function NewPageDialog({
         return
       }
       if (status === 'error') {
+        const message =
+          data.generation?.error ??
+          'The AI draft failed. The blank page was kept — you can edit it directly or try the AI editor.'
+        onGenerationFailed(path, message)
         if (!mountedRef.current) return
         setPhase('error')
-        setError(
-          data.generation?.error ??
-            'The AI draft failed. The blank page was kept — you can edit it directly or try the AI editor.'
-        )
+        setError(message)
         return
       }
     }
     // Timed out waiting — leave the starter in place; the admin can reload.
+    const message = 'The AI draft is taking longer than expected. Check back shortly, or edit the page directly.'
+    onGenerationFailed(path, message)
     if (!mountedRef.current) return
     setPhase('error')
-    setError('The AI draft is taking longer than expected. Check back shortly, or edit the page directly.')
+    setError(message)
   }
 
   // Config-driven pricing pages: enable + push the config to the draft branch,
@@ -195,6 +204,7 @@ export default function NewPageDialog({
       if (mode === 'ai' && data.generationId) {
         setPhase('generating')
         setBusy(false)
+        onGenerationStart(data.path)
         void pollUntilDone(data.generationId, data.path)
         return
       }
@@ -228,8 +238,8 @@ export default function NewPageDialog({
               profile. This usually takes a minute.
             </p>
             <p className="mt-2 font-body text-xs text-text-muted">
-              The blank page is already in place — you can keep working. It will refresh here when the
-              draft is ready.
+              The page is already in place — you can keep working elsewhere. It will refresh in the
+              editor when the draft is ready.
             </p>
             {redirectNotice && (
               <p role="status" className="mt-2 font-body text-xs text-info">

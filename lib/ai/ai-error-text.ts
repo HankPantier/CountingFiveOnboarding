@@ -40,7 +40,7 @@ export function aiErrorMessageFor(kind: AiErrorKind, detail: { resetDate?: strin
     case 'timeout':
       return `The AI service didn't respond in time, so this request may not have finished. Wait a moment and try again — your saved work is safe. If it keeps happening, check ${ANTHROPIC_STATUS_URL}.`
     case 'auth':
-      return `The AI service rejected our credentials, so AI features are unavailable right now. This is a configuration issue on our side — please tell an administrator. Your saved work is safe.`
+      return `The AI service rejected our API key or account setup, so AI features are unavailable right now. This is a configuration issue on our side — please tell an administrator. Your saved work is safe.`
     case 'credit':
       return `AI features are paused because the account's Claude API credits have run out. Retrying won't help until an administrator adds credits — please tell them. Your saved work is safe.`
     case 'usage_limit':
@@ -69,6 +69,13 @@ export function aiErrorKindFromText(msg: string): AiErrorKind | null {
     return 'timeout'
   }
   if (/\b401\b|invalid api key|authentication|could not load api key|x-api-key/i.test(msg)) return 'auth'
+  // Account/key misconfiguration that Anthropic returns as a 400/403/404 (e.g. an
+  // org-level key without a workspace, a model the workspace can't use). Checked
+  // before bad_request, which also matches invalid_request_error — retrying or
+  // shortening the request won't help; an admin has to fix the key or model id.
+  if (/not scoped to a workspace|anthropic-workspace-id|permission_error|not_found_error[\s\S]{0,80}\bmodel\b/i.test(msg)) {
+    return 'auth'
+  }
   // Out of Claude API credits / a billing problem. Anthropic returns this as a 400
   // whose body says "credit balance is too low" with type invalid_request_error —
   // so it MUST be checked BEFORE bad_request (which also matches that type) or it

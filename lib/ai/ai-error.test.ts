@@ -42,6 +42,19 @@ describe('classifyAiError — Anthropic API status codes', () => {
     expect(info.userMessage).toMatch(/configuration issue/i)
   })
 
+  it('classifies a 400 for a key/workspace misconfiguration as auth, not "shorten your request"', () => {
+    const body = '{"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header with the ID of the workspace to use. Add the header, or use an API key that is scoped to a workspace."},"request_id":null}'
+    const info = classifyAiError(apiError(400, { message: 'This API key is not scoped to a workspace', responseBody: body }))
+    expect(info.kind).toBe('auth')
+    expect(info.userMessage).toMatch(/configuration issue/i)
+    expect(info.userMessage).not.toMatch(/too long/i)
+  })
+
+  it('classifies a 404 for an unknown or inaccessible model as auth (config)', () => {
+    const body = '{"type":"error","error":{"type":"not_found_error","message":"model: claude-sonnet-5"}}'
+    expect(classifyAiError(apiError(404, { message: 'model: claude-sonnet-5', responseBody: body })).kind).toBe('auth')
+  })
+
   it('falls back to isRetryable when the status is unmapped', () => {
     expect(classifyAiError(apiError(408, { isRetryable: true })).kind).toBe('timeout')
   })

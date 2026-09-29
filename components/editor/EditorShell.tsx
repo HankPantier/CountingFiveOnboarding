@@ -35,6 +35,13 @@ const DesignPreviewPane = dynamic(() => import('./DesignPreviewPane'), { ssr: fa
 
 type LoadedFile = { content: string; sha: string }
 
+function withoutPath(set: ReadonlySet<string>, path: string): ReadonlySet<string> {
+  if (!set.has(path)) return set
+  const next = new Set(set)
+  next.delete(path)
+  return next
+}
+
 export default function EditorShell({
   sessionId,
   firmName,
@@ -97,6 +104,8 @@ export default function EditorShell({
   const [bulkStatus, setBulkStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [publishResult, setPublishResult] = useState<string | null>(null)
+  // New pages whose AI first draft is still running (the file holds the starter until it lands).
+  const [draftingPaths, setDraftingPaths] = useState<ReadonlySet<string>>(() => new Set())
   const [conflictPrUrl, setConflictPrUrl] = useState<string | null>(null)
   const [draftBusy, setDraftBusy] = useState(false)
   const [newPageOpen, setNewPageOpen] = useState(false)
@@ -1208,6 +1217,15 @@ export default function EditorShell({
           </button>
         </div>
       )}
+      {selectedPath && draftingPaths.has(selectedPath) && (
+        <div
+          role="status"
+          className="px-6 py-2 bg-brand-cyan/10 border-b border-brand-cyan/30 text-brand-navy font-body text-xs"
+        >
+          AI is still writing this page — it will appear here automatically, usually within a minute or two.
+          Edits made now will be replaced by the draft.
+        </div>
+      )}
       {bulkStatus && (
         <div
           role="status"
@@ -1397,10 +1415,16 @@ export default function EditorShell({
               await select(path)
             })()
           }}
+          onGenerationStart={(path) => setDraftingPaths((prev) => new Set(prev).add(path))}
           onGenerated={(path) => {
+            setDraftingPaths((prev) => withoutPath(prev, path))
             // AI draft replaced the starter — drop the cached blob and reopen.
             void reloadFile(path)
             void refreshStatus()
+          }}
+          onGenerationFailed={(path, message) => {
+            setDraftingPaths((prev) => withoutPath(prev, path))
+            setPublishResult(message)
           }}
         />
       )}
