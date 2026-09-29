@@ -332,9 +332,16 @@ function assessCoverage(
   }
 }
 
+// Floor for the follow-up calls' timeout once the deadline is nearly spent — a
+// call that can't finish in time just falls back, so this only bounds the overrun.
+const MIN_FOLLOW_UP_TIMEOUT_MS = 10_000
+
 export async function draftSessionFromAudit(
   result: AuditResult,
-  auditId?: string
+  auditId?: string,
+  // `deadline` (epoch ms) bounds the sitemap + suggestion follow-ups so the
+  // caller's route returns a draft before its maxDuration.
+  opts?: { deadline?: number }
 ): Promise<DraftResult> {
   const signals = result.business_signals
   const hadBusinessSignals = !!(
@@ -371,22 +378,30 @@ export async function draftSessionFromAudit(
   // reserved content-gap buckets so the chat starts pre-informed.
   if (result.intelligence) enrichSchemaFromIntelligence(schema, result.intelligence)
 
-  // Now that niches/services are populated, propose a differentiated, hierarchical
-  // sitemap (new niche/service pages + parent grouping) in place of the flat,
-  // update-only deterministic list. Falls back to the deterministic plan internally
-  // on AI failure; the try/catch guards the whole draft against a thrown call.
-  try {
-    schema.proposed_sitemap = await proposeSitemap(schema, result, { auditId })
-  } catch (err) {
-    console.warn('[draft-from-audit] sitemap proposal failed, keeping deterministic plan:', err)
+  // Two independent follow-ups, run in parallel (neither reads the other's output):
+  // - a differentiated, hierarchical sitemap in place of the flat update-only
+  //   deterministic list (falls back to the deterministic plan on AI failure);
+  // - AI per-item treatments (page / block / exclude + team + geo scope) so the
+  //   Audit Review step opens pre-selected (falls back to origin-based defaults).
+  // Both are non-fatal and share the caller's deadline, so a slow call degrades to
+  // its fallback instead of running the route past maxDuration.
+  const followUpTimeoutMs =
+    opts?.deadline !== undefined ? Math.max(MIN_FOLLOW_UP_TIMEOUT_MS, opts.deadline - Date.now()) : undefined
+  const [sitemapOutcome, suggestionsOutcome] = await Promise.allSettled([
+    proposeSitemap(schema, result, { auditId, timeoutMs: followUpTimeoutMs }),
+    suggestAuditTreatments(schema, result.intelligence, { auditId, timeoutMs: followUpTimeoutMs }),
+  ])
+
+  if (sitemapOutcome.status === 'fulfilled') {
+    schema.proposed_sitemap = sitemapOutcome.value
+  } else {
+    console.warn('[draft-from-audit] sitemap proposal failed, keeping deterministic plan:', sitemapOutcome.reason)
   }
 
-  // AI-suggested per-item treatments (Own page / Content block / Exclude + team
-  // keep/remove + geo scope) so the Audit Review step opens pre-selected. Runs
-  // after enrichment so it sees niche signal, content gaps, and competitive data.
-  // Non-fatal: on failure the review falls back to origin-based defaults.
-  try {
-    const suggestions = await suggestAuditTreatments(schema, result.intelligence, { auditId })
+  if (suggestionsOutcome.status === 'rejected') {
+    console.warn('[draft-from-audit] treatment suggestions failed, using defaults:', suggestionsOutcome.reason)
+  } else {
+    const suggestions = suggestionsOutcome.value
     if (suggestions) {
       const meta = (schema._meta ??= {
         phase3_completed_chunks: [],
@@ -396,8 +411,6 @@ export async function draftSessionFromAudit(
       })
       meta.audit_suggestions = suggestions
     }
-  } catch (err) {
-    console.warn('[draft-from-audit] treatment suggestions failed, using defaults:', err)
   }
 
   const gaps = computePhase4Gaps(schema)

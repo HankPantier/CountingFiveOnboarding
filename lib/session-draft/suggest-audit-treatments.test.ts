@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { coerceSuggestions } from './suggest-audit-treatments'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/mbp/generate-json', () => ({ generateMbpJson: vi.fn().mockResolvedValue(null) }))
+
+import { generateMbpJson } from '@/lib/mbp/generate-json'
+import { coerceSuggestions, suggestAuditTreatments } from './suggest-audit-treatments'
+import type { SessionSchema } from '@/types/session-schema'
 
 const ctx = { serviceNames: ['Bookkeeping', 'Business Tax'], nicheNames: ['Dental'] }
 const AT = '2026-09-18T00:00:00.000Z'
@@ -56,5 +61,13 @@ describe('coerceSuggestions', () => {
     expect(coerceSuggestions({}, ctx, AT)).toBeNull()
     expect(coerceSuggestions(null, ctx, AT)).toBeNull()
     expect(coerceSuggestions({ services: [{ name: 'A', treatment: 'bad', rationale: '' }] }, ctx, AT)).toBeNull()
+  })
+})
+
+describe('suggestAuditTreatments', () => {
+  it('forwards the caller timeout to the generation call', async () => {
+    const schema = { services: [{ name: 'Bookkeeping' }] } as SessionSchema
+    await suggestAuditTreatments(schema, undefined, { auditId: 'a1', timeoutMs: 42_000 })
+    expect(vi.mocked(generateMbpJson).mock.calls[0][4]).toMatchObject({ timeoutMs: 42_000 })
   })
 })

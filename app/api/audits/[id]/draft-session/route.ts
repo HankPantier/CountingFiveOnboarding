@@ -5,12 +5,16 @@ import { draftSessionFromAudit } from '@/lib/session-draft/draft-from-audit'
 import type { AuditResult } from '@/types/audit-result'
 
 export const runtime = 'nodejs'
-export const maxDuration = 120
+export const maxDuration = 300
+
+// Headroom left after the AI follow-ups for mapping, gaps, and the response.
+const DEADLINE_MARGIN_MS = 15_000
 
 // POST /api/audits/[id]/draft-session — AI-draft a session profile from the
 // audit's crawled content. Returns the draft for admin review; does NOT create
 // the session (that's POST .../start-session after the admin confirms).
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const deadline = Date.now() + maxDuration * 1000 - DEADLINE_MARGIN_MS
   const auth = await requireAdminUser()
   if (auth instanceof NextResponse) return auth
 
@@ -31,7 +35,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Audit has no page content to draft from' }, { status: 422 })
   }
 
-  const { schema, gaps, contact, coverage } = await draftSessionFromAudit(result, id)
+  const { schema, gaps, contact, coverage } = await draftSessionFromAudit(result, id, { deadline })
 
   return NextResponse.json({ schemaData: schema, gapList: gaps, contact, coverage })
 }

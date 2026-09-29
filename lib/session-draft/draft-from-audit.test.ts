@@ -230,4 +230,48 @@ describe('draftSessionFromAudit', () => {
     expect(schema.business?.name).toBe('Acme Accounting')
     expect(schema._meta?.audit_suggestions).toBeUndefined()
   })
+
+  it('keeps the deterministic sitemap when the proposer throws', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    mockPropose.mockRejectedValue(new Error('boom'))
+    const { schema } = await draftSessionFromAudit(auditResult())
+    expect(schema.business?.name).toBe('Acme Accounting')
+    expect(Array.isArray(schema.proposed_sitemap)).toBe(true)
+  })
+
+  it('bounds both follow-ups by the remaining deadline', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    const deadline = Date.now() + 60_000
+    await draftSessionFromAudit(auditResult(), 'audit-1', { deadline })
+    const sitemapTimeout = mockPropose.mock.calls[0][2]?.timeoutMs
+    const suggestTimeout = mockSuggest.mock.calls[0][2]?.timeoutMs
+    for (const t of [sitemapTimeout, suggestTimeout]) {
+      expect(t).toBeGreaterThan(0)
+      expect(t).toBeLessThanOrEqual(60_000)
+    }
+  })
+
+  it('floors the follow-up timeout when the deadline has already passed', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    await draftSessionFromAudit(auditResult(), 'audit-1', { deadline: Date.now() - 5_000 })
+    expect(mockPropose.mock.calls[0][2]?.timeoutMs).toBe(10_000)
+    expect(mockSuggest.mock.calls[0][2]?.timeoutMs).toBe(10_000)
+  })
+
+  it('leaves the follow-up timeout to the per-call default without a deadline', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    await draftSessionFromAudit(auditResult())
+    expect(mockPropose.mock.calls[0][2]?.timeoutMs).toBeUndefined()
+    expect(mockSuggest.mock.calls[0][2]?.timeoutMs).toBeUndefined()
+  })
+
+  it('starts the suggestion pass without waiting for the sitemap proposal', async () => {
+    mockGen.mockResolvedValue(MODEL)
+    let releaseSitemap: (v: []) => void = () => {}
+    mockPropose.mockReturnValue(new Promise((resolve) => { releaseSitemap = resolve }))
+    const draft = draftSessionFromAudit(auditResult())
+    await vi.waitFor(() => expect(mockSuggest).toHaveBeenCalled())
+    releaseSitemap([])
+    await draft
+  })
 })

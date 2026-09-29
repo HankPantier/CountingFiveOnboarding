@@ -48,8 +48,11 @@ export function StartSessionForm({ auditId }: { auditId: string }) {
     try {
       const res = await fetch(`/api/audits/${auditId}/draft-session`, { method: 'POST', signal: controller.signal })
       if (!res.ok) {
-        const b = await res.json().catch(() => ({}))
-        throw new Error(b.error ?? 'Could not draft the session')
+        const b: { error?: string } = await res.json().catch(() => ({}))
+        // A platform timeout returns a non-JSON 504, so there's no `error` to show.
+        throw new Error(
+          b.error ?? (res.status === 504 ? 'Drafting took too long — try again' : 'Could not draft the session'),
+        )
       }
       const data: DraftResponse = await res.json()
       if (controller.signal.aborted) return

@@ -194,7 +194,7 @@ Rules: cover EVERY service, niche, sub-service, and team member listed, plus eac
 export async function suggestAuditTreatments(
   schema: SessionSchema,
   intel: AuditIntelligence | undefined,
-  ctx?: { auditId?: string },
+  ctx?: { auditId?: string; timeoutMs?: number },
 ): Promise<AuditSuggestions | null> {
   const hasItems =
     activeServices(schema).some((s) => s.name?.trim()) ||
@@ -213,6 +213,6 @@ export async function suggestAuditTreatments(
     (parsed) => coerceSuggestions(parsed, suggestCtx, generatedAt),
     8000,
     { task: 'onboarding', stage: 'mbp', auditId: ctx?.auditId },
-    { model: PUBLISHED_CONTENT_MODEL, providerOptions: GENERATION_PROVIDER_OPTIONS },
+    { model: PUBLISHED_CONTENT_MODEL, providerOptions: GENERATION_PROVIDER_OPTIONS, timeoutMs: ctx?.timeoutMs },
   )
 }

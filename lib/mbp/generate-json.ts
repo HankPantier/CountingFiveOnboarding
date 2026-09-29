@@ -11,13 +11,11 @@ const MBP_JSON_MODEL = PUBLISHED_CONTENT_MODEL
 // Hard ceiling on a single generation. Without it an AI SDK call has no timeout
 // and can hang indefinitely — which, in the audit intelligence stage (many
 // sequential Sonnet passes), is enough to run the whole function past its
-// maxDuration and get the row swept to 'error'. 110s stays under the tightest
-// caller route (the 120s draft-session) while bounding every call. Overridable
-// per-call via `opts.timeoutMs`. On abort, generateText throws → we return null,
-// which every caller already treats as "no result".
-// Sized against the TIGHTEST caller route. Callers on a longer budget should pass
-// their own `timeoutMs` — a value tuned for a 120s route is needlessly strict for
-// one running in a 600s function.
+// maxDuration and get the row swept to 'error'. 110s bounds any single call;
+// overridable per-call via `opts.timeoutMs`. On abort, generateText throws → we
+// return null, which every caller already treats as "no result".
+// This is a per-CALL ceiling, not a route budget: a route that chains several
+// calls must pass each one the time it has left (see draft-session's deadline).
 const GENERATION_TIMEOUT_MS = 110_000
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))

@@ -296,7 +296,7 @@ RULES:
 export async function proposeSitemap(
   schema: SessionSchema,
   auditResult: AuditResult | null = null,
-  ctx?: Pick<TokenContext, 'sessionId' | 'contentJobId' | 'auditId'>
+  ctx?: Pick<TokenContext, 'sessionId' | 'contentJobId' | 'auditId'> & { timeoutMs?: number }
 ): Promise<ProposedSitemap> {
   const skeleton = buildSkeletonProposal(schema, auditResult)
 
@@ -311,7 +311,7 @@ export async function proposeSitemap(
       contentJobId: ctx?.contentJobId,
       auditId: ctx?.auditId,
     },
-    { providerOptions: OUTLINE_PROVIDER_OPTIONS },
+    { providerOptions: OUTLINE_PROVIDER_OPTIONS, timeoutMs: ctx?.timeoutMs },
   )
 
   // Fall back to the deterministic skeleton on any generation/parse failure so
