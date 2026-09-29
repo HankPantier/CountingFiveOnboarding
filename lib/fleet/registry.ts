@@ -46,7 +46,7 @@ export function repoName(slug: string): string {
   return slug.includes('/') ? slug.split('/')[1] : slug
 }
 
-// "bblcpa" resolves "HankPantier/bblcpa" too.
+// "bblcpa" resolves "Revaltus/bblcpa" too.
 function slugMatches(entry: ClientEntry, wanted: string): boolean {
   const w = wanted.trim().toLowerCase()
   return entry.slug.toLowerCase() === w || repoName(entry.slug).toLowerCase() === w

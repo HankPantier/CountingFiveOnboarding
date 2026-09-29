@@ -47,7 +47,7 @@ import { pool, verifyRepo, type VerifyResult } from '../lib/fleet/verify'
 import { draftPreflight, mergeMainIntoDraft, pushMain, waitForVercel } from '../lib/fleet/remote'
 import { runPushPhase, type PushResult } from '../lib/fleet/push-phase'
 
-const OWNER = 'HankPantier'
+const OWNER = 'Revaltus'
 const TRAILER = 'Branding-Apply'
 
 type Palette = Record<(typeof PALETTE_ROLES)[number], string>

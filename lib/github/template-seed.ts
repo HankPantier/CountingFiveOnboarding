@@ -53,7 +53,7 @@ export function isTemplateOnlyPath(path: string): boolean {
 export function resolveTemplateSlug(): string {
   // Fully-qualified default: the target repo slug may carry an explicit owner
   // that differs from GITHUB_ORG, so don't rely on the bare-name owner default.
-  return process.env.GITHUB_TEMPLATE_REPO?.trim() || 'HankPantier/CountingFiveTemplate'
+  return process.env.GITHUB_TEMPLATE_REPO?.trim() || 'Revaltus/CountingFiveTemplate'
 }
 
 export type SeedResult =

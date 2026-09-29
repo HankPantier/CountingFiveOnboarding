@@ -3,7 +3,7 @@
 // See lib/fleet/README.md.
 
 export interface ClientEntry {
-  /** owner/repo, e.g. "HankPantier/bblcpa". */
+  /** owner/repo, e.g. "Revaltus/bblcpa". */
   slug: string
   displayName: string
   liveUrl: string | null
