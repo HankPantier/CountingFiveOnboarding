@@ -6,6 +6,7 @@ import { DefaultChatTransport, type TextUIPart, type UIMessage } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import type { ClientEntry, AuditEntry } from '@/lib/admin/command-index'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
+import { latestProgressNote } from '@/lib/ai/progress-note'
 
 export interface CommandSection {
   label: string
@@ -186,7 +187,7 @@ export default function CommandBox({
               {answer ? (
                 <p className="text-sm font-body text-text-primary whitespace-pre-wrap">{answer}</p>
               ) : isLoading ? (
-                <p className="text-sm font-body text-text-muted italic">Thinking…</p>
+                <p className="text-sm font-body text-text-muted italic">{latestProgressNote(messages) ?? 'Thinking…'}</p>
               ) : null}
               {error && <AiIssueNotice message={error.message} />}
               {navLinks.length > 0 && (

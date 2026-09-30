@@ -121,7 +121,6 @@ export async function POST(
   })
 
   return result.toUIMessageStreamResponse({
-    sendReasoning: false,
     onError: (error) => logAndFormatAiStreamError('content-assistant', error),
   })
 }

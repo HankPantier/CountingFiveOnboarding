@@ -5,11 +5,14 @@ import { AUTO_CACHE_OPTIONS } from './cache-control'
 // pipeline. Kept here so the published-content model and the thinking/effort
 // settings live in one place rather than drifting across generator modules.
 
-// Sonnet 5 is the writing-tuned tier used for client-facing published
-// deliverables (page bodies and the audit→session draft). Moved off Opus 4.8
-// (2026-06-30): Sonnet 5 is purpose-tuned for writing and far cheaper. It still
-// supports adaptive thinking + effort, so GENERATION_PROVIDER_OPTIONS applies.
-export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5'
+// Sonnet 5.5 is the writing tier for client-facing published deliverables (page
+// bodies and the audit→session draft). It replaced Sonnet 5 on 2026-09-30 after
+// scripts/compare-content-models.ts: critic mean 7.64 vs 7.36, unsupported claims
+// per page 3.0 vs 6.5, 97s vs 184s per page, $0.16 vs $0.22 per page (same list
+// price). It supports adaptive thinking + effort, so GENERATION_PROVIDER_OPTIONS
+// applies. It rejects forced tool use — structured output goes through native
+// structured outputs (SDK ≥ 3.0.125 handles generateObject).
+export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5-5'
 
 // The draft critic grades pages the Sonnet 5 writer produced. A different,
 // stronger tier avoids self-grading bias, and its verdict gates the one
@@ -33,10 +36,10 @@ export const DESIGN_AB_CHALLENGER_MODEL = 'claude-fable-5-1'
 // A/B scripts. No route uses it until those runs justify a tier change.
 export const SONNET_5_5_CHALLENGER = 'claude-sonnet-5-5'
 
-// Interactive (streaming, operator-facing) chats. Sonnet 5 turns adaptive
-// thinking on with effort 'high' by default, which is too slow for chat — every
-// chat route must pass chatProviderOptions() to pick its effort explicitly.
-export const INTERACTIVE_CHAT_MODEL = 'claude-sonnet-5'
+// Interactive (streaming, operator-facing) chats. Sonnet 5.5 (replaced Sonnet 5 on
+// 2026-09-30) defaults to effort 'high', which is too slow for chat — every chat
+// route must pass chatProviderOptions() to pick its effort explicitly.
+export const INTERACTIVE_CHAT_MODEL = 'claude-sonnet-5-5'
 
 // Fast/cheap tier for classification helpers and the lightweight intake phases.
 // One constant so a future Haiku retirement is a one-line swap. NEVER pass
@@ -45,10 +48,14 @@ export const FAST_MODEL = 'claude-haiku-4-5-20251001'
 
 // Every chat also turns on automatic prompt caching (AUTO_CACHE_OPTIONS): tool
 // loops resend tools + system + history on each step, which is most of chat spend.
+// `display: 'summarized'`: Sonnet 5.5 returns its notes between tool calls as
+// thinking blocks, so with 'omitted' a multi-step edit streamed nothing until the
+// final answer. The UI shows the latest note (lib/ai/progress-note.ts), and
+// trimMessages() strips reasoning before it is replayed.
 export function chatProviderOptions(effort: 'low' | 'medium') {
   return {
     anthropic: {
-      thinking: { type: 'adaptive', display: 'omitted' },
+      thinking: { type: 'adaptive', display: 'summarized' },
       effort,
       ...AUTO_CACHE_OPTIONS,
     } satisfies AnthropicProviderOptions,

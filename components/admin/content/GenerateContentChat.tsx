@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
+import { latestProgressNote } from '@/lib/ai/progress-note'
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
@@ -88,7 +89,7 @@ export default function GenerateContentChat({ sessionId }: { sessionId: string }
             </div>
           )
         })}
-        {isLoading && <p className="text-text-muted font-body text-xs italic">Thinking…</p>}
+        {isLoading && <p className="text-text-muted font-body text-xs italic">{latestProgressNote(messages) ?? 'Thinking…'}</p>}
         <div ref={bottomRef} />
       </div>
 

@@ -5,6 +5,7 @@ import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import { unwrapChatErrorMessage } from '@/lib/ai/ai-error-text'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
+import { latestProgressNote } from '@/lib/ai/progress-note'
 
 type GenStatus = 'generating' | 'complete' | 'error'
 const STRUCTURAL_TOOLS = ['tool-delete_page', 'tool-create_page', 'tool-set_nav']
@@ -149,7 +150,7 @@ export default function SiteAssistantChat({
             </div>
           )
         })}
-        {isLoading && <p className="font-body text-xs italic text-text-muted">Working…</p>}
+        {isLoading && <p className="font-body text-xs italic text-text-muted">{latestProgressNote(messages) ?? 'Working…'}</p>}
         <div ref={bottomRef} />
       </div>
 

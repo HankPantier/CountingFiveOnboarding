@@ -6,6 +6,7 @@ const MAX_MESSAGES = 20
 // earlier context (system, tools, messages) changed since it was produced, and
 // our chats change that context every turn (per-turn page blocks, trimming).
 // The current turn's tool loop keeps its reasoning in-request, so it is unaffected.
+// Chats stream reasoning to the client (progress notes), so it does come back here.
 function withoutReasoning(messages: UIMessage[]): UIMessage[] {
   return messages
     .map((m) => (m.parts.some((p) => p.type === 'reasoning') ? { ...m, parts: m.parts.filter((p) => p.type !== 'reasoning') } : m))

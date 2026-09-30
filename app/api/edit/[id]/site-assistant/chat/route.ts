@@ -513,7 +513,6 @@ RULES
   })
 
   return result.toUIMessageStreamResponse({
-    sendReasoning: false,
     onError: (error) => logAndFormatAiStreamError('site-assistant', error),
   })
 }

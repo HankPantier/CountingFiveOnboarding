@@ -4,6 +4,7 @@ import { DefaultChatTransport, type TextUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import { useRouter } from 'next/navigation'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
+import { latestProgressNote } from '@/lib/ai/progress-note'
 
 export default function MbpChat({
   sessionId,
@@ -88,7 +89,7 @@ export default function MbpChat({
           )
         })}
         {isLoading && (
-          <p className="text-text-muted font-body text-xs italic">Thinking…</p>
+          <p className="text-text-muted font-body text-xs italic">{latestProgressNote(messages) ?? 'Thinking…'}</p>
         )}
         <div ref={bottomRef} />
       </div>

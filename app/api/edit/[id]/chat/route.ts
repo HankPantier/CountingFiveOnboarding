@@ -672,7 +672,6 @@ ${view().visible}
     })
 
   return result.toUIMessageStreamResponse({
-    sendReasoning: false,
     // Relay the finish reason to the client so it can tell a truncated run
     // (`tool-calls` = the model was stopped while still wanting to edit) from a
     // clean stop, and report honest applied/incomplete status.

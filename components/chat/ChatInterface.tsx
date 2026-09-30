@@ -7,6 +7,7 @@ import Link from 'next/link'
 import MessageBubble from './MessageBubble'
 import FileUploadButton from './FileUploadButton'
 import type { Database } from '@/types/database'
+import { latestProgressNote } from '@/lib/ai/progress-note'
 
 // Only the fields the chat actually reads — the parent server component passes
 // just these instead of the whole sessions row (schema_data, gap_list, …).
@@ -356,7 +357,7 @@ export default function ChatInterface({
                     style={{ animationDelay: `${i * 160}ms` }}
                   />
                 ))}
-                <span className="text-text-muted text-xs font-body">Thinking…</span>
+                <span className="text-text-muted text-xs font-body">{latestProgressNote(messages) ?? 'Thinking…'}</span>
               </div>
             </div>
           )}

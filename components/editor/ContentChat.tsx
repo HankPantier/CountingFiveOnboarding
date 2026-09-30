@@ -5,6 +5,7 @@ import { useChat } from '@ai-sdk/react'
 import { summarizeEditRun } from '@/lib/editor/edit-run-summary'
 import { unwrapChatErrorMessage } from '@/lib/ai/ai-error-text'
 import AiIssueNotice from '@/components/ui/AiIssueNotice'
+import { latestProgressNote } from '@/lib/ai/progress-note'
 
 export default function ContentChat({
   sessionId,
@@ -102,7 +103,7 @@ export default function ContentChat({
             </div>
           )
         })}
-        {isLoading && <p className="text-text-muted font-body text-xs italic">Editing…</p>}
+        {isLoading && <p className="text-text-muted font-body text-xs italic">{latestProgressNote(messages) ?? 'Editing…'}</p>}
         <div ref={bottomRef} />
       </div>
 

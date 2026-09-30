@@ -138,18 +138,27 @@ Interactive chat (`/api/chat`) stays Sonnet/Haiku — never use Sonnet for phase
 ```typescript
 const modelId = [3, 4].includes(session.current_phase) ? INTERACTIVE_CHAT_MODEL : FAST_MODEL
 ```
-Tier map (reviewed 2026-09-23 against the Fable 5.1 / Opus 5.5 / Sonnet 5 / Haiku 4.5 lineup):
-- **Sonnet 5** (`PUBLISHED_CONTENT_MODEL`) — all async content writing: the published page-body
-  generator (`lib/content/content-generator.ts`) and audit→session draft
-  (`lib/session-draft/draft-from-audit.ts`), plus outlines, sitemap proposal, MBP/draft JSON &
-  text, SEO fields, social, and resource generation. $2/$10 (the intro price became standard on
-  2026-09-01). Replaced Opus 4.8 here on 2026-06-30.
-- **Sonnet 5** (`INTERACTIVE_CHAT_MODEL`) — every interactive chat: intake phases 3/4 and the
-  audit/MBP/content-assistant/editor/site-assistant/theme/admin-assistant chats. Replaced
-  Sonnet 4.6 on 2026-09-23. Sonnet 5 enables adaptive thinking at effort `high` by default,
-  which is too slow for chat, so every chat route MUST pass `chatProviderOptions('low'|'medium')`
-  (`medium` for the page editor, site assistant and Design Studio chat, `low` elsewhere). Thinking tokens count
-  against `maxOutputTokens` — leave headroom.
+Tier map (reviewed 2026-09-30 against the Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 4.5 lineup):
+- **Sonnet 5.5** (`PUBLISHED_CONTENT_MODEL`) — all async content writing: the published
+  page-body generator (`lib/content/content-generator.ts`) and the audit→session draft
+  (`lib/session-draft/draft-from-audit.ts`), plus outlines, sitemap proposal, MBP/draft JSON and
+  text, SEO fields, social, and resource generation. $2/$10.
+  - Replaced Sonnet 5 on 2026-09-30 (`scripts/compare-content-models.ts`, Opus-judged):
+    - critic mean 7.64 vs 7.36
+    - unsupported claims per page 3.0 vs 6.5
+    - 97s vs 184s per page
+    - $0.16 vs $0.22 per page
+  - Sonnet 5 had replaced Opus 4.8 on 2026-06-30.
+- **Sonnet 5.5** (`INTERACTIVE_CHAT_MODEL`) — every interactive chat: intake phases 3/4 and the
+  audit/MBP/content-assistant/editor/site-assistant/theme/admin-assistant chats. Replaced Sonnet 5
+  on 2026-09-30.
+  - It defaults to adaptive thinking at effort `high`, which is too slow for chat, so every chat
+    route MUST pass `chatProviderOptions('low'|'medium')`: `medium` for the page editor, site
+    assistant and Design Studio chat, `low` elsewhere.
+  - Thinking tokens count against `maxOutputTokens`, so leave headroom.
+  - Chats use `display: 'summarized'` and stream reasoning to the UI. Sonnet 5.5 puts its notes
+    between tool calls into thinking blocks, and the loading line shows the latest one via
+    `latestProgressNote()` in `lib/ai/progress-note.ts`.
 - **Opus 5.5** (`CRITIC_MODEL`) — the draft critic only (`lib/content/draft-critic.ts`). A
   different, stronger tier than the writer avoids self-grading bias; in an A/B on 5 live pages
   it caught 2-4x more ungrounded claims (e.g. invented service lines) and ran faster.
@@ -162,13 +171,14 @@ Tier map (reviewed 2026-09-23 against the Fable 5.1 / Opus 5.5 / Sonnet 5 / Haik
   +0.09 (3.34 vs 3.25) at 2.3x the cost and 24% slower.
 - **Fable 5.1** (`DESIGN_AB_CHALLENGER_MODEL`) — only the Design Studio A/B script
   (`scripts/compare-design-models.ts`, P7); never a production route at 5x Sonnet's price. The
-  script judges both sides with Sonnet 5 by default (`--critic`), so the judge is never a contender.
+  script judges both sides with `PUBLISHED_CONTENT_MODEL` (Sonnet 5.5) by default (`--critic`). When Sonnet 5.5 is itself a contender, pass a non-contender judge (e.g. `--critic claude-fable-5-1`); the script warns when the judge is a contender.
 
 The async generation paths use adaptive thinking + `effort` via the shared
 `GENERATION_PROVIDER_OPTIONS` in `lib/content/generation-tuning.ts`. Hard rules:
 - **Never** send `effort` (or any of those provider-options objects) to a Haiku call — it errors on Haiku 4.5.
 - `budget_tokens` is deprecated — use `thinking: { type: 'adaptive' }`.
-- Never set `temperature`/`top_p`/`top_k` — Sonnet 5 and Opus 5.5 return a 400 on non-default values.
+- Never set `temperature`/`top_p`/`top_k` — Sonnet 5.5 and Opus 5.5 return a 400 on non-default values.
+- Sonnet 5.5 (like Opus 5.5) rejects forced tool use (`toolChoice`) and `thinking: { type: 'disabled' }`. Its lowest setting is `between_tools`.
 - Opus 5.5 always thinks (thinking can't be disabled) and rejects forced tool use (`toolChoice`).
 ### Prompt Caching
 All caching helpers live in `lib/content/cache-control.ts`.
@@ -200,7 +210,7 @@ How it runs:
   - fast tier: `compare-fast-models.ts`
 - A tier change also needs a `PRICING` entry, an SDK version that knows the model id (`@ai-sdk/anthropic`'s `getModelCapabilities` matches ids by prefix, so an unknown id silently inherits the older model's quirks), and an updated tier map above.
 - After a review, run `node scripts/model-check.mjs --mark "<summary>"` and commit `.audit/model-review.json`.
-- Chats never replay reasoning parts: `trimMessages()` strips them and chat routes pass `sendReasoning: false`. Sonnet 5.5 and later reject thinking blocks whose earlier context changed.
+- Chats never replay reasoning parts: `trimMessages()` strips them server-side, even though routes stream reasoning to the UI for progress notes. Sonnet 5.5 and later reject thinking blocks whose earlier context changed.
 
 ### Processing Flag Safety
 The `processing` boolean in `sessions` prevents concurrent Claude calls. It MUST be set to `false` in both:
