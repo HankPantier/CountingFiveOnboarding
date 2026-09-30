@@ -166,9 +166,16 @@ Tier map (reviewed 2026-09-30 against the Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Ha
 - **Haiku 4.5** (`FAST_MODEL`) — phase 1/2/5/6 intake chat and classification helpers (brand-fit,
   keyword, reverse-link, oneoff resolve, pricing seeds, article-import links, command bar).
   Retirement "not sooner than 2026-10-15"; when it's deprecated, swap `FAST_MODEL` in one place.
-- **Opus 5.5** (`DESIGN_MODEL`) — Design Studio concept generation, revision and vision critique
-  (admin-only, a few runs per client). Kept after the 2026-09-26 A/B on bblcpa: Fable 5.1 scored
-  +0.09 (3.34 vs 3.25) at 2.3x the cost and 24% slower.
+- **Sonnet 5.5** (`DESIGN_MODEL`) — Design Studio concept generation and revision (admin-only,
+  a few runs per client). Replaced Opus 5.5 on 2026-09-30 after the bblcpa A/B (3 concepts each,
+  Sonnet 5 judge):
+  - critic mean 3.89 vs 3.94, both 3/3 pass
+  - 50s vs 127s per concept
+  - generation $0.34 vs $1.17
+  - The earlier 2026-09-26 A/B kept Opus 5.5 over Fable 5.1: Fable scored +0.09 at 2.3x the cost.
+- **Opus 5.5** (`DESIGN_CRITIC_MODEL`) — Design Studio's vision critique, which gates
+  keep/revise. It stays a stronger tier than `DESIGN_MODEL` so the generator never grades its own
+  concepts. It's also the A/B script's default judge.
 - **Fable 5.1** (`DESIGN_AB_CHALLENGER_MODEL`) — only the Design Studio A/B script
   (`scripts/compare-design-models.ts`, P7); never a production route at 5x Sonnet's price. The
   script judges both sides with `PUBLISHED_CONTENT_MODEL` (Sonnet 5.5) by default (`--critic`). When Sonnet 5.5 is itself a contender, pass a non-contender judge (e.g. `--critic claude-fable-5-1`); the script warns when the judge is a contender.

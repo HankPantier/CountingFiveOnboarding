@@ -20,16 +20,25 @@ export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5-5'
 // capped (~6k-token page) and output is small JSON, so the premium is cents/page.
 export const CRITIC_MODEL = 'claude-opus-5-5'
 
-// Design Studio concept generation + vision self-critique (admin-only, a few
-// runs per client). Taste and visual judgement matter more than cost here, so
-// it uses the strongest everyday tier. Opus 5.5 always thinks and rejects forced
-// toolChoice — use generateText → extractJson → zod (see draft-critic.ts).
-export const DESIGN_MODEL = 'claude-opus-5-5'
+// Design Studio concept generation + revision (admin-only, a few runs per
+// client). Sonnet 5.5 replaced Opus 5.5 on 2026-09-30 after
+// scripts/compare-design-models.ts (bblcpa, 3 concepts each, Sonnet 5 judge):
+// critic mean 3.89 vs 3.94, 3/3 pass for both, 50s vs 127s per concept,
+// generation $0.34 vs $1.17. Like Opus 5.5 it rejects forced toolChoice — use
+// generateText → extractJson → zod (see draft-critic.ts).
+export const DESIGN_MODEL = 'claude-sonnet-5-5'
+
+// Design Studio's vision critique, which gates keep/revise, is a separate, stronger
+// tier than DESIGN_MODEL so the generator never grades its own concepts (same
+// reason CRITIC_MODEL differs from the page writer). Critique calls are a small
+// share of Studio spend.
+export const DESIGN_CRITIC_MODEL = 'claude-opus-5-5'
 
 // Only for scripts/compare-design-models.ts (A/B vs DESIGN_MODEL). Not used by
 // any route — the tier map keeps Fable out of production paths until the A/B
 // says otherwise.
 // A/B 2026-09-26 (bblcpa): Opus 5.5 kept as DESIGN_MODEL — Fable 5.1 scored +0.09 mean at 2.3× the cost and 24% slower.
+// (DESIGN_MODEL has since moved to Sonnet 5.5 — see above.)
 export const DESIGN_AB_CHALLENGER_MODEL = 'claude-fable-5-1'
 
 // Sonnet 5.5 (released 2026-09-28) is the challenger in the compare-*-models.ts

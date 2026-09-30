@@ -7,6 +7,11 @@ vi.mock('@ai-sdk/anthropic', () => ({ anthropic: (id: string) => ({ modelId: id 
 
 import { APICallError } from '@ai-sdk/provider'
 import { attemptFailureReason, createDesignCaller, providerRejectionMessage, DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS, estimateInputUsd, type DesignCallerOptions } from './model-call'
+import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
+import { estimateCostUsd } from '@/lib/content/token-pricing'
+
+// Priced from the live tier constant so a tier change doesn't break the mechanics tests.
+const usd = (inputTokens: number, outputTokens: number) => estimateCostUsd(DESIGN_MODEL, inputTokens, outputTokens)
 
 type Opts = {
   system?: string
@@ -49,11 +54,11 @@ describe('createDesignCaller', () => {
     const caller = createDesignCaller(opts({ onSpend: (u) => spends.push(u) }))
     expect(await caller.call(MSG, CFG)).toEqual({ ok: 1 })
     expect(m.record).toHaveBeenCalledWith(
-      expect.objectContaining({ task: 'content', stage: 'design_critique', model: 'claude-opus-5-5', inputTokens: 10_000, outputTokens: 5_000, cacheTtl: '5m' })
+      expect.objectContaining({ task: 'content', stage: 'design_critique', model: DESIGN_MODEL, inputTokens: 10_000, outputTokens: 5_000, cacheTtl: '5m' })
     )
-    // Opus 5.5 at $4/$20: 10k in + 5k out = $0.14.
-    expect(caller.spentUsd()).toBeCloseTo(0.14, 6)
-    expect(spends.at(-1)).toBeCloseTo(0.14, 6)
+    // 10k in + 5k out at DESIGN_MODEL rates.
+    expect(caller.spentUsd()).toBeCloseTo(usd(10_000, 5_000), 6)
+    expect(spends.at(-1)).toBeCloseTo(usd(10_000, 5_000), 6)
     expect(caller.estimatedUsd()).toBe(0)
     expect(caller.stopReason()).toBeNull()
   })
@@ -95,7 +100,7 @@ describe('createDesignCaller', () => {
     })
     const caller = createDesignCaller(opts())
     await caller.call(MSG, CFG)
-    const expected = estimateInputUsd('SYS', MSG) + (8_000 / 1_000_000) * 20
+    const expected = estimateInputUsd('SYS', MSG) + usd(0, 8_000)
     expect(caller.estimatedUsd()).toBeCloseTo(expected, 8)
     expect(caller.spentUsd()).toBeCloseTo(expected, 8)
     expect(m.record).not.toHaveBeenCalled()
@@ -113,7 +118,7 @@ describe('createDesignCaller', () => {
     expect(m.record).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-fable-5-1' }))
     // Fable 5.1 at $10/$50: 10k in + 5k out = $0.35.
     expect(caller.spentUsd()).toBeCloseTo(0.35, 6)
-    expect(estimateInputUsd('SYS', MSG, 'claude-fable-5-1')).toBeCloseTo(estimateInputUsd('SYS', MSG) * 2.5, 10)
+    expect(estimateInputUsd('SYS', MSG, 'claude-fable-5-1')).toBeCloseTo(estimateInputUsd('SYS', MSG) * (estimateCostUsd('claude-fable-5-1', 1, 0) / usd(1, 0)), 10)
   })
 })
 
@@ -134,9 +139,9 @@ describe('per-attempt log', () => {
     const caller = createDesignCaller(opts({ logTag: 'design-concept', now: () => clock }))
     await caller.call(MSG, { ...CFG, retryBudget: 8_000 })
     const lines = warn.mock.calls.map((c) => String(c[0]))
-    expect(lines).toContain('[design-concept] attempt 1 (claude-opus-5-5) failed after 180.0s — aborted (timeout)')
-    expect(lines).toContain('[design-concept] attempt 2 (claude-opus-5-5) finished in 61.5s — finish=length, out=5000 tokens')
-    expect(lines).toContain('[design-concept] attempt 2 (claude-opus-5-5) failed after 61.5s — unparseable output (finish=length)')
+    expect(lines).toContain(`[design-concept] attempt 1 (${DESIGN_MODEL}) failed after 180.0s — aborted (timeout)`)
+    expect(lines).toContain(`[design-concept] attempt 2 (${DESIGN_MODEL}) finished in 61.5s — finish=length, out=5000 tokens`)
+    expect(lines).toContain(`[design-concept] attempt 2 (${DESIGN_MODEL}) failed after 61.5s — unparseable output (finish=length)`)
   })
 
   it('names a timeout abort, else the error, clipped', () => {
@@ -190,7 +195,7 @@ describe('provider errors', () => {
       })
       const caller = createDesignCaller(opts())
       await caller.call(MSG, CFG)
-      const expected = estimateInputUsd('SYS', MSG) + (8_000 / 1_000_000) * 20
+      const expected = estimateInputUsd('SYS', MSG) + usd(0, 8_000)
       expect(caller.estimatedUsd()).toBeCloseTo(expected, 8)
     }
   })
@@ -205,7 +210,7 @@ describe('provider errors', () => {
     })
     const caller = createDesignCaller(opts())
     await caller.call(MSG, { ...CFG, retryBudget: 12_000 })
-    expect(caller.estimatedUsd()).toBeCloseTo(estimateInputUsd('SYS', MSG) + (12_000 / 1_000_000) * 20, 8)
+    expect(caller.estimatedUsd()).toBeCloseTo(estimateInputUsd('SYS', MSG) + usd(0, 12_000), 8)
   })
 
   it('words the Studio message per kind, with the reset date, never the key', () => {

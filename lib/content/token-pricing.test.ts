@@ -4,6 +4,7 @@ import * as tuning from './generation-tuning'
 import {
   CRITIC_MODEL,
   DESIGN_AB_CHALLENGER_MODEL,
+  DESIGN_CRITIC_MODEL,
   DESIGN_MODEL,
   FAST_MODEL,
   INTERACTIVE_CHAT_MODEL,
@@ -51,9 +52,11 @@ describe('estimateCostUsd', () => {
 })
 
 describe('design studio model pricing', () => {
-  it('prices DESIGN_MODEL (Opus 5.5) at $4/$20', () => {
-    expect(DESIGN_MODEL).toBe('claude-opus-5-5')
-    expect(estimateCostUsd(DESIGN_MODEL, M, M)).toBeCloseTo(24)
+  it('prices DESIGN_MODEL (Sonnet 5.5) at $2/$10 and DESIGN_CRITIC_MODEL (Opus 5.5) at $4/$20', () => {
+    expect(DESIGN_MODEL).toBe('claude-sonnet-5-5')
+    expect(estimateCostUsd(DESIGN_MODEL, M, M)).toBeCloseTo(12)
+    expect(DESIGN_CRITIC_MODEL).toBe('claude-opus-5-5')
+    expect(estimateCostUsd(DESIGN_CRITIC_MODEL, M, M)).toBeCloseTo(24)
   })
 
   it('prices the A/B challenger (Fable 5.1) at 5x Sonnet 5 ($10/$50)', () => {

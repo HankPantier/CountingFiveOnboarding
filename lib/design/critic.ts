@@ -1,4 +1,4 @@
-// Server-only. ONE Design-model (Opus 5.5) vision call that critiques ONE
+// Server-only. ONE design-critic (DESIGN_CRITIC_MODEL, Opus 5.5) vision call that critiques ONE
 // concept's latest render (spec P4 "critic.ts"): generateText → extractJson →
 // zod (critique.ts), recorded as token stage 'design_critique'. `passed` is
 // computed server-side from the scores; the model's own verdict is never read.
@@ -7,7 +7,7 @@
 // only second attempt. Opus 5.5 always thinks; never temperature / top_p /
 // top_k / toolChoice.
 import { buildCachedPartsMessages } from '@/lib/content/cache-control'
-import { DESIGN_MODEL, GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
+import { DESIGN_CRITIC_MODEL, GENERATION_PROVIDER_OPTIONS, providerOptionsForAttempt } from '@/lib/content/generation-tuning'
 import type { BuiltPrompt } from './brief'
 import { CRITIC_SYSTEM_PROMPT } from './brief/critique-prompt'
 import { parseCritiqueAnswer, type CritiqueRecord } from './critique'
@@ -31,7 +31,7 @@ export type CritiqueConceptArgs = {
   attribution: { sessionId: string; contentJobId: string; createdBy: string | null }
   now?: () => number
   onSpend?: (totalUsd: number) => void
-  // The judge model (default DESIGN_MODEL). Only the design-model A/B script
+  // The judge model (default DESIGN_CRITIC_MODEL). Only the design-model A/B script
   // overrides it (CRITIC_MODEL — the same judge for every model under test).
   model?: string
 }
@@ -58,7 +58,7 @@ export async function critiqueConcept(args: CritiqueConceptArgs): Promise<Critiq
     attribution: args.attribution,
     now,
     onSpend: args.onSpend,
-    ...(args.model ? { model: args.model } : {}),
+    model: args.model ?? DESIGN_CRITIC_MODEL,
   })
   const shared = args.prompt.sharedPartCount
   const messages = buildCachedPartsMessages(args.prompt.staticPrefix, args.prompt.parts, {
@@ -77,7 +77,7 @@ export async function critiqueConcept(args: CritiqueConceptArgs): Promise<Critiq
   if (raw === null) return { ...money, critique: null, errors: [], stoppedReason: caller.stopReason() ?? 'no_output' }
   const parsed = parseCritiqueAnswer(raw, {
     iteration: args.iteration,
-    model: args.model ?? DESIGN_MODEL,
+    model: args.model ?? DESIGN_CRITIC_MODEL,
     at: new Date(now()).toISOString(),
     paletteFreedom: args.paletteFreedom,
   })

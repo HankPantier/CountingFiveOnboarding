@@ -5,7 +5,7 @@ vi.mock('@/lib/content/json-generation', () => ({ generateJson: (o: unknown) => 
 vi.mock('@/lib/content/token-usage', () => ({ recordTokenUsage: (a: unknown) => m.record(a) }))
 vi.mock('@ai-sdk/anthropic', () => ({ anthropic: (id: string) => ({ modelId: id }) }))
 
-import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
+import { DESIGN_CRITIC_MODEL } from '@/lib/content/generation-tuning'
 import { CRITIC_SYSTEM_PROMPT } from './brief/critique-prompt'
 import { CRITIQUE_OUTPUT_TOKENS, critiqueConcept, type CritiqueConceptArgs } from './critic'
 
@@ -65,7 +65,7 @@ describe('critiqueConcept', () => {
   it('records usage as design_critique and returns the call’s cost', async () => {
     const r = await critiqueConcept(args())
     expect(m.record).toHaveBeenCalledWith(expect.objectContaining({ stage: 'design_critique', cacheTtl: '5m' }))
-    // $4/$20 per M: 12k in + 2k out = $0.088.
+    // DESIGN_CRITIC_MODEL (Opus 5.5) at $4/$20 per M: 12k in + 2k out = $0.088.
     expect(r.costUsd).toBeCloseTo(0.088, 6)
     expect(r.stoppedReason).toBeNull()
   })
@@ -93,10 +93,10 @@ describe('critiqueConcept', () => {
 })
 
 describe('critiqueConcept model override', () => {
-  it('defaults to DESIGN_MODEL and judges with an override (CRITIC_MODEL in the A/B script) when given', async () => {
+  it('defaults to DESIGN_CRITIC_MODEL and judges with an override (CRITIC_MODEL in the A/B script) when given', async () => {
     const d = await critiqueConcept(args())
-    expect((seen as unknown as { model: { modelId: string } }).model.modelId).toBe(DESIGN_MODEL)
-    expect(d.critique?.model).toBe(DESIGN_MODEL)
+    expect((seen as unknown as { model: { modelId: string } }).model.modelId).toBe(DESIGN_CRITIC_MODEL)
+    expect(d.critique?.model).toBe(DESIGN_CRITIC_MODEL)
     const o = await critiqueConcept(args({ model: 'claude-sonnet-5' }))
     expect((seen as unknown as { model: { modelId: string } }).model.modelId).toBe('claude-sonnet-5')
     expect(o.critique?.model).toBe('claude-sonnet-5')

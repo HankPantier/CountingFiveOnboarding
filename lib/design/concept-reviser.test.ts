@@ -14,6 +14,10 @@ import { reviseConcept, REVISE_CALL_CAP_MS, type ReviseConceptArgs } from './con
 import { FIRST_ATTEMPT_CAP_MS, REPAIR_CALL_TIMEOUT_MS } from './concept-generator'
 import { DEADLINE_SAFETY_MS, MIN_CALL_TIMEOUT_MS } from './model-call'
 import { STEP_MODEL_BUDGET_MS } from './step-types'
+import { estimateCostUsd } from '@/lib/content/token-pricing'
+
+// Priced from the live tier constant so a tier change doesn't break the mechanics tests.
+const usd = (inputTokens: number, outputTokens: number) => estimateCostUsd(DESIGN_MODEL, inputTokens, outputTokens)
 
 type Opts = { system?: string; beforeAttempt?: (n: 1 | 2) => boolean | Promise<boolean>; onAttempt?: (u: unknown, f: string) => Promise<void> | void; [k: string]: unknown }
 const USAGE = { inputTokens: 20_000, outputTokens: 10_000, inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -21,7 +25,7 @@ const NOW = 1_000_000
 const REVISED = { ...VALID, name: 'Harbor Ledger II', palette: { ...VALID.palette, primary: '#1f4d3d', action: '#ffa94d' } }
 const args = (over: Partial<ReviseConceptArgs> = {}): ReviseConceptArgs => ({
   prompt: { staticPrefix: 'STATIC', parts: [{ type: 'text', text: 'SHARED' }, { type: 'text', text: 'TASK' }], sharedPartCount: 1 },
-  context: { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: 'claude-opus-5-5' },
+  context: { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: DESIGN_MODEL },
   others: [],
   costSoFarUsd: 0,
   costCapUsd: 4,
@@ -54,8 +58,8 @@ describe('reviseConcept', () => {
     expect(m.generateJson).toHaveBeenCalledTimes(1)
     expect(m.record).toHaveBeenCalledWith(expect.objectContaining({ stage: 'design_concept' }))
     expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
-    expect(r.concept?.bundle.meta).toEqual({ source: 'concept', model: 'claude-opus-5-5' })
-    expect(r.costUsd).toBeCloseTo(0.28, 6) // 20k × $4 + 10k × $20 per M
+    expect(r.concept?.bundle.meta).toEqual({ source: 'concept', model: DESIGN_MODEL })
+    expect(r.costUsd).toBeCloseTo(usd(20_000, 10_000), 6)
     expect(r.stoppedReason).toBeNull()
   })
   it('defaults to DESIGN_MODEL; a model override reaches the call, pricing and the usage row (A/B script)', async () => {
@@ -176,7 +180,7 @@ describe('reviseConcept', () => {
       expect(r.stoppedReason).toBeNull()
       expect(m.record).toHaveBeenCalledTimes(2)
       for (const [a] of m.record.mock.calls) expect(a).toMatchObject({ stage: 'design_concept' })
-      expect(r.costUsd).toBeCloseTo(0.56, 6)
+      expect(r.costUsd).toBeCloseTo(2 * usd(20_000, 10_000), 6)
     })
     it('over the cap twice → rejected with both errors, no third call', async () => {
       answer = { concepts: [OVERSIZED] }
@@ -197,11 +201,11 @@ describe('reviseConcept', () => {
     })
     it('the cost cap vetoes the repair: rejected with the size errors, no extra spend', async () => {
       queue = [{ concepts: [OVERSIZED] }]
-      const r = await reviseConcept(args({ costCapUsd: 0.2 })) // the first call spends $0.28
+      const r = await reviseConcept(args({ costCapUsd: usd(20_000, 10_000) * 0.7 })) // just under the first call's spend
       expect(m.generateJson).toHaveBeenCalledTimes(1)
       expect(r).toMatchObject({ concept: null, stoppedReason: 'cost_cap' })
       expect(r.errors).toEqual(['css.blocks.hero: The CSS has 75 lines (max 60).'])
-      expect(r.costUsd).toBeCloseTo(0.28, 6)
+      expect(r.costUsd).toBeCloseTo(usd(20_000, 10_000), 6)
       expect(m.record).toHaveBeenCalledTimes(1)
     })
     it('too little time left vetoes the repair: rejected, no extra spend', async () => {
@@ -210,7 +214,7 @@ describe('reviseConcept', () => {
       const r = await reviseConcept(args({ now: () => t, onSpend: () => void (t = NOW + 540_000 - 100_000) })) // 80 s usable < 90 s floor
       expect(m.generateJson).toHaveBeenCalledTimes(1)
       expect(r).toMatchObject({ concept: null, stoppedReason: 'deadline' })
-      expect(r.costUsd).toBeCloseTo(0.28, 6)
+      expect(r.costUsd).toBeCloseTo(usd(20_000, 10_000), 6)
     })
   })
   describe('sanitizer repair (live run a81093ea: "css.blocks.hero: pointer-events: none is not allowed")', () => {
@@ -230,7 +234,7 @@ describe('reviseConcept', () => {
       expect(r.concept?.bundle.name).toBe('Harbor Ledger II')
       expect(r.errors).toEqual([])
       expect(r.stoppedReason).toBeNull()
-      expect(r.costUsd).toBeCloseTo(0.56, 6)
+      expect(r.costUsd).toBeCloseTo(2 * usd(20_000, 10_000), 6)
     })
     it('rejected twice → no concept with both errors, no third call', async () => {
       answer = { concepts: [REJECTED] }
@@ -242,10 +246,10 @@ describe('reviseConcept', () => {
     })
     it('the cost cap vetoes the repair: rejected, no extra spend', async () => {
       queue = [{ concepts: [REJECTED] }]
-      const r = await reviseConcept(args({ costCapUsd: 0.2 }))
+      const r = await reviseConcept(args({ costCapUsd: usd(20_000, 10_000) * 0.7 }))
       expect(m.generateJson).toHaveBeenCalledTimes(1)
       expect(r).toMatchObject({ concept: null, stoppedReason: 'cost_cap' })
-      expect(r.costUsd).toBeCloseTo(0.28, 6)
+      expect(r.costUsd).toBeCloseTo(usd(20_000, 10_000), 6)
     })
     it('a non-CSS failure (contrast) still gets no repair', async () => {
       answer = { concepts: [{ ...rawOf(REVISED), palette: { ...VALID.palette, nearBlack: '#bbbbbb', nearWhite: '#ffffff' } }] }

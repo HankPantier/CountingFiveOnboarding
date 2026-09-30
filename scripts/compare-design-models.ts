@@ -7,8 +7,8 @@
 // model's own earlier concepts), renders every valid concept on each page at
 // desktop + mobile, measures the render checks, and — unless --no-critic —
 // scores each concept with the SAME judge via critiqueConcept: --critic, by
-// default PUBLISHED_CONTENT_MODEL (Sonnet 5), which is not a contender (the
-// production critic, DESIGN_MODEL, is Opus 5.5 — one of the compared models).
+// default DESIGN_CRITIC_MODEL (Opus 5.5, the production judge), which is not a
+// contender in the default DESIGN_MODEL vs DESIGN_AB_CHALLENGER_MODEL match-up.
 // A judge that IS a compared model is warned about and flagged in the report.
 // By default this compares first drafts. With --revise [n] each concept then
 // runs the production critique → revise loop (review.ts decideAfterCritique,
@@ -65,10 +65,9 @@ async function main() {
   const tuning = await import('../lib/content/generation-tuning')
   const { abUsage, criticIsContender, parseAbArgs } = await import('../lib/design/ab/args')
   const { noUsableAnswerText, rejectionText } = await import('../lib/design/ab/outcome')
-  // Default judge: the Sonnet 5 writing tier — not a contender. critiqueConcept
-  // sends it adaptive thinking + effort (GENERATION_PROVIDER_OPTIONS), both
-  // supported on Sonnet 5; nothing Opus-only.
-  const defaults = { models: [tuning.DESIGN_MODEL, tuning.DESIGN_AB_CHALLENGER_MODEL], critic: tuning.PUBLISHED_CONTENT_MODEL }
+  // Default judge: the production design critic (Opus 5.5), not a contender in the
+  // default match-up. Pass --critic when it is one of the compared models.
+  const defaults = { models: [tuning.DESIGN_MODEL, tuning.DESIGN_AB_CHALLENGER_MODEL], critic: tuning.DESIGN_CRITIC_MODEL }
   const parsed = parseAbArgs(process.argv.slice(2), defaults)
   if (parsed.kind === 'help') {
     console.log(abUsage(defaults))

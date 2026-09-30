@@ -20,6 +20,10 @@ import {
 } from './concept-generator'
 import { DEFAULT_CAPABILITIES } from './run-types'
 import { DESIGN_MODEL } from '@/lib/content/generation-tuning'
+import { estimateCostUsd } from '@/lib/content/token-pricing'
+
+// Priced from the live tier constant so a tier change doesn't break the mechanics tests.
+const usd = (inputTokens: number, outputTokens: number) => estimateCostUsd(DESIGN_MODEL, inputTokens, outputTokens)
 
 const A = rawOf(VALID)
 const OXBLOOD: typeof VALID = {
@@ -56,7 +60,7 @@ let clock = NOW
 function args(over: Partial<GenerateConceptArgs> = {}): GenerateConceptArgs {
   return {
     prompt: { staticPrefix: 'STATIC', parts: [{ type: 'text', text: 'TASK' }] },
-    context: { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: 'claude-opus-5-5' },
+    context: { current: VALID, caps: DEFAULT_CAPABILITIES, paletteFreedom: 'evolve', draftFiles: DRAFT_FILES, model: DESIGN_MODEL },
     priors: [],
     costSoFarUsd: 0,
     costCapUsd: 4,
@@ -79,7 +83,7 @@ beforeEach(() => {
     if (opts.beforeAttempt && !(await opts.beforeAttempt(1))) return null
     timeouts.push(opts.timeoutMs as number)
     clock += elapsed.shift() ?? 0
-    // Opus 5.5 at $4/$20: 10k in + 5k out = $0.14 per call.
+    // 10k in + 5k out per call, at DESIGN_MODEL rates.
     await opts.onAttempt?.(USAGE, 'stop')
     return scripted.shift() ?? null
   })
@@ -96,19 +100,19 @@ describe('generateConcept', () => {
     expect(r.concept?.bundle.name).toBe('Harbor Ledger')
     expect(r.errors).toEqual([])
     expect(r.stoppedReason).toBeNull()
-    expect(r.costUsd).toBeCloseTo(0.14, 6)
+    expect(r.costUsd).toBeCloseTo(usd(10_000, 5_000), 6)
     expect(r.estimatedUsd).toBe(0)
     expect(m.generateJson).toHaveBeenCalledTimes(1)
     expect(m.record).toHaveBeenCalledWith(
-      expect.objectContaining({ task: 'content', stage: 'design_concept', model: 'claude-opus-5-5', sessionId: 'sess', contentJobId: 'job', createdBy: 'admin-1', cacheTtl: '5m' })
+      expect.objectContaining({ task: 'content', stage: 'design_concept', model: DESIGN_MODEL, sessionId: 'sess', contentJobId: 'job', createdBy: 'admin-1', cacheTtl: '5m' })
     )
   })
 
-  it('calls Opus 5.5 with cached multi-part messages, adaptive thinking, a one-bundle budget and no sampling / tool-choice params', async () => {
+  it('calls DESIGN_MODEL with cached multi-part messages, adaptive thinking, a one-bundle budget and no sampling / tool-choice params', async () => {
     scripted = [{ concepts: [A] }]
     await generateConcept(args())
     const opts = m.generateJson.mock.calls[0][0] as Opts & { model: { modelId: string }; providerOptions: { anthropic: { thinking: { type: string } } } }
-    expect(opts.model.modelId).toBe('claude-opus-5-5')
+    expect(opts.model.modelId).toBe(DESIGN_MODEL)
     expect(opts.providerOptions.anthropic.thinking.type).toBe('adaptive')
     for (const k of ['temperature', 'topP', 'topK', 'toolChoice', 'prompt']) expect(k in opts).toBe(false)
     expect(opts.messages).toHaveLength(1)
@@ -199,7 +203,7 @@ describe('generateConcept', () => {
 
   it('skips the repair when the first call pushed the run over its cap', async () => {
     scripted = [{ concepts: [BROKEN] }]
-    const r = await generateConcept(args({ costCapUsd: 0.1 }))
+    const r = await generateConcept(args({ costCapUsd: usd(10_000, 5_000) * 0.7 })) // just under one call
     expect(m.record).toHaveBeenCalledTimes(1)
     expect(r.concept).toBeNull()
     expect(r.errors.join(' ')).toContain('palette.primary')
@@ -264,8 +268,8 @@ describe('generateConcept', () => {
       const seen: number[] = []
       await generateConcept(args({ onSpend: (usd) => seen.push(usd) }))
       expect(seen).toHaveLength(2)
-      expect(seen[0]).toBeCloseTo(0.14, 6)
-      expect(seen[1]).toBeCloseTo(0.28, 6)
+      expect(seen[0]).toBeCloseTo(usd(10_000, 5_000), 6)
+      expect(seen[1]).toBeCloseTo(2 * usd(10_000, 5_000), 6)
     })
 
     it('reports the aborted-attempt estimate, even when generateJson throws', async () => {
@@ -380,15 +384,15 @@ describe('generateConcept', () => {
       // 540 − 360 − 20 = 160 s, under the 180 s first-call cap.
       expect(timeouts).toEqual([FIRST_ATTEMPT_CAP_MS, 160_000])
       expect(r.concept).not.toBeNull()
-      expect(r.costUsd).toBeCloseTo(0.28, 6)
+      expect(r.costUsd).toBeCloseTo(2 * usd(10_000, 5_000), 6)
     })
   })
 
   describe('aborted attempts', () => {
     const IMG = { type: 'image' as const, image: new Uint8Array([1, 2, 3]), mediaType: 'image/webp' }
-    // Opus 5.5 at $4/M input + the attempt's full maxOutputTokens at $20/M output.
+    // DESIGN_MODEL input rate + the attempt's full maxOutputTokens at its output rate.
     const estimateFor = (textChars: number, images: number, maxOutputTokens = 24_000) =>
-      ((Math.ceil(textChars / 4) + images * ESTIMATED_TOKENS_PER_IMAGE) / 1_000_000) * 4 + (maxOutputTokens / 1_000_000) * 20
+      usd(Math.ceil(textChars / 4) + images * ESTIMATED_TOKENS_PER_IMAGE, maxOutputTokens)
 
     it('adds an estimated input + max-output cost for a started attempt that never reported usage, and warns', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
@@ -398,7 +402,7 @@ describe('generateConcept', () => {
       })
       const r = await generateConcept(args({ prompt: { staticPrefix: 'STATIC', parts: [{ type: 'text', text: 'TASK' }, IMG] } }))
       const expected = estimateFor(DESIGN_SYSTEM_PROMPT.length + 'STATIC'.length + 'TASK'.length, 1)
-      expect(expected).toBeGreaterThan(0.48) // the 24k output tokens alone are $0.48
+      expect(expected).toBeGreaterThan(usd(0, 24_000)) // more than the 24k output tokens alone
       expect(r.estimatedUsd).toBeCloseTo(expected, 9)
       expect(r.costUsd).toBeCloseTo(expected, 9)
       expect(m.record).not.toHaveBeenCalled() // token_usage stays exact-only
@@ -435,8 +439,8 @@ describe('generateConcept', () => {
       })
       const r = await generateConcept(args())
       expect(r.concept).toBeNull()
-      expect(r.estimatedUsd).toBeGreaterThan(0.32)
-      expect(r.costUsd).toBeCloseTo(0.14 + r.estimatedUsd, 9)
+      expect(r.estimatedUsd).toBeGreaterThan(usd(0, 16_000))
+      expect(r.costUsd).toBeCloseTo(usd(10_000, 5_000) + r.estimatedUsd, 9)
     })
 
     it('does not estimate attempts that did report usage', async () => {
@@ -444,7 +448,7 @@ describe('generateConcept', () => {
       scripted = [{ concepts: [BROKEN] }, { concepts: [B] }]
       const r = await generateConcept(args())
       expect(r.estimatedUsd).toBe(0)
-      expect(r.costUsd).toBeCloseTo(0.28, 6)
+      expect(r.costUsd).toBeCloseTo(2 * usd(10_000, 5_000), 6)
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('aborted attempt'))
     })
   })
