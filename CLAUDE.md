@@ -180,6 +180,27 @@ All caching helpers live in `lib/content/cache-control.ts`.
 Any new model id must also be added to the `PRICING` map in `lib/content/token-pricing.ts`,
 or its spend silently records as $0 on the Token Usage dashboard. Models whose cache reads are
 not 0.1x input (e.g. Opus 5.5 at 0.05x) set `cacheRead` on their entry.
+`lib/content/token-pricing.test.ts` fails CI for any `claude-*` constant in `generation-tuning.ts` without an entry.
+
+### Model review cadence
+A model-fit review checks whether each tier above is still the best fit for quality and cost. It's due when `node scripts/model-check.mjs` flags any of these:
+- a new model on Anthropic's Models API (not in `.audit/model-review.json` `knownModels`)
+- an in-use model that the API no longer lists
+- a `watch` entry with a retirement `date` under 30 days away (add the date once Anthropic announces one)
+- 45 days since `lastReview`
+- a model constant with no `PRICING` entry
+
+How it runs:
+- A SessionStart hook runs `model-check.mjs --hook`. When it flags, tell the user at session start and offer the review. Don't start one unprompted.
+- A monthly scheduled cloud agent also posts a report-only review.
+- Every tier change needs evidence from an A/B run before it ships:
+  - writer: `scripts/compare-content-models.ts`
+  - critic: `compare-critic-models.ts`
+  - Design Studio: `compare-design-models.ts`
+  - fast tier: `compare-fast-models.ts`
+- A tier change also needs a `PRICING` entry, an SDK version that knows the model id (`@ai-sdk/anthropic`'s `getModelCapabilities` matches ids by prefix, so an unknown id silently inherits the older model's quirks), and an updated tier map above.
+- After a review, run `node scripts/model-check.mjs --mark "<summary>"` and commit `.audit/model-review.json`.
+- Chats never replay reasoning parts: `trimMessages()` strips them and chat routes pass `sendReasoning: false`. Sonnet 5.5 and later reject thinking blocks whose earlier context changed.
 
 ### Processing Flag Safety
 The `processing` boolean in `sessions` prevents concurrent Claude calls. It MUST be set to `false` in both:

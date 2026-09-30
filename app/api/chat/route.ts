@@ -289,6 +289,7 @@ export async function POST(req: Request) {
     // banner when that's the cause, and classifies provider outages for the
     // client's error banner.
     return result.toUIMessageStreamResponse({
+      sendReasoning: false,
       onError: (error) => logAndFormatAiStreamError('onboarding-chat', error),
     })
   } catch (err) {

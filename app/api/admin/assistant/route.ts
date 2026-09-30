@@ -64,6 +64,7 @@ export async function POST(req: Request) {
   })
 
   return result.toUIMessageStreamResponse({
+    sendReasoning: false,
     onError: (error) => logAndFormatAiStreamError('admin-assistant', error),
   })
 }

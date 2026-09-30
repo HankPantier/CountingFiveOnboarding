@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { estimateCostUsd } from './token-pricing'
+import * as tuning from './generation-tuning'
 import {
   CRITIC_MODEL,
   DESIGN_AB_CHALLENGER_MODEL,
@@ -36,10 +37,16 @@ describe('estimateCostUsd', () => {
     expect(estimateCostUsd('claude-opus-4-8', M, M)).toBeCloseTo(30)
   })
 
-  it('has a PRICING entry for every model the app calls', () => {
-    for (const model of [CRITIC_MODEL, FAST_MODEL, INTERACTIVE_CHAT_MODEL, PUBLISHED_CONTENT_MODEL]) {
-      expect(estimateCostUsd(model, M, 0)).toBeGreaterThan(0)
+  it('has a PRICING entry for every model constant in generation-tuning', () => {
+    const models = Object.values(tuning as Record<string, unknown>).filter((v): v is string => typeof v === 'string' && v.startsWith('claude-'))
+    expect(models).toEqual(expect.arrayContaining([CRITIC_MODEL, FAST_MODEL, INTERACTIVE_CHAT_MODEL, PUBLISHED_CONTENT_MODEL]))
+    for (const model of models) {
+      expect(estimateCostUsd(model, M, 0), model).toBeGreaterThan(0)
     }
+  })
+
+  it('prices Sonnet 5.5 at the same $2/$10 as Sonnet 5', () => {
+    expect(estimateCostUsd('claude-sonnet-5-5', M, M)).toBeCloseTo(12)
   })
 })
 

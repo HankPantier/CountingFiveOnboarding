@@ -29,6 +29,10 @@ export const DESIGN_MODEL = 'claude-opus-5-5'
 // A/B 2026-09-26 (bblcpa): Opus 5.5 kept as DESIGN_MODEL — Fable 5.1 scored +0.09 mean at 2.3× the cost and 24% slower.
 export const DESIGN_AB_CHALLENGER_MODEL = 'claude-fable-5-1'
 
+// Sonnet 5.5 (released 2026-09-28) is the challenger in the compare-*-models.ts
+// A/B scripts. No route uses it until those runs justify a tier change.
+export const SONNET_5_5_CHALLENGER = 'claude-sonnet-5-5'
+
 // Interactive (streaming, operator-facing) chats. Sonnet 5 turns adaptive
 // thinking on with effort 'high' by default, which is too slow for chat — every
 // chat route must pass chatProviderOptions() to pick its effort explicitly.

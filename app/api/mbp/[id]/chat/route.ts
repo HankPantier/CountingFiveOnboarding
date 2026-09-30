@@ -143,6 +143,7 @@ export async function POST(
   })
 
   return result.toUIMessageStreamResponse({
+    sendReasoning: false,
     onError: (error) => logAndFormatAiStreamError('mbp-chat', error),
   })
 }

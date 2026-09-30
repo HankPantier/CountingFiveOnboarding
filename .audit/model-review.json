@@ -1,0 +1,36 @@
+{
+  "lastReview": "2026-09-30",
+  "note": "Sonnet 5.5 review 2026-09-30: added pricing + A/B scripts; tier swap pending A/B results",
+  "reviewEveryDays": 45,
+  "knownModels": [
+    "claude-fable-5",
+    "claude-fable-5-1",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-5-20251101",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-opus-5-5",
+    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-4-6",
+    "claude-sonnet-5",
+    "claude-sonnet-5-5"
+  ],
+  "inUse": {
+    "PUBLISHED_CONTENT_MODEL": "claude-sonnet-5",
+    "CRITIC_MODEL": "claude-opus-5-5",
+    "DESIGN_MODEL": "claude-opus-5-5",
+    "DESIGN_AB_CHALLENGER_MODEL": "claude-fable-5-1",
+    "SONNET_5_5_CHALLENGER": "claude-sonnet-5-5",
+    "INTERACTIVE_CHAT_MODEL": "claude-sonnet-5",
+    "FAST_MODEL": "claude-haiku-4-5-20251001"
+  },
+  "watch": [
+    {
+      "model": "claude-haiku-4-5-20251001",
+      "note": "retirement not sooner than 2026-10-15; no date announced yet \u2014 set \"date\" when Anthropic announces one",
+      "fallback": "Sonnet 5.5 at effort low + between_tools (scripts/compare-fast-models.ts)"
+    }
+  ]
+}

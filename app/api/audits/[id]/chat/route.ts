@@ -123,6 +123,7 @@ export async function POST(
   })
 
   return result.toUIMessageStreamResponse({
+    sendReasoning: false,
     onError: (error) => logAndFormatAiStreamError('audit-chat', error),
   })
 }

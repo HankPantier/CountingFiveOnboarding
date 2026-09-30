@@ -8,6 +8,12 @@
             "command": "node \"$CLAUDE_PROJECT_DIR/scripts/audit-due.mjs\" --hook 2>/dev/null || true",
             "timeout": 15,
             "statusMessage": "Checking full re-audit cadence"
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/model-check.mjs\" --hook 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "Checking model-fit review cadence"
           }
         ]
       }

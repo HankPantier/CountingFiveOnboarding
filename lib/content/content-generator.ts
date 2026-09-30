@@ -308,7 +308,9 @@ export async function generatePageContent(
   callTimeoutMs: number = PER_CALL_CAP_MS,
   // Absolute page deadline (epoch ms). When set, each call's timeout is clipped
   // to it and the internal JSON retry is skipped if too little time remains.
-  deadlineAt?: number
+  deadlineAt?: number,
+  // Writer model override — only the compare-content-models A/B script sets it.
+  modelId: string = CONTENT_MODEL
 ): Promise<GeneratedResult> {
   const firmName = schema.business?.name ?? 'the firm'
   const location = schema.locations?.[0]
@@ -532,7 +534,7 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
   ): Promise<{ ok: true; result: GeneratedResult } | { ok: false; text: string; finishReason: string }> => {
     const callStartedAt = Date.now()
     const { text, usage, finishReason } = await generateText({
-      model: anthropic(CONTENT_MODEL),
+      model: anthropic(modelId),
       messages: buildCachedMessages(staticPrefix, dynamicSuffix),
       maxOutputTokens,
       providerOptions,
@@ -555,7 +557,7 @@ ${competitorExcerpts ? `COMPETITOR REFERENCES (differentiate from these — do n
       sessionId,
       stage: 'content',
       pageUrl,
-      model: CONTENT_MODEL,
+      model: modelId,
       inputTokens: usage?.inputTokens,
       outputTokens: usage?.outputTokens,
       cacheReadInputTokens: cache.cacheReadInputTokens,
@@ -684,6 +686,8 @@ export type FinalizePageInput = {
   // Absolute deadline (epoch ms) for the WHOLE page — every call (first draft and
   // all retries) is clipped to it and optional retries are skipped near it.
   deadlineAt?: number
+  // Writer model override (A/B script only); production always uses CONTENT_MODEL.
+  modelId?: string
 }
 
 export async function generateAndFinalizePage(input: FinalizePageInput): Promise<GeneratedResult> {
@@ -708,7 +712,8 @@ export async function generateAndFinalizePage(input: FinalizePageInput): Promise
       input.revisionGuidance,
       input.attemptNumber ?? 1,
       input.callTimeoutMs ?? PER_CALL_CAP_MS,
-      input.deadlineAt
+      input.deadlineAt,
+      input.modelId
     )
   const canRetry = () => hasTimeForRetry(input.deadlineAt)
 
@@ -1059,7 +1064,7 @@ export type PageGenContext = {
   templateVersion?: string | null
 }
 
-async function loadPageGenContext(
+export async function loadPageGenContext(
   supabase: ReturnType<typeof createServerClient>,
   contentJobId: string
 ): Promise<PageGenContext | null> {
@@ -1133,7 +1138,7 @@ async function loadPageGenContext(
   }
 }
 
-type OutlineRow = {
+export type OutlineRow = {
   id: string
   page_url: string
   page_title: string
@@ -1144,11 +1149,11 @@ type OutlineRow = {
   angle: string | null
 }
 
-const OUTLINE_SELECT = 'id, page_url, page_title, sections, target_keyword, admin_approved, cta, angle'
+export const OUTLINE_SELECT = 'id, page_url, page_title, sections, target_keyword, admin_approved, cta, angle'
 
 // The generateAndFinalizePage input for one outline, shared by the bulk/regenerate
 // path and the critic's rewrite so both prompt the model identically.
-function buildFinalizeInput(
+export function buildFinalizeInput(
   outline: OutlineRow,
   ctx: PageGenContext,
   contentJobId: string,

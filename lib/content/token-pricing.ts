@@ -65,6 +65,8 @@ const PRICING: Record<string, { input: number; output: number; cacheRead?: numbe
   // $2/$10 launched as intro pricing and became the standard rate on 2026-09-01
   // (the scheduled rise to $3/$15 was cancelled).
   'claude-sonnet-5': { input: 2, output: 10 },
+  // Sonnet 5.5 (2026-09-28) kept Sonnet 5's rates, including cache and batch.
+  'claude-sonnet-5-5': { input: 2, output: 10 },
   // Legacy interactive-chat tier (kept so historical token_usage rows still price).
   'claude-sonnet-4-6': { input: 3, output: 15 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5 },

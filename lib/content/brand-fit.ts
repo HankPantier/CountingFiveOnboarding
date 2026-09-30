@@ -1,6 +1,7 @@
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { buildBrandVoiceBlock } from './brand-voice'
+import { extractJson } from './extract-json'
 import { recordTokenUsage } from './token-usage'
 import type { SessionSchema } from '@/types/session-schema'
 import { FAST_MODEL } from './generation-tuning'
@@ -33,7 +34,10 @@ export async function checkBrandFit(args: {
   schema: SessionSchema
   contentJobId: string
   sessionId: string
+  // Model override — only scripts/compare-fast-models.ts sets it.
+  model?: { id: string; providerOptions?: Parameters<typeof generateText>[0]['providerOptions'] }
 }): Promise<BrandFitResult> {
+  const modelId = args.model?.id ?? BRAND_FIT_MODEL
   const prompt = `You are the brand steward for ${args.schema.business?.name ?? 'a CPA firm'}. An admin asked the content engine for the following:
 
 "${args.text}"
@@ -59,10 +63,13 @@ Return ONLY JSON:
 
   try {
     const { text, usage } = await generateText({
-      model: anthropic(BRAND_FIT_MODEL),
+      model: anthropic(modelId),
+      providerOptions: args.model?.providerOptions,
       system: 'You are a meticulous brand steward. Return JSON only, no prose.',
       prompt,
-      maxOutputTokens: 500,
+      // An off-brand verdict with conflicts + an amendment runs 500+ tokens;
+      // a tighter cap truncated the JSON and silently failed the guard open.
+      maxOutputTokens: 1200,
       maxRetries: 4,
       // Haiku helper on a request path: a hang must not hold the route.
       abortSignal: AbortSignal.timeout(HELPER_CALL_CAP_MS),
@@ -73,13 +80,13 @@ Return ONLY JSON:
       sessionId: args.sessionId,
       stage: 'idea',
       pageUrl: 'brand-fit',
-      model: BRAND_FIT_MODEL,
+      model: modelId,
       inputTokens: usage?.inputTokens,
       outputTokens: usage?.outputTokens,
     })
 
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned)
+    const parsed = extractJson(text) as { fit?: unknown; conflicts?: unknown; proposedAmendment?: Record<string, unknown> | null } | null
+    if (!parsed) throw new Error(`unparseable brand-fit JSON: ${text.slice(0, 120)}`)
     if (parsed?.fit !== 'off-brand') return ON_BRAND
     const amendment = parsed.proposedAmendment
     return {
