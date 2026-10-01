@@ -241,6 +241,9 @@ export async function finalizeGenerationIfComplete(
     .from('content_jobs')
     .update({ phase: 6, updated_at: new Date().toISOString() })
     .eq('id', contentJobId)
+    // Fenced: the phase read above is separate, so never regress a job that
+    // moved on meanwhile.
+    .eq('phase', 5)
   return true
 }
 

@@ -4,6 +4,7 @@ import { readJsonBody } from '@/app/api/_json'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { reviewContentForMbpImpact } from '@/lib/mbp/impact-review'
+import { fenceQaForHumanEdit } from '@/lib/content/qa/fence'
 
 export async function GET(
   _req: Request,
@@ -106,6 +107,14 @@ export async function PATCH(
     return NextResponse.json({ error: 'no supported fields in body' }, { status: 400 })
   }
 
+  // A human edit (or approval) wins over QA: fence QA out BEFORE writing, so a
+  // QA final write can't land between this update and the fence and overwrite
+  // the human's text. An approval fences too — QA never touches an approved
+  // page, so a still-queued row would otherwise hold phase 6 (`on` mode).
+  if (contentEdited || updates.admin_approved_content === true) {
+    await fenceQaForHumanEdit(supabase, pageId, { contentJobId: id })
+  }
+
   const { data, error } = await supabase
     .from('generated_pages')
     .update(updates)
@@ -116,21 +125,6 @@ export async function PATCH(
 
   if (error) return internalError('pages:patch', error, "Couldn't update the page")
   if (!data) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
-
-  // A human edit wins over an in-flight QA run: flip queued/running QA to
-  // skipped so the QA worker's fenced write (qa_status = 'running') misses.
-  // An admin approval does the same — QA never touches an approved page, so a
-  // still-queued row would otherwise hold phase 6 (QA `on` mode) forever.
-  if (contentEdited || updates.admin_approved_content === true) {
-    const { data: fenced } = await supabase
-      .from('generated_pages')
-      .update({ qa_status: 'skipped' })
-      .eq('id', pageId)
-      .eq('content_job_id', id)
-      .in('qa_status', ['queued', 'running'])
-      .select('id')
-    if (fenced?.length) data.qa_status = 'skipped'
-  }
 
   if (contentEdited && typeof data.content_markdown === 'string') {
     after(() =>

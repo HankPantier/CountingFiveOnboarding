@@ -370,6 +370,7 @@ export async function GET(req: Request) {
       .eq('admin_approved_content', false)
       .lt('qa_attempts', QA_MAX_ATTEMPTS)
       .or(`and(qa_status.eq.queued,generation_started_at.lt.${qaCutoff}),qa_status.eq.error`)
+      .order('generation_started_at', { ascending: true })
       .limit(20)
     for (const p of qaStale ?? []) {
       if (await triggerQa(p.content_job_id, p.id)) qaRetriggered++

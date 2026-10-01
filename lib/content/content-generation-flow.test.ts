@@ -136,7 +136,9 @@ function makeSupabaseStub(opts: {
         select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { phase: opts.phase } }) }) }),
         update: (vals: Record<string, unknown>) => {
           updates.push(vals)
-          return { eq: () => Promise.resolve({ data: null, error: null }) }
+          const done = Promise.resolve({ data: null, error: null })
+          const chain: Record<string, unknown> = { eq: () => chain, then: done.then.bind(done) }
+          return chain
         },
       }
     },

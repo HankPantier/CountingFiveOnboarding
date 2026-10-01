@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 import { checkRateLimit } from '@/lib/auth/rate-limit'
 import { readJsonBody } from '@/app/api/_json'
+import { fenceQaForHumanEdit } from '@/lib/content/qa/fence'
 import type { SessionSchema } from '@/types/session-schema'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -124,6 +125,12 @@ export async function PATCH(
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'no supported fields in body' }, { status: 400 })
+  }
+
+  // A client content edit wins over QA: fence QA out BEFORE writing (see
+  // fenceQaForHumanEdit). Scoped to flagged pages, like the update below.
+  if (contentEdited) {
+    await fenceQaForHumanEdit(supabase, pageId, { contentJobId: id, needsClientReview: true })
   }
 
   // Update with content_job_id and needs_client_review gates for defence in depth
