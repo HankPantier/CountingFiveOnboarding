@@ -262,6 +262,9 @@ function OverflowMenu({
           >
             Download doc ↓
           </a>
+          {/* Whole-site export: admins + managers only (canPublishLive minus Site
+              Owners); the route enforces the same gate. */}
+          {canPublishLive && !isOwner && (
           <button
             type="button"
             role="menuitem"
@@ -272,6 +275,7 @@ function OverflowMenu({
           >
             {divi.state === 'working' ? 'Building Divi export…' : 'Export to Divi ↓'}
           </button>
+          )}
           {divi.state === 'error' && divi.msg && (
             <p className="px-3 py-1.5 text-[11px] font-body text-error">{divi.msg}</p>
           )}

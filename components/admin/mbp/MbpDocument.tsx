@@ -6,6 +6,9 @@ import type { MbpDocument, MbpDocumentField, MbpDocumentItem } from '@/types/mbp
 // Sitemap sections are uniformly tabular and otherwise render as tall
 // label/value stacks — show them as a compact one-row-per-page table instead.
 const SITEMAP_KEYS = new Set(['site_map'])
+// Sections whose values are changed elsewhere (the Audit Review instruction
+// cards), never inline: an inline JSON edit would skip their apply step.
+const READ_ONLY_KEYS = new Set(['operator_directives'])
 const COL_ORDER = ['Title', 'Url', 'Action', 'Status', 'New Url', 'Live', 'Parent', 'Notes']
 
 // Advisory field-origin badge (see lib/mbp/provenance.ts). 'thin' is the only
@@ -141,7 +144,25 @@ function SectionCard({
             <FieldRow key={f.fieldPath} field={f} overridden={!!overrides[f.fieldPath]} recentlyApplied={recentlyApplied} sessionId={sessionId} editable={editable} />
           ))}
         {section.items && SITEMAP_KEYS.has(section.key) && <SitemapTable items={section.items} />}
-        {section.items && !SITEMAP_KEYS.has(section.key) && (
+        {section.items && READ_ONLY_KEYS.has(section.key) && (
+          <>
+            {section.items.map((item, i) => (
+              <div key={i} className="py-2 border-b border-border-default last:border-0">
+                <p className="text-xs font-heading font-semibold text-text-primary mb-1">{item.heading}</p>
+                {item.fields.map(f => (
+                  <FieldRow key={f.fieldPath} field={f} overridden={false} recentlyApplied={recentlyApplied} sessionId={sessionId} editable={false} />
+                ))}
+              </div>
+            ))}
+            <a
+              href={`/admin/sessions/${sessionId}/onboarding?step=notes`}
+              className="inline-block mt-2 text-xs font-heading font-semibold text-brand-cyan hover:text-brand-navy"
+            >
+              Edit in Audit Review →
+            </a>
+          </>
+        )}
+        {section.items && !SITEMAP_KEYS.has(section.key) && !READ_ONLY_KEYS.has(section.key) && (
           <>
             {section.items.length === 0 ? (
               <p className="text-text-muted font-body text-sm italic py-2">None.</p>

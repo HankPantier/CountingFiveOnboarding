@@ -1,12 +1,8 @@
 import { NextResponse } from 'next/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
-import { refreshPhase4Gaps } from '@/lib/agent/gap-tiering'
 import { createServerClient } from '@/lib/supabase/server'
-import { asJson } from '@/lib/supabase/json-typed'
-import { extractNotesModel, mergeNotesExtraction } from '@/lib/session-draft/extract-from-notes'
-import type { GapItem } from '@/types/gap-item'
-import type { SessionSchema } from '@/types/session-schema'
-import { updateSessionWithCas, SessionNotFoundError } from '@/lib/session/schema-cas'
+import { applyNotesExtraction } from '@/lib/session-draft/apply-notes-extraction'
+import { SessionNotFoundError } from '@/lib/session/schema-cas'
 
 export const runtime = 'nodejs'
 
@@ -30,7 +26,7 @@ export async function POST(
   const supabase = createServerClient()
   const { data: session, error: readErr } = await supabase
     .from('sessions')
-    .select('schema_data, gap_list, call_notes')
+    .select('call_notes')
     .eq('id', id)
     .single()
 
@@ -43,39 +39,15 @@ export async function POST(
     return NextResponse.json({ error: 'No call notes to extract from' }, { status: 400 })
   }
 
-  const schema = (session.schema_data as SessionSchema | null) ?? {}
-  const gaps = (session.gap_list as GapItem[] | null) ?? []
-
-  const model = await extractNotesModel(notes, schema, gaps, {
-    task: 'onboarding',
-    stage: 'mbp',
-    sessionId: id,
-  })
-
-  if (!model) {
-    return NextResponse.json({ error: 'Extraction failed — please try again' }, { status: 502 })
-  }
-
-  // The extraction call is long; the (blank-fill-only) merge is applied inside a
-  // compare-and-swap onto the FRESH row, so an edit made meanwhile — a chat
-  // turn, an inline field edit — is re-read and kept, never overwritten.
-  let applied: ReturnType<typeof mergeNotesExtraction>['applied']
+  let applied: Awaited<ReturnType<typeof applyNotesExtraction>>
   try {
-    applied = await updateSessionWithCas(supabase, id, fresh => {
-      const freshSchema = (fresh.schema_data as SessionSchema | null) ?? {}
-      const freshGaps = (fresh.gap_list as GapItem[] | null) ?? []
-      const merged = mergeNotesExtraction(freshSchema, freshGaps, model)
-      // Notes can add niches/services — give them their Phase-4 depth gaps.
-      const mergedGaps = refreshPhase4Gaps(merged.schema, merged.gaps)
-      return {
-        update: {
-          schema_data: asJson(merged.schema),
-          gap_list: asJson(mergedGaps),
-          notes_extracted_at: new Date().toISOString(),
-        },
-        result: merged.applied,
-      }
-    })
+    applied = await applyNotesExtraction(
+      supabase,
+      id,
+      notes,
+      { task: 'onboarding', stage: 'mbp', sessionId: id },
+      { stampExtractedAt: true },
+    )
   } catch (err) {
     if (err instanceof SessionNotFoundError) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 })
@@ -84,5 +56,8 @@ export async function POST(
     return NextResponse.json({ error: 'Save failed' }, { status: 500 })
   }
 
+  if (!applied) {
+    return NextResponse.json({ error: 'Extraction failed — please try again' }, { status: 502 })
+  }
   return NextResponse.json({ success: true, applied, appliedCount: applied.length })
 }

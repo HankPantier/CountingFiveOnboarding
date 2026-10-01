@@ -76,10 +76,6 @@ export const DESIGN_SYSTEM_REQUIRED_FOR_REDEPLOY =
 export const DESIGN_SYSTEM_REQUIRED_FOR_EXPORT =
   'This site has no locked palette, so the export would use generic colours. Open step 1 “Design System” on the content job, review the logo palette and click Save, then export again.'
 
-// Editor / Site Owner members can't open the content job (manager-only).
-export const DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER =
-  'This site has no locked palette, so the export would use generic colours. Ask an admin or manager to lock the Design System (step 1 on the content job), then export again.'
-
 export type PhaseStatusValue = 'locked' | 'active' | 'complete'
 
 /**

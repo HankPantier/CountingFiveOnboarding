@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import SitemapPageRow from './SitemapPageRow'
+import type { PageDirectiveBadge } from '@/lib/content/directive-pipeline'
+import { normPath } from '@/lib/onboarding/directives'
 
 type SitemapPage = {
   _key: string
@@ -16,11 +18,13 @@ export default function SitemapSection({
   sectionTitle,
   sectionUrl,
   pages,
+  directiveBadges,
   onUpdate,
 }: {
   sectionTitle: string
   sectionUrl: string
   pages: SitemapPage[]
+  directiveBadges?: Record<string, PageDirectiveBadge[]>
   onUpdate: (updated: SitemapPage[]) => void
 }) {
   const [collapsed, setCollapsed] = useState(false)
@@ -77,6 +81,7 @@ export default function SitemapSection({
             <SitemapPageRow
               key={page._key}
               page={page}
+              badges={directiveBadges?.[normPath(page.url)]}
               onChange={updated => handleChange(i, updated)}
               onRemove={() => handleRemove(i)}
             />

@@ -5,6 +5,7 @@ import { getCurrentUser, getAccessibleSessionIds } from '@/lib/auth/access'
 import { buildMbpDocument } from '@/lib/mbp/build-document'
 import AuditReview from '@/components/admin/onboarding/AuditReview'
 import { buildAuditReviewProps } from '@/lib/onboarding/audit-review-props'
+import { crawledPages } from '@/lib/onboarding/directives'
 import MbpDocument from '@/components/admin/mbp/MbpDocument'
 import MbpCompleteness from '@/components/admin/mbp/MbpCompleteness'
 import ChatInterface from '@/components/chat/ChatInterface'
@@ -131,6 +132,8 @@ export default async function OnboardingPage({
           team={props.team}
           geo={props.geo}
           initialCallNotes={session.call_notes ?? ''}
+          crawledPages={crawledPages(schema)}
+          initialDirectives={schema.operator_directives ?? []}
         />
       </main>
     )

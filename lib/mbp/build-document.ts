@@ -1,4 +1,4 @@
-import type { SessionSchema } from '@/types/session-schema'
+import type { OperatorDirectiveKind, SessionSchema } from '@/types/session-schema'
 import type {
   MbpDocument,
   MbpDocumentField,
@@ -248,6 +248,8 @@ export function buildMbpDocument(
       'contact', 'business', 'brand', 'content_direction', 'culture', 'technical',
       'locations', 'team', 'services', 'niches', 'clientPortals', 'reputation',
       'content_gaps', 'assets', 'additional', 'websiteUrl', 'socialPresence',
+      // rendered read-only below (edited via the Audit Review cards):
+      'operator_directives',
       // internal state / superseded by confirmedSitemap — intentionally hidden:
       '_meta', 'proposed_sitemap', 'current_sitemap',
     ])
@@ -265,10 +267,55 @@ export function buildMbpDocument(
     }
   }
 
+  const directives = operatorDirectivesSection(schema)
+  if (directives) sections.push(directives)
+
   if (confirmedSitemap && confirmedSitemap.length > 0) {
     sections.push(arraySection('site_map', 'Site Map', confirmedSitemap, p => p.title || p.url || ''))
   }
   return { sections }
+}
+
+const DIRECTIVE_KIND_LABEL: Record<OperatorDirectiveKind, string> = {
+  bring_page: 'Bring page over',
+  verbatim_content: 'Keep verbatim',
+  add_offering: 'Add new offering',
+  merge_page: 'Merge page',
+  drop_page: 'Drop page',
+  other: 'Instruction',
+}
+
+// The rep's Audit Review instructions, read-only (MbpDocument links back to the
+// Audit Review cards to change them, so every edit re-runs the full apply).
+// Only non-empty fields are listed, so completeness never counts them as gaps.
+function operatorDirectivesSection(schema: SessionSchema): MbpDocumentSection | null {
+  const rows = Array.isArray(schema.operator_directives) ? schema.operator_directives : []
+  if (!rows.length) return null
+  const items: MbpDocumentItem[] = rows.flatMap((d, i) => {
+    if (!d || typeof d !== 'object') return []
+    const base = `operator_directives.${i}`
+    const target =
+      d.kind === 'merge_page' ? `${d.sourceUrl ?? '?'} → ${d.targetUrl ?? '?'}`
+      : d.kind === 'add_offering' ? `${d.offering?.name ?? '?'} (${d.offering?.type === 'niche' ? 'industry' : 'service'}, ${d.offering?.treatment === 'block' ? 'section' : 'own page'})`
+      : d.kind === 'verbatim_content' && d.teamMember ? `Bio: ${d.teamMember}`
+      : d.sourceUrl ?? ''
+    const flags = [d.verbatim ? 'verbatim' : '', d.keepLinks ? 'keep all links' : ''].filter(Boolean).join(', ')
+    const raw: Array<[string, string, unknown]> = [
+      ['Instruction', 'sourceText', d.sourceText],
+      ['Applies to', 'target', target],
+      ['Options', 'options', flags],
+      ['Status', 'status', d.status === 'resolved' ? 'Applied' : 'Needs clarification (asked in Q&A)'],
+      ['Clarification', 'clarification', d.clarification],
+      ['Exact text', 'verbatimText', d.verbatimText],
+    ]
+    return [{
+      heading: `${DIRECTIVE_KIND_LABEL[d.kind] ?? 'Instruction'}${target ? `: ${target}` : ''}`,
+      fields: raw
+        .filter(([, , v]) => !isEmpty(v))
+        .map(([label, key, value]) => ({ label, fieldPath: `${base}.${key}`, value, empty: false })),
+    }]
+  })
+  return { key: 'operator_directives', title: 'Operator instructions', items, nextIndex: rows.length }
 }
 
 // Flat markdown rendering for export / repo records.

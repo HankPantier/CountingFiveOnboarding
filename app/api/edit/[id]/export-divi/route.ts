@@ -17,7 +17,6 @@ import type { NavJson } from '@/types/nav-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import {
   DESIGN_SYSTEM_REQUIRED_FOR_EXPORT,
-  DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER,
   isCompletePalette,
   paletteFromBrandJson,
 } from '@/lib/content/brand-gate'
@@ -62,6 +61,12 @@ export async function GET(
   const { id } = await params
   const ctx = await resolveEditContext(id)
   if (ctx instanceof NextResponse) return ctx
+  // A whole-site bundle (brand, nav, Client Center, pricing, design, logo) is a
+  // site-wide admin surface, not page content: admins and managers only — never
+  // Site Owners (rule 6 lockdown) or proof-only editors.
+  if (!(ctx.user.isAdmin || hasCapability(ctx.user, 'manager'))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const supabase = createServerClient()
 
@@ -92,11 +97,7 @@ export async function GET(
   // No silent house navy/cyan fallback: an export without a locked palette would
   // hand the client a site in Revaltus colours (same gate as packaging).
   if (!palette) {
-    const canOpenJob = ctx.user.isAdmin || hasCapability(ctx.user, 'manager')
-    return NextResponse.json(
-      { error: canOpenJob ? DESIGN_SYSTEM_REQUIRED_FOR_EXPORT : DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER },
-      { status: 409 }
-    )
+    return NextResponse.json({ error: DESIGN_SYSTEM_REQUIRED_FOR_EXPORT }, { status: 409 })
   }
 
   // Logo: signed because session-assets is private. The private-bucket contract

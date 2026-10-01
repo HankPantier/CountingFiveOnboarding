@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { requireOnboardingSessionAccess } from '@/lib/auth/access'
 import { createServerClient } from '@/lib/supabase/server'
 import { asJson } from '@/lib/supabase/json-typed'
@@ -9,7 +9,18 @@ import { applySubCategoryReview, type SubCategoryTreatment } from '@/lib/agent/s
 import { applyGeoReview, type GeoAreaInput, type GeoScope } from '@/lib/agent/geo-review'
 import { applyTeamReview, type TeamAddition } from '@/lib/agent/team-review'
 import { refreshPhase4Gaps } from '@/lib/agent/gap-tiering'
-import type { SessionSchema } from '@/types/session-schema'
+import { applyDirectives, offeringTreatments } from '@/lib/agent/directive-review'
+import {
+  MAX_DIRECTIVES,
+  coerceDirective,
+  crawledPages,
+  isVerbatimSubstring,
+  notesWithoutDirectives,
+  resolveDirectiveStatus,
+} from '@/lib/onboarding/directives'
+import { readSnapshot } from '@/lib/onboarding/page-snapshot'
+import { applyNotesExtraction } from '@/lib/session-draft/apply-notes-extraction'
+import type { OperatorDirective, SessionSchema } from '@/types/session-schema'
 import type { GapItem } from '@/types/gap-item'
 import { updateSessionWithCas, SessionNotFoundError, type CasSessionUpdate } from '@/lib/session/schema-cas'
 
@@ -36,6 +47,7 @@ interface AuditReviewBody {
   subcategories?: unknown
   geo?: unknown
   team?: unknown
+  directives?: unknown
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
@@ -112,6 +124,35 @@ function coerceTeam(raw: unknown): { keep: string[]; remove: string[]; add: Team
   return { keep: strArr(r.keep), remove: strArr(r.remove), add }
 }
 
+function coerceDirectives(raw: unknown, sessionId: string): OperatorDirective[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: OperatorDirective[] = []
+  for (const r of raw.slice(0, MAX_DIRECTIVES)) {
+    const d = coerceDirective(r, sessionId)
+    if (!d || seen.has(d.id)) continue
+    seen.add(d.id)
+    out.push(d)
+  }
+  return out
+}
+
+// A verbatim passage is only trusted when it is still an exact substring of the
+// stored snapshot — the client could otherwise post altered "verbatim" text.
+async function verifyVerbatimPassages(
+  supabase: ReturnType<typeof createServerClient>,
+  sessionId: string,
+  directives: OperatorDirective[],
+): Promise<void> {
+  await Promise.all(
+    directives.map(async (d) => {
+      if (d.kind !== 'verbatim_content' || !d.verbatimText) return
+      const source = d.snapshot ? await readSnapshot(supabase, sessionId, d.snapshot.path) : null
+      if (!source || !isVerbatimSubstring(d.verbatimText, source)) delete d.verbatimText
+    }),
+  )
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -133,8 +174,13 @@ export async function POST(
   const geo = coerceGeo(body.geo)
   const team = coerceTeam(body.team)
   const callNotes = typeof body.callNotes === 'string' ? body.callNotes.slice(0, MAX_NOTES) : null
+  const directivesSent = body.directives !== undefined
+  const directives = coerceDirectives(body.directives, id)
 
   const supabase = createServerClient()
+  const { data: prior } = await supabase.from('sessions').select('call_notes').eq('id', id).maybeSingle()
+  const notesChanged = callNotes !== null && callNotes.trim() !== (prior?.call_notes ?? '').trim()
+  await verifyVerbatimPassages(supabase, id, directives)
   let schema: SessionSchema
   try {
     schema = await updateSessionWithCas(supabase, id, row => {
@@ -143,13 +189,25 @@ export async function POST(
       const now = new Date().toISOString()
       const by = auth.user.id
 
+      // Status is never trusted from the client: re-resolve against this row's
+      // real crawled pages and team. A resubmit without a directives field keeps
+      // the stored ones.
+      const pages = crawledPages(schema)
+      const teamNames = (schema.team ?? []).filter((m) => m?.name).map((m) => m.name)
+      let active: OperatorDirective[] = directivesSent
+        ? directives.map((d) => ({ ...d, createdBy: d.createdBy ?? by, status: resolveDirectiveStatus(d, pages, teamNames) }))
+        : (schema.operator_directives ?? [])
+      const offerings = offeringTreatments(active)
+
       // Niches: treatments carry page/block/exclude + origin; add = every non-excluded
       // name (applyNicheReview's add loop dedups names already in the array).
-      const nicheAdd = nicheTreatments.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
-      ;({ schema, gaps } = applyNicheReview(schema, gaps, { treatments: nicheTreatments, add: nicheAdd }, now, by))
+      const allNiches = [...nicheTreatments, ...offerings.niches]
+      const allServices = [...serviceTreatments, ...offerings.services]
+      const nicheAdd = allNiches.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
+      ;({ schema, gaps } = applyNicheReview(schema, gaps, { treatments: allNiches, add: nicheAdd }, now, by))
 
-      const serviceAdd = serviceTreatments.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
-      ;({ schema, gaps } = applyServiceReview(schema, gaps, { treatments: serviceTreatments, add: serviceAdd }, now, by))
+      const serviceAdd = allServices.filter((t) => t.pageTreatment !== 'exclude').map((t) => t.name)
+      ;({ schema, gaps } = applyServiceReview(schema, gaps, { treatments: allServices, add: serviceAdd }, now, by))
 
       // Sub-services after niches (applySubCategoryReview skips dropped niches).
       ;({ schema, gaps } = applySubCategoryReview(schema, gaps, { treatments: subTreatments }, now, by))
@@ -157,6 +215,15 @@ export async function POST(
       if (geo) schema = applyGeoReview(schema, geo, now, by)
       // A resubmit without a team section leaves the earlier team decision intact.
       if (body.team !== undefined) schema = applyTeamReview(schema, team, now, by)
+
+      // After team review, so a verbatim bio lands on the kept member record —
+      // and re-resolved against the post-review team, so a bio for someone this
+      // same submit added resolves instead of being dropped as "unclear".
+      if (directivesSent) {
+        const postTeam = (schema.team ?? []).filter((m) => m?.name).map((m) => m.name)
+        active = active.map((d) => ({ ...d, status: resolveDirectiveStatus(d, pages, postTeam) }))
+      }
+      ;({ schema, gaps } = applyDirectives(schema, gaps, active))
 
       // Add Phase-4 gaps for any niche/service this review added (gaps are otherwise
       // only computed at session creation), then tier by page treatment: a
@@ -191,6 +258,29 @@ export async function POST(
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 
+  // Notes → MBP facts, minus the sentences already captured as instructions.
+  // Background so the submit stays fast; blank-fill only, so it never clobbers.
+  const factNotes = notesChanged ? notesWithoutDirectives(callNotes ?? '', schema.operator_directives ?? []) : ''
+  if (factNotes) {
+    // Scheduling is guarded so a hook failure can never fail the saved review.
+    try {
+      after(async () => {
+        try {
+          await applyNotesExtraction(supabase, id, factNotes, {
+            task: 'onboarding',
+            stage: 'mbp',
+            sessionId: id,
+            createdBy: auth.user.id,
+          })
+        } catch (err) {
+          console.error('[audit-review] notes extraction failed:', err)
+        }
+      })
+    } catch (err) {
+      console.warn('[audit-review] could not schedule notes extraction:', err)
+    }
+  }
+
   return NextResponse.json({
     success: true,
     markers: {
@@ -200,5 +290,6 @@ export async function POST(
       geo_review: schema._meta?.geo_review,
       team_review: schema._meta?.team_review,
     },
+    directives: schema.operator_directives ?? [],
   })
 }

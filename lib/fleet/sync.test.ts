@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -10,6 +10,11 @@ import type { ClientEntry, ReleaseManifest } from './types'
 
 // End-to-end on throwaway local repos: a template with three commits
 // (OLDER → OLD → NEW) and a client cloned from a bare "origin". No network.
+
+// Every test shells out to real git (clones, merges, pushes to a bare origin);
+// the file takes ~13s alone, and under a full parallel run single tests crossed
+// the 5s default. The budget is generous, not a hang guard.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
 
 const FIX = path.join(process.cwd(), 'lib', 'content', '__fixtures__')
 const THEME = readFileSync(path.join(FIX, 'theme.css.golden'), 'utf-8')

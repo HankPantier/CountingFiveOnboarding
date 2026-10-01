@@ -38,6 +38,8 @@ import {
   FileNotFoundError,
 } from '@/lib/github/repo-files'
 import type { SessionSchema } from '@/types/session-schema'
+import { verbatimGuardNote } from '@/lib/content/verbatim-guard'
+import { contentPathToUrl } from '@/lib/editor/content-paths'
 
 export const runtime = 'nodejs'
 // Batched edits (apply_edits / remove_text) keep the tool-loop short, but a
@@ -222,7 +224,8 @@ When such a durable rule or fact surfaces (and isn't already in the profile), FI
   // The page is its own system block AFTER the cached one: it changes with every
   // edit, so keeping it out of the marked prefix lets follow-up turns re-read
   // tools + instructions + firm context from cache.
-  const systemFile = `THE FILE BEING EDITED (${path}) — as it was at the START of this request. Every successful tool call in this run changes it; the tool results are authoritative for what changed since, so never rebuild content (e.g. a set_faq list) that re-adds text an earlier tool removed. (A generated SEO/structured-data appendix at the end of the file is hidden from you and preserved automatically.)
+  const verbatimNote = verbatimGuardNote(schema, contentPathToUrl(path), view().visible)
+  const systemFile = `${verbatimNote ? `${verbatimNote}\n\n` : ''}THE FILE BEING EDITED (${path}) — as it was at the START of this request. Every successful tool call in this run changes it; the tool results are authoritative for what changed since, so never rebuild content (e.g. a set_faq list) that re-adds text an earlier tool removed. (A generated SEO/structured-data appendix at the end of the file is hidden from you and preserved automatically.)
 """
 ${view().visible}
 """`

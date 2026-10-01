@@ -1,5 +1,8 @@
 'use client'
 
+import DirectiveBadges from './DirectiveBadges'
+import type { PageDirectiveBadge } from '@/lib/content/directive-pipeline'
+
 type SitemapPage = {
   _key: string
   url: string
@@ -23,10 +26,12 @@ function formatSlug(raw: string): string {
 
 export default function SitemapPageRow({
   page,
+  badges,
   onChange,
   onRemove,
 }: {
   page: SitemapPage
+  badges?: PageDirectiveBadge[]
   onChange: (updated: SitemapPage) => void
   onRemove: () => void
 }) {
@@ -66,6 +71,11 @@ export default function SitemapPageRow({
           </svg>
         </button>
       </div>
+      {badges && badges.length > 0 && (
+        <div className="pl-[4.5rem] pr-8 pt-1">
+          <DirectiveBadges badges={badges} />
+        </div>
+      )}
       {page.notes && (
         <p className="pl-[4.5rem] pr-8 pt-0.5 text-xs font-body text-text-muted">{page.notes}</p>
       )}

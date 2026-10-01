@@ -35,6 +35,8 @@ function auditResult(): AuditResult {
         { url: 'https://x.com/about', status_code: 200, html: '<article>x</article>' }, // not an article
         { url: 'https://x.com/resources/guide', status_code: 404, html: '' }, // not 200
         { url: 'https://x.com/insights/growth', status_code: 200, html: '<article>x</article>' },
+        { url: 'https://x.com/blog-quick-reads/2/', status_code: 200, html: '' }, // pagination
+        { url: 'https://x.com/blog/page/3', status_code: 200, html: '' }, // pagination
       ],
       analyzed: [
         { title: 'Tax Tips', meta_desc: 'Save tax', word_count: 800, imgs_total: 2 },
@@ -43,6 +45,8 @@ function auditResult(): AuditResult {
         { title: 'About', meta_desc: '', word_count: 500, imgs_total: 0 },
         { title: 'Guide', meta_desc: '', word_count: 500, imgs_total: 0 },
         { title: 'Growth', meta_desc: 'Grow', word_count: 300, imgs_total: 0 },
+        { title: 'Quick reads page 2', meta_desc: '', word_count: 400, imgs_total: 0 },
+        { title: 'Blog page 3', meta_desc: '', word_count: 400, imgs_total: 0 },
       ],
     },
     intelligence: {
@@ -71,6 +75,16 @@ describe('discoverImportableArticles', () => {
     expect(urls).not.toContain('https://x.com/about') // non-article excluded
     expect(urls).not.toContain('https://x.com/blog/short') // too short
     expect(urls).not.toContain('https://x.com/resources/guide') // not 200
+  })
+
+  it('discovers articles from a stored audit, which never carries page HTML', async () => {
+    // lib/audit/worker.ts trimForStorage blanks html on every persisted audit;
+    // requiring it here made discovery always empty (the importer is now live-fetching).
+    const result = auditResult()
+    for (const p of result.raw!.pages) p.html = ''
+    h.run = { id: 'run-1', result }
+    const { articles } = await discoverImportableArticles('job-1')
+    expect(articles.map((a) => a.url)).toEqual(['https://x.com/blog/tax-tips', 'https://x.com/insights/growth'])
   })
 
   it('surfaces the syndication assessment and projects the hint', async () => {

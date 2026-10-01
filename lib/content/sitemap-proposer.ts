@@ -14,6 +14,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { AuditResult } from '@/types/audit-result'
 import type { TokenContext } from './token-pricing'
 import { objArr } from './schema-coerce'
+import { applyDirectivesToSitemap } from './directive-sitemap'
 
 type ProposedSitemap = NonNullable<SessionSchema['proposed_sitemap']>
 type ProposedPage = ProposedSitemap[number]
@@ -315,8 +316,10 @@ export async function proposeSitemap(
   )
 
   // Fall back to the deterministic skeleton on any generation/parse failure so
-  // the admin never sees an empty or update-only sitemap.
-  return ensureBlockParents(schema, enriched ?? skeleton, skeleton)
+  // the admin never sees an empty or update-only sitemap. Operator directives
+  // (bring/merge/drop page) are re-applied last so the AI can't undo them.
+  const proposal = ensureBlockParents(schema, enriched ?? skeleton, skeleton)
+  return applyDirectivesToSitemap({ ...schema, proposed_sitemap: proposal }).proposed_sitemap ?? proposal
 }
 
 // A content-block item renders as a section on its parent page and gets no URL of

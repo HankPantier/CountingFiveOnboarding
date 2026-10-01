@@ -246,6 +246,10 @@ export type SessionSchema = {
     // kept. A 'remove'd member stays in the array for read-back but is excluded from
     // all content generation via activeTeam() (lib/content/active-team.ts).
     teamDecision?: 'keep' | 'remove'
+    // Set by an operator "keep this bio word-for-word" instruction: `bio` holds the
+    // exact text captured from the client's current site, and generators must
+    // reproduce it unchanged (lib/content/brand-voice.ts, output-validators.ts).
+    bioVerbatim?: true
   }>
   services?: Array<{
     name: string
@@ -436,6 +440,12 @@ export type SessionSchema = {
     status: 'new' | 'update' | 'existing'
     parent?: string
     notes?: string
+    // Set when an operator instruction drives this page (see operator_directives).
+    // `mode: 'verbatim'` = reproduce the captured source page as-is.
+    directiveId?: string
+    mode?: 'verbatim'
+    // Crawled pages whose content an operator merge_page directive folds in here.
+    mergeFrom?: string[]
   }>
   current_sitemap?: Array<{
     url: string
@@ -443,6 +453,9 @@ export type SessionSchema = {
     action: 'keep' | 'redirect' | 'consolidate' | 'new'
     new_url?: string
     live: boolean
+    // The operator directive (merge/drop) that set this row's action; lets a
+    // later removal of that directive revert the row to 'keep'.
+    directiveId?: string
   }>
   // Audit-derived social & local presence, quality-assessed per channel. Seeded
   // by the audit→session draft (enrich-from-intelligence); hand-written MBPs keep
@@ -493,4 +506,48 @@ export type SessionSchema = {
     preferredPhrases: string[]
     avoidPhrases: string[]
   }
+  // Operator instructions captured in the Audit Review "Notes & instructions"
+  // box and confirmed as typed cards (lib/onboarding/directives.ts). Applied to
+  // the MBP/sitemap on submit and honored downstream by every generator.
+  operator_directives?: OperatorDirective[]
+}
+
+export type OperatorDirectiveKind =
+  | 'bring_page'
+  | 'verbatim_content'
+  | 'add_offering'
+  | 'merge_page'
+  | 'drop_page'
+  | 'other'
+
+export type DirectiveSnapshot = {
+  // Private storage path in session-assets: snapshots/{sessionId}/{uuid}.md
+  path: string
+  capturedAt: string
+  words: number
+  links: number
+}
+
+export type OperatorDirective = {
+  id: string
+  kind: OperatorDirectiveKind
+  // The admin's own sentence, kept verbatim for traceability.
+  sourceText: string
+  status: 'resolved' | 'unresolved'
+  // Root-relative path of a crawled page (a current_sitemap url).
+  sourceUrl?: string
+  // merge_page destination path.
+  targetUrl?: string
+  verbatim?: boolean
+  keepLinks?: boolean
+  teamMember?: string
+  // verbatim_content: the exact passage, an exact substring of the snapshot.
+  verbatimText?: string
+  offering?: { type: 'service' | 'niche'; name: string; treatment: 'page' | 'block'; parent?: string }
+  snapshot?: DirectiveSnapshot
+  // Answer to an unresolved directive, filled by the Q&A chat via its gap
+  // (operator_directives[i].clarification).
+  clarification?: string
+  createdAt: string
+  createdBy?: string
 }

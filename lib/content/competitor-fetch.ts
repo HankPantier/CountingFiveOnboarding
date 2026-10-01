@@ -94,3 +94,29 @@ export async function fetchExistingContent(
     return null
   }
 }
+
+// Text of the crawled pages an operator merge directive folds into one page.
+// Each source is labeled with its path so the writer knows what came from where.
+// Larger per-page budget than fetchExistingContent: merged content must be carried
+// over, not just used as loose inspiration.
+export async function fetchMergedContent(
+  websiteUrl: string,
+  sourcePaths: string[]
+): Promise<string | null> {
+  if (!sourcePaths.length) return null
+  const baseUrl = websiteUrl.replace(/\/$/, '').replace(/^(?!https?:\/\/)/, 'https://')
+  const parts = await Promise.all(
+    sourcePaths.slice(0, 5).map(async (path) => {
+      try {
+        const res = await safeGet(`${baseUrl}${path}`)
+        if (!res || res.status < 200 || res.status >= 300) return null
+        const text = truncateToTokens(extractBodyText(res.body), 2500)
+        return text.length > 50 ? `FROM ${path}:\n${text}` : null
+      } catch {
+        return null
+      }
+    })
+  )
+  const joined = parts.filter(Boolean).join('\n\n')
+  return joined || null
+}

@@ -7,8 +7,9 @@ import type { AuditResult, CrawledPage, PageAnalysis } from '@/types/audit-resul
 const MIN_WORD_COUNT = 150
 
 // A crawled article from the client's CURRENT site that an operator can bring
-// into the new site AS-IS. The verbatim body is NOT carried here — it is re-read
-// from the audit result at import time (audit_runs.result.raw.pages[].html).
+// into the new site AS-IS. The verbatim body is NOT carried here — the audit
+// stores no page HTML (lib/audit/worker.ts trimForStorage), so the importer
+// fetches the article live at import time.
 export interface DiscoveredArticle {
   url: string
   title: string
@@ -41,6 +42,8 @@ function isArticleUrl(rawUrl: string): boolean {
   }
   if (!ARTICLE_URL_RE.test(pathname)) return false
   const segments = pathname.split('/').filter(Boolean)
+  // Paginated listings (/blog/2, /blog/page/3) are index pages, not articles.
+  if (/^\d+$/.test(segments[segments.length - 1] ?? '') || segments.includes('page')) return false
   return segments.length >= 2
 }
 
@@ -80,7 +83,7 @@ export async function discoverImportableArticles(contentJobId: string): Promise<
   const seen = new Set<string>()
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i]
-    if (!page || page.status_code !== 200 || !page.html) continue
+    if (!page || page.status_code !== 200) continue
     if (!isArticleUrl(page.url)) continue
     if (seen.has(page.url)) continue
     // pages[] and analyzed[] are parallel arrays (same index → same page).

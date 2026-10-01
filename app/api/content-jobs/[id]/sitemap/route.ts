@@ -8,6 +8,8 @@ import { runResearchPipeline } from '@/lib/content/research-pipeline'
 import { assessContentReadiness } from '@/lib/content/content-readiness'
 import { normUrl } from '@/lib/content/sitemap-proposer'
 import { toSitePath } from '@/lib/content/url-path'
+import { directiveBadgesFor, pipelineTreatmentFor, type PageDirectiveBadge } from '@/lib/content/directive-pipeline'
+import { normPath } from '@/lib/onboarding/directives'
 import type { SessionSchema } from '@/types/session-schema'
 import { asJson } from '@/lib/supabase/json-typed'
 import { DESIGN_SYSTEM_REQUIRED_FOR_SITEMAP, isDesignSystemLocked } from '@/lib/content/brand-gate'
@@ -39,25 +41,38 @@ export async function GET(
     return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
   }
 
-  // Return confirmed sitemap if it exists, otherwise load proposed from session
-  if (job.confirmed_sitemap) {
-    return NextResponse.json({ pages: job.confirmed_sitemap, confirmed: true })
-  }
-
   const { data: session } = await supabase
     .from('sessions')
     .select('schema_data')
     .eq('id', job.session_id)
     .single()
+  const schema = (session?.schema_data ?? {}) as SessionSchema
 
-  const schemaData = (session?.schema_data ?? {}) as Record<string, unknown>
-  const proposed = (schemaData.proposed_sitemap ?? []) as SitemapPage[]
+  // Operator-directive badges (Verbatim / Merged from / Added by instruction),
+  // keyed by normalized path so the UI can match pages after a re-propose.
+  const badgesFor = (pages: SitemapPage[]): Record<string, PageDirectiveBadge[]> => {
+    const out: Record<string, PageDirectiveBadge[]> = {}
+    for (const p of pages) {
+      if (typeof p?.url !== 'string') continue
+      const b = directiveBadgesFor(schema, p.url)
+      if (b.length) out[normPath(p.url)] = b
+    }
+    return out
+  }
+
+  // Return confirmed sitemap if it exists, otherwise load proposed from session
+  if (job.confirmed_sitemap) {
+    const confirmedPages = job.confirmed_sitemap as SitemapPage[]
+    return NextResponse.json({ pages: confirmedPages, confirmed: true, directiveBadges: badgesFor(confirmedPages) })
+  }
+
+  const proposed = schema.proposed_sitemap ?? []
 
   // Advisory content-readiness so the UI can warn (before confirm) that the
   // content-critical MBP fields are thin and the copy will come out generic.
-  const readiness = assessContentReadiness((session?.schema_data ?? {}) as SessionSchema)
+  const readiness = assessContentReadiness(schema)
 
-  return NextResponse.json({ pages: proposed, confirmed: false, readiness })
+  return NextResponse.json({ pages: proposed, confirmed: false, readiness, directiveBadges: badgesFor(proposed) })
 }
 
 export async function POST(
@@ -113,7 +128,7 @@ export async function POST(
   // simultaneous confirms both pass a read-check, but only one flips the job.
   const { data: jobRow } = await supabase
     .from('content_jobs')
-    .select('phase, updated_at, palette, design_tokens')
+    .select('phase, updated_at, palette, design_tokens, session_id')
     .eq('id', id)
     .single()
   if (!jobRow) return NextResponse.json({ error: 'Content job not found' }, { status: 404 })
@@ -167,10 +182,19 @@ export async function POST(
     page_url: p.url,
     page_title: p.title,
   }))
+  // Operator directives (verbatim / merged pages) ride on the outline rows,
+  // derived from the session's stored directives rather than the posted pages.
+  const { data: sessionRow } = await supabase
+    .from('sessions')
+    .select('schema_data')
+    .eq('id', jobRow.session_id)
+    .maybeSingle()
+  const sessionSchema = (sessionRow?.schema_data ?? {}) as SessionSchema
+  const outlineRows = seedRows.map(r => ({ ...r, ...pipelineTreatmentFor(sessionSchema, r.page_url) }))
 
   const [r1, r2, r3] = await Promise.all([
     supabase.from('research_results').insert(seedRows),
-    supabase.from('page_outlines').insert(seedRows),
+    supabase.from('page_outlines').insert(outlineRows),
     supabase.from('generated_pages').insert(seedRows),
   ])
 

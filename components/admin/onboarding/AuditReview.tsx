@@ -6,6 +6,9 @@ import AuditReviewItemRow, { type Treatment, type Signal, type ParentOption, typ
 import TeamReviewList, { type ReviewTeamMember, type TeamReviewPayload } from './TeamReviewList'
 import GeoScopeControl, { type ReviewArea, type GeoScope, type GeoPayload } from './GeoScopeControl'
 import CallNotesBox from './CallNotesBox'
+import DirectiveCardList from './DirectiveCardList'
+import type { OperatorDirective } from '@/types/session-schema'
+import type { CrawledPageRef } from '@/lib/onboarding/directives'
 
 export type ReviewItem = {
   name: string
@@ -39,6 +42,8 @@ export default function AuditReview({
   team,
   geo,
   initialCallNotes,
+  crawledPages,
+  initialDirectives,
 }: {
   sessionId: string
   services: ReviewItem[]
@@ -47,6 +52,8 @@ export default function AuditReview({
   team: ReviewTeamMember[]
   geo: { scope?: GeoScope; areas: ReviewArea[]; suggestedScope?: GeoScope; suggestedPrimaryArea?: string; suggestionRationale?: string; suggestionConfidence?: Confidence }
   initialCallNotes: string
+  crawledPages: CrawledPageRef[]
+  initialDirectives: OperatorDirective[]
 }) {
   const router = useRouter()
   // Existing site items default to their own page; audit recommendations default
@@ -66,6 +73,12 @@ export default function AuditReview({
   const [geoPayload, setGeoPayload] = useState<GeoPayload>({ scope: geo.scope ?? geo.suggestedScope ?? (geo.areas.length ? 'local' : 'national'), areas: geo.areas })
   const [teamPayload, setTeamPayload] = useState<TeamReviewPayload>({ keep: team.map((m) => m.name), remove: [], add: [] })
   const [callNotes, setCallNotes] = useState(initialCallNotes)
+  const [directives, setDirectives] = useState<OperatorDirective[]>(initialDirectives)
+  // The notes text the current cards were interpreted from; a mismatch means the
+  // rep has typed more since and should re-interpret.
+  const [interpretedNotes, setInterpretedNotes] = useState<string | null>(initialDirectives.length ? initialCallNotes : null)
+  const [interpreting, setInterpreting] = useState(false)
+  const [interpretError, setInterpretError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -91,6 +104,35 @@ export default function AuditReview({
 
   const sitePart = <T extends ReviewItem>(items: T[]) => items.filter((i) => i.origin !== 'audit')
   const auditPart = <T extends ReviewItem>(items: T[]) => items.filter((i) => i.origin === 'audit')
+
+  async function handleInterpret() {
+    if (interpreting || !callNotes.trim()) return
+    setInterpreting(true)
+    setInterpretError('')
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/directives/interpret`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: callNotes }),
+      })
+      const b = (await res.json().catch(() => ({}))) as { directives?: OperatorDirective[]; error?: string }
+      if (!res.ok || !b.directives) throw new Error(b.error ?? `HTTP ${res.status}`)
+      setDirectives(b.directives)
+      setInterpretedNotes(callNotes)
+    } catch (err) {
+      setInterpretError(err instanceof Error ? err.message : 'Could not interpret the notes')
+    } finally {
+      setInterpreting(false)
+    }
+  }
+
+  // Include people added in this review, so a "keep X's bio" card can point at them.
+  const teamNames = useMemo(
+    () => [...new Set([...team.map((m) => m.name), ...teamPayload.add.map((a) => a.name)])],
+    [team, teamPayload.add],
+  )
+  const notesStale = interpretedNotes !== null && interpretedNotes.trim() !== callNotes.trim()
+  const unresolvedCount = directives.filter((d) => d.status !== 'resolved').length
 
   async function handleSubmit() {
     if (submitting) return
@@ -125,6 +167,7 @@ export default function AuditReview({
         ),
         geo: geoPayload,
         team: teamPayload,
+        directives,
       }
       const res = await fetch(`/api/sessions/${sessionId}/audit-review`, {
         method: 'POST',
@@ -212,8 +255,15 @@ export default function AuditReview({
     services.forEach((s) => add(serviceDec[s.name]?.treatment ?? (s.origin === 'audit' ? 'exclude' : 'page'), serviceDec[s.name]?.parent, true))
     niches.forEach((n) => add(nicheDec[n.name]?.treatment ?? (n.origin === 'audit' ? 'exclude' : 'page'), nicheDec[n.name]?.parent, true))
     visibleSubGroups.forEach((g) => g.subs.forEach((s) => add(subDec[subKey(g.niche, s.name)] ?? (s.origin === 'audit' ? 'exclude' : 'block'), undefined, false)))
+    // New offerings added by instruction count too (a hub parent is implied).
+    const known = new Set([...services, ...niches].map((i) => i.name.trim().toLowerCase()))
+    directives.forEach((d) => {
+      if (d.kind === 'add_offering' && d.status === 'resolved' && d.offering && !known.has(d.offering.name.trim().toLowerCase())) {
+        add(d.offering.treatment, undefined, false)
+      }
+    })
     return { pages, blocks, excluded, orphans }
-  }, [services, niches, serviceDec, nicheDec, subDec, visibleSubGroups])
+  }, [services, niches, serviceDec, nicheDec, subDec, visibleSubGroups, directives])
 
   // Bulk actions (#4): fast paths so the operator confirms in one click.
   const acceptAllSuggestions = () => {
@@ -315,8 +365,45 @@ export default function AuditReview({
         <TeamReviewList members={team} onChange={setTeamPayload} />
       </Section>
 
-      <Section title="Call notes" subtitle="Anything the structured decisions above don’t capture.">
+      <Section
+        title="Notes & instructions"
+        subtitle="Facts from the call and instructions for the new site: pages to bring over, bios to keep word-for-word, services to add. Interpret turns the instructions into cards you confirm; the facts fill the MBP."
+      >
         <CallNotesBox value={callNotes} onChange={setCallNotes} />
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleInterpret}
+            disabled={interpreting || !callNotes.trim()}
+            className="bg-brand-navy text-text-inverse font-heading font-semibold text-xs px-4 py-2 rounded-pill transition-all hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {interpreting ? 'Interpreting…' : directives.length ? 'Re-interpret ▸' : 'Interpret instructions ▸'}
+          </button>
+          {directives.length > 0 && !interpreting && (
+            <span className="text-xs font-body text-text-muted">
+              {directives.length} instruction{directives.length === 1 ? '' : 's'}
+              {unresolvedCount > 0 ? ` · ${unresolvedCount} need${unresolvedCount === 1 ? 's' : ''} a match` : ''}
+              {' · re-interpreting replaces these cards'}
+            </span>
+          )}
+          {notesStale && !interpreting && (
+            <span className="inline-flex items-center rounded-pill border border-warning/40 bg-warning/10 text-warning px-2 py-0.5 text-[11px] font-heading font-semibold">
+              Notes changed since the last interpret
+            </span>
+          )}
+          {interpretError && <span className="text-error text-xs font-body">{interpretError}</span>}
+        </div>
+        {directives.length > 0 && (
+          <div className="mt-4">
+            <DirectiveCardList
+              sessionId={sessionId}
+              directives={directives}
+              onChange={setDirectives}
+              pages={crawledPages}
+              teamNames={teamNames}
+            />
+          </div>
+        )}
       </Section>
 
       {error && <p className="text-error text-sm font-body">{error}</p>}

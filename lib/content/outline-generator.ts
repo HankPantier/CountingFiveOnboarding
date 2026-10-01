@@ -25,6 +25,7 @@ import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { AuditResult } from '@/types/audit-result'
 import { asJson } from '@/lib/supabase/json-typed'
+import { readSnapshot } from '@/lib/onboarding/page-snapshot'
 
 const OUTLINE_MODEL = PUBLISHED_CONTENT_MODEL
 
@@ -59,6 +60,7 @@ export type PageResearch = {
   secondary_keywords: unknown
   competitor_references: unknown
   existing_content: string | null
+  merged_content: string | null
 }
 
 export async function generateOutlineForPage(
@@ -75,6 +77,30 @@ export async function generateOutlineForPage(
 ): Promise<void> {
   const supabase = createServerClient()
 
+  // A verbatim page (operator "bring this page over word-for-word") gets a fixed
+  // outline mirroring the captured page's own headings — no AI planning, nothing
+  // to restructure. The body is reproduced from the same snapshot at generation.
+  const { data: mode } = await supabase
+    .from('page_outlines')
+    .select('generation_mode, source_snapshot_path')
+    .eq('id', outlineId)
+    .maybeSingle()
+  if (mode?.generation_mode === 'verbatim') {
+    const markdown = mode.source_snapshot_path ? await readSnapshot(supabase, sessionId, mode.source_snapshot_path) : null
+    const outline = verbatimOutline(pageTitle, markdown)
+    await supabase
+      .from('page_outlines')
+      .update({
+        h1: outline.h1,
+        sections: asJson(outline.sections),
+        target_keyword: outline.target_keyword,
+        admin_notes: outline.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', outlineId)
+    return
+  }
+
   // Research for this page — prefer the batch-loaded Map (one query for the whole
   // job); fall back to a per-page SELECT when called standalone (regenerate route).
   let research: PageResearch | null
@@ -83,7 +109,7 @@ export async function generateOutlineForPage(
   } else {
     const { data } = await supabase
       .from('research_results')
-      .select('target_keyword, secondary_keywords, competitor_references, existing_content')
+      .select('target_keyword, secondary_keywords, competitor_references, existing_content, merged_content')
       .eq('content_job_id', contentJobId)
       .eq('page_url', pageUrl)
       .limit(1)
@@ -95,6 +121,7 @@ export async function generateOutlineForPage(
   const secondaryKeywords = (research?.secondary_keywords as string[]) ?? []
   const competitorRefs = (research?.competitor_references as Array<{ url: string; title: string; excerpt: string }>) ?? []
   const existingContent = research?.existing_content ?? ''
+  const mergedContent = research?.merged_content ?? ''
 
   const paletteTone = derivePaletteToneSignal(palette)
 
@@ -194,6 +221,8 @@ SECONDARY KEYWORDS: ${secondaryKeywords.join(', ')}
 ${focusBlock}
 
 ${existingContent ? `EXISTING CONTENT (current site — improve on this):\n${existingContent.slice(0, 800)}` : ''}
+
+${mergedContent ? `MERGED INTO THIS PAGE (an operator folded these current pages into this one — plan sections that carry over all of their substance):\n${mergedContent.slice(0, 4000)}` : ''}
 
 ${competitorExcerpts ? `COMPETITOR REFERENCES (SERP top results — differentiate from these):\n${competitorExcerpts}` : ''}
 
@@ -354,7 +383,7 @@ export async function runOutlineGeneration(
   // generateOutlineForPage = N+1), mirroring runContentGeneration's researchByUrl.
   const { data: researchRows } = await supabase
     .from('research_results')
-    .select('page_url, target_keyword, secondary_keywords, competitor_references, existing_content')
+    .select('page_url, target_keyword, secondary_keywords, competitor_references, existing_content, merged_content')
     .eq('content_job_id', contentJobId)
   const researchByUrl = new Map<string, PageResearch>()
   for (const r of researchRows ?? []) {
@@ -477,5 +506,33 @@ export async function runOutlineGeneration(
     } catch (emailErr) {
       console.warn('[outline-gen] Email notification failed:', emailErr)
     }
+  }
+}
+
+export const VERBATIM_OUTLINE_NOTE =
+  'Verbatim page: reproduces the client’s current page exactly (operator instruction from onboarding). Only the SEO title and description are written by AI.'
+
+// Outline for a verbatim page: the snapshot's own H2s (or one section when the
+// page has none), so the outline review shows what will ship.
+export function verbatimOutline(pageTitle: string, markdown: string | null): OutlineResult {
+  if (!markdown) {
+    return {
+      h1: pageTitle,
+      sections: [{ h2: 'Page content', description: 'Snapshot missing: re-capture it on the Audit Review card', word_count: 0 }],
+      target_keyword: pageTitle.toLowerCase(),
+      notes: `${VERBATIM_OUTLINE_NOTE} WARNING: the captured snapshot could not be read.`,
+    }
+  }
+  const headings = [...markdown.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].trim()).filter(Boolean)
+  const h1 = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() || pageTitle
+  return {
+    h1,
+    sections: (headings.length ? headings : ['Page content']).map((h2) => ({
+      h2,
+      description: 'Verbatim client content, reproduced exactly',
+      word_count: 0,
+    })),
+    target_keyword: pageTitle.toLowerCase(),
+    notes: VERBATIM_OUTLINE_NOTE,
   }
 }

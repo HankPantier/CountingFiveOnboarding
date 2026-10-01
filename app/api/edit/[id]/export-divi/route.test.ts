@@ -34,7 +34,7 @@ vi.mock('@/lib/supabase/server', () => ({
 }))
 
 import { GET } from './route'
-import { DESIGN_SYSTEM_REQUIRED_FOR_EXPORT, DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER } from '@/lib/content/brand-gate'
+import { DESIGN_SYSTEM_REQUIRED_FOR_EXPORT } from '@/lib/content/brand-gate'
 
 describe('GET /api/edit/[id]/export-divi — no silent house-colour fallback', () => {
   it('refuses (409) when the job has no locked palette', async () => {
@@ -44,11 +44,19 @@ describe('GET /api/edit/[id]/export-divi — no silent house-colour fallback', (
     expect(((await res.json()) as { error: string }).error).toBe(DESIGN_SYSTEM_REQUIRED_FOR_EXPORT)
   })
 
-  it('tells an editor member to ask an admin or manager (they cannot open the job)', async () => {
-    h.job = { palette: null }
-    h.user = { isAdmin: false, capabilities: ['editor'] }
+  it.each([['owner'], ['editor']])('forbids a %s (whole-site export is admin/manager only)', async (cap) => {
+    h.job = { palette: { primary: '#123456' } }
+    h.user = { isAdmin: false, capabilities: [cap] }
     const res = await GET(new Request('http://test'), { params: Promise.resolve({ id: 'sess-1' }) })
-    expect(((await res.json()) as { error: string }).error).toBe(DESIGN_SYSTEM_REQUIRED_FOR_EXPORT_MEMBER)
+    expect(res.status).toBe(403)
+    h.user = { isAdmin: true, capabilities: [] }
+  })
+
+  it('lets a manager past the role gate', async () => {
+    h.job = { palette: null }
+    h.user = { isAdmin: false, capabilities: ['manager'] }
+    const res = await GET(new Request('http://test'), { params: Promise.resolve({ id: 'sess-1' }) })
+    expect(res.status).toBe(409)
     h.user = { isAdmin: true, capabilities: [] }
   })
 

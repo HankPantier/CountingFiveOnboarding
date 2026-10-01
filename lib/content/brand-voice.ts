@@ -202,7 +202,8 @@ export function buildFirmContext(schema: SessionSchema): string {
 
   const scope = buildContentScopeBlock(schema)
   const direction = buildContentDirectionBlock(schema)
-  return [profile, auditBlock, scope, direction].filter(Boolean).join('\n\n')
+  const operator = buildOperatorInstructionsBlock(schema)
+  return [profile, auditBlock, scope, direction, operator].filter(Boolean).join('\n\n')
 }
 
 // Per-client "do not use these phrases" — the hard-ban list. Fed into
@@ -249,6 +250,23 @@ export function buildContentScopeBlock(schema: SessionSchema): string {
     )
   }
   return lines.join('\n')
+}
+
+// Free-form operator instructions from the Audit Review (operator_directives of
+// kind 'other', plus non-bio verbatim passages). Page-structure directives are
+// applied to the sitemap and verbatim bios to team[] instead, so they're not
+// repeated here.
+export function buildOperatorInstructionsBlock(schema: SessionSchema): string {
+  const lines: string[] = []
+  for (const d of arr(schema.operator_directives)) {
+    if (!d || d.status !== 'resolved') continue
+    if (d.kind === 'other') lines.push(`- ${str(d.sourceText).trim()}`)
+    else if (d.kind === 'verbatim_content' && !d.teamMember && str(d.verbatimText).trim()) {
+      lines.push(`- Wherever this content belongs, reproduce it word-for-word (no edits): """${str(d.verbatimText).trim().slice(0, 4000)}"""`)
+    }
+  }
+  if (!lines.length) return ''
+  return ['OPERATOR INSTRUCTIONS (from the client onboarding call — follow them):', ...lines].join('\n')
 }
 
 export function buildBrandVoiceBlock(schema: SessionSchema): string {

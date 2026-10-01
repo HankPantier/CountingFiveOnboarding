@@ -1,13 +1,14 @@
 'use client'
 
-// Freeform call-notes field retained on the Audit Review step. Controlled by the
-// parent (AuditReview owns the value and persists it in the consolidated submit),
-// with the same guiding prompts the old notes-only screen showed.
+// Freeform notes + instructions field on the Audit Review step. Controlled by the
+// parent (AuditReview owns the value, interprets instructions into cards, and
+// persists it in the consolidated submit).
 const GUIDING_PROMPTS: { heading: string; hint: string }[] = [
   { heading: 'Firm background', hint: 'Founding year, history/origin, growth goals' },
   { heading: 'Differentiators', hint: 'What sets them apart, in their own words' },
   { heading: 'Ideal clients', hint: 'Who they want more of; typical revenue/stage; who decides' },
   { heading: 'Brand & tone', hint: 'How they sound today vs. aspirational; words to avoid' },
+  { heading: 'Instructions for the new site', hint: '“Bring over the Forms page with all links” · “Keep Jane’s bio word-for-word” · “Add a CFO Advisory service” · “Merge Our History into About”' },
   { heading: 'Anything else', hint: 'Context the structured decisions above don’t capture' },
 ]
 
@@ -22,13 +23,13 @@ export default function CallNotesBox({
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
       <div className="lg:col-span-2">
         <label htmlFor="call-notes" className="block text-sm font-heading font-semibold text-text-primary mb-2">
-          Call notes
+          Notes &amp; instructions
         </label>
         <textarea
           id="call-notes"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Anything from the call the structured decisions above don't capture — write naturally. Saved when you submit the review."
+          placeholder="Write naturally: facts from the call plus any instructions for the new site. Saved when you submit the review."
           rows={10}
           className="w-full border border-border-default rounded-2xl px-4 py-3 text-sm font-body bg-surface-page focus:outline-none focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/15 transition-all duration-150"
         />

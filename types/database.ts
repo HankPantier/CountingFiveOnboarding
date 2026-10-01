@@ -1469,11 +1469,14 @@ export type Database = {
           created_at: string
           cta: Json | null
           generation_claimed_at: string | null
+          generation_mode: string
           h1: string | null
           id: string
+          merge_source_urls: string[]
           page_title: string
           page_url: string
           sections: Json | null
+          source_snapshot_path: string | null
           target_keyword: string | null
           updated_at: string
         }
@@ -1485,11 +1488,14 @@ export type Database = {
           created_at?: string
           cta?: Json | null
           generation_claimed_at?: string | null
+          generation_mode?: string
           h1?: string | null
           id?: string
+          merge_source_urls?: string[]
           page_title: string
           page_url: string
           sections?: Json | null
+          source_snapshot_path?: string | null
           target_keyword?: string | null
           updated_at?: string
         }
@@ -1501,11 +1507,14 @@ export type Database = {
           created_at?: string
           cta?: Json | null
           generation_claimed_at?: string | null
+          generation_mode?: string
           h1?: string | null
           id?: string
+          merge_source_urls?: string[]
           page_title?: string
           page_url?: string
           sections?: Json | null
+          source_snapshot_path?: string | null
           target_keyword?: string | null
           updated_at?: string
         }
@@ -1664,6 +1673,7 @@ export type Database = {
           error_message: string | null
           existing_content: string | null
           id: string
+          merged_content: string | null
           page_title: string
           page_url: string
           research_status: string
@@ -1678,6 +1688,7 @@ export type Database = {
           error_message?: string | null
           existing_content?: string | null
           id?: string
+          merged_content?: string | null
           page_title: string
           page_url: string
           research_status?: string
@@ -1692,6 +1703,7 @@ export type Database = {
           error_message?: string | null
           existing_content?: string | null
           id?: string
+          merged_content?: string | null
           page_title?: string
           page_url?: string
           research_status?: string

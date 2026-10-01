@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { fileTypeFromBuffer } from 'file-type'
 import { createServerClient } from '@/lib/supabase/server'
 import { isUrlPubliclyFetchable } from '@/lib/audit/ssrf-guard'
+import { fetchLiveHtml } from '@/lib/onboarding/page-snapshot'
 import { safeGetBinary } from '@/lib/audit/crawl'
 import { checkTokenBudget, truncateToTokenBudget } from './truncate-to-token-budget'
 import { recordTokenUsage } from './token-usage'
@@ -310,12 +311,16 @@ export async function importArticleAsIs(
     if (!session) throw new Error('Session not found')
     const schema = (session.schema_data ?? {}) as SessionSchema
 
-    // Re-read the verbatim HTML from the audit result (not stored on the row).
+    // The source must be a page the audit actually crawled (never an arbitrary
+    // URL). Its HTML is fetched live: the audit trims page HTML before storing
+    // it, so a stored copy only exists on audits from before that trim.
     const pages = await loadAuditPages(supabase, claimed.audit_run_id, opts?.auditPages)
     const page = pages.find((p) => p.url === claimed.source_url)
-    if (!page?.html) throw new Error('Source article is no longer in the audit crawl')
+    if (!page) throw new Error('Source article is no longer in the audit crawl')
+    const html = page.html || (await fetchLiveHtml(claimed.source_url))
+    if (!html) throw new Error('Could not fetch the source article from the live site')
 
-    const extracted = extractArticleMarkdown(page.html, { baseUrl: claimed.source_url })
+    const extracted = extractArticleMarkdown(html, { baseUrl: claimed.source_url })
     if (!extracted.markdown.trim()) throw new Error('Could not extract an article body from the page')
 
     const title = (claimed.source_title || extracted.extractedTitle || '').trim() || 'Imported Article'

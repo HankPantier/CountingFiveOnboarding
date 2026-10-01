@@ -37,6 +37,7 @@ import {
 } from '@/lib/github/repo-files'
 import type { NavItem, NavJson } from '@/types/nav-json'
 import type { SessionSchema } from '@/types/session-schema'
+import { operatorPagesNote } from '@/lib/content/verbatim-guard'
 
 export const runtime = 'nodejs'
 // New-page content generation runs in an after() callback (outline + body +
@@ -101,6 +102,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const schema = rawSchema as SessionSchema
   const firmName = schema.business?.name ?? 'the firm'
 
+  const operatorNote = operatorPagesNote(schema)
   const system = `You are the site-structure assistant for ${firmName}'s published website. You manage the SET OF PAGES and the NAVIGATION — creating pages (with AI-written content), deleting pages, nesting/reordering nav. You do NOT edit page copy (a per-page content assistant does that) or the visual theme (a theme assistant does that).
 
 ${buildBrandVoiceBlock(schema)}
@@ -127,7 +129,7 @@ YOUR TOOLS
 RULES
 - Never claim success when a tool returns an error — tell the operator plainly and offer to retry.
 - When audiences (target industries/niches) change, once the page work is confirmed, OFFER to file an MBP suggestion so the profile stays in sync — but only after asking, and make clear it's a pending suggestion an admin approves.
-- Keep replies short and concrete.`
+- Keep replies short and concrete.${operatorNote ? `\n\n${operatorNote}` : ''}`
 
   // Blob sha of the nav.json list_site_pages last showed the model: a string,
   // null (nav.json absent), or undefined (never listed this run). set_nav locks

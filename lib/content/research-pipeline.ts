@@ -1,6 +1,6 @@
 import { createServerClient } from '@/lib/supabase/server'
 import { runKeywordResearch } from './keyword-research'
-import { fetchCompetitorPages, fetchExistingContent } from './competitor-fetch'
+import { fetchCompetitorPages, fetchExistingContent, fetchMergedContent } from './competitor-fetch'
 import { activeNiches } from './active-niches'
 import { resolvePageIntent } from './page-intent'
 import type { SessionSchema } from '@/types/session-schema'
@@ -52,6 +52,16 @@ export async function runResearchPipeline(
   }
   const currentSitemap = schema.current_sitemap
 
+  // Pages an operator merge directive folds into each page (set at sitemap confirm).
+  const { data: outlineRows } = await supabase
+    .from('page_outlines')
+    .select('page_url, merge_source_urls, generation_mode')
+    .eq('content_job_id', contentJobId)
+  const mergeSources = new Map((outlineRows ?? []).map(r => [r.page_url, r.merge_source_urls ?? []]))
+  // Verbatim pages reproduce the captured client page; neither their outline nor
+  // their body reads research, so skip the paid keyword/competitor/fetch work.
+  const verbatimUrls = new Set((outlineRows ?? []).filter(r => r.generation_mode === 'verbatim').map(r => r.page_url))
+
   // Budgeted pool of 3 (was unbounded batches inside a route with no
   // maxDuration). Pages that don't fit are left 'pending' and the run
   // self-chains to /research/continue; already-complete pages are skipped so a
@@ -93,6 +103,14 @@ export async function runResearchPipeline(
         return
       }
 
+      if (verbatimUrls.has(page.url)) {
+        await supabase
+          .from('research_results')
+          .update({ research_status: 'complete', error_message: null, updated_at: new Date().toISOString() })
+          .eq('id', researchRow.id)
+        return
+      }
+
       try {
         // Job 1: Keyword research — steer it toward the page's specific niche or
         // service audience when the URL identifies one.
@@ -113,11 +131,10 @@ export async function runResearchPipeline(
         const competitorRefs = await fetchCompetitorPages(keywords.competitorRefs)
 
         // Job 3: Existing content extraction
-        const existingContent = await fetchExistingContent(
-          session.website_url,
-          currentSitemap,
-          page.url
-        )
+        const [existingContent, mergedContent] = await Promise.all([
+          fetchExistingContent(session.website_url, currentSitemap, page.url),
+          fetchMergedContent(session.website_url, mergeSources.get(page.url) ?? []),
+        ])
 
         // Save results — clear any error_message from a prior failed attempt.
         await supabase
@@ -127,6 +144,7 @@ export async function runResearchPipeline(
             secondary_keywords: asJson(keywords.secondaryKeywords),
             competitor_references: asJson(competitorRefs),
             existing_content: existingContent,
+            merged_content: mergedContent,
             research_status: 'complete',
             error_message: null,
             updated_at: new Date().toISOString(),

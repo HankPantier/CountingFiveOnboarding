@@ -112,3 +112,35 @@ describe('resolveGapsAfterUpdate', () => {
     expect(out[0].resolvedBy).toBeUndefined()
   })
 })
+
+describe('preserveOperatorLocked', () => {
+  const before = {
+    team: [
+      { name: 'John Smith', bio: 'Exact client bio.', bioVerbatim: true },
+      { name: 'Jane Doe', bio: 'Old' },
+    ],
+    operator_directives: [
+      { id: 'a', kind: 'bring_page', sourceText: 'Bring the portal page', status: 'unresolved' },
+    ],
+  }
+
+  it('keeps verbatim bios and lets the model fill only clarification', () => {
+    const merged = applyChatUpdates(before, {
+      'team[0].bio': 'A punchier AI bio.',
+      'team[1].bio': 'New Jane bio',
+      'operator_directives[0].clarification': 'The Client Portal page at /portal',
+      'operator_directives[0].status': 'resolved',
+    })
+    const team = merged.team as Array<Record<string, unknown>>
+    expect(team[0]).toMatchObject({ bio: 'Exact client bio.', bioVerbatim: true })
+    expect(team[1].bio).toBe('New Jane bio')
+    expect(merged.operator_directives).toEqual([
+      { id: 'a', kind: 'bring_page', sourceText: 'Bring the portal page', status: 'unresolved', clarification: 'The Client Portal page at /portal' },
+    ])
+  })
+
+  it('never lets the model create directives', () => {
+    const merged = applyChatUpdates({}, { operator_directives: [{ kind: 'drop_page' }] })
+    expect('operator_directives' in merged).toBe(false)
+  })
+})

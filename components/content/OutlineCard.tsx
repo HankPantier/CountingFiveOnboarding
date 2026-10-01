@@ -41,6 +41,9 @@ type Outline = {
   angle: string | null
   cta: Json | null
   content_job_id: string
+  // Set at sitemap confirm from the session's operator directives (migration 082).
+  generation_mode?: string
+  merge_source_urls?: string[]
 }
 
 export default function OutlineCard({
@@ -244,6 +247,27 @@ export default function OutlineCard({
           <div className="text-left min-w-0">
             <div className="text-sm font-heading font-semibold text-text-primary truncate">{outline.page_title}</div>
             <div className="text-xs font-mono text-text-muted">{outline.page_url}</div>
+            {(outline.generation_mode === 'verbatim' || (outline.merge_source_urls?.length ?? 0) > 0) && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {outline.generation_mode === 'verbatim' && (
+                  <span
+                    title="Operator instruction: this page reproduces the client’s current page word-for-word. Only SEO fields are AI-written."
+                    className="inline-flex items-center rounded-pill border border-brand-navy/30 bg-brand-navy/10 text-brand-navy px-2 py-0.5 text-[11px] font-heading font-semibold"
+                  >
+                    Verbatim
+                  </span>
+                )}
+                {outline.merge_source_urls?.map((u) => (
+                  <span
+                    key={u}
+                    title="Operator instruction: this page absorbs that page’s content."
+                    className="inline-flex items-center rounded-pill border border-info/40 bg-info/10 text-info px-2 py-0.5 text-[11px] font-heading font-semibold"
+                  >
+                    Merged from {u}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </button>
         <div className="flex items-center gap-2 flex-shrink-0 ml-2">

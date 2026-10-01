@@ -5,6 +5,21 @@ const h = vi.hoisted(() => ({
   schema: {} as SessionSchema,
   gaps: [] as unknown[],
   updates: [] as Array<Record<string, unknown>>,
+  afterCalls: 0,
+  snapshot: '' as string | null,
+}))
+
+vi.mock('next/server', async (orig) => ({
+  ...(await orig<typeof import('next/server')>()),
+  after: vi.fn(() => { h.afterCalls++ }),
+}))
+
+vi.mock('@/lib/onboarding/page-snapshot', () => ({
+  readSnapshot: vi.fn(async () => h.snapshot),
+}))
+
+vi.mock('@/lib/session-draft/apply-notes-extraction', () => ({
+  applyNotesExtraction: vi.fn(async () => []),
 }))
 
 vi.mock('@/lib/auth/access', () => ({
@@ -51,6 +66,8 @@ beforeEach(() => {
   } as SessionSchema
   h.gaps = []
   h.updates = []
+  h.afterCalls = 0
+  h.snapshot = null
 })
 
 describe('POST /api/sessions/[id]/audit-review', () => {
@@ -111,5 +128,76 @@ describe('POST /api/sessions/[id]/audit-review', () => {
       params: Promise.resolve({ id: 'not-a-uuid' }),
     })
     expect(res.status).toBe(400)
+  })
+
+  describe('operator directives', () => {
+    const SNAP = { path: `snapshots/${ID}/0f0f0f0f-1111-4222-8333-444444444444.md`, capturedAt: '', words: 10, links: 2 }
+    const dirId = (n: number) => `aaaaaaaa-bbbb-4ccc-8ddd-${String(n).padStart(12, '0')}`
+    const base = { services: [], niches: [], subcategories: [] }
+
+    beforeEach(() => {
+      h.schema = {
+        ...h.schema,
+        team: [{ name: 'John Smith', title: '', certifications: [], bio: 'AI bio', specializations: [] }],
+        current_sitemap: [
+          { url: '/forms', title: 'Forms', action: 'keep', live: true },
+          { url: '/team', title: 'Team', action: 'keep', live: true },
+        ],
+        proposed_sitemap: [{ url: '/team', title: 'Team', status: 'update' }],
+      } as SessionSchema
+    })
+
+    it('applies directives, re-resolving status server-side and adding new offerings', async () => {
+      h.snapshot = 'Intro.\n\nJohn Smith has served clients since 1998.'
+      const res = await post({
+        ...base,
+        directives: [
+          { id: dirId(1), kind: 'bring_page', sourceText: 'Bring Forms over', sourceUrl: '/forms', status: 'unresolved' },
+          { id: dirId(2), kind: 'verbatim_content', sourceText: 'Keep John’s bio', teamMember: 'John Smith', sourceUrl: '/team', verbatimText: 'John Smith has served clients since 1998.', snapshot: SNAP },
+          { id: dirId(3), kind: 'add_offering', sourceText: 'Add CFO Advisory', offering: { type: 'service', name: 'CFO Advisory', treatment: 'page' } },
+          { id: dirId(4), kind: 'drop_page', sourceText: 'Drop the careers page', sourceUrl: '/careers', status: 'resolved' },
+        ],
+      })
+      expect(res.status).toBe(200)
+      const schema = h.updates[0].schema_data as SessionSchema
+      expect(schema.operator_directives?.map((d) => d.status)).toEqual(['resolved', 'resolved', 'resolved', 'unresolved'])
+      expect(schema.team?.find((m) => m.name === 'John Smith')).toMatchObject({ bio: 'John Smith has served clients since 1998.', bioVerbatim: true })
+      expect(schema.services?.find((s) => s.name === 'CFO Advisory')).toMatchObject({ status: 'kept', origin: 'audit', pageTreatment: 'page' })
+      expect(schema.proposed_sitemap?.map((p) => p.url)).toContain('/forms')
+      expect((h.updates[0].gap_list as Array<{ field: string }>).map((g) => g.field)).toContain('operator_directives[3].clarification')
+    })
+
+    it('resolves a verbatim bio for a team member added in the same submit', async () => {
+      h.snapshot = 'Jane Doe joined in 2020 and leads payroll.'
+      await post({
+        ...base,
+        team: { keep: ['John Smith'], remove: [], add: [{ name: 'Jane Doe', title: 'Payroll Lead' }] },
+        directives: [
+          { id: dirId(6), kind: 'verbatim_content', sourceText: 'Keep Jane’s bio', teamMember: 'Jane Doe', sourceUrl: '/team', verbatimText: 'Jane Doe joined in 2020 and leads payroll.', snapshot: SNAP },
+        ],
+      })
+      const schema = h.updates[0].schema_data as SessionSchema
+      expect(schema.operator_directives?.[0].status).toBe('resolved')
+      expect(schema.team?.find((m) => m.name === 'Jane Doe')).toMatchObject({ bio: 'Jane Doe joined in 2020 and leads payroll.', bioVerbatim: true })
+    })
+
+    it('rejects a "verbatim" passage that is not in the stored snapshot', async () => {
+      h.snapshot = 'Completely different page text.'
+      await post({
+        ...base,
+        directives: [
+          { id: dirId(5), kind: 'verbatim_content', sourceText: 'Keep John’s bio', teamMember: 'John Smith', sourceUrl: '/team', verbatimText: 'An altered bio.', snapshot: SNAP },
+        ],
+      })
+      const schema = h.updates[0].schema_data as SessionSchema
+      expect(schema.operator_directives?.[0]).toMatchObject({ status: 'unresolved' })
+      expect(schema.operator_directives?.[0].verbatimText).toBeUndefined()
+      expect(schema.team?.[0].bio).toBe('AI bio')
+    })
+
+    it('schedules notes extraction only when the notes changed', async () => {
+      await post({ ...base, callNotes: 'Founded in 1998.' })
+      expect(h.afterCalls).toBe(1)
+    })
   })
 })

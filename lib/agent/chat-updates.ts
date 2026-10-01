@@ -83,7 +83,48 @@ export function applyChatUpdates(
       next = deepSetPath(next, path, value)
     }
   }
-  return preserveAppendOnlyMarkers(current, next)
+  return preserveOperatorLocked(current, preserveAppendOnlyMarkers(current, next))
+}
+
+const nameKey = (v: unknown): string => (typeof v === 'string' ? v.trim().toLowerCase() : '')
+
+// Operator-confirmed content the chat model must not rewrite: a verbatim bio
+// (team[].bioVerbatim) keeps its exact text, and operator_directives keep every
+// field except `clarification` — the one answer the Q&A gap asks the model for.
+export function preserveOperatorLocked(
+  before: Record<string, unknown>,
+  merged: Record<string, unknown>
+): Record<string, unknown> {
+  const prevTeam = Array.isArray(before.team) ? (before.team as Record<string, unknown>[]) : []
+  const locked = new Map(
+    prevTeam.filter((m) => m && m.bioVerbatim === true).map((m) => [nameKey(m.name), m.bio])
+  )
+  let next = merged
+  if (locked.size && Array.isArray(merged.team)) {
+    next = {
+      ...next,
+      team: (merged.team as Record<string, unknown>[]).map((m) => {
+        if (!m || typeof m !== 'object' || !locked.has(nameKey(m.name))) return m
+        return { ...m, bio: locked.get(nameKey(m.name)), bioVerbatim: true }
+      }),
+    }
+  }
+  if (Array.isArray(before.operator_directives)) {
+    const prev = before.operator_directives as Record<string, unknown>[]
+    const after = Array.isArray(merged.operator_directives) ? (merged.operator_directives as Record<string, unknown>[]) : []
+    next = {
+      ...next,
+      operator_directives: prev.map((d, i) => {
+        const c = after[i]?.clarification
+        return typeof c === 'string' && c.trim() ? { ...d, clarification: c } : d
+      }),
+    }
+  } else if ('operator_directives' in next) {
+    const { operator_directives: _dropped, ...rest } = next
+    void _dropped
+    next = rest
+  }
+  return next
 }
 
 // Resolves gaps against the merged schema. A gap resolves only when its field

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import SitemapSection from './SitemapSection'
 import type { ReadinessReport } from '@/lib/content/content-readiness'
+import type { PageDirectiveBadge } from '@/lib/content/directive-pipeline'
 
 type SitemapPage = {
   // Stable client-only identity so rows keep focus across edits. React remounts
@@ -72,6 +73,7 @@ export default function SitemapPhase({
 }) {
   const [pages, setPages] = useState<SitemapPage[]>([])
   const [readiness, setReadiness] = useState<ReadinessReport | null>(null)
+  const [directiveBadges, setDirectiveBadges] = useState<Record<string, PageDirectiveBadge[]>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [proposing, setProposing] = useState(false)
@@ -84,6 +86,7 @@ export default function SitemapPhase({
       const data = await res.json()
       setPages((data.pages ?? []).map((p: Omit<SitemapPage, '_key'>) => ({ ...p, _key: crypto.randomUUID() })))
       setReadiness(data.readiness ?? null)
+      setDirectiveBadges(data.directiveBadges ?? {})
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load')
     } finally {
@@ -211,6 +214,7 @@ export default function SitemapPhase({
             sectionTitle={group.title}
             sectionUrl={group.url}
             pages={group.pages}
+            directiveBadges={directiveBadges}
             onUpdate={updated => handleSectionUpdate(group.url, updated)}
           />
         ))}
