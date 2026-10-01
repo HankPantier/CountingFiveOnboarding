@@ -19,7 +19,7 @@ import type { Database } from '@/types/database'
 type Row = Record<string, unknown>
 type UpdatePayload = Record<string, unknown>
 type FakeError = { message: string }
-type Filter = [op: 'eq' | 'neq' | 'in' | 'lt', col: string, val: unknown]
+type Filter = [op: 'eq' | 'neq' | 'in' | 'lt' | 'limit', col: string, val: unknown]
 
 export type FakeSupabaseOptions = {
   claimReturnsEmpty?: boolean
@@ -30,6 +30,8 @@ export type FakeSupabaseOptions = {
 export type FakeSupabase = SupabaseClient<Database> & {
   updates: (table: string) => UpdatePayload[]
   updateFilters: (table: string) => Filter[][]
+  /** Filter chains of plain (non-update) reads, incl. `limit` bounds. */
+  selectFilters: (table: string) => Filter[][]
 }
 
 function matchesEq(row: Row, filters: Filter[]): boolean {
@@ -45,6 +47,7 @@ export function makeFakeSupabase(
 ): FakeSupabase {
   const updateLog: Record<string, UpdatePayload[]> = {}
   const updateFilterLog: Record<string, Filter[][]> = {}
+  const selectFilterLog: Record<string, Filter[][]> = {}
 
   function from(table: string) {
     const rows = tables[table] ?? []
@@ -59,6 +62,7 @@ export function makeFakeSupabase(
         if ('qa_review' in updatePayload && opts.finalWriteReturnsEmpty) return []
         return rows
       }
+      ;(selectFilterLog[table] ??= []).push([...filters])
       return rows.filter(r => matchesEq(r, filters))
     }
 
@@ -73,6 +77,8 @@ export function makeFakeSupabase(
     builder.neq = (col: string, val: unknown) => chain(() => filters.push(['neq', col, val]))
     builder.in = (col: string, val: unknown) => chain(() => filters.push(['in', col, val]))
     builder.lt = (col: string, val: unknown) => chain(() => filters.push(['lt', col, val]))
+    builder.limit = (n: number) => chain(() => filters.push(['limit', '', n]))
+    builder.order = () => builder
     builder.single = async () => {
       const err = opts.selectErrors?.[table]
       if (err) return { data: null, error: err }
@@ -97,6 +103,9 @@ export function makeFakeSupabase(
   })
   Object.defineProperty(client, 'updateFilters', {
     value: (table: string) => updateFilterLog[table] ?? [],
+  })
+  Object.defineProperty(client, 'selectFilters', {
+    value: (table: string) => selectFilterLog[table] ?? [],
   })
   return client
 }

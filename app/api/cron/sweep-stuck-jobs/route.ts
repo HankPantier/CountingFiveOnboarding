@@ -6,6 +6,7 @@ import { runWhoisLookup } from '@/lib/whois/lookup'
 import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS, maybeCompleteAfterQa } from '@/lib/content/content-generator'
 import { triggerQa } from '@/lib/content/qa/trigger'
 import { qaMode, QA_MAX_ATTEMPTS } from '@/lib/content/qa/mode'
+import { normalizeQaHolds } from '@/lib/content/qa/sweep'
 import { reconcileStuckTarget, finalizeBlogBatchIfDone } from '@/lib/content/blog-batch-runner'
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
@@ -361,7 +362,17 @@ export async function GET(req: Request) {
   // Then finish jobs that were only waiting on QA (`on` mode holds phase 6).
   let qaRetriggered = 0
   let qaJobsFinalized = 0
+  let qaApprovedSkipped = 0
+  let qaQueuedTimedOut = 0
   if (qaMode() !== 'off') {
+    // First unwedge the phase-6 hold: approved pages → skipped, and queued rows
+    // no worker claimed in 30 min → terminal error (attempts at the cap).
+    const holds = await normalizeQaHolds(supabase)
+    qaApprovedSkipped = holds.approvedSkipped
+    qaQueuedTimedOut = holds.queuedTimedOut
+    if (qaApprovedSkipped || qaQueuedTimedOut) {
+      console.warn(`[sweep-stuck-jobs] qa holds normalised approvedSkipped=${qaApprovedSkipped} queuedTimedOut=${qaQueuedTimedOut}`)
+    }
     const qaCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
     const { data: qaStale } = await supabase
       .from('generated_pages')
@@ -644,5 +655,5 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed,
-    researchResumed, qaSwept, qaRetriggered, qaJobsFinalized, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, designRendersRemoved: designOrphans.renders, designAttachmentsRemoved: designOrphans.attachments, designRunRendersRemoved: designOrphans.runRenders, cutoff })
+    researchResumed, qaSwept, qaRetriggered, qaJobsFinalized, qaApprovedSkipped, qaQueuedTimedOut, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, designRendersRemoved: designOrphans.renders, designAttachmentsRemoved: designOrphans.attachments, designRunRendersRemoved: designOrphans.runRenders, cutoff })
 }
