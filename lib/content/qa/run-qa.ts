@@ -19,7 +19,7 @@ import { qaMode, QA_MAX_ATTEMPTS, type QaMode } from './mode'
 import { runRules } from './rules'
 import { runAllSpecialists } from './specialists/run'
 import { mergeFindings } from './merge'
-import { judgeFindings, dedupeFindings, qaPasses, agentScores } from './judge'
+import { judgeFindings, judgeUnavailableFinding, dedupeFindings, qaPasses, agentScores } from './judge'
 
 type Supabase = ReturnType<typeof createServerClient>
 type PageUpdate = Database['public']['Tables']['generated_pages']['Update']
@@ -180,7 +180,14 @@ export async function runQaForPage(
           { timeoutMs: CRITIC_CALL_CAP_MS },
         )
 
-    const findings = dedupeFindings([...merged.findings, ...judgeFindings(judge)])
+    // Verbatim pages skip the judge by design; anywhere else a null judge means
+    // it failed, which must fail QA rather than silently pass.
+    const judgeMissing = !verbatim && judge === null
+    const findings = dedupeFindings([
+      ...merged.findings,
+      ...judgeFindings(judge),
+      ...(judgeMissing ? [judgeUnavailableFinding()] : []),
+    ])
     const review: QaReview = {
       mode,
       ran_at: now(),
@@ -200,7 +207,9 @@ export async function runQaForPage(
       update.meta_description = merged.fields.metaDescription
     }
     if (mode === 'on') {
-      if (judge) update.critic_review = asJson({ ...judge, needs_human_review: !review.passed })
+      // A null judge clears critic_review so a stale flag from an earlier
+      // generation can't drive needs-review; the QA chip carries the signal.
+      update.critic_review = judge ? asJson({ ...judge, needs_human_review: !review.passed }) : null
     }
 
     const { data: written } = await supabase

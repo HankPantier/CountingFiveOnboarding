@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { judgeFindings, dedupeFindings, qaPasses, agentScores } from './judge'
+import { judgeFindings, judgeUnavailableFinding, dedupeFindings, qaPasses, agentScores } from './judge'
 import type { CriticReview } from '@/lib/content/critic-review'
 import type { Finding } from '@/types/qa-review'
 
@@ -27,6 +27,16 @@ describe('judge', () => {
     expect(qaPasses(good, [mk({ agent: 'copy', severity: 'high' })])).toBe(false)
     expect(qaPasses(good, [mk({ agent: 'copy', severity: 'high', status: 'applied' })])).toBe(true)
     expect(qaPasses(null, [])).toBe(true)
+  })
+  it('fails when the judge could not run (open judge_unavailable finding)', () => {
+    expect(qaPasses(null, [mk({ agent: 'judge', severity: 'high', kind: 'judge_unavailable' })])).toBe(false)
+    expect(qaPasses(null, [mk({ agent: 'judge', severity: 'high', kind: 'judge_unavailable', status: 'dismissed' })])).toBe(true)
+  })
+  it('judgeUnavailableFinding is an open high flag from the judge', () => {
+    expect(judgeUnavailableFinding()).toMatchObject({
+      agent: 'judge', severity: 'high', kind: 'judge_unavailable', quote: '', safety: 'flag', status: 'open',
+      message: 'The senior-editor accuracy check could not run on this page — proof facts by hand.',
+    })
   })
   it('scores per agent from open findings', () => {
     const s = agentScores([

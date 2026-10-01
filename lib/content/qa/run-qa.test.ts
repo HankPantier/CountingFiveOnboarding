@@ -145,4 +145,38 @@ describe('runQaForPage', () => {
     const final = d.supabase.updates('generated_pages').at(-1)! as Record<string, unknown>
     expect(final.content_markdown).toBeUndefined()
   })
+
+  it('a judge failure on a generated page fails QA with a judge_unavailable flag and clears critic_review (on)', async () => {
+    const { supabase, deps: d } = deps('on')
+    await runQaForPage('j1', 'p1', d)
+    const final = supabase.updates('generated_pages').at(-1)! as Record<string, unknown>
+    const review = final.qa_review as { passed: boolean; findings: Array<Record<string, unknown>> }
+    expect(review.passed).toBe(false)
+    expect(review.findings).toContainEqual(expect.objectContaining({
+      agent: 'judge', severity: 'high', kind: 'judge_unavailable', status: 'open',
+    }))
+    expect('critic_review' in final).toBe(true)
+    expect(final.critic_review).toBeNull()
+  })
+
+  it('a judge failure in shadow mode leaves critic_review alone', async () => {
+    const { supabase, deps: d } = deps('shadow')
+    await runQaForPage('j1', 'p1', d)
+    const final = supabase.updates('generated_pages').at(-1)! as Record<string, unknown>
+    expect('critic_review' in final).toBe(false)
+    expect((final.qa_review as { passed: boolean }).passed).toBe(false)
+  })
+
+  it('verbatim pages (judge skipped by design) get no judge_unavailable flag', async () => {
+    const { deps: d } = deps('on')
+    d.supabase = makeFakeSupabase({
+      generated_pages: [page],
+      page_outlines: [{ content_job_id: 'j1', page_url: '/a', sections: [], generation_mode: 'verbatim' }],
+      content_jobs: [{ id: 'j1', phase: 5 }],
+    })
+    await runQaForPage('j1', 'p1', d)
+    const final = d.supabase.updates('generated_pages').at(-1)! as Record<string, unknown>
+    const review = final.qa_review as { findings: Array<Record<string, unknown>> }
+    expect(review.findings.some(f => f.kind === 'judge_unavailable')).toBe(false)
+  })
 })
