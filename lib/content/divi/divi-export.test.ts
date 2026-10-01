@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildDiviStyle, defaultDesignJson } from './style'
 import { parseDiviSections, parseCards, parseQA, accordionBlock, ctaBlock, pricingTablesBlock } from './blocks'
 import { DEFAULT_PLANS_CONFIG } from '@/types/pricing-plans'
 import { markdownToHtml, inlineMarkdown } from './markdown'
@@ -207,7 +208,7 @@ describe('WXR', () => {
 })
 
 describe('Divi library JSON', () => {
-  const json = buildDiviLibrary({ brand: BRAND, clientCenter: CLIENT_CENTER, nav: NAV, logoUrl: null, dateGmt: '2026-08-21 12:00:00' })
+  const json = buildDiviLibrary({ brand: BRAND, clientCenter: CLIENT_CENTER, nav: NAV, logoUrl: null, style: buildDiviStyle(BRAND, defaultDesignJson()), dateGmt: '2026-08-21 12:00:00' })
   const parsed = JSON.parse(json)
 
   it('is a valid et_builder_layouts envelope with header + footer', () => {
@@ -323,6 +324,7 @@ describe('home page guarantee', () => {
       websiteUrl: 'https://firm.com',
       pages: [{ ...PAGE, page_title: 'About', page_url: '/about' }], // no '/' page
       brand: BRAND,
+      design: defaultDesignJson(),
       clientCenter: CLIENT_CENTER,
       nav: NAV,
       logoUrl: null,
@@ -385,6 +387,7 @@ describe('buildDiviExport (end to end)', () => {
         { ...PAGE, page_title: 'Virtual CFO', page_url: '/services/virtual-cfo' },
       ],
       brand: BRAND,
+      design: defaultDesignJson(),
       clientCenter: CLIENT_CENTER,
       nav: NAV,
       logoUrl: null,

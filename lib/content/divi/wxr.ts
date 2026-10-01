@@ -18,6 +18,9 @@ export type WxrPage = {
   slug: string
   postId: number
   parentId: number
+  // Position in the editor sidebar (nav order, then not-in-nav pages) so the WP
+  // Pages list and page-attribute order match what the operator arranged.
+  menuOrder?: number
   content: string // assembled Divi shortcode
 }
 
@@ -53,7 +56,7 @@ function pageItem(page: WxrPage, dateGmt: string, author: string, baseUrl: strin
     `\t\t<wp:post_name>${cdata(page.slug)}</wp:post_name>\n` +
     `\t\t<wp:status>${cdata('draft')}</wp:status>\n` +
     `\t\t<wp:post_parent>${page.parentId}</wp:post_parent>\n` +
-    `\t\t<wp:menu_order>0</wp:menu_order>\n` +
+    `\t\t<wp:menu_order>${page.menuOrder ?? 0}</wp:menu_order>\n` +
     `\t\t<wp:post_type>${cdata('page')}</wp:post_type>\n` +
     `\t\t<wp:post_password>${cdata('')}</wp:post_password>\n` +
     `\t\t<wp:is_sticky>0</wp:is_sticky>\n` +

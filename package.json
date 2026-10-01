@@ -24,6 +24,7 @@
     "@octokit/rest": "^21.0.2",
     "@react-email/components": "^1.0.12",
     "@react-pdf/renderer": "^4.5.1",
+    "@resvg/resvg-js": "^2.6.2",
     "@sparticuz/chromium": "153.0.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",

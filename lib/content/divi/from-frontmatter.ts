@@ -94,5 +94,10 @@ export function pageInputFromRepoFile(path: string, content: string): DiviPageIn
     content_markdown: stripInlineSeoSection(body),
     faq_block: faqBlock(frontmatter),
     cta: null,
+    seo: {
+      metaTitle: scalar(frontmatter, 'meta_title'),
+      metaDescription: scalar(frontmatter, 'meta_description'),
+      targetKeyword: scalar(frontmatter, 'target_keyword'),
+    },
   }
 }

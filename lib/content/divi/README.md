@@ -8,11 +8,44 @@ pipeline is the norm, **delete this feature** — see removal below.
 
 ## What it produces
 
-A downloadable zip (`<site>.wxr` + `<site>-divi-library.json` + `README.txt`):
+A downloadable zip (`<site>-divi-customizer.json` + `<site>.wxr` + `<site>-divi-library.json` + `<site>-sitemap.pdf/.svg/.png` + `README.txt`):
+
+- **Customizer JSON** (import first) — the client's styling as a Divi Theme
+  Customizer import: six Global Colors (`gcid-c5-*`), heading/body fonts, H1–H6
+  sizes, buttons, and a marked "Revaltus brand" block of Additional CSS (the
+  template's fluid type scale, radii, shadows, serif headlines). Divi's import
+  REPLACES all Customizer settings + Additional CSS, so the file is the
+  boilerplate's full export (`__fixtures__/divi-customizer-base.json`) with only
+  the styling keys changed and our CSS appended after the boilerplate's.
 
 - **WXR** — every live `content/pages/*.md` rendered to Divi Builder shortcode
   (`content:encoded`, flagged `_et_pb_use_builder=on`), plus the primary nav menu
   (from the repo `nav.json`). Pages import as drafts.
+- **Sitemap** — a PDF (summary, schematic, page directory with WordPress URL,
+  parent, menu position and SEO fields) plus the schematic as SVG and PNG, for
+  whoever runs the import. The PNG and PDF are fail-soft (omitted, with a README
+  note, if they can't render).
+
+### Styling = the client's design system
+
+`style.ts` builds one model from `content/brand.json` + `content/design.json`
+using the template's own contrast rules. Templates in `blocks.ts`/`library.ts`
+never contain a hex: they carry tokens (`c5('primary')`, `c5('text')`,
+`c5('action', 0.35)`, `pad(60)`, `radius('button')`) that `applyDiviStyle()`
+resolves and links to Divi Global Colors via `global_colors_info` (the hex stays
+in the attribute, so pages render even before the Customizer import). Heading
+sizes are left to the brand CSS. Not portable: Design Studio custom CSS + style
+axes (they target the template's markup). Refresh the base fixture by
+re-exporting the boilerplate's Customizer settings.
+
+### Menu = the editor's Pages sidebar
+
+The Primary Menu and page nesting come from `content/nav.json` — the same tree
+the content editor's Pages sidebar shows and edits — so the menu has the same
+items, order and dropdown nesting. Absolute nav urls on the firm's host resolve
+to their page (as in the sidebar). Pages under "Not in navigation" still import
+but get no menu item; their WordPress parent follows the URL prefix. Every
+page's `menu_order` follows sidebar order. No nav.json ⇒ an empty menu.
 - **Divi Library JSON** — per-client branded Header (with Client Center portals)
   and Footer, for import into the Divi Library + assignment in Theme Builder.
 - **README.txt** — operator import steps.
@@ -53,6 +86,12 @@ from `raw-docs/Divi Builder Layouts.json`:
 - `wxr.ts` — WordPress WXR (pages + nav menu)
 - `library.ts` — per-client Header/Footer Divi Library JSON
 - `readme.ts` — the README.txt shipped in the zip
+- `style.ts` — client style model, colour/padding tokens, `applyDiviStyle`, brand CSS
+- `customizer.ts` + `__fixtures__/divi-customizer-base.json` — Customizer import file
+- `sitemap.ts` — sitemap model (menu tree, not-in-nav group, WP permalinks)
+- `sitemap-layout.ts` — schematic geometry shared by the SVG and PDF renderers
+- `sitemap-svg.ts` / `sitemap-png.ts` / `sitemap-pdf.tsx` — the three renderers
+  (PNG via `@resvg/resvg-js` + bundled Open Sans in `assets/`, OFL)
 - `index.ts` — `buildDiviExport()` orchestrator (source-neutral) → zip Buffer
 
 Consumed only by:
@@ -65,7 +104,8 @@ Consumed only by:
 This feature is fully additive and self-contained — no migrations, no schema
 changes, no edits to the existing content pipeline. To remove:
 
-1. `rm -rf lib/content/divi`
+1. `rm -rf lib/content/divi` (and `npm rm @resvg/resvg-js`; drop its
+   `serverExternalPackages` / `export-divi` tracing entries in `next.config.ts`)
 2. `rm -rf app/api/edit/[id]/export-divi`
 3. In `components/editor/EditorTopBar.tsx`, delete the "Export to Divi ↓" anchor
    in `OverflowMenu`.

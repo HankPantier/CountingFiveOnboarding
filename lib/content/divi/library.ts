@@ -13,6 +13,7 @@ import type { BrandJson } from '@/types/brand-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import type { NavJson } from '@/types/nav-json'
 import { safeUrl, htmlAttrEscape } from './sanitize'
+import { applyDiviStyle, c5, globalColorEntries, HEADING_FONT, radius, type DiviStyle } from './style'
 
 const BV = '4.27.4'
 
@@ -54,18 +55,18 @@ function clientCenterMenu(cc: ClientCenterJson): string {
   const groups = cc.groups
     .map((g) => {
       const title = showTitles
-        ? `<div style="font-weight:700;color:#003B71;margin:10px 0 4px;font-size:13px;">${htmlEsc(g.title)}</div>`
+        ? `<div style="font-weight:700;color:${c5('primary')};margin:10px 0 4px;font-size:13px;">${htmlEsc(g.title)}</div>`
         : ''
       const links = g.links
-        .map((l) => anchor(l.url, l.label, 'display:block;color:#003B71;text-decoration:none;padding:5px 0;font-weight:600;'))
+        .map((l) => anchor(l.url, l.label, `display:block;color:${c5('primary')};text-decoration:none;padding:5px 0;font-weight:600;`))
         .join('')
       return title + links
     })
     .join('')
   return (
     `<details style="display:inline-block;position:relative;vertical-align:middle;">` +
-    `<summary style="list-style:none;cursor:pointer;color:#FFFFFF;">${htmlEsc(cc.label)} ▾</summary>` +
-    `<div style="position:absolute;right:0;top:180%;background:#FFFFFF;padding:14px 18px;min-width:240px;text-align:left;box-shadow:0 10px 30px rgba(0,59,113,0.25);border-radius:8px;z-index:9999;">${groups}</div>` +
+    `<summary style="list-style:none;cursor:pointer;color:${c5('nearWhite')};">${htmlEsc(cc.label)} ▾</summary>` +
+    `<div style="position:absolute;right:0;top:180%;background:${c5('nearWhite')};padding:14px 18px;min-width:240px;text-align:left;box-shadow:0 10px 30px ${c5('primary', 0.25)};border-radius:${radius('card')};z-index:9999;">${groups}</div>` +
     `</details>`
   )
 }
@@ -75,18 +76,18 @@ function clientCenterMenu(cc: ClientCenterJson): string {
 function utilityBarHtml(cc: ClientCenterJson, phone: string | undefined): string {
   const ccMenu = clientCenterMenu(cc)
   const phoneHtml = phone
-    ? `<span style="color:#FFFFFF;margin-left:22px;font-weight:700;">${htmlEsc(phone)}</span>`
+    ? `<span style="color:${c5('nearWhite')};margin-left:22px;font-weight:700;">${htmlEsc(phone)}</span>`
     : ''
   if (!ccMenu && !phoneHtml) return ''
   return `<p style="margin:0;font-size:14px;">${ccMenu}${phoneHtml}</p>`
 }
 
 // Logo (or firm name) linked to the home page.
-function logoOrName(brand: BrandJson, logoUrl: string | null, color: string): string {
+function logoOrName(brand: BrandJson, logoUrl: string | null): string {
   if (logoUrl) {
     return `[et_pb_image src="${esc(logoUrl)}" alt="${esc(brand.logo.alt || brand.firm.name)}" url="/" url_new_window="off" _builder_version="${BV}" _module_preset="default" width="200px" global_colors_info="{}"][/et_pb_image]`
   }
-  return `[et_pb_text _builder_version="${BV}" header_2_font="Inter|800|||||||" header_2_text_color="${color}" header_2_font_size="26px" global_colors_info="{}"]<h2 style="margin:0;"><a href="/" style="color:${color};text-decoration:none;">${htmlEsc(brand.firm.name)}</a></h2>[/et_pb_text]`
+  return `[et_pb_text _builder_version="${BV}" header_2_font="${HEADING_FONT(800)}" header_2_text_color="${c5('primary')}" header_2_font_size="26px" global_colors_info="{}"]<h2 style="margin:0;"><a href="/" style="color:${c5('primary')};text-decoration:none;">${htmlEsc(brand.firm.name)}</a></h2>[/et_pb_text]`
 }
 
 function buildHeader(
@@ -95,14 +96,10 @@ function buildHeader(
   _nav: NavJson,
   logoUrl: string | null
 ): string {
-  const primary = brand.palette.primary || '#003B71'
-  const action = brand.palette.action || '#00C1DE'
-  const dark = brand.palette.nearBlack || '#231F20'
-
   // Dark top utility bar: Client Center + phone, right-aligned.
   const util = utilityBarHtml(cc, brand.contact.phone)
   const topBar = util
-    ? `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${dark}" custom_padding="8px||8px|||" global_colors_info="{}" template_type="section"]` +
+    ? `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('nearBlack')}" custom_padding="8px||8px|||" global_colors_info="{}" template_type="section"]` +
       `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="92%" module_alignment="center" custom_padding="0px||0px|||" global_colors_info="{}"]` +
       `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
       `[et_pb_text _builder_version="${BV}" text_orientation="right" background_layout="dark" global_colors_info="{}"]${util}[/et_pb_text]` +
@@ -114,15 +111,15 @@ function buildHeader(
   // once the operator assigns it. Managed in Appearance → Menus, with dropdowns.
   const menu =
     `[et_pb_menu menu_id="" _builder_version="${BV}" _module_preset="default" menu_style="left_aligned" ` +
-    `menu_font="||||||||" menu_text_color="${primary}" active_link_color="${action}" ` +
-    `dropdown_menu_bg_color="#FFFFFF" dropdown_menu_text_color="${primary}" ` +
+    `menu_font="${HEADING_FONT(600)}" menu_text_color="${c5('heading')}" active_link_color="${c5('actionText')}" ` +
+    `dropdown_menu_bg_color="${c5('nearWhite')}" dropdown_menu_text_color="${c5('heading')}" ` +
     `background_color="rgba(0,0,0,0)" module_alignment="right" global_colors_info="{}"][/et_pb_menu]`
 
   // Main bar: logo (linked home) left, nav menu flowing to the right.
   const mainBar =
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#FFFFFF" custom_padding="14px||14px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('nearWhite')}" custom_padding="14px||14px|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row column_structure="1_4,3_4" _builder_version="${BV}" _module_preset="default" width="100%" max_width="92%" module_alignment="center" custom_padding="0px||0px|||" global_colors_info="{}"]` +
-    `[et_pb_column type="1_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl, primary)}[/et_pb_column]` +
+    `[et_pb_column type="1_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl)}[/et_pb_column]` +
     `[et_pb_column type="3_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${menu}[/et_pb_column]` +
     `[/et_pb_row][/et_pb_section]`
 
@@ -137,18 +134,18 @@ function buildFooter(brand: BrandJson, nav: NavJson): string {
   const phone = brand.contact.phone ? `<p>${htmlEsc(brand.contact.phone)}</p>` : ''
   const email = brand.contact.email ? `<p>${htmlEsc(brand.contact.email)}</p>` : ''
   const social = brand.social.length
-    ? `<p>${brand.social.map((s) => anchor(s.url, s.platform, 'color:#FFFFFF;margin-right:14px;')).join('')}</p>`
+    ? `<p>${brand.social.map((s) => anchor(s.url, s.platform, `color:${c5('nearWhite')};margin-right:14px;`)).join('')}</p>`
     : ''
-  const navHtml = navLinksHtml(nav, '#FFFFFF')
+  const navHtml = navLinksHtml(nav, c5('nearWhite'))
 
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#003B71" custom_padding="50px||40px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('nearBlack')}" custom_padding="50px||40px|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row column_structure="1_2,1_2" _builder_version="${BV}" _module_preset="default" width="100%" max_width="90%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" background_layout="dark" text_text_color="#EEEEEE" global_colors_info="{}"]<h3 style="color:#FFFFFF;">${htmlEsc(brand.firm.name)}</h3>${addrHtml}${phone}${email}[/et_pb_text]` +
+    `[et_pb_text _builder_version="${BV}" background_layout="dark" text_text_color="${c5('nearWhite')}" global_colors_info="{}"]<h3 style="color:${c5('nearWhite')};">${htmlEsc(brand.firm.name)}</h3>${addrHtml}${phone}${email}[/et_pb_text]` +
     `[/et_pb_column]` +
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" text_orientation="right" background_layout="dark" text_text_color="#EEEEEE" global_colors_info="{}"]${navHtml}${social}[/et_pb_text]` +
+    `[et_pb_text _builder_version="${BV}" text_orientation="right" background_layout="dark" text_text_color="${c5('nearWhite')}" global_colors_info="{}"]${navHtml}${social}[/et_pb_text]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }
@@ -210,10 +207,11 @@ export function buildDiviLibrary(opts: {
   clientCenter: ClientCenterJson
   nav: NavJson
   logoUrl: string | null
+  style: DiviStyle
   dateGmt: string
 }): string {
-  const header = buildHeader(opts.brand, opts.clientCenter, opts.nav, opts.logoUrl)
-  const footer = buildFooter(opts.brand, opts.nav)
+  const header = applyDiviStyle(buildHeader(opts.brand, opts.clientCenter, opts.nav, opts.logoUrl), opts.style)
+  const footer = applyDiviStyle(buildFooter(opts.brand, opts.nav), opts.style)
 
   // Envelope shape matches a native Divi Library export exactly.
   const envelope = {
@@ -223,7 +221,9 @@ export function buildDiviLibrary(opts: {
       '2': layoutRecord(2, `${opts.brand.firm.name} — Footer`, footer, opts.dateGmt),
     },
     presets: '',
-    global_colors: [],
+    // The client palette as Divi Global Colors (the layouts link to them). The
+    // Customizer import carries the same set; Divi upserts by id.
+    global_colors: globalColorEntries(opts.style),
     global_variables: [],
     canvases: [],
     images: [],

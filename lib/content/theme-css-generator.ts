@@ -26,7 +26,7 @@ function toHslTokens(hex: string, fallback = '220 10% 50%'): string {
 }
 
 // Pick foreground (near-white or near-black) with WCAG contrast >= 4.5 on bg.
-function pickForeground(bgHex: string, nearWhiteHex: string, nearBlackHex: string): string {
+export function pickForeground(bgHex: string, nearWhiteHex: string, nearBlackHex: string): string {
   try {
     const cw = chroma.contrast(bgHex, nearWhiteHex)
     const cb = chroma.contrast(bgHex, nearBlackHex)
@@ -40,7 +40,7 @@ function pickForeground(bgHex: string, nearWhiteHex: string, nearBlackHex: strin
 
 // Override HSL lightness (0–100), preserving hue + saturation. Uses
 // .set('hsl.l', ...) to avoid the bare-array constructor which defaults to RGB.
-function setLightness(hex: string, targetL: number): string {
+export function setLightness(hex: string, targetL: number): string {
   try {
     return chroma(hex).set('hsl.l', targetL / 100).hex()
   } catch {
@@ -50,7 +50,7 @@ function setLightness(hex: string, targetL: number): string {
 
 // Nudge a surface color's lightness until it clears WCAG `minRatio` against the
 // foreground, preserving hue + saturation. No-op when the pair already passes.
-function ensureContrast(bgHex: string, fgHex: string, minRatio = 4.5): string {
+export function ensureContrast(bgHex: string, fgHex: string, minRatio = 4.5): string {
   try {
     if (chroma.contrast(bgHex, fgHex) >= minRatio) return bgHex
     const darkenBg = chroma(fgHex).luminance() > chroma(bgHex).luminance()

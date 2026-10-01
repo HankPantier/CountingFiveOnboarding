@@ -10,6 +10,7 @@ import { buildClientCenterJson } from '@/lib/content/client-center-json-builder'
 import { buildDiviExport, type DiviPageInput } from '@/lib/content/divi'
 import { normalizePricingPlansConfig } from '@/lib/content/pricing-plans-config'
 import { pageInputFromRepoFile } from '@/lib/content/divi/from-frontmatter'
+import { parseDesignJsonText } from '@/lib/content/divi/style'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { NavJson } from '@/types/nav-json'
@@ -32,6 +33,7 @@ const NAV_PATH = 'content/nav.json'
 const CLIENT_CENTER_PATH = 'content/client-center.json'
 const PRICING_PLANS_PATH = 'content/pricing-plans.json'
 const BRAND_JSON_PATH = 'content/brand.json'
+const DESIGN_JSON_PATH = 'content/design.json'
 const READ_CONCURRENCY = 4
 
 function gmtStamp(d: Date): string {
@@ -51,17 +53,6 @@ async function readInBatches(
     out.push(...read)
   }
   return out
-}
-
-// Build a flat primary nav from top-level pages when the repo has no nav.json.
-function fallbackNav(pages: DiviPageInput[]): NavJson {
-  const primary = pages
-    .filter((p) => {
-      const segs = p.page_url.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
-      return segs.length === 1
-    })
-    .map((p) => ({ label: p.page_title, url: p.page_url }))
-  return { primary }
 }
 
 export async function GET(
@@ -149,8 +140,10 @@ export async function GET(
     const files = await readInBatches(ctx.githubRepo, pagePaths)
     const pages: DiviPageInput[] = files.map((f) => pageInputFromRepoFile(f.path, f.content))
 
-    // Nav + Client Center from the live repo, with graceful fallbacks.
-    let nav: NavJson = fallbackNav(pages)
+    // Nav + Client Center from the live repo, with graceful fallbacks. No (or a
+    // malformed) nav.json means the editor sidebar shows every page as "Not in
+    // navigation", so the export ships an empty menu rather than inventing one.
+    let nav: NavJson = { primary: [] }
     if (tree.some((e) => e.path === NAV_PATH)) {
       try {
         const navBlob = await readFile(ctx.githubRepo, NAV_PATH, DRAFT_BRANCH)
@@ -183,11 +176,23 @@ export async function GET(
       }
     }
 
+    // Fonts, roundness, density and treatments; a missing or malformed file
+    // falls back to the template defaults rather than failing the export.
+    let designText: string | null = null
+    if (tree.some((e) => e.path === DESIGN_JSON_PATH)) {
+      try {
+        designText = (await readFile(ctx.githubRepo, DESIGN_JSON_PATH, DRAFT_BRANCH)).content
+      } catch {
+        designText = null
+      }
+    }
+
     const { zip, filenameBase } = await buildDiviExport({
       firmName,
       websiteUrl: session.website_url,
       pages,
       brand,
+      design: parseDesignJsonText(designText),
       clientCenter,
       nav,
       logoUrl,

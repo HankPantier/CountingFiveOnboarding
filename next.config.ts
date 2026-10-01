@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // lightningcss ships native .node bindings — keep it out of the server
   // bundle (require() it at runtime) instead of letting Turbopack try to
   // bundle the binary. Used by lib/design/css-sanitizer.ts (server-only).
-  serverExternalPackages: ['lightningcss', '@sparticuz/chromium', 'playwright-core'],
+  serverExternalPackages: ['lightningcss', '@sparticuz/chromium', 'playwright-core', '@resvg/resvg-js'],
   // Force-includes native deps that file tracing can't follow (computed
   // require()s / by-path loads) for every route that (even lazily) needs
   // them. See the `lightningcss` / `renderer` comments below for why.
@@ -37,6 +37,13 @@ const nextConfig: NextConfig = {
       '/api/edit/\\[id\\]/design/versions/import': lightningcss,
       // Design chat: chat-workspace (sanitizer) + chat-preview (renderer), both lazy.
       '/api/edit/\\[id\\]/design/chat': [...lightningcss, ...renderer],
+      // Divi export sitemap: resvg's native binding is require()d by platform
+      // name, and the bundled fonts are read by path (PNG + PDF).
+      '/api/edit/\\[id\\]/export-divi': [
+        './node_modules/@resvg/resvg-js/**',
+        './node_modules/@resvg/resvg-js-linux-x64-gnu/**',
+        './lib/content/divi/assets/*.ttf',
+      ],
     }
   })(),
   async headers() {

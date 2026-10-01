@@ -32,7 +32,12 @@ export type DiviPageInput = {
   content_markdown: string | null
   faq_block: unknown
   cta: { text: string; url: string } | null
+  // SEO frontmatter — not rendered into the page, listed in the sitemap PDF so
+  // the importer can fill the SEO plugin fields.
+  seo?: DiviPageSeo
 }
+
+export type DiviPageSeo = { metaTitle: string; metaDescription: string; targetKeyword: string }
 
 function colsFromVariant(variant: string | undefined, fallback: number): number {
   const m = (variant ?? '').match(/(\d+)/)
@@ -93,7 +98,7 @@ function renderSection(
       const cards = parseCards(section.content)
       if (cards.length === 0) return basicContentBlock(headingHtml(section))
       const cols = colsFromVariant(section.variant, section.blockId === 'service-cards' ? 3 : 3)
-      return cardGridBlock(section.heading, cards, cols)
+      return cardGridBlock(section.heading, cards, cols, section.theme === 'ink' ? 'ink' : 'light')
     }
 
     case 'cta-banner': {

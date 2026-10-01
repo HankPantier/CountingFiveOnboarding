@@ -5,15 +5,20 @@
 // bundle for the shared Divi boilerplate site. See ./README.md for the full
 // rationale and a one-move removal guide. Produces a zip containing:
 //   - <site>.wxr                 all pages (Divi shortcode) + primary nav menu
+//   - <site>-divi-customizer.json  client styling: Global Colors, fonts, H1–H6,
+//                                buttons, brand CSS (./customizer.ts)
 //   - <site>-divi-library.json   per-client Header (Client Center) + Footer
+//   - <site>-sitemap.pdf/.svg/.png  site structure reference for the importer
 //   - README.txt                 import + Theme Builder steps
 //
 // Source-neutral: callers hand it a prepared DiviPageInput[] (the editor route
-// maps live repo `.md` files via from-frontmatter.ts). Page parent hierarchy is
-// derived from the URL paths, so no separate sitemap is needed.
+// maps live repo `.md` files via from-frontmatter.ts). The Primary Menu and page
+// nesting come from nav.json — the tree the editor's Pages sidebar shows — and
+// pages outside it import with no menu entry (URL-prefix parent only).
 // ---------------------------------------------------------------------------
 
 import type { BrandJson } from '@/types/brand-json'
+import type { DesignJson } from '@/types/design-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import type { NavJson } from '@/types/nav-json'
 import type { PricingPlansConfig } from '@/types/pricing-plans'
@@ -25,6 +30,13 @@ import { buildWxr, type WxrPage } from './wxr'
 import { buildDiviLibrary } from './library'
 import { buildReadme } from './readme'
 import { analyzeNav, levelOf, buildSectionLandingDivi, type NavSection } from './hierarchy'
+import { buildSitemapModel, sidebarOrder } from './sitemap'
+import { layoutSitemap, sitemapTheme } from './sitemap-layout'
+import { renderSitemapSvg } from './sitemap-svg'
+import { renderSitemapPng } from './sitemap-png'
+import { renderSitemapPdf } from './sitemap-pdf'
+import { applyDiviStyle, buildDiviStyle } from './style'
+import { buildDiviCustomizer } from './customizer'
 
 export type { DiviPageInput } from './page'
 
@@ -33,6 +45,8 @@ export type DiviExportInput = {
   websiteUrl: string
   pages: DiviPageInput[]
   brand: BrandJson
+  // The draft's content/design.json (fonts, roundness, density, treatments).
+  design: DesignJson
   clientCenter: ClientCenterJson
   nav: NavJson
   logoUrl: string | null
@@ -66,15 +80,26 @@ function parentPathFor(path: string, existing: Set<string>): string | null {
   return null
 }
 
-type PageRec = { path: string; title: string; real?: DiviPageInput; section?: NavSection }
+type PageRec = {
+  path: string
+  title: string
+  real?: DiviPageInput
+  section?: NavSection
+  synthesized?: 'section' | 'home'
+}
 
 export async function buildDiviExport(input: DiviExportInput): Promise<DiviExportResult> {
+  const style = buildDiviStyle(input.brand, input.design)
+
   // nav.json is the authoritative structure: parent/child + which section pages
   // must be synthesized, plus a nav with URLs rewritten to real page paths.
-  const { parentByChildPath, sections, resolvedNav } = analyzeNav(input.nav)
-
   const realByPath = new Map<string, DiviPageInput>()
   for (const p of input.pages) realByPath.set(toPagePath(p.page_url), p)
+
+  const { parentByChildPath, sections, resolvedNav } = analyzeNav(input.nav, {
+    pagePaths: new Set(realByPath.keys()),
+    siteHost: siteHost(input.websiteUrl),
+  })
 
   // A dropdown parent with no page of its own gets a synthesized landing page so
   // its children have something to nest under and the section is navigable.
@@ -84,7 +109,7 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     real: p,
   }))
   for (const s of sections) {
-    if (!realByPath.has(s.path)) recs.push({ path: s.path, title: s.title, section: s })
+    if (!realByPath.has(s.path)) recs.push({ path: s.path, title: s.title, section: s, synthesized: 'section' })
   }
 
   // Dedup by path (first wins — real pages are added first).
@@ -98,6 +123,7 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     uniqueRecs.push({
       path: '/',
       title: 'Home',
+      synthesized: 'home',
       section: {
         path: '/',
         title: input.firmName || 'Home',
@@ -121,12 +147,30 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
   uniqueRecs.forEach((r, i) => pageIdByPath.set(r.path, 100 + i))
   const allPaths = new Set(pageIdByPath.keys())
 
-  const parentIdFor = (path: string): number => {
+  const parentPathOf = (path: string): string | null => {
     const navParent = parentByChildPath.get(path)
-    if (navParent && pageIdByPath.has(navParent)) return pageIdByPath.get(navParent)!
-    const urlParent = parentPathFor(path, allPaths) // fallback: URL-prefix nesting
-    return (urlParent && pageIdByPath.get(urlParent)) || 0
+    if (navParent && pageIdByPath.has(navParent)) return navParent
+    return parentPathFor(path, allPaths) // fallback: URL-prefix nesting
   }
+  const parentIdFor = (path: string): number => {
+    const parent = parentPathOf(path)
+    return (parent && pageIdByPath.get(parent)) || 0
+  }
+
+  // One model of the imported structure feeds both menu_order and the sitemap docs.
+  const sitemap = buildSitemapModel({
+    firmName: input.firmName || siteHost(input.websiteUrl),
+    generatedAt: input.dateGmt.slice(0, 10),
+    pages: uniqueRecs.map((r) => ({
+      path: r.path,
+      title: r.path === '/' ? 'Home' : r.title,
+      synthesized: r.synthesized ?? null,
+      parentPath: parentPathOf(r.path),
+      seo: r.real?.seo,
+    })),
+    nav: resolvedNav,
+  })
+  const menuOrderByPath = new Map(sidebarOrder(sitemap).map((p, i) => [p, i]))
 
   // Resolve every image query once, deduped across the real pages.
   const allQueries = uniqueRecs.filter((r) => r.real).flatMap((r) => collectPageQueries(r.real!))
@@ -141,9 +185,13 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     slug: slugFor(r.path),
     postId: pageIdByPath.get(r.path)!,
     parentId: parentIdFor(r.path),
-    content: r.real
-      ? buildPageDivi(r.real, imageUrls, input.websiteUrl, input.pricingPlans ?? null)
-      : buildSectionLandingDivi(r.section!),
+    menuOrder: menuOrderByPath.get(r.path) ?? 0,
+    content: applyDiviStyle(
+      r.real
+        ? buildPageDivi(r.real, imageUrls, input.websiteUrl, input.pricingPlans ?? null)
+        : buildSectionLandingDivi(r.section!),
+      style
+    ),
   }))
 
   const wxr = buildWxr({
@@ -159,11 +207,26 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     clientCenter: input.clientCenter,
     nav: resolvedNav,
     logoUrl: input.logoUrl,
+    style,
     dateGmt: input.dateGmt,
   })
+  const customizer = buildDiviCustomizer(style)
 
   const filenameBase =
     (siteHost(input.websiteUrl) || 'client').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')
+
+  // Sitemap reference. The SVG is a pure string; the PNG and PDF are fail-soft
+  // so a renderer problem never blocks the import bundle itself.
+  const theme = sitemapTheme(input.brand.palette)
+  const layout = layoutSitemap(sitemap)
+  const sitemapSvg = renderSitemapSvg(layout, theme)
+  const [sitemapPng, sitemapPdf] = await Promise.all([
+    renderSitemapPng(sitemapSvg, layout.width),
+    renderSitemapPdf(sitemap, layout, theme, style).catch((err: unknown) => {
+      console.warn('[divi-export] sitemap PDF render skipped:', err instanceof Error ? err.message : err)
+      return null
+    }),
+  ])
 
   const readme = buildReadme({
     firmName: input.firmName,
@@ -171,11 +234,21 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     pageCount: wxrPages.length,
     imageCount: imageUrls.size,
     hasLogo: !!input.logoUrl,
+    navConfigured: sitemap.navConfigured,
+    menuPageCount: sitemap.counts.inMenu,
+    notInNavCount: sitemap.counts.notInNav,
+    hasSitemapPdf: !!sitemapPdf,
+    hasSitemapPng: !!sitemapPng,
+    fonts: { heading: style.fonts.heading, body: style.fonts.body },
   })
 
   const zip = await assembleZip([
     { path: `${filenameBase}.wxr`, content: wxr },
+    { path: `${filenameBase}-divi-customizer.json`, content: customizer },
     { path: `${filenameBase}-divi-library.json`, content: library },
+    ...(sitemapPdf ? [{ path: `${filenameBase}-sitemap.pdf`, content: sitemapPdf }] : []),
+    { path: `${filenameBase}-sitemap.svg`, content: sitemapSvg },
+    ...(sitemapPng ? [{ path: `${filenameBase}-sitemap.png`, content: sitemapPng }] : []),
     { path: 'README.txt', content: readme },
   ])
 

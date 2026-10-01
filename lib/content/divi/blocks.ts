@@ -7,6 +7,11 @@
 // (raw-docs/Divi Builder Layouts.json) and substituting real copy.
 //
 // Design notes:
+//  - Colours, padding and radii are TOKENS (./style.ts c5()/pad()/radius()),
+//    resolved to the client's palette + linked to Divi Global Colors by
+//    applyDiviStyle(). Never write a hex here. Heading sizes are left to the
+//    site-wide brand CSS (the template's fluid type scale), so no module sets a
+//    heading font size or weight.
 //  - Every block family that lacks a dedicated template falls back to a plain
 //    styled text block (basicContentBlock) so no content is ever dropped.
 //  - Card icons and testimonial author/quote parsing are intentionally omitted
@@ -18,6 +23,7 @@ import { markdownToHtml, inlineMarkdown } from './markdown'
 import { safeUrl } from './sanitize'
 import { templateSectionPattern } from '@/lib/editor/block-annotation'
 import type { PricingPlansConfig } from '@/types/pricing-plans'
+import { c5, pad, radius, HEADING_FONT } from './style'
 
 const BV = '4.27.4' // Divi _builder_version stamped on emitted modules
 
@@ -95,10 +101,10 @@ export function parseQA(content: string): QA[] {
 
 export function basicContentBlock(html: string): string {
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" custom_padding="||60px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" custom_padding="${pad(50)}||${pad(60)}|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" text_font="||||||||" text_text_color="#333333" text_font_size="18px" text_line_height="1.8em" header_2_font="|800|||||||" header_2_text_color="#003B71" header_2_font_size="34px" header_3_font="|700|||||||" header_3_text_color="#003B71" header_3_font_size="24px" global_colors_info="{}"]` +
+    `[et_pb_text _builder_version="${BV}" text_text_color="${c5('text')}" header_2_text_color="${c5('heading')}" header_3_text_color="${c5('heading')}" global_colors_info="{}"]` +
     `${html}` +
     `[/et_pb_text][/et_pb_column][/et_pb_row][/et_pb_section]`
   )
@@ -106,13 +112,13 @@ export function basicContentBlock(html: string): string {
 
 export function subPageHeader(title: string, subhead?: string): string {
   const sub = subhead
-    ? `\n<p style="color:#EEEEEE;font-size:18px;">${inlineMarkdown(subhead)}</p>`
+    ? `\n<p style="color:${c5('onPrimary')};opacity:0.85;font-size:1.125rem;">${inlineMarkdown(subhead)}</p>`
     : ''
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#003B71" custom_padding="70px||70px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('primarySurface')}" custom_padding="${pad(70)}||${pad(70)}|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" text_orientation="center" background_layout="dark" header_font="Inter|800|||||||" header_text_color="#FFFFFF" header_font_size="42px" global_colors_info="{}"]` +
+    `[et_pb_text _builder_version="${BV}" text_orientation="center" background_layout="dark" header_text_color="${c5('onPrimary')}" text_text_color="${c5('onPrimary')}" global_colors_info="{}"]` +
     `<h1>${inlineMarkdown(title)}</h1>${sub}` +
     `[/et_pb_text][/et_pb_column][/et_pb_row][/et_pb_section]`
   )
@@ -121,7 +127,7 @@ export function subPageHeader(title: string, subhead?: string): string {
 function imageColumn(url: string, alt: string): string {
   return (
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_image src="${attr(url)}" alt="${attr(alt)}" _builder_version="${BV}" _module_preset="default" border_radii="on|12px|12px|12px|12px" box_shadow_style="preset3" box_shadow_color="rgba(0,59,113,0.15)" global_colors_info="{}"][/et_pb_image]` +
+    `[et_pb_image src="${attr(url)}" alt="${attr(alt)}" _builder_version="${BV}" _module_preset="default" border_radii="on|${radius('image')}|${radius('image')}|${radius('image')}|${radius('image')}" box_shadow_style="preset3" box_shadow_color="${c5('primary', 0.15)}" global_colors_info="{}"][/et_pb_image]` +
     `[/et_pb_column]`
   )
 }
@@ -144,17 +150,20 @@ export function copyImageBlock(opts: {
     ? `\n<h2>${inlineMarkdown(opts.subhead)}</h2>`
     : ''
   const buttonHref = opts.buttonUrl ? safeUrl(opts.buttonUrl) : null
+  // Hero buttons invert onto the primary surface; body buttons use the action colour.
   const button =
     opts.buttonText && buttonHref
-      ? `[et_pb_button button_url="${attr(buttonHref)}" button_text="${attr(opts.buttonText)}" button_alignment="left" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="15px" button_text_color="${opts.hero ? '#003B71' : '#FFFFFF'}" button_bg_color="${opts.hero ? '#FFFFFF' : '#00C1DE'}" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="15px|25px|15px|25px|true|true" global_colors_info="{}"][/et_pb_button]`
+      ? `[et_pb_button button_url="${attr(buttonHref)}" button_text="${attr(opts.buttonText)}" button_alignment="left" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="${opts.hero ? c5('primary') : c5('onAction')}" button_bg_color="${opts.hero ? c5('onPrimary') : c5('action')}" button_border_width="0px" button_border_radius="${radius('button')}" button_font="${HEADING_FONT(700)}" button_use_icon="off" custom_padding="15px|26px|15px|26px|true|true" global_colors_info="{}"][/et_pb_button]`
       : ''
 
-  const textColor = opts.hero ? '#FFFFFF' : '#333333'
-  const headerColor = opts.hero ? '#FFFFFF' : '#003B71'
+  const textColor = opts.hero ? c5('onPrimary') : c5('text')
+  const headerColor = opts.hero ? c5('onPrimary') : c5('heading')
+  // The hero H1 takes the template's display size (.c5-display in the brand CSS).
+  const headingOpen = opts.hero ? '<h1 class="c5-display">' : `<${headingTag}>`
   const textColumn =
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" ${opts.hero ? 'background_layout="dark" ' : ''}header_font="Inter|800|||||||" header_text_color="${headerColor}" header_font_size="${opts.hero ? '44px' : '34px'}" header_2_font="Inter||||||||" header_2_text_color="${opts.hero ? '#EEEEEE' : '#00C1DE'}" header_2_font_size="22px" text_font="Inter||||||||" text_text_color="${textColor}" text_font_size="17px" text_line_height="1.9em" global_colors_info="{}"]` +
-    `<${headingTag}>${inlineMarkdown(opts.heading)}</${headingTag}>${sub}\n${opts.bodyHtml}` +
+    `[et_pb_text _builder_version="${BV}" ${opts.hero ? 'background_layout="dark" ' : ''}header_text_color="${headerColor}" header_2_text_color="${opts.hero ? c5('onPrimary') : c5('actionText')}" text_text_color="${textColor}" global_colors_info="{}"]` +
+    `${headingOpen}${inlineMarkdown(opts.heading)}</${headingTag}>${sub}\n${opts.bodyHtml}` +
     `[/et_pb_text]${button}[/et_pb_column]`
 
   const imgCol = opts.imageUrl ? imageColumn(opts.imageUrl, opts.imageAlt ?? opts.heading) : ''
@@ -165,8 +174,8 @@ export function copyImageBlock(opts: {
     : textColumn
 
   const sectionAttrs = opts.hero
-    ? `background_color="#003B71" use_background_color_gradient="on" background_color_gradient_stops="#003b71 0%|#00C1DE 100%" background_color_gradient_start="#003b71" background_color_gradient_end="#00C1DE" custom_padding="90px|0px|90px|0px"`
-    : `custom_padding="50px|0px|50px|0px"`
+    ? `background_color="${c5('primarySurface')}" custom_padding="${pad(90)}|0px|${pad(90)}|0px"`
+    : `custom_padding="${pad(50)}|0px|${pad(50)}|0px"`
 
   return (
     `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" ${sectionAttrs} global_colors_info="{}" template_type="section"]` +
@@ -178,8 +187,8 @@ export function copyImageBlock(opts: {
 
 function cardColumn(card: Card, colType: string): string {
   return (
-    `[et_pb_column type="${colType}" _builder_version="${BV}" _module_preset="default" background_color="#FFFFFF" custom_padding="24px|24px|24px|24px|true|false" border_radii="on|8px|8px|8px|8px" box_shadow_style="preset3" box_shadow_color="rgba(0,59,113,0.15)" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" _module_preset="default" header_3_font="|800|||||||" header_3_text_color="#003B71" header_3_font_size="20px" text_font="||||||||" text_text_color="#333333" text_font_size="15px" text_line_height="1.7em" global_colors_info="{}"]` +
+    `[et_pb_column type="${colType}" _builder_version="${BV}" _module_preset="default" background_color="${c5('nearWhite')}" custom_padding="24px|24px|24px|24px|true|false" border_radii="on|${radius('card')}|${radius('card')}|${radius('card')}|${radius('card')}" box_shadow_style="preset3" box_shadow_color="${c5('primary', 0.12)}" module_class="c5-card" global_colors_info="{}"]` +
+    `[et_pb_text _builder_version="${BV}" _module_preset="default" header_3_text_color="${c5('heading')}" text_text_color="${c5('text')}" global_colors_info="{}"]` +
     `<h3>${inlineMarkdown(card.title)}</h3>\n${card.bodyHtml}` +
     `[/et_pb_text][/et_pb_column]`
   )
@@ -187,13 +196,18 @@ function cardColumn(card: Card, colType: string): string {
 
 const COL_TYPES: Record<number, string> = { 1: '4_4', 2: '1_2', 3: '1_3', 4: '1_4' }
 
-export function cardGridBlock(heading: string, cards: Card[], cols: number): string {
+// `band: 'ink'` renders the section on the template's dark band (theme: ink):
+// the primary surface, or the deep ink surface when design.json darkSections is
+// on — the `band` role resolves that per client. Cards stay light.
+export function cardGridBlock(heading: string, cards: Card[], cols: number, band: 'light' | 'ink' = 'light'): string {
   const perRow = Math.min(Math.max(cols, 1), 4)
   const rows: string[] = []
+  const bandBg = band === 'ink' ? c5('band') : c5('surfaceMuted')
+  const headingColor = band === 'ink' ? c5('onBand') : c5('heading')
   const headingText = heading
     ? `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
       `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-      `[et_pb_text _builder_version="${BV}" text_orientation="center" header_2_font="|800|||||||" header_2_text_color="#003B71" header_2_font_size="34px" global_colors_info="{}"]<h2>${inlineMarkdown(heading)}</h2>[/et_pb_text]` +
+      `[et_pb_text _builder_version="${BV}" text_orientation="center" ${band === 'ink' ? 'background_layout="dark" ' : ''}header_2_text_color="${headingColor}" global_colors_info="{}"]<h2>${inlineMarkdown(heading)}</h2>[/et_pb_text]` +
       `[/et_pb_column][/et_pb_row]`
     : ''
 
@@ -209,7 +223,7 @@ export function cardGridBlock(heading: string, cards: Card[], cols: number): str
   }
 
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#F7FAFC" custom_padding="50px||60px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${bandBg}" custom_padding="${pad(50)}||${pad(60)}|||" global_colors_info="{}" template_type="section"]` +
     `${headingText}${rows.join('')}` +
     `[/et_pb_section]`
   )
@@ -222,14 +236,14 @@ export function ctaBlock(opts: {
   buttonUrl: string
 }): string {
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#003B71" custom_padding="60px|0px|60px|0px|true|true" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('primarySurface')}" custom_padding="${pad(60)}|0px|${pad(60)}|0px|true|true" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row column_structure="2_3,1_3" use_custom_gutter="on" make_equal="on" _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="2_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" background_layout="dark" header_2_font="|700|||||||" header_2_text_color="#FFFFFF" header_2_font_size="34px" text_text_color="#EEEEEE" text_font_size="17px" global_colors_info="{}"]` +
+    `[et_pb_text _builder_version="${BV}" background_layout="dark" header_2_text_color="${c5('onPrimary')}" text_text_color="${c5('onPrimary')}" global_colors_info="{}"]` +
     `<h2>${inlineMarkdown(opts.heading)}</h2>\n${opts.bodyHtml}` +
     `[/et_pb_text][/et_pb_column]` +
     `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_button button_url="${attr(safeUrl(opts.buttonUrl) ?? '/contact/')}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="#003B71" button_bg_color="#00C1DE" button_border_width="0px" button_border_radius="40px" button_font="--et_global_heading_font|700||on|||||" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="rgba(0,193,222,0.35)" global_colors_info="{}"][/et_pb_button]` +
+    `[et_pb_button button_url="${attr(safeUrl(opts.buttonUrl) ?? '/contact/')}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="${c5('onAction')}" button_bg_color="${c5('action')}" button_border_width="0px" button_border_radius="${radius('button')}" button_font="${HEADING_FONT(700)}" button_use_icon="off" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="${c5('action', 0.35)}" global_colors_info="{}"][/et_pb_button]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }
@@ -266,7 +280,7 @@ export function pricingTablesBlock(config: PricingPlansConfig): string {
         (tier.description ? ` subtitle="${attr(tier.description)}"` : '') +
         ` currency="${attr(symbol)}" per="${per}" sum="${attr(sum)}"` +
         ` button_url="${attr(buttonUrl)}" button_text="${attr(tier.cta.label)}"` +
-        ` _builder_version="${BV}" _module_preset="default" button_bg_color="#00C1DE" button_border_radius="40px" global_colors_info="{}"]` +
+        ` _builder_version="${BV}" _module_preset="default" button_bg_color="${c5('action')}" button_text_color="${c5('onAction')}" button_border_radius="${radius('button')}" global_colors_info="{}"]` +
         `${features}` +
         `[/et_pb_pricing_table]`
       )
@@ -274,10 +288,10 @@ export function pricingTablesBlock(config: PricingPlansConfig): string {
     .join('')
 
   const pricingSection =
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" custom_padding="50px||60px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" custom_padding="${pad(50)}||${pad(60)}|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="90%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_pricing_tables _builder_version="${BV}" _module_preset="default" header_background_color="#003B71" featured_table_background_color="#F7FAFC" global_colors_info="{}"]${tables}[/et_pb_pricing_tables]` +
+    `[et_pb_pricing_tables _builder_version="${BV}" _module_preset="default" header_background_color="${c5('primarySurface')}" featured_table_background_color="${c5('surfaceMuted')}" global_colors_info="{}"]${tables}[/et_pb_pricing_tables]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
 
   // Shared features + add-ons as a styled prose block below the tables.
@@ -313,14 +327,14 @@ export function accordionBlock(heading: string, items: QA[]): string {
     )
     .join('')
   const headingText = heading
-    ? `[et_pb_text _builder_version="${BV}" header_2_font="|700|||||||" header_2_text_color="#003B71" header_2_font_size="34px" custom_margin="||20px|" global_colors_info="{}"]<h2>${inlineMarkdown(heading)}</h2>[/et_pb_text]`
+    ? `[et_pb_text _builder_version="${BV}" header_2_text_color="${c5('heading')}" custom_margin="||20px|" global_colors_info="{}"]<h2>${inlineMarkdown(heading)}</h2>[/et_pb_text]`
     : ''
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="#EEEEEE" custom_padding="50px|0px|50px|0px|true|true" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('surfaceMuted')}" custom_padding="${pad(50)}|0px|${pad(50)}|0px|true|true" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
     `${headingText}` +
-    `[et_pb_accordion _builder_version="${BV}" _module_preset="default" toggle_font="|700|||||||" toggle_text_color="#003B71" body_font="||||||||" body_text_color="#333333" global_colors_info="{}"]${accItems}[/et_pb_accordion]` +
+    `[et_pb_accordion _builder_version="${BV}" _module_preset="default" toggle_font="${HEADING_FONT(600)}" toggle_text_color="${c5('heading')}" body_text_color="${c5('text')}" global_colors_info="{}"]${accItems}[/et_pb_accordion]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }
