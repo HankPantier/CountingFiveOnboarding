@@ -98,11 +98,11 @@ export default async function ContentQualityPage() {
             <section className="mb-6">
               <h2 className="text-lg font-heading font-bold text-brand-navy mb-3">QA Desk</h2>
               <div className="grid gap-4 sm:grid-cols-5 mb-4">
-                <StatTile label="Pages QA'd" value={String(data.qa.pages)} sub="reviews on record" />
-                <StatTile label="Pass rate" value={`${Math.round(data.qa.passRate * 100)}%`} sub="of QA'd pages" />
+                <StatTile label="Pass rate" value={`${Math.round(data.qa.passRate * 100)}%`} sub={`${data.qa.pages} page(s) QA'd`} />
                 <StatTile label="Avg accuracy" value={`${data.qa.avgScores.accuracy}/10`} sub="accuracy score" />
                 <StatTile label="Avg copy" value={`${data.qa.avgScores.copy}/10`} sub="copy score" />
                 <StatTile label="Avg SEO" value={`${data.qa.avgScores.seo}/10`} sub="SEO/GEO score" />
+                <StatTile label="Avg structure" value={`${data.qa.avgScores.structure}/10`} sub="structure score" />
               </div>
               <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
                 <table className="w-full text-sm font-body">

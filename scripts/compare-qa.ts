@@ -87,6 +87,7 @@ async function main(): Promise<void> {
   type TokenContext = import('../lib/content/token-pricing').TokenContext
   type SpecialistInput = import('../lib/content/qa/specialists/types').SpecialistInput
   type Json = import('../types/database').Json
+  type ScoreDraftInput = Parameters<typeof scoreDraft>[0]
   // Only the fields run.ts's runSpecialist actually passes. Kept loose
   // (providerOptions: unknown) and cast at the call boundary below —
   // generateMbpJson's full generic opts type (with `accept`/`attempts` tied to
@@ -108,9 +109,18 @@ async function main(): Promise<void> {
   const supabase = createServerClient()
   const model = args.model ?? QA_SPECIALIST_MODEL
 
+  // Identifies the fixture target's token_usage rows (see Target.isFixture
+  // below) so they never attribute spend to a real client's content_job_id/
+  // session_id — a synthetic page must not pollute a live client's cost ledger.
+  const FIXTURE_PAGE_URL = '__fixture__/seeded-defects'
+
   // Delegates to the real generateMbpJson (same retries/caching/recordTokenUsage
   // as production) with the A/B model substituted in — the specialist modules
   // hardcode QA_SPECIALIST_MODEL, so this is the only hook available to vary it.
+  // Also the interception point that nulls session_id/content_job_id in the
+  // recorded ctx for the fixture page (TokenContext already allows null here —
+  // no cast needed), while still keying the row to the identifiable fixture
+  // page_url.
   function generateWithModel<T>(
     prompt: string,
     validate: (parsed: unknown) => T | null,
@@ -118,7 +128,9 @@ async function main(): Promise<void> {
     ctx?: TokenContext,
     opts?: GenerateOpts,
   ): Promise<T | null> {
-    return generateMbpJson<T>(prompt, validate, maxOutputTokens, ctx, {
+    const effectiveCtx: TokenContext | undefined =
+      ctx && ctx.pageUrl === FIXTURE_PAGE_URL ? { ...ctx, sessionId: null, contentJobId: null } : ctx
+    return generateMbpJson<T>(prompt, validate, maxOutputTokens, effectiveCtx, {
       ...(opts as Parameters<typeof generateMbpJson>[4]),
       model,
     })
@@ -219,7 +231,7 @@ async function main(): Promise<void> {
     expected = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'seeded-defects.expect.json'), 'utf8')) as Expect
     targets.push({
       pageId: 'seeded-defects-fixture',
-      pageUrl: '__fixture__/seeded-defects',
+      pageUrl: FIXTURE_PAGE_URL,
       pageTitle: 'Tax Planning for Manufacturers in Michigan',
       body: fixtureBody,
       metaTitle: 'Tax Planning for Manufacturers in Michigan | Korbey Lague',
@@ -240,15 +252,26 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  async function costSince(stage: string, costModel: string, pageUrl: string, sinceIso: string): Promise<number> {
-    const { data } = await supabase
+  // `byJobId: null` (the fixture case) reads back the rows generateWithModel
+  // recorded with a null content_job_id — queried by page_url + stage + model
+  // + the time window instead, since FIXTURE_PAGE_URL is unique to this run and
+  // no live job ever writes it.
+  async function costSince(
+    stage: string,
+    costModel: string,
+    pageUrl: string,
+    sinceIso: string,
+    byJobId: string | null,
+  ): Promise<number> {
+    let q = supabase
       .from('token_usage')
       .select('cost_usd')
-      .eq('content_job_id', jobId)
       .eq('stage', stage)
       .eq('model', costModel)
       .eq('page_url', pageUrl)
       .gte('created_at', sinceIso)
+    if (byJobId) q = q.eq('content_job_id', byJobId)
+    const { data } = await q
     return (data ?? []).reduce((s, r) => s + Number(r.cost_usd), 0)
   }
 
@@ -296,7 +319,7 @@ async function main(): Promise<void> {
         const t0 = Date.now()
         const findings = await runSpecialist(def, input, { generate: generateWithModel as typeof generateMbpJson })
         const wallMs = Date.now() - t0
-        const cost = await costSince(def.stage, model, t.pageUrl, startedAt)
+        const cost = await costSince(def.stage, model, t.pageUrl, startedAt, t.isFixture ? null : jobId)
         return { def, findings, wallMs, cost }
       }),
     )
@@ -309,6 +332,12 @@ async function main(): Promise<void> {
       )
     }
 
+    // scoreDraft's DraftCriticInput types sessionId/contentJobId as required
+    // strings (every production call site has them) — but it only ever reads
+    // them to build the token_usage ctx it records, so for the fixture target
+    // we deliberately pass null to keep it off the real session's cost ledger.
+    // `as unknown as ScoreDraftInput` bridges that one intentional widening;
+    // every other field matches the real interface exactly.
     const judgeStartedAt = new Date().toISOString()
     const judgeT0 = Date.now()
     const judge = await scoreDraft(
@@ -321,14 +350,14 @@ async function main(): Promise<void> {
         targetKeyword: t.targetKeyword ?? '',
         competitorRefs: [],
         schema: ctx.schema,
-        sessionId: ctx.sessionId,
-        contentJobId: jobId,
-      },
+        sessionId: t.isFixture ? null : ctx.sessionId,
+        contentJobId: t.isFixture ? null : jobId,
+      } as unknown as ScoreDraftInput,
       CRITIC_MODEL,
       { timeoutMs: CRITIC_CALL_CAP_MS },
     )
     const judgeWallMs = Date.now() - judgeT0
-    const judgeCost = await costSince('critic', CRITIC_MODEL, t.pageUrl, judgeStartedAt)
+    const judgeCost = await costSince('critic', CRITIC_MODEL, t.pageUrl, judgeStartedAt, t.isFixture ? null : jobId)
     pageCost += judgeCost
     console.warn(
       `  judge(Opus) ${judge ? `claims=${judge.unsupported_claims.length} missing=${(judge.missing_sections ?? []).length}` : 'NO RESULT'}  $${judgeCost.toFixed(4)}  ${judgeWallMs}ms`,
