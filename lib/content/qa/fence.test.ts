@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fenceQaForHumanEdit, QA_FENCED_STATUSES } from './fence'
+import { fenceQaForHumanEdit, fenceQaForPages, QA_FENCED_STATUSES } from './fence'
 
 type Call = { table: string; payload: unknown; filters: Array<[string, string, unknown]> }
 
@@ -50,5 +50,30 @@ describe('fenceQaForHumanEdit', () => {
   it('fails soft on a DB error (never blocks the human edit)', async () => {
     const { supabase } = fake({ data: null, error: { message: 'boom' } })
     expect(await fenceQaForHumanEdit(supabase, 'p1', { contentJobId: 'j1' })).toBe(false)
+  })
+})
+
+describe('fenceQaForPages', () => {
+  it('flips the whole set in one update, scoped to the job', async () => {
+    const { supabase, calls } = fake({ data: [{ id: 'p1' }, { id: 'p2' }], error: null })
+    expect(await fenceQaForPages(supabase, ['p1', 'p2'], 'j1')).toBe(2)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].payload).toEqual({ qa_status: 'skipped' })
+    expect(calls[0].filters).toEqual([
+      ['in', 'id', ['p1', 'p2']],
+      ['eq', 'content_job_id', 'j1'],
+      ['in', 'qa_status', ['queued', 'running', 'error']],
+    ])
+  })
+
+  it('is a no-op for an empty set', async () => {
+    const { supabase, calls } = fake({ data: [], error: null })
+    expect(await fenceQaForPages(supabase, [], 'j1')).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('fails soft on a DB error', async () => {
+    const { supabase } = fake({ data: null, error: { message: 'boom' } })
+    expect(await fenceQaForPages(supabase, ['p1'], 'j1')).toBe(0)
   })
 })

@@ -34,3 +34,26 @@ export async function fenceQaForHumanEdit(
   }
   return (data?.length ?? 0) > 0
 }
+
+// Bulk sibling of fenceQaForHumanEdit for a human-initiated write that touches
+// many pages of one job at once (e.g. the domain-rename patch). One update over
+// the id set; returns how many QA runs were pre-empted. Fail-soft like above.
+export async function fenceQaForPages(
+  supabase: ReturnType<typeof createServerClient>,
+  pageIds: string[],
+  contentJobId: string,
+): Promise<number> {
+  if (!pageIds.length) return 0
+  const { data, error } = await supabase
+    .from('generated_pages')
+    .update({ qa_status: 'skipped' })
+    .in('id', pageIds)
+    .eq('content_job_id', contentJobId)
+    .in('qa_status', [...QA_FENCED_STATUSES])
+    .select('id')
+  if (error) {
+    console.error(`[qa] bulk human-edit fence failed for job ${contentJobId}:`, error)
+    return 0
+  }
+  return data?.length ?? 0
+}

@@ -4,6 +4,7 @@ import { requireAdminUser } from '@/lib/auth/access'
 import { readJsonBody } from '@/app/api/_json'
 import { asJson } from '@/lib/supabase/json-typed'
 import { hostOf, rewriteHost } from '@/lib/session/domain-rewrite'
+import { fenceQaForPages } from '@/lib/content/qa/fence'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
@@ -73,12 +74,12 @@ export async function POST(
     .select('id, page_url, canonical_url, content_markdown, answer_block, hero_block, meta_title, meta_description')
     .eq('content_job_id', job.id)
 
-  let pagesUpdated = 0
+  const fields: Array<'page_url' | 'canonical_url' | 'content_markdown' | 'answer_block' | 'hero_block' | 'meta_title' | 'meta_description'> = [
+    'page_url', 'canonical_url', 'content_markdown', 'answer_block', 'hero_block', 'meta_title', 'meta_description',
+  ]
+  const patches: Array<{ id: string; patch: Record<string, string> }> = []
   for (const p of pages ?? []) {
     const patch: Record<string, string> = {}
-    const fields: Array<'page_url' | 'canonical_url' | 'content_markdown' | 'answer_block' | 'hero_block' | 'meta_title' | 'meta_description'> = [
-      'page_url', 'canonical_url', 'content_markdown', 'answer_block', 'hero_block', 'meta_title', 'meta_description',
-    ]
     for (const f of fields) {
       const val = p[f]
       if (typeof val === 'string' && val) {
@@ -86,10 +87,17 @@ export async function POST(
         if (next !== val) patch[f] = next
       }
     }
-    if (Object.keys(patch).length) {
-      await supabase.from('generated_pages').update(patch).eq('id', p.id)
-      pagesUpdated++
-    }
+    if (Object.keys(patch).length) patches.push({ id: p.id, patch })
+  }
+
+  // A human-initiated rewrite of body/meta: pre-empt any in-flight or pending
+  // QA run on these pages first so a QA write can't land on top of it.
+  await fenceQaForPages(supabase, patches.map(x => x.id), job.id)
+
+  let pagesUpdated = 0
+  for (const { id: pageId, patch } of patches) {
+    await supabase.from('generated_pages').update(patch).eq('id', pageId)
+    pagesUpdated++
   }
 
   return NextResponse.json({ sitemapUpdated, pagesUpdated })
