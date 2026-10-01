@@ -1265,6 +1265,17 @@ export type CriticRewriteDeps = {
     supabase: ReturnType<typeof createServerClient>,
     contentJobId: string
   ) => Promise<PageGenContext | null>
+  /** Hand the rewritten page to the QA worker. Defaults to after(triggerQa). */
+  scheduleQa?: (contentJobId: string, pageId: string) => void
+}
+
+// Same never-throw scheduling guard generateSinglePage uses for QA.
+function scheduleQaAfter(contentJobId: string, pageId: string): void {
+  try {
+    after(() => triggerQa(contentJobId, pageId).then(() => undefined))
+  } catch (hookErr) {
+    console.warn('[qa] could not schedule QA:', hookErr)
+  }
 }
 
 // The critic's one quality rewrite of an ALREADY-COMPLETE page. Unlike
@@ -1328,7 +1339,16 @@ export async function rewritePageForCritic(
 
   let write = supabase
     .from('generated_pages')
-    .update({ ...pageContentFields(result, outline.sections), admin_approved_content: false, generation_error: null })
+    .update({
+      ...pageContentFields(result, outline.sections),
+      admin_approved_content: false,
+      generation_error: null,
+      // The body changed, so any QA report is stale: start QA over in the same
+      // fenced write (mirrors generateSinglePage) and trigger it once it lands.
+      qa_status: qaMode() !== 'off' ? 'queued' : null,
+      qa_review: null,
+      qa_attempts: 0,
+    })
     .eq('id', page.id)
     .eq('generation_status', 'complete')
     .eq('admin_approved_content', false)
@@ -1343,6 +1363,7 @@ export async function rewritePageForCritic(
   if (!written?.length) {
     return { status: 'skipped', error: 'Page changed during the rewrite — kept the newer version' }
   }
+  if (qaMode() !== 'off') (deps.scheduleQa ?? scheduleQaAfter)(args.contentJobId, page.id)
   return { status: 'complete' }
 }
 

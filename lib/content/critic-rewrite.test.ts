@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { criticTimeoutFor, CRITIC_CALL_CAP_MS } from './draft-critic'
 import {
   rewritePageForCritic,
@@ -156,6 +156,38 @@ describe('rewritePageForCritic', () => {
       expect(updates).toHaveLength(0)
     }
     expect(generate).not.toHaveBeenCalled()
+  })
+})
+
+describe('rewritePageForCritic — QA re-queue (I5)', () => {
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  it('re-queues QA in the same fenced write and schedules a trigger after it lands', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'shadow')
+    const { supabase, updates } = makeSupabase({ generated_pages: completePage, page_outlines: outline })
+    const scheduleQa = vi.fn()
+    const res = await rewritePageForCritic(args, { supabase, loadContext, generate: async () => goodResult(), scheduleQa })
+    expect(res.status).toBe('complete')
+    expect(updates).toHaveLength(1)
+    expect(updates[0].values).toMatchObject({ qa_status: 'queued', qa_review: null, qa_attempts: 0 })
+    expect(scheduleQa).toHaveBeenCalledWith('job-1', 'page-1')
+  })
+
+  it('clears QA (null status) and schedules nothing when QA is off', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'off')
+    const { supabase, updates } = makeSupabase({ generated_pages: completePage, page_outlines: outline })
+    const scheduleQa = vi.fn()
+    await rewritePageForCritic(args, { supabase, loadContext, generate: async () => goodResult(), scheduleQa })
+    expect(updates[0].values).toMatchObject({ qa_status: null, qa_review: null, qa_attempts: 0 })
+    expect(scheduleQa).not.toHaveBeenCalled()
+  })
+
+  it('does not schedule QA when the fenced write matched nothing', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'shadow')
+    const { supabase } = makeSupabase({ generated_pages: completePage, page_outlines: outline }, [])
+    const scheduleQa = vi.fn()
+    expect((await rewritePageForCritic(args, { supabase, loadContext, generate: async () => goodResult(), scheduleQa })).status).toBe('skipped')
+    expect(scheduleQa).not.toHaveBeenCalled()
   })
 })
 
