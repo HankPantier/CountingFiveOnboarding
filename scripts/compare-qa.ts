@@ -5,7 +5,7 @@
 // parsing and session loading. Read-only against generated_pages — nothing here
 // ever writes a page's content or QA fields. Each specialist/judge call still
 // records its real spend to token_usage (stage qa_accuracy/qa_copy/qa_seo/
-// qa_structure/critic), which is also where the per-call cost below is read
+// qa_structure/qa_judge), which is also where the per-call cost below is read
 // from (same pattern as scripts/compare-content-models.ts).
 //
 // Usage:
@@ -58,7 +58,7 @@ Usage:
                     print PASS/FAIL per expected live-only finding kind.
 
 Each specialist/judge call still records its real spend to token_usage (stage
-qa_accuracy/qa_copy/qa_seo/qa_structure/critic) — this script never writes
+qa_accuracy/qa_copy/qa_seo/qa_structure/qa_judge) — this script never writes
 generated_pages.`)
 }
 
@@ -354,10 +354,10 @@ async function main(): Promise<void> {
         contentJobId: t.isFixture ? null : jobId,
       } as unknown as ScoreDraftInput,
       CRITIC_MODEL,
-      { timeoutMs: CRITIC_CALL_CAP_MS },
+      { timeoutMs: CRITIC_CALL_CAP_MS, stage: 'qa_judge' },
     )
     const judgeWallMs = Date.now() - judgeT0
-    const judgeCost = await costSince('critic', CRITIC_MODEL, t.pageUrl, judgeStartedAt, t.isFixture ? null : jobId)
+    const judgeCost = await costSince('qa_judge', CRITIC_MODEL, t.pageUrl, judgeStartedAt, t.isFixture ? null : jobId)
     pageCost += judgeCost
     console.warn(
       `  judge(Opus) ${judge ? `claims=${judge.unsupported_claims.length} missing=${(judge.missing_sections ?? []).length}` : 'NO RESULT'}  $${judgeCost.toFixed(4)}  ${judgeWallMs}ms`,

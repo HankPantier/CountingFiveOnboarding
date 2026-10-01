@@ -177,7 +177,7 @@ export async function runQaForPage(
             contentJobId,
           },
           CRITIC_MODEL,
-          { timeoutMs: CRITIC_CALL_CAP_MS },
+          { timeoutMs: CRITIC_CALL_CAP_MS, stage: 'qa_judge' },
         )
 
     // Verbatim pages skip the judge by design; anywhere else a null judge means

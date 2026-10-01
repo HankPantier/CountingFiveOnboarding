@@ -179,4 +179,10 @@ describe('runQaForPage', () => {
     const review = final.qa_review as { findings: Array<Record<string, unknown>> }
     expect(review.findings.some(f => f.kind === 'judge_unavailable')).toBe(false)
   })
+
+  it("records the QA judge's spend under the qa_judge stage", async () => {
+    const { deps: d } = deps('on')
+    await runQaForPage('j1', 'p1', d)
+    expect(d.judge).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ stage: 'qa_judge' }))
+  })
 })

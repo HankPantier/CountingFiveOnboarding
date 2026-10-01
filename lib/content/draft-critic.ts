@@ -8,6 +8,7 @@ import { RESERVE_MS } from './generation-budget'
 import { parseCritic, criticFailsThreshold, type CriticReview, type ParsedCritic } from './critic-review'
 import type { SessionSchema } from '@/types/session-schema'
 import type { Json } from '@/types/database'
+import type { TokenStage } from './token-pricing'
 
 export interface DraftCriticInput {
   pageId: string
@@ -45,10 +46,12 @@ export function criticTimeoutFor(deadlineAt: number, now: number = Date.now()): 
 // content-generator). Fail-soft: any error (generation, parse) resolves to null.
 // `opts.timeoutMs` bounds the whole critic call (both parse attempts); callers
 // running inside a shared invocation (after()) clip it to the time left.
+// `opts.stage` is the token_usage stage the spend is recorded under (default
+// 'critic'; the QA Desk judge passes 'qa_judge').
 export async function scoreDraft(
   input: DraftCriticInput,
   model: string = CRITIC_MODEL,
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; stage?: TokenStage },
 ): Promise<CriticReview | null> {
   const body = input.contentMarkdown?.trim()
   if (!body) return null
@@ -105,7 +108,7 @@ Return ONLY JSON:
 { "evidence_specificity": 0-10, "information_gain": 0-10, "brand_fidelity": 0-10, "promise_fulfillment": 0-10, "outline_coverage": 0-10, "input_utilization": 0-10, "differentiation": 0-10, "unsupported_claims": ["..."], "missing_sections": ["..."], "notes": "..." }`,
     parseCritic,
     8000,
-    { task: 'content', stage: 'critic', sessionId: input.sessionId, contentJobId: input.contentJobId, pageUrl: input.pageUrl },
+    { task: 'content', stage: opts?.stage ?? 'critic', sessionId: input.sessionId, contentJobId: input.contentJobId, pageUrl: input.pageUrl },
     {
       model,
       providerOptions: GENERATION_PROVIDER_OPTIONS,
