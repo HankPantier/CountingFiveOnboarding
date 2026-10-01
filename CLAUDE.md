@@ -247,9 +247,19 @@ This does NOT apply to the **background** impact reviews (`reviewContentForMbpIm
 - **Mode.** `CONTENT_QA_MODE=off|shadow|on`.
   - `shadow` only reports; the legacy critic still runs.
   - `on` applies `auto` findings, replaces the legacy critic step, and holds phase 5→6 + the content-ready email until QA is terminal.
-- **Safety.** Specialists may only auto-fix kinds in their `allowedAuto`. Accuracy claims and section changes are always flags. Every patch goes through `applyBatchEdits` + `checkEditAnnotations`; failures degrade to flags. Verbatim pages and verbatim bios are never patched.
-- **Human edits win.** The page PATCH route flips queued/running QA to `skipped`, which breaks the QA write fence.
-- **Sweep.** `sweep-stuck-jobs` errors QA `running` > 15 min, re-triggers stale `queued`/`error` rows (cap `QA_MAX_ATTEMPTS`), and finishes jobs that were waiting on QA.
+- **Safety.** Specialists may only auto-fix kinds in their `allowedAuto`. Accuracy claims and section changes are always flags.
+  - Patches apply one at a time through `applyFindReplace`, then the batch result is checked once with `checkEditAnnotations`. Any failure degrades to a flag.
+  - Verbatim pages and verbatim bios never get body-text patches. Rules may still fix their layout variants and SEO meta fields.
+  - In `on` mode patches only land while the job is in phase 5. A run after that (e.g. a retry) is report-only.
+  - A judge that returns nothing on a non-verbatim page adds an open high `judge_unavailable` flag, which fails QA.
+- **Human edits win.** Human writes call `fenceQaForHumanEdit` (one page) or `fenceQaForPages` (bulk, e.g. domain-rename). Both flip `queued|running|error` → `skipped`, which breaks the QA write fence.
+- **Sweep.** `sweep-stuck-jobs` handles QA in this order:
+  - errors QA `running` > 15 min;
+  - flips approved pages still `queued|running|error` to `skipped`;
+  - time-boxes `queued` rows unclaimed 30 min after generation to `error` with attempts at the cap (`normalizeQaHolds`, 100 rows max);
+  - re-triggers stale `queued`/retriable `error` rows (cap `QA_MAX_ATTEMPTS`);
+  - finishes jobs that were waiting on QA.
+  In `on` mode a retriable `error` (attempts below the cap) still holds phase 6.
 - **Apply/Dismiss.** The Apply/Dismiss route calls the `qa_apply_page_update` RPC (migration 084), which does a server-side md5+rev CAS — PostgREST can't filter on long text in the URL.
 
 ### Design Studio
