@@ -7,22 +7,29 @@
 // (the claim write sets qa_status:'running'; the final write carries
 // qa_review) and returns [] for that call when the matching
 // claimReturnsEmpty / finalWriteReturnsEmpty option is set, modeling a lost
-// claim or a human edit that won the race. Every `.update()` payload is
-// recorded regardless, so tests can assert on it via `updates(table)`.
+// claim or a human edit that won the race. Every `.update()` payload AND the
+// filter chain applied to it is recorded, so tests can assert on both via
+// `updates(table)` / `updateFilters(table)` — otherwise deleting a fencing
+// `.eq()`/`.in()`/`.lt()` call from the real code would never fail a test.
+// `selectErrors` makes a `.single()`/`.maybeSingle()` read on a given table
+// resolve with `{ data: null, error }` instead, to exercise read-failure paths.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 
 type Row = Record<string, unknown>
 type UpdatePayload = Record<string, unknown>
+type FakeError = { message: string }
 type Filter = [op: 'eq' | 'neq' | 'in' | 'lt', col: string, val: unknown]
 
 export type FakeSupabaseOptions = {
   claimReturnsEmpty?: boolean
   finalWriteReturnsEmpty?: boolean
+  selectErrors?: Partial<Record<string, FakeError>>
 }
 
 export type FakeSupabase = SupabaseClient<Database> & {
   updates: (table: string) => UpdatePayload[]
+  updateFilters: (table: string) => Filter[][]
 }
 
 function matchesEq(row: Row, filters: Filter[]): boolean {
@@ -37,6 +44,7 @@ export function makeFakeSupabase(
   opts: FakeSupabaseOptions = {},
 ): FakeSupabase {
   const updateLog: Record<string, UpdatePayload[]> = {}
+  const updateFilterLog: Record<string, Filter[][]> = {}
 
   function from(table: string) {
     const rows = tables[table] ?? []
@@ -46,6 +54,7 @@ export function makeFakeSupabase(
     function resolve(): Row[] {
       if (updatePayload) {
         ;(updateLog[table] ??= []).push(updatePayload)
+        ;(updateFilterLog[table] ??= []).push([...filters])
         if (updatePayload.qa_status === 'running' && opts.claimReturnsEmpty) return []
         if ('qa_review' in updatePayload && opts.finalWriteReturnsEmpty) return []
         return rows
@@ -65,10 +74,16 @@ export function makeFakeSupabase(
     builder.in = (col: string, val: unknown) => chain(() => filters.push(['in', col, val]))
     builder.lt = (col: string, val: unknown) => chain(() => filters.push(['lt', col, val]))
     builder.single = async () => {
+      const err = opts.selectErrors?.[table]
+      if (err) return { data: null, error: err }
       const matched = resolve()
       return { data: matched[0] ?? null, error: matched[0] ? null : { message: 'not found' } }
     }
-    builder.maybeSingle = async () => ({ data: resolve()[0] ?? null, error: null })
+    builder.maybeSingle = async () => {
+      const err = opts.selectErrors?.[table]
+      if (err) return { data: null, error: err }
+      return { data: resolve()[0] ?? null, error: null }
+    }
     builder.then = (
       onFulfilled?: (v: { data: Row[]; error: null }) => unknown,
       onRejected?: (e: unknown) => unknown,
@@ -79,6 +94,9 @@ export function makeFakeSupabase(
   const client = { from } as unknown as FakeSupabase
   Object.defineProperty(client, 'updates', {
     value: (table: string) => updateLog[table] ?? [],
+  })
+  Object.defineProperty(client, 'updateFilters', {
+    value: (table: string) => updateFilterLog[table] ?? [],
   })
   return client
 }

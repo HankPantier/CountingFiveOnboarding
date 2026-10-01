@@ -61,12 +61,19 @@ export async function runQaForPage(
   const supabase = deps.supabase ?? createServerClient()
   const now = deps.now ?? (() => new Date().toISOString())
 
-  const { data: row } = await supabase
+  const { data: row, error: rowErr } = await supabase
     .from('generated_pages')
     .select(PAGE_COLS)
     .eq('id', pageId)
     .eq('content_job_id', contentJobId)
     .maybeSingle()
+  // No claim was taken yet, so a read failure needs no fenced DB write — just
+  // report it as an error rather than silently treating it as "not found"
+  // (which a transient failure must never be confused with).
+  if (rowErr) {
+    console.error(`[qa] row read failed for page ${pageId}:`, rowErr)
+    return { status: 'error', reason: 'page read failed' }
+  }
   if (!row) return { status: 'skipped', reason: 'page not found' }
   if (row.generation_status !== 'complete' || row.admin_approved_content) {
     return { status: 'skipped', reason: 'not reviewable' }
@@ -87,12 +94,17 @@ export async function runQaForPage(
   if (!claimed?.length) return { status: 'skipped', reason: 'claim lost' }
 
   try {
-    const { data: outline } = await supabase
+    const { data: outline, error: outlineErr } = await supabase
       .from('page_outlines')
       .select('sections, generation_mode')
       .eq('content_job_id', contentJobId)
       .eq('page_url', row.page_url)
       .maybeSingle()
+    // A transient failure here must never silently read as "not verbatim" —
+    // outline null -> verbatim=false would strip protection from a verbatim
+    // page's body. Throw so the catch below fences qa_status to 'error' and
+    // the page is retried within the attempt cap.
+    if (outlineErr) throw new Error(`outline read failed: ${outlineErr.message}`)
     const ctx = await (deps.loadContext ?? loadPageGenContext)(supabase, contentJobId)
     if (!ctx) throw new Error('content job context unavailable')
     const verbatim = outline?.generation_mode === 'verbatim'
@@ -185,6 +197,7 @@ export async function runQaForPage(
       .eq('id', pageId)
       .eq('qa_status', 'running')
       .eq('qa_started_at', stamp)
+      .eq('generation_status', 'complete')
       .eq('admin_approved_content', false)
       .select('id')
     if (!written?.length) return { status: 'skipped', reason: 'page changed during QA' }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { runQaForPage } from './run-qa'
 import { makeFakeSupabase } from './test-fake-supabase'
+import { QA_MAX_ATTEMPTS } from './mode'
 
 const page = {
   id: 'p1', content_job_id: 'j1', page_url: '/a', page_title: 'A', generation_status: 'complete',
@@ -75,5 +76,45 @@ describe('runQaForPage', () => {
     )
     await runQaForPage('j1', 'p1', d)
     expect(d.judge).not.toHaveBeenCalled()
+  })
+
+  it('fences the claim and the final write with the required filters', async () => {
+    const { supabase, deps: d } = deps('on')
+    expect(await runQaForPage('j1', 'p1', d)).toEqual({ status: 'done' })
+    const allFilters = supabase.updateFilters('generated_pages')
+    expect(allFilters).toHaveLength(2)
+    const [claimFilters, finalFilters] = allFilters
+    expect(claimFilters).toEqual(expect.arrayContaining([
+      ['in', 'qa_status', ['queued', 'error']],
+      ['lt', 'qa_attempts', QA_MAX_ATTEMPTS],
+      ['eq', 'generation_status', 'complete'],
+      ['eq', 'admin_approved_content', false],
+    ]))
+    expect(finalFilters).toEqual(expect.arrayContaining([
+      ['eq', 'qa_status', 'running'],
+      ['eq', 'qa_started_at', '2026-10-01T00:00:00.000Z'],
+      ['eq', 'generation_status', 'complete'],
+    ]))
+  })
+
+  it('fences to error (not a silent "not verbatim") when the outline read fails', async () => {
+    const { deps: d } = deps('on')
+    d.supabase = makeFakeSupabase(
+      { generated_pages: [page], page_outlines: [{ content_job_id: 'j1', page_url: '/a', sections: [], generation_mode: 'generate' }] },
+      { selectErrors: { page_outlines: { message: 'outline read boom' } } },
+    )
+    expect((await runQaForPage('j1', 'p1', d)).status).toBe('error')
+    expect(d.supabase.updates('generated_pages').at(-1)).toEqual({ qa_status: 'error' })
+  })
+
+  it('returns error with no write when the initial page read fails', async () => {
+    const { deps: d } = deps('on')
+    d.supabase = makeFakeSupabase(
+      { generated_pages: [page], page_outlines: [{ content_job_id: 'j1', page_url: '/a', sections: [], generation_mode: 'generate' }] },
+      { selectErrors: { generated_pages: { message: 'row read boom' } } },
+    )
+    const result = await runQaForPage('j1', 'p1', d)
+    expect(result).toEqual({ status: 'error', reason: 'page read failed' })
+    expect(d.supabase.updates('generated_pages')).toEqual([])
   })
 })
