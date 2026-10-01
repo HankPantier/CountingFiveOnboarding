@@ -48,8 +48,28 @@ describe('runSpecialist', () => {
     expect(opts.cachePrefix).not.toContain('since 2003')
     expect(ctx).toMatchObject({ task: 'content', stage: 'qa_accuracy', pageUrl: '/services/tax' })
   })
-  it('fails soft to [] when generation returns null', async () => {
-    expect(await runSpecialist(ACCURACY, input, { generate: vi.fn().mockResolvedValue(null) })).toEqual([])
+  it('drops body patches whose find occurs more than once', async () => {
+    const dupeInput: SpecialistInput = { ...input, body: 'Call 555-0100 today. For questions, Call 555-0100 today.' }
+    const generate = vi.fn().mockResolvedValue([
+      { id: '1', agent: 'copy', severity: 'low', kind: 'typo', quote: 'x', message: 'm', patch: { target: 'body', find: 'Call 555-0100 today', replace: 'Call 555-0100 now' }, safety: 'auto', status: 'open' },
+    ])
+    const out = await runSpecialist(COPY_EDITOR, dupeInput, { generate })
+    expect(out).toEqual([])
+  })
+  it('reports a page-level specialist_unavailable finding when generation returns null', async () => {
+    const out = await runSpecialist(ACCURACY, input, { generate: vi.fn().mockResolvedValue(null) })
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ agent: 'accuracy', kind: 'specialist_unavailable', safety: 'flag', status: 'open', severity: 'low', quote: '' })
+    expect(out[0].message).toContain('fact-check')
+  })
+  it('reports a page-level specialist_unavailable finding when generation throws', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const out = await runSpecialist(COPY_EDITOR, input, { generate: vi.fn().mockRejectedValue(new Error('boom')) })
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ agent: 'copy', kind: 'specialist_unavailable', safety: 'flag', status: 'open' })
+    expect(out[0].message).toContain('copy editor')
+    expect(errorSpy).toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })
 

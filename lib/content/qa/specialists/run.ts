@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { generateMbpJson } from '@/lib/mbp/generate-json'
 import { buildBrandVoiceBlock, buildFirmContext } from '@/lib/content/brand-voice'
 import { truncateToTokenBudget } from '@/lib/content/truncate-to-token-budget'
@@ -11,8 +12,37 @@ import { STRUCTURE } from './structure'
 
 export const SPECIALISTS: readonly SpecialistDef[] = [ACCURACY, COPY_EDITOR, SEO_GEO, STRUCTURE]
 export const SPECIALIST_TIMEOUT_MS = 120_000
+// Thinking tokens (GENERATION_PROVIDER_OPTIONS: adaptive, effort high) count
+// against maxOutputTokens. 6000 left no headroom for a full 15-finding
+// response and could silently truncate mid-JSON on the worst pages — raised
+// to give thinking + a max-size findings array room to complete.
+export const SPECIALIST_MAX_OUTPUT_TOKENS = 16_000
 
 type Deps = { generate?: typeof generateMbpJson; timeoutMs?: number }
+
+const UNAVAILABLE_LABEL: Record<SpecialistDef['agent'], string> = {
+  accuracy: 'fact-check',
+  copy: 'copy editor',
+  seo: 'SEO/GEO',
+  structure: 'layout',
+}
+
+// A specialist that produced no result (truncated/unparseable output, timeout,
+// or a thrown error) must never be silently reported as "page is clean" — the
+// worst pages are exactly the ones most likely to blow the output budget or
+// error out. Surface one page-level finding so a human knows to check by hand.
+function unavailableFinding(def: SpecialistDef): Finding {
+  return {
+    id: randomUUID(),
+    agent: def.agent,
+    severity: 'low',
+    kind: 'specialist_unavailable',
+    quote: '',
+    message: `The ${UNAVAILABLE_LABEL[def.agent]} reviewer could not run on this page — review this area by hand.`,
+    safety: 'flag',
+    status: 'open',
+  }
+}
 
 // Job-constant: instructions + firm voice/facts. Nothing page-specific, or the
 // cache prefix differs per page and every call pays full price.
@@ -41,7 +71,7 @@ export async function runSpecialist(def: SpecialistDef, input: SpecialistInput, 
     const findings = await generate<Finding[]>(
       promptFor(def, input),
       raw => parseSpecialistFindings(raw, def),
-      6000,
+      SPECIALIST_MAX_OUTPUT_TOKENS,
       { task: 'content', stage: def.stage, sessionId: input.sessionId, contentJobId: input.contentJobId, pageUrl: input.pageUrl },
       {
         model: QA_SPECIALIST_MODEL,
@@ -51,12 +81,17 @@ export async function runSpecialist(def: SpecialistDef, input: SpecialistInput, 
         timeoutMs: deps.timeoutMs ?? SPECIALIST_TIMEOUT_MS,
       },
     )
-    if (!findings) return []
-    // A body patch must target text that is really on the page.
-    return findings.filter(f => !f.patch || f.patch.target !== 'body' || (f.patch.find.length >= 8 && input.body.includes(f.patch.find)))
+    if (!findings) return [unavailableFinding(def)]
+    // A body patch must target text that is really on the page, and uniquely —
+    // a find that occurs more than once is ambiguous about which occurrence to patch.
+    return findings.filter(f => !f.patch || f.patch.target !== 'body' || (
+      f.patch.find.length >= 8 &&
+      input.body.includes(f.patch.find) &&
+      input.body.indexOf(f.patch.find) === input.body.lastIndexOf(f.patch.find)
+    ))
   } catch (err) {
     console.error(`[qa] ${def.agent} specialist failed for ${input.pageUrl}:`, err)
-    return []
+    return [unavailableFinding(def)]
   }
 }
 
