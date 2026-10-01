@@ -20,6 +20,10 @@ export const PUBLISHED_CONTENT_MODEL = 'claude-sonnet-5-5'
 // capped (~6k-token page) and output is small JSON, so the premium is cents/page.
 export const CRITIC_MODEL = 'claude-opus-5-5'
 
+// QA Desk specialists (Accuracy / Copy Editor / SEO-GEO / Structure). Same tier
+// as the writer; the judge stays CRITIC_MODEL so nothing grades its own tier.
+export const QA_SPECIALIST_MODEL = PUBLISHED_CONTENT_MODEL
+
 // Design Studio concept generation + revision (admin-only, a few runs per
 // client). Sonnet 5.5 replaced Opus 5.5 on 2026-09-30 after
 // scripts/compare-design-models.ts (bblcpa, 3 concepts each, Sonnet 5 judge):

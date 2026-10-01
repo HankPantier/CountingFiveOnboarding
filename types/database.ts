@@ -1062,6 +1062,10 @@ export type Database = {
           needs_client_review: boolean
           page_title: string
           page_url: string
+          qa_attempts: number
+          qa_review: Json | null
+          qa_started_at: string | null
+          qa_status: string | null
           schema_markup_type: string | null
           secondary_keywords: Json | null
           target_keyword: string | null
@@ -1098,6 +1102,10 @@ export type Database = {
           needs_client_review?: boolean
           page_title: string
           page_url: string
+          qa_attempts?: number
+          qa_review?: Json | null
+          qa_started_at?: string | null
+          qa_status?: string | null
           schema_markup_type?: string | null
           secondary_keywords?: Json | null
           target_keyword?: string | null
@@ -1134,6 +1142,10 @@ export type Database = {
           needs_client_review?: boolean
           page_title?: string
           page_url?: string
+          qa_attempts?: number
+          qa_review?: Json | null
+          qa_started_at?: string | null
+          qa_status?: string | null
           schema_markup_type?: string | null
           secondary_keywords?: Json | null
           target_keyword?: string | null
