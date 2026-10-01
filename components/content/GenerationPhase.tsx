@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import MarkdownPreviewModal from './MarkdownPreviewModal'
 import { classifyAiErrorText, ANTHROPIC_STATUS_URL } from '@/lib/ai/ai-error-text'
+import { qaChip } from '@/lib/content/qa/chip'
+import type { QaSummary } from '@/types/qa-review'
 
 type PageStatus = {
   id: string
@@ -19,6 +21,8 @@ type PageStatus = {
   wordCountActual?: number | null
   wordCountTarget?: number | null
   critic?: { overall: number; hasFlags: boolean; needsReview?: boolean; regenerated?: boolean } | null
+  qa?: QaSummary | null
+  qaStatus?: string | null
 }
 
 // Depth in the sitemap tree, capped to guard against accidental cycles.
@@ -362,11 +366,12 @@ export default function GenerationPhase({
 
   const runningPages = status.pages.filter(p => p.status === 'running')
 
-  // Pages the critic still judged weak after its one auto-rewrite AND that the
-  // operator hasn't approved yet — the short list worth proofing closely, so the
-  // operator scrutinizes these instead of re-reading every page.
+  // Pages the critic still judged weak after its one auto-rewrite, OR that the
+  // QA desk flagged with a high-priority open finding (facts/missing sections),
+  // AND that the operator hasn't approved yet — the short list worth proofing
+  // closely, so the operator scrutinizes these instead of re-reading every page.
   const needsReviewPages = status.pages.filter(
-    p => p.status === 'complete' && !p.approved && p.critic?.needsReview,
+    p => p.status === 'complete' && !p.approved && (p.critic?.needsReview || (p.qa?.mode === 'on' && (p.qa.highOpen ?? 0) > 0)),
   )
 
   return (
@@ -435,10 +440,10 @@ export default function GenerationPhase({
             {needsReviewPages.length} page{needsReviewPages.length !== 1 ? 's need' : ' needs'} a closer look
           </span>
           <p className="text-xs font-body text-text-muted">
-            The quality critic auto-rewrote {needsReviewPages.length !== 1 ? 'these' : 'this'} once and still flagged {needsReviewPages.length !== 1 ? 'them' : 'it'}. Proof {needsReviewPages.length !== 1 ? 'these' : 'this'} before approving — the rest scored clean.
+            Automated QA flagged {needsReviewPages.length} page(s) with facts or sections that need a human. Proof these before approving — the rest are clean.
           </p>
           {needsReviewPages.map(page => {
-            const q = criticChip(page.critic)
+            const q = qaChip(page.qa ?? null, page.qaStatus ?? null) ?? criticChip(page.critic)
             return (
               <div key={page.id} className="flex items-center gap-2 text-xs font-body border-t border-error/15 pt-1.5 first:border-t-0 first:pt-0">
                 <span className="font-semibold text-text-primary flex-1 truncate" title={page.title}>{page.title}</span>
@@ -523,7 +528,7 @@ export default function GenerationPhase({
             const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
             const depth = depthOf(page.url, parentByUrl)
             const wcBadge = page.status === 'complete' ? wordCountBadge(page.wordCountActual, page.wordCountTarget) : null
-            const qBadge = page.status === 'complete' ? criticChip(page.critic) : null
+            const qBadge = page.status === 'complete' ? (qaChip(page.qa ?? null, page.qaStatus ?? null) ?? criticChip(page.critic)) : null
             const approveBusy = pendingActions.has(`approve:${page.id}`)
             const regenBusy = pendingActions.has(`regen:${page.id}`)
             const flagBusy = pendingActions.has(`flag:${page.id}`)

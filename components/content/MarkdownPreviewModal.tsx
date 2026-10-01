@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm'
 import { useDialog } from '@/components/ui/use-dialog'
 import { MARKDOWN_COMPONENTS } from '@/components/content/markdown-components'
 import { parseCritic, criticOverall } from '@/lib/content/critic-review'
+import { parseQaReview } from '@/types/qa-review'
+import QaPanel from '@/components/content/QaPanel'
 
 type FaqItem = { question: string; answer: string }
 type InternalLink = { url: string; anchor_text: string; reason: string }
@@ -32,6 +34,7 @@ type GeneratedPageRow = {
   admin_approved_content: boolean
   client_approved_content: boolean
   critic_review: unknown
+  qa_review: unknown
 }
 
 type EditForm = {
@@ -322,7 +325,14 @@ export default function MarkdownPreviewModal({
                 </div>
               )}
 
-              <CriticPanel review={page.critic_review} />
+              <QaPanel
+                jobId={contentJobId}
+                pageId={pageId}
+                review={page.qa_review}
+                onPageUpdated={updated => setPage(updated as GeneratedPageRow)}
+              />
+
+              {parseQaReview(page.qa_review)?.mode !== 'on' && <CriticPanel review={page.critic_review} />}
 
               {/* Body */}
               <div className="border-t border-border-default pt-4">

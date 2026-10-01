@@ -3,6 +3,7 @@ import { internalError } from '@/lib/api/errors'
 import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { summarizeCritic } from '@/lib/content/critic-review'
+import { summarizeQa } from '@/types/qa-review'
 
 export async function GET(
   _req: Request,
@@ -43,19 +44,24 @@ export async function GET(
     string,
     { overall: number; hasFlags: boolean; needsReview: boolean; regenerated: boolean }
   >()
+  // QA Desk summary is fetched the same best-effort way: qa_review/qa_status
+  // may not exist yet (pre-migration 083), so a failure here must not break
+  // the core status poll — it just omits the QA chip.
+  const qaByPage = new Map<string, { summary: ReturnType<typeof summarizeQa>; status: string | null }>()
   try {
     const { data: criticRows, error: criticErr } = await supabase
       .from('generated_pages')
-      .select('id, critic_review')
+      .select('id, critic_review, qa_review, qa_status')
       .eq('content_job_id', id)
     if (!criticErr) {
       for (const r of criticRows ?? []) {
         const summary = summarizeCritic(r.critic_review)
         if (summary) criticByPage.set(r.id, summary)
+        qaByPage.set(r.id, { summary: summarizeQa(r.qa_review), status: r.qa_status ?? null })
       }
     }
   } catch {
-    // critic_review column absent pre-migration — degrade silently.
+    // critic_review/qa_review columns absent pre-migration — degrade silently.
   }
 
   const all = pages ?? []
@@ -87,6 +93,8 @@ export async function GET(
       wordCountActual: p.word_count_actual,
       wordCountTarget: p.word_count_target,
       critic: criticByPage.get(p.id) ?? null,
+      qa: qaByPage.get(p.id)?.summary ?? null,
+      qaStatus: qaByPage.get(p.id)?.status ?? null,
     })),
   })
 }
