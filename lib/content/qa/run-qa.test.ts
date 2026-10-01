@@ -12,9 +12,13 @@ const page = {
 }
 const ctx = { sessionId: 's1', websiteUrl: '', schema: {}, palette: null, sitemapUrls: ['/a'], researchByUrl: new Map(), templateVersion: null }
 
-function deps(mode: 'on' | 'shadow', fakeOpts = {}) {
+function deps(mode: 'on' | 'shadow', fakeOpts = {}, jobPhase = 5) {
   const supabase = makeFakeSupabase(
-    { generated_pages: [page], page_outlines: [{ content_job_id: 'j1', page_url: '/a', sections: [], generation_mode: 'generate' }] },
+    {
+      generated_pages: [page],
+      page_outlines: [{ content_job_id: 'j1', page_url: '/a', sections: [], generation_mode: 'generate' }],
+      content_jobs: [{ id: 'j1', phase: jobPhase }],
+    },
     fakeOpts,
   )
   return {
@@ -116,5 +120,29 @@ describe('runQaForPage', () => {
     const result = await runQaForPage('j1', 'p1', d)
     expect(result).toEqual({ status: 'error', reason: 'page read failed' })
     expect(d.supabase.updates('generated_pages')).toEqual([])
+  })
+
+  it('on mode is report-only once the job has left phase 5 (no late patches on a page being proofed)', async () => {
+    const { supabase, deps: d } = deps('on', {}, 6)
+    expect(await runQaForPage('j1', 'p1', d)).toEqual({ status: 'done' })
+    const final = supabase.updates('generated_pages').at(-1)! as Record<string, unknown>
+    expect(final.qa_status).toBe('done')
+    expect(final.content_markdown).toBeUndefined()
+    expect(final.meta_title).toBeUndefined()
+    expect(final.meta_description).toBeUndefined()
+    const review = final.qa_review as { findings: Array<Record<string, unknown>> }
+    expect(review.findings[0]).toMatchObject({ kind: 'media_side', status: 'open' })
+  })
+
+  it('on mode is report-only when the job phase cannot be read', async () => {
+    const { deps: d } = deps('on')
+    d.supabase = makeFakeSupabase({
+      generated_pages: [page],
+      page_outlines: [{ content_job_id: 'j1', page_url: '/a', sections: [], generation_mode: 'generate' }],
+      content_jobs: [],
+    })
+    await runQaForPage('j1', 'p1', d)
+    const final = d.supabase.updates('generated_pages').at(-1)! as Record<string, unknown>
+    expect(final.content_markdown).toBeUndefined()
   })
 })

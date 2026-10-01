@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { qaMode, qaOutstanding } from './mode'
+import { qaMode, qaOutstanding, QA_MAX_ATTEMPTS } from './mode'
 
 describe('qaMode', () => {
   it('defaults to shadow when unset or unknown', () => {
@@ -26,8 +26,14 @@ describe('qaOutstanding', () => {
     expect(qaOutstanding([
       { generation_status: 'error', qa_status: 'queued' },
       { generation_status: 'complete', qa_status: 'skipped' },
-      { generation_status: 'complete', qa_status: 'error' },
+      { generation_status: 'complete', qa_status: 'error', qa_attempts: QA_MAX_ATTEMPTS },
       { generation_status: 'complete', qa_status: null },
     ], 'on')).toBe(false)
+  })
+  it('treats a retriable QA error (attempts below the cap) as outstanding in on mode', () => {
+    expect(qaOutstanding([{ generation_status: 'complete', qa_status: 'error', qa_attempts: 1 }], 'on')).toBe(true)
+    expect(qaOutstanding([{ generation_status: 'complete', qa_status: 'error', qa_attempts: null }], 'on')).toBe(true)
+    expect(qaOutstanding([{ generation_status: 'complete', qa_status: 'error', qa_attempts: QA_MAX_ATTEMPTS }], 'on')).toBe(false)
+    expect(qaOutstanding([{ generation_status: 'complete', qa_status: 'error', qa_attempts: 1 }], 'shadow')).toBe(false)
   })
 })

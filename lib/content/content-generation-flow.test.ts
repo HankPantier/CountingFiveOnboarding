@@ -116,7 +116,7 @@ describe('selectResumableContentJobs', () => {
 // from().update().eq() records the write, from().select().eq().single() for the
 // phase read. Enough to exercise finalizeGenerationIfComplete's branches.
 function makeSupabaseStub(opts: {
-  pages: Array<{ page_url?: string; generation_status: string; generation_attempts?: number; qa_status?: string | null }>
+  pages: Array<{ page_url?: string; generation_status: string; generation_attempts?: number; qa_status?: string | null; qa_attempts?: number | null }>
   phase: number
   approvedUrls?: string[]
 }) {
@@ -246,7 +246,7 @@ describe('finalizeGenerationIfComplete — QA gate', () => {
 // Stub for completeContentJob / maybeCompleteAfterQa: the fenced phase update
 // lands only while `phase` is still 5 (and flips it), like the real row.
 function makeCompletionStub(opts: {
-  pages: Array<{ page_url: string; generation_status: string; generation_attempts?: number; qa_status?: string | null }>
+  pages: Array<{ page_url: string; generation_status: string; generation_attempts?: number; qa_status?: string | null; qa_attempts?: number | null }>
   phase: number
 }) {
   const state = { phase: opts.phase, phaseWrites: 0 }
@@ -325,8 +325,33 @@ describe('maybeCompleteAfterQa', () => {
     const { supabase, state } = makeCompletionStub({
       pages: [
         { page_url: '/a', generation_status: 'complete', qa_status: 'done' },
-        { page_url: '/b', generation_status: 'complete', qa_status: 'error' },
+        { page_url: '/b', generation_status: 'complete', qa_status: 'error', qa_attempts: 2 },
         { page_url: '/c', generation_status: 'complete', qa_status: 'skipped' },
+      ],
+      phase: 5,
+    })
+    expect(await maybeCompleteAfterQa(supabase, 'job-1')).toBe(true)
+    expect(state.phase).toBe(6)
+  })
+
+  it('waits on a retriable QA error (attempts below the cap) in on mode', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'on')
+    const { supabase, state } = makeCompletionStub({
+      pages: [
+        { page_url: '/a', generation_status: 'complete', qa_status: 'done' },
+        { page_url: '/b', generation_status: 'complete', qa_status: 'error', qa_attempts: 1 },
+      ],
+      phase: 5,
+    })
+    expect(await maybeCompleteAfterQa(supabase, 'job-1')).toBe(false)
+    expect(state.phaseWrites).toBe(0)
+  })
+
+  it('finishes despite a retriable QA error in shadow mode', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'shadow')
+    const { supabase, state } = makeCompletionStub({
+      pages: [
+        { page_url: '/a', generation_status: 'complete', qa_status: 'error', qa_attempts: 1 },
       ],
       phase: 5,
     })

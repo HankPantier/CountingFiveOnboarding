@@ -213,7 +213,7 @@ export async function finalizeGenerationIfComplete(
 ): Promise<boolean> {
   const { data: allPages } = await supabase
     .from('generated_pages')
-    .select('page_url, generation_status, generation_attempts, qa_status')
+    .select('page_url, generation_status, generation_attempts, qa_status, qa_attempts')
     .eq('content_job_id', contentJobId)
 
   if (!allPages?.length) return false
@@ -1672,7 +1672,7 @@ export async function runContentGeneration(
   // Check completion + advance phase + email notification.
   const { data: allPages } = await supabase
     .from('generated_pages')
-    .select('page_url, generation_status, generation_attempts, qa_status')
+    .select('page_url, generation_status, generation_attempts, qa_status, qa_attempts')
     .eq('content_job_id', contentJobId)
 
   // Scope every count to pages whose outline is APPROVED. generated_pages rows
@@ -1833,7 +1833,7 @@ export async function maybeCompleteAfterQa(
   if (!job || job.phase !== 5) return false
   const { data: pages } = await supabase
     .from('generated_pages')
-    .select('page_url, generation_status, generation_attempts, qa_status')
+    .select('page_url, generation_status, generation_attempts, qa_status, qa_attempts')
     .eq('content_job_id', contentJobId)
   const { data: approved } = await supabase
     .from('page_outlines')

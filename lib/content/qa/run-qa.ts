@@ -105,6 +105,16 @@ export async function runQaForPage(
     // page's body. Throw so the catch below fences qa_status to 'error' and
     // the page is retried within the attempt cap.
     if (outlineErr) throw new Error(`outline read failed: ${outlineErr.message}`)
+    // Patches only land while the job is still in generation (phase 5). A retry
+    // that fires after phase 6 (a human may be proofing) is report-only, as is
+    // any run whose job phase can't be read — never guess toward writing.
+    const { data: job, error: jobErr } = await supabase
+      .from('content_jobs')
+      .select('phase')
+      .eq('id', contentJobId)
+      .maybeSingle()
+    if (jobErr) console.warn(`[qa] job phase read failed for ${contentJobId}; running report-only:`, jobErr)
+    const apply = mode === 'on' && job?.phase === 5
     const ctx = await (deps.loadContext ?? loadPageGenContext)(supabase, contentJobId)
     if (!ctx) throw new Error('content job context unavailable')
     const verbatim = outline?.generation_mode === 'verbatim'
@@ -143,7 +153,7 @@ export async function runQaForPage(
       { body, metaTitle: row.meta_title, metaDescription: row.meta_description },
       [...rules, ...spec],
       {
-        apply: mode === 'on',
+        apply,
         protectedTexts: protectedTextsFor(body, verbatim, teamNames),
         templateVersion: ctx.templateVersion,
       },
@@ -181,13 +191,15 @@ export async function runQaForPage(
     }
 
     const update: PageUpdate = { qa_status: 'done', qa_review: asJson(review) }
-    if (mode === 'on') {
+    if (apply) {
       if (merged.fields.body !== body) {
         update.content_markdown = merged.fields.body
         update.word_count_actual = countWords(merged.fields.body)
       }
       update.meta_title = merged.fields.metaTitle
       update.meta_description = merged.fields.metaDescription
+    }
+    if (mode === 'on') {
       if (judge) update.critic_review = asJson({ ...judge, needs_human_review: !review.passed })
     }
 
