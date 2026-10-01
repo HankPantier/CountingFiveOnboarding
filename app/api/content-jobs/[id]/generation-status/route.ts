@@ -4,6 +4,7 @@ import { createServerClient } from '@/lib/supabase/server'
 import { requireContentJobAccess } from '@/lib/auth/access'
 import { summarizeCritic } from '@/lib/content/critic-review'
 import { summarizeQa } from '@/types/qa-review'
+import { qaMode } from '@/lib/content/qa/mode'
 
 export async function GET(
   _req: Request,
@@ -73,6 +74,7 @@ export async function GET(
     approved: all.filter(p => p.generation_status === 'complete' && p.admin_approved_content).length,
     needsClientReview: all.filter(p => p.needs_client_review).length,
     clientApproved: all.filter(p => p.needs_client_review && p.client_approved_content).length,
+    qaMode: qaMode(),
     pages: all.map(p => ({
       id: p.id,
       url: p.page_url,

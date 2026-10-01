@@ -14,7 +14,7 @@ const CLS = {
 export function qaChip(
   qa: QaSummary | null,
   qaStatus: string | null,
-): { label: string; cls: string; title: string } | null {
+): Chip | null {
   if (!qa) {
     if (qaStatus === 'queued' || qaStatus === 'running') {
       return { label: 'QA…', cls: CLS.info, title: 'The QA desk is reviewing this page.' }
@@ -50,4 +50,65 @@ export function qaChip(
     cls: CLS.warning,
     title: `QA fixed ${qa.fixed} item(s); ${qa.open} need a quick look.`,
   }
+}
+
+export type Chip = { label: string; cls: string; title: string }
+
+export type CriticChipInput = {
+  overall: number
+  hasFlags: boolean
+  needsReview?: boolean
+  regenerated?: boolean
+}
+
+// Quality-critic chip. Green ≥8, amber 6-7, red <6; a flag marker when the critic
+// surfaced unsupported specifics to verify. When `needsReview` is set the page
+// stayed weak after the critic's one auto-rewrite, so it's forced red and labelled
+// "Review" to pull the operator's eye. Advisory only — never gates approval.
+export function criticChip(critic: CriticChipInput | null | undefined): Chip | null {
+  if (!critic) return null
+  const cls = critic.needsReview
+    ? CLS.error
+    : critic.overall >= 8
+      ? CLS.success
+      : critic.overall >= 6
+        ? CLS.warning
+        : CLS.error
+  const regenNote = critic.regenerated ? ' Auto-rewritten once by the critic.' : ''
+  return {
+    label: `${critic.needsReview ? 'Review ' : 'Q '}${critic.overall}/10${critic.hasFlags ? ' ⚑' : ''}`,
+    cls,
+    title: critic.needsReview
+      ? `This page still looks weak (${critic.overall}/10${critic.hasFlags ? ', with unsupported claim(s)' : ''}).${regenNote} Open View and proof it closely before approving. Advisory — does not gate approval.`
+      : `Advisory quality review: ${critic.overall}/10 overall.${critic.hasFlags ? ' Flagged unsupported claim(s) to verify — open View for detail.' : ''}${regenNote} This is advisory and does not gate approval.`,
+  }
+}
+
+// Which chip(s) a page row shows. Only an 'on'-mode QA verdict replaces the
+// legacy critic chip; in shadow the critic chip (incl. the red needs-review
+// chip) stays primary and the QA chip rides along as a secondary badge. The
+// review's own mode wins; with no stored review (queued/running/error) the
+// server-reported live mode is used, defaulting to shadow.
+export function pickPageChips(
+  qa: QaSummary | null,
+  qaStatus: string | null,
+  critic: CriticChipInput | null | undefined,
+  liveMode?: 'off' | 'shadow' | 'on' | null,
+): { primary: Chip | null; secondary: Chip | null } {
+  const mode = qa?.mode ?? liveMode ?? 'shadow'
+  const q = qaChip(qa, qaStatus)
+  const c = criticChip(critic)
+  if (mode === 'on') return { primary: q ?? c, secondary: null }
+  return { primary: c, secondary: q }
+}
+
+// Needs-review banner body. The QA wording only applies when at least one page
+// in the list was flagged by an 'on'-mode QA review; otherwise the list comes
+// from the legacy critic and keeps its original copy.
+export function needsReviewBannerCopy(count: number, anyOnModeQa: boolean): string {
+  if (anyOnModeQa) {
+    return `Automated QA flagged ${count} page(s) with facts or sections that need a human. Proof these before approving — the rest are clean.`
+  }
+  const many = count !== 1
+  return `The quality critic auto-rewrote ${many ? 'these' : 'this'} once and still flagged ${many ? 'them' : 'it'}. Proof ${many ? 'these' : 'this'} before approving — the rest scored clean.`
 }

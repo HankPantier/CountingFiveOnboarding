@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import MarkdownPreviewModal from './MarkdownPreviewModal'
 import { classifyAiErrorText, ANTHROPIC_STATUS_URL } from '@/lib/ai/ai-error-text'
-import { qaChip } from '@/lib/content/qa/chip'
+import { pickPageChips, needsReviewBannerCopy } from '@/lib/content/qa/chip'
 import type { QaSummary } from '@/types/qa-review'
 
 type PageStatus = {
@@ -44,6 +44,9 @@ type GenStatus = {
   approved: number
   needsClientReview: number
   clientApproved: number
+  // Live CONTENT_QA_MODE, so queued/running rows (no stored review yet) know
+  // whether the QA chip replaces the critic chip. Absent on older responses.
+  qaMode?: 'off' | 'shadow' | 'on'
   pages: PageStatus[]
 }
 
@@ -81,31 +84,6 @@ function wordCountBadge(actual: number | null | undefined, target: number | null
     label: `${actual} / ${target}`,
     cls: 'text-text-muted bg-surface-subtle',
     title: `${actual} words generated vs target of ${target} (${pct >= 0 ? '+' : ''}${pct}%). Within the acceptable ±25% range.`,
-  }
-}
-
-// Quality-critic chip. Green ≥8, amber 6-7, red <6; a flag marker when the critic
-// surfaced unsupported specifics to verify. When `needsReview` is set the page
-// stayed weak after the critic's one auto-rewrite, so it's forced red and labelled
-// "Review" to pull the operator's eye. Advisory only — never gates approval.
-function criticChip(
-  critic: { overall: number; hasFlags: boolean; needsReview?: boolean; regenerated?: boolean } | null | undefined,
-): { label: string; cls: string; title: string } | null {
-  if (!critic) return null
-  const cls = critic.needsReview
-    ? 'text-error bg-error/10'
-    : critic.overall >= 8
-      ? 'text-success bg-success/10'
-      : critic.overall >= 6
-        ? 'text-warning-strong bg-warning/10'
-        : 'text-error bg-error/10'
-  const regenNote = critic.regenerated ? ' Auto-rewritten once by the critic.' : ''
-  return {
-    label: `${critic.needsReview ? 'Review ' : 'Q '}${critic.overall}/10${critic.hasFlags ? ' ⚑' : ''}`,
-    cls,
-    title: critic.needsReview
-      ? `This page still looks weak (${critic.overall}/10${critic.hasFlags ? ', with unsupported claim(s)' : ''}).${regenNote} Open View and proof it closely before approving. Advisory — does not gate approval.`
-      : `Advisory quality review: ${critic.overall}/10 overall.${critic.hasFlags ? ' Flagged unsupported claim(s) to verify — open View for detail.' : ''}${regenNote} This is advisory and does not gate approval.`,
   }
 }
 
@@ -440,14 +418,16 @@ export default function GenerationPhase({
             {needsReviewPages.length} page{needsReviewPages.length !== 1 ? 's need' : ' needs'} a closer look
           </span>
           <p className="text-xs font-body text-text-muted">
-            Automated QA flagged {needsReviewPages.length} page(s) with facts or sections that need a human. Proof these before approving — the rest are clean.
+            {needsReviewBannerCopy(needsReviewPages.length, needsReviewPages.some(p => p.qa?.mode === 'on' && (p.qa.highOpen ?? 0) > 0))}
           </p>
           {needsReviewPages.map(page => {
-            const q = qaChip(page.qa ?? null, page.qaStatus ?? null) ?? criticChip(page.critic)
+            const chips = pickPageChips(page.qa ?? null, page.qaStatus ?? null, page.critic, status.qaMode)
             return (
               <div key={page.id} className="flex items-center gap-2 text-xs font-body border-t border-error/15 pt-1.5 first:border-t-0 first:pt-0">
                 <span className="font-semibold text-text-primary flex-1 truncate" title={page.title}>{page.title}</span>
-                {q && <span className={`font-mono px-1.5 py-0.5 rounded ${q.cls}`} title={q.title}>{q.label}</span>}
+                {[chips.primary, chips.secondary].map(q => q && (
+                  <span key={q.label} className={`font-mono px-1.5 py-0.5 rounded ${q.cls}`} title={q.title}>{q.label}</span>
+                ))}
                 <button
                   type="button"
                   onClick={() => setPreviewPageId(page.id)}
@@ -528,7 +508,9 @@ export default function GenerationPhase({
             const s = STATUS_ICONS[page.status] ?? STATUS_ICONS.pending
             const depth = depthOf(page.url, parentByUrl)
             const wcBadge = page.status === 'complete' ? wordCountBadge(page.wordCountActual, page.wordCountTarget) : null
-            const qBadge = page.status === 'complete' ? (qaChip(page.qa ?? null, page.qaStatus ?? null) ?? criticChip(page.critic)) : null
+            const chips = page.status === 'complete'
+              ? pickPageChips(page.qa ?? null, page.qaStatus ?? null, page.critic, status.qaMode)
+              : { primary: null, secondary: null }
             const approveBusy = pendingActions.has(`approve:${page.id}`)
             const regenBusy = pendingActions.has(`regen:${page.id}`)
             const flagBusy = pendingActions.has(`flag:${page.id}`)
@@ -549,14 +531,15 @@ export default function GenerationPhase({
                       {wcBadge.label}
                     </span>
                   )}
-                  {qBadge && (
+                  {[chips.primary, chips.secondary].map(qBadge => qBadge && (
                     <span
+                      key={qBadge.label}
                       className={`text-xs font-mono px-1.5 py-0.5 rounded ${qBadge.cls}`}
                       title={qBadge.title}
                     >
                       {qBadge.label}
                     </span>
-                  )}
+                  ))}
                   {page.needsClientReview && (
                     <span
                       className={`text-xs font-mono px-1.5 py-0.5 rounded ${
