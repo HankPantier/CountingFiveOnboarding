@@ -38,6 +38,35 @@ describe('mergeFindings', () => {
     expect(r.fields.body).toBe(body)
     expect(r.findings[0].message).toContain('annotation')
   })
+  it('applies the first of two duplicate-find body patches and flags the second', () => {
+    const r = mergeFindings(fields, [
+      mk({ patch: { target: 'body', find: 'grow fast', replace: 'rapidly' } }),
+      mk({ patch: { target: 'body', find: 'grow fast', replace: 'quickly' } }),
+    ], { apply: true, protectedTexts: [] })
+    expect(r.fields.body).toContain('rapidly')
+    expect(r.fields.body).not.toContain('quickly')
+    expect(r.findings[0].status).toBe('applied')
+    expect(r.findings[1]).toMatchObject({ safety: 'flag', status: 'open' })
+  })
+  it('flags a find that straddles a protected text boundary without containing it', () => {
+    // 'Mor' overlaps the start of the protected 'More.' span without either
+    // string containing the other — the naive substring-containment check
+    // used to miss this.
+    const r = mergeFindings(fields, [mk({ patch: { target: 'body', find: '## B\n\nMor', replace: '## B\n\nXXX' } })], { apply: true, protectedTexts: ['More.'] })
+    expect(r.fields.body).toBe(body)
+    expect(r.findings[0].safety).toBe('flag')
+  })
+  it('reverts an annotation-breaking batch and flags every patch that had applied', () => {
+    const r = mergeFindings(fields, [
+      mk({ patch: { target: 'body', find: 'grow fast', replace: 'grow faster' } }),
+      mk({ patch: { target: 'body', find: 'block: content-split | variant: image-right -->\n## B', replace: 'block: not-a-block -->\n## B' } }),
+    ], { apply: true, protectedTexts: [] })
+    expect(r.fields.body).toBe(body)
+    expect(r.findings[0]).toMatchObject({ safety: 'flag', status: 'open' })
+    expect(r.findings[0].message).toContain('annotation')
+    expect(r.findings[1]).toMatchObject({ safety: 'flag', status: 'open' })
+    expect(r.findings[1].message).toContain('annotation')
+  })
   it('applies a variant fix', () => {
     const r = mergeFindings(fields, [mk({ agent: 'rules', variantFix: { sectionIndex: 1, variant: 'image-left' } })], { apply: true, protectedTexts: [] })
     expect(r.fields.body).toContain('variant: image-left')
