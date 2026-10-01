@@ -1,7 +1,7 @@
 {
-  "date": "2026-09-27",
-  "commit": "e0b816d386d5ee36945392ce5c80f41c22552dbf",
-  "note": "Full re-audit 2026-09-27: 6 read-only reviewers (security/RLS, pipeline+cron, AI/chat, editor/GitHub, Design Studio+UI, fleet+DB); 0 High, 7 Medium, 17 Low fixed in fix/audit-0927 (+integration review, round 2)",
+  "date": "2026-10-01",
+  "commit": "7dbb824331492d44844377d9726f0f6f787c78ad",
+  "note": "Full re-audit 2026-10-01: 6 read-only reviewers (security/RLS, pipeline+cron, agent/MBP, editor/GitHub, Design Studio, Divi/fleet/DB/UI); 0 Critical, 2 High, 3 Medium, 1 Low fixed in 7dbb824",
   "thresholds": {
     "days": 30,
     "commits": 150,
