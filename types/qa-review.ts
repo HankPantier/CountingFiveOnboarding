@@ -32,6 +32,10 @@ export type QaReview = {
   scores: { accuracy: number; copy: number; seo: number; structure: number }
   judge: CriticReview | null
   passed: boolean
+  // Optimistic-lock counter for the qa-findings route's server-side CAS
+  // (qa_apply_page_update, migration 084). Bumped by applyOneFinding on every
+  // apply/dismiss; absent on reviews written before this existed.
+  rev?: number
 }
 
 export type QaSummary = {
@@ -83,7 +87,7 @@ export function parseQaReview(raw: unknown): QaReview | null {
   if (typeof raw.ran_at !== 'string' || !Array.isArray(raw.findings) || !isObj(raw.scores)) return null
   const s = raw.scores
   const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : 0)
-  return {
+  const out: QaReview = {
     mode: raw.mode,
     ran_at: raw.ran_at,
     findings: raw.findings.map(parseFinding).filter((f): f is Finding => f !== null),
@@ -91,6 +95,8 @@ export function parseQaReview(raw: unknown): QaReview | null {
     judge: raw.judge && parseCritic(raw.judge) ? (raw.judge as CriticReview) : null,
     passed: raw.passed === true,
   }
+  if (typeof raw.rev === 'number' && Number.isInteger(raw.rev) && raw.rev >= 0) out.rev = raw.rev
+  return out
 }
 
 export function summarizeQa(raw: unknown): QaSummary | null {

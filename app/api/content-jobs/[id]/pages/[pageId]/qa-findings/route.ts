@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { after, NextResponse } from 'next/server'
 import { internalError } from '@/lib/api/errors'
 import { readJsonBody } from '@/app/api/_json'
@@ -10,6 +11,8 @@ import { parseQaReview } from '@/types/qa-review'
 import { applyOneFinding } from '@/lib/content/qa/apply-finding'
 
 interface QaFindingActionBody { findingId?: unknown; action?: unknown }
+
+const md5 = (s: string) => createHash('md5').update(s).digest('hex')
 
 // Human Apply/Dismiss on ONE QA finding. An apply that changes content is a
 // human-approved content edit: fence QA out before writing (same as the page
@@ -36,6 +39,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const review = parseQaReview(row.qa_review)
   if (!review) return NextResponse.json({ error: 'This page has no QA report' }, { status: 409 })
 
+  // templateVersion is intentionally not passed here: the only variant fixes
+  // that exist today (rules' media-side alternation) are baseline-safe at
+  // every template version, so there's nothing yet that needs it gated.
   const result = applyOneFinding(
     { body: row.content_markdown ?? '', metaTitle: row.meta_title, metaDescription: row.meta_description },
     review, body.findingId, body.action,
@@ -53,20 +59,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await fenceQaForHumanEdit(supabase, pageId, { contentJobId: id })
   }
 
-  // CAS on the content we read, so a concurrent edit makes this 409 instead of
-  // clobbering it.
-  let q = supabase.from('generated_pages').update({
-    qa_review: asJson(result.review),
-    ...(contentChanged ? {
-      content_markdown: result.fields.body,
-      meta_title: result.fields.metaTitle,
-      meta_description: result.fields.metaDescription,
-      admin_approved_content: false,
-    } : {}),
-  }).eq('id', pageId).eq('content_job_id', id)
-  q = row.content_markdown === null ? q.is('content_markdown', null) : q.eq('content_markdown', row.content_markdown)
-  const { data: updated, error: upErr } = await q.select('*')
-  if (upErr) return internalError('qa-findings:save', upErr, "Couldn't save the change")
+  // CAS moved server-side (migration 084): PostgREST rejects a `.eq()` filter
+  // once the full page body is in the query string (confirmed in prod — a
+  // 12k-char body passes, 30k is a flat 400), and pages are capped at 50k.
+  // The function compares an md5 of the body instead — only when this action
+  // actually changes content; `dismiss` passes NULL so an unrelated
+  // concurrent content edit never 409s it — plus the qa_review.rev counter,
+  // which doubles as the lock on the review itself.
+  const { data: updated, error: rpcErr } = await supabase.rpc('qa_apply_page_update', {
+    p_page_id: pageId,
+    p_job_id: id,
+    p_expected_content_md5: contentChanged ? md5(row.content_markdown ?? '') : null,
+    p_expected_rev: review.rev ?? 0,
+    p_qa_review: asJson(result.review),
+    p_content_changed: contentChanged,
+    p_content: contentChanged ? result.fields.body : null,
+    p_meta_title: contentChanged ? result.fields.metaTitle : null,
+    p_meta_description: contentChanged ? result.fields.metaDescription : null,
+  })
+  if (rpcErr) return internalError('qa-findings:save', rpcErr, "Couldn't save the change")
   if (!updated?.length) return NextResponse.json({ error: 'The page changed while you were reviewing — reload and try again.' }, { status: 409 })
 
   const saved = updated[0]

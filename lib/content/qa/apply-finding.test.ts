@@ -17,12 +17,19 @@ describe('applyOneFinding', () => {
     expect(r.review.findings[0].status).toBe('accepted')
     expect(r.review.scores.accuracy).toBe(10)
     expect(r.review.passed).toBe(true)
+    expect(r.review.rev).toBe(1)
   })
   it('dismisses without touching content', () => {
     const r = applyOneFinding(fields, review, 'f1', 'dismiss')
     if (!r.ok) throw new Error(r.error)
     expect(r.fields).toEqual(fields)
     expect(r.review.findings[0].status).toBe('dismissed')
+    expect(r.review.rev).toBe(1)
+  })
+  it('bumps an existing rev rather than resetting it', () => {
+    const r = applyOneFinding(fields, { ...review, rev: 3 }, 'f1', 'dismiss')
+    if (!r.ok) throw new Error(r.error)
+    expect(r.review.rev).toBe(4)
   })
   it('errors when the target text has changed', () => {
     const r = applyOneFinding({ ...fields, body: 'Edited by a human.\n' }, review, 'f1', 'apply')

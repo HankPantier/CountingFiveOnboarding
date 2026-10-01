@@ -29,6 +29,14 @@ export function applyOneFinding(
   return {
     ok: true,
     fields: nextFields,
-    review: { ...review, findings, scores: agentScores(findings), passed: qaPasses(review.judge, findings) },
+    review: {
+      ...review,
+      findings,
+      scores: agentScores(findings),
+      passed: qaPasses(review.judge, findings),
+      // Optimistic-lock counter for the route's server-side CAS
+      // (qa_apply_page_update) — bumped on every apply/dismiss.
+      rev: (review.rev ?? 0) + 1,
+    },
   }
 }

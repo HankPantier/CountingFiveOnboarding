@@ -2151,6 +2151,59 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      qa_apply_page_update: {
+        Args: {
+          p_page_id: string
+          p_job_id: string
+          p_expected_content_md5: string | null
+          p_expected_rev: number
+          p_qa_review: Json
+          p_content_changed: boolean
+          p_content: string | null
+          p_meta_title: string | null
+          p_meta_description: string | null
+        }
+        Returns: {
+          admin_approved_content: boolean
+          answer_block: string | null
+          canonical_url: string | null
+          client_approved_content: boolean
+          content_job_id: string
+          content_markdown: string | null
+          created_at: string
+          critic_review: Json | null
+          eeat_signals: Json | null
+          faq_block: Json | null
+          generation_attempts: number
+          generation_error: string | null
+          generation_started_at: string | null
+          generation_status: string
+          hero_block: string
+          hero_image: string | null
+          hero_image_alt: string | null
+          hero_image_query: string | null
+          hero_subhead: string | null
+          hero_variant: string | null
+          id: string
+          internal_links: Json | null
+          llm_citation_note: string | null
+          meta_description: string | null
+          meta_title: string | null
+          needs_client_review: boolean
+          page_title: string
+          page_url: string
+          qa_attempts: number
+          qa_review: Json | null
+          qa_started_at: string | null
+          qa_status: string | null
+          schema_markup_type: string | null
+          secondary_keywords: Json | null
+          target_keyword: string | null
+          url_slug: string | null
+          word_count_actual: number | null
+          word_count_target: number | null
+        }[]
+      }
       token_usage_model_totals: {
         Args: { since?: string }
         Returns: {
