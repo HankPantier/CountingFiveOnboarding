@@ -96,7 +96,9 @@ export async function loadContentQuality(): Promise<ContentQualityData> {
     supabase
       .from('generated_pages')
       .select('critic_review, qa_review, page_url, content_job_id')
-      .not('critic_review', 'is', null),
+      // Either verdict: a QA review whose judge failed has no critic_review but
+      // still belongs in the QA stats. fold() skips rows with a null critic.
+      .or('critic_review.not.is.null,qa_review.not.is.null'),
     supabase
       .from('resource_ideas')
       .select('critic_review, title, session_id, draft_path')
