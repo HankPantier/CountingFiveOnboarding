@@ -24,9 +24,38 @@ export function checkCopy(args: {
     out.push(f('copy_banned_phrase', phrase, why))
   }
   for (const hit of findNoGoHits(args.body, args.avoidPhrases)) push(hit, `"${hit}" is on this client's avoid list.`)
+
+  // validateContent's flagged[] mixes three shapes: a quoted "No-go phrase:
+  // ..." wrapper, a bare BANNED_PHRASES entry that's a literal body substring,
+  // and free-text structural/AI-tell diagnostics with no body-verbatim
+  // snippet to quote. Finding.quote must be a verbatim page snippet, so only
+  // the first two extract a quote; the rest become page-level findings.
+  const lowerBody = args.body.toLowerCase()
   for (const flagged of validateContent(args.body, args.noGoPhrases).flagged) {
-    const phrase = /"(.+)"/.exec(flagged)?.[1] ?? flagged
-    push(phrase, flagged.startsWith('No-go') ? `"${phrase}" is a banned no-go phrase.` : `"${phrase}" reads as generic AI copy.`)
+    const noGoMatch = /^No-go phrase: "(.+)"$/.exec(flagged)
+    if (noGoMatch) {
+      push(noGoMatch[1], `"${noGoMatch[1]}" is a banned no-go phrase.`)
+      continue
+    }
+    const idx = lowerBody.indexOf(flagged.toLowerCase())
+    if (idx !== -1) {
+      const quote = args.body.slice(idx, idx + flagged.length)
+      push(quote, `"${quote}" reads as generic AI copy.`)
+      continue
+    }
+    // Structural/AI-tell diagnostic (e.g. "Three or more consecutive
+    // sentences open with..."): no verbatim snippet, not deduped against
+    // the phrase set above.
+    out.push({
+      id: randomUUID(),
+      agent: 'rules',
+      severity: 'med',
+      kind: 'copy_ai_pattern',
+      quote: '',
+      message: flagged,
+      safety: 'flag',
+      status: 'open',
+    })
   }
   const sub = validateHeroSubhead(args.heroSubhead)
   if (sub) out.push(f('hero_subhead', args.heroSubhead ?? '', sub))

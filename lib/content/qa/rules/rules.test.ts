@@ -34,4 +34,18 @@ describe('runRules', () => {
     const body = base.body + '\n<!-- block: content-split | variant: image-right -->\n## B\n\nMore.\n'
     expect(runRules({ ...base, body }).some(f => f.kind === 'media_side')).toBe(true)
   })
+  it('still extracts the phrase verbatim for a no-go hit', () => {
+    const body = base.body + '\nAsk about our acme referral program today.\n'
+    const f = runRules({ ...base, body, noGoPhrases: ['acme referral program'] }).find(x => x.kind === 'copy_banned_phrase')
+    expect(f?.quote).toBe('acme referral program')
+    expect(f?.message).toContain('banned no-go phrase')
+  })
+  it('gives a page-level finding with no quote for a structural anti-slop message', () => {
+    const body = base.body + '\nWe help dentists grow. We build trust fast. We file returns on time.\n'
+    const structural = runRules({ ...base, body }).find(f => f.kind === 'copy_ai_pattern')
+    expect(structural?.quote).toBe('')
+    expect(structural?.message).toContain('Three or more consecutive sentences')
+    expect(structural?.severity).toBe('med')
+    expect(structural?.safety).toBe('flag')
+  })
 })
