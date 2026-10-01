@@ -1,0 +1,2 @@
+{ "rules": ["media_side", "heading_skip", "copy_banned_phrase"],
+  "live": { "accuracy": ["unsupported_claim"], "copy": ["long_paragraph"], "seo": ["link_anchor"], "structure": ["wrong_block"] } }

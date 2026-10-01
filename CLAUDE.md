@@ -163,6 +163,9 @@ Tier map (reviewed 2026-09-30 against the Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Ha
   different, stronger tier than the writer avoids self-grading bias; in an A/B on 5 live pages
   it caught 2-4x more ungrounded claims (e.g. invented service lines) and ran faster.
   `scripts/compare-critic-models.ts` re-runs that comparison.
+- **Sonnet 5.5** (`QA_SPECIALIST_MODEL`) — QA Desk specialists (Accuracy, Copy Editor, SEO/GEO, Structure)
+  in `lib/content/qa/specialists/`. The judge is `CRITIC_MODEL` (Opus 5.5), so no tier grades its own
+  work. A/B with `scripts/compare-qa.ts`.
 - **Haiku 4.5** (`FAST_MODEL`) — phase 1/2/5/6 intake chat and classification helpers (brand-fit,
   keyword, reverse-link, oneoff resolve, pricing seeds, article-import links, command bar).
   Retirement "not sooner than 2026-10-15"; when it's deprecated, swap `FAST_MODEL` in one place.
@@ -238,6 +241,16 @@ This does NOT apply to the **background** impact reviews (`reviewContentForMbpIm
 ### Content Generation Concurrency
 - `lib/content/content-generator.ts → generateSinglePage()` uses an atomic SQL guard: the `generation_status` is updated to `'running'` only if it's not already `'running'` (`.neq('generation_status', 'running')`). A second caller hitting the same outline-id while one is in flight gets `{ status: 'skipped' }`. Mirror this pattern for any future per-row pipeline worker.
 - Stuck rows (status `running` for >15 min) are reset to `error` automatically by `/api/cron/sweep-stuck-jobs` every 5 minutes. Don't write manual recovery scripts for orphaned rows — extend the cron.
+
+### QA Desk
+- **Stage.** `generated_pages.qa_status` (queued/running/done/error/skipped) is claimed atomically like `generation_status`. QA runs per page in `/api/content-jobs/[id]/qa/run`, triggered with the CRON bearer.
+- **Mode.** `CONTENT_QA_MODE=off|shadow|on`.
+  - `shadow` only reports; the legacy critic still runs.
+  - `on` applies `auto` findings, replaces the legacy critic step, and holds phase 5→6 + the content-ready email until QA is terminal.
+- **Safety.** Specialists may only auto-fix kinds in their `allowedAuto`. Accuracy claims and section changes are always flags. Every patch goes through `applyBatchEdits` + `checkEditAnnotations`; failures degrade to flags. Verbatim pages and verbatim bios are never patched.
+- **Human edits win.** The page PATCH route flips queued/running QA to `skipped`, which breaks the QA write fence.
+- **Sweep.** `sweep-stuck-jobs` errors QA `running` > 15 min, re-triggers stale `queued`/`error` rows (cap `QA_MAX_ATTEMPTS`), and finishes jobs that were waiting on QA.
+- **Apply/Dismiss.** The Apply/Dismiss route calls the `qa_apply_page_update` RPC (migration 084), which does a server-side md5+rev CAS — PostgREST can't filter on long text in the URL.
 
 ### Design Studio
 Spec: `docs/superpowers/specs/2026-09-24-design-studio-design.md`. It replaced the template's retired `export-brief` → Claude Design workflow (removed 2026-09-26).
