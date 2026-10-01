@@ -5,6 +5,7 @@ import {
   summarizeCritic,
   CRITIC_DIMENSIONS,
 } from '@/lib/content/critic-review'
+import { qaStats } from '@/lib/content/qa/stats'
 import type { SessionSchema } from '@/types/session-schema'
 
 // Read-side aggregation for the content-quality dashboard. Reads the advisory
@@ -44,6 +45,7 @@ export interface ContentQualityData {
   dims: DimAvg[]
   slices: QualitySlice[] // [Pages, Blog & resources]
   recentFlagged: FlaggedItem[]
+  qa: ReturnType<typeof qaStats>
 }
 
 const round1 = (v: number): number => Math.round(v * 10) / 10
@@ -93,7 +95,7 @@ export async function loadContentQuality(): Promise<ContentQualityData> {
   const [pagesRes, resourcesRes] = await Promise.all([
     supabase
       .from('generated_pages')
-      .select('critic_review, page_url, content_job_id')
+      .select('critic_review, qa_review, page_url, content_job_id')
       .not('critic_review', 'is', null),
     supabase
       .from('resource_ideas')
@@ -208,5 +210,6 @@ export async function loadContentQuality(): Promise<ContentQualityData> {
     dims,
     slices: [slice('Site pages', pageAcc), slice('Blog & resources', resourceAcc)],
     recentFlagged,
+    qa: qaStats(pageRows.map((r) => r.qa_review)),
   }
 }

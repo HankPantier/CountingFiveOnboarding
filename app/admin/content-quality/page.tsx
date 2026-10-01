@@ -94,6 +94,54 @@ export default async function ContentQualityPage() {
             </div>
           </section>
 
+          {data.qa.pages > 0 && (
+            <section className="mb-6">
+              <h2 className="text-lg font-heading font-bold text-brand-navy mb-3">QA Desk</h2>
+              <div className="grid gap-4 sm:grid-cols-5 mb-4">
+                <StatTile label="Pages QA'd" value={String(data.qa.pages)} sub="reviews on record" />
+                <StatTile label="Pass rate" value={`${Math.round(data.qa.passRate * 100)}%`} sub="of QA'd pages" />
+                <StatTile label="Avg accuracy" value={`${data.qa.avgScores.accuracy}/10`} sub="accuracy score" />
+                <StatTile label="Avg copy" value={`${data.qa.avgScores.copy}/10`} sub="copy score" />
+                <StatTile label="Avg SEO" value={`${data.qa.avgScores.seo}/10`} sub="SEO/GEO score" />
+              </div>
+              <div className="bg-surface-card border border-border-default rounded-xl shadow-subtle overflow-hidden">
+                <table className="w-full text-sm font-body">
+                  <thead>
+                    <tr className="border-b border-border-default bg-surface-header text-left">
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Agent</th>
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Kind</th>
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Applied</th>
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Open</th>
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Accepted</th>
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Dismissed</th>
+                      <th className="px-4 py-3 font-heading font-semibold text-xs uppercase tracking-wide text-text-secondary">Dismiss rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.qa.byKind.map((k) => (
+                      <tr key={`${k.agent}-${k.kind}`} className="border-b border-border-default last:border-0">
+                        <td className="px-4 py-3 text-text-primary font-semibold">{k.agent}</td>
+                        <td className="px-4 py-3 text-text-secondary">{k.kind}</td>
+                        <td className="px-4 py-3 tabular-nums">{k.applied}</td>
+                        <td className="px-4 py-3 tabular-nums">{k.open}</td>
+                        <td className="px-4 py-3 tabular-nums">{k.accepted}</td>
+                        <td className="px-4 py-3 tabular-nums">{k.dismissed}</td>
+                        <td
+                          className={`px-4 py-3 tabular-nums ${k.dismissRate > 0.4 ? 'text-warning-strong font-semibold' : ''}`}
+                        >
+                          {Math.round(k.dismissRate * 100)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-text-muted text-[11px] pt-2">
+                High dismiss rate = QA is wrong here too often; demote this kind to flag-only or fix its prompt.
+              </p>
+            </section>
+          )}
+
           {data.recentFlagged.length > 0 && (
             <section>
               <h2 className="text-lg font-heading font-bold text-brand-navy mb-3">
