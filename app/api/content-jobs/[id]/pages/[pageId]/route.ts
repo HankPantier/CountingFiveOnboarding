@@ -117,6 +117,21 @@ export async function PATCH(
   if (error) return internalError('pages:patch', error, "Couldn't update the page")
   if (!data) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
 
+  // A human edit wins over an in-flight QA run: flip queued/running QA to
+  // skipped so the QA worker's fenced write (qa_status = 'running') misses.
+  // An admin approval does the same — QA never touches an approved page, so a
+  // still-queued row would otherwise hold phase 6 (QA `on` mode) forever.
+  if (contentEdited || updates.admin_approved_content === true) {
+    const { data: fenced } = await supabase
+      .from('generated_pages')
+      .update({ qa_status: 'skipped' })
+      .eq('id', pageId)
+      .eq('content_job_id', id)
+      .in('qa_status', ['queued', 'running'])
+      .select('id')
+    if (fenced?.length) data.qa_status = 'skipped'
+  }
+
   if (contentEdited && typeof data.content_markdown === 'string') {
     after(() =>
       reviewContentForMbpImpact({

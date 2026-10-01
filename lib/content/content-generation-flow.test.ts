@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   shouldChainGeneration,
   selectResumableContentJobs,
   finalizeGenerationIfComplete,
+  completeContentJob,
+  maybeCompleteAfterQa,
   MAX_GENERATION_ATTEMPTS,
 } from './content-generator'
+
+afterEach(() => { vi.unstubAllEnvs() })
 
 describe('shouldChainGeneration', () => {
   it('finalizes when every page is complete', () => {
@@ -112,7 +116,7 @@ describe('selectResumableContentJobs', () => {
 // from().update().eq() records the write, from().select().eq().single() for the
 // phase read. Enough to exercise finalizeGenerationIfComplete's branches.
 function makeSupabaseStub(opts: {
-  pages: Array<{ page_url?: string; generation_status: string; generation_attempts?: number }>
+  pages: Array<{ page_url?: string; generation_status: string; generation_attempts?: number; qa_status?: string | null }>
   phase: number
   approvedUrls?: string[]
 }) {
@@ -212,5 +216,132 @@ describe('finalizeGenerationIfComplete', () => {
     })
     expect(await finalizeGenerationIfComplete(supabase, 'job-1')).toBe(false)
     expect(updates).toHaveLength(0)
+  })
+})
+
+describe('finalizeGenerationIfComplete — QA gate', () => {
+  it('holds phase 6 in QA on mode while a complete page is still queued for QA', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'on')
+    const { supabase, updates } = makeSupabaseStub({
+      pages: [{ generation_status: 'complete', qa_status: 'done' }, { generation_status: 'complete', qa_status: 'queued' }],
+      phase: 5,
+    })
+    expect(await finalizeGenerationIfComplete(supabase, 'job-1')).toBe(false)
+    expect(updates).toHaveLength(0)
+  })
+
+  it('does not wait on QA in shadow mode', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'shadow')
+    const { supabase, updates } = makeSupabaseStub({
+      pages: [{ generation_status: 'complete', qa_status: 'running' }],
+      phase: 5,
+    })
+    expect(await finalizeGenerationIfComplete(supabase, 'job-1')).toBe(true)
+    expect(updates[0]).toMatchObject({ phase: 6 })
+  })
+})
+
+// Stub for completeContentJob / maybeCompleteAfterQa: the fenced phase update
+// lands only while `phase` is still 5 (and flips it), like the real row.
+function makeCompletionStub(opts: {
+  pages: Array<{ page_url: string; generation_status: string; generation_attempts?: number; qa_status?: string | null }>
+  phase: number
+}) {
+  const state = { phase: opts.phase, phaseWrites: 0 }
+  const resolved = (data: unknown) => {
+    const p = Promise.resolve({ data, error: null })
+    // Thenable chain that tolerates any number of .eq() calls.
+    const chain: Record<string, unknown> = {
+      eq: () => chain,
+      single: () => p,
+      then: p.then.bind(p),
+    }
+    return chain
+  }
+  const supabase = {
+    from(table: string) {
+      if (table === 'generated_pages') return { select: () => resolved(opts.pages) }
+      if (table === 'page_outlines') return { select: () => resolved(opts.pages.map(p => ({ page_url: p.page_url }))) }
+      if (table === 'sessions') return { select: () => resolved({ schema_data: { business: { name: 'Acme CPA' } } }) }
+      if (table === 'audit_runs') return { select: () => resolved([]) }
+      // content_jobs
+      return {
+        select: () => resolved({ phase: state.phase, session_id: 'sess-1' }),
+        update: () => {
+          const filters: Record<string, unknown> = {}
+          const chain = {
+            eq: (col: string, val: unknown) => { filters[col] = val; return chain },
+            select: () => {
+              const lands = filters.phase === 5 && state.phase === 5
+              if (lands) { state.phase = 6; state.phaseWrites += 1 }
+              return Promise.resolve({ data: lands ? [{ id: 'job-1' }] : [], error: null })
+            },
+          }
+          return chain
+        },
+      }
+    },
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { supabase: supabase as any, state }
+}
+
+describe('completeContentJob', () => {
+  it('advances phase 5→6 once; a second (racing) caller is a no-op', async () => {
+    const { supabase, state } = makeCompletionStub({
+      pages: [{ page_url: '/a', generation_status: 'complete' }],
+      phase: 5,
+    })
+    expect(await completeContentJob(supabase, 'job-1', 'sess-1')).toBe(true)
+    expect(await completeContentJob(supabase, 'job-1', 'sess-1')).toBe(false)
+    expect(state.phaseWrites).toBe(1)
+  })
+
+  it('does nothing for a job not in generation', async () => {
+    const { supabase, state } = makeCompletionStub({ pages: [], phase: 6 })
+    expect(await completeContentJob(supabase, 'job-1', 'sess-1')).toBe(false)
+    expect(state.phaseWrites).toBe(0)
+  })
+})
+
+describe('maybeCompleteAfterQa', () => {
+  it('waits while QA is outstanding in on mode', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'on')
+    const { supabase, state } = makeCompletionStub({
+      pages: [
+        { page_url: '/a', generation_status: 'complete', qa_status: 'done' },
+        { page_url: '/b', generation_status: 'complete', qa_status: 'running' },
+      ],
+      phase: 5,
+    })
+    expect(await maybeCompleteAfterQa(supabase, 'job-1')).toBe(false)
+    expect(state.phaseWrites).toBe(0)
+  })
+
+  it('finishes the job once every page is done and QA has settled', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'on')
+    const { supabase, state } = makeCompletionStub({
+      pages: [
+        { page_url: '/a', generation_status: 'complete', qa_status: 'done' },
+        { page_url: '/b', generation_status: 'complete', qa_status: 'error' },
+        { page_url: '/c', generation_status: 'complete', qa_status: 'skipped' },
+      ],
+      phase: 5,
+    })
+    expect(await maybeCompleteAfterQa(supabase, 'job-1')).toBe(true)
+    expect(state.phase).toBe(6)
+  })
+
+  it('waits while generation still has work, whatever QA says', async () => {
+    vi.stubEnv('CONTENT_QA_MODE', 'on')
+    const { supabase, state } = makeCompletionStub({
+      pages: [
+        { page_url: '/a', generation_status: 'complete', qa_status: 'done' },
+        { page_url: '/b', generation_status: 'pending', qa_status: null },
+      ],
+      phase: 5,
+    })
+    expect(await maybeCompleteAfterQa(supabase, 'job-1')).toBe(false)
+    expect(state.phaseWrites).toBe(0)
   })
 })

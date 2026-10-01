@@ -3,7 +3,9 @@ import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase/server'
 import { resumePlan } from '@/lib/content/resume-targets'
 import { runWhoisLookup } from '@/lib/whois/lookup'
-import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS } from '@/lib/content/content-generator'
+import { selectResumableContentJobs, ORPHAN_RECLAIM_MS, MAX_GENERATION_ATTEMPTS, maybeCompleteAfterQa } from '@/lib/content/content-generator'
+import { triggerQa } from '@/lib/content/qa/trigger'
+import { qaMode, QA_MAX_ATTEMPTS } from '@/lib/content/qa/mode'
 import { reconcileStuckTarget, finalizeBlogBatchIfDone } from '@/lib/content/blog-batch-runner'
 import { MAX_LIBRARY_ATTEMPTS } from '@/lib/content/library-inclusion'
 import { MAX_IMPORT_ATTEMPTS } from '@/lib/content/article-import-inclusion'
@@ -116,14 +118,23 @@ export async function GET(req: Request) {
           .in('status', ['pending', 'running'])
           .lt('updated_at', cutoff)
           .select('id'),
+        // QA Desk: a QA worker that died mid-run (STUCK_THRESHOLD_MS = 15 min,
+        // judged by qa_started_at, stamped on claim). 'error' is retriable
+        // below while qa_attempts is under the cap.
+        supabase
+          .from('generated_pages')
+          .update({ qa_status: 'error' })
+          .eq('qa_status', 'running')
+          .lt('qa_started_at', cutoff)
+          .select('id'),
       ])
     } catch (err) {
       console.error('[sweep-stuck-jobs] sweep queries failed:', err)
       return null
     }
   })()
-  const [research, pages, ideas, socials, oneoffs, audits, newPages] =
-    sweep ?? [null, null, null, null, null, null, null]
+  const [research, pages, ideas, socials, oneoffs, audits, newPages, qaStuck] =
+    sweep ?? [null, null, null, null, null, null, null, null]
 
   // Design Studio runs whose self-chain stopped (Vercel's recursion protection
   // refuses a deployment's ~5th self-call per chain with 508) are nudged
@@ -343,6 +354,39 @@ export async function GET(req: Request) {
     }
   }
 
+  // QA Desk: re-fire pages whose QA trigger was lost (queued for 5+ min since
+  // the page finished generating — generation_started_at, NOT created_at, which
+  // is set at sitemap confirm and would re-fire every freshly queued page), or
+  // a retriable error. The worker's atomic claim makes a duplicate fire a no-op.
+  // Then finish jobs that were only waiting on QA (`on` mode holds phase 6).
+  let qaRetriggered = 0
+  let qaJobsFinalized = 0
+  if (qaMode() !== 'off') {
+    const qaCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    const { data: qaStale } = await supabase
+      .from('generated_pages')
+      .select('id, content_job_id')
+      .eq('generation_status', 'complete')
+      .eq('admin_approved_content', false)
+      .lt('qa_attempts', QA_MAX_ATTEMPTS)
+      .or(`and(qa_status.eq.queued,generation_started_at.lt.${qaCutoff}),qa_status.eq.error`)
+      .limit(20)
+    for (const p of qaStale ?? []) {
+      if (await triggerQa(p.content_job_id, p.id)) qaRetriggered++
+    }
+    if (qaRetriggered) console.warn(`[sweep-stuck-jobs] qa re-triggered pages=${qaRetriggered}`)
+  }
+  if (qaMode() === 'on') {
+    for (const jobId of genJobIds) {
+      try {
+        if (await maybeCompleteAfterQa(supabase, jobId)) qaJobsFinalized++
+      } catch (err) {
+        console.error('[sweep-stuck-jobs] QA-held job finalize failed for', jobId, err)
+      }
+    }
+    if (qaJobsFinalized) console.warn(`[sweep-stuck-jobs] qa-held jobs finalized=${qaJobsFinalized}`)
+  }
+
   // Research: a phase-3 job with pending/error research rows, nothing running,
   // and no activity for 10+ minutes has lost its worker (the pipeline's chain
   // died or the function was killed). Re-trigger /research/continue.
@@ -550,6 +594,8 @@ export async function GET(req: Request) {
   const oneoffsSwept = oneoffs?.data?.length ?? 0
   const auditsSwept = audits?.data?.length ?? 0
   const newPagesSwept = newPages?.data?.length ?? 0
+  const qaSwept = qaStuck?.data?.length ?? 0
+  if (qaSwept) console.warn(`[sweep-stuck-jobs] qa runs reset to error=${qaSwept} cutoff=${cutoff}`)
   if (batchTargetsSwept) {
     console.warn(`[sweep-stuck-jobs] blog-batch-targets reset to pending=${batchTargetsSwept}`)
   }
@@ -597,5 +643,5 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({ researchSwept, pagesSwept, ideasSwept, socialsSwept, oneoffsSwept, auditsSwept, batchTargetsSwept, newPagesSwept, librarySelectionsSwept, articleImportsSwept, whoisRetried, generationResumed, batchesResumed, auditBatchesResumed, librarySelectionsResumed, articleImportsResumed,
-    researchResumed, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, designRendersRemoved: designOrphans.renders, designAttachmentsRemoved: designOrphans.attachments, designRunRendersRemoved: designOrphans.runRenders, cutoff })
+    researchResumed, qaSwept, qaRetriggered, qaJobsFinalized, designInputsSwept: designSwept.inputs, designRunsSwept: designSwept.runs, designConceptsSwept: designSwept.concepts, designRendersRemoved: designOrphans.renders, designAttachmentsRemoved: designOrphans.attachments, designRunRendersRemoved: designOrphans.runRenders, cutoff })
 }

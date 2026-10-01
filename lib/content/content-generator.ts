@@ -45,6 +45,8 @@ import {
   RESERVE_MS,
 } from './generation-budget'
 import { summarizeGenerationState } from './generation-state'
+import { qaMode, qaOutstanding } from './qa/mode'
+import { triggerQa } from './qa/trigger'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
 import type { Json } from '@/types/database'
@@ -202,14 +204,16 @@ type ResumablePageRow2 = {
 // per-page retry that finishes the last straggler). Returns whether it advanced,
 // so callers can decide whether to trigger downstream side effects. Does nothing
 // when pages are still pending/running or an error is still retriable — those are
-// not "done" and must not unlock the deliverable.
+// not "done" and must not unlock the deliverable. In QA `on` mode it also waits
+// for every complete page's QA to settle; the QA worker's maybeCompleteAfterQa
+// then finishes the job (and sends the email this path never sent).
 export async function finalizeGenerationIfComplete(
   supabase: ReturnType<typeof createServerClient>,
   contentJobId: string
 ): Promise<boolean> {
   const { data: allPages } = await supabase
     .from('generated_pages')
-    .select('page_url, generation_status, generation_attempts')
+    .select('page_url, generation_status, generation_attempts, qa_status')
     .eq('content_job_id', contentJobId)
 
   if (!allPages?.length) return false
@@ -223,6 +227,7 @@ export async function finalizeGenerationIfComplete(
   const approvedUrls = approved ? new Set(approved.map(o => o.page_url)) : null
   const { allDone } = summarizeGenerationState(allPages, approvedUrls, MAX_GENERATION_ATTEMPTS)
   if (!allDone) return false
+  if (qaOutstanding(allPages, qaMode())) return false
 
   const { data: job } = await supabase
     .from('content_jobs')
@@ -1471,6 +1476,11 @@ export async function generateSinglePage(
         admin_approved_content: false,  // re-review required after every generation
         generation_status: degraded ? 'error' : 'complete',
         generation_error: degraded ? degradedReason : null,  // clear prior failure on a clean (re)generation
+        // Queue QA for a clean page; a degraded page has nothing worth reviewing.
+        // Every (re)generation starts QA over: fresh attempts, no stale report.
+        qa_status: !degraded && qaMode() !== 'off' ? 'queued' : null,
+        qa_review: null,
+        qa_attempts: 0,
       })
       .eq('id', genPage.id)
       // Fenced: only if this worker still owns the claim. A reclaimed row (swept
@@ -1500,7 +1510,18 @@ export async function generateSinglePage(
     // own regen so it re-scores manually instead of recursing. The scheduling is
     // wrapped so a hook failure (e.g. no request scope) can NEVER fall through to
     // the catch below and mistakenly mark this completed page 'error'.
-    if (!degraded && !verbatim && !opts?.skipCritic) {
+    // QA Desk: a clean page is handed to the QA worker (its own invocation and
+    // budget). In `on` mode QA's judge replaces this critic; in `shadow` both
+    // run and QA only reports. Same never-throw scheduling guard as the critic.
+    const mode = qaMode()
+    if (!degraded && mode !== 'off') {
+      try {
+        after(() => triggerQa(contentJobId, genPage.id).then(() => undefined))
+      } catch (hookErr) {
+        console.warn('[qa] could not schedule QA:', hookErr)
+      }
+    }
+    if (!degraded && !verbatim && !opts?.skipCritic && mode !== 'on') {
       try {
         after(() =>
           reviewAndMaybeRegen(
@@ -1648,7 +1669,7 @@ export async function runContentGeneration(
   // Check completion + advance phase + email notification.
   const { data: allPages } = await supabase
     .from('generated_pages')
-    .select('page_url, generation_status, generation_attempts')
+    .select('page_url, generation_status, generation_attempts, qa_status')
     .eq('content_job_id', contentJobId)
 
   // Scope every count to pages whose outline is APPROVED. generated_pages rows
@@ -1696,62 +1717,128 @@ export async function runContentGeneration(
   }
 
   if (allDone) {
-    // Only advance a job that is actually in generation (phase 5) — a restart
-    // at another phase must not jump it forward.
-    await supabase
-      .from('content_jobs')
-      .update({ phase: 6, updated_at: new Date().toISOString() })
-      .eq('id', contentJobId)
-      .eq('phase', 5)
+    // QA `on` mode holds phase 6 + the email until every complete page's QA has
+    // settled; the last QA worker to land finishes the job (maybeCompleteAfterQa).
+    if (qaOutstanding(allPages ?? [], qaMode())) {
+      console.warn(`[content-job] generation done, waiting on QA session=${sessionId} complete=${completeCount} errors=${errorCount}`)
+      return
+    }
+    await completeContentJob(supabase, contentJobId, sessionId)
+  }
+}
 
-    console.warn(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
+// Phase 5→6 + audit-folder promote + "content ready" email. Idempotent: only
+// the caller whose fenced phase update lands does the side effects, so the
+// generator, a QA worker and the sweep can all race here and the email still
+// goes out once. Counts are recomputed fresh (the caller may be a QA worker
+// that never saw the batch's summary).
+export async function completeContentJob(
+  supabase: ReturnType<typeof createServerClient>,
+  contentJobId: string,
+  sessionId: string,
+): Promise<boolean> {
+  // Only advance a job that is actually in generation (phase 5) — a restart
+  // at another phase must not jump it forward.
+  const { data: advanced } = await supabase
+    .from('content_jobs')
+    .update({ phase: 6, updated_at: new Date().toISOString() })
+    .eq('id', contentJobId)
+    .eq('phase', 5)
+    .select('id')
+  if (!advanced?.length) return false
 
-    // Content is generated for this client — move its audit folder to 'client'
-    // (forward-only, whole-domain). Non-fatal: never fail generation over it.
-    const { data: linkedAudits } = await supabase
-      .from('audit_runs')
-      .select('domain, created_by')
-      .eq('session_id', sessionId)
-    const seenDomains = new Set<string>()
-    const toPromote = (linkedAudits ?? []).filter((a) => {
-      const key = `${a.domain}|${a.created_by ?? ''}`
-      if (seenDomains.has(key)) return false
-      seenDomains.add(key)
-      return true
-    })
-    // Distinct domains are independent — promote them in parallel.
-    await Promise.all(
-      toPromote.map((a) =>
-        promoteAuditGroupByDomain(supabase, {
-          domain: a.domain,
-          createdBy: a.created_by,
-          to: 'client',
-        })
-      )
+  const [{ data: pages }, { data: approved }, { data: session }] = await Promise.all([
+    supabase
+      .from('generated_pages')
+      .select('page_url, generation_status, generation_attempts')
+      .eq('content_job_id', contentJobId),
+    supabase
+      .from('page_outlines')
+      .select('page_url')
+      .eq('content_job_id', contentJobId)
+      .eq('admin_approved', true),
+    supabase.from('sessions').select('schema_data').eq('id', sessionId).single(),
+  ])
+  const approvedUrls = approved ? new Set(approved.map(o => o.page_url)) : null
+  const { completeCount, errorCount } = summarizeGenerationState(pages ?? [], approvedUrls, MAX_GENERATION_ATTEMPTS)
+
+  console.warn(`[content-job] phase 5→6 session=${sessionId} complete=${completeCount} errors=${errorCount}`)
+
+  // Content is generated for this client — move its audit folder to 'client'
+  // (forward-only, whole-domain). Non-fatal: never fail generation over it.
+  const { data: linkedAudits } = await supabase
+    .from('audit_runs')
+    .select('domain, created_by')
+    .eq('session_id', sessionId)
+  const seenDomains = new Set<string>()
+  const toPromote = (linkedAudits ?? []).filter((a) => {
+    const key = `${a.domain}|${a.created_by ?? ''}`
+    if (seenDomains.has(key)) return false
+    seenDomains.add(key)
+    return true
+  })
+  // Distinct domains are independent — promote them in parallel.
+  await Promise.all(
+    toPromote.map((a) =>
+      promoteAuditGroupByDomain(supabase, {
+        domain: a.domain,
+        createdBy: a.created_by,
+        to: 'client',
+      })
     )
+  )
 
-    const firmName = pageCtx.schema.business?.name ?? 'Unknown firm'
+  const schema = (session?.schema_data ?? null) as SessionSchema | null
+  const firmName = schema?.business?.name ?? 'Unknown firm'
 
-    if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
-      try {
-        const { Resend } = await import('resend')
-        const resend = new Resend(process.env.RESEND_API_KEY)
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) {
+    try {
+      const { Resend } = await import('resend')
+      const resend = new Resend(process.env.RESEND_API_KEY)
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL,
-          to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
-          subject: `[Revaltus] Content ready for review — ${firmName}`,
-          html: `
-            <h2>Content Generation Complete</h2>
-            <p><strong>${firmName}</strong></p>
-            <p>${completeCount} pages generated${errorCount > 0 ? `, ${errorCount} errors` : ''}.</p>
-            <p><a href="${appUrl}/admin/content/${sessionId}">Review and approve before download →</a></p>
-          `,
-        })
-      } catch (emailErr) {
-        console.warn('[content-gen] Email notification failed:', emailErr)
-      }
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL,
+        to: process.env.ADMIN_EMAIL ?? process.env.RESEND_FROM_EMAIL,
+        subject: `[Revaltus] Content ready for review — ${firmName}`,
+        html: `
+          <h2>Content Generation Complete</h2>
+          <p><strong>${firmName}</strong></p>
+          <p>${completeCount} pages generated${errorCount > 0 ? `, ${errorCount} errors` : ''}.</p>
+          <p><a href="${appUrl}/admin/content/${sessionId}">Review and approve before download →</a></p>
+        `,
+      })
+    } catch (emailErr) {
+      console.warn('[content-gen] Email notification failed:', emailErr)
     }
   }
+  return true
+}
+
+// Called after each page's QA (and by the sweep). Finishes the job once
+// generation is done AND no QA is outstanding — the last QA to land sends the
+// email (fenced in completeContentJob).
+export async function maybeCompleteAfterQa(
+  supabase: ReturnType<typeof createServerClient>,
+  contentJobId: string,
+): Promise<boolean> {
+  const { data: job } = await supabase
+    .from('content_jobs')
+    .select('phase, session_id')
+    .eq('id', contentJobId)
+    .single()
+  if (!job || job.phase !== 5) return false
+  const { data: pages } = await supabase
+    .from('generated_pages')
+    .select('page_url, generation_status, generation_attempts, qa_status')
+    .eq('content_job_id', contentJobId)
+  const { data: approved } = await supabase
+    .from('page_outlines')
+    .select('page_url')
+    .eq('content_job_id', contentJobId)
+    .eq('admin_approved', true)
+  const approvedUrls = approved ? new Set(approved.map(o => o.page_url)) : null
+  const { allDone } = summarizeGenerationState(pages ?? [], approvedUrls, MAX_GENERATION_ATTEMPTS)
+  if (!allDone || qaOutstanding(pages ?? [], qaMode())) return false
+  return completeContentJob(supabase, contentJobId, job.session_id)
 }
