@@ -91,6 +91,7 @@ describe('runQaForPage', () => {
     expect(claimFilters).toEqual(expect.arrayContaining([
       ['in', 'qa_status', ['queued', 'error']],
       ['lt', 'qa_attempts', QA_MAX_ATTEMPTS],
+      ['eq', 'qa_attempts', 0],
       ['eq', 'generation_status', 'complete'],
       ['eq', 'admin_approved_content', false],
     ]))
@@ -184,5 +185,16 @@ describe('runQaForPage', () => {
     const { deps: d } = deps('on')
     await runQaForPage('j1', 'p1', d)
     expect(d.judge).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ stage: 'qa_judge' }))
+  })
+
+  it('a failed final write fences the row to qa error immediately', async () => {
+    const { supabase, deps: d } = deps('on', { finalWriteError: { message: 'write boom' } })
+    expect((await runQaForPage('j1', 'p1', d)).status).toBe('error')
+    expect(supabase.updates('generated_pages').at(-1)).toEqual({ qa_status: 'error' })
+    const lastFilters = supabase.updateFilters('generated_pages').at(-1)
+    expect(lastFilters).toEqual(expect.arrayContaining([
+      ['eq', 'qa_status', 'running'],
+      ['eq', 'qa_started_at', '2026-10-01T00:00:00.000Z'],
+    ]))
   })
 })

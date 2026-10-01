@@ -90,6 +90,9 @@ export async function runQaForPage(
     .eq('admin_approved_content', false)
     .in('qa_status', ['queued', 'error'])
     .lt('qa_attempts', QA_MAX_ATTEMPTS)
+    // Optimistic attempts CAS: two racing claims both read N; only one can
+    // move N → N+1, so a double-fire can't both win.
+    .eq('qa_attempts', row.qa_attempts ?? 0)
     .select('id')
   if (!claimed?.length) return { status: 'skipped', reason: 'claim lost' }
 
@@ -212,7 +215,7 @@ export async function runQaForPage(
       update.critic_review = judge ? asJson({ ...judge, needs_human_review: !review.passed }) : null
     }
 
-    const { data: written } = await supabase
+    const { data: written, error: writeErr } = await supabase
       .from('generated_pages')
       .update(update)
       .eq('id', pageId)
@@ -221,6 +224,9 @@ export async function runQaForPage(
       .eq('generation_status', 'complete')
       .eq('admin_approved_content', false)
       .select('id')
+    // A write error must not leave the row 'running' until the stuck sweep;
+    // throw so the catch fences it to 'error' (retriable within the cap) now.
+    if (writeErr) throw new Error(`final QA write failed: ${writeErr.message}`)
     if (!written?.length) return { status: 'skipped', reason: 'page changed during QA' }
     return { status: 'done' }
   } catch (err) {

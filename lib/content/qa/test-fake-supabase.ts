@@ -24,6 +24,8 @@ type Filter = [op: 'eq' | 'neq' | 'in' | 'lt' | 'limit', col: string, val: unkno
 export type FakeSupabaseOptions = {
   claimReturnsEmpty?: boolean
   finalWriteReturnsEmpty?: boolean
+  /** Make the final (qa_review-carrying) write resolve with this error. */
+  finalWriteError?: FakeError
   selectErrors?: Partial<Record<string, FakeError>>
 }
 
@@ -91,9 +93,14 @@ export function makeFakeSupabase(
       return { data: resolve()[0] ?? null, error: null }
     }
     builder.then = (
-      onFulfilled?: (v: { data: Row[]; error: null }) => unknown,
+      onFulfilled?: (v: { data: Row[] | null; error: FakeError | null }) => unknown,
       onRejected?: (e: unknown) => unknown,
-    ) => Promise.resolve({ data: resolve(), error: null }).then(onFulfilled, onRejected)
+    ) => {
+      const data = resolve()
+      const failFinal = updatePayload && 'qa_review' in updatePayload && opts.finalWriteError
+      const result = failFinal ? { data: null, error: opts.finalWriteError ?? null } : { data, error: null }
+      return Promise.resolve(result).then(onFulfilled, onRejected)
+    }
     return builder
   }
 
