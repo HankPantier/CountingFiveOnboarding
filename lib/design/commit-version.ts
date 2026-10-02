@@ -33,7 +33,10 @@ import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { BRAND_PATH, DESIGN_PATH } from '@/app/api/edit/[id]/theme/_theme'
 import { applyBundleToDraft } from './apply-bundle'
 import type { DesignBundle } from './bundle'
-import { bundleFromRepoFiles, hasLegacyOverrides } from './bundle-files'
+import { bundleFromRepoFiles, hasLegacyOverrides, readRegion, replaceLocksFragment } from './bundle-files'
+import { applyUserLocks, snapshotFromBundle, withLockPins } from './lock-enforce'
+import { listLocks, updateLockSnapshot } from './lock-store'
+import type { LockSnapshot } from './locks'
 import { capabilityViolations, fontsUnlocked, keepLockedLevers } from './capabilities'
 import { readEffectiveCapabilities } from './capabilities-read'
 import { mergeAppliedBlobs, themeFilePaths } from './drift'
@@ -112,7 +115,27 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
   // axes, and below the `layout-presets` flag a layout-less bundle keeps the
   // draft's layout: render + record the filled bundle, or the replace-semantics
   // render would delete them from design.json.
-  const bundle = keepLockedLevers(args.bundle, current.bundle, capRead.effective)
+  // Design locks (migration 085). Every versioned write keeps locked levers /
+  // areas at the draft's current values and carries the recomputed lock pins
+  // — except a restore, which is a full rollback: it ignores the locks and
+  // re-freezes every locked area to the restored look instead.
+  let locks = await listLocks(db, target.sessionId)
+  const refrozen: { key: string; snapshot: LockSnapshot }[] = []
+  let locked: DesignBundle
+  if (args.source === 'revert') {
+    if (locks.some((l) => l.kind === 'area')) {
+      const snapshot = snapshotFromBundle(args.bundle, draft.files)
+      if (snapshot) {
+        locks = locks.map((l) => (l.kind === 'area' ? { ...l, snapshot } : l))
+        refrozen.push(...locks.filter((l) => l.kind === 'area').map((l) => ({ key: l.key, snapshot })))
+      }
+    }
+    locked = withLockPins(args.bundle, locks)
+  } else {
+    const region = readRegion(draft.files.overridesCss)
+    locked = applyUserLocks(args.bundle, current.bundle, region.ok ? region.css : null, locks).bundle
+  }
+  const bundle = keepLockedLevers(locked, current.bundle, capRead.effective)
   const violations = capabilityViolations(bundle, current.bundle, capRead.effective)
   if (violations.length > 0) return { ok: false, status: 422, error: violations.join(' ') }
   // File contract follows the DRAFT marker (what the next build ships).
@@ -140,7 +163,7 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
       fontsModule: fontsUnlocked(capRead.draft),
       designMd: (brand, design) => buildDesignMdFromTheme({ brand, design, schema, ...(direction ? { direction } : {}) }),
       ...(expectedShas ? { base: before } : {}),
-      ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: args.overridesVerbatim } : {}),
+      ...(args.overridesVerbatim !== undefined ? { overridesVerbatim: replaceLocksFragment(args.overridesVerbatim, bundle.css.locks) } : {}),
     })
   } catch (err) {
     if (err instanceof StaleShaError) return { ok: false, status: 409, error: STALE_THEME_ERROR, stale: true }
@@ -150,6 +173,17 @@ export async function commitDesignVersion(db: Db, args: CommitVersionArgs): Prom
 
   if (args.skipIfUnchanged && result.changedPaths.length === 0) {
     return { ok: true, version: null, commitSha: null, changedPaths: [], appliedBlobs: mergeAppliedBlobs(before.shas, {}, paths), css: result.css }
+  }
+
+  // The commit landed: persist the re-frozen snapshots (best effort — the pins
+  // on disk are already right; a failure only means the next commit re-pins
+  // from the older snapshot).
+  for (const r of refrozen) {
+    try {
+      await updateLockSnapshot(db, target.sessionId, r.key, r.snapshot)
+    } catch (err) {
+      console.warn('[design:commit] lock snapshot refresh failed', err)
+    }
   }
 
   if (args.syncMbp) {

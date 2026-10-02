@@ -637,6 +637,7 @@ export async function reviseUnit(db: Db, ctx: StepContext, runId: string, concep
         paletteFreedom: b.paletteFreedom,
         draftFiles: { brandText: b.theme.brandText, designText: b.theme.designText, overridesCss: b.theme.overridesCss },
         model: DESIGN_MODEL,
+        locks: { list: b.locks, base: b.current, baseCss: b.currentCss },
       },
       others,
       costSoFarUsd: priorCost,

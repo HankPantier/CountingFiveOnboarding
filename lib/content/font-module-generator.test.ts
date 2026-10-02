@@ -26,8 +26,8 @@ describe('generateFontsModule (byte parity with the template)', () => {
   it('no-arg call → the DEFAULT kind → the template default module golden', () => {
     expect(generateFontsModule().source).toBe(read('fonts-default.golden.txt'))
   })
-  it.each(['editorial', 'noitalic'])('%s fixture (SYNCED kind) → its golden', (name) => {
-    const design = JSON.parse(read(`design-fonts-${name}.json`)) as { typography: Record<string, string> }
+  it.each(['editorial', 'noitalic', 'pinned'])('%s fixture (SYNCED kind) → its golden', (name) => {
+    const design = JSON.parse(read(`design-fonts-${name}.json`)) as { typography: { headingFont?: string; bodyFont?: string; accentFont?: string; pinnedFonts?: string[] } }
     expect(generateFontsModule(design.typography).source).toBe(read(`fonts-${name}.golden.txt`))
   })
   it('never warns for a curated font', () => {

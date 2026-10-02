@@ -22,7 +22,13 @@ const EDIT_LABELS: Record<string, string> = {
   set_block_css: 'Block CSS',
   remove_block_css: 'Removed CSS',
 }
-const WORKING_LABELS: Record<string, string> = { render_preview: 'Rendering a preview…', commit_version: 'Saving to the draft…' }
+const WORKING_LABELS: Record<string, string> = {
+  render_preview: 'Rendering a preview…',
+  commit_version: 'Saving to the draft…',
+  lock_design: 'Locking…',
+  unlock_design: 'Unlocking…',
+}
+const LOCK_TOOLS = new Set(['lock_design', 'unlock_design'])
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [])
 
@@ -83,6 +89,15 @@ export function chatBlocks(m: DesignChatMessage): ChatBlock[] {
         gateFailures: strings(output.gateFailures),
         warnings: strings(output.warnings),
       })
+    } else if (LOCK_TOOLS.has(tool)) {
+      const verb = tool === 'lock_design' ? 'Locked' : 'Unlocked'
+      if (output?.ok === true) {
+        const names = strings(output.changed)
+        const v = typeof output.versionNo === 'number' ? ` (saved as v${output.versionNo})` : ''
+        out.push({ kind: 'notice', tone: 'success', text: names.length > 0 ? `${verb}: ${names.join(', ')}${v}` : `Nothing new to ${verb.toLowerCase().replace(/ed$/, '')}`, items: [] })
+      } else {
+        out.push({ kind: 'notice', tone: 'error', text: error, items: [] })
+      }
     } else if (tool === 'commit_version') {
       if (output?.ok === true && typeof output.versionNo === 'number') {
         out.push({ kind: 'notice', tone: 'success', text: `Saved to the draft as v${output.versionNo}`, items: strings(output.warnings) })
@@ -98,7 +113,8 @@ export function committedVersionNos(m: DesignChatMessage): number[] {
   const out: number[] = []
   for (const p of m.parts as unknown[]) {
     if (!isPlainObject(p)) continue
-    if (p.type === 'tool-commit_version' && p.state === 'output-available' && isPlainObject(p.output) && p.output.ok === true && typeof p.output.versionNo === 'number') {
+    const versioned = p.type === 'tool-commit_version' || p.type === 'tool-lock_design' || p.type === 'tool-unlock_design'
+    if (versioned && p.state === 'output-available' && isPlainObject(p.output) && p.output.ok === true && typeof p.output.versionNo === 'number') {
       out.push(p.output.versionNo)
     }
     if (p.type === 'data-design-commit' && isPlainObject(p.data) && p.data.status === 'committed' && typeof p.data.versionNo === 'number') out.push(p.data.versionNo)

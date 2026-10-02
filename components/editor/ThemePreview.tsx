@@ -6,6 +6,7 @@ import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import ThemeControls, { type FlagsPatch } from './ThemeControls'
 import type { LayoutPresets } from '@/lib/design/layout-presets'
+import type { DesignLockDto } from '@/lib/design/locks'
 import { themeSourcesHtmlAttributes, type ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
 
 // Live 1:1 preview: the client's REAL deployed homepage (shellHtml) re-skinned
@@ -24,6 +25,7 @@ export default function ThemePreview({
   onChangeLayout,
   logos,
   logoSlot,
+  locks,
 }: {
   shellHtml: string
   sources: ThemeSources
@@ -37,6 +39,7 @@ export default function ThemePreview({
   // Draft logo images (data: URLs) swapped into the live shell's header/footer.
   logos?: PreviewLogos
   logoSlot?: ReactNode
+  locks?: DesignLockDto[]
 }) {
   const srcDoc = useMemo(
     () =>
@@ -77,6 +80,7 @@ export default function ThemePreview({
         onChangeFlags={onChangeFlags}
         onChangeLayout={onChangeLayout}
         logoSlot={logoSlot}
+        locks={locks}
       />
       <iframe
         title="Theme preview"

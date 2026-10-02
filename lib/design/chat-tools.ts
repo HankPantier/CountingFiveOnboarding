@@ -20,6 +20,9 @@ import { z } from 'zod'
 import type { Database } from '@/types/database'
 import { PALETTE_ROLES } from '@/lib/editor/theme-edit'
 import { CSS_FRAGMENT_KEYS, type ChatEdit } from './chat-edits'
+import { CSS_TARGETS, isCssTarget } from './css-targets'
+import type { LockChange } from './lock-ops'
+import { LEVER_KEYS, isLeverKey, type LeverKey, type LockKind } from './locks'
 import { StyleAxesInputSchema } from './style-axes-schema'
 import { LayoutPresetsInputSchema } from './layout-presets-schema'
 import { COMMIT_FAILED_ERROR } from './chat-commit'
@@ -57,7 +60,12 @@ export type ChatToolDeps = {
   // PF1: whether a preview of `page` started now still leaves
   // CHAT_COMMIT_RESERVE_MS (baseline cached or not). chatPreviewDeps provides it.
   previewFits: (page: string) => boolean
+  // lock_design / unlock_design (lock-ops.ts via the turn).
+  changeLocks: (change: LockChange) => Promise<LockToolOutput>
 }
+
+export type LockToolOutput = { ok: true; changed: string[]; locked: string[]; versionNo: number | null } | { ok: false; error: string }
+export const LOCK_FAILED_ERROR = 'Changing the locks failed — nothing was changed. Try again.'
 
 // One turn's binding of render_preview to renderChatPreview (see header).
 export function chatPreviewDeps(args: {
@@ -236,6 +244,44 @@ export function createDesignChatToolset(ws: ChatWorkspace, deps: ChatToolDeps) {
           ],
         }
       },
+    }),
+    lock_design: tool({
+      description:
+        'Lock areas and/or site-wide levers so later edits leave them as they are. A locked area keeps its exact current look (colours, fonts, spacing, CSS) even when site-wide levers change. Commit staged changes first.',
+      inputSchema: z.object({
+        areas: z.array(z.enum(CSS_TARGETS)).max(12).optional().describe('Block / chrome ids to freeze, e.g. service-cards, navbar'),
+        levers: z.array(z.enum(LEVER_KEYS as [LeverKey, ...LeverKey[]])).max(10).optional().describe('Site-wide levers to freeze'),
+        label: z.string().max(80).optional().describe('Short human name when locking one thing, e.g. "Service cards (What we do)"'),
+      }),
+      execute: ({ areas, levers, label }): Promise<LockToolOutput> =>
+        run(async () => {
+          try {
+            return await deps.changeLocks({ op: 'lock', areas: areas ?? [], levers: levers ?? [], ...(label ? { label } : {}) })
+          } catch (err) {
+            console.error('[design-chat] lock_design failed', err)
+            return { ok: false, error: LOCK_FAILED_ERROR }
+          }
+        }),
+    }),
+    unlock_design: tool({
+      description:
+        'Unlock areas / levers. ONLY after the user confirmed unlocking in this conversation. An unlocked area follows the site-wide palette, fonts and tokens again. Commit staged changes first.',
+      inputSchema: z.object({
+        keys: z.array(z.string().max(64)).min(1).max(12).describe('Locked area ids or lever keys, as listed under LOCKED'),
+      }),
+      execute: ({ keys }): Promise<LockToolOutput> =>
+        run(async () => {
+          try {
+            const parsed = keys.flatMap((key): { kind: LockKind; key: string }[] =>
+              isCssTarget(key) ? [{ kind: 'area', key }] : isLeverKey(key) ? [{ kind: 'lever', key }] : []
+            )
+            if (parsed.length === 0) return { ok: false, error: 'None of those keys is a lockable area or lever.' }
+            return await deps.changeLocks({ op: 'unlock', keys: parsed })
+          } catch (err) {
+            console.error('[design-chat] unlock_design failed', err)
+            return { ok: false, error: LOCK_FAILED_ERROR }
+          }
+        }),
     }),
     commit_version: tool({
       description: 'Save the staged design to the draft as a new version. Refused while the latest preview failed a render check, until a newer preview passes.',

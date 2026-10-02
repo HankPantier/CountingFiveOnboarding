@@ -14,6 +14,12 @@ const m = vi.hoisted(() => ({
   sync: vi.fn(async (..._a: unknown[]) => {}),
   insertVersion: vi.fn(),
   hasAnyVersion: vi.fn(),
+  locks: vi.fn(async (..._a: unknown[]): Promise<unknown[]> => []),
+  updateSnapshot: vi.fn(async (..._a: unknown[]) => {}),
+}))
+vi.mock('./lock-store', () => ({
+  listLocks: (...a: unknown[]) => m.locks(...a),
+  updateLockSnapshot: (...a: unknown[]) => m.updateSnapshot(...a),
 }))
 vi.mock('./theme-snapshot', async (orig) => ({ ...((await orig()) as object), readDraftThemeSnapshot: (r: string) => m.snapshot(r), readThemeSnapshotAt: (r: string, s: unknown) => m.snapshotAt(r, s) }))
 vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
@@ -334,5 +340,40 @@ describe('commitDesignVersion', () => {
     m.apply.mockResolvedValue({ ...APPLIED, changedPaths: ['content/brand.json', 'content/design.json'] })
     await commitDesignVersion(DB, args({ syncMbp: true }))
     expect(m.sync).toHaveBeenCalledWith(DB, { sessionId: SID, jobId: 'job-1', brand: APPLIED.brand, design: APPLIED.design })
+  })
+})
+
+describe('commitDesignVersion — design locks (migration 085)', () => {
+  const SNAP = { vars: { '--color-primary': 'hsl(1 2% 3%)' }, darkVars: {}, fonts: { heading: 'Lora', body: 'Inter', accent: 'Fraunces', display: 'heading' as const } }
+  const AREA = { kind: 'area', key: 'service-cards', label: 'Service cards', snapshot: SNAP }
+  const applied = () => m.apply.mock.calls[0][0] as { bundle: { palette: unknown; css: { locks?: string }; typography: { pinnedFonts?: string[] } } }
+
+  it('a chat / concept commit keeps locked levers and writes the pins for locked areas', async () => {
+    m.locks.mockResolvedValueOnce([{ kind: 'lever', key: 'palette', label: 'Palette', snapshot: null }, AREA])
+    const current = JSON.parse(BRAND_TEXT) as { palette: Record<string, string> }
+    await commitDesignVersion(DB, args({ bundle: { ...VALID, palette: { ...VALID.palette, primary: '#7a1f1f' }, meta: { source: 'chat' } } }))
+    expect(applied().bundle.palette).toEqual(Object.fromEntries(Object.entries(current.palette).map(([k, v]) => [k, v.toLowerCase()])))
+    expect(applied().bundle.css.locks).toContain(':where([data-block="service-cards"])')
+    expect(applied().bundle.typography.pinnedFonts).toEqual(['Fraunces', 'Inter', 'Lora'])
+    expect(m.updateSnapshot).not.toHaveBeenCalled()
+  })
+
+  it('a restore ignores the locks but re-freezes every locked area to the restored look', async () => {
+    m.snapshot.mockReset().mockResolvedValue(BEFORE)
+    m.locks.mockResolvedValueOnce([{ kind: 'lever', key: 'palette', label: 'Palette', snapshot: null }, AREA])
+    const restored = { ...VALID, palette: { ...VALID.palette, primary: '#7a1f1f' }, meta: { source: 'revert' as const } }
+    await commitDesignVersion(DB, args({ source: 'revert', bundle: restored }))
+    expect(applied().bundle.palette).toEqual(restored.palette)
+    expect(applied().bundle.css.locks).not.toContain('hsl(1 2% 3%)')
+    expect(m.updateSnapshot).toHaveBeenCalledWith(DB, SID, 'service-cards', expect.objectContaining({ fonts: expect.objectContaining({ heading: 'Public Sans' }) }))
+  })
+
+  it('a verbatim restore gets today’s pins spliced into its recorded overrides file', async () => {
+    m.snapshot.mockReset().mockResolvedValue(BEFORE)
+    m.locks.mockResolvedValueOnce([AREA])
+    await commitDesignVersion(DB, args({ source: 'revert', overridesVerbatim: '/* hand */\n[data-block="hero"] { color: red; }\n' }))
+    const verbatim = (m.apply.mock.calls[0][0] as { overridesVerbatim: string }).overridesVerbatim
+    expect(verbatim).toContain('[data-block="hero"] { color: red; }')
+    expect(verbatim).toContain('/* design-studio:locks */')
   })
 })

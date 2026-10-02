@@ -24,6 +24,8 @@ import { readDesignCapabilities, readEffectiveCapabilities } from '@/lib/design/
 import { fontsUnlocked, layoutLockedReason } from '@/lib/design/capabilities'
 import { normalizeLayoutPresets, type LayoutPresets } from '@/lib/design/layout-presets'
 import { FONTS_MODULE_PATH } from '@/lib/design/drift'
+import { listLocks } from '@/lib/design/lock-store'
+import { controlsLockViolations, controlsLockedError } from '@/lib/design/locks'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
 import { BRAND_PATH, DESIGN_PATH, THEME_CSS_PATH, normalizeTypography } from './_theme'
 
@@ -176,6 +178,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       layoutChanged = res.changed
     }
     designChanged = fontsChanged || treatmentsChanged || layoutChanged
+
+    // Design locks (migration 085): a picker may not change a locked lever —
+    // or a layout preset that re-lays out a locked area. Locked AREAS need no
+    // check here: their pins live in design-overrides.css, which this route
+    // never touches, so they keep their look through any palette/font change.
+    if (brandChanged || designChanged) {
+      const original = JSON.parse(designFile.content) as DesignJson
+      const violations = controlsLockViolations(await listLocks(createServerClient(), sessionId), {
+        palette: brandChanged,
+        fonts: fontsChanged,
+        treatments:
+          (original.headlineStyle ?? 'sans') !== (design.headlineStyle ?? 'sans') ||
+          (original.eyebrowStyle ?? 'standard') !== (design.eyebrowStyle ?? 'standard') ||
+          (original.darkSections ?? false) !== (design.darkSections ?? false),
+        layoutBefore: normalizeLayoutPresets(original.layout),
+        layoutAfter: normalizeLayoutPresets(design.layout),
+      })
+      if (violations.length > 0) return NextResponse.json({ error: controlsLockedError(violations), locked: true }, { status: 422 })
+    }
 
     if (!brandChanged && !designChanged && !regenerate) {
       return NextResponse.json({ ok: true, note: 'No change — those values were already set.' })

@@ -9,7 +9,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 import { readOptional } from './apply-bundle'
 import type { DesignBundle } from './bundle'
-import { bundleFromRepoFiles } from './bundle-files'
+import { bundleFromRepoFiles, readRegion } from './bundle-files'
+import { listLocks } from './lock-store'
+import type { DesignLock } from './locks'
 import { capabilitiesFromJson } from './capabilities'
 import type { PromptImage, SharedPromptArgs } from './brief'
 import { DESIGN_MD_PATH } from './brief/brand'
@@ -35,6 +37,9 @@ export type BriefBasics = {
   blockSamples: string
   shell: RenderShell | null
   notes: string[]
+  // Design locks + the draft's CSS region they are enforced against.
+  locks: DesignLock[]
+  currentCss: DesignBundle['css'] | null
 }
 
 export function firmNameFrom(brandText: string): string {
@@ -77,7 +82,16 @@ export async function gatherBriefBasics(
       notes.push(`Page ${pagePath} could not be loaded (${loaded.reason}) — concepts were generated without its markup.`)
     }
   }
-  const [schema, designMd] = await Promise.all([readSessionSchema(db, target.sessionId), readOptional(target.githubRepo, DESIGN_MD_PATH)])
+  const [schema, designMd, locks] = await Promise.all([
+    readSessionSchema(db, target.sessionId),
+    readOptional(target.githubRepo, DESIGN_MD_PATH),
+    // Fail-soft: the apply commit re-enforces the locks with a fresh read.
+    listLocks(db, target.sessionId).catch((err: unknown) => {
+      console.warn('[design:gather] locks unavailable', err)
+      return [] as DesignLock[]
+    }),
+  ])
+  const region = readRegion(theme.files.overridesCss)
   return {
     ok: true,
     basics: {
@@ -91,6 +105,8 @@ export async function gatherBriefBasics(
       blockSamples,
       shell,
       notes,
+      locks,
+      currentCss: region.ok ? region.css : null,
     },
   }
 }
@@ -108,5 +124,6 @@ export function sharedPromptArgs(basics: BriefBasics, run: Pick<DesignRunRow, 'a
     images,
     blockSamples: basics.blockSamples,
     pagePath,
+    locks: basics.locks,
   }
 }

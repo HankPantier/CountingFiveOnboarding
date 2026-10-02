@@ -1,0 +1,9 @@
+{
+  "typography": {
+    "headingFont": "Inter",
+    "bodyFont": "Inter",
+    "accentFont": "Fraunces",
+    "googleFontsUrl": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Fraunces:wght@400;500;700&family=Lora:wght@400;500;700&display=swap",
+    "pinnedFonts": ["Fraunces", "Lora"]
+  }
+}

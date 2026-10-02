@@ -6,7 +6,7 @@ import type { DesignConceptDto, DesignRunDto } from '@/lib/design/run-types'
 import { fixInChatMessage } from '@/lib/design/critique-ui'
 import { DEFAULT_CHAT_PAGE } from '@/lib/design/chat-types'
 import { NUDGE_TIMEOUT_MS, RUN_POLL_MS, SIGNED_VIEW_STALE_MS, nudgeStepUrl, runIsActive, shouldNudgeRun, startSequentialPoll, stabilizeSignedUrls, type NudgeState, type SignedUrlCache } from '@/lib/design/studio-ui'
-import DesignChat, { type ChatSeed } from './DesignChat'
+import type { ChatSeed } from './DesignChat'
 import InputsPanel from './InputsPanel'
 import RunLauncher from './RunLauncher'
 import RunPanel from './RunPanel'
@@ -18,7 +18,23 @@ import { SECONDARY_BTN } from './styles'
 // compare concepts, preview them live, and apply one to the draft; inputs and
 // versions from P2; P5: the revision chat, restore and capture. All state comes from GET /design; while a run is active
 // the Studio polls GET /design/runs and reloads everything when it settles.
-export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId: string; onThemeChanged?: () => void }) {
+// The revision chat lives beside both Theme Studio tabs (ThemeStudio owns it):
+// the Studio reports the page its run was judged on (`onChatPage`), hands a
+// concept to it (`onFixInChat`), and reloads when a chat commit changed the
+// draft (`reloadKey` bumps).
+export default function DesignStudio({
+  sessionId,
+  onThemeChanged,
+  onChatPage,
+  onFixInChat,
+  reloadKey = 0,
+}: {
+  sessionId: string
+  onThemeChanged?: () => void
+  onChatPage?: (page: string) => void
+  onFixInChat?: (seed: ChatSeed) => void
+  reloadKey?: number
+}) {
   const [state, setState] = useState<DesignStudioState | null>(null)
   const [run, setRun] = useState<DesignRunDto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -35,15 +51,15 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
   // Stalled-run nudges (see shouldNudgeRun): one in flight, debounced.
   const nudge = useRef<NudgeState>({ inFlight: false, lastNudgeAt: null })
   // "Fix in chat" (WS-B): the concept + message handed to the chat composer.
-  // Cleared once the chat took it; the nonce keeps counting so every click
-  // is a new hand-off.
-  const [chatSeed, setChatSeed] = useState<ChatSeed | null>(null)
+  // The nonce keeps counting so every click is a new hand-off.
   const seedNonce = useRef(0)
-  const fixInChat = useCallback((c: DesignConceptDto) => {
-    seedNonce.current += 1
-    setChatSeed({ nonce: seedNonce.current, conceptId: c.id, conceptName: c.name, text: fixInChatMessage(c) })
-  }, [])
-  const seedUsed = useCallback(() => setChatSeed(null), [])
+  const fixInChat = useCallback(
+    (c: DesignConceptDto) => {
+      seedNonce.current += 1
+      onFixInChat?.({ nonce: seedNonce.current, conceptId: c.id, conceptName: c.name, text: fixInChatMessage(c) })
+    },
+    [onFixInChat]
+  )
 
   const load = useCallback(async () => {
     const loadId = ++loadSeq.current
@@ -74,7 +90,7 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, reloadKey])
 
   // A concept apply, chat commit, restore or capture changed the draft theme:
   // reload the Studio and let Theme Studio refresh Controls + the publish count.
@@ -82,6 +98,13 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
     void load()
     onThemeChanged?.()
   }, [load, onThemeChanged])
+
+  // The chat previews + gates the page the run's concepts were judged on
+  // (WS-B, R2 I9b) — not always "/".
+  const chatPage = run?.pagePath ?? DEFAULT_CHAT_PAGE
+  useEffect(() => {
+    onChatPage?.(chatPage)
+  }, [chatPage, onChatPage])
 
   const active = runIsActive(run)
   useEffect(() => {
@@ -125,7 +148,7 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
       <div className="flex items-center justify-between gap-3 border-b border-border-default bg-surface-card px-6 py-2.5">
         <div className="min-w-0">
           <h1 className="font-heading text-sm font-semibold text-brand-navy">Design Studio</h1>
-          <p className="font-body text-xs text-text-muted">Generate concepts, compare them on the real site, apply one, then refine it in the chat.</p>
+          <p className="font-body text-xs text-text-muted">Generate concepts, compare them on the real site, apply one, then refine it in the chat on the right.</p>
         </div>
         <button
           type="button"
@@ -149,7 +172,7 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
       {!state && loading ? (
         <div className="flex flex-1 items-center justify-center font-body text-sm text-text-muted">Loading the Design Studio…</div>
       ) : state ? (
-        <div className="grid flex-1 items-start gap-4 p-6 lg:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="grid flex-1 items-start gap-4 p-6 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex min-w-0 flex-col gap-4">
             {/* Keyed by run so a new run starts with fresh selection / applied state.
                 PF10: only an apply changes the theme — cancel / retry just reload. */}
@@ -158,9 +181,6 @@ export default function DesignStudio({ sessionId, onThemeChanged }: { sessionId:
             <InputsPanel sessionId={sessionId} inputs={state.inputs} suggestions={state.suggestions} onChanged={load} />
           </div>
           <div className="flex min-w-0 flex-col gap-4">
-            {/* The chat previews + gates the page the run's concepts were judged
-                on (WS-B, R2 I9b) — not always "/". */}
-            <DesignChat sessionId={sessionId} page={run?.pagePath ?? DEFAULT_CHAT_PAGE} seed={chatSeed} onSeedUsed={seedUsed} onCommitted={themeChanged} />
             <VersionsPanel
               sessionId={sessionId}
               versions={state.versions}

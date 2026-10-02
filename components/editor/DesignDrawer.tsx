@@ -1,10 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import DesignChat from '@/components/design-studio/DesignChat'
-import type { DesignBaselineResponse } from '@/lib/design/studio-types'
-
-type BaselineState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; error: string }
+import { useDesignBaseline } from '@/components/design-studio/useDesignBaseline'
 
 // The editor's quick-revise drawer: the Design Studio chat on the current
 // draft theme, without the concept workflow. It shares the Studio chat's
@@ -23,29 +20,7 @@ export default function DesignDrawer({
   onOpenStudio: () => void
   onClose: () => void
 }) {
-  const [baseline, setBaseline] = useState<BaselineState>({ status: 'loading' })
-
-  // A chat commit 409s until the session has a v0 version; the Studio creates
-  // it on first open, so the drawer (which can come first) makes sure of it.
-  useEffect(() => {
-    let cancelled = false
-    const ensure = async () => {
-      try {
-        const res = await fetch(`/api/edit/${sessionId}/design/baseline`, { method: 'POST' })
-        const data = (await res.json().catch(() => null)) as (DesignBaselineResponse & { error?: string }) | null
-        if (cancelled) return
-        if (!res.ok || !data) setBaseline({ status: 'error', error: data?.error ?? `Couldn’t prepare the design history (${res.status})` })
-        else if (data.baseline.status === 'error') setBaseline({ status: 'error', error: data.baseline.error })
-        else setBaseline({ status: 'ready' })
-      } catch {
-        if (!cancelled) setBaseline({ status: 'error', error: 'Couldn’t prepare the design history — check your connection.' })
-      }
-    }
-    void ensure()
-    return () => {
-      cancelled = true
-    }
-  }, [sessionId])
+  const baseline = useDesignBaseline(sessionId)
 
   return (
     <aside className="fixed inset-y-0 right-0 z-40 flex w-[440px] max-w-[92vw] flex-col border-l border-border-default bg-surface-card shadow-elevated">

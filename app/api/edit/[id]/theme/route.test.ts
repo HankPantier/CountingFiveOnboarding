@@ -13,8 +13,10 @@ const h = vi.hoisted(() => {
     fs: new Map<string, { content: string; sha: string }>(),
     writeFiles: vi.fn(),
     effective: vi.fn(),
+    locks: vi.fn(async (..._a: unknown[]): Promise<unknown[]> => []),
   }
 })
+vi.mock('@/lib/design/lock-store', () => ({ listLocks: (...a: unknown[]) => h.locks(...a) }))
 
 vi.mock('../_helpers', () => ({
   resolveEditContext: vi.fn(async () => ({
@@ -122,6 +124,20 @@ describe('PATCH /api/edit/[id]/theme — optimistic locks', () => {
     h.writeFiles.mockRejectedValueOnce(new h.StaleShaError('src/styles/theme.css'))
     const res = await patchFlags()
     expect(res.status).toBe(409)
+  })
+
+  it('refuses (422, nothing written) a treatment change while treatments are locked in the design chat', async () => {
+    h.locks.mockResolvedValueOnce([{ kind: 'lever', key: 'treatments', label: 'Treatments', snapshot: null }])
+    const res = await patchFlags()
+    expect(res.status).toBe(422)
+    expect(await res.json()).toMatchObject({ locked: true, error: expect.stringContaining('Treatments is locked') })
+    expect(h.writeFiles).not.toHaveBeenCalled()
+  })
+
+  it('a lock on an unrelated lever does not block the change', async () => {
+    h.locks.mockResolvedValueOnce([{ kind: 'lever', key: 'palette', label: 'Palette', snapshot: null }])
+    const res = await patchFlags()
+    expect(res.status).toBe(200)
   })
 })
 

@@ -7,7 +7,7 @@
 // Design Studio's managed region (lib/design/bundle-files.ts), not by this file.
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
-import { CURATED_FONTS, gfUrl } from '@/lib/content/type-pairing-catalog'
+import { CURATED_FONTS, typographyGfUrl } from '@/lib/content/type-pairing-catalog'
 import { DEFAULT_AXIS_VALUE, STYLE_AXES, STYLE_AXIS_NAMES, type StyleAxes } from '@/lib/design/style-axes'
 import { LOGO_SIZES, type LogoSize } from '@/lib/design/logo-size'
 import {
@@ -143,11 +143,9 @@ export function patchDesignTypography(designJsonText: string, patch: TypographyP
   const typography = { ...design.typography }
   for (const [slot, font] of entries) typography[slot] = font
 
-  // Rebuild the embed URL from the (deduped) heading + body + accent families.
-  const families = Array.from(
-    new Set([typography.headingFont, typography.bodyFont, typography.accentFont].filter(Boolean))
-  ) as string[]
-  typography.googleFontsUrl = gfUrl(families)
+  // Rebuild the embed URL from the (deduped) heading + body + accent families
+  // plus any families a Design Studio lock still pins.
+  typography.googleFontsUrl = typographyGfUrl(typography)
 
   const next: DesignJson = { ...design, typography }
   const nextText = serialize(next)

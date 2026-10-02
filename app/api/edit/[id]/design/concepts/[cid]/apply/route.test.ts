@@ -35,6 +35,7 @@ vi.mock('@/lib/design/theme-snapshot', async (orig) => ({
 }))
 vi.mock('@/lib/design/capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('@/lib/design/apply-bundle', () => ({ applyBundleToDraft: (a: unknown) => m.apply(a) }))
+vi.mock('@/lib/design/lock-store', () => ({ listLocks: async () => [], updateLockSnapshot: async () => {} }))
 vi.mock('@/lib/design/sync-mbp-theme', () => ({ syncMbpTheme: (...a: unknown[]) => m.sync(...a) }))
 vi.mock('@/lib/design/store', async (orig) => ({
   ...((await orig()) as object),

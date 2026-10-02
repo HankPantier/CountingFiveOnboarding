@@ -890,6 +890,54 @@ export type Database = {
           },
         ]
       }
+      design_locks: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          key: string
+          kind: string
+          label: string
+          session_id: string
+          snapshot: Json | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          key: string
+          kind: string
+          label?: string
+          session_id: string
+          snapshot?: Json | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          key?: string
+          kind?: string
+          label?: string
+          session_id?: string
+          snapshot?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "design_locks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admins"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "design_locks_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       design_runs: {
         Row: {
           admin_brief: string | null

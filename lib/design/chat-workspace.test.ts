@@ -235,3 +235,43 @@ describe('ChatWorkspace previews + commits', () => {
     expect(css).toContain('design-studio:hero')
   })
 })
+
+describe('ChatWorkspace design locks', () => {
+  const lever = (key: 'palette' | 'fonts' | 'layout:faq') => ({ kind: 'lever' as const, key, label: key === 'palette' ? 'Palette' : key, snapshot: null })
+  const area = { kind: 'area' as const, key: 'service-cards' as const, label: 'Service cards (What we do)', snapshot: null }
+
+  it('refuses a locked lever with a "locked — ask the user" error and stages nothing', () => {
+    const w = ws({ locks: [lever('palette')] })
+    const r = w.apply({ kind: 'palette', patch: { primary: '#7a1f1f' } })
+    expect(r).toEqual({ ok: false, error: expect.stringContaining('Palette is locked') })
+    expect(!r.ok && r.error).toMatch(/Ask the user whether to unlock/)
+    expect(w.isStaged()).toBe(false)
+  })
+
+  it('refuses CSS for a locked area, names it by its label, and leaves other targets editable', () => {
+    const w = ws({ locks: [area] })
+    const r = w.apply({ kind: 'remove-css', target: 'service-cards' })
+    expect(!r.ok && r.error).toContain('Service cards (What we do) is locked')
+    expect(w.apply({ kind: 'css', target: 'hero', css: '[data-block="hero"] h1 { letter-spacing: -0.01em; }' })).toMatchObject({ ok: true })
+  })
+
+  it('refuses a layout preset that re-lays out a locked area, but not an unrelated one', () => {
+    const w = ws({ locks: [area], caps: { ...L3, capabilities: [...L3.capabilities, 'layout-presets'] } })
+    expect(w.apply({ kind: 'layout', patch: { cards: 'list' } }).ok).toBe(false)
+    expect(w.apply({ kind: 'layout', patch: { faq: 'split' } }).ok).toBe(true)
+  })
+
+  it('refuses global CSS that changes a locked area’s rules, allows global CSS that leaves them alone', () => {
+    const w = ws({ locks: [area] })
+    const touching = w.apply({ kind: 'css', target: 'global', css: '[data-block="service-cards"] h3 { letter-spacing: 0.02em; }' })
+    expect(!touching.ok && touching.error).toMatch(/global CSS rules for a locked area/)
+    expect(w.apply({ kind: 'css', target: 'global', css: '[data-block="hero"] h1 { letter-spacing: -0.02em; }' })).toMatchObject({ ok: true })
+  })
+
+  it('adoptCommitted swaps in the new locks (an unlocked lever is editable again)', () => {
+    const w = ws({ locks: [lever('palette')] })
+    w.adoptCommitted(w.bundle(), [], SHAS, 'ver-1')
+    expect(w.apply({ kind: 'palette', patch: { primary: '#7a1f1f' } })).toMatchObject({ ok: true, changed: true })
+    expect(w.lastVersionId()).toBe('ver-1')
+  })
+})

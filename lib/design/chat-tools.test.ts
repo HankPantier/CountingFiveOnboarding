@@ -41,6 +41,7 @@ function setup(over: Partial<ChatToolDeps> = {}, caps: DesignCapabilities = DEFA
     previewFits: () => true,
     preview: vi.fn(async () => preview),
     commit: vi.fn(async () => ({ ok: true as const, versionId: 'ver-9', versionNo: 9, changedPaths: [], warnings: [] })),
+    changeLocks: vi.fn(async () => ({ ok: true as const, changed: [], locked: [], versionNo: null })),
     ...over,
   }
   return { ws, deps, tools: createDesignChatToolset(ws, deps).tools }
@@ -75,11 +76,12 @@ describe('edit tools', () => {
     expect(await exec(tools.set_layout_presets, { faq: 'default' })).toMatchObject({ ok: true, changed: true })
     expect(ws.bundle().layout).toBeUndefined()
   })
-  it('lists exactly the edit + preview + commit tools, including set_style_axes', () => {
+  it('lists exactly the edit + preview + commit + lock tools, including set_style_axes', () => {
     const { tools } = setup()
     expect(Object.keys(tools).sort()).toEqual(
       [
         'commit_version',
+        'lock_design',
         'remove_block_css',
         'render_preview',
         'set_block_css',
@@ -89,6 +91,7 @@ describe('edit tools', () => {
         'set_style_axes',
         'set_tokens',
         'set_treatments',
+        'unlock_design',
       ]
     )
   })
@@ -236,7 +239,7 @@ describe('drain (the turn awaits it before the auto-commit)', () => {
     const r = bundleFromRepoFiles(DRAFT_FILES, { name: 'Harbor v3', source: 'chat' })
     if (!r.ok) throw new Error('fixture')
     const ws = new ChatWorkspace({ current: r.bundle, draftFiles: DRAFT_FILES, draftShas: {}, caps: DEFAULT_CAPABILITIES, model: 'claude-sonnet-5' })
-    const { tools, drain } = createDesignChatToolset(ws, { defaultPage: '/', timeLeftMs: () => 500_000, previewFits: () => true, preview, commit })
+    const { tools, drain } = createDesignChatToolset(ws, { defaultPage: '/', timeLeftMs: () => 500_000, previewFits: () => true, preview, commit, changeLocks: async () => ({ ok: false, error: 'n/a' }) })
     const tick = () => new Promise((res) => setTimeout(res, 0))
     let drained = false
     void exec(tools.render_preview, {}, 'r1')

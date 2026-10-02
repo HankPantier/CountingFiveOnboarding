@@ -5,6 +5,14 @@ import { HexColorPicker } from 'react-colorful'
 import { PALETTE_ROLES, type PaletteRole } from '@/lib/editor/theme-edit'
 import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
 import { LAYOUT_PRESETS, LAYOUT_PRESET_NAMES, type LayoutPresetName, type LayoutPresets } from '@/lib/design/layout-presets'
+import { Lock } from 'lucide-react'
+import { isLeverLocked, lockedPresets, type DesignLockDto } from '@/lib/design/locks'
+
+const LOCKED_TITLE = 'Locked in the design chat — unlock it there (or with its lock chip) to change it.'
+
+function LockedMark() {
+  return <Lock aria-label="Locked" className="h-3 w-3 text-brand-navy" />
+}
 
 const ROLE_LABELS: Record<PaletteRole, string> = {
   primary: 'Primary',
@@ -45,12 +53,14 @@ function Swatch({
   role,
   hex,
   saving,
+  locked,
   onPreview,
   onCommit,
 }: {
   role: PaletteRole
   hex: string
   saving: boolean
+  locked: boolean
   onPreview: (role: PaletteRole, hex: string) => void
   onCommit: (role: PaletteRole, hex: string) => void
 }) {
@@ -105,10 +115,11 @@ function Swatch({
     <div ref={ref} className="relative">
       <button
         type="button"
-        title={`${ROLE_LABELS[role]}: ${hex}`}
+        title={locked ? `${ROLE_LABELS[role]}: ${hex} — ${LOCKED_TITLE}` : `${ROLE_LABELS[role]}: ${hex}`}
         aria-label={`Edit ${ROLE_LABELS[role]} color`}
         onClick={toggle}
-        className="h-6 w-6 rounded-full border border-border-default shadow-subtle transition-transform hover:scale-110"
+        disabled={locked}
+        className="h-6 w-6 rounded-full border border-border-default shadow-subtle transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
         style={{ backgroundColor: hex }}
       />
       {open && (
@@ -164,6 +175,7 @@ export default function ThemeControls({
   onChangeFlags,
   onChangeLayout,
   logoSlot,
+  locks = [],
 }: {
   palette: ThemeSources['palette']
   typography: ThemeSources['typography']
@@ -188,13 +200,21 @@ export default function ThemeControls({
   onChangeLayout: (patch: LayoutPresets) => void
   // The logo upload slots (LogoControls), rendered beside Logo size.
   logoSlot?: ReactNode
+  // Design locks (the design chat's lock chips): locked levers are disabled.
+  locks?: DesignLockDto[]
 }) {
+  const paletteLocked = isLeverLocked(locks, 'palette')
+  const fontsLocked = isLeverLocked(locks, 'fonts')
+  const treatmentsLocked = isLeverLocked(locks, 'treatments')
+  const presetsLocked = new Set<string>(lockedPresets(locks))
   const layoutDisabledReason = layoutLock === null ? null : (layoutLock ?? 'Checking this site’s template…')
   return (
     <div className="flex flex-col gap-2 border-b border-border-default bg-surface-subtle px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
         <div className="flex items-center gap-2">
-          <span className="font-heading text-[11px] font-semibold text-text-secondary">Colors</span>
+          <span className="flex items-center gap-1 font-heading text-[11px] font-semibold text-text-secondary" title={paletteLocked ? LOCKED_TITLE : undefined}>
+            Colors{paletteLocked && <LockedMark />}
+          </span>
           <div className="flex items-center gap-1.5">
             {PALETTE_ROLES.map((role) => (
               <Swatch
@@ -202,6 +222,7 @@ export default function ThemeControls({
                 role={role}
                 hex={palette?.[role] ?? '#000000'}
                 saving={saving}
+                locked={paletteLocked}
                 onPreview={onPreviewPalette}
                 onCommit={onCommitPalette}
               />
@@ -210,7 +231,9 @@ export default function ThemeControls({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <span className="font-heading text-[11px] font-semibold text-text-secondary">Fonts</span>
+          <span className="flex items-center gap-1 font-heading text-[11px] font-semibold text-text-secondary" title={fontsLocked ? LOCKED_TITLE : undefined}>
+            Fonts{fontsLocked && <LockedMark />}
+          </span>
           {FONT_SLOTS.map(({ key, label }) => {
             // Legacy design.json can omit a font slot (e.g. accentFont). Guard so
             // a missing value renders a blank <select> instead of crashing.
@@ -220,7 +243,8 @@ export default function ThemeControls({
                 <span className="font-body text-[11px] text-text-muted">{label}</span>
                 <select
                   value={current}
-                  disabled={saving}
+                  disabled={saving || fontsLocked}
+                  title={fontsLocked ? LOCKED_TITLE : undefined}
                   onChange={(e) => onChangeFont(key, e.target.value)}
                   className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
                 >
@@ -238,12 +262,14 @@ export default function ThemeControls({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <span className="font-heading text-[11px] font-semibold text-text-secondary">Treatments</span>
+          <span className="flex items-center gap-1 font-heading text-[11px] font-semibold text-text-secondary" title={treatmentsLocked ? LOCKED_TITLE : undefined}>
+            Treatments{treatmentsLocked && <LockedMark />}
+          </span>
           <label className="flex items-center gap-1.5">
             <span className="font-body text-[11px] text-text-muted">Headlines</span>
             <select
               value={headlineStyle}
-              disabled={saving}
+              disabled={saving || treatmentsLocked}
               onChange={(e) => onChangeFlags({ headlineStyle: e.target.value as ThemeSources['headlineStyle'] })}
               className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
             >
@@ -255,7 +281,7 @@ export default function ThemeControls({
             <span className="font-body text-[11px] text-text-muted">Eyebrows</span>
             <select
               value={eyebrowStyle}
-              disabled={saving}
+              disabled={saving || treatmentsLocked}
               onChange={(e) => onChangeFlags({ eyebrowStyle: e.target.value as ThemeSources['eyebrowStyle'] })}
               className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"
             >
@@ -267,7 +293,7 @@ export default function ThemeControls({
             <input
               type="checkbox"
               checked={darkSections}
-              disabled={saving}
+              disabled={saving || treatmentsLocked}
               onChange={(e) => onChangeFlags({ darkSections: e.target.checked })}
               className="h-3.5 w-3.5 accent-brand-cyan disabled:opacity-50"
             />
@@ -298,11 +324,14 @@ export default function ThemeControls({
         <div className="flex flex-wrap items-center gap-3" title={layoutDisabledReason ?? undefined}>
           <span className="font-heading text-[11px] font-semibold text-text-secondary">Layout</span>
           {LAYOUT_PRESET_NAMES.map((name) => (
-            <label key={name} className="flex items-center gap-1.5">
-              <span className="font-body text-[11px] text-text-muted">{LAYOUT_PRESET_LABELS[name]}</span>
+            <label key={name} className="flex items-center gap-1.5" title={presetsLocked.has(name) ? LOCKED_TITLE : undefined}>
+              <span className="flex items-center gap-1 font-body text-[11px] text-text-muted">
+                {LAYOUT_PRESET_LABELS[name]}
+                {presetsLocked.has(name) && <LockedMark />}
+              </span>
               <select
                 value={layout?.[name] ?? 'default'}
-                disabled={saving || layoutDisabledReason !== null}
+                disabled={saving || layoutDisabledReason !== null || presetsLocked.has(name)}
                 aria-describedby={layoutDisabledReason !== null ? 'theme-layout-lock' : undefined}
                 onChange={(e) => onChangeLayout({ [name]: e.target.value } as LayoutPresets)}
                 className="rounded border border-border-default bg-surface-card px-2 py-1 font-body text-xs focus:border-brand-cyan focus:outline-none disabled:opacity-50"

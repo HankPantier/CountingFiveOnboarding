@@ -105,3 +105,27 @@ describe('adoptAfterRefusal ("Fix in chat" chip)', () => {
     expect(adoptAfterRefusal(a, null, 400, MISSING_CONCEPT)).toBe(a)
   })
 })
+
+describe('design lock tools', () => {
+  it('shows a lock / unlock result and counts its version as a commit', () => {
+    const m = msg([
+      { type: 'tool-lock_design', toolCallId: 'l', state: 'output-available', input: { areas: ['service-cards'] }, output: { ok: true, changed: ['Service cards'], locked: [], versionNo: 12 } },
+      { type: 'tool-unlock_design', toolCallId: 'u', state: 'output-available', input: { keys: ['palette'] }, output: { ok: false, error: 'There are staged changes' } },
+    ])
+    expect(chatBlocks(m)).toEqual([
+      { kind: 'notice', tone: 'success', text: 'Locked: Service cards (saved as v12)', items: [] },
+      { kind: 'notice', tone: 'error', text: 'There are staged changes', items: [] },
+    ])
+    expect(committedVersionNos(m)).toEqual([12])
+  })
+
+  it('a lever lock saves no version and says so plainly', () => {
+    const m = msg([{ type: 'tool-lock_design', toolCallId: 'l', state: 'output-available', input: {}, output: { ok: true, changed: ['Palette'], locked: [], versionNo: null } }])
+    expect(chatBlocks(m)).toEqual([{ kind: 'notice', tone: 'success', text: 'Locked: Palette', items: [] }])
+    expect(messageCommitted(m)).toBe(false)
+  })
+
+  it('shows a running lock step', () => {
+    expect(chatBlocks(msg([{ type: 'tool-lock_design', toolCallId: 'l', state: 'input-available', input: {} }]))).toEqual([{ kind: 'working', label: 'Locking…' }])
+  })
+})

@@ -14,6 +14,7 @@
 import chroma from 'chroma-js'
 import type { DynamicPart } from '@/lib/content/cache-control'
 import type { DesignBundle } from '../bundle'
+import { withoutLockPins } from '../locks'
 import { CSS_TARGETS } from '../css-targets'
 import { MAX_TARGET_BYTES, MAX_TARGET_LINES, MAX_TOTAL_BYTES, MAX_TOTAL_LINES, countCssLines, cssByteLength, cssCaps, totalCssSize, type CssSizeScope } from '../css-budget'
 import { conceptConsistencyNotes } from '../concept-consistency'
@@ -48,7 +49,7 @@ export function formatCritique(c: CritiqueRecord): string {
 
 // The levers the designer controls — never schemaVersion / meta.
 function bundleForPrompt(b: DesignBundle): Omit<DesignBundle, 'schemaVersion' | 'meta'> {
-  const { schemaVersion: _v, meta: _m, ...levers } = b
+  const { schemaVersion: _v, meta: _m, ...levers } = withoutLockPins(b)
   return levers
 }
 

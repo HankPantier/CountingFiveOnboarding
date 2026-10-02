@@ -4,8 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ThemePreview from './ThemePreview'
 import LogoControls, { type LogoSlot } from './LogoControls'
 import DesignStudio from '@/components/design-studio/DesignStudio'
+import DesignChat, { type ChatSeed } from '@/components/design-studio/DesignChat'
+import { useDesignBaseline } from '@/components/design-studio/useDesignBaseline'
+import { DEFAULT_CHAT_PAGE } from '@/lib/design/chat-types'
+import type { DesignLockDto } from '@/lib/design/locks'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
-import { gfUrl } from '@/lib/content/type-pairing-catalog'
+import { typographyGfUrl } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import type { FlagsPatch } from './ThemeControls'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
@@ -40,8 +44,9 @@ const STUDIO_TABS: { key: StudioTab; label: string }[] = [
 ]
 
 // Admin-only Theme Studio. Two tabs: Studio (the Design Studio — concepts,
-// the AI revision chat, versions) and Controls (a live 1:1 preview of the
-// client's site with direct color/font controls). The preview fetches a real deployed URL — the
+// versions) and Controls (a live 1:1 preview of the client's site with direct
+// color/font controls), with ONE AI revision chat beside both (one useChat,
+// one thread — switching tabs keeps the conversation and any turn running). The preview fetches a real deployed URL — the
 // operator's override (e.g. a Vercel preview deploy before DNS cutover) or the
 // canonical site.config.ts siteUrl — and re-skins it with the pending draft
 // theme. Changes publish through the editor's existing Review changes → Publish.
@@ -90,6 +95,19 @@ export default function ThemeStudio({
   // so the Controls preview and the publish count refresh.
   const [studioOpened, setStudioOpened] = useState(initialTab === 'studio')
   const tabRefs = useRef<Partial<Record<StudioTab, HTMLButtonElement | null>>>({})
+  // The shared chat: open by default, collapsible. On the Studio tab it works
+  // on the page the run was judged on; on Controls, the homepage the preview shows.
+  const [chatOpen, setChatOpen] = useState(true)
+  const [chatSeed, setChatSeed] = useState<ChatSeed | null>(null)
+  const [studioChatPage, setStudioChatPage] = useState(DEFAULT_CHAT_PAGE)
+  const [studioReloadKey, setStudioReloadKey] = useState(0)
+  const [locks, setLocks] = useState<DesignLockDto[]>([])
+  const baseline = useDesignBaseline(sessionId)
+  const fixInChat = useCallback((seed: ChatSeed) => {
+    setChatSeed(seed)
+    setChatOpen(true)
+  }, [])
+  const seedUsed = useCallback(() => setChatSeed(null), [])
   const selectTab = useCallback((next: StudioTab, focus = false) => {
     setTab(next)
     if (next === 'studio') setStudioOpened(true)
@@ -231,6 +249,8 @@ export default function ThemeStudio({
         return true
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : 'Failed to save theme change')
+        // Undo the optimistic preview (e.g. a 422 for a locked lever).
+        await loadSources().catch(() => {})
         return false
       }
     },
@@ -357,9 +377,7 @@ export default function ThemeStudio({
       setSources((s) => {
         if (!s) return s
         const typography = { ...s.typography, [slot]: font }
-        typography.googleFontsUrl = gfUrl(
-          Array.from(new Set([typography.headingFont, typography.bodyFont, typography.accentFont].filter(Boolean)))
-        )
+        typography.googleFontsUrl = typographyGfUrl(typography)
         return { ...s, typography, themeCss: rebuildThemeCss(s, s.palette, typography) }
       })
       void commitTheme({ typography: { [slot]: font } })
@@ -404,6 +422,14 @@ export default function ThemeStudio({
   // address (even when cached in preview_url) is the default.
   const overrideSet = info?.source === 'override'
 
+  // A chat commit (or a lock / unlock) changed the draft theme: refresh the
+  // Controls preview, the Studio's versions and the editor's publish status.
+  const chatCommitted = useCallback(() => {
+    void loadSources().catch(() => {})
+    setStudioReloadKey((k) => k + 1)
+    onCommitted()
+  }, [loadSources, onCommitted])
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
@@ -444,7 +470,19 @@ export default function ThemeStudio({
             {t.label}
           </button>
         ))}
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setChatOpen((o) => !o)}
+          aria-expanded={chatOpen}
+          aria-controls="theme-ai-chat"
+          className="rounded-pill border border-border-default px-3 py-1 font-heading text-xs font-semibold text-text-secondary transition-colors hover:border-brand-cyan hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan"
+        >
+          {chatOpen ? 'Hide AI chat' : 'AI chat'}
+        </button>
       </div>
+      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {studioOpened && (
         <div
           id="theme-panel-studio"
@@ -460,6 +498,9 @@ export default function ThemeStudio({
               void loadSources().catch(() => {})
               onCommitted()
             }}
+            onChatPage={setStudioChatPage}
+            onFixInChat={fixInChat}
+            reloadKey={studioReloadKey}
           />
         </div>
       )}
@@ -476,7 +517,7 @@ export default function ThemeStudio({
           <div className="min-w-0">
             <h1 className="font-heading text-sm font-semibold text-brand-navy">Theme &amp; styling</h1>
             <p className="font-body text-xs text-text-muted">
-              Live preview. Click a color to pick a new one or choose fonts below. For AI changes, use Studio → Revise with AI. Then Publish.
+              Live preview. Click a color or choose fonts below, or ask the AI chat on the right (screenshots welcome). Then Publish.
             </p>
           </div>
           <button
@@ -594,6 +635,7 @@ export default function ThemeStudio({
               onChangeFlags={changeFlags}
               onChangeLayout={changeLayout}
               logos={logoImages}
+              locks={locks}
               logoSlot={
                 <LogoControls
                   logo={sources.logo}
@@ -607,6 +649,34 @@ export default function ThemeStudio({
           </>
         ) : null}
       </div>
+      </div>
+      </div>
+      {/* Hidden, never unmounted: a running turn, the composer and the locks survive a collapse. */}
+      <aside
+        id="theme-ai-chat"
+        aria-label="AI design chat"
+        hidden={!chatOpen}
+        className={chatOpen ? 'flex w-[420px] max-w-[45vw] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border-default bg-surface-subtle p-4' : 'hidden'}
+      >
+        {baseline.status === 'error' && (
+          <p role="alert" className="rounded-lg border border-error/20 bg-error/10 px-3 py-2 font-body text-[11px] text-error">
+            {baseline.error} Changes can’t be saved until this is fixed in the Studio tab.
+          </p>
+        )}
+        {baseline.status === 'loading' ? (
+          <p className="font-body text-xs text-text-muted">Preparing the design chat…</p>
+        ) : (
+          <DesignChat
+            sessionId={sessionId}
+            page={tab === 'studio' ? studioChatPage : DEFAULT_CHAT_PAGE}
+            seed={chatSeed}
+            onSeedUsed={seedUsed}
+            onCommitted={chatCommitted}
+            onLocksChange={setLocks}
+            title="AI design chat"
+          />
+        )}
+      </aside>
       </div>
     </div>
   )

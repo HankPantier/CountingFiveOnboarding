@@ -40,7 +40,10 @@ export const DesignBundleSchema = z.object({
   rationale: z.string().max(BUNDLE_RATIONALE_MAX_LENGTH).default(''),
   moves: z.array(z.string().max(BUNDLE_MOVE_MAX_LENGTH)).max(BUNDLE_MAX_MOVES).default([]),
   palette: z.object(paletteShape),
-  typography: z.object({ headingFont: font, bodyFont: font, accentFont: font }),
+  // pinnedFonts: families a Design Studio lock still references (lock-pins.ts)
+  // — loaded by the fonts module / googleFontsUrl; derived from the locks at
+  // commit time, never authored.
+  typography: z.object({ headingFont: font, bodyFont: font, accentFont: font, pinnedFonts: z.array(font).max(24).optional() }),
   tokens: z.object({
     roundness: z.enum(['sharp', 'soft', 'pill']),
     density: z.enum(['tight', 'balanced', 'airy']),
@@ -65,9 +68,12 @@ export const DesignBundleSchema = z.object({
   // held (enforceCapabilities / keepLockedLayout), exactly like `style`.
   // Canonicalized in parseDesignBundle.
   layout: LayoutPresetsInputSchema.optional(),
+  // css.locks: the server-generated lock pins (lock-pins.ts composeLockPins) —
+  // derived from design_locks at commit time, never authored by a model.
   css: z.object({
     global: z.string().optional(),
     blocks: z.partialRecord(z.enum(CSS_TARGETS), z.string()),
+    locks: z.string().optional(),
   }),
   meta: z.object({ source: z.enum(BUNDLE_SOURCES), model: z.string().optional() }),
 })

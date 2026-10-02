@@ -21,6 +21,14 @@ export function gfUrl(families: string[]): string {
   return `https://fonts.googleapis.com/css2?${params}&display=swap`
 }
 
+// The embed URL for a design.json typography: the three role families, then
+// any families a Design Studio lock pins (absent pins → the URL is unchanged).
+export function typographyGfUrl(t: { headingFont?: string; bodyFont?: string; accentFont?: string; pinnedFonts?: readonly string[] }): string {
+  return gfUrl(
+    Array.from(new Set([t.headingFont, t.bodyFont, t.accentFont, ...(t.pinnedFonts ?? [])].filter((f): f is string => Boolean(f))))
+  )
+}
+
 export const TYPE_PAIRINGS: readonly TypePairing[] = [
   // Modern
   { id: 'modern-sans', label: 'Modern Sans', feel: 'modern',
