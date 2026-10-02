@@ -4,6 +4,7 @@ import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import { styleAxisHtmlAttributes, type StyleAxes } from '@/lib/design/style-axes'
 import { logoSizeHtmlAttribute, type LogoSize } from '@/lib/design/logo-size'
 import { layoutPresetHtmlAttributes, type LayoutPresets } from '@/lib/design/layout-presets'
+import { LOGO_TONE_ATTRIBUTE } from '@/lib/design/logo-size'
 
 // The four files the theme editor owns in a client site repo. brand.json +
 // design.json are the source of truth; theme.css is regenerated from them (never
@@ -40,6 +41,16 @@ export type ThemeSources = {
   themeCss: string
   /** Per-client design-overrides.css on draft. */
   overridesCss: string
+  /** brand.json logo as repo paths (null = unset / not a content asset). */
+  logo?: ThemeLogo
+  /** brand.json blob sha on draft — the guard for a logo upload. */
+  brandSha?: string
+}
+
+export type ThemeLogo = {
+  primary: string | null
+  footer: string | null
+  tone: 'light' | 'dark' | null
 }
 
 // design.json files packaged before the Ink & Clay `accentFont` slot existed
@@ -66,7 +77,7 @@ export function normalizeTypography(
 // so the Controls preview and the design render route match every other
 // composition site.
 export function themeSourcesHtmlAttributes(
-  sources: Pick<ThemeSources, 'headlineStyle' | 'eyebrowStyle' | 'style'> & Partial<Pick<ThemeSources, 'logoSize' | 'layout'>>,
+  sources: Pick<ThemeSources, 'headlineStyle' | 'eyebrowStyle' | 'style'> & Partial<Pick<ThemeSources, 'logoSize' | 'layout' | 'logo'>>,
 ): Record<string, string | null> {
   return {
     'data-headline': sources.headlineStyle,
@@ -74,6 +85,10 @@ export function themeSourcesHtmlAttributes(
     ...styleAxisHtmlAttributes(sources.style),
     ...logoSizeHtmlAttribute(sources.logoSize),
     ...layoutPresetHtmlAttributes(sources.layout),
+    // Mirrors the template's logoToneAttributes (only a light tone WITH a logo).
+    ...(sources.logo
+      ? { [LOGO_TONE_ATTRIBUTE]: sources.logo.tone === 'light' && sources.logo.primary ? 'light' : null }
+      : {}),
   }
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { HexColorPicker } from 'react-colorful'
 import { PALETTE_ROLES, type PaletteRole } from '@/lib/editor/theme-edit'
 import type { ThemeSources } from '@/app/api/edit/[id]/theme/_theme'
@@ -163,6 +163,7 @@ export default function ThemeControls({
   onChangeFont,
   onChangeFlags,
   onChangeLayout,
+  logoSlot,
 }: {
   palette: ThemeSources['palette']
   typography: ThemeSources['typography']
@@ -185,6 +186,8 @@ export default function ThemeControls({
   onChangeFont: (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => void
   onChangeFlags: (patch: FlagsPatch) => void
   onChangeLayout: (patch: LayoutPresets) => void
+  // The logo upload slots (LogoControls), rendered beside Logo size.
+  logoSlot?: ReactNode
 }) {
   const layoutDisabledReason = layoutLock === null ? null : (layoutLock ?? 'Checking this site’s template…')
   return (
@@ -271,6 +274,8 @@ export default function ThemeControls({
             <span className="font-body text-[11px] text-text-muted">Dark sections</span>
           </label>
         </div>
+
+        {logoSlot}
 
         {/* design.json logo.size (template 2026.09.8): header 44px desktop / 40px
             phone, footer 40px — for stacked or two-line lockups. */}

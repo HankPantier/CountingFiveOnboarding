@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ThemePreview from './ThemePreview'
+import LogoControls, { type LogoSlot } from './LogoControls'
 import DesignStudio from '@/components/design-studio/DesignStudio'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
@@ -10,6 +11,7 @@ import type { FlagsPatch } from './ThemeControls'
 import type { ThemeSources, PreviewUrlInfo } from '@/app/api/edit/[id]/theme/_theme'
 import { fetchShellWithRetry, type ShellFetchResult } from '@/lib/theme-preview/shell-fetch'
 import { canonicalLayout, type LayoutPresets } from '@/lib/design/layout-presets'
+import type { PreviewLogos } from '@/lib/theme-preview/compose-srcdoc'
 
 // Regenerate theme.css client-side (generateThemeCss is pure) so a color/font
 // pick re-skins the preview instantly, before the draft commit round-trips.
@@ -230,26 +232,108 @@ export default function ThemeStudio({
       } catch (err) {
         setSaveError(err instanceof Error ? err.message : 'Failed to save theme change')
         return false
-      } finally {
-        pendingCommitsRef.current -= 1
-        if (pendingCommitsRef.current === 0) setSaving(false)
       }
     },
     [sessionId, loadSources, onCommitted]
   )
+  // Every draft commit from the Controls (theme PATCH, logo upload) runs
+  // through this one queue.
+  const enqueueCommit = useCallback((task: () => Promise<boolean>) => {
+    pendingCommitsRef.current += 1
+    setSaving(true)
+    const run = commitQueueRef.current.then(task).finally(() => {
+      pendingCommitsRef.current -= 1
+      if (pendingCommitsRef.current === 0) setSaving(false)
+    })
+    commitQueueRef.current = run.then(
+      () => {},
+      () => {}
+    )
+    return run
+  }, [])
   const commitTheme = useCallback(
-    (patch: ThemePatch) => {
-      pendingCommitsRef.current += 1
-      setSaving(true)
-      const run = commitQueueRef.current.then(() => commitThemeNow(patch))
-      commitQueueRef.current = run.then(
-        () => {},
-        () => {}
-      )
-      return run
-    },
-    [commitThemeNow]
+    (patch: ThemePatch) => enqueueCommit(() => commitThemeNow(patch)),
+    [enqueueCommit, commitThemeNow]
   )
+
+  // Logo upload / footer-logo removal. brand.json's sha is read when the task
+  // RUNS (after any earlier queued commit refreshed the sources), so a palette
+  // change just before an upload doesn't trip the stale guard.
+  const [logoNotices, setLogoNotices] = useState<string[]>([])
+  const logoRequest = useCallback(
+    async (send: (brandSha: string) => Promise<Response>): Promise<boolean> => {
+      setSaveError(null)
+      setLogoNotices([])
+      try {
+        const brandSha = sourcesRef.current?.brandSha
+        if (!brandSha) throw new Error('Reload the Theme Studio and try again.')
+        const res = await send(brandSha)
+        const data = (await res.json().catch(() => ({}))) as { error?: string; notices?: string[]; warning?: string }
+        if (!res.ok) throw new Error(data.error ?? `Failed to save the logo (${res.status})`)
+        setLogoNotices([...(data.warning ? [data.warning] : []), ...(Array.isArray(data.notices) ? data.notices : [])])
+        await loadSources().catch(() => {})
+        onCommitted()
+        return true
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to save the logo')
+        return false
+      }
+    },
+    [loadSources, onCommitted]
+  )
+  const uploadLogo = useCallback(
+    (slot: LogoSlot, file: File) =>
+      void enqueueCommit(() =>
+        logoRequest((brandSha) => {
+          const form = new FormData()
+          form.append('file', file)
+          form.append('slot', slot)
+          form.append('brandSha', brandSha)
+          return fetch(`/api/edit/${sessionId}/theme/logo`, { method: 'POST', body: form })
+        })
+      ),
+    [enqueueCommit, logoRequest, sessionId]
+  )
+  const removeFooterLogo = useCallback(
+    () =>
+      void enqueueCommit(() =>
+        logoRequest((brandSha) =>
+          fetch(`/api/edit/${sessionId}/theme/logo?slot=footer&brandSha=${encodeURIComponent(brandSha)}`, { method: 'DELETE' })
+        )
+      ),
+    [enqueueCommit, logoRequest, sessionId]
+  )
+
+  // The draft logo files as data: URLs — the sandboxed preview frame can't
+  // send the admin session cookie, so it can't load the asset route itself.
+  const primaryPath = sources?.logo?.primary ?? null
+  const footerPath = sources?.logo?.footer ?? null
+  const [logoImages, setLogoImages] = useState<PreviewLogos>({ primary: null, footer: null })
+  useEffect(() => {
+    let cancelled = false
+    const toDataUrl = async (path: string | null): Promise<string | null> => {
+      if (!path) return null
+      try {
+        const res = await fetch(`/api/edit/${sessionId}/asset?path=${encodeURIComponent(path)}`)
+        if (!res.ok) return null
+        const blob = await res.blob()
+        return await new Promise<string | null>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+          reader.onerror = () => resolve(null)
+          reader.readAsDataURL(blob)
+        })
+      } catch {
+        return null
+      }
+    }
+    void Promise.all([toDataUrl(primaryPath), toDataUrl(footerPath)]).then(([primary, footer]) => {
+      if (!cancelled) setLogoImages({ primary, footer })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, primaryPath, footerPath])
 
   // Live (local) preview while dragging the picker — regenerate theme.css from
   // the new palette without a round-trip.
@@ -482,6 +566,23 @@ export default function ThemeStudio({
                 {saveError}
               </div>
             )}
+            {logoNotices.length > 0 && (
+              <div className="flex items-start justify-between gap-3 border-b border-border-default bg-warning/10 px-4 py-1.5 font-body text-[11px] text-warning-strong">
+                <ul className="space-y-0.5">
+                  {logoNotices.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => setLogoNotices([])}
+                  aria-label="Dismiss logo notes"
+                  className="shrink-0 font-heading font-semibold hover:text-brand-navy"
+                >
+                  ×
+                </button>
+              </div>
+            )}
             <ThemePreview
               shellHtml={shellHtml}
               sources={sources}
@@ -492,6 +593,16 @@ export default function ThemeStudio({
               onChangeFont={changeFont}
               onChangeFlags={changeFlags}
               onChangeLayout={changeLayout}
+              logos={logoImages}
+              logoSlot={
+                <LogoControls
+                  logo={sources.logo}
+                  images={logoImages}
+                  saving={saving}
+                  onUpload={uploadLogo}
+                  onRemoveFooter={removeFooterLogo}
+                />
+              }
             />
           </>
         ) : null}

@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { composePreviewSrcDoc } from '@/lib/theme-preview/compose-srcdoc'
+import { useMemo, type ReactNode } from 'react'
+import { composePreviewSrcDoc, type PreviewLogos } from '@/lib/theme-preview/compose-srcdoc'
 import { CURATED_FONTS } from '@/lib/content/type-pairing-catalog'
 import type { PaletteRole } from '@/lib/editor/theme-edit'
 import ThemeControls, { type FlagsPatch } from './ThemeControls'
@@ -22,6 +22,8 @@ export default function ThemePreview({
   onChangeFont,
   onChangeFlags,
   onChangeLayout,
+  logos,
+  logoSlot,
 }: {
   shellHtml: string
   sources: ThemeSources
@@ -32,6 +34,9 @@ export default function ThemePreview({
   onChangeFont: (slot: 'headingFont' | 'bodyFont' | 'accentFont', font: string) => void
   onChangeFlags: (patch: FlagsPatch) => void
   onChangeLayout: (patch: LayoutPresets) => void
+  // Draft logo images (data: URLs) swapped into the live shell's header/footer.
+  logos?: PreviewLogos
+  logoSlot?: ReactNode
 }) {
   const srcDoc = useMemo(
     () =>
@@ -44,8 +49,9 @@ export default function ThemePreview({
         // the draft values so treatment toggles (and the draft's style axes)
         // preview instantly.
         htmlAttributes: themeSourcesHtmlAttributes(sources),
+        logos,
       }),
-    [shellHtml, sources]
+    [shellHtml, sources, logos]
   )
 
   return (
@@ -70,6 +76,7 @@ export default function ThemePreview({
         onChangeFont={onChangeFont}
         onChangeFlags={onChangeFlags}
         onChangeLayout={onChangeLayout}
+        logoSlot={logoSlot}
       />
       <iframe
         title="Theme preview"

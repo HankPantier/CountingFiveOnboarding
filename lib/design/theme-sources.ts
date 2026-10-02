@@ -15,6 +15,7 @@ import {
 import { normalizeStyleAxes } from './style-axes'
 import { logoSizeOf } from './logo-size'
 import { normalizeLayoutPresets } from './layout-presets'
+import { brandLogoAssetPath } from '@/lib/content/logo-tone-sync'
 
 async function readOr(githubRepo: string, path: string, fallback: string): Promise<string> {
   try {
@@ -29,7 +30,15 @@ export async function loadDraftThemeSources(
   githubRepo: string
 ): Promise<{ ok: true; sources: ThemeSources } | { ok: false; status: 409 | 422; error: string }> {
   await ensureDraftBranch(githubRepo)
-  const brandText = await readOr(githubRepo, BRAND_PATH, '')
+  let brandText = ''
+  let brandSha = ''
+  try {
+    const f = await readFile(githubRepo, BRAND_PATH, DRAFT_BRANCH)
+    brandText = f.content
+    brandSha = f.sha
+  } catch (err) {
+    if (!(err instanceof FileNotFoundError)) throw err
+  }
   const designText = await readOr(githubRepo, DESIGN_PATH, '')
   if (!brandText || !designText) {
     return { ok: false, status: 409, error: 'This site has no brand.json / design.json yet — theme editing is unavailable.' }
@@ -62,6 +71,12 @@ export async function loadDraftThemeSources(
       layout: normalizeLayoutPresets(design.layout),
       themeCss,
       overridesCss,
+      logo: {
+        primary: brandLogoAssetPath(brand.logo?.primary),
+        footer: brandLogoAssetPath(brand.logo?.footer),
+        tone: brand.logo?.tone === 'light' || brand.logo?.tone === 'dark' ? brand.logo.tone : null,
+      },
+      brandSha,
     },
   }
 }

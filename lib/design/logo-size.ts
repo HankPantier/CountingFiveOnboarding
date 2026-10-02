@@ -21,3 +21,8 @@ export function logoSizeOf(design: Pick<DesignJson, 'logo'> | null | undefined):
 export function logoSizeHtmlAttribute(size: string | undefined): Record<string, string | null> {
   return { [LOGO_SIZE_ATTRIBUTE]: size === 'large' ? 'large' : null }
 }
+
+// brand.json logo.tone → <html data-c5-logo-tone="light"> (template 2026.09.6,
+// src/lib/brand/logo-tone.ts). Lives here beside the size attribute so the
+// preview composer's allowlist can import both from one client-safe module.
+export const LOGO_TONE_ATTRIBUTE = 'data-c5-logo-tone'

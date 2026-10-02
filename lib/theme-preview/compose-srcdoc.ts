@@ -3,7 +3,7 @@
 // (see build-preview-shell.ts). Pure + client-safe (no server imports) so the
 // preview re-skins instantly on the client when the sources change.
 import { STYLE_AXIS_ATTRIBUTES } from '@/lib/design/style-axes'
-import { LOGO_SIZE_ATTRIBUTE } from '@/lib/design/logo-size'
+import { LOGO_SIZE_ATTRIBUTE, LOGO_TONE_ATTRIBUTE } from '@/lib/design/logo-size'
 import { LAYOUT_PRESET_ATTRIBUTES } from '@/lib/design/layout-presets'
 
 // The marker the shell leaves at the end of <head> for the injected theme.
@@ -44,6 +44,7 @@ export const PREVIEW_HTML_ATTRS: readonly string[] = [
   'data-eyebrow',
   ...STYLE_AXIS_ATTRIBUTES,
   LOGO_SIZE_ATTRIBUTE,
+  LOGO_TONE_ATTRIBUTE,
   ...LAYOUT_PRESET_ATTRIBUTES,
 ]
 
@@ -83,16 +84,72 @@ function fontHead(typography: Partial<PreviewTypography> | undefined): { link: s
   return { link, vars }
 }
 
+// The draft logo images (data: URLs) to show in place of the deployed ones.
+export type PreviewLogos = { primary: string | null; footer: string | null }
+
+const LOGO_ANCHOR_RE = /<a\b[^>]*\bdata-c5="logo"[^>]*>/gi
+const FOOTER_RE = /\bdata-component="footer"/i
+
+function setImgSrc(img: string, src: string, footerVariant: boolean | null): string {
+  let tag = img
+    .replace(/\s(?:srcset|sizes|src)=("[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/\s*\/?>$/, ` src="${escapeAttr(src)}">`)
+  if (footerVariant !== null) {
+    // Mirror the template footer: a footer variant renders as-is, the primary
+    // fallback is inverted.
+    tag = tag.replace(/\sclass=("[^"]*"|'[^']*')/i, (_m, v: string) => {
+      const classes = v.slice(1, -1).split(/\s+/).filter((c) => c && c !== 'invert' && c !== 'opacity-90')
+      if (!footerVariant) classes.push('invert', 'opacity-90')
+      return ` class="${classes.join(' ')}"`
+    })
+  }
+  return tag
+}
+
+// Swap the header + footer logo <img> (the template's [data-c5="logo"] links)
+// for the draft files, so a logo upload previews before it is published. A
+// link with no <img> (the live site shows the firm name as text) gets one.
+export function swapPreviewLogos(html: string, given: PreviewLogos): string {
+  // Only inline images: the frame is sandboxed with an opaque origin, so an
+  // admin-API URL would load without the session cookie anyway.
+  const inline = (u: string | null) => (u && /^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(u) ? u : null)
+  const logos = { primary: inline(given.primary), footer: inline(given.footer) }
+  if (!logos.primary && !logos.footer) return html
+  const footerAt = html.search(FOOTER_RE)
+  let out = ''
+  let last = 0
+  for (const m of html.matchAll(LOGO_ANCHOR_RE)) {
+    const start = m.index
+    const openEnd = start + m[0].length
+    const close = html.indexOf('</a>', openEnd)
+    if (close < 0) continue
+    const inFooter = footerAt >= 0 && start > footerAt
+    const src = inFooter ? (logos.footer ?? logos.primary) : logos.primary
+    if (!src) continue
+    const variant = inFooter ? logos.footer !== null : null
+    const inner = html.slice(openEnd, close)
+    const img = /<img\b[^>]*>/i.exec(inner)
+    const nextInner = img
+      ? inner.slice(0, img.index) + setImgSrc(img[0], src, variant) + inner.slice(img.index + img[0].length)
+      : setImgSrc('<img alt="" class="h-8 w-auto">', src, variant)
+    out += html.slice(last, openEnd) + nextInner
+    last = close
+  }
+  return out + html.slice(last)
+}
+
 export function composePreviewSrcDoc(args: {
   shellHtml: string
   themeCss: string
   overridesCss: string
   typography?: PreviewTypography
   htmlAttributes?: Record<string, string | null>
+  logos?: PreviewLogos
 }): string {
   const { link, vars } = fontHead(args.typography)
   const style = `${link}<style>${vars}\n${cssSafe(args.themeCss)}\n${cssSafe(args.overridesCss)}</style>`
-  const shellHtml = args.htmlAttributes ? setHtmlAttributes(args.shellHtml, args.htmlAttributes) : args.shellHtml
+  let shellHtml = args.htmlAttributes ? setHtmlAttributes(args.shellHtml, args.htmlAttributes) : args.shellHtml
+  if (args.logos) shellHtml = swapPreviewLogos(shellHtml, args.logos)
   return shellHtml.includes(THEME_SLOT)
     ? shellHtml.replace(THEME_SLOT, style)
     : shellHtml.replace(/<\/head>/i, `${style}</head>`)

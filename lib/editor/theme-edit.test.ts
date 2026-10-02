@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as themeEdit from './theme-edit'
-import { patchBrandPalette, patchDesignTypography, patchDesignFlags, patchDesignLayout, patchDesignStyle } from './theme-edit'
+import { patchBrandPalette, patchDesignTypography, patchDesignFlags, patchDesignLayout, patchDesignStyle, patchBrandLogo } from './theme-edit'
 
 const BRAND = JSON.stringify(
   {
@@ -212,5 +212,46 @@ describe('patchDesignLayout (2026.09.9)', () => {
     expect(patchDesignLayout(base, { cards: 'grid' } as never).ok).toBe(false)
     expect(patchDesignLayout(base, { hero: 'split' } as never).ok).toBe(false)
     expect(patchDesignLayout(base, {}).ok).toBe(false)
+  })
+})
+
+describe('patchBrandLogo', () => {
+  const brand = (logo: Record<string, unknown>) =>
+    JSON.stringify({ firm: { name: 'Acme' }, palette: { primary: '#111111' }, logo }, null, 2) + '\n'
+
+  it('points logo.primary at the new file and keeps other keys', () => {
+    const r = patchBrandLogo(brand({ primary: 'old.png', alt: 'Acme logo', tone: 'light' }), { primary: 'logo-abc.svg' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.changed).toBe(true)
+    expect(r.brand.logo).toEqual({ primary: 'logo-abc.svg', alt: 'Acme logo', tone: 'light' })
+    expect(r.brand.palette.primary).toBe('#111111')
+    expect(r.next.endsWith('\n')).toBe(true)
+  })
+
+  it('sets and clears the footer variant and tone', () => {
+    const set = patchBrandLogo(brand({ primary: 'a.png', alt: 'x' }), { footer: 'logo-footer-1.png', tone: 'light' })
+    expect(set.ok && set.brand.logo).toEqual({ primary: 'a.png', alt: 'x', footer: 'logo-footer-1.png', tone: 'light' })
+    const cleared = patchBrandLogo(brand({ primary: 'a.png', alt: 'x', footer: 'f.png', tone: 'light' }), { footer: null, tone: null })
+    expect(cleared.ok && cleared.brand.logo).toEqual({ primary: 'a.png', alt: 'x' })
+  })
+
+  it('creates a logo object (with a firm-name alt) when brand.json has none', () => {
+    const text = JSON.stringify({ firm: { name: 'Acme' } }, null, 2) + '\n'
+    const r = patchBrandLogo(text, { primary: 'logo-1.png' })
+    expect(r.ok && r.brand.logo).toEqual({ primary: 'logo-1.png', alt: 'Acme logo' })
+  })
+
+  it('reports no change when the values are already set', () => {
+    const text = brand({ primary: 'a.png', alt: 'x' })
+    const r = patchBrandLogo(text, { primary: 'a.png' })
+    expect(r.ok && r.changed).toBe(false)
+  })
+
+  it('rejects path-like or non-image file names and bad JSON', () => {
+    expect(patchBrandLogo(brand({ primary: 'a.png', alt: 'x' }), { primary: '../x.png' }).ok).toBe(false)
+    expect(patchBrandLogo(brand({ primary: 'a.png', alt: 'x' }), { footer: 'a/b.png' }).ok).toBe(false)
+    expect(patchBrandLogo(brand({ primary: 'a.png', alt: 'x' }), { primary: 'evil.html' }).ok).toBe(false)
+    expect(patchBrandLogo('{', { primary: 'a.png' }).ok).toBe(false)
   })
 })

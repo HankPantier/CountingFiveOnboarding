@@ -49,6 +49,11 @@ export type BrandJson = {
     primary: string  // filename in /content/assets/
     alt: string
     /**
+     * Footer-only logo variant (template: rendered as-is in the dark footer).
+     * Absent = the footer shows `primary` inverted.
+     */
+    footer?: string
+    /**
      * "light" = a white/light logo that needs a dark surface. The template
      * (2026.09.6+, src/lib/brand/logo-tone.ts) turns it into
      * <html data-c5-logo-tone="light">: no light plate on the inverted nav, a

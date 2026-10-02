@@ -70,6 +70,45 @@ export function patchBrandPalette(brandJsonText: string, patch: PalettePatch): B
   return { ok: true, next: nextText, brand: next, changed: nextText !== brandJsonText }
 }
 
+export type LogoPatch = {
+  /** Bare content-assets filename for logo.primary. */
+  primary?: string
+  /** Bare filename for logo.footer, or null to remove it (footer falls back to primary). */
+  footer?: string | null
+  /** logo.tone: 'light' sets it, null removes it. Omit to leave as-is. */
+  tone?: 'light' | null
+}
+
+const LOGO_FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(png|jpe?g|webp|svg)$/
+
+// Point brand.json's logo at newly uploaded files (Theme Studio logo upload).
+// Values are bare filenames the template resolves under /content-assets/.
+export function patchBrandLogo(brandJsonText: string, patch: LogoPatch): BrandPatchResult {
+  let brand: BrandJson
+  try {
+    brand = JSON.parse(brandJsonText) as BrandJson
+  } catch {
+    return { ok: false, reason: 'content/brand.json is not valid JSON.' }
+  }
+  if (!brand || typeof brand !== 'object' || Array.isArray(brand)) {
+    return { ok: false, reason: 'content/brand.json is not an object.' }
+  }
+  for (const v of [patch.primary, patch.footer]) {
+    if (typeof v === 'string' && !LOGO_FILE_RE.test(v)) return { ok: false, reason: `Invalid logo file name "${v}".` }
+  }
+  const current = brand.logo && typeof brand.logo === 'object' && !Array.isArray(brand.logo) ? brand.logo : { primary: '', alt: '' }
+  const logo = { ...current }
+  if (patch.primary !== undefined) logo.primary = patch.primary
+  if (patch.footer === null) delete logo.footer
+  else if (patch.footer !== undefined) logo.footer = patch.footer
+  if (patch.tone === null) delete logo.tone
+  else if (patch.tone !== undefined) logo.tone = patch.tone
+  if (!logo.alt && brand.firm?.name) logo.alt = `${brand.firm.name} logo`
+  const next: BrandJson = { ...brand, logo }
+  const nextText = serialize(next)
+  return { ok: true, next: nextText, brand: next, changed: nextText !== brandJsonText }
+}
+
 export type DesignPatchResult =
   | { ok: true; next: string; design: DesignJson; changed: boolean }
   | { ok: false; reason: string }
