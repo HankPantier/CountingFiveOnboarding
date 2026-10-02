@@ -79,6 +79,13 @@ function stripInlineSeoSection(body: string): string {
   return body.slice(0, idx).replace(/\n*-{3,}\s*\n*$/, '\n').trimEnd() + '\n'
 }
 
+// The template's hero button: hero_cta_label + hero_cta_url (both required).
+function heroCta(frontmatter: Frontmatter | null): { text: string; url: string } | null {
+  const text = scalar(frontmatter, 'hero_cta_label')
+  const url = scalar(frontmatter, 'hero_cta_url')
+  return text && url ? { text, url } : null
+}
+
 export function pageInputFromRepoFile(path: string, content: string): DiviPageInput {
   const { frontmatter, body } = splitFile(content)
   return {
@@ -88,12 +95,15 @@ export function pageInputFromRepoFile(path: string, content: string): DiviPageIn
     hero_variant: scalar(frontmatter, 'hero_variant') || null,
     hero_image_alt: scalar(frontmatter, 'hero_image_alt') || null,
     hero_subhead: scalar(frontmatter, 'hero_subhead') || null,
-    // Hero stock query isn't persisted in repo frontmatter; body block `query:`
-    // annotations still resolve. Home hero simply renders without a stock image.
+    // Hero stock query isn't persisted in repo frontmatter; the uploaded
+    // hero_image (a /content-assets file) is what the live hero shows.
     hero_image_query: null,
+    hero_image: scalar(frontmatter, 'hero_image') || null,
+    hero_headline: scalar(frontmatter, 'hero_headline') || null,
+    hero_eyebrow: scalar(frontmatter, 'hero_eyebrow') || null,
     content_markdown: stripInlineSeoSection(body),
     faq_block: faqBlock(frontmatter),
-    cta: null,
+    cta: heroCta(frontmatter),
     seo: {
       metaTitle: scalar(frontmatter, 'meta_title'),
       metaDescription: scalar(frontmatter, 'meta_description'),

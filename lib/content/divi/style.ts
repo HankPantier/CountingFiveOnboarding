@@ -18,6 +18,8 @@ import type { DesignJson } from '@/types/design-json'
 import type { Density, Roundness } from '@/types/design-tokens'
 import { buildDesignJson } from '@/lib/content/design-json-builder'
 import { TYPE_PAIRINGS } from '@/lib/content/type-pairing-catalog'
+import { normalizeStyleAxes, type StyleAxes } from '@/lib/design/style-axes'
+import { normalizeLayoutPresets, type LayoutPresets } from '@/lib/design/layout-presets'
 import {
   deriveLightActionTextTokens,
   ensureContrast,
@@ -83,6 +85,9 @@ export const TYPE_SCALE = {
 } as const
 
 const DENSITY_FACTOR: Record<Density, number> = { tight: 0.8, balanced: 1, airy: 1.25 }
+// The template's sectionRhythm axis re-pads every section (style-axes.css):
+// ~0.75x compact, ~1.4x generous of the default padding.
+const RHYTHM_FACTOR: Record<string, number> = { compact: 0.75, generous: 1.4 }
 const HEX = /^#[0-9a-f]{6}$/i
 
 export type DiviStyle = {
@@ -95,6 +100,10 @@ export type DiviStyle = {
   paddingFactor: number
   shadowRgb: string // "r, g, b" of the primary, for the navy-tinted shadow scale
   treatments: { serifHeadlines: boolean; darkSections: boolean; monoEyebrows: boolean }
+  // Design Studio style axes + layout presets (non-default values only).
+  axes: StyleAxes
+  layout: LayoutPresets
+  logo: { large: boolean; light: boolean }
 }
 
 const FALLBACK_PALETTE: Record<PaletteRole, string> = {
@@ -114,6 +123,34 @@ function cleanFont(name: unknown, fallback: string): string {
 
 function fontsUrl(url: unknown): string | null {
   return typeof url === 'string' && /^https:\/\/fonts\.googleapis\.com\/[^\s"'()<>]+$/.test(url) ? url : null
+}
+
+// A design.json radius token as Divi-friendly px ('16px', '1rem' → '16px');
+// null for anything that isn't a plain length.
+export function radiusPx(value: unknown): number | null {
+  if (typeof value !== 'string') return null
+  const m = value.trim().match(/^(\d+(?:\.\d+)?)(px|rem|em)?$/)
+  if (!m) return null
+  const n = Number(m[1]) * (m[2] === 'rem' || m[2] === 'em' ? 16 : 1)
+  return Number.isFinite(n) ? Math.round(n) : null
+}
+
+// Buttons follow the template's --radius-pill, cards and framed images its
+// --radius-md (style-axes rounded images: --radius-lg). Divi needs a finite px
+// value, so a 9999px pill is written as 40px (fully round at button height).
+function radiusModel(design: DesignJson, roundness: Roundness, axes: StyleAxes): DiviStyle['radius'] {
+  const px = (v: unknown, fallback: number) => radiusPx(v) ?? fallback
+  const pillFallback = roundness === 'pill' ? 9999 : roundness === 'soft' ? 8 : 4
+  let button = Math.min(px(design.radius?.pill, pillFallback), 40)
+  if (axes.buttons === 'pill') button = 40
+  if (axes.buttons === 'sharp') button = 0
+  const md = px(design.radius?.md, roundness === 'sharp' ? 4 : 8)
+  const lg = px(design.radius?.lg, roundness === 'sharp' ? 4 : 16)
+  return {
+    button: `${button}px`,
+    card: `${md}px`,
+    image: `${axes.imageTreatment === 'rounded' ? lg : md}px`,
+  }
 }
 
 // The design.json a site without one would have: the first catalog pairing at
@@ -140,6 +177,8 @@ export function parseDesignJsonText(text: string | null): DesignJson {
       ...fallback,
       ...raw,
       typography: { ...fallback.typography, ...(raw.typography ?? {}) },
+      style: normalizeStyleAxes(raw.style),
+      layout: normalizeLayoutPresets(raw.layout),
       radius: { ...fallback.radius, ...(raw.radius ?? {}) },
       spacing: { ...fallback.spacing, ...(raw.spacing ?? {}) },
     }
@@ -148,7 +187,10 @@ export function parseDesignJsonText(text: string | null): DesignJson {
   }
 }
 
-export function buildDiviStyle(brand: Pick<BrandJson, 'palette'>, design: DesignJson): DiviStyle {
+export function buildDiviStyle(
+  brand: Pick<BrandJson, 'palette'> & { logo?: Partial<BrandJson['logo']> },
+  design: DesignJson
+): DiviStyle {
   const palette = {} as Record<PaletteRole, string>
   for (const role of PALETTE_ROLES) {
     const v = brand.palette?.[role]
@@ -175,6 +217,7 @@ export function buildDiviStyle(brand: Pick<BrandJson, 'palette'>, design: Design
   const roundness: Roundness = (['sharp', 'soft', 'pill'] as const).includes(design.roundness) ? design.roundness : 'soft'
   const density: Density = (['tight', 'balanced', 'airy'] as const).includes(design.density) ? design.density : 'balanced'
   const [r, g, b] = chroma(palette.primary).rgb()
+  const axes = normalizeStyleAxes(design.style) ?? {}
 
   return {
     palette,
@@ -201,20 +244,17 @@ export function buildDiviStyle(brand: Pick<BrandJson, 'palette'>, design: Design
     },
     roundness,
     density,
-    // Buttons follow the roundness token (the template's --radius-pill); cards and
-    // images use the template's lg radius, squared off for 'sharp'.
-    radius: {
-      button: roundness === 'pill' ? '40px' : roundness === 'soft' ? '8px' : '4px',
-      card: roundness === 'sharp' ? '4px' : '16px',
-      image: roundness === 'sharp' ? '4px' : '12px',
-    },
-    paddingFactor: DENSITY_FACTOR[density],
+    radius: radiusModel(design, roundness, axes),
+    paddingFactor: DENSITY_FACTOR[density] * (axes.sectionRhythm ? RHYTHM_FACTOR[axes.sectionRhythm] ?? 1 : 1),
     shadowRgb: `${r}, ${g}, ${b}`,
     treatments: {
       serifHeadlines: design.headlineStyle === 'serif',
       darkSections: design.darkSections === true,
       monoEyebrows: design.eyebrowStyle === 'mono',
     },
+    axes,
+    layout: normalizeLayoutPresets(design.layout) ?? {},
+    logo: { large: design.logo?.size === 'large', light: brand.logo?.tone === 'light' },
   }
 }
 
@@ -371,8 +411,67 @@ export function brandCss(style: DiviStyle): string {
     'body .gform_wrapper .gfield input, body .gform_wrapper .gfield textarea, body .gform_wrapper .gfield select { border-radius: var(--c5-radius-card); }',
     'body .c5-card { box-shadow: var(--c5-shadow-card); transition: box-shadow 200ms ease; }',
     'body .c5-card:hover { box-shadow: var(--c5-shadow-card-hover); }',
+    // The hero eyebrow (template .t-kicker; mono with eyebrowStyle "mono").
+    `body .c5-eyebrow { font-size: 0.8125rem; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; color: var(--c5-link); margin-bottom: 1.25rem; }`,
+    `body .et_pb_bg_layout_dark .c5-eyebrow { color: ${d.actionOnPrimary}; }`,
+    ...(style.treatments.monoEyebrows
+      ? ['body .c5-eyebrow { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; letter-spacing: 0.13em; font-weight: 500; }']
+      : []),
+    // Headline accent: a `*word*` in a headline is the template's italic-serif
+    // accent in the action colour (the accentUsage axis tones it down).
+    ...accentCss(style),
+    ...axisCss(style),
     BRAND_CSS_END,
   ].join('\n')
+}
+
+const HEADLINE_EM = 'body h1 em, body h2 em'
+
+function accentCss(style: DiviStyle): string[] {
+  const usage = style.axes.accentUsage
+  if (usage === 'plain') return [`${HEADLINE_EM} { font-style: normal; }`]
+  if (usage === 'underline') {
+    return [
+      `${HEADLINE_EM} { font-style: normal; text-decoration: underline; text-decoration-color: var(--c5-action); text-decoration-thickness: 0.08em; text-underline-offset: 0.14em; }`,
+    ]
+  }
+  const rules = [`${HEADLINE_EM} { font-family: var(--c5-font-accent); }`]
+  if (usage !== 'subtle') {
+    rules.push(`${HEADLINE_EM} { color: var(--c5-link); }`)
+    rules.push(`body .et_pb_bg_layout_dark h1 em, body .et_pb_bg_layout_dark h2 em { color: ${style.derived.actionOnPrimary}; }`)
+  }
+  return rules
+}
+
+// Divi equivalents of the template's style-axes.css. Card and image rules need
+// !important: Divi prints a module's own shadow/background under a generated
+// per-module selector. Button shape and image rounding ride the radius tokens,
+// section rhythm the padding factor, nav/footer the header/footer layouts.
+function axisCss(style: DiviStyle): string[] {
+  const a = style.axes
+  const sh = style.shadowRgb
+  const out: string[] = []
+  if (a.cards === 'flat') out.push('body .c5-card, body .c5-card:hover { box-shadow: none !important; border-color: transparent !important; }')
+  if (a.cards === 'outlined') {
+    out.push(`body .c5-card, body .c5-card:hover { box-shadow: none !important; border: 1px solid rgba(${sh}, 0.28) !important; }`)
+  }
+  if (a.cards === 'elevated') {
+    out.push(`body .c5-card, body .c5-card:hover { box-shadow: 0 18px 40px -12px rgba(${sh}, 0.28) !important; }`)
+    out.push('body .c5-card:hover { transform: translateY(-4px); }')
+  }
+  if (a.buttons === 'bold') {
+    out.push('body .et_pb_button, body .et_pb_pricing_table_button { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; }')
+  }
+  if (a.heroScale === 'compact') {
+    out.push('body .c5-display { font-size: clamp(2.2rem, 1.3rem + 3vw, 3.25rem); }')
+    out.push('body .c5-page-title { font-size: clamp(1.8rem, 1.2rem + 1.8vw, 2.5rem); }')
+  }
+  if (a.heroScale === 'dramatic') {
+    out.push('body .c5-display { font-size: clamp(3rem, 1.5rem + 5.6vw, 5.5rem); }')
+    out.push('body .c5-page-title { font-size: clamp(2.4rem, 1.5rem + 3.2vw, 3.75rem); }')
+  }
+  if (a.imageTreatment === 'mono') out.push('body .c5-frame img { filter: grayscale(1) contrast(1.05); }')
+  return out
 }
 
 // Font @imports for Additional CSS: the client's pairing, plus the accent serif

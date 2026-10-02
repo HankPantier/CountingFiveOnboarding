@@ -115,7 +115,7 @@ describe('page assembly', () => {
 
   it('opens with a page-header hero section', () => {
     expect(divi.startsWith('[et_pb_section')).toBe(true)
-    expect(divi).toContain('<h1>Virtual CFO Services</h1>')
+    expect(divi).toContain('<h1 class="c5-page-title">Virtual CFO Services</h1>')
   })
   it('renders card grid as blurb columns', () => {
     expect(divi).toContain('<h3>Planning</h3>')
@@ -283,7 +283,7 @@ describe('nav-driven hierarchy', () => {
       title: 'Services',
       children: [{ title: 'Tax', path: '/tax-services' }],
     })
-    expect(divi).toContain('<h1>Services</h1>')
+    expect(divi).toContain('<h1 class="c5-page-title">Services</h1>')
     expect(divi).toContain('href="/tax-services"')
   })
 })

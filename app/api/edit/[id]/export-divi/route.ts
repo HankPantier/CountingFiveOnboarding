@@ -13,6 +13,7 @@ import { pageInputFromRepoFile } from '@/lib/content/divi/from-frontmatter'
 import { parseDesignJsonText } from '@/lib/content/divi/style'
 import type { SessionSchema } from '@/types/session-schema'
 import type { PaletteData } from '@/types/palette'
+import type { BrandJson } from '@/types/brand-json'
 import type { NavJson } from '@/types/nav-json'
 import type { ClientCenterJson } from '@/types/client-center'
 import {
@@ -21,6 +22,7 @@ import {
   paletteFromBrandJson,
 } from '@/lib/content/brand-gate'
 import { hasCapability } from '@/lib/auth/access'
+import { resolvePreviewSiteUrl } from '@/lib/theme-preview/site-url'
 
 // archiver (zip) + GitHub reads require the Node.js runtime; a large site takes
 // dozens of GitHub reads plus (time-boxed) Pexels lookups, so allow the full
@@ -33,7 +35,24 @@ const CLIENT_CENTER_PATH = 'content/client-center.json'
 const PRICING_PLANS_PATH = 'content/pricing-plans.json'
 const BRAND_JSON_PATH = 'content/brand.json'
 const DESIGN_JSON_PATH = 'content/design.json'
+const OVERRIDES_PATH = 'content/design-overrides.css'
+const ASSETS_DIR = 'public/content-assets/'
 const READ_CONCURRENCY = 4
+
+function logoFromBrandJson(text: string): BrandJson['logo'] | null {
+  try {
+    const logo = (JSON.parse(text) as Partial<BrandJson> | null)?.logo
+    if (!logo || typeof logo !== 'object' || typeof logo.primary !== 'string') return null
+    return {
+      primary: logo.primary,
+      alt: typeof logo.alt === 'string' ? logo.alt : '',
+      ...(typeof logo.footer === 'string' && logo.footer ? { footer: logo.footer } : {}),
+      ...(logo.tone === 'light' || logo.tone === 'dark' ? { tone: logo.tone } : {}),
+    }
+  } catch {
+    return null
+  }
+}
 
 function gmtStamp(d: Date): string {
   return d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '')
@@ -87,8 +106,11 @@ export async function GET(
   // The export is "the live site": its palette is the draft's content/brand.json
   // (Theme Studio / Design Studio write it), falling back to the job palette.
   let livePalette: PaletteData | null = null
+  let liveLogo: BrandJson['logo'] | null = null
   try {
-    livePalette = paletteFromBrandJson((await readFile(ctx.githubRepo, BRAND_JSON_PATH, DRAFT_BRANCH)).content)
+    const brandText = (await readFile(ctx.githubRepo, BRAND_JSON_PATH, DRAFT_BRANCH)).content
+    livePalette = paletteFromBrandJson(brandText)
+    liveLogo = logoFromBrandJson(brandText)
   } catch {
     livePalette = null
   }
@@ -121,7 +143,10 @@ export async function GET(
   }
 
   const schema = (session.schema_data ?? {}) as SessionSchema
-  const brand = buildBrandJson(schema, palette)
+  // The site's logos (incl. the footer logo + tone) are what Theme Studio wrote
+  // to the draft brand.json, not the onboarding-time default.
+  const built = buildBrandJson(schema, palette)
+  const brand: BrandJson = liveLogo ? { ...built, logo: liveLogo } : built
   const firmName = brand.firm.name || session.website_url
 
   try {
@@ -188,6 +213,36 @@ export async function GET(
       }
     }
 
+    let overridesCss: string | null = null
+    if (tree.some((e) => e.path === OVERRIDES_PATH)) {
+      try {
+        overridesCss = (await readFile(ctx.githubRepo, OVERRIDES_PATH, DRAFT_BRANCH)).content
+      } catch {
+        overridesCss = null
+      }
+    }
+
+    // Which uploaded files exist, so a reference to a missing one falls back to
+    // its stock query instead of hot-linking a 404.
+    let knownAssets: Set<string> | null = null
+    try {
+      const assetTree = await listTree(ctx.githubRepo, DRAFT_BRANCH, ASSETS_DIR)
+      knownAssets = new Set(assetTree.filter((e) => e.type === 'blob').map((e) => e.path.slice(ASSETS_DIR.length)))
+    } catch {
+      knownAssets = null
+    }
+
+    // Uploaded images and logos hot-link from the deployed Revaltus site. Only
+    // a Vercel / operator-set address counts: the 'config' fallback is the
+    // client's OLD site before DNS cutover, which doesn't have these files.
+    let siteUrl: string | null = null
+    try {
+      const resolved = await resolvePreviewSiteUrl({ jobId: ctx.jobId, githubRepo: ctx.githubRepo })
+      siteUrl = resolved.source === 'config' ? null : resolved.url
+    } catch (err) {
+      console.warn('[export-divi] site address lookup failed; uploaded images fall back to stock:', err)
+    }
+
     const { zip, filenameBase } = await buildDiviExport({
       firmName,
       websiteUrl: session.website_url,
@@ -197,6 +252,9 @@ export async function GET(
       clientCenter,
       nav,
       logoUrl,
+      siteUrl,
+      knownAssets,
+      overridesCss,
       pexelsApiKey: process.env.PEXELS_API_KEY ?? '',
       pricingPlans,
       dateGmt: gmtStamp(new Date()),

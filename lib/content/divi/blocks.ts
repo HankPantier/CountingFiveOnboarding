@@ -99,12 +99,20 @@ export function parseQA(content: string): QA[] {
 // Shortcode template shells (lifted from the reference boilerplate export)
 // ---------------------------------------------------------------------------
 
-export function basicContentBlock(html: string): string {
+// `band: 'ink'` = the template's dark band (theme: ink); `align` = the text
+// orientation (intro-text is centred by default).
+export function basicContentBlock(html: string, opts: { band?: 'light' | 'ink'; align?: 'left' | 'center' } = {}): string {
+  const ink = opts.band === 'ink'
+  const bg = ink ? ` background_color="${c5('band')}"` : ''
+  const orient = opts.align === 'center' ? ' text_orientation="center"' : ''
+  const textColors = ink
+    ? `background_layout="dark" text_text_color="${c5('onBand')}" header_2_text_color="${c5('onBand')}" header_3_text_color="${c5('onBand')}"`
+    : `text_text_color="${c5('text')}" header_2_text_color="${c5('heading')}" header_3_text_color="${c5('heading')}"`
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" custom_padding="${pad(50)}||${pad(60)}|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default"${bg} custom_padding="${pad(50)}||${pad(60)}|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" text_text_color="${c5('text')}" header_2_text_color="${c5('heading')}" header_3_text_color="${c5('heading')}" global_colors_info="{}"]` +
+    `[et_pb_text _builder_version="${BV}"${orient} ${textColors} global_colors_info="{}"]` +
     `${html}` +
     `[/et_pb_text][/et_pb_column][/et_pb_row][/et_pb_section]`
   )
@@ -119,7 +127,7 @@ export function subPageHeader(title: string, subhead?: string): string {
     `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
     `[et_pb_text _builder_version="${BV}" text_orientation="center" background_layout="dark" header_text_color="${c5('onPrimary')}" text_text_color="${c5('onPrimary')}" global_colors_info="{}"]` +
-    `<h1>${inlineMarkdown(title)}</h1>${sub}` +
+    `<h1 class="c5-page-title">${inlineMarkdown(title)}</h1>${sub}` +
     `[/et_pb_text][/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }
@@ -127,7 +135,7 @@ export function subPageHeader(title: string, subhead?: string): string {
 function imageColumn(url: string, alt: string): string {
   return (
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_image src="${attr(url)}" alt="${attr(alt)}" _builder_version="${BV}" _module_preset="default" border_radii="on|${radius('image')}|${radius('image')}|${radius('image')}|${radius('image')}" box_shadow_style="preset3" box_shadow_color="${c5('primary', 0.15)}" global_colors_info="{}"][/et_pb_image]` +
+    `[et_pb_image src="${attr(url)}" alt="${attr(alt)}" _builder_version="${BV}" _module_preset="default" module_class="c5-frame" border_radii="on|${radius('image')}|${radius('image')}|${radius('image')}|${radius('image')}" box_shadow_style="preset3" box_shadow_color="${c5('primary', 0.15)}" global_colors_info="{}"][/et_pb_image]` +
     `[/et_pb_column]`
   )
 }
@@ -136,6 +144,7 @@ function imageColumn(url: string, alt: string): string {
 // copy+image shell; `hero` swaps in the gradient background + H1.
 export function copyImageBlock(opts: {
   heading: string
+  eyebrow?: string
   subhead?: string
   bodyHtml: string
   buttonText?: string
@@ -160,10 +169,11 @@ export function copyImageBlock(opts: {
   const headerColor = opts.hero ? c5('onPrimary') : c5('heading')
   // The hero H1 takes the template's display size (.c5-display in the brand CSS).
   const headingOpen = opts.hero ? '<h1 class="c5-display">' : `<${headingTag}>`
+  const eyebrow = opts.eyebrow ? `<p class="c5-eyebrow">${inlineMarkdown(opts.eyebrow)}</p>` : ''
   const textColumn =
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
     `[et_pb_text _builder_version="${BV}" ${opts.hero ? 'background_layout="dark" ' : ''}header_text_color="${headerColor}" header_2_text_color="${opts.hero ? c5('onPrimary') : c5('actionText')}" text_text_color="${textColor}" global_colors_info="{}"]` +
-    `${headingOpen}${inlineMarkdown(opts.heading)}</${headingTag}>${sub}\n${opts.bodyHtml}` +
+    `${eyebrow}${headingOpen}${inlineMarkdown(opts.heading)}</${headingTag}>${sub}\n${opts.bodyHtml}` +
     `[/et_pb_text]${button}[/et_pb_column]`
 
   const imgCol = opts.imageUrl ? imageColumn(opts.imageUrl, opts.imageAlt ?? opts.heading) : ''
@@ -229,22 +239,35 @@ export function cardGridBlock(heading: string, cards: Card[], cols: number, band
   )
 }
 
+// cta-banner. `centered` = the template's centred layout (variant
+// *-centered or the ctaBanner preset); `bgImageUrl` = its image-bg variant,
+// multiplied onto the primary surface like the template's scrim.
 export function ctaBlock(opts: {
   heading: string
   bodyHtml: string
   buttonText: string
   buttonUrl: string
+  centered?: boolean
+  bgImageUrl?: string
 }): string {
-  return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('primarySurface')}" custom_padding="${pad(60)}|0px|${pad(60)}|0px|true|true" global_colors_info="{}" template_type="section"]` +
-    `[et_pb_row column_structure="2_3,1_3" use_custom_gutter="on" make_equal="on" _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
-    `[et_pb_column type="2_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" background_layout="dark" header_2_text_color="${c5('onPrimary')}" text_text_color="${c5('onPrimary')}" global_colors_info="{}"]` +
+  const bgImage = opts.bgImageUrl
+    ? ` background_image="${attr(opts.bgImageUrl)}" background_size="cover" background_position="center" background_blend="multiply"`
+    : ''
+  const text =
+    `[et_pb_text _builder_version="${BV}"${opts.centered ? ' text_orientation="center"' : ''} background_layout="dark" header_2_text_color="${c5('onPrimary')}" text_text_color="${c5('onPrimary')}" global_colors_info="{}"]` +
     `<h2>${inlineMarkdown(opts.heading)}</h2>\n${opts.bodyHtml}` +
-    `[/et_pb_text][/et_pb_column]` +
-    `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_button button_url="${attr(safeUrl(opts.buttonUrl) ?? '/contact/')}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="${c5('onAction')}" button_bg_color="${c5('action')}" button_border_width="0px" button_border_radius="${radius('button')}" button_font="${HEADING_FONT(700)}" button_use_icon="off" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="${c5('action', 0.35)}" global_colors_info="{}"][/et_pb_button]` +
-    `[/et_pb_column][/et_pb_row][/et_pb_section]`
+    `[/et_pb_text]`
+  const button =
+    `[et_pb_button button_url="${attr(safeUrl(opts.buttonUrl) ?? '/contact/')}" button_text="${attr(opts.buttonText)}" button_alignment="center" _builder_version="${BV}" _module_preset="default" custom_button="on" button_text_size="16px" button_text_color="${c5('onAction')}" button_bg_color="${c5('action')}" button_border_width="0px" button_border_radius="${radius('button')}" button_font="${HEADING_FONT(700)}" button_use_icon="off" custom_padding="16px|30px|16px|30px|true|true" box_shadow_style="preset3" box_shadow_color="${c5('action', 0.35)}" global_colors_info="{}"][/et_pb_button]`
+  const row = opts.centered
+    ? `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="60%" module_alignment="center" global_colors_info="{}"]` +
+      `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${text}${button}[/et_pb_column][/et_pb_row]`
+    : `[et_pb_row column_structure="2_3,1_3" use_custom_gutter="on" make_equal="on" _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
+      `[et_pb_column type="2_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${text}[/et_pb_column]` +
+      `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${button}[/et_pb_column][/et_pb_row]`
+  return (
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('primarySurface')}"${bgImage} custom_padding="${pad(opts.bgImageUrl ? 90 : 60)}|0px|${pad(opts.bgImageUrl ? 90 : 60)}|0px|true|true" global_colors_info="{}" template_type="section"]` +
+    `${row}[/et_pb_section]`
   )
 }
 
@@ -319,7 +342,8 @@ export function pricingTablesBlock(config: PricingPlansConfig): string {
   return pricingSection + (extras ? basicContentBlock(extras) : '')
 }
 
-export function accordionBlock(heading: string, items: QA[]): string {
+// `split` = the template's faq split preset: heading left, questions right.
+export function accordionBlock(heading: string, items: QA[], split = false): string {
   const accItems = items
     .map(
       (qa, i) =>
@@ -329,12 +353,16 @@ export function accordionBlock(heading: string, items: QA[]): string {
   const headingText = heading
     ? `[et_pb_text _builder_version="${BV}" header_2_text_color="${c5('heading')}" custom_margin="||20px|" global_colors_info="{}"]<h2>${inlineMarkdown(heading)}</h2>[/et_pb_text]`
     : ''
+  const accordion = `[et_pb_accordion _builder_version="${BV}" _module_preset="default" toggle_font="${HEADING_FONT(600)}" toggle_text_color="${c5('heading')}" body_text_color="${c5('text')}" global_colors_info="{}"]${accItems}[/et_pb_accordion]`
+  const row =
+    split && headingText
+      ? `[et_pb_row column_structure="1_3,2_3" _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
+        `[et_pb_column type="1_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${headingText}[/et_pb_column]` +
+        `[et_pb_column type="2_3" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${accordion}[/et_pb_column][/et_pb_row]`
+      : `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
+        `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${headingText}${accordion}[/et_pb_column][/et_pb_row]`
   return (
     `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('surfaceMuted')}" custom_padding="${pad(50)}|0px|${pad(50)}|0px|true|true" global_colors_info="{}" template_type="section"]` +
-    `[et_pb_row _builder_version="${BV}" _module_preset="default" width="100%" max_width="75%" module_alignment="center" global_colors_info="{}"]` +
-    `[et_pb_column type="4_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `${headingText}` +
-    `[et_pb_accordion _builder_version="${BV}" _module_preset="default" toggle_font="${HEADING_FONT(600)}" toggle_text_color="${c5('heading')}" body_text_color="${c5('text')}" global_colors_info="{}"]${accItems}[/et_pb_accordion]` +
-    `[/et_pb_column][/et_pb_row][/et_pb_section]`
+    `${row}[/et_pb_section]`
   )
 }

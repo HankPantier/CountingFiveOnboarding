@@ -36,6 +36,7 @@ const DESIGN: DesignJson = {
   },
   roundness: 'pill',
   density: 'airy',
+  radius: { ...defaultDesignJson().radius, pill: '9999px' },
 }
 const style = buildDiviStyle({ palette: PALETTE }, DESIGN)
 

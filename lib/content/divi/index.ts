@@ -25,7 +25,8 @@ import type { PricingPlansConfig } from '@/types/pricing-plans'
 import { toPagePath, siteHost } from '@/lib/content/deliverable-builder'
 import { assembleZip } from '@/lib/content/zip-assembler'
 import { buildPageDivi, collectPageQueries, type DiviPageInput } from './page'
-import { resolveImageUrls } from './images'
+import { parseDiviSections } from './blocks'
+import { repoAssetResolver, resolveImageUrls } from './images'
 import { buildWxr, type WxrPage } from './wxr'
 import { buildDiviLibrary } from './library'
 import { buildReadme } from './readme'
@@ -37,6 +38,7 @@ import { renderSitemapPng } from './sitemap-png'
 import { renderSitemapPdf } from './sitemap-pdf'
 import { applyDiviStyle, buildDiviStyle } from './style'
 import { buildDiviCustomizer } from './customizer'
+import { readRegion } from '@/lib/design/bundle-files'
 
 export type { DiviPageInput } from './page'
 
@@ -50,6 +52,13 @@ export type DiviExportInput = {
   clientCenter: ClientCenterJson
   nav: NavJson
   logoUrl: string | null
+  // The deployed site's address: uploaded images and the footer logo are
+  // hot-linked from its /content-assets/. Null = unknown (stock images only).
+  siteUrl?: string | null
+  // Filenames under the repo's public/content-assets/ (null = unknown).
+  knownAssets?: ReadonlySet<string> | null
+  // content/design-overrides.css — only read to report what didn't transfer.
+  overridesCss?: string | null
   pexelsApiKey: string
   // Config-driven plans page (content/pricing-plans.json), if the client ships
   // one — the /pricing host page md carries only the annotation, not the tiers.
@@ -86,6 +95,48 @@ type PageRec = {
   real?: DiviPageInput
   section?: NavSection
   synthesized?: 'section' | 'home'
+}
+
+// Every uploaded image ref the pages carry, and those missing from the repo.
+function uploadedImageRefs(pages: DiviPageInput[], known: ReadonlySet<string> | null): { total: number; missing: string[] } {
+  const refs = new Set<string>()
+  for (const p of pages) {
+    if (p.hero_image) refs.add(p.hero_image.trim())
+    for (const s of parseDiviSections(p.content_markdown ?? '')) if (s.image) refs.add(s.image.trim())
+  }
+  const missing = known ? [...refs].filter((r) => !/^https?:\/\//i.test(r) && !r.startsWith('/') && !known.has(r)) : []
+  return { total: refs.size, missing: missing.sort() }
+}
+
+// Distinct live-site images the pages actually show (uploads inside blocks that
+// export as prose — team photos, logo bars — are not placed).
+function placedUploads(pages: WxrPage[], origin: string | null): number {
+  if (!origin) return 0
+  const prefix = `${origin}/content-assets/`
+  const urls = new Set<string>()
+  for (const p of pages) {
+    let i = p.content.indexOf(prefix)
+    while (i !== -1) {
+      const end = p.content.slice(i).search(/["\s\]]/)
+      urls.add(p.content.slice(i, end === -1 ? undefined : i + end))
+      i = p.content.indexOf(prefix, i + prefix.length)
+    }
+  }
+  return urls.size
+}
+
+// The Design Studio CSS areas (scoped CSS + lock pins) in design-overrides.css:
+// they target the client template's markup, so they can't carry over.
+export function unportedCssAreas(overridesCss: string | null): string[] {
+  if (!overridesCss?.trim()) return []
+  const region = readRegion(overridesCss)
+  if (!region.ok) return ['design-overrides.css']
+  const areas = [
+    ...(region.css.global?.trim() ? ['site-wide'] : []),
+    ...Object.entries(region.css.blocks).filter(([, css]) => css?.trim()).map(([key]) => key),
+    ...(region.css.locks?.trim() ? ['locked areas'] : []),
+  ]
+  return areas
 }
 
 export async function buildDiviExport(input: DiviExportInput): Promise<DiviExportResult> {
@@ -172,9 +223,17 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
   })
   const menuOrderByPath = new Map(sidebarOrder(sitemap).map((p, i) => [p, i]))
 
-  // Resolve every image query once, deduped across the real pages.
-  const allQueries = uniqueRecs.filter((r) => r.real).flatMap((r) => collectPageQueries(r.real!))
+  // Uploaded images come from the live site; resolve every remaining stock
+  // query once, deduped across the real pages.
+  const assets = repoAssetResolver(input.siteUrl ?? null, input.knownAssets ?? null)
+  const uploadsResolve = assets.linked
+  const allQueries = uniqueRecs.filter((r) => r.real).flatMap((r) => collectPageQueries(r.real!, assets.url))
   const imageUrls = await resolveImageUrls(allQueries, input.pexelsApiKey)
+  const renderOpts = { layout: style.layout, assetUrl: assets.url }
+  // brand.json's logo on the live site is the one the site shows and never
+  // expires; the signed onboarding copy (1h) is the fallback.
+  const siteLogo = input.brand.logo?.primary ? assets.url(input.brand.logo.primary) : null
+  const logoUrl = siteLogo ?? input.logoUrl
 
   const wxrPages: WxrPage[] = uniqueRecs.map((r) => ({
     // Always name the front page "Home" so it's unmistakable in the Pages list
@@ -188,7 +247,7 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     menuOrder: menuOrderByPath.get(r.path) ?? 0,
     content: applyDiviStyle(
       r.real
-        ? buildPageDivi(r.real, imageUrls, input.websiteUrl, input.pricingPlans ?? null)
+        ? buildPageDivi(r.real, imageUrls, input.websiteUrl, input.pricingPlans ?? null, renderOpts)
         : buildSectionLandingDivi(r.section!),
       style
     ),
@@ -206,7 +265,8 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     brand: input.brand,
     clientCenter: input.clientCenter,
     nav: resolvedNav,
-    logoUrl: input.logoUrl,
+    logoUrl,
+    footerLogoUrl: input.brand.logo?.footer ? assets.url(input.brand.logo.footer) : null,
     style,
     dateGmt: input.dateGmt,
   })
@@ -228,18 +288,26 @@ export async function buildDiviExport(input: DiviExportInput): Promise<DiviExpor
     }),
   ])
 
+  const uploadRefs = uploadedImageRefs(uniqueRecs.flatMap((r) => (r.real ? [r.real] : [])), input.knownAssets ?? null)
   const readme = buildReadme({
     firmName: input.firmName,
     filenameBase,
     pageCount: wxrPages.length,
     imageCount: imageUrls.size,
-    hasLogo: !!input.logoUrl,
+    hasLogo: !!logoUrl,
+    logoExpires: !siteLogo && !!input.logoUrl,
     navConfigured: sitemap.navConfigured,
     menuPageCount: sitemap.counts.inMenu,
     notInNavCount: sitemap.counts.notInNav,
     hasSitemapPdf: !!sitemapPdf,
     hasSitemapPng: !!sitemapPng,
     fonts: { heading: style.fonts.heading, body: style.fonts.body },
+    uploadedImageCount: uploadRefs.total,
+    missingUploads: uploadRefs.missing,
+    uploadsPlaced: uploadsResolve ? placedUploads(wxrPages, assets.origin) : 0,
+    uploadsLinked: uploadsResolve,
+    siteUrl: assets.origin,
+    unportedCss: unportedCssAreas(input.overridesCss ?? null),
   })
 
   const zip = await assembleZip([

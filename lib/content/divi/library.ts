@@ -82,20 +82,44 @@ function utilityBarHtml(cc: ClientCenterJson, phone: string | undefined): string
   return `<p style="margin:0;font-size:14px;">${ccMenu}${phoneHtml}</p>`
 }
 
+// Logo height follows design.json logo.size (template: 32px, 'large' 44px).
+function logoHeight(style: DiviStyle): string {
+  return style.logo.large ? '44px' : '32px'
+}
+
+// A plate behind the logo so it stays legible on its bar (template logo-tone +
+// nav axis): a light logo on a light bar gets a dark plate; any other logo on
+// the inverted (primary) bar gets a light plate.
+function logoPlate(plate: 'dark' | 'light' | null): string {
+  if (!plate) return ''
+  return ` background_color="${plate === 'dark' ? c5('nearBlack') : c5('nearWhite')}" custom_padding="4px|10px|4px|10px|true|true" border_radii="on|${radius('button')}|${radius('button')}|${radius('button')}|${radius('button')}"`
+}
+
 // Logo (or firm name) linked to the home page.
-function logoOrName(brand: BrandJson, logoUrl: string | null): string {
+function logoOrName(brand: BrandJson, logoUrl: string | null, style: DiviStyle): string {
+  const inverted = style.axes.nav === 'inverted'
   if (logoUrl) {
-    return `[et_pb_image src="${esc(logoUrl)}" alt="${esc(brand.logo.alt || brand.firm.name)}" url="/" url_new_window="off" _builder_version="${BV}" _module_preset="default" width="200px" global_colors_info="{}"][/et_pb_image]`
+    const plate = inverted ? (style.logo.light ? null : 'light') : style.logo.light ? 'dark' : null
+    return `[et_pb_image src="${esc(logoUrl)}" alt="${esc(brand.logo.alt || brand.firm.name)}" url="/" url_new_window="off" _builder_version="${BV}" _module_preset="default" max_height="${logoHeight(style)}"${logoPlate(plate)} global_colors_info="{}"][/et_pb_image]`
   }
-  return `[et_pb_text _builder_version="${BV}" header_2_font="${HEADING_FONT(800)}" header_2_text_color="${c5('primary')}" header_2_font_size="26px" global_colors_info="{}"]<h2 style="margin:0;"><a href="/" style="color:${c5('primary')};text-decoration:none;">${htmlEsc(brand.firm.name)}</a></h2>[/et_pb_text]`
+  const color = inverted ? c5('onPrimary') : c5('primary')
+  return `[et_pb_text _builder_version="${BV}" header_2_font="${HEADING_FONT(800)}" header_2_text_color="${color}" header_2_font_size="26px" global_colors_info="{}"]<h2 style="margin:0;"><a href="/" style="color:${color};text-decoration:none;">${htmlEsc(brand.firm.name)}</a></h2>[/et_pb_text]`
 }
 
 function buildHeader(
   brand: BrandJson,
   cc: ClientCenterJson,
   _nav: NavJson,
-  logoUrl: string | null
+  logoUrl: string | null,
+  style: DiviStyle
 ): string {
+  // nav axis: inverted = primary-colour bar with light text; bordered = a 2px
+  // brand rule under the bar.
+  const inverted = style.axes.nav === 'inverted'
+  const barBg = inverted ? c5('primarySurface') : c5('nearWhite')
+  const linkColor = inverted ? c5('onPrimary') : c5('heading')
+  const activeColor = inverted ? c5('actionOnPrimary') : c5('actionText')
+  const border = style.axes.nav === 'bordered' ? ` border_width_bottom="2px" border_color_bottom="${c5('primary')}"` : ''
   // Dark top utility bar: Client Center + phone, right-aligned.
   const util = utilityBarHtml(cc, brand.contact.phone)
   const topBar = util
@@ -111,22 +135,43 @@ function buildHeader(
   // once the operator assigns it. Managed in Appearance → Menus, with dropdowns.
   const menu =
     `[et_pb_menu menu_id="" _builder_version="${BV}" _module_preset="default" menu_style="left_aligned" ` +
-    `menu_font="${HEADING_FONT(600)}" menu_text_color="${c5('heading')}" active_link_color="${c5('actionText')}" ` +
+    `menu_font="${HEADING_FONT(600)}" menu_text_color="${linkColor}" active_link_color="${activeColor}" ` +
     `dropdown_menu_bg_color="${c5('nearWhite')}" dropdown_menu_text_color="${c5('heading')}" ` +
     `background_color="rgba(0,0,0,0)" module_alignment="right" global_colors_info="{}"][/et_pb_menu]`
 
   // Main bar: logo (linked home) left, nav menu flowing to the right.
   const mainBar =
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('nearWhite')}" custom_padding="14px||14px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${barBg}"${border} custom_padding="14px||14px|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row column_structure="1_4,3_4" _builder_version="${BV}" _module_preset="default" width="100%" max_width="92%" module_alignment="center" custom_padding="0px||0px|||" global_colors_info="{}"]` +
-    `[et_pb_column type="1_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl)}[/et_pb_column]` +
+    `[et_pb_column type="1_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${logoOrName(brand, logoUrl, style)}[/et_pb_column]` +
     `[et_pb_column type="3_4" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]${menu}[/et_pb_column]` +
     `[/et_pb_row][/et_pb_section]`
 
   return topBar + mainBar
 }
 
-function buildFooter(brand: BrandJson, nav: NavJson): string {
+// Footer logo, as the template draws it: the dedicated footer logo as
+// authored, else the primary logo knocked out to white on a dark footer (a
+// light-tone logo already is). On the light footer a footer logo — light-on-dark
+// artwork — sits on a dark plate.
+function footerLogo(brand: BrandJson, logos: FooterLogos, style: DiviStyle, darkFooter: boolean): string {
+  const src = logos.footer ?? logos.primary
+  if (!src) return ''
+  const knockout = !logos.footer && darkFooter && !style.logo.light ? ' filter_brightness="0%" filter_invert="100%"' : ''
+  const plate = logos.footer && !darkFooter ? logoPlate('dark') : ''
+  return `[et_pb_image src="${esc(src)}" alt="${esc(brand.logo.alt || brand.firm.name)}" url="/" url_new_window="off" _builder_version="${BV}" _module_preset="default" max_height="${logoHeight(style)}" custom_margin="||18px|"${knockout}${plate} global_colors_info="{}"][/et_pb_image]`
+}
+
+type FooterLogos = { primary: string | null; footer: string | null }
+
+function buildFooter(brand: BrandJson, nav: NavJson, logos: FooterLogos, style: DiviStyle): string {
+  // footer axis: light = muted light surface, brand = the primary colour;
+  // default = the template's near-black footer.
+  const surface = style.axes.footer
+  const bg = surface === 'light' ? c5('surfaceMuted') : surface === 'brand' ? c5('primarySurface') : c5('nearBlack')
+  const fg = surface === 'light' ? c5('text') : surface === 'brand' ? c5('onPrimary') : c5('nearWhite')
+  const dark = surface !== 'light'
+  const layout = dark ? 'background_layout="dark" ' : ''
   const addr = brand.contact.address
   const addrHtml = addr
     ? `<p>${htmlEsc(addr.street)}${addr.line2 ? '<br/>' + htmlEsc(addr.line2) : ''}<br/>${htmlEsc(addr.city)}, ${htmlEsc(addr.state)} ${htmlEsc(addr.zip)}</p>`
@@ -134,18 +179,19 @@ function buildFooter(brand: BrandJson, nav: NavJson): string {
   const phone = brand.contact.phone ? `<p>${htmlEsc(brand.contact.phone)}</p>` : ''
   const email = brand.contact.email ? `<p>${htmlEsc(brand.contact.email)}</p>` : ''
   const social = brand.social.length
-    ? `<p>${brand.social.map((s) => anchor(s.url, s.platform, `color:${c5('nearWhite')};margin-right:14px;`)).join('')}</p>`
+    ? `<p>${brand.social.map((s) => anchor(s.url, s.platform, `color:${fg};margin-right:14px;`)).join('')}</p>`
     : ''
-  const navHtml = navLinksHtml(nav, c5('nearWhite'))
+  const navHtml = navLinksHtml(nav, fg)
 
   return (
-    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${c5('nearBlack')}" custom_padding="50px||40px|||" global_colors_info="{}" template_type="section"]` +
+    `[et_pb_section fb_built="1" _builder_version="${BV}" _module_preset="default" background_color="${bg}"${surface === 'light' ? ` border_width_top="1px" border_color_top="${c5('border')}"` : ''} custom_padding="50px||40px|||" global_colors_info="{}" template_type="section"]` +
     `[et_pb_row column_structure="1_2,1_2" _builder_version="${BV}" _module_preset="default" width="100%" max_width="90%" module_alignment="center" global_colors_info="{}"]` +
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" background_layout="dark" text_text_color="${c5('nearWhite')}" global_colors_info="{}"]<h3 style="color:${c5('nearWhite')};">${htmlEsc(brand.firm.name)}</h3>${addrHtml}${phone}${email}[/et_pb_text]` +
+    footerLogo(brand, logos, style, dark) +
+    `[et_pb_text _builder_version="${BV}" ${layout}text_text_color="${fg}" global_colors_info="{}"]<h3 style="color:${fg};">${htmlEsc(brand.firm.name)}</h3>${addrHtml}${phone}${email}[/et_pb_text]` +
     `[/et_pb_column]` +
     `[et_pb_column type="1_2" _builder_version="${BV}" _module_preset="default" global_colors_info="{}"]` +
-    `[et_pb_text _builder_version="${BV}" text_orientation="right" background_layout="dark" text_text_color="${c5('nearWhite')}" global_colors_info="{}"]${navHtml}${social}[/et_pb_text]` +
+    `[et_pb_text _builder_version="${BV}" text_orientation="right" ${layout}text_text_color="${fg}" global_colors_info="{}"]${navHtml}${social}[/et_pb_text]` +
     `[/et_pb_column][/et_pb_row][/et_pb_section]`
   )
 }
@@ -207,11 +253,13 @@ export function buildDiviLibrary(opts: {
   clientCenter: ClientCenterJson
   nav: NavJson
   logoUrl: string | null
+  footerLogoUrl?: string | null
   style: DiviStyle
   dateGmt: string
 }): string {
-  const header = applyDiviStyle(buildHeader(opts.brand, opts.clientCenter, opts.nav, opts.logoUrl), opts.style)
-  const footer = applyDiviStyle(buildFooter(opts.brand, opts.nav), opts.style)
+  const header = applyDiviStyle(buildHeader(opts.brand, opts.clientCenter, opts.nav, opts.logoUrl, opts.style), opts.style)
+  const logos = { primary: opts.logoUrl, footer: opts.footerLogoUrl ?? null }
+  const footer = applyDiviStyle(buildFooter(opts.brand, opts.nav, logos, opts.style), opts.style)
 
   // Envelope shape matches a native Divi Library export exactly.
   const envelope = {
