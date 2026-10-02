@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { internalError } from '@/lib/api/errors'
 import { DEFAULT_COMMIT_AUTHOR } from '@/lib/github/commit-identity'
 import { resolveEditContext } from '../../_helpers'
@@ -20,7 +21,9 @@ import { replaceSessionLogoRow } from '@/lib/assets/replace-session-logo'
 import { LIGHT_LOGO_NOTE, preflightLogo } from '@/lib/content/logo-preflight'
 import { patchBrandLogo, type LogoPatch } from '@/lib/editor/theme-edit'
 import type { BrandJson } from '@/types/brand-json'
-import { BRAND_PATH } from '../_theme'
+import { BRAND_PATH, type LogoUploadResponse } from '../_theme'
+import type { ChatAttachmentDto } from '@/lib/design/chat-types'
+import { attachmentStoragePath, signDesignPaths, storeDesignImage, toWebp } from '@/lib/design/storage'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -29,12 +32,6 @@ type Slot = 'primary' | 'footer'
 
 const BLOB_SHA_RE = /^[0-9a-f]{40}$/i
 
-export interface LogoUploadResponse {
-  ok: true
-  path: string
-  notices: string[]
-  warning?: string
-}
 
 function staleResponse() {
   return NextResponse.json(
@@ -52,8 +49,12 @@ async function readBrand(githubRepo: string): Promise<{ content: string; sha: st
   }
 }
 
-// POST multipart { file, slot: 'primary'|'footer', brandSha } — Theme Studio
-// logo upload. Commits the new image under a content-hashed name plus
+// POST multipart { file, slot: 'primary'|'footer', brandSha?, attach? } —
+// logo upload from the Theme Studio Controls or the Revise-with-AI chat.
+// brandSha (Controls) refuses an upload made against a stale view; the chat
+// sends none, and the commit is still guarded by the sha read here. attach=1
+// (chat) also stores the logo as a chat attachment so the next message can
+// show it to the assistant. Commits the new image under a content-hashed name plus
 // brand.json pointing at it (one guarded commit on draft). A primary upload
 // also replaces the session's onboarding `logo` asset so the palette step,
 // re-packaging and the Divi export use the same file. Admin-only, like the
@@ -73,9 +74,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (slot !== 'primary' && slot !== 'footer') {
     return NextResponse.json({ error: "slot must be 'primary' or 'footer'" }, { status: 400 })
   }
-  if (typeof brandSha !== 'string' || !BLOB_SHA_RE.test(brandSha)) {
-    return NextResponse.json({ error: 'brandSha is required' }, { status: 400 })
+  if (brandSha !== null && brandSha !== undefined && (typeof brandSha !== 'string' || !BLOB_SHA_RE.test(brandSha))) {
+    return NextResponse.json({ error: 'brandSha must be a 40-char blob sha' }, { status: 400 })
   }
+  const attach = form?.get('attach') === '1'
 
   const checked = await validateLogoUpload(Buffer.from(await file.arrayBuffer()))
   if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: checked.status })
@@ -98,7 +100,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         { status: 409 }
       )
     }
-    if (brandFile.sha !== brandSha) return staleResponse()
+    if (typeof brandSha === 'string' && brandFile.sha !== brandSha) return staleResponse()
+    const guardSha = brandFile.sha
 
     const patch: LogoPatch = slot === 'primary' ? { primary: fileName } : { footer: fileName }
     const notices: string[] = []
@@ -127,14 +130,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await writeBinaryFileWithCompanions(githubRepo, path, bytes, DRAFT_BRANCH, message, {
         mode: 'create',
         ...author,
-        companions: [{ path: BRAND_PATH, content: patched.next, expectedSha: brandSha }],
+        companions: [{ path: BRAND_PATH, content: patched.next, expectedSha: guardSha }],
       })
     } catch (err) {
       // The same bytes are already on draft (content-hashed name): only
       // brand.json needs to point at them.
       if (!(err instanceof AssetExistsError)) throw err
       if (patched.changed) {
-        await writeFiles(githubRepo, [{ path: BRAND_PATH, content: patched.next, expectedSha: brandSha }], DRAFT_BRANCH, message, author)
+        await writeFiles(githubRepo, [{ path: BRAND_PATH, content: patched.next, expectedSha: guardSha }], DRAFT_BRANCH, message, author)
       }
     }
 
@@ -142,11 +145,41 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (slot === 'primary') {
       warning = await syncSessionLogo(sessionId, fileName, logo.mime, bytes)
     }
-    const body: LogoUploadResponse = { ok: true, path, notices, ...(warning ? { warning } : {}) }
+    const attachment = attach ? await logoAttachment(sessionId, bytes, pre.lightLogo) : undefined
+    const body: LogoUploadResponse = {
+      ok: true,
+      path,
+      notices,
+      ...(warning ? { warning } : {}),
+      ...(attachment ? { attachment } : {}),
+    }
     return NextResponse.json(body)
   } catch (err) {
     if (err instanceof StaleShaError) return staleResponse()
     return internalError('theme:logo:post', err, 'Failed to save the logo')
+  }
+}
+
+// The logo as a chat attachment (WebP, like every Design Studio image). It is
+// flattened onto white, or onto a dark ground for a light logo, so the
+// assistant sees the artwork rather than transparency. Best-effort: the logo
+// is already committed, so a failure only means no attachment.
+async function logoAttachment(sessionId: string, bytes: Buffer, lightLogo: boolean): Promise<ChatAttachmentDto | undefined> {
+  try {
+    const flat = await sharp(bytes, { density: 300, limitInputPixels: 50_000_000 })
+      .flatten({ background: lightLogo ? '#333333' : '#ffffff' })
+      .png()
+      .toBuffer()
+    const { webp, width, height } = await toWebp(flat)
+    const id = randomUUID()
+    const storagePath = attachmentStoragePath(sessionId, id)
+    const supabase = createServerClient()
+    await storeDesignImage(supabase, storagePath, webp)
+    const url = (await signDesignPaths(supabase, [storagePath]))[storagePath] ?? null
+    return { id, url, width, height }
+  } catch (err) {
+    console.warn('[theme:logo] chat attachment failed:', err)
+    return undefined
   }
 }
 

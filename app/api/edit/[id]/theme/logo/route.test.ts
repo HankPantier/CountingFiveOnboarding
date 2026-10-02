@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   writeFiles: vi.fn(async (..._args: unknown[]) => ({ commitSha: 'c', blobs: {} })),
   replaceSessionLogoRow: vi.fn(async (..._args: unknown[]) => ({ ok: true, assetId: 'asset-1' })),
   storageUpload: vi.fn(async (..._args: unknown[]) => ({ error: null as unknown })),
+  storeDesignImage: vi.fn(async (..._args: unknown[]) => {}),
 }))
 
 vi.mock('../../_helpers', () => ({
@@ -40,6 +41,12 @@ vi.mock('@/lib/content/logo-preflight', () => ({
   }),
 }))
 vi.mock('@/lib/assets/replace-session-logo', () => ({ replaceSessionLogoRow: h.replaceSessionLogoRow }))
+vi.mock('@/lib/design/storage', () => ({
+  toWebp: async (b: Buffer) => ({ webp: b, width: 10, height: 4 }),
+  attachmentStoragePath: (sid: string, id: string) => `design/${sid}/attachments/${id}.webp`,
+  storeDesignImage: h.storeDesignImage,
+  signDesignPaths: async (_s: unknown, paths: string[]) => Object.fromEntries(paths.map((p) => [p, `https://signed/${p}`])),
+}))
 vi.mock('@/lib/supabase/server', () => ({
   createServerClient: () => ({
     storage: { from: () => ({ upload: h.storageUpload, remove: vi.fn(async () => ({})) }) },
@@ -78,11 +85,12 @@ const PNG = Buffer.from(
 const params = { params: Promise.resolve({ id: 'sess-1' }) }
 const brand = (logo: Record<string, unknown>) => JSON.stringify({ firm: { name: 'A' }, logo }, null, 2) + '\n'
 
-function post(slot: string, bytes: Buffer = PNG, sha = SHA) {
+function post(slot: string, bytes: Buffer = PNG, sha: string | null = SHA, attach = false) {
   const form = new FormData()
   form.append('file', new Blob([new Uint8Array(bytes)]), 'upload.png')
   form.append('slot', slot)
-  form.append('brandSha', sha)
+  if (sha !== null) form.append('brandSha', sha)
+  if (attach) form.append('attach', '1')
   return POST(new Request('http://x/api/edit/sess-1/theme/logo', { method: 'POST', body: form }), params)
 }
 const committedBrand = () => {
@@ -164,7 +172,7 @@ describe('/api/edit/[id]/theme/logo', () => {
     expect(h.writeBinaryFileWithCompanions).not.toHaveBeenCalled()
   })
 
-  it('rejects a bad slot or missing sha', async () => {
+  it('rejects a bad slot or a malformed sha', async () => {
     expect((await post('favicon')).status).toBe(400)
     expect((await post('primary', PNG, 'nope')).status).toBe(400)
   })
@@ -184,6 +192,24 @@ describe('/api/edit/[id]/theme/logo', () => {
     const res = await post('primary')
     expect(res.status).toBe(200)
     expect(((await res.json()) as { warning?: string }).warning).toMatch(/onboarding copy/)
+  })
+
+  it('from the chat: no brandSha (guarded by the sha read in the request) and the logo comes back as a chat attachment', async () => {
+    h.storeDesignImage.mockClear()
+    const res = await post('primary', PNG, null, true)
+    expect(res.status).toBe(200)
+    expect(committedBrand().logo.primary).toMatch(/^logo-[0-9a-f]{10}\.png$/)
+    const data = (await res.json()) as { attachment?: { id: string; url: string | null } }
+    expect(data.attachment?.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(data.attachment?.url).toBe(`https://signed/design/sess-1/attachments/${data.attachment?.id}.webp`)
+    expect(h.storeDesignImage).toHaveBeenCalledTimes(1)
+  })
+
+  it('no attachment unless asked for', async () => {
+    h.storeDesignImage.mockClear()
+    const data = (await (await post('primary')).json()) as { attachment?: unknown }
+    expect(data.attachment).toBeUndefined()
+    expect(h.storeDesignImage).not.toHaveBeenCalled()
   })
 
   it('DELETE removes only logo.footer', async () => {

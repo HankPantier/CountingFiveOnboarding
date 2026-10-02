@@ -12,6 +12,8 @@ import AnnotateCanvas, { type AnnotateSource } from './AnnotateCanvas'
 import InlineConfirm from './InlineConfirm'
 import { designApi, errorMessage } from './api'
 import { FOCUS, PANEL, PRIMARY_BTN, SECONDARY_BTN_SM, TEXTAREA } from './styles'
+import type { LogoSlot } from '@/components/editor/LogoControls'
+import type { LogoUploadResponse } from '@/app/api/edit/[id]/theme/_theme'
 
 // A turn the route refused before streaming (PF12). Thrown from the transport's
 // fetch so useChat's error carries the server's own text and the status.
@@ -96,7 +98,7 @@ export default function DesignChat({
           Revise with AI
         </h2>
         <p className="font-body text-xs text-text-muted">
-          Describe a change or attach an annotated screenshot. The assistant previews its work on the real page and saves each change to the draft as a version.
+          Describe a change or attach an annotated screenshot. The assistant previews its work on the real page and saves each change to the draft as a version. Use Upload logo to replace the header or footer logo.
         </p>
       </div>
       {loadError && (
@@ -232,6 +234,15 @@ function ChatBody({
   const [notice, setNotice] = useState<string | null>(null)
   const [turnAnnouncement, setTurnAnnouncement] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  // Logo upload: pick header/footer, then a file. It commits to the draft
+  // straight away (not a design version) and rides as an attachment on the
+  // next message so the assistant can see it.
+  const logoRef = useRef<HTMLInputElement>(null)
+  const logoSlotRef = useRef<LogoSlot>('primary')
+  const [logoMenu, setLogoMenu] = useState(false)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoIds, setLogoIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [logoNote, setLogoNote] = useState<{ tone: 'success' | 'warning'; lines: string[] } | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
   // Whether the admin is reading the latest messages: only then does new
   // output keep the transcript pinned to the bottom. Updated on scroll.
@@ -326,6 +337,42 @@ function ChatBody({
       setAnnotate(null)
     } finally {
       setUploading(false)
+    }
+  }
+
+  const uploadLogo = async (slot: LogoSlot, file: File) => {
+    setUploading(true)
+    setLogoUploading(true)
+    setNotice(null)
+    setLogoNote(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('slot', slot)
+      form.append('attach', '1')
+      const res = await designApi<LogoUploadResponse>(`/api/edit/${sessionId}/theme/logo`, { method: 'POST', form })
+      const name = res.path.split('/').pop() ?? res.path
+      const attached = !!res.attachment && pending.length < MAX_ATTACHMENTS_PER_MESSAGE
+      if (attached && res.attachment) {
+        const a = res.attachment
+        setPending((p) => [...p, a])
+        setLogoIds((ids) => new Set(ids).add(a.id))
+      }
+      setLogoNote({
+        tone: res.warning ? 'warning' : 'success',
+        lines: [
+          `${slot === 'primary' ? 'Header' : 'Footer'} logo saved to the draft (${name}). Publish from the editor when ready.`,
+          ...(attached ? ['It’s attached to your next message — e.g. “match the palette to the new logo”.'] : []),
+          ...(res.warning ? [res.warning] : []),
+          ...res.notices,
+        ],
+      })
+      onCommitted()
+    } catch (err) {
+      setNotice(errorMessage(err, 'The logo could not be uploaded.'))
+    } finally {
+      setUploading(false)
+      setLogoUploading(false)
     }
   }
 
@@ -453,7 +500,7 @@ function ChatBody({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={a.url} alt="" className="h-6 w-auto rounded" />
                 )}
-                <span className="font-body text-[11px] text-text-secondary">Screenshot</span>
+                <span className="font-body text-[11px] text-text-secondary">{logoIds.has(a.id) ? 'Logo' : 'Screenshot'}</span>
                 <button type="button" onClick={() => void removePending(a.id)} aria-label="Remove attachment" className={`rounded-pill px-1 font-heading text-[11px] font-semibold text-text-secondary hover:text-error ${FOCUS}`}>
                   ✕
                 </button>
@@ -512,6 +559,54 @@ function ChatBody({
           <button type="button" onClick={() => void screenshotDraft()} disabled={!canAttach} className={SECONDARY_BTN_SM}>
             {capturing ? 'Capturing…' : 'Screenshot the draft'}
           </button>
+          {logoMenu ? (
+            <span className="flex items-center gap-1" role="group" aria-label="Which logo to replace">
+              {(['primary', 'footer'] as const).map((slot) => (
+                <button
+                  key={slot}
+                  type="button"
+                  disabled={busy || uploading}
+                  onClick={() => {
+                    logoSlotRef.current = slot
+                    setLogoMenu(false)
+                    logoRef.current?.click()
+                  }}
+                  className={SECONDARY_BTN_SM}
+                >
+                  {slot === 'primary' ? 'Header logo' : 'Footer logo'}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setLogoMenu(false)}
+                aria-label="Cancel logo upload"
+                className={`rounded-pill px-1 font-heading text-[11px] font-semibold text-text-secondary hover:text-error ${FOCUS}`}
+              >
+                ✕
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setLogoMenu(true)}
+              disabled={busy || uploading || capturing}
+              title="Replace the site logo (header or footer). PNG, JPG, WebP or SVG."
+              className={SECONDARY_BTN_SM}
+            >
+              {logoUploading ? 'Uploading logo…' : 'Upload logo'}
+            </button>
+          )}
+          <input
+            ref={logoRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) void uploadLogo(logoSlotRef.current, f)
+            }}
+          />
           <span className="flex-1" />
           <InlineConfirm label="Clear chat" prompt="Delete this conversation?" confirmLabel="Clear" busy={busy || clearing} onConfirm={clear} />
           <button type="submit" disabled={!canSend} className={PRIMARY_BTN}>
@@ -522,6 +617,18 @@ function ChatBody({
           <p role="alert" className="font-body text-xs text-error">
             {notice}
           </p>
+        )}
+        {logoNote && (
+          <div role="status" className={`flex items-start justify-between gap-2 rounded-lg border px-3 py-2 font-body text-xs ${TONE[logoNote.tone]}`}>
+            <ul className="space-y-0.5">
+              {logoNote.lines.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+            <button type="button" onClick={() => setLogoNote(null)} aria-label="Dismiss" className={`shrink-0 rounded-pill px-1 font-heading font-semibold ${FOCUS}`}>
+              ✕
+            </button>
+          </div>
         )}
       </form>
 

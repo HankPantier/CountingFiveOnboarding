@@ -21,6 +21,11 @@ describe('buildChatSystemStatic', () => {
     expect(s).toContain(TOKEN_CONTRACT)
     expect(s).toContain('at most 2 times per turn')
   })
+  it('points logo requests at the composer’s Upload logo button instead of refusing', () => {
+    const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
+    expect(s).toContain('"Upload logo" button')
+    expect(s).toContain("never say the logo can't be changed here")
+  })
   it('says chat commits do NOT update the MBP, and how the admin mirrors it', () => {
     const s = buildChatSystemStatic({ ...base, caps: DEFAULT_CAPABILITIES })
     expect(s).not.toMatch(/mirrored to the MBP automatically/)

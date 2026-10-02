@@ -1,5 +1,6 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
+import type { ChatAttachmentDto } from '@/lib/design/chat-types'
 import { gfUrl } from '@/lib/content/type-pairing-catalog'
 import { styleAxisHtmlAttributes, type StyleAxes } from '@/lib/design/style-axes'
 import { logoSizeHtmlAttribute, type LogoSize } from '@/lib/design/logo-size'
@@ -45,6 +46,16 @@ export type ThemeSources = {
   logo?: ThemeLogo
   /** brand.json blob sha on draft — the guard for a logo upload. */
   brandSha?: string
+}
+
+/** POST /api/edit/[id]/theme/logo response (Controls + the Revise-with-AI chat). */
+export interface LogoUploadResponse {
+  ok: true
+  path: string
+  notices: string[]
+  warning?: string
+  /** With `attach`: the new logo as a Revise-with-AI chat attachment. */
+  attachment?: ChatAttachmentDto
 }
 
 export type ThemeLogo = {
