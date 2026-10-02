@@ -52,6 +52,8 @@ vi.mock('./chat-store', () => ({
   clearAdoptedConceptIf: (...a: unknown[]) => m.clearAdoptedIf(...a),
 }))
 vi.mock('./storage', async (orig) => ({ ...((await orig()) as object), downloadDesignImage: (...a: unknown[]) => m.download(...a) }))
+vi.mock('./lock-store', () => ({ listLocks: async () => [] }))
+vi.mock('./page-sections', () => ({ readPageSections: async () => [] }))
 vi.mock('./capabilities-read', () => ({ readEffectiveCapabilities: (a: unknown) => m.effective(a) }))
 vi.mock('./run-store', async (orig) => ({ ...((await orig()) as object), getConcept: (...a: unknown[]) => m.getConcept(...a) }))
 vi.mock('./apply-bundle', async (orig) => ({ ...((await orig()) as object), readOptional: (...a: unknown[]) => m.readOptional(...a) }))
@@ -294,6 +296,7 @@ describe('streamChatTurn', () => {
       previewFits: vi.fn<TurnIo['previewFits']>(() => true),
       persistAssistant: vi.fn<TurnIo['persistAssistant']>(async () => {}),
       recordUsage: vi.fn<TurnIo['recordUsage']>(async () => {}),
+      changeLocks: vi.fn<TurnIo['changeLocks']>(async () => ({ ok: false, status: 409, error: 'n/a' })),
     }
   }
 

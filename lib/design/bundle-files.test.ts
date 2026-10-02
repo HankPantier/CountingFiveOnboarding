@@ -12,6 +12,7 @@ import {
   bundleFromRepoFiles,
   bundleToRepoFiles,
   hasLegacyOverrides,
+  replaceLocksFragment,
 } from './bundle-files'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
@@ -402,5 +403,47 @@ describe('layout presets (2026.09.9)', () => {
     expect(back.bundle.layout).toEqual({ team: 'list' })
     const twice = bundleToRepoFiles(back.bundle, x, { removeLegacy: false })
     expect(twice.ok && twice.files.designText).toBe(x.designText)
+  })
+})
+
+describe('design lock pins (migration 085)', () => {
+  const PINS = ':where([data-block="service-cards"]) {\n  --color-primary: hsl(209 100% 22%);\n}'
+  const withPins = { ...VALID, css: { ...VALID.css, locks: PINS }, typography: { ...VALID.typography, pinnedFonts: ['Lora'] } }
+
+  it('writes the pins FIRST in the region and reads them back', () => {
+    const region = composeRegion(withPins.css)
+    expect(region.indexOf('/* design-studio:locks */')).toBeLessThan(region.indexOf('/* design-studio:hero */'))
+    const back = readRegion(region)
+    expect(back.ok && back.css.locks).toBe(PINS)
+  })
+
+  it('records pinned fonts in design.json and the embed URL; absent pins leave typography as it was', () => {
+    const r = bundleToRepoFiles(withPins, { brandText, designText, overridesCss: '' }, { removeLegacy: false, fontsModule: true })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const design = JSON.parse(r.files.designText) as { typography: { pinnedFonts?: string[]; googleFontsUrl: string } }
+    expect(design.typography.pinnedFonts).toEqual(['Lora'])
+    expect(design.typography.googleFontsUrl).toContain('family=Lora')
+    expect(r.files.fontsModule).toContain("variable: '--font-pin-lora'")
+    expect(r.css.locks).toBe(PINS)
+
+    const without = bundleToRepoFiles({ ...VALID }, { brandText, designText: r.files.designText, overridesCss: r.files.overridesCss }, { removeLegacy: false })
+    expect(without.ok && (JSON.parse(without.files.designText) as { typography: object }).typography).not.toHaveProperty('pinnedFonts')
+    expect(without.ok && without.files.overridesCss).not.toContain('design-studio:locks')
+  })
+
+  it('refuses malformed pins instead of writing them', () => {
+    const r = bundleToRepoFiles({ ...VALID, css: { ...VALID.css, locks: '[data-block="hero"] { display: none }' } }, { brandText, designText, overridesCss: '' }, { removeLegacy: false })
+    expect(r).toEqual({ ok: false, errors: [expect.stringContaining('lock pins are malformed')] })
+  })
+
+  it('replaceLocksFragment swaps the pins inside a verbatim overrides file', () => {
+    const verbatim = `/* hand */\n[data-block="hero"] { color: red; }\n\n${composeRegion(VALID.css)}`
+    const next = replaceLocksFragment(verbatim, PINS)
+    expect(next).toContain('[data-block="hero"] { color: red; }')
+    const region = readRegion(next)
+    expect(region.ok && region.css.locks).toBe(PINS)
+    expect(region.ok && region.css.blocks.hero).toBe(VALID.css.blocks.hero)
+    expect(replaceLocksFragment(verbatim, undefined)).toBe(verbatim)
   })
 })

@@ -10,6 +10,7 @@ export type DesignJson = {
     bodyFont: string
     googleFontsUrl: string  // ready-to-embed <link> href
     accentFont: string      // italic-serif accent role (Ink & Clay); Fraunces default
+    pinnedFonts?: string[]  // families a Design Studio lock still needs loaded (lib/design/lock-pins.ts)
   }
   roundness: Roundness
   density: Density

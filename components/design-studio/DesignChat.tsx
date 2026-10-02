@@ -13,6 +13,8 @@ import InlineConfirm from './InlineConfirm'
 import { designApi, errorMessage } from './api'
 import { FOCUS, PANEL, PRIMARY_BTN, SECONDARY_BTN_SM, TEXTAREA } from './styles'
 import type { LogoSlot } from '@/components/editor/LogoControls'
+import type { DesignLockDto } from '@/lib/design/locks'
+import LockChips, { useDesignLocks } from './LockChips'
 import type { LogoUploadResponse } from '@/app/api/edit/[id]/theme/_theme'
 
 // A turn the route refused before streaming (PF12). Thrown from the transport's
@@ -32,6 +34,8 @@ const chatFetch: typeof fetch = async (input, init) => {
   if (!res.ok) throw new ChatRequestError(chatRequestErrorText(res.status, await res.text().catch(() => '')), res.status)
   return res
 }
+
+const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 
 const TONE: Record<'success' | 'warning' | 'error', string> = {
   success: 'border-success/30 bg-success/10 text-success',
@@ -61,13 +65,20 @@ export default function DesignChat({
   seed = null,
   onSeedUsed,
   onCommitted,
+  onLocksChange,
+  title = 'Revise with AI',
 }: {
   sessionId: string
   page: string
   seed?: ChatSeed | null
   onSeedUsed?: () => void
   onCommitted: () => void
+  // The session's design locks whenever they change (the Controls disable
+  // locked levers from it).
+  onLocksChange?: (locks: DesignLockDto[]) => void
+  title?: string
 }) {
+  const locks = useDesignLocks(sessionId, onLocksChange)
   const [history, setHistory] = useState<DesignChatMessage[] | null>(null)
   const [initialAdopt, setInitialAdopt] = useState<Adopt | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -95,10 +106,10 @@ export default function DesignChat({
     <section aria-labelledby="design-chat-heading" className={PANEL}>
       <div>
         <h2 id="design-chat-heading" className="font-heading text-sm font-semibold text-text-primary">
-          Revise with AI
+          {title}
         </h2>
         <p className="font-body text-xs text-text-muted">
-          Describe a change or attach an annotated screenshot. The assistant previews its work on the real page and saves each change to the draft as a version. Use Upload logo to replace the header or footer logo.
+          Describe a change, or attach, paste or drop a screenshot (“use this palette”). The assistant previews its work on the real page and saves each change to the draft as a version. Say “lock the What we do section” to freeze an area or setting. Use Upload logo to replace the header or footer logo.
         </p>
       </div>
       {loadError && (
@@ -116,6 +127,7 @@ export default function DesignChat({
           seed={seed}
           onSeedUsed={onSeedUsed}
           onCommitted={onCommitted}
+          locks={locks}
           onCleared={() => {
             setHistory(null)
             setEpoch((e) => e + 1)
@@ -139,6 +151,7 @@ function ChatBody({
   seed,
   onSeedUsed,
   onCommitted,
+  locks,
   onCleared,
   onStale,
 }: {
@@ -149,6 +162,7 @@ function ChatBody({
   seed: ChatSeed | null
   onSeedUsed?: () => void
   onCommitted: () => void
+  locks: ReturnType<typeof useDesignLocks>
   onCleared: () => void
   // The history's signed image URLs have (nearly) expired: reload it.
   onStale: () => void
@@ -208,6 +222,7 @@ function ChatBody({
     },
   })
   const busy = status === 'submitted' || status === 'streaming'
+  const refreshLocks = locks.refresh
   const refused = error instanceof ChatRequestError
 
   // A new hand-off (adjusted while rendering, so no effect-driven setState):
@@ -290,14 +305,34 @@ function ChatBody({
     const last = lastAssistant(messages.slice(turnStart.current))
     const committed = !!last && messageCommitted(last)
     setTurnAnnouncement(committed ? 'Reply received — a new version was saved to the draft.' : 'Reply received.')
+    // The turn may have locked or unlocked something (a lever lock saves no version).
+    void refreshLocks()
     if (committed) {
       // A saved version ends the hand-off (the server cleared it too).
       setAdopt((a) => (a?.persisted ? null : a))
       onCommitted()
     }
-  }, [busy, messages, onCommitted])
+  }, [busy, messages, onCommitted, refreshLocks])
 
   const canAttach = !busy && !capturing && !uploading && pending.length < MAX_ATTACHMENTS_PER_MESSAGE
+
+  // A pasted or dropped image goes through the same annotate → upload path as
+  // the Upload image button (the server re-checks type and size).
+  const [dragOver, setDragOver] = useState(false)
+  const takeImage = (files: File[], how: 'Pasted' | 'Dropped'): boolean => {
+    const image = files.find((f) => ACCEPTED_IMAGE_TYPES.includes(f.type))
+    if (!image) {
+      if (files.length > 0) setNotice('Only PNG, JPG or WebP images can be attached.')
+      return false
+    }
+    if (!canAttach) {
+      setNotice(pending.length >= MAX_ATTACHMENTS_PER_MESSAGE ? `Up to ${MAX_ATTACHMENTS_PER_MESSAGE} images per message.` : 'Wait for the current step to finish, then attach the image.')
+      return true
+    }
+    setNotice(files.length > 1 ? 'One image at a time — the first one was attached.' : null)
+    setAnnotate({ kind: 'file', file: image, label: `${how} screenshot` })
+    return true
+  }
   // One turn at a time: a second send while one streams would double-spend
   // (the draft's sha guard would 409 its commit anyway).
   const canSend = !busy && !uploading && text.trim().length > 0
@@ -423,6 +458,12 @@ function ChatBody({
     }
   }
 
+  const unlockFromChip = async (key: string): Promise<boolean> => {
+    const ok = await locks.unlock(key)
+    if (ok) onCommitted()
+    return ok
+  }
+
   const clear = async () => {
     setClearing(true)
     try {
@@ -491,7 +532,27 @@ function ChatBody({
           <AiIssueNotice message={error.message} />
         ))}
 
-      <form onSubmit={send} className="flex flex-col gap-2">
+      <LockChips locks={locks.locks} error={locks.error} disabled={busy} onUnlock={unlockFromChip} />
+
+      <form
+        onSubmit={send}
+        onDragOver={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes('Files')) return
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+        }}
+        onDrop={(e) => {
+          const files = Array.from(e.dataTransfer.files)
+          if (files.length === 0) return
+          e.preventDefault()
+          setDragOver(false)
+          takeImage(files, 'Dropped')
+        }}
+        className={`flex flex-col gap-2 rounded-2xl ${dragOver ? 'ring-2 ring-brand-cyan ring-offset-2' : ''}`}
+      >
         {pending.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Attachments for the next message">
             {pending.map((a) => (
@@ -531,6 +592,13 @@ function ChatBody({
           value={text}
           maxLength={CHAT_TEXT_MAX}
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData.items)
+              .filter((it) => it.kind === 'file')
+              .map((it) => it.getAsFile())
+              .filter((f): f is File => f !== null)
+            if (files.length > 0 && takeImage(files, 'Pasted')) e.preventDefault()
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
@@ -538,7 +606,7 @@ function ChatBody({
             }
           }}
           rows={2}
-          placeholder="Describe the change…"
+          placeholder="Describe the change, or paste a screenshot…"
           className={TEXTAREA}
         />
         <div className="flex flex-wrap items-center gap-2">

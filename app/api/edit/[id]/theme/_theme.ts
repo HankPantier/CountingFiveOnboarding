@@ -1,7 +1,7 @@
 import type { BrandJson } from '@/types/brand-json'
 import type { DesignJson } from '@/types/design-json'
 import type { ChatAttachmentDto } from '@/lib/design/chat-types'
-import { gfUrl } from '@/lib/content/type-pairing-catalog'
+import { CURATED_FONTS, typographyGfUrl } from '@/lib/content/type-pairing-catalog'
 import { styleAxisHtmlAttributes, type StyleAxes } from '@/lib/design/style-axes'
 import { logoSizeHtmlAttribute, type LogoSize } from '@/lib/design/logo-size'
 import { layoutPresetHtmlAttributes, type LayoutPresets } from '@/lib/design/layout-presets'
@@ -76,9 +76,9 @@ export function normalizeTypography(
   const headingFont = t?.headingFont || 'Public Sans'
   const bodyFont = t?.bodyFont || 'Public Sans'
   const accentFont = t?.accentFont || 'Fraunces'
-  const googleFontsUrl =
-    t?.googleFontsUrl || gfUrl(Array.from(new Set([headingFont, bodyFont, accentFont])))
-  return { headingFont, bodyFont, accentFont, googleFontsUrl }
+  const pinnedFonts = Array.isArray(t?.pinnedFonts) ? t.pinnedFonts.filter((f) => CURATED_FONTS.includes(f)) : []
+  const googleFontsUrl = t?.googleFontsUrl || typographyGfUrl({ headingFont, bodyFont, accentFont, pinnedFonts })
+  return { headingFont, bodyFont, accentFont, googleFontsUrl, ...(pinnedFonts.length > 0 ? { pinnedFonts } : {}) }
 }
 
 // The <html> attributes a draft-theme preview sets on the live shell: the

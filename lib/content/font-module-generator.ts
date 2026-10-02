@@ -16,7 +16,15 @@
 import { DEFAULT_TYPOGRAPHY, FONT_MANIFEST, MONO_FAMILY, type FontManifestEntry } from './font-manifest'
 
 export type FontRole = 'heading' | 'body' | 'accent' | 'mono'
-export type FontTypographyInput = { headingFont?: string; bodyFont?: string; accentFont?: string }
+// pinnedFonts: families a Design Studio lock still references (lib/design/
+// lock-pins.ts). Each gets a --font-pin-<slug> variable: an alias when a role
+// already loads the family, otherwise its own load. Absent/empty → the output
+// is byte-identical to the template's generator.
+export type FontTypographyInput = { headingFont?: string; bodyFont?: string; accentFont?: string; pinnedFonts?: readonly string[] }
+
+export function fontPinVariable(family: string): string {
+  return `--font-pin-${family.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+}
 
 type RoleSpec = { role: FontRole; variable: string; weights: readonly string[]; italic: boolean }
 export const ROLE_SPECS: readonly RoleSpec[] = [
@@ -142,6 +150,24 @@ export function generateFontsModule(t?: FontTypographyInput): { source: string; 
       weights: new Set(supported.length > 0 ? supported : [entry.weights[0]]),
       italic: spec.italic && entry.italic,
     })
+  }
+  for (const family of [...new Set(t?.pinnedFonts ?? [])].sort()) {
+    const entry = entryFor(family)
+    if (!entry) {
+      warnings.push(`Unknown pinned font "${family}" — skipped.`)
+      continue
+    }
+    const variable = fontPinVariable(family)
+    // A pin may stand in for any role, so its family loads every role weight.
+    const weights = ROLE_SPECS[0].weights.filter((w) => entry.weights.includes(w))
+    const existing = loads.find((l) => l.entry.family === entry.family)
+    if (existing) {
+      for (const w of weights) existing.weights.add(w)
+      existing.italic = existing.italic || entry.italic
+      aliases.push([variable, existing.variable])
+      continue
+    }
+    loads.push({ entry, variable, weights: new Set(weights.length > 0 ? weights : [entry.weights[0]]), italic: entry.italic })
   }
   return { source: renderModule(FONTS_MODULE_HEADERS[t === undefined ? 'default' : 'synced'], loads, aliases), warnings }
 }

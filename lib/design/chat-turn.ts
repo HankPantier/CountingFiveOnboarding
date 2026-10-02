@@ -60,7 +60,10 @@ import { clearAdoptedConceptIf, insertChatMessage, listChatMessages, setAdoptedC
 import { loadAdoptableConcept, type AdoptedConcept } from './chat-adopt'
 import { MISSING_CONCEPT } from './chat-ui'
 import { CHAT_COMMIT_RESERVE_MS } from './chat-preview'
-import { chatPreviewDeps, createDesignChatToolset, type ChatToolDeps } from './chat-tools'
+import { chatPreviewDeps, createDesignChatToolset, type ChatToolDeps, type LockToolOutput } from './chat-tools'
+import { changeLocks, type LockBase, type LockChange, type LockChangeResult } from './lock-ops'
+import { listLocks } from './lock-store'
+import { readPageSections } from './page-sections'
 import { CHAT_MAX_OUTPUT_TOKENS, CHAT_MAX_STEPS, DEFAULT_CHAT_PAGE, TURN_BUDGET_MS, type DesignChatMessage } from './chat-types'
 import { ChatWorkspace } from './chat-workspace'
 import { commitDesignVersion, type CommitTarget } from './commit-version'
@@ -102,6 +105,8 @@ export type TurnIo = {
   // PF1: the exact per-page time check (baseline cached or not) — chatPreviewDeps.
   previewFits: ChatToolDeps['previewFits']
   persistAssistant: (row: { id: string; content: string; parts: unknown[]; versionId: string | null }) => Promise<void>
+  // lock_design / unlock_design: lock-ops.changeLocks bound to the session.
+  changeLocks: (change: LockChange, base: LockBase) => Promise<LockChangeResult>
   recordUsage: (usage: LanguageModelUsage) => Promise<void>
   // The turn's clock (tests inject one); defaults to Date.now.
   now?: () => number
@@ -117,6 +122,8 @@ export type TurnIo = {
 //   - a step still running AT the deadline is aborted (the stream then counts
 //     as failed and staged edits are discarded, never half-committed).
 export const CHAT_WRAP_UP_MS = 60_000
+export const STAGED_BEFORE_LOCK_ERROR =
+  'There are staged changes that are not saved yet — commit them (or render and fix them) first, then lock or unlock, so the lock freezes what is actually on the draft.'
 export const CHAT_TURN_TIMEOUT_ERROR = 'The reply ran out of time, so it was stopped.'
 const CONVERSION_FAILED_ERROR = 'The conversation could not be prepared for the assistant — nothing was changed. Try again, or clear the chat if it keeps happening.'
 
@@ -172,11 +179,14 @@ export async function prepareChatTurn(
     }
   }
 
-  const [capRead, schema, designMd, rows] = await Promise.all([
+  const page = request.page ?? DEFAULT_CHAT_PAGE
+  const [capRead, schema, designMd, rows, locks, sections] = await Promise.all([
     readEffectiveCapabilities({ githubRepo: actor.githubRepo, jobId: actor.jobId }),
     readSessionSchema(db, actor.sessionId),
     readOptional(actor.githubRepo, DESIGN_MD_PATH),
     listChatMessages(db, actor.sessionId),
+    listLocks(db, actor.sessionId),
+    readPageSections(actor.githubRepo, page),
   ])
   const caps = capRead.effective
   // Null signers: the model's context never carries a signed URL.
@@ -215,12 +225,19 @@ export async function prepareChatTurn(
   }
 
   const drift = computeDrift(snapshot.shas, latest ? { versionNo: latest.version_no, appliedBlobs: toBlobMap(latest.applied_blobs) } : null, themeFilePaths(capRead.draft))
-  const page = request.page ?? DEFAULT_CHAT_PAGE
   const turn: PreparedTurn = {
     assistantId: randomUUID(),
     userMessage,
     history: withAttachmentImages(trimmed, images),
-    workspace: new ChatWorkspace({ current: current.bundle, draftFiles, draftShas: snapshot.shas, caps, model: INTERACTIVE_CHAT_MODEL, ...(adopt ? { adopt: adopt.bundle } : {}) }),
+    workspace: new ChatWorkspace({
+      current: current.bundle,
+      draftFiles,
+      draftShas: snapshot.shas,
+      caps,
+      model: INTERACTIVE_CHAT_MODEL,
+      locks,
+      ...(adopt ? { adopt: adopt.bundle } : {}),
+    }),
     staticSystem: buildChatSystemStatic({ firmName: firmNameFrom(draft.files.brandText), schema, designMd: designMd?.content ?? null, caps }),
     turnContext: buildChatTurnContext({
       bundle: current.bundle,
@@ -230,6 +247,8 @@ export async function prepareChatTurn(
       lastTurnNote: lastTurnNote(prior),
       ...(adopt ? { adopt: adopt.bundle, adoptCarried } : {}),
       layoutUnlocked: layoutPresetsUnlocked(caps),
+      locks,
+      sections,
     }),
     adoptedConceptId: adopt?.id ?? null,
     page,
@@ -281,12 +300,23 @@ export async function streamChatTurn(turn: PreparedTurn, io: TurnIo): Promise<Re
   const now = io.now ?? Date.now
   const turnDeadlineAt = turn.startedAt + TURN_BUDGET_MS
   const commit = (summary: string) => commitWorkspace(ws, { summary, target: turn.target, commitVersion: io.commitVersion })
+  // A lock / unlock commits what is ON THE DRAFT, so it waits for staged
+  // edits to be committed (or dropped) first; then the workspace rebases onto
+  // the lock commit (its pins included).
+  const changeLocks = async (change: LockChange): Promise<LockToolOutput> => {
+    if (ws.isStaged()) return { ok: false, error: STAGED_BEFORE_LOCK_ERROR }
+    const r = await io.changeLocks(change, { bundle: ws.bundle(), files: ws.themeFiles(), shas: ws.draftShas() })
+    if (!r.ok) return { ok: false, error: r.error }
+    ws.adoptCommitted(r.bundle, r.locks, r.appliedBlobs, r.versionId)
+    return { ok: true, changed: r.changed, locked: r.locks.map((l) => `${l.kind} ${l.key} (${l.label})`), versionNo: r.versionNo }
+  }
   const { tools, drain } = createDesignChatToolset(ws, {
     defaultPage: turn.page,
     timeLeftMs: () => turnDeadlineAt - now(),
     preview: io.preview,
     previewFits: io.previewFits,
     commit,
+    changeLocks,
   })
   // The SAME tools object converts the history, so earlier previews go
   // through toModelOutput (text only). The user message is already stored: if
@@ -400,6 +430,7 @@ export async function runDesignChatTurn(db: Db, actor: ChatActor, request: ChatR
   return streamChatTurn(turn, {
     model: anthropic(INTERACTIVE_CHAT_MODEL),
     commitVersion: (args) => commitDesignVersion(db, args),
+    changeLocks: (change, base) => changeLocks(db, { target: actor, base, change, commitVersion: (args) => commitDesignVersion(db, args) }),
     preview: previewDeps.preview,
     previewFits: previewDeps.previewFits,
     persistAssistant: async (row) => {

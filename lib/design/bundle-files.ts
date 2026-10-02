@@ -8,12 +8,13 @@ import type { DesignJson } from '@/types/design-json'
 import { patchDesignFlags, patchDesignLayout, patchDesignStyle } from '@/lib/editor/theme-edit'
 import { generateThemeCss } from '@/lib/content/theme-css-generator'
 import { generateFontsModule } from '@/lib/content/font-module-generator'
-import { gfUrl } from '@/lib/content/type-pairing-catalog'
+import { typographyGfUrl } from '@/lib/content/type-pairing-catalog'
 import { normalizeTypography } from '@/app/api/edit/[id]/theme/_theme'
 import { parseDesignBundle, type DesignBundle } from './bundle'
 import { sanitizeDesignCss } from './css-sanitizer'
 import { CSS_TARGETS, isCssTarget, type CssTarget } from './css-targets'
 import { totalCssErrors } from './css-budget'
+import { isWellFormedLockPins } from './lock-pins'
 import { DEFAULT_AXIS_VALUE, STYLE_AXIS_NAMES, normalizeStyleAxes, type StyleAxes } from './style-axes'
 import { DEFAULT_LAYOUT_PRESET, LAYOUT_PRESET_NAMES, normalizeLayoutPresets, type LayoutPresets } from './layout-presets'
 
@@ -27,6 +28,9 @@ export type RenderedThemeFiles = { brandText: string; designText: string; themeC
 // readRegion's throw-free signal: `ok: false` means the file's design-studio
 // markers are malformed (never guessed at — see regionStatus below).
 export type ReadRegionResult = { ok: true; css: DesignBundle['css'] } | { ok: false }
+
+export const LOCKS_FRAGMENT = 'locks'
+export const MALFORMED_LOCK_PINS_ERROR = 'The design lock pins are malformed — unlock and re-lock the area.'
 
 export const MALFORMED_REGION_ERROR =
   'content/design-overrides.css has malformed design-studio region markers — fix by hand or apply with removeLegacy.'
@@ -82,6 +86,7 @@ export function readRegion(overridesCss: string): ReadRegionResult {
   while ((m = re.exec(region))) {
     const [, key, body] = m
     if (key === 'global') out.global = body
+    else if (key === LOCKS_FRAGMENT) out.locks = body
     else if (isCssTarget(key)) out.blocks[key] = body
   }
   return { ok: true, css: out }
@@ -102,8 +107,11 @@ export function removeRegion(overridesCss: string): string {
   return joined.trimEnd()
 }
 
+// The lock pins come FIRST: they are zero-specificity :where() rules, and any
+// later rule authored for the same block must win over them.
 export function composeRegion(css: DesignBundle['css']): string {
   const parts: string[] = []
+  if (css.locks?.trim()) parts.push(`${fragStart(LOCKS_FRAGMENT)}\n${css.locks.trim()}\n${fragEnd(LOCKS_FRAGMENT)}`)
   if (css.global?.trim()) parts.push(`${fragStart('global')}\n${css.global.trim()}\n${fragEnd('global')}`)
   for (const key of CSS_TARGETS) {
     const body = css.blocks[key]?.trim()
@@ -111,6 +119,18 @@ export function composeRegion(css: DesignBundle['css']): string {
   }
   if (parts.length === 0) return ''
   return `${REGION_BEGIN}\n${parts.join('\n')}\n${REGION_END}\n`
+}
+
+// `overridesCss` with its region's lock pins replaced by `locks` (a restore of
+// a verbatim file keeps today's locks). A malformed region is returned as-is.
+export function replaceLocksFragment(overridesCss: string, locks: string | undefined): string {
+  const region = readRegion(overridesCss)
+  if (!region.ok) return overridesCss
+  if ((region.css.locks ?? '').trim() === (locks ?? '').trim()) return overridesCss
+  const { locks: _old, ...rest } = region.css
+  const next = composeRegion(locks?.trim() ? { ...rest, locks } : rest)
+  const base = removeRegion(overridesCss).trimEnd()
+  return next ? (base ? `${base}\n\n${next}` : next) : base ? `${base}\n` : ''
 }
 
 // Whether design-overrides.css holds hand-written CSS OUTSIDE the Studio
@@ -140,7 +160,12 @@ export function bundleFromRepoFiles(
     schemaVersion: 1,
     name: meta.name,
     palette: brand.palette,
-    typography: { headingFont: t.headingFont, bodyFont: t.bodyFont, accentFont: t.accentFont },
+    typography: {
+      headingFont: t.headingFont,
+      bodyFont: t.bodyFont,
+      accentFont: t.accentFont,
+      ...(t.pinnedFonts?.length ? { pinnedFonts: t.pinnedFonts } : {}),
+    },
     tokens: {
       roundness: design.roundness,
       density: design.density,
@@ -196,19 +221,27 @@ export function bundleToRepoFiles(
     if (r.ok) clean.blocks[key] = r.css
     else errors.push(...r.errors.map((e) => `css.blocks.${key}: ${e}`))
   }
+  if (bundle.css.locks?.trim()) {
+    if (!isWellFormedLockPins(bundle.css.locks)) errors.push(MALFORMED_LOCK_PINS_ERROR)
+    else clean.locks = bundle.css.locks.trim()
+  }
   if (errors.length) return { ok: false, errors }
+  // Lock pins are platform-generated and exempt from the authored-CSS budget.
   const totalErrors = totalCssErrors([clean.global, ...Object.values(clean.blocks)])
   if (totalErrors.length) return { ok: false, errors: totalErrors }
 
   const nextBrand: BrandJson = { ...brand, palette: { ...brand.palette, ...bundle.palette } }
 
-  const { headingFont, bodyFont, accentFont } = bundle.typography
+  const { headingFont, bodyFont, accentFont, pinnedFonts } = bundle.typography
+  const { pinnedFonts: _oldPins, ...baseTypography } = design.typography
+  const pins = pinnedFonts && pinnedFonts.length > 0 ? { pinnedFonts: [...pinnedFonts] } : {}
   const typography = {
-    ...design.typography,
+    ...baseTypography,
     headingFont,
     bodyFont,
     accentFont,
-    googleFontsUrl: gfUrl(Array.from(new Set([headingFont, bodyFont, accentFont]))),
+    googleFontsUrl: typographyGfUrl({ headingFont, bodyFont, accentFont, ...pins }),
+    ...pins,
   }
   const merged: DesignJson = {
     ...design,

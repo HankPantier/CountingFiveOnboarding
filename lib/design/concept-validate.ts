@@ -29,6 +29,8 @@ import { bundleToRepoFiles, type RenderedThemeFiles, type RepoThemeFiles } from 
 import { layoutGuardErrors } from './css-sanitizer'
 import type { PriorConcept } from './brief'
 import { enforceCapabilities } from './capabilities'
+import { applyUserLocks, withLockPins } from './lock-enforce'
+import type { DesignLock } from './locks'
 import { conceptConsistencyNotes } from './concept-consistency'
 import { isNearDuplicate } from './distinctness'
 import { isPlainObject } from './input-validation'
@@ -44,6 +46,10 @@ export type ConceptContext = {
   // the caller guards the CSS it authored itself (the chat edits one fragment
   // of a bundle that may carry older, already-applied CSS).
   layoutGuards?: 'all' | 'none'
+  // Design locks (migration 085): locked levers / areas are put back to
+  // `base` (whose `css` must be the draft's region, or null to leave area CSS
+  // alone) and the lock pins are recomputed. Absent → no locks.
+  locks?: { list: DesignLock[]; base: DesignBundle; baseCss?: DesignBundle['css'] | null }
 }
 export type ValidConcept = { bundle: DesignBundle; files: RenderedThemeFiles; notes: string[] }
 export type ConceptValidation = { ok: true; concept: ValidConcept } | { ok: false; errors: string[] }
@@ -101,6 +107,16 @@ export function validateConceptBundle(raw: unknown, ctx: ConceptContext): Concep
   if (ctx.paletteFreedom === 'keep' && !samePalette(bundle.palette, ctx.current.palette)) {
     bundle = { ...bundle, palette: { ...ctx.current.palette } }
     notes.push(KEEP_NOTE)
+  }
+
+  if (ctx.locks) {
+    const baseCss = ctx.locks.baseCss === undefined ? ctx.locks.base.css : ctx.locks.baseCss
+    const locked = applyUserLocks(bundle, ctx.locks.base, baseCss, ctx.locks.list)
+    bundle = locked.bundle
+    notes.push(...locked.notes)
+  } else {
+    // A model never authors lock pins: without locks in play there are none.
+    bundle = withLockPins(bundle, [])
   }
 
   const rendered = bundleToRepoFiles(bundle, ctx.draftFiles, { removeLegacy: true })

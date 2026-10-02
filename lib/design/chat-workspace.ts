@@ -17,6 +17,8 @@ import { scopeGuardErrors, scopeGuardWarnings } from './scope-guard'
 import { cssByteLength, cssCaps, countCssLines } from './css-budget'
 import type { RenderMetrics } from './metrics'
 import type { DesignCapabilities, RunScreenshot } from './run-types'
+import { keepLockedGlobalRules } from './lock-enforce'
+import { isLeverLocked, leverLabel, lockedError, lockedPresets, lockedTargets, targetLabel, type BaseLever, type DesignLock } from './locks'
 import type { ThemeBlobShas } from './studio-types'
 
 export const FONTS_LOCKED_TOOL_ERROR =
@@ -28,7 +30,17 @@ export const LAYOUT_LOCKED_TOOL_ERROR =
   'Layout presets are locked on this site (its draft or deployed template predates 2026.09.9) — nothing was changed. Keep the current structure; restyle with tokens, treatments and block CSS instead.'
 
 // `adopt`: the "Fix in chat" concept, whose own CSS the scope guard lets through.
-export type WorkspaceInit = { current: DesignBundle; draftFiles: RepoThemeFiles; draftShas: ThemeBlobShas; caps: DesignCapabilities; model: string; adopt?: DesignBundle }
+// `locks`: the session's design locks at turn start (lock_design / unlock_design
+// replace them mid-turn via adoptCommitted).
+export type WorkspaceInit = {
+  current: DesignBundle
+  draftFiles: RepoThemeFiles
+  draftShas: ThemeBlobShas
+  caps: DesignCapabilities
+  model: string
+  adopt?: DesignBundle
+  locks?: DesignLock[]
+}
 export type EditOutcome = { ok: true; changed: boolean; notes: string[]; budget: string | null } | { ok: false; error: string }
 export type WorkspacePreview = { revision: number; metrics: RenderMetrics | null; baseline: RenderMetrics | null; shots: RunScreenshot[] }
 
@@ -49,12 +61,67 @@ export class ChatWorkspace {
   private previews = 0
   private preview: WorkspacePreview | null = null
   private versionIds: string[] = []
+  private lockList: DesignLock[]
 
   constructor(private readonly init: WorkspaceInit) {
     this.caps = init.caps
     this.working = init.current
     this.files = init.draftFiles
     this.shas = init.draftShas
+    this.lockList = init.locks ?? []
+  }
+
+  locks(): DesignLock[] {
+    return this.lockList
+  }
+  themeFiles(): RepoThemeFiles {
+    return this.files
+  }
+
+  // A lock / unlock committed outside the edit flow (nothing was staged): the
+  // working copy becomes `bundle` (the committed design with its new pins) and
+  // the next commit builds on `appliedBlobs`.
+  adoptCommitted(bundle: DesignBundle, locks: DesignLock[], appliedBlobs: ThemeBlobShas, versionId: string | null): void {
+    this.lockList = locks
+    this.working = bundle
+    this.markCommitted(appliedBlobs, versionId, { revision: this.rev, bundle })
+  }
+
+  // Why `edit` would change something a lock protects, or null.
+  private lockRefusal(edit: ChatEdit): string | null {
+    const locks = this.lockList
+    if (locks.length === 0) return null
+    const lever = (key: BaseLever) => (isLeverLocked(locks, key) ? lockedError(leverLabel(key)) : null)
+    switch (edit.kind) {
+      case 'palette':
+        return lever('palette')
+      case 'fonts':
+        return lever('fonts')
+      case 'tokens':
+        return lever('tokens')
+      case 'treatments':
+        return lever('treatments')
+      case 'style':
+        return lever('style')
+      case 'layout': {
+        const blocked = lockedPresets(locks).filter((p) => p in edit.patch)
+        return blocked.length > 0 ? lockedError(blocked.map((p) => leverLabel(`layout:${p}`)).join(', ')) : null
+      }
+      case 'css':
+      case 'remove-css': {
+        const targets = lockedTargets(locks)
+        if (edit.target !== 'global') {
+          const lock = locks.find((l) => l.kind === 'area' && l.key === edit.target)
+          return lock ? lockedError(lock.label || targetLabel(edit.target)) : null
+        }
+        if (targets.length === 0) return null
+        const next = edit.kind === 'css' ? edit.css : undefined
+        const kept = keepLockedGlobalRules(next, this.working.css.global, targets)
+        return (kept ?? '').trim() === (next ?? '').trim()
+          ? null
+          : `${lockedError(targets.map(targetLabel).join(', '))} (global CSS rules for a locked area must stay as they are)`
+      }
+    }
   }
 
   bundle(): DesignBundle {
@@ -74,6 +141,8 @@ export class ChatWorkspace {
   }
 
   apply(edit: ChatEdit): EditOutcome {
+    const refusal = this.lockRefusal(edit)
+    if (refusal) return { ok: false, error: refusal }
     if (edit.kind === 'fonts' && !fontsUnlocked(this.caps)) return { ok: false, error: FONTS_LOCKED_TOOL_ERROR }
     if (edit.kind === 'style' && !styleAxesUnlocked(this.caps)) return { ok: false, error: STYLE_LOCKED_TOOL_ERROR }
     if (edit.kind === 'layout' && !layoutPresetsUnlocked(this.caps)) return { ok: false, error: LAYOUT_LOCKED_TOOL_ERROR }
@@ -89,7 +158,15 @@ export class ChatWorkspace {
     }
     const v = checkConceptCandidate(
       candidate,
-      { current: this.init.current, caps: this.caps, paletteFreedom: 'free', draftFiles: this.files, model: this.init.model, layoutGuards: 'none' },
+      {
+        current: this.init.current,
+        caps: this.caps,
+        paletteFreedom: 'free',
+        draftFiles: this.files,
+        model: this.init.model,
+        layoutGuards: 'none',
+        locks: { list: this.lockList, base: this.working },
+      },
       []
     )
     if (!v.ok) return { ok: false, error: v.errors.join(' ').slice(0, 1500) }
