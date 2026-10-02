@@ -1,0 +1,26 @@
+{
+  "_note": "Template 2026.09.12 (feat/pinned-fonts, merged 554b129). File set = the CHANGELOG 'Rollout notes (template 2026.09.11 → 2026.09.12)' list. Build tooling only: generateFontsModule + generate-fonts understand design.json typography.pinnedFonts (Design Studio locks), so a site with a locked area passes CI's generate-fonts --check. No visible change; theme.css, fonts.generated.ts, package.json and package-lock.json are not touched.",
+  "templateVersion": "2026.09.12",
+  "notes": "Behind-the-scenes update so the site keeps loading the fonts of any section you lock in the design tools. Nothing looks different.",
+  "exclude": [
+    "\\.png$",
+    "^e2e/.*-snapshots/"
+  ],
+  "themeCss": "none",
+  "lockfile": "ignore",
+  "expectFiles": {
+    "overwrite": [
+      "CHANGELOG.md",
+      "scripts/generate-design-contracts.ts",
+      "scripts/generate-fonts.ts",
+      "src/lib/theme/design-contracts.test.ts",
+      "src/lib/theme/font-module.ts",
+      "src/lib/theme/template-marker.test.ts"
+    ],
+    "add": [
+      "src/lib/theme/__fixtures__/fonts/design-pinned.json",
+      "src/lib/theme/__fixtures__/fonts/fonts-pinned.golden.txt"
+    ],
+    "delete": []
+  }
+}
