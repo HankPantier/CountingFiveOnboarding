@@ -2153,15 +2153,15 @@ export type Database = {
     Functions: {
       qa_apply_page_update: {
         Args: {
-          p_page_id: string
-          p_job_id: string
-          p_expected_content_md5: string | null
-          p_expected_rev: number
-          p_qa_review: Json
+          p_content: string
           p_content_changed: boolean
-          p_content: string | null
-          p_meta_title: string | null
-          p_meta_description: string | null
+          p_expected_content_md5: string
+          p_expected_rev: number
+          p_job_id: string
+          p_meta_description: string
+          p_meta_title: string
+          p_page_id: string
+          p_qa_review: Json
         }
         Returns: {
           admin_approved_content: boolean
@@ -2203,6 +2203,12 @@ export type Database = {
           word_count_actual: number | null
           word_count_target: number | null
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "generated_pages"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       token_usage_model_totals: {
         Args: { since?: string }
