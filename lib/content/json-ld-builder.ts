@@ -61,8 +61,11 @@ function buildOrganization(schema: SessionSchema, websiteUrl: string): Record<st
     '@type': 'Organization',
     name: firmName,
     url: origin,
-    logo: `${origin}/logo.png`,
   }
+  // No `logo`: this node is baked into each page's markdown at package time,
+  // so it can't follow a later logo change (it was a hard-coded /logo.png no
+  // site serves). The template layout's site-wide Organization node emits the
+  // real logo from brand.json logo.primary.
   const sameAs = sameAsLinks(schema)
   if (sameAs.length) node.sameAs = sameAs
   if (nonEmpty(schema.business?.foundingYear)) {

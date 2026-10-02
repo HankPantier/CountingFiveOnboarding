@@ -252,3 +252,13 @@ describe('buildJsonLdForPage with dirty schema shapes', () => {
     expect(out).toContain('Newtown Square')
   })
 })
+
+describe('buildJsonLdForPage — Organization node', () => {
+  it('emits no logo (the template layout carries the real brand.json logo), never the old /logo.png', () => {
+    const scripts = buildJsonLdForPage(inputs({ business: { name: 'Firm' } } as SessionSchema))
+    const org = node(scripts, 'Organization') as Record<string, unknown>
+    expect(org).toMatchObject({ name: 'Firm', url: 'https://firm.com' })
+    expect(org.logo).toBeUndefined()
+    expect(scripts).not.toContain('/logo.png')
+  })
+})
